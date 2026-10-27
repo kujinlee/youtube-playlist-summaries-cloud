@@ -17692,14 +17692,15 @@ to the top of `_self_test` so the new cases can run first. Filed backlog #358 (f
 ## 2026-10-26
 The project's safety hooks — including the one that stops a push straight to the main branch — only
 worked while the session sat in the project's top folder. One step into a subfolder and every one of them
-silently failed to start, and nothing stopped. They now start from anywhere, and a new check refuses any
-hook written the old way, so the next settings edit cannot quietly bring it back.
+silently failed to start, and nothing stopped. They now start from anywhere, and they still use the copy
+of the project you are working in when you work in a side copy. A new check allows exactly one way of
+registering a hook, so the next settings edit cannot quietly bring the problem back.
 <!--tech-->
-Branch `hooks-absolute-path` (backlog #223). `.claude/settings.json`: 13 commands `bash .claude/hooks/X.sh` ->
-`bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/X.sh` (fallback = old behaviour, so no hook is less reachable). New
-`scripts/check-hook-commands.py`: per `type: command` hook, a token naming an existing repo file by a relative path
-is refused, and an anchored token whose file is missing is refused; missing/unparseable settings, a malformed hooks
-block, or ZERO commands are CANNOT RUN. Known positive: the unfixed file gave rc 1 with 13 findings. 19 cases; 6
-mutations (2138 -> 2144), each killed by its named case; CI runs `--self-test` and the live check. `main.argv`
-EXEMPT in check-fixture-variation (its second value re-enters the suite), as for check-goal-status.
-⚠ Live falsifier owed after merge: a push to master from `scripts/` must be refused.
+Branch `hooks-absolute-path` (backlog #223, PR #409). All 13 commands: `bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh
+<name>.sh`. `run-hook.sh` picks the cwd's checkout when it shares the project's `--git-common-dir` (else the project
+dir), passes no argument through, refuses a path-shaped name. ⟳ r1 (both halves): anchoring at the project dir alone
+ran MAIN's hooks from a linked worktree (a plan gate there 2 -> 0), and the denylist guard was bypassed six ways.
+`check-hook-commands.py` is now a one-shape ALLOWLIST plus a registration check (`UNREGISTERED` names
+`check-memory-index-budget.sh` and why), and runs the launcher over real git worlds. 29 cases; 13 mutations
+(2138 -> 2151), each killed by its named case; 6 launcher mutations by hand, each killed.
+⚠ Live falsifier owed: a push to master from `scripts/` is refused.

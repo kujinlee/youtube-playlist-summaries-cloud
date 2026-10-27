@@ -44,9 +44,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # `${RECALL_MATCHER:-…}`, which any ambient variable in the session could set — giving either
 # SILENT TOTAL DISABLEMENT (rc=0, no output, no diagnostic) or arbitrary text in
 # `additionalContext` at every step transition. An env var is also invisible to a diff, so
-# `git status`, the guards and CI were all blind to it. `.claude/settings.json:57` invokes this
-# file as `bash .claude/hooks/surface-recall.sh` and passes NO argument, so `$1` is unreachable in
-# production BY CONSTRUCTION rather than by convention — and the guard that must override it is a
+# `git status`, the guards and CI were all blind to it. `.claude/settings.json` invokes this file
+# through `run-hook.sh surface-recall.sh`, which passes NO argument through (backlog #223, and a case
+# in `check-hook-commands.py` pins it), so `$1` is unreachable in production BY CONSTRUCTION rather than by convention — and the guard that must override it is a
 # caller, which is exactly who should be able to.
 # ⛔ WHY A SEAM RATHER THAN A STAGED COPY — round 7 B2, measured. `check-rc-contract.py` used to
 # observe this hook by staging a MINIMAL tree (this file plus a stub matcher) and running it there.

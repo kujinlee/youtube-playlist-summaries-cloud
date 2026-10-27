@@ -1870,7 +1870,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 6,
-    "scripts/check-hook-commands.py": 6,
+    "scripts/check-hook-commands.py": 13,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
     # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
@@ -6054,7 +6054,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2144)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2151)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

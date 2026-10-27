@@ -1,28 +1,106 @@
 [
   {
-    "name": "the anchored-path existence check is skipped, so an anchored hook that does not exist passes",
+    "name": "a command that merely CONTAINS the canonical form passes (||true and friends)",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "                if not exists(rel):\n",
-        "                if False:\n"
+        "        m = CANONICAL.fullmatch(cmd)",
+        "        m = CANONICAL.search(cmd)"
       ]
     ],
     "expect": [
-      "an anchored path to a file that does not exist is refused — it would launch nothing"
+      "every round-1 bypass is refused — one finding each, by the allowlist"
     ]
   },
   {
-    "name": "the relative-path refusal is switched off — the shipped defect passes",
+    "name": "the launcher becomes optional in the canonical form, so round 1's anchored-only shape passes",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "            elif not tok.startswith(ANCHORS) and exists(tok):",
-        "            elif False:"
+        "/\\.claude/hooks/run-hook\\.sh ([A-Za-z0-9_]",
+        "/\\.claude/hooks/(?:run-hook\\.sh )?([A-Za-z0-9_]"
       ]
     ],
     "expect": [
-      "⭐ the shipped defect — `bash .claude/hooks/x.sh` — is refused"
+      "every round-1 bypass is refused — one finding each, by the allowlist"
+    ]
+  },
+  {
+    "name": "a canonical command naming a missing hook passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        elif name not in on_disk:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "the canonical form naming a hook that does not exist is refused"
+    ]
+  },
+  {
+    "name": "the launcher may register itself",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if name == LAUNCHER:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "registering the launcher itself as a hook is refused"
+    ]
+  },
+  {
+    "name": "a missing launcher passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    if LAUNCHER not in on_disk:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a missing launcher is refused even when every command is canonical"
+    ]
+  },
+  {
+    "name": "an unregistered, unexplained hook file passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if f.endswith(\".sh\") and f not in unregistered:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a hook file nobody registers and nobody explains is refused"
+    ]
+  },
+  {
+    "name": "a stale UNREGISTERED entry for a registered file passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if f in registered:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a stale UNREGISTERED entry — the file is registered — is refused"
+    ]
+  },
+  {
+    "name": "a stale UNREGISTERED entry for a missing file passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        elif f not in on_disk:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a stale UNREGISTERED entry — no such file — is refused"
     ]
   },
   {
@@ -52,25 +130,38 @@
     ]
   },
   {
-    "name": "existence is read under the REPO, not the root it was given",
+    "name": "a settings file that is not an object reports a pass",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "lambda rel: (root / rel).is_file()",
-        "lambda rel: (REPO_ROOT / rel).is_file()"
+        "        return 2, [f\"CANNOT RUN — {path} is not a JSON object.",
+        "        return 0, [f\"CANNOT RUN — {path} is not a JSON object."
       ]
     ],
     "expect": [
-      "an anchored command whose hook exists under ROOT passes"
+      "a settings file that is a JSON array is CANNOT RUN, not a crash"
     ]
   },
   {
-    "name": "main() ignores the root it is given and judges the repo's own settings",
+    "name": "hook files are listed from the REPO, not the root given",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    code, messages = check(root / SETTINGS_REL, root)",
-        "    code, messages = check(REPO_ROOT / SETTINGS_REL, REPO_ROOT)"
+        "    hooks_dir = root / HOOKS_REL",
+        "    hooks_dir = REPO_ROOT / HOOKS_REL"
+      ]
+    ],
+    "expect": [
+      "a canonical command whose hook exists under ROOT passes"
+    ]
+  },
+  {
+    "name": "main() ignores the root it is given",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    code, messages = check(root / SETTINGS_REL, root, unregistered)",
+        "    code, messages = check(REPO_ROOT / SETTINGS_REL, REPO_ROOT, unregistered)"
       ]
     ],
     "expect": [

@@ -7,13 +7,13 @@
           {
             "type": "command",
             "if": "Bash(git push*)",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/block-default-branch-push.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-default-branch-push.sh",
             "statusMessage": "Checking branch rule..."
           },
           {
             "type": "command",
             "if": "Bash(gh pr create*)",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/suggest-explainer.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh suggest-explainer.sh",
             "statusMessage": "Checking whether this PR wants an explainer..."
           }
         ]
@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/block-implementation-before-plan-gate.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-implementation-before-plan-gate.sh"
           }
         ]
       },
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/enforce-handoff-path.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh enforce-handoff-path.sh",
             "statusMessage": "Checking the handoff save path..."
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/enforce-selection-card.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh enforce-selection-card.sh"
           }
         ]
       }
@@ -54,7 +54,7 @@
           {
             "type": "command",
             "if": "Bash(*begin-plan.py*)",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/surface-recall.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh surface-recall.sh",
             "statusMessage": "Any recorded lesson for this step?"
           }
         ]
@@ -64,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/check-plan-gate.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-plan-gate.sh"
           }
         ]
       },
@@ -73,27 +73,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/check-schema-gates.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-schema-gates.sh",
             "statusMessage": "Checking schema gate reminder..."
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/regen-backlog-page.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-backlog-page.sh",
             "statusMessage": "Refreshing the backlog view..."
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/regen-goals-page.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-goals-page.sh",
             "statusMessage": "Refreshing the goals view..."
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/regen-features-page.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-features-page.sh",
             "statusMessage": "Refreshing the features view..."
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/regen-dashboard.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-dashboard.sh",
             "statusMessage": "Refreshing the dashboard..."
           }
         ]
@@ -104,7 +104,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/block-idle-stop.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-idle-stop.sh",
             "statusMessage": "Checking whether a plan is still mid-execution..."
           }
         ]
