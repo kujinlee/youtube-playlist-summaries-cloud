@@ -121,7 +121,7 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
   something it does not. They are named by token, not by hue, because a page sets its own hue.
   ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — and since
-  #376 the composer REFUSES to compose one that does not, naming the blocks — the light default, each
+  backlog #376 the composer REFUSES to compose one that does not, naming the blocks — the light default, each
   explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light / `#9db8e8` dark unless
   it has a reason to differ. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
   is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
