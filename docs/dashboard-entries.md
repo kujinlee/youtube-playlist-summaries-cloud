@@ -17835,3 +17835,13 @@ mutants, live in the harness). Backlog #364 records the two owner decisions (NOT
 `EnterWorktree`). Files backlog #374 (a waiver HOLD should be cleared by a recorded review, not the owner) and #375
 (eleven hooks' `cd && pwd` root strips a trailing newline).
 
+
+## 2026-10-27
+The skills explainer page now has the text-style switcher beside the theme switcher, and making that switcher appear on
+every explainer page by default is filed as the next piece of work.
+<!--tech-->
+Docs only. `docs/explainers/2026-10-27-brief-topic-builtin-skills-explainer.{fragment.,}html`: body wrapped in `ex-body`
+and recomposed — verified in the browser: `#schemer`'s three buttons reachable, `data-scheme` flips, `h2` colour changes
+between *colour* and *plain*. Files backlog #376: the switcher is opt-in (`brief-compose.py:814`), so it is on 9 of 89
+tracked pages; default it on, and recompose the 24 pages that have fragments.
+
