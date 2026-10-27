@@ -225,8 +225,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    \"shell\": (False,",
-        "    \"shell\": (True,"
+        "    \"type\": ((str,), \"the hook kind\"),\n",
+        "    \"type\": ((str,), \"the hook kind\"),\n    \"shell\": ((str,), \"x\"),\n"
       ]
     ],
     "expect": [
@@ -238,8 +238,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    \"async\": (False,",
-        "    \"async\": (True,"
+        "    \"command\": ((str,), \"the one registration shape\"),\n",
+        "    \"command\": ((str,), \"the one registration shape\"),\n    \"async\": ((bool,), \"x\"),\n"
       ]
     ],
     "expect": [
@@ -251,8 +251,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    \"asyncRewake\": (False,",
-        "    \"asyncRewake\": (True,"
+        "    \"statusMessage\": ((str,), \"spinner text only\"),\n",
+        "    \"statusMessage\": ((str,), \"spinner text only\"),\n    \"asyncRewake\": ((bool,), \"x\"),\n"
       ]
     ],
     "expect": [
@@ -264,8 +264,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    \"once\": (False,",
-        "    \"once\": (True,"
+        "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n",
+        "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n    \"once\": ((bool,), \"x\"),\n"
       ]
     ],
     "expect": [
@@ -277,8 +277,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "FIELD_POLICY.get(key, (False, \"UNCLASSIFIED",
-        "FIELD_POLICY.get(key, (True, \"UNCLASSIFIED"
+        "            else:\n                why = REFUSED.get(key,",
+        "            elif key in REFUSED:\n                why = REFUSED.get(key,"
       ]
     ],
     "expect": [
@@ -290,8 +290,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    \"if\": (True,",
-        "    \"if\": (False,"
+        "    \"if\": ((str,), \"in live use; its VALUE is not checked\"),\n",
+        ""
       ]
     ],
     "expect": [
@@ -303,8 +303,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "        if h.get(\"type\") != \"command\":\n            continue\n        for key in h:",
-        "        for key in h:"
+        "        if h.get(\"type\") != \"command\":\n            continue\n        for key, val in h.items():",
+        "        for key, val in h.items():"
       ]
     ],
     "expect": [
@@ -322,6 +322,71 @@
     ],
     "expect": [
       "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
+    ]
+  },
+  {
+    "name": "⭐ an accepted field's TYPE is not checked (r2: statusMessage {} disables the file)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "                if type(val) not in types:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ an accepted field with the WRONG TYPE is refused — Claude Code would not load the file (r2)"
+    ]
+  },
+  {
+    "name": "⭐ the type check uses isinstance, so `timeout: true` passes as an int (r2)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "type(val) not in types",
+        "not isinstance(val, types)"
+      ]
+    ],
+    "expect": [
+      "⭐ `timeout: true` is refused — a bool is an int to isinstance, not a number of seconds (r2)"
+    ]
+  },
+  {
+    "name": "⭐ the walk REJECTS every second group — a raise must not satisfy the traversal case (r2, Codex)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "for g in groups:",
+        "for i, g in enumerate(groups):\n            if i:\n                raise Malformed(\"second group\")"
+      ]
+    ],
+    "expect": [
+      "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
+    ]
+  },
+  {
+    "name": "⭐ a NON-LIST event value is skipped, not refused (r2, Codex)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if not isinstance(groups, list):\n            raise Malformed(f\"`hooks.{event}` is not a list\")",
+        "        if not isinstance(groups, list):\n            continue"
+      ]
+    ],
+    "expect": [
+      "⭐ a NON-LIST event value beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
+    ]
+  },
+  {
+    "name": "⭐ a NON-STRING command is skipped, not refused (r2, Codex)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "                    raise Malformed(f\"a `hooks.{event}` command is not a string\")",
+        "                    continue"
+      ]
+    ],
+    "expect": [
+      "⭐ a NON-STRING command beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
     ]
   }
 ]

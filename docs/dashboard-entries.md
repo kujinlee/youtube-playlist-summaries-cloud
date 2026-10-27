@@ -17822,5 +17822,7 @@ Branch `hook-args-shell` (backlog #368, PR #414, from PR #412 round 1). `check-h
 every field of a command hook, deny by default. Refused: `args`, `shell` (a policy — even `bash`), and `async`/
 `asyncRewake`/`once`, which let a gate look as though it ran. Accepted: the five in live use; `timeout` and `if` values are
 NOT checked, said in the docstring. ⟳ r1 (both halves): the first version refused only `args`/`shell`, and walked the
-hooks a second time with three unseen regressions — now ONE walk (`_walk`). 38 cases; 25 mutations, each killed by its case.
+hooks a second time with three unseen regressions — now ONE walk (`_walk`). ⟳ r2 (REDESIGN): accepted fields carry their
+types — `statusMessage: {}` passed while Claude Code refused to load the whole file — and cases compare exact findings. 42
+cases; 30 mutations, each killed by its case.
 
