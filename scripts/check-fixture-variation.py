@@ -359,6 +359,13 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "render.prs",
         "render.truncated",
     ),
+    # backlog #364 (2026-10-27): the launcher's world runner. The world plumbing is EXEMPT with its
+    # reason (one built world per suite run); everything a case decides is varied.
+    "check-run-hook.py": (
+        "apply_mutant.m", "apply_mutant.text", "build.launcher", "build.x", "cases.w", "kill_report.markers",
+        "kill_report.mutants", "kill_report.real", "kill_report.w", "main.argv", "main.launcher",
+        "red_names.results", "run_worlds.markers", "run_worlds.only", "run_worlds.w", "verdict.got",
+        "verdict.want",),
     # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.
     "check-hook-commands.py": (
         "check.path", "check.root", "check.unregistered",
@@ -1097,6 +1104,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #364 (2026-10-27): check-run-hook.py's world plumbing — one world per suite run.
+    "check-run-hook.py:build.x": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:build.launcher": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:cases.w": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:run_worlds.w": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:kill_report.w": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:run_worlds.markers": "a scratch directory for the probe's marker files, cleared before every run; any directory is equivalent",
+    "check-run-hook.py:kill_report.markers": "a scratch directory for the probe's marker files, cleared before every run; any directory is equivalent",
+    "check-run-hook.py:kill_report.real": "the launcher text the world was built with — every mutant is an edit OF it, so a second value would be a second launcher, which main(launcher=…) already varies",
+    "check-run-hook.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the three main([]) cases",
     # ⛔ argv has exactly two values and the suite cannot pass the second: `main(["--self-test"])`
     # re-enters `_self_test()` from inside itself and never terminates. Measured by writing it.
     # The dispatch IS covered — every `main([])` case reaches it and takes the other branch —
