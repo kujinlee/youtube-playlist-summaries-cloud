@@ -17837,6 +17837,16 @@ mutants, live in the harness). Backlog #364 records the two owner decisions (NOT
 
 
 ## 2026-10-27
+The skills explainer page now has the text-style switcher beside the theme switcher, and making that switcher appear on
+every explainer page by default is filed as the next piece of work.
+<!--tech-->
+Docs only. `docs/explainers/2026-10-27-brief-topic-builtin-skills-explainer.{fragment.,}html`: body wrapped in `ex-body`
+and recomposed — verified in the browser: `#schemer`'s three buttons reachable, `data-scheme` flips, `h2` colour changes
+between *colour* and *plain*. Files backlog #376: the switcher is opt-in (`brief-compose.py:814`), so it is on 9 of 89
+tracked pages; default it on, and recompose the 24 pages that have fragments.
+
+
+## 2026-10-27
 The check that every hook is registered one way now refuses any hook setting it has not been told about, and five it
 has: a list of arguments, a choice of shell, and three that let a safety check look as though it ran when it did not
 (running in the background, or only once).
