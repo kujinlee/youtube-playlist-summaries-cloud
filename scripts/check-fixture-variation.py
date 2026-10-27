@@ -315,7 +315,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.
     "check-hook-commands.py": (
-        "check.path", "check.root", "check.unregistered", "launch.cwd", "launch.project",
+        "check.path", "check.root", "check.unregistered",
         "main.argv", "main.root", "main.unregistered", "problems.commands", "problems.on_disk",
         "problems.unregistered",),
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.

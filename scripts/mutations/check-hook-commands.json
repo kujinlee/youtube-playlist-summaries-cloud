@@ -1,6 +1,6 @@
 [
   {
-    "name": "a command that merely CONTAINS the canonical form passes (||true and friends)",
+    "name": "a command that merely CONTAINS the one form passes (||true and friends)",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
@@ -9,59 +9,33 @@
       ]
     ],
     "expect": [
-      "every round-1 bypass is refused — one finding each, by the allowlist"
+      "every divergent shape is refused — one finding each"
     ]
   },
   {
-    "name": "the launcher becomes optional in the canonical form, so round 1's anchored-only shape passes",
+    "name": "the one form tolerates trailing arguments",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "/\\.claude/hooks/run-hook\\.sh ([A-Za-z0-9_]",
-        "/\\.claude/hooks/(?:run-hook\\.sh )?([A-Za-z0-9_]"
+        "[A-Za-z0-9._-]*\\.sh)\")",
+        "[A-Za-z0-9._-]*\\.sh)(?: .*)?\")"
       ]
     ],
     "expect": [
-      "every round-1 bypass is refused — one finding each, by the allowlist"
+      "a trailing argument is a second shape too"
     ]
   },
   {
-    "name": "a canonical command naming a missing hook passes",
+    "name": "a registered hook that does not exist passes",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "        elif name not in on_disk:",
-        "        elif False:"
-      ]
-    ],
-    "expect": [
-      "the canonical form naming a hook that does not exist is refused"
-    ]
-  },
-  {
-    "name": "the launcher may register itself",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if name == LAUNCHER:",
+        "        if name not in on_disk:",
         "        if False:"
       ]
     ],
     "expect": [
-      "registering the launcher itself as a hook is refused"
-    ]
-  },
-  {
-    "name": "a missing launcher passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    if LAUNCHER not in on_disk:",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "a missing launcher is refused even when every command is canonical"
+      "the one form naming a hook that does not exist is refused"
     ]
   },
   {
@@ -69,12 +43,25 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "        if f.endswith(\".sh\") and f not in unregistered:",
-        "        if False:"
+        "and f not in unregistered:",
+        "and False:"
       ]
     ],
     "expect": [
       "a hook file nobody registers and nobody explains is refused"
+    ]
+  },
+  {
+    "name": "every file in the hooks directory counts as a hook",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if f.endswith(\".sh\") and",
+        "        if True and"
+      ]
+    ],
+    "expect": [
+      "a non-.sh file in the hooks directory is not a hook"
     ]
   },
   {
@@ -152,7 +139,7 @@
       ]
     ],
     "expect": [
-      "a canonical command whose hook exists under ROOT passes"
+      "a registered hook that exists under ROOT passes"
     ]
   },
   {
@@ -165,7 +152,7 @@
       ]
     ],
     "expect": [
-      "⭐ main() over the shipped defect exits 1"
+      "main() over a compliant world exits 0"
     ]
   }
 ]

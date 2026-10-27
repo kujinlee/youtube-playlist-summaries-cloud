@@ -17690,18 +17690,60 @@ to the top of `_self_test` so the new cases can run first. Filed backlog #358 (f
 
 
 ## 2026-10-26
-The project's safety hooks — including the one that stops a push straight to the main branch — only
-worked while the session sat in the project's top folder. One step into a subfolder and every one of them
-silently failed to start, and nothing stopped. They now start from anywhere, and they still use the copy
-of the project you are working in when you work in a side copy. A new check allows exactly one way of
-registering a hook, so the next settings edit cannot quietly bring the problem back.
+The CI install of a video tool that some tests need now keeps a copy of what it downloaded and reuses it,
+after checking each file against the official package list, so a slow package mirror no longer stalls most runs. On the day this was written the download stalled on
+about a third of runs, and each stall needed a manual re-run before anything could merge.
 <!--tech-->
-Branch `hooks-absolute-path` (backlog #223, PR #409). All 13 commands: `bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh
-<name>.sh`. `run-hook.sh` walks up from the physical cwd to the nearest directory with both `.git` and `run-hook.sh` (no
-git process; else the project dir), passes no argument through, refuses a path-shaped name; a hook missing there is NOT RUN.
-⟳ r2: asking git was steerable (`GIT_CEILING_DIRECTORIES` -> main's plan gate) and let main's copy stand in for a missing hook. ⟳ r1 (both halves): anchoring at the project dir alone
-ran MAIN's hooks from a linked worktree (a plan gate there 2 -> 0), and the denylist guard was bypassed six ways.
-`check-hook-commands.py` is now a one-shape ALLOWLIST plus a registration check (`UNREGISTERED` names
-`check-memory-index-budget.sh` and why), and runs the launcher over real git worlds. 36 cases; 13 mutations
-(2138 -> 2151), each killed by its named case; 7 launcher mutations by hand, each killed.
-⚠ Live falsifier owed: a push to master from `scripts/` is refused.
+Branch `ffmpeg-deb-cache` (backlog #358, the owner's option A). `ci.yml` `verify`: a key step runs one bounded
+`apt-get update`, then `--print-uris -o Acquire::ForceHash=SHA256` (bounded, status checked) into a manifest of every
+file's name and SHA256 from this run's signed index; the key is a hash of that manifest. `actions/cache/restore` into
+`~/ffmpeg-debs`; a separate bounded `Seed` step copies into `/var/cache/apt/archives` ONLY restored files whose
+`sha256sum` matches the manifest; the install step itself is master's, except that it reuses the key step's index
+(no second update, so nothing drifts) and its cap is 13 min on that path, 20 otherwise. ⟳ r2: cache preparation was moved OUT of the install into its own `continue-on-error` step, which rebuilds
+`~/ffmpeg-debs` from scratch with exactly the manifest's files, each re-hashed; the save runs only if all were staged.
+⟳ r1 (both halves) corrected two false claims of the first version: apt accepts a cached .deb by SIZE, not hash (a forged
+package installed, in a container), and a failing cache step could skip the install — now every cache step is
+`continue-on-error` and bounded. Measured in CI: a miss saved 81 files; the next run restored 81, `Need to get 0 B`.
+Measured in an ubuntu:26.04 container: 194 files listed with SHA256, a forged same-size file rejected and re-downloaded.
+⟳ r3: cache work left the install step entirely (a stalled copy could hold it to its cap). ⟳ r4 (Codex, NOT CONVERGED, filed
+as backlog #360): the "28.3 / 27.3 / 21.3 by STEP CAPS" figures were FALSE — they added the measured runtime of the 77 steps
+that have NO cap. The explicit caps per path are 23 (index not reused) / 16 (reused, no key) / 19 (cache hit) / 21 (miss,
+then stage and save), each plus R, the uncapped remainder; only the job's 30-min limit bounds R, exactly as on master. Container: a forced copy failure still reached the install; staging after a
+partial restore kept 194 of 194 manifest files and no extra.
+
+
+## 2026-10-26
+Two notes on the merge checker and one on the mutation count. The merge checker's false alarms, where it
+holds a pull request that only added to a line, turned out to be wider than first filed: a line that was
+only re-indented, or whose comment changed, is held too. And the hand-typed total of mutation tests now
+clashes between every two open pull requests that add tests, so it is filed with a fix that cannot clash.
+Also saved: the page explaining the day's progress.
+<!--tech-->
+Docs only. backlog #355 gains PR #404's three held lines: one EXTENDED (`+ 3` -> `+ 3 + 10`), one re-indented
+into a `try:` with identical text, one with only a `# 236 cases` comment changed — the latter two are the cheap,
+safe half (compare after stripping indentation and a trailing comment). Filed backlog #359: the literal total in
+`check-plan-code.py`'s `_self_test` is the shrink ratchet, and it conflicts on every concurrent mutation PR (once
+merged silently wrong, 2115 + 2115 for a real 2125); candidate is a branch-sum >= base-sum comparison in CI.
+Filed backlog #360: `verify` has 78 steps on master and one step cap, so its budget is bounded only by the job limit — PR #407's
+round 4 refuted my per-path "step caps" figures, which had added the uncapped steps' measured runtime.
+Filed at the owner's request: backlog #361 (tell compaction what must survive; falsified by one `/compact`) and backlog #362
+(derive a handoff's in-flight state from git and `gh` when it is read — the hand-written one missed PR #407's conflict).
+New `/goal-tree` command: prints every work thread under the request it serves — tagged fix, blocker,
+bookkeeping or side question, named by backlog row, PR state read live. Filed backlog #363 to have the work-lines
+page draw that tree from recorded data instead.
+Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.
+
+
+## 2026-10-26
+The project's safety hooks stop working whenever the session steps into a subfolder, and that is still
+true: three ways of fixing it each broke something else under review, so the fix now gets a design review
+of its own before another attempt. What ships instead is a check that every hook is registered one way,
+exists, and is actually wired up — so the eventual fix has one place to change, and a hook can no longer
+sit in the folder doing nothing.
+<!--tech-->
+Branch `hooks-absolute-path` (backlog #223, PR #409), SPLIT at the owner's choice A. Ships: `check-hook-commands.py`
+(in CI) — one registration shape (today's `bash .claude/hooks/<name>.sh`), a registered hook must exist, every hook
+file registered or in `UNREGISTERED` with a reason (`check-memory-index-budget.sh`). `.claude/` is byte-identical to
+master. 22 cases; 12 mutations (2138 -> 2150), each killed by its named case. Split out: backlog #364, the launcher,
+after r1 (project dir ran main's hooks from a worktree), r2 (git discovery steerable), r3 (a marker walk skipped
+pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review comes first.
