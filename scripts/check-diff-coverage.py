@@ -544,7 +544,15 @@ def self_test_lines_helper():
                 return R(0, (REPO_ROOT / cmd[-1]).read_bytes())
             return R(128, err=f"unexpected git call {cmd}")
         return fake
-    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + f"@@ -{n} +{n} @@\n"))
+    # ⛔ PLANT a GIT_* variable for this run: the "no GIT_* reaches a call" case below can only go red if one EXISTS,
+    # and that was ambient — this session's harness exports GIT_EDITOR/GIT_ASKPASS, a Linux CI runner exports none, so
+    # the case passed there for a reason it did not name (PR #415's CI, shard 1: the mutation was caught elsewhere).
+    _had = os.environ.get("GIT_DIFF_COVERAGE_SENTINEL")
+    os.environ["GIT_DIFF_COVERAGE_SENTINEL"] = "1"
+    try:
+        rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + f"@@ -{n} +{n} @@\n"))
+    finally:
+        os.environ.pop("GIT_DIFF_COVERAGE_SENTINEL", None) if _had is None else os.environ.__setitem__("GIT_DIFF_COVERAGE_SENTINEL", _had)
     # The line is CHOSEN by the pure rules above, so this tests the WIRING over the REAL manifests.
     case("⭐ over the REAL manifests, an unedited decision line of a real guard is warned by file:line",
          (bool(open_), any(m.startswith(f"WARN {target}:{n}:") for m in msgs), rc), (True, True, 0))
