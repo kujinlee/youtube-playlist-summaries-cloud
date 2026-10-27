@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 4426 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "4334b4441021d101057b00ee77705fd58bdfe53d",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../373-codex-r3.md",
+  "reason": "4426 chars",
+  "refused": false,
+  "review": "fixture-git-isolation-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
