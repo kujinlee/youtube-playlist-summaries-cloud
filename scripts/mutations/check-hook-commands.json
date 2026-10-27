@@ -154,5 +154,57 @@
     "expect": [
       "main() over a compliant world exits 0"
     ]
+  },
+  {
+    "name": "an unknown hook type is skipped again (backlog #365)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "                if not isinstance(h.get(\"type\"), str) or h.get(\"type\") not in KNOWN_TYPES:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a hook entry with type None is CANNOT RUN, not skipped or a crash (backlog #365)"
+    ]
+  },
+  {
+    "name": "an empty UNREGISTERED reason is accepted again (backlog #365)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if not isinstance(unregistered[f], str) or not unregistered[f].strip():",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNREGISTERED entry with an EMPTY reason is refused (backlog #365)"
+    ]
+  },
+  {
+    "name": "a known type is forgotten (`prompt` dropped)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "KNOWN_TYPES = frozenset({\"command\", \"prompt\", \"agent\", \"http\", \"mcp_tool\"})",
+        "KNOWN_TYPES = frozenset({\"command\", \"agent\", \"http\", \"mcp_tool\"})"
+      ]
+    ],
+    "expect": [
+      "⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)"
+    ]
+  },
+  {
+    "name": "a non-string reason is accepted through str()",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "unregistered[f], str) or not unregistered[f].strip():",
+        "unregistered[f], object) or not str(unregistered[f]).strip():"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason"
+    ]
   }
 ]

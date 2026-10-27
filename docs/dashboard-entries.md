@@ -17767,3 +17767,16 @@ another (filename conventions; then `origin/master..<head>` on a stacked branch)
 is backlog #367, architecture review first. 36 cases; 17 mutations. Delivery after compaction verified.
 ⟳ r4 (Codex, DEFER): the ledger erases its jobs once past its 64 KiB cap, and a `gh` element missing its checks reads
 as NO CHECKS — filed as backlog #369, not folded; the loop stops.
+
+
+## 2026-10-26
+The check that every hook is registered one way now also refuses a hook entry it does not recognise and an
+exemption with no reason written down, instead of quietly letting both through.
+<!--tech-->
+Branch `hook-guard-gaps` (backlog #365, from PR #409 round 4). `check-hook-commands.py`: an entry with no `type` or one
+outside `KNOWN_TYPES` (the 5 of Claude Code 2.1.309's schema) is Malformed → CANNOT RUN; an empty or whitespace `UNREGISTERED` reason is
+refused; the alternate-path and `main()` divergence cases assert the shape diagnostic (they passed on a second
+violation before). Known positive: `{}`, `"commmand"` and an empty reason exited 0 before, 2/2/1 now. ⟳ r1 (both halves):
+the first fold knew 2 of Claude Code 2.1.309's 5 hook types, crashed on a list `type`, took `str(None)` as a reason —
+fixed. 29 cases; 16 mutations. Filed backlog #368 (`args` makes a hook launch nothing).
+
