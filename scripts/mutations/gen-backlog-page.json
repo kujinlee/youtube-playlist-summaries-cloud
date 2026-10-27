@@ -174,5 +174,27 @@
       ]
     ],
     "expect": "a `|` inside a tag group, escaped or not, is MALFORMED"
+  },
+  {
+    "name": "the header schema check is dropped, so a misspelled Bundle column parses with every tag empty",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            why = header_error(header, section)\n            if why:",
+        "            why = header_error(header, section)\n            if False:"
+      ]
+    ],
+    "expect": "a six-column table whose header misspells Bundle REFUSES, naming the table"
+  },
+  {
+    "name": "the header schema check is LOOSENED to width only, so `Bundel` passes",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if tuple(\" \".join(c.split()) for c in header) in TABLE_SCHEMAS:",
+        "    if len(header) in {len(t) for t in TABLE_SCHEMAS}:"
+      ]
+    ],
+    "expect": "a six-column table whose header misspells Bundle REFUSES, naming the table"
   }
 ]

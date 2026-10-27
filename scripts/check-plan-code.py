@@ -1060,7 +1060,9 @@ EXPECTED_MUTATIONS = {
     # for a family, the filter's per-tag count and the card's per-tag chips.
     # ⟳ 2026-10-27, backlog #381 r1 — 15 -> 16: a `|` inside a tag group accepted again (Codex M1).
     # The comma entry was RETARGETED onto a substring of the rewritten `TAG_CELL` line, not added.
-    "scripts/gen-backlog-page.py": 16,
+    # ⟳ 2026-10-27, backlog #381 r2 — 16 -> 18: the table-header SCHEMA check dropped, and loosened to
+    # width only (Codex X1, a `Bundel` header that emptied every row's tags).
+    "scripts/gen-backlog-page.py": 18,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -6088,7 +6090,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2325)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2327)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

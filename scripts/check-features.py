@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 44 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 45 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -440,6 +440,13 @@ expected-because: standard for a hosted multi-tenant service.
     fam = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud)"))[0]
     check("an in-use leaf is claimed by its family's area, and that area is not stale",
           check_cross(fam, set(), {"cloud / new"}), [])
+    # ⛔ backlog #381 r2, Codex X1: a header that misspells `Bundle` is a gate FAILURE, not a table
+    # whose every row is untagged — master FAILED on this probe, and the round-1 fold passed it.
+    _bundel = backlog_areas(_bl("| 1 | x | f | S | (worker) | open |")
+                            + "\n## Probe\n| # | Item | Touches | Size | Bundel | Status |\n"
+                            "|---|---|---|---|---|---|\n| 999 | 🟡 **Probe** | f | S | (not-claimed) | open |\n")
+    check("a table whose header misspells Bundle FAILS the gate, naming the table",
+          (_bundel[0], len(_bundel[1]), "`## Probe`" in " ".join(_bundel[1])), (set(), 1, True))
     # ⛔ backlog #381 r1, Claude M1: a family area that is nobody's NEAREST claimant places no row.
     both = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud), (cloud/money)"))[0]
     check("a family area that is nobody's NEAREST claimant is stale",

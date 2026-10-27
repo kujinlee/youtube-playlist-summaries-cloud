@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 180 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 182 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -916,6 +916,27 @@ class ShapeError(Exception):
     cell is how a closed marker written for something else once closed two open items."""
 
 
+# ⛔ THE DECLARED TABLE SCHEMAS (backlog #381 r2, Codex X1). `parse` validated SHAPE — a row's width
+# against its header — and not SCHEMA: a six-column table headed `Bundel` gave every row
+# `bundle=""` through `col.get`, so its tags vanished from every reader and `check-features`
+# passed where master failed. A `| # |` header must now be one of these, compared after
+# lowercasing and collapsing spaces, or `parse` raises `ShapeError` naming the table. Measured
+# 2026-10-27 over `docs/backlog.md`: exactly two `| # |` headers exist, one of each.
+TABLE_SCHEMAS = (
+    ("#", "item", "touches", "size", "bundle", "status"),   # ## Items
+    ("#", "item", "status"),                                 # ## Found during testing
+)
+
+
+def header_error(header: list[str], section: str) -> str | None:
+    """PURE. Why a `| # |` header is not a declared schema, or None when it is one."""
+    if tuple(" ".join(c.split()) for c in header) in TABLE_SCHEMAS:
+        return None
+    return (f"the table under `## {section}` has header {' | '.join(header)!r}, which is not a "
+            f"declared backlog table — expected one of: "
+            + "; ".join(" | ".join(t) for t in TABLE_SCHEMAS))
+
+
 DELIMITER_CELL = re.compile(r"^:?-+:?$")
 
 
@@ -1064,6 +1085,9 @@ def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
             continue
         if re.match(r"^\|\s*#\s*\|", line):
             header = [c.strip().lower() for c in CELL_SPLIT.split(line)[1:-1]]
+            why = header_error(header, section)
+            if why:
+                raise ShapeError(why)
             seen_delimiter = False
             continue
         if not re.match(r"^\|\s*\d+\s*\|", line):
@@ -2537,6 +2561,16 @@ def _self_test_body() -> int:
     case("a table whose columns are named differently REFUSES rather than crashing",
          lambda: _raises(lambda: parse(["## Items", "| # | Key | Note |", "|---|---|---|",
                                         "| 7 | a | b |"]), ShapeError))
+    # ⛔ backlog #381 r2, Codex X1 — SCHEMA, not only shape. The probe verbatim: a six-column table
+    # whose header misspells `Bundle` used to parse, giving every row an empty Bundle cell.
+    _PROBE = ["## Probe", "| # | Item | Touches | Size | Bundel | Status |", "|---|---|---|---|---|---|",
+              "| 999 | 🟡 **Probe** | f | S | (not-claimed) | open |"]
+    case("a six-column table whose header misspells Bundle REFUSES, naming the table",
+         lambda: "`## Probe`" in _shape_of(_PROBE) and "bundel" in _shape_of(_PROBE))
+    case("both declared schemas parse, in any spacing and case",
+         lambda: len(parse(["## Items", "|  #  | ITEM | Touches | Size |  Bundle  | Status |",
+                            "|---|---|---|---|---|---|", "| 1 | x | f | S | (a) | open |",
+                            "## Found", "| # | Item | Status |", "|---|---|---|", "| 2 | y | open |"])) == 2)
     case("a legend table in its OWN section reports nothing",
          lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
                              "| 5 | x | y |", "", "## Markers", "",
@@ -3445,6 +3479,15 @@ def _self_test_body() -> int:
         failed += not ok
     print(f"\n{len(cases) - failed}/{len(cases)} passed")
     return 1 if failed else 0
+
+
+def _shape_of(lines: Sequence[str]) -> str:
+    """The `ShapeError` text `parse` raises over `lines`, or "" when it raises none."""
+    try:
+        parse(lines)
+    except ShapeError as e:
+        return str(e)
+    return ""
 
 
 def _raises(fn, exc: type[BaseException]) -> bool:
