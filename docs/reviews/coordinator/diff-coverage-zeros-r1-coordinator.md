@@ -45,4 +45,4 @@ all preserved the warning.
 The fold's own first attempt failed the harness CONTROL — its `REPO_ROOT` cases ran real `ls-tree` inside the harness's
 staged copy, which is no repository; they now mirror the checkout, and the real-git path is the `world()` cases. One new
 mutation (the snapshot reading the working tree via `cwd`) was EQUIVALENT by construction and was dropped, not bent to fit.
-Route ACCRETE (decision-log row written before round 2). 56 cases; 30 mutations, each killed by its named case.
+Route ACCRETE (decision-log row written before round 2). 57 cases; 34 mutations, each killed by its named case.

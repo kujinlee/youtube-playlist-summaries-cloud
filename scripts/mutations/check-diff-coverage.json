@@ -392,5 +392,57 @@
     "expect": [
       "⭐ a range that changes NO manifested script says nothing was measured — never 'every one is edited' (r1)"
     ]
+  },
+  {
+    "name": "⭐ an unreadable manifest blob is skipped — a partial set reads as whole (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            if blob.returncode != 0:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifest BLOB that cannot be read at HEAD is CANNOT RUN, never a partial set read as whole (r1)"
+    ]
+  },
+  {
+    "name": "⭐ the snapshot's refusal is ignored (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if why:\n            return 2,",
+        "        if False:\n            return 2,"
+      ]
+    ],
+    "expect": [
+      "⭐ HEAD's tree that cannot be LISTED is CANNOT RUN — no manifests read is not a clean pass (backlog #371)"
+    ]
+  },
+  {
+    "name": "the snapshot writes no target stubs — the loader refuses every manifest",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            (snap / path).touch()",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ over the REAL manifests, an unedited decision line of a real guard is warned by file:line"
+    ]
+  },
+  {
+    "name": "⭐ the redirect filter keeps GIT_DIR (r1 H1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "if k not in REDIRECTING}",
+        "if k not in REDIRECTING[1:]}"
+      ]
+    ],
+    "expect": [
+      "⭐ under an exported GIT_DIR naming ANOTHER repo, `root` is still measured and the other is untouched (r1 H1)"
+    ]
   }
 ]

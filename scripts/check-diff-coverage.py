@@ -35,7 +35,7 @@ without a decision line changing, a `match` statement's arms, a decision express
 assignment, or a DELETED line.
 
     python3 scripts/check-diff-coverage.py --base origin/master
-    python3 scripts/check-diff-coverage.py --self-test  # 56 cases
+    python3 scripts/check-diff-coverage.py --self-test  # 57 cases
 
 EXIT CODES: 0 = ran (warnings, if any, are printed; a file it could not measure says NOT CHECKED) · 2 =
 CANNOT RUN (no git, an unknown base, HEAD's tree unreadable, or manifests the loader refuses). There is no 1: it only
@@ -550,6 +550,10 @@ def self_test_lines_helper():
     res = caught(lambda: run_check(REPO_ROOT, "HEAD", run=via((hdr + "@@ -1 +1 @@\n").encode() + b"\xff\xfe\n")))
     case("⭐ a non-UTF-8 byte in git's output is decoded with replacement, not a traceback",
          res[0] if len(res) == 2 else res, 0)
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(128, err="fatal: bad object")
+                         if "cat-file" in cmd else via(hdr + "@@ -1 +1 @@\n")(cmd, **k))
+    case("⭐ a manifest BLOB that cannot be read at HEAD is CANNOT RUN, never a partial set read as whole (r1)",
+         (rc, msgs[0].startswith("CANNOT RUN — cannot read scripts/mutations/")), (2, True))
     many = "".join(f"@@ -{k} +{k} @@\n" for k in open_)
     rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + many))
     shown = sum(1 for m in msgs if m.startswith(f"WARN {target}:") and not m.startswith(f"WARN {target}: …"))
