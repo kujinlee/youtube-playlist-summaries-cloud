@@ -109,6 +109,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-state.sh",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   }
 }

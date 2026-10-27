@@ -1,0 +1,223 @@
+[
+  {
+    "name": "an EMPTY rollup reads as fine instead of NO CHECKS",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        return \"NO CHECKS\"",
+        "        return \"0 pass\""
+      ]
+    ],
+    "expect": [
+      "⭐ an EMPTY rollup says NO CHECKS — the PR #407 state the handoff missed"
+    ]
+  },
+  {
+    "name": "failures are no longer counted as fail",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        elif concl in (\"FAILURE\", \"TIMED_OUT\", \"CANCELLED\", \"ACTION_REQUIRED\", \"ERROR\", \"STARTUP_FAILURE\"):\n            k = \"fail\"",
+        "        elif concl in (\"TIMED_OUT\",):\n            k = \"fail\""
+      ]
+    ],
+    "expect": [
+      "a mixed rollup is summarised with failures first"
+    ]
+  },
+  {
+    "name": "a malformed rollup member is dropped silently",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            counts[\"unreadable\"] = counts.get(\"unreadable\", 0) + 1\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a malformed rollup member is COUNTED as unreadable, not dropped"
+    ]
+  },
+  {
+    "name": "failing checks are no longer named",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            out.append(clean(c.get(\"name\") or c.get(\"context\") or \"?\", 60))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "failing checks are NAMED, check runs and status contexts alike"
+    ]
+  },
+  {
+    "name": "⭐ clean() keeps Unicode separators",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if cat in (\"Cc\", \"Zl\", \"Zp\"):",
+        "        if cat == \"Cc\":"
+      ]
+    ],
+    "expect": [
+      "⭐ clean() strips Unicode separators and invisible characters too"
+    ]
+  },
+  {
+    "name": "⭐ clean() keeps invisible format characters",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        elif cat == \"Cf\":\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ clean() strips Unicode separators and invisible characters too"
+    ]
+  },
+  {
+    "name": "clean() no longer breaks `===`",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    s = re.sub(r\"={2,}\", lambda m: \" \".join(m.group(0)), s)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ clean() strips ASCII line breaks and breaks `===`"
+    ]
+  },
+  {
+    "name": "⭐ gh failing prints an empty list instead of CANNOT RUN",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        L.append(f\"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.\")",
+        "        L.append(\"OPEN PRS: none (gh answered).\")"
+      ]
+    ],
+    "expect": [
+      "⭐ gh failing prints CANNOT RUN — never an empty list"
+    ]
+  },
+  {
+    "name": "truncation is not flagged",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "{', MAY BE TRUNCATED at the list limit' if truncated else ''}",
+        "{''}"
+      ]
+    ],
+    "expect": [
+      "a list as long as the limit says it MAY BE TRUNCATED"
+    ]
+  },
+  {
+    "name": "⭐ an empty ledger reads as 'empty' again",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        L.append(f\"IN-FLIGHT LEDGER ({LEDGER_REL}): none RECORDED — it is written by hand (`--add`), \"\n                 \"so empty is not proof that nothing is running.\")",
+        "        L.append(f\"IN-FLIGHT LEDGER ({LEDGER_REL}): empty\")"
+      ]
+    ],
+    "expect": [
+      "⭐ an empty ledger says none RECORDED — never 'nothing running'"
+    ]
+  },
+  {
+    "name": "⭐ a timeout loses the words 'timed out'",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        return 124, f\"timed out after {timeout:.0f}s\"",
+        "        return 124, \"error\""
+      ]
+    ],
+    "expect": [
+      "_run turns a real timeout into exit 124 with the words 'timed out'"
+    ]
+  },
+  {
+    "name": "⭐ an oversized ledger is read anyway",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if st.st_size > MAX_LEDGER:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a ledger over MAX_LEDGER is refused unread (r3 F4: 139 MB took 35 s)"
+    ]
+  },
+  {
+    "name": "⭐ an empty id is accepted by add",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not id_.strip():\n        raise ValueError(\"an empty id could never be shown or removed\")",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ an EMPTY id is refused by add and done — no entry can be impossible to remove (r3 F5)"
+    ]
+  },
+  {
+    "name": "⭐ damaged ledger lines are not written back",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "_write(path, entries, raw)\n\n\ndef ledger_done",
+        "_write(path, entries, [])\n\n\ndef ledger_done"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and an update writes them back BYTE-FOR-BYTE"
+    ]
+  },
+  {
+    "name": "⭐ the ledger is split on every Unicode line break",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    for i, line in enumerate(path.read_bytes().split(b\"\\n\"), 1):",
+        "    for i, line in enumerate((x.encode(\"utf-8\", \"surrogateescape\") for x in path.read_bytes().decode(\"utf-8\", \"surrogateescape\").splitlines()), 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ a line written elsewhere with a RAW U+2028 in a value is still ONE readable job — split on \\n only"
+    ]
+  },
+  {
+    "name": "⭐ the ledger lock is dropped",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        fcntl.flock(fh, fcntl.LOCK_EX)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ 20 concurrent adds keep all 20 jobs"
+    ]
+  },
+  {
+    "name": "⭐ main() no longer prints the block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    print(collect(root, run=run))\n    return 0",
+        "    collect(root, run=run)\n    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ main() PRINTS the block — the hook's whole output"
+    ]
+  }
+]
