@@ -1,0 +1,185 @@
+<title>Progress and plan — 2026-10-26</title>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* literal values (backlog #351: var() aliases here and in the shim form a cycle) */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+    --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+    --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+    --good:#8fcaa2; --defect:#e08f8f;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+  --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+  --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+  --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+  --good:#8fcaa2; --defect:#e08f8f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:900px;margin:0 auto;padding:40px 18px 120px}
+h1{font-size:29px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:44px 0 12px;padding-top:16px;border-top:1px solid var(--rule);position:relative}
+h3{font-size:16.5px;margin:26px 0 8px;position:relative}
+p{margin:11px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:12px 16px;
+  font-size:14px;color:var(--fg2);margin:16px 0}
+.howto code{font-size:12.5px}
+.callout{border-radius:6px;padding:12px 16px;margin:16px 0;font-size:15px}
+.callout.ok{background:var(--greenbg);border:1px solid var(--verified-br)}
+.callout.warn{background:var(--amberbg);border:1px solid var(--amber)}
+.tablewrap{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--rule)}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg3);font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 4px;border-radius:3px}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;
+  overflow-x:auto;white-space:pre;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;padding:0}
+.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;border:1px solid var(--rule);white-space:nowrap}
+.tag.done{background:var(--greenbg);color:var(--green);border-color:var(--verified-br)}
+.tag.wait{background:var(--amberbg);color:var(--amber);border-color:var(--amber)}
+.tag.next{color:var(--fg3)}
+ol li,ul li{margin:4px 0}
+.small{font-size:13.5px;color:var(--fg3)}
+</style>
+<div class="wrap">
+<h1>Progress and plan — 2026-10-26</h1>
+<p class="horizon">As of <b>2026-10-26 14:09 PDT</b>. Read from GitHub and git at that moment; background reviews and CI were still running, so states below may have moved since.</p>
+
+<div class="reading"><b>Reading chosen:</b> what this session (2026-10-26, from about 09:20 PDT) changed in the project's own checking tools — the "guard-and-gate harness" — what is still in flight, and the plan from here. Not the product itself.</div>
+
+<div class="howto">
+<b>This page:</b> <code>http://127.0.0.1:7391/latest</code> always shows the newest page.
+<b>To ask:</b> select text or hover a heading → <i>ask</i> → type → <b>Send</b>, then say <i>"read my questions"</i>.
+<b>If that URL does not load</b> (a reboot stops the server): run <code>python3 scripts/explainer-serve.py</code> — safe to run twice.
+A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.
+<span id="modechip"></span>
+</div>
+
+<div class="callout ok"><b>Nothing needs you right now.</b> No PR is waiting on your decision. Four PRs merged today; four more are in review or CI and merge on their own when the merge rule says READY. The open owner decisions are the 22 backlog rows the audit marked <i>NEEDS-OWNER</i> — none of them blocks today's work.</div>
+
+<p class="lede">Today had two halves. In the morning the merge rule went live and its first false alarm was handled. After you asked, the tooling backlog was audited row by row, and the highest-priority fixable rows became four PRs. A flaky CI download kept failing merges, so it got its own fix too.</p>
+
+<h3>Four words used below</h3>
+<div class="tablewrap"><table>
+<tr><th>Word</th><th>Means</th></tr>
+<tr><td><b>READY</b> / <b>HOLD</b></td><td>The two answers of <code>check-merge-ready</code>. READY means every check CI runs is green and the PR merges under the house rule. HOLD means it is ready but touches something the rule reserves for you (for example a change near a gate's failure line), so it waits for you.</td></tr>
+<tr><td><b>round</b></td><td>One pass of adversarial review — a Codex half, a Claude half, or both — over the current code, followed by a fold of what they found.</td></tr>
+<tr><td><b>mutation</b></td><td>A deliberate small break in a checking script (for example deleting a check). Its named test case must turn red; if nothing turns red, the test does not really protect that line.</td></tr>
+<tr><td><b>bet</b></td><td>A prediction written in the decision log <i>before</i> a round (e.g. "round 2 finds no High"). A lost bet forces a change of approach instead of another patch.</td></tr>
+</table></div>
+
+<h2>1. Where things stand</h2>
+<div class="tablewrap"><table>
+<tr><th>Thread</th><th>What it fixes</th><th>PR</th><th>State at 14:09</th><th>Next</th></tr>
+<tr><td>T1</td><td>The merge rule now treats TypeScript/JavaScript checks as checks.</td><td>PR #402</td><td><span class="tag done">merged b59f74d6</span></td><td>—</td></tr>
+<tr><td>T2</td><td>The tooling backlog was audited against the code.</td><td>PR #403</td><td><span class="tag done">merged 2e8714ec</span></td><td>—</td></tr>
+<tr><td>T3</td><td>Four checks that could say "fine" (or crash into a warning) without having checked now say they could not run.</td><td>PR #404</td><td><span class="tag wait">CI running</span> review converged</td><td>merge on READY</td></tr>
+<tr><td>T4</td><td>A broken mutation hook is now caught in half a second, before a run starts, not 15 minutes into CI.</td><td>PR #405</td><td><span class="tag wait">CI running</span> review converged</td><td>merge on READY</td></tr>
+<tr><td>T5</td><td>The tool that arms the "don't stop mid-job" guard refuses to run from a side copy (worktree) where the guard never looks.</td><td>PR #406</td><td><span class="tag wait">round 2 lost its bet (14:15) → round 3 fix built locally</span></td><td>fold or merge</td></tr>
+<tr><td>T6</td><td>CI keeps a copy of the video tool's packages, so a slow download mirror stops failing PRs.</td><td>PR #407</td><td><span class="tag wait">round 1 NOT CONVERGED (14:15): fix in progress</span></td><td>prove the cache hit, then merge</td></tr>
+</table></div>
+<p class="small">PR #407 showed one failed check at 14:09; it belongs to an earlier, cancelled run (40397292037). A fresh run (40400167030) was queued.</p>
+
+<h2>2. What landed today</h2>
+<div class="tablewrap"><table>
+<tr><th>PR</th><th>Merged as</th><th>Effect, plainly</th></tr>
+<tr><td>PR #400</td><td><code>ba4d2c28</code></td><td>A full mutation sweep on the laptop now refuses to start if it would take over 10 minutes; the full sweep belongs to CI's 12 parallel shards. <code>--allow-long-local</code> overrides it for one run only. It was the merge rule's first HOLD; you approved it.</td></tr>
+<tr><td>PR #401</td><td><code>778f0169</code></td><td>Filed backlog #355: that HOLD was a false alarm (a line only gained arguments next to a failure line).</td></tr>
+<tr><td>PR #402</td><td><code>b59f74d6</code></td><td>Backlog #354: a TypeScript check switched to "always pass" (<code>process.exit(1)</code> → <code>0</code>) now makes the merge rule HOLD instead of printing READY. Two harder parts were tried, found broken in review, and split off as backlog #356.</td></tr>
+<tr><td>PR #403</td><td><code>2e8714ec</code></td><td>The audit you asked for: every open tooling row checked against the code by four read-only auditors. 9 closed (5 superseded, 4 duplicates), 11 rated down, 22 marked as waiting on you. Open rows in that section: <b>115 → 106</b>; urgent ones (🔴/🟠) <b>32 → 26</b>.</td></tr>
+</table></div>
+
+<h2>3. The four PRs still in flight</h2>
+<h3>T3 — PR #404: four checks that failed open</h3>
+<p>Backlog #253, #255, #152, #111. Each fix is small; the review kept finding paths the first fix did not reach.</p>
+<ul>
+<li><b>Round 1</b> (both halves): the transcript fix was only half done — a second consumer still crashed; the handoff hook did not check its own payload copy. Folded.</li>
+<li><b>Round 2</b> (Codex): <b>bet lost</b>. The round-1 fix decided "real verdict or broken tool" by matching the checker's English, so a reworded message would silently downgrade a block. Route changed to <b>redesign</b>: the checker now writes a small <i>receipt</i> file with its verdict, and the hook acts on the receipt alone. Five older malformed-input crashes were filed as backlog #357, as the stop rule required.</li>
+<li><b>Round 3</b>: converged; bet won. <b>Round 4</b>: confirmed a merge with master.</li>
+</ul>
+<h3>T4 — PR #405: catch broken mutation hooks early (backlog #252)</h3>
+<p>Each mutation is anchored to an exact piece of text. Editing that text elsewhere silently breaks the anchor, and the old code only noticed when the mutation ran — measured once at 14m58s into a CI shard. Now every one of 2,121 anchors is checked in about 0.5 s before anything starts. Both halves converged in round 1; rounds 2–4 fixed a duplicate anchor I added and confirmed a merge. ⚠ Only the anchor half is done; the other half (a test name that matches nothing) stays open under backlog #208.</p>
+<h3>T5 — PR #406: no arming from a worktree (backlog #301)</h3>
+<p>A worktree is a second working copy of the repo. Arming a job from one wrote the marker where the stop guard never looks — and still printed <code>armed:</code>. Round 1 (both halves) broke the first version three ways because it asked <code>git</code> (an old git, a <code>GIT_DIR</code> setting, a moved main copy). <b>Redesign:</b> it now reads the <code>.git</code> entry directly — a folder means the main copy, a file pointing into <code>worktrees/</code> means a side copy. The refusal also prints a correctly quoted command. <b>⟳ 14:15 — round 2 lost its bet:</b> reading <code>.git</code> by its path shape was bypassed by two valid layouts (a <code>.git</code> that is a symlink, and a <code>gitdir:</code> through a symlinked alias), and it wrongly refused one unusual main copy. The route moved to <b>split</b>: git is the authority again, asked so none of round 1's failures can reach it (no <code>GIT_*</code> variables, a flag old git understands, exactly two path lines); the <code>.git</code> file is read only when git cannot answer, and then it refuses. Built and tested locally (139 cases, 9 mutations each turning its own case red); round 3 is the last.</p>
+<h3>T6 — PR #407: the ffmpeg package cache (backlog #358)</h3>
+<p>Your choice A. See the next section. <b>⟳ 14:15 — round 1 (Codex) found two serious problems and a false claim of mine</b>, below.</p>
+
+<h2>4. The ffmpeg question</h2>
+<p>You asked whether we know the root cause. <b>Not proven.</b> Here is what is measured and what is not.</p>
+<div class="tablewrap"><table>
+<tr><th>Measured</th><th>How</th></tr>
+<tr><td>The step either finishes in 16–19 s or exceeds its 150 s download limit on all 3 tries.</td><td>step timings from 3 good runs; the failure messages</td></tr>
+<tr><td>4 of 14 <code>verify</code> attempts failed this way by early afternoon, and at least 3 more after.</td><td>job/step results per attempt via the GitHub API</td></tr>
+<tr><td>It is a <b>crawl</b>, not a hang: each try fetched a few small packages from <code>azure.archive.ubuntu.com</code> (<code>amd64v3</code> pool), stalled on a large one (libcodec2, 9 MB), and the next try resumed from there.</td><td>apt's own output in a failed run's log</td></tr>
+<tr><td><code>apt-get update</code> always succeeds; only the package download fails.</td><td>same log</td></tr>
+</table></div>
+<p><b>Inferred, not verified:</b> the Azure mirror serves the new <code>amd64v3</code> pool poorly at times. A per-runner network problem would look the same. Either way it is outside this repo.</p>
+<p><b>The fix (option A):</b> keep a copy of the downloaded packages in GitHub's cache. The cache key is a hash of the exact package list apt prints for that run, so a changed list is never served stale. apt skips a file already in its cache, so a cache hit downloads nothing.</p>
+<div class="callout"><p><b>⚠ Correction (14:15, found by review, executed in an Ubuntu container).</b> This page, the PR and the dashboard entry said apt checks a cached file against the <i>checksum</i> in its signed index. <b>It does not:</b> apt accepted a fabricated package of the right <i>size</i>, and installed it. So the cache must check each restored file's SHA256 against the signed index <i>before</i> handing it to apt. The page also said a failure in the new steps leaves the install untouched; <b>also false</b> — a hang in the key step, or a restore error, can make GitHub skip the install. Both are being fixed before merge; neither has reached master.</p></div>
+<p><b>How it will be proven:</b> the first run should miss and save; a later run must log <code>ffmpeg cache: restored N package(s)</code> with a short step. The first half was seen (all four new steps succeeded on run 40397292029's job). <b>⟳ 14:15 — the second half was seen too:</b> run 40400167030 hit the same key, logged <code>ffmpeg cache: restored 81 package(s)</code> and <code>Need to get 0 B/66.4 MB</code>, and skipped the save (read from the run log by the Claude review half). The cache works; the corrections above must still land before it merges.</p>
+
+<h2>5. What went wrong in my process today, and what now prevents it</h2>
+<div class="tablewrap"><table>
+<tr><th>What happened</th><th>Effect</th><th>Prevention now</th></tr>
+<tr><td>Step banners stopped once several threads ran at once.</td><td>You could not follow the work.</td><td>A thread map (T1–T6) plus a one-line banner per step; saved to memory.</td></tr>
+<tr><td>Three PRs were pushed without running the PR-only checks (unqualified <code>#N</code> references; a function parameter given only one value in tests).</td><td>CI went red; one red was hidden for an hour behind ffmpeg failures.</td><td>A pre-push checklist in memory.</td></tr>
+<tr><td>My gate loop printed <code>rc=$?</code> after <code>$(basename …)</code>, so every "rc=0" was basename's exit code.</td><td>Real failures on three branches looked green.</td><td>Re-ran every gate on every branch with the exit code read on its own; all fixed.</td></tr>
+<tr><td>Two Codex rounds wrote files instead of returning their review; one also added a backlog row, which I committed unread.</td><td>One review gate never actually ran.</td><td>Recorded as a review gap and repaired; every prompt now says "write no file"; I read the wrapper's verdict line, not the file.</td></tr>
+<tr><td>Two branches both wrote the mutation total <code>2115</code>, so git merged it without a conflict — but the real total was 2125.</td><td>Would have failed the self-test.</td><td>Caught by summing the manifests after each merge.</td></tr>
+<tr><td>Edits orphaned existing mutation anchors, three times.</td><td>Sweeps reported "not measured".</td><td>PR #405 (backlog #252) makes this a half-second check before any run.</td></tr>
+</table></div>
+
+<h2>6. The plan from here</h2>
+<ol>
+<li>Merge PR #404, #405, #406 and #407, each only when <code>check-merge-ready</code> prints READY; a HOLD comes to you.</li>
+<li>For PR #407, see the cache hit in a real run before merging.</li>
+<li>Backlog #223: every hook in <code>.claude/settings.json</code> is registered by a relative path, so none runs if the session starts elsewhere. Deferred until now because it changes the hooks this very session depends on.</li>
+<li>Backlog #251, the one remaining 🔴 tooling row: code can change with no mutation covering it.</li>
+<li>Filed follow-ups: backlog #355 (false HOLD on a lengthened line), #356 (TypeScript call sites and comments), #357 (five malformed inputs).</li>
+<li>The 22 NEEDS-OWNER rows are yours whenever you want them; each row now names the decision it waits on.</li>
+</ol>
+
+<h2>7. Measured vs inferred</h2>
+<div class="tablewrap"><table>
+<tr><th>Claim</th><th>Status</th><th>How</th></tr>
+<tr><td>PR #400–#403 merged with the SHAs above</td><td>measured</td><td><code>gh pr view</code>, <code>git log origin/master</code> at 14:09</td></tr>
+<tr><td>PR #404–#407 states</td><td>measured at 14:09</td><td><code>gh pr checks</code>; may have moved since</td></tr>
+<tr><td>Tooling section 115 → 106 open, 🔴/🟠 32 → 26</td><td>measured</td><td>the backlog page's own parser, before and after</td></tr>
+<tr><td>ffmpeg timings, failure counts, the crawl pattern</td><td>measured</td><td>CI step timings and apt's log output</td></tr>
+<tr><td>Azure's <code>amd64v3</code> pool is the cause</td><td><b>inferred</b></td><td>fits the logs; not tested against another mirror</td></tr>
+<tr><td>The cache will hit on later runs</td><td><b>not yet measured</b></td><td>first run missed and saved; the hit run had not finished</td></tr>
+<tr><td>Review verdicts per round</td><td>measured</td><td>the review files and the wrapper's <code>gate_ran</code> verdicts</td></tr>
+</table></div>
+</div>

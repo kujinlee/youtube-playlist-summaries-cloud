@@ -17687,3 +17687,18 @@ first version asked `git`, which an old git, `GIT_DIR` and a moved main checkout
 is now `shlex.join`ed; every state command (`--plan` included) is witnessed. 9 cases over a real repo and a real
 linked worktree (136 total), 6 mutations (2115 -> 2121 after merging master); the suite's state-path `global` moved
 to the top of `_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).
+
+
+## 2026-10-26
+Two notes on the merge checker and one on the mutation count. The merge checker's false alarms, where it
+holds a pull request that only added to a line, turned out to be wider than first filed: a line that was
+only re-indented, or whose comment changed, is held too. And the hand-typed total of mutation tests now
+clashes between every two open pull requests that add tests, so it is filed with a fix that cannot clash.
+Also saved: the page explaining the day's progress.
+<!--tech-->
+Docs only. backlog #355 gains PR #404's three held lines: one EXTENDED (`+ 3` -> `+ 3 + 10`), one re-indented
+into a `try:` with identical text, one with only a `# 236 cases` comment changed — the latter two are the cheap,
+safe half (compare after stripping indentation and a trailing comment). Filed backlog #359: the literal total in
+`check-plan-code.py`'s `_self_test` is the shrink ratchet, and it conflicts on every concurrent mutation PR (once
+merged silently wrong, 2115 + 2115 for a real 2125); candidate is a branch-sum >= base-sum comparison in CI.
+Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.
