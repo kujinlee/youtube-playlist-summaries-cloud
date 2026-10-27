@@ -70,8 +70,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "TAG_CELL = re.compile(r\"^\\(([^()]*)\\)(?:[\\s,]*\\(([^()]*)\\))*$\")",
-        "TAG_CELL = re.compile(r\"^\\(([^()]*)\\)(?:\\s*\\(([^()]*)\\))*$\")"
+        "(?:[\\s,]*\\(",
+        "(?:\\s*\\("
       ]
     ],
     "expect": "a comma between groups separates them exactly as a space does"
@@ -163,5 +163,16 @@
       ]
     ],
     "expect": "a two-tag card draws a chip per tag and carries every filter tag"
+  },
+  {
+    "name": "a `|` inside a tag group is accepted again, so the filter offers a tag that matches nothing",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "TAG_CELL = re.compile(r\"^\\(([^()|]*)\\)",
+        "TAG_CELL = re.compile(r\"^\\(([^()]*)\\)"
+      ]
+    ],
+    "expect": "a `|` inside a tag group, escaped or not, is MALFORMED"
   }
 ]

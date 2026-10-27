@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 39 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 44 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -153,8 +153,6 @@ def check_nodes(nodes: list[Node]) -> list[str]:
     return problems
 
 
-CELL_SPLIT = re.compile(r"(?<!\\)\|")
-ITEM_ROW = re.compile(r"^\|\s*\d+\s*\|")
 _TAGS = None
 
 
@@ -173,25 +171,33 @@ def tags():
 
 
 def backlog_areas(text: str) -> tuple[set[str], list[str]]:
-    """(every tag an item row WRITES, normalised; the item rows whose cell had to be guessed at).
+    """(every tag an item row WRITES, normalised; the PROBLEMS met reading them).
 
     ⛔ PER TAG, through `gen-backlog-page.cell_tags` — this used to collect the RAW cell, so
-    `(cloud/money)` and `(cloud / money)` were two areas and a row could hold one. ⚠ Item rows
-    only (`| <number> |`), not every row whose cell starts with `(`: that filter is what let a
-    bare-word cell through unseen, and a malformed cell is exactly what this gate must SEE."""
+    `(cloud/money)` and `(cloud / money)` were two areas and a row could hold one.
+
+    ⛔ AND THE ROWS COME FROM `gen-backlog-page.parse`, the header-aware reader the page itself
+    uses (backlog #381 r1, Codex M2). This read `cells[-3]` of every numbered line, which was a
+    second copy of the row rule: an extra `|` in a row shifted its cells, the page's parser refused
+    the table with a `ShapeError`, and this gate read the fragment that landed in the third-last
+    slot and passed. A `ShapeError` is now a PROBLEM — the gate FAILS, naming the row — never
+    "no areas", which would be CANNOT RUN and read as a different thing. A malformed cell is a
+    problem too, carrying its row number."""
+    bp = tags()
+    try:
+        rows = bp.parse(text.split("\n"))
+    except bp.ShapeError as e:
+        return set(), [f"docs/backlog.md cannot be read as a table, so no area in it can be "
+                       f"trusted — {e}"]
     out: set[str] = set()
     bad: list[str] = []
-    for line in text.split("\n"):
-        if not ITEM_ROW.match(line):
-            continue
-        cells = CELL_SPLIT.split(line)
-        if len(cells) < 7:
-            continue
-        cell = cells[-3].strip()
-        leaves, malformed = tags().cell_tags(cell)
+    for r in rows:
+        leaves, malformed = bp.cell_tags(r["bundle"])
         out.update(leaves)
         if malformed:
-            bad.append(f"{cells[1].strip()}: {cell[:40]!r}")
+            bad.append(f"backlog.md row {r['num']} — its Bundle cell {r['bundle'][:40]!r} is not a run "
+                       f"of `(tag)` groups, so it was read as ONE tag by guesswork; write every tag "
+                       f"in its own parentheses, and no `|` inside one")
     return out, bad
 
 
@@ -199,12 +205,16 @@ def anchor_slugs(text: str) -> set[str]:
     return set(re.findall(r"^\|\s*`([a-z0-9-]+)`\s*\|", text, re.MULTILINE))
 
 
-def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str]) -> list[str]:
+def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str] | None) -> list[str]:
     """⛔ AREAS ARE COMPARED PER TAG, NORMALISED (backlog #381). An `areas:` entry and an in-use
     tag are equal when `normalise_tag` makes them so, and a tag is claimed by the NEAREST area
     that equals it or is a family above it — the rule `gen-features-page.match_rows` places rows
     by. So "claimed by exactly one node" holds per tag: no two entries normalise alike, and every
-    in-use tag has a nearest claimant."""
+    in-use tag has a nearest claimant.
+
+    `areas_in_use=None` means the backlog could NOT BE READ (a `ShapeError`, already reported as a
+    failure by `backlog_areas`): the per-area questions are skipped rather than answered over an
+    empty set, which would accuse every area of being stale and bury the one real cause."""
     nt, nearest = tags().normalise_tag, tags().nearest_claim
     problems: list[str] = []
     area_claims: dict[str, list[str]] = {}
@@ -216,9 +226,16 @@ def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str]) -> li
                 problems.append(f"features.md:{n.line}: `{n.slug}` names anchor `{a}`, which is not "
                                 f"in docs/anchors.md")
         for raw in n.areas:
-            area = nt(raw)
-            area_claims.setdefault(area, []).append(n.slug)
-            if not any(nearest(u, [area]) for u in areas_in_use):
+            area_claims.setdefault(nt(raw), []).append(n.slug)
+    # ⛔ STALE MEANS "PLACES NO ROW", so it is asked of the NEAREST claimant, the rule `match_rows`
+    # places rows by (backlog #381 r1, Claude M1). Asking "does any in-use tag sit at or below this
+    # area" passed `(cloud)` beside `(cloud/money)` with only `cloud / money` in use — an area that
+    # claims nothing, which is the "stale alias looks like coverage" this message names. That was
+    # LOOSER than master, which compared exactly.
+    placing = {nearest(u, area_claims) for u in (areas_in_use or ())}
+    for n in (nodes if areas_in_use is not None else ()):
+        for raw in n.areas:
+            if nt(raw) not in placing:
                 problems.append(f"features.md:{n.line}: `{n.slug}` claims area `{raw}`, which no "
                                 f"backlog row uses — a stale alias looks like coverage")
     for area, owners in area_claims.items():
@@ -228,7 +245,7 @@ def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str]) -> li
     for anchor, owners in anchor_claims.items():
         if len(owners) > 1:
             problems.append(f"anchor `{anchor}` is claimed by {len(owners)} nodes: {', '.join(owners)}")
-    for area in sorted(u for u in areas_in_use if nearest(u, area_claims) is None):
+    for area in sorted(u for u in (areas_in_use or ()) if nearest(u, area_claims) is None):
         problems.append(f"backlog area `{area}` is claimed by no node — its rows cannot appear")
     for anchor in sorted(anchors_declared - set(anchor_claims)):
         problems.append(f"anchor `{anchor}` is claimed by no node — its specs, plans and ADRs "
@@ -255,15 +272,13 @@ def main() -> int:
     if not declared:
         print("CANNOT RUN — no anchors parsed from docs/anchors.md. Treat this as NOT RUN.", file=sys.stderr)
         return 2
-    areas, malformed = backlog_areas(BACKLOG.read_text())
-    if not areas:
+    areas, area_problems = backlog_areas(BACKLOG.read_text())
+    if not areas and not area_problems:
         print("CANNOT RUN — no `(area)` tags parsed from docs/backlog.md. Treat this as NOT RUN.", file=sys.stderr)
         return 2
-    problems += [f"backlog.md row {m} — its Bundle cell is not a run of `(tag)` groups, so it was "
-                 f"read as ONE tag by guesswork; write every tag in its own parentheses"
-                 for m in malformed]
+    problems += area_problems
     problems += check_nodes(nodes)
-    problems += check_cross(nodes, declared, areas)
+    problems += check_cross(nodes, declared, None if not areas else areas)
     if problems:
         print(f"FAILED — {len(problems)} feature-map problem(s):", file=sys.stderr)
         for p in problems:
@@ -390,18 +405,33 @@ expected-because: standard for a hosted multi-tenant service.
     check("an area claimed by TWO nodes fails",
           any("area `product` is claimed 2 times" in p
               for p in check_cross(parse_features(twice_area)[0], set(), {"product"})), True)
+    def _bl(*rows: str) -> str:
+        return ("## Items\n| # | Item | Touches | Size | Bundle | Status |\n|---|---|---|---|---|---|\n"
+                + "\n".join(rows) + "\n")
     check("backlog areas are read from the area cell",
-          backlog_areas("| 1 | x | f | S | (worker) | open |"), ({"worker"}, []))
+          backlog_areas(_bl("| 1 | x | f | S | (worker) | open |")), ({"worker"}, []))
     ESCAPED = r"| 90 | a \| b | f | S | (comprehensibility) | open \| still |"
-    check("a row with an ESCAPED PIPE is not dropped", backlog_areas(ESCAPED), ({"comprehensibility"}, []))
+    check("a row with an ESCAPED PIPE is not dropped", backlog_areas(_bl(ESCAPED)), ({"comprehensibility"}, []))
     # ── PER TAG, NORMALISED (backlog #381) ───────────────────────────────────────────────────────
     check("a cell with two tags puts BOTH in use",
-          backlog_areas("| 1 | x | f | S | (tooling) (cloud / Money) | open |"),
+          backlog_areas(_bl("| 1 | x | f | S | (tooling) (cloud / Money) | open |")),
           ({"tooling", "cloud / money"}, []))
+    _mal = backlog_areas(_bl("| 2 | x | f | S | cloud | open |"))
     check("a malformed cell is REPORTED with its row, and its one guessed tag is still in use",
-          backlog_areas("| 2 | x | f | S | cloud | open |"), ({"cloud"}, ["2: 'cloud'"]))
+          (_mal[0], len(_mal[1]), "row 2" in " ".join(_mal[1]) and "'cloud'" in " ".join(_mal[1])),
+          ({"cloud"}, 1, True))
+    _pipe = backlog_areas(_bl(r"| 3 | x | f | S | (a \| b) (tooling) | open |"))
+    check("a `|` inside a tag group is MALFORMED here too, and named by its row",
+          (len(_pipe[1]), "row 3" in " ".join(_pipe[1])), (1, True))
     check("a non-item row is not read as a tag cell",
-          backlog_areas("| # | Item | Touches | Size | Bundle | Status |"), (set(), []))
+          backlog_areas(_bl()), (set(), []))
+    # ⛔ backlog #381 r1, Codex M2: the TABLE'S shape decides, through the page's own parser.
+    _extra = backlog_areas(_bl("| 4 | x | f | S | (tooling) | (tooling) | open |"))
+    check("an EXTRA column separator is a gate FAILURE naming the row",
+          (_extra[0], len(_extra[1]), "| 4 |" in " ".join(_extra[1])), (set(), 1, True))
+    _short = backlog_areas(_bl("| 5 | x | f | S (tooling) | open |"))
+    check("a MISSING column separator is a gate FAILURE naming the row",
+          (_short[0], len(_short[1]), "| 5 |" in " ".join(_short[1])), (set(), 1, True))
     spelled = parse_features(TREE.replace("anchors: cloud-publishing",
                                           "areas: (cloud/money), (cloud / money)"))[0]
     check("two spellings of one tag on ONE node are a duplicate claim, not two areas",
@@ -410,6 +440,14 @@ expected-because: standard for a hosted multi-tenant service.
     fam = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud)"))[0]
     check("an in-use leaf is claimed by its family's area, and that area is not stale",
           check_cross(fam, set(), {"cloud / new"}), [])
+    # ⛔ backlog #381 r1, Claude M1: a family area that is nobody's NEAREST claimant places no row.
+    both = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud), (cloud/money)"))[0]
+    check("a family area that is nobody's NEAREST claimant is stale",
+          [p for p in check_cross(both, set(), {"cloud / money"}) if "no backlog row uses" in p and "`(cloud)`" in p] != []
+          and not any("`(cloud/money)`" in p for p in check_cross(both, set(), {"cloud / money"})), True)
+    check("an UNREADABLE backlog (areas None) asks no per-area question, so the one real cause is not buried",
+          tuple(sum("no backlog row uses" in p for p in check_cross(both, set(), a)) for a in (None, set())),
+          (0, 2))
     check("a tag that merely SHARES a prefix is not in the family",
           any("claimed by no node" in p for p in check_cross(fam, set(), {"cloudy"})), True)
     # ── THE MESSAGES THEMSELVES — code review r3 (Claude), Medium ───────────────────────────────

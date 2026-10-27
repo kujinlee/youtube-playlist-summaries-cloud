@@ -1058,7 +1058,9 @@ EXPECTED_MUTATIONS = {
     # three readers: a group dropped, the comma separator, normalisation, de-duplication, the
     # malformed cell dropped and its drift note lost, nearest-vs-first claim, a bare prefix taken
     # for a family, the filter's per-tag count and the card's per-tag chips.
-    "scripts/gen-backlog-page.py": 15,
+    # ⟳ 2026-10-27, backlog #381 r1 — 15 -> 16: a `|` inside a tag group accepted again (Codex M1).
+    # The comma entry was RETARGETED onto a substring of the rewritten `TAG_CELL` line, not added.
+    "scripts/gen-backlog-page.py": 16,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1873,7 +1875,13 @@ EXPECTED_MUTATIONS = {
     # alias and unclaimed-area lines were rewritten to compare per tag. The five: item rows only,
     # every tag of a cell in use, the malformed cell reported, `areas:` normalised, and a family
     # area over its leaves not called stale.
-    "scripts/check-features.py": 27,
+    # ⟳ 2026-10-27, backlog #381 r1 — 27 stays 27, by one retirement and one addition. RETIRED
+    # with its subject: the escaped-pipe entry anchored `check-features`' own `CELL_SPLIT`, which is
+    # gone — rows are read through `gen-backlog-page.parse` now (Codex M2). ADDED: a `ShapeError`
+    # swallowed into no problems. Five entries were RETARGETED onto the rewritten lines, and the
+    # exact-match stale entry was REPLACED by one reverting to any-descendant (Claude M1). Then
+    # 27 -> 28: an unreadable backlog treated as an empty one, burying its cause under 22 stale lines.
+    "scripts/check-features.py": 28,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -6073,7 +6081,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2266)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2268)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

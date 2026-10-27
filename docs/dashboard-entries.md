@@ -17895,9 +17895,10 @@ hardening it for every hook is backlog #379.
 A backlog item can now carry more than one tag, written as `(tooling) (comprehensibility)`, and it
 shows up under each one, both in the backlog page's tag filter and on the features page. That made
 it possible to show the comprehensibility suite's real state: the features page now lists 30 open
-items across its three suite features (status pages 10, the feature map 3, explainer pages 18),
-where it showed 16 before, because work tagged as tooling or process was invisible there. Four
-items that were filed under the suite but are not page work moved to process or tooling.
+items across its three suite features (status pages 14, the feature map 2, explainer pages 19;
+an item can sit under two), where it showed 15 before, because work tagged as tooling or process
+was invisible there. Four items that were filed under the suite but are not page work moved to
+process or tooling.
 <!--tech-->
 Backlog #381. ONE parser for the Bundle cell, `gen-backlog-page.cell_tags`, now read by all three
 readers: the backlog page (filter tags and chips), `gen-features-page.match_rows` (which node a
@@ -17907,16 +17908,23 @@ Tags compare normalised, so `docs/features.md` drops its duplicate `(cloud / mon
 and `check-features` now refuses two spellings of one tag. A tag is claimed by the NEAREST area
 equal to it or above it, so a money row stays under `spend-control` and not also under the
 `(cloud)` node. A malformed cell is read as one tag by the old rule and flagged: the backlog page
-lists it in its drift box and `check-features` fails. Measured on the real backlog: 334 rows,
+lists it in its drift box and `check-features` fails; a `|` inside a tag group counts as malformed,
+because the page's filter splits its tag list on `|`. `check-features` reads rows through the
+page's own header-aware parser, so a row with a wrong number of cells fails the gate, naming the
+row. Measured on the real backlog: 334 rows,
 0 differ from the old rule, 0 malformed, and the features page's 329 backlog links are identical
-to master's, node by node. Mutations: gen-backlog-page 5 → 15, gen-features-page 10 → 15,
-check-features 22 → 27 (plus 2 retargets); `EXPECTED_MUTATIONS` sum 2246 → 2266.
+to master's, node by node. Mutations: gen-backlog-page 5 → 16, gen-features-page 10 → 15,
+check-features 22 → 28 (one retired with the code it guarded, several retargeted);
+`EXPECTED_MUTATIONS` sum 2246 → 2268. A family area that is nobody's nearest claimant is stale,
+which keeps the stale-area rule as strict as master's.
 
 The retag (second commit): the suite is everything under `(comprehensibility)`. `status-pages` keeps
 `(comprehensibility)`, `feature-map` claims `(comprehensibility/feature-map)` and `explainer-pages`
-claims `(comprehensibility/explainers)`, which it never had. 32 open rows changed: 18 gained a
+claims `(comprehensibility/explainers)`, which it never had. 33 open rows changed: 19 gained a
 suite tag beside their own area, 10 suite rows were refined to a sub-area, and 4 moved out
-(backlog #39 and backlog #90 to `(process)`, backlog #100 and backlog #101 to `(tooling)`). Open
-by severity: status-pages 🟠3 🟡6 🟢1, feature-map 🟠1 🟡2, explainer-pages 🟠4 🟡9 🟢5. Touched
-rows had their old bare `#N` references qualified, 42 of them, because the namespace guard reads
-a touched line as new.
+(backlog #39 and backlog #90 to `(process)`, backlog #100 and backlog #101 to `(tooling)`). The
+five page-chrome rows also carry `(comprehensibility)`, since the status pages render through
+that chrome. Open by severity, counted by the features page's own `collect` with ✅ rows
+excluded: status-pages 🟠3 🟡8 🟢3, feature-map 🟡2, explainer-pages 🟠4 🟡10 🟢5; 30 distinct.
+42 bare `#N` references were qualified: 22 already on six retagged rows, which the namespace
+guard reads as new once the line is touched, and 20 in backlog #381's own status text.

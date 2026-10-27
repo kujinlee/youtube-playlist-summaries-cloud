@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 179 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 180 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1172,7 +1172,10 @@ def attach_history(rows: list[dict], working_text: str) -> None:
 # and every one of them had to keep its meaning — a whitespace grammar would have split them all.
 TAG_SENTINELS = {"", "—", "-", "Item"}
 TAG_GROUP = re.compile(r"\(([^()]*)\)")
-TAG_CELL = re.compile(r"^\(([^()]*)\)(?:[\s,]*\(([^()]*)\))*$")
+# ⛔ NO `|` INSIDE A GROUP, escaped or not (backlog #381 r1, Codex M1 = Claude m5). The card joins
+# `data-tags` with `|` and the filter script splits on it, so `(a \| b)` would be offered as a filter
+# that matches nothing. Refused here, so such a cell is MALFORMED and reported like the others.
+TAG_CELL = re.compile(r"^\(([^()|]*)\)(?:[\s,]*\(([^()|]*)\))*$")
 
 
 def normalise_tag(raw: str) -> str:
@@ -3074,6 +3077,9 @@ def self_test() -> int:
     case("a malformed cell is read as ONE tag and flagged, never dropped",
          lambda: (cell_tags("cloud"), cell_tags("(cloud/money"), cell_tags("(a) (b"))
          == ((["cloud"], True), (["cloud / money"], True), (["a) (b"], True)))
+    case("a `|` inside a tag group, escaped or not, is MALFORMED",
+         lambda: cell_tags("(a \\| b) (tooling)")[1] is True and cell_tags("(a | b)")[1] is True
+         and cell_tags("(tooling) (comprehensibility)")[1] is False)
     case("a malformed cell reaches the drift notes, naming the row",
          lambda: malformed_tag_errors([{"num": 7, "bundle": "cloud"}, {"num": 8, "bundle": "(x)"}])
          and "[7]" in malformed_tag_errors([{"num": 7, "bundle": "cloud"}])[0]
@@ -3359,12 +3365,14 @@ def self_test() -> int:
          and set(_placed).isdisjoint(_indexed)
          and set(_placed) | _indexed == _open_real)
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
-    # ⛔ backlog #381: EVERY EXISTING CELL PARSES TO EXACTLY THE TAGS IT GOT BEFORE. `_legacy` is
-    # the pre-#381 `bundle_tags`, copied VERBATIM and frozen here, so the comparison is against an
-    # independent copy rather than against the code under test. It is restricted to cells that
-    # write at most ONE group, because a multi-tag cell has no pre-#381 reading to agree with —
-    # which is also what keeps this case true after the retag. The count floor stops it passing
-    # over an empty or shrunken corpus.
+    # ⛔ backlog #381: EVERY CELL PARSES TO EXACTLY WHAT THE PRE-#381 RULE GIVES IT, GROUP BY GROUP.
+    # `_legacy` is the pre-#381 `bundle_tags`, copied VERBATIM and frozen here, so the comparison is
+    # against an independent copy rather than the code under test. A multi-tag cell has no pre-#381
+    # reading as a whole, so the oracle applies the old rule to EACH `(…)` group and takes the union
+    # in order; a cell that is not purely groups gets the old rule over the whole cell.
+    # ⟳ r1: this compared single-group rows only, above a constant floor of 300 — 315 remained after
+    # the retag, so ~15 more multi-tagged rows would have turned it red for no defect. It now
+    # compares EVERY row, and the comparison set must BE every row and must not be empty.
     def _legacy(raw: str) -> list[str]:
         s = (raw or "").strip().strip("()").strip()
         if not s or s in {"—", "-", "Item"}:
@@ -3374,10 +3382,16 @@ def self_test() -> int:
         if not parts:
             return ["untagged"]
         return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
-    _single = [r for r in real if len(cell_tags(r["bundle"])[0]) <= 1]
-    case("every REAL single-tag row parses to exactly the tags the pre-#381 rule gave it",
-         lambda: len(_single) > 300
-         and [r["num"] for r in _single if bundle_tags(r["bundle"]) != _legacy(r["bundle"])] == [])
+
+    def _oracle(raw: str) -> list[str]:
+        groups = re.findall(r"\([^()]*\)", raw or "")
+        if not groups or re.sub(r"\([^()]*\)|[\s,]", "", raw):
+            return _legacy(raw)
+        out = [t for g in groups for t in _legacy(g) if t != "untagged"]
+        return list(dict.fromkeys(out)) or ["untagged"]
+    case("every REAL row parses to exactly the tags the pre-#381 rule gives each of its groups",
+         lambda: bool(real)
+         and [r["num"] for r in real if bundle_tags(r["bundle"]) != _oracle(r["bundle"])] == [])
     case("the REAL backlog has no malformed Bundle cell",
          lambda: malformed_tag_errors(real) == [])
     # ⛔ THE FAILS-IF, card half: a two-tag row DRAWS both chips and its `data-tags` carries both
