@@ -17701,4 +17701,6 @@ into a `try:` with identical text, one with only a `# 236 cases` comment changed
 safe half (compare after stripping indentation and a trailing comment). Filed backlog #359: the literal total in
 `check-plan-code.py`'s `_self_test` is the shrink ratchet, and it conflicts on every concurrent mutation PR (once
 merged silently wrong, 2115 + 2115 for a real 2125); candidate is a branch-sum >= base-sum comparison in CI.
+Filed backlog #360: `verify` has 78 steps on master and one step cap, so its budget is bounded only by the job limit — PR #407's
+round 4 refuted my per-path "step caps" figures, which had added the uncapped steps' measured runtime.
 Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.
