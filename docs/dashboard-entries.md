@@ -17821,5 +17821,5 @@ filter, and an uncommitted change to the planted-fault lists.
 Branch `diff-coverage-zeros` (backlog #371, from PR #411 round 4). `scripts/check-diff-coverage.py`: `git show` read as
 bytes (no universal-newline translation, so a lone CR is NOT CHECKED); `--no-textconv` on the diff (measured: a textconv
 driver emptied a 4-line diff) and, as a pin, on `show`; a dirty `scripts/mutations/` is CANNOT RUN. Each is a case over a
-real repository, not a fake `run`. 51 cases; 27 mutations, each killed by its named case.
+real repository, not a fake `run`. 52 cases; 30 mutations, each killed by its named case.
 

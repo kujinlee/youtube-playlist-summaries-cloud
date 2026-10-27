@@ -35,7 +35,7 @@ without a decision line changing, a `match` statement's arms, a decision express
 assignment, or a DELETED line.
 
     python3 scripts/check-diff-coverage.py --base origin/master
-    python3 scripts/check-diff-coverage.py --self-test  # 51 cases
+    python3 scripts/check-diff-coverage.py --self-test  # 52 cases
 
 EXIT CODES: 0 = ran (warnings, if any, are printed; a file it could not measure says NOT CHECKED) · 2 =
 CANNOT RUN (no git, an unknown base, manifests the loader refuses, or manifests that differ from HEAD's). There
@@ -452,6 +452,10 @@ def self_test_lines_helper():
         # The REAL loader is present, so this reaches the refusal path, not an import failure.
         case("manifests the loader refuses (here: none at all) are CANNOT RUN, never a clean pass",
              (rc, msgs[0]), (2, "CANNOT RUN — the mutation manifests do not load:"))
+        rc, msgs = run_check(root, "b", run=lambda cmd, **k: R(128, err="fatal: not a git repository")
+                             if "status" in cmd else R(0, ""))
+        case("⭐ a `git status` that FAILS is CANNOT RUN — an unknown manifest state is not a clean one (backlog #371)",
+             (rc, msgs[0][:60]), (2, "CANNOT RUN — the mutation manifests in the working tree diff"))
         (root / "scripts" / "check-plan-code.py").write_text("raise RuntimeError('broken loader')\n")
         rc, msgs = run_check(root, "b", run=lambda *a, **k: R(0, ""))
         case("a loader that RAISES is CANNOT RUN, never a clean pass",

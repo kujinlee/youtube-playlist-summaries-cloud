@@ -353,5 +353,44 @@
     "expect": [
       "⭐ an UNCOMMITTED manifest edit is CANNOT RUN — it cannot clear a committed line (backlog #371)"
     ]
+  },
+  {
+    "name": "⭐ the source call asks for TEXT again (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return run([\"git\", \"-c\", \"core.quotepath=off\", *args], cwd=root, capture_output=True)\n",
+        "        return run([\"git\", \"-c\", \"core.quotepath=off\", *args], cwd=root, capture_output=True, text=True)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ the source is read as BYTES — `text=True` would translate a lone CR first (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ a failed `git status` is trusted as clean (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "if dirty.returncode != 0 or dirty.stdout.strip():",
+        "if dirty.stdout.strip():"
+      ]
+    ],
+    "expect": [
+      "⭐ a `git status` that FAILS is CANNOT RUN — an unknown manifest state is not a clean one (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ dirty manifests exit 0 instead of CANNOT RUN (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [\"CANNOT RUN — the mutation manifests in the working tree",
+        "        return 0, [\"CANNOT RUN — the mutation manifests in the working tree"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCOMMITTED manifest edit is CANNOT RUN — it cannot clear a committed line (backlog #371)"
+    ]
   }
 ]
