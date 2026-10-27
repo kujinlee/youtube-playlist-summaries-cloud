@@ -17697,10 +17697,11 @@ of the project you are working in when you work in a side copy. A new check allo
 registering a hook, so the next settings edit cannot quietly bring the problem back.
 <!--tech-->
 Branch `hooks-absolute-path` (backlog #223, PR #409). All 13 commands: `bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh
-<name>.sh`. `run-hook.sh` picks the cwd's checkout when it shares the project's `--git-common-dir` (else the project
-dir), passes no argument through, refuses a path-shaped name. ⟳ r1 (both halves): anchoring at the project dir alone
+<name>.sh`. `run-hook.sh` walks up from the physical cwd to the nearest directory with both `.git` and `run-hook.sh` (no
+git process; else the project dir), passes no argument through, refuses a path-shaped name; a hook missing there is NOT RUN.
+⟳ r2: asking git was steerable (`GIT_CEILING_DIRECTORIES` -> main's plan gate) and let main's copy stand in for a missing hook. ⟳ r1 (both halves): anchoring at the project dir alone
 ran MAIN's hooks from a linked worktree (a plan gate there 2 -> 0), and the denylist guard was bypassed six ways.
 `check-hook-commands.py` is now a one-shape ALLOWLIST plus a registration check (`UNREGISTERED` names
-`check-memory-index-budget.sh` and why), and runs the launcher over real git worlds. 29 cases; 13 mutations
-(2138 -> 2151), each killed by its named case; 6 launcher mutations by hand, each killed.
+`check-memory-index-budget.sh` and why), and runs the launcher over real git worlds. 36 cases; 13 mutations
+(2138 -> 2151), each killed by its named case; 7 launcher mutations by hand, each killed.
 ⚠ Live falsifier owed: a push to master from `scripts/` is refused.

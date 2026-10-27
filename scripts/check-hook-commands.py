@@ -7,9 +7,12 @@ WHY THIS FILE EXISTS (measured live 2026-10-02).
   printed `No such file or directory`, the harness reported it as NON-BLOCKING, and nothing stopped.
 
   The fix is `bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh <name>.sh`. The launcher is
-  found through the stable project dir. It then runs the hook from the checkout that CONTAINS the
-  cwd, when that checkout is this repository (same `--git-common-dir`). Behaviour at any checkout
-  root is therefore what the relative form gave, and a subdirectory now works too.
+  found through the stable project dir. It then walks up from the physical cwd to the nearest
+  directory holding both `.git` and `run-hook.sh` and runs the hook from THAT checkout, with no git
+  process; the project dir only when there is none. That is the old relative form extended to
+  subdirectories: at any checkout root it picks the copy the relative form picked.
+  ⟳ PR #409 round 2 refuted the git-asking version: an inherited `GIT_CEILING_DIRECTORIES` made
+  discovery fail into the project (main) checkout, and a hook missing in a worktree ran MAIN's copy.
   ⟳ PR #409 round 1 (both halves) refuted the first version twice:
     - anchoring at `$CLAUDE_PROJECT_DIR` alone ran the MAIN checkout's hooks from a linked
       worktree, so a pending plan gate there was ignored (exit 0 where it had been 2);
@@ -38,9 +41,9 @@ worktree of this repository.
 ⚠ BOUNDS. Only the TRACKED `.claude/settings.json` is read; `settings.local.json` is per-machine.
 ⚠ The harness's mutation runner runs `python3 <file> --self-test` on the file it mutates, so it
 cannot mutate `run-hook.sh` itself. The launcher's mutations were applied by hand (recorded in
-the PR #409 round-2 coordinator record). The cases below are what turn them red.
+the PR #409 round-1 and round-2 coordinator records). The cases below are what turn them red.
 
-    python3 scripts/check-hook-commands.py --self-test  # 32 cases
+    python3 scripts/check-hook-commands.py --self-test  # 36 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -173,9 +176,10 @@ def _repo(at: Path, launcher: Path) -> Path:
     return at
 
 
-def launch(cwd: Path, project: Path | None, *argv: str) -> tuple[int, str]:
+def launch(cwd: Path, project: Path | None, *argv: str, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
     """Run the PROJECT's launcher the way the harness would: from `cwd`, with `CLAUDE_PROJECT_DIR`."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k != "CLAUDE_PROJECT_DIR"}
+    env.update(extra_env or {})
     if project is not None:
         env["CLAUDE_PROJECT_DIR"] = str(project)
     launcher = (project or cwd) / HOOKS_REL / LAUNCHER
@@ -267,7 +271,7 @@ def self_test(launcher: Path = REPO_ROOT / HOOKS_REL / LAUNCHER) -> int:
         more.append(("the same good settings judged against a ROOT with no hooks are refused", check(p, empty, {})[0], 1))
         more.append(("main() over a compliant world exits 0", main([], root=root, unregistered={}), 0))
         p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "bash .claude/hooks/x.sh"}]}]}}))
-        more.append(("⭐ main() over the shipped defect exits 1", main([], root=root, unregistered={}), 1))
+        more.append(("⭐ main() over the shipped defect exits 1", main([], root=root), 1))
         more.append(("main() over a world with no settings file exits 2 (CANNOT RUN)", main([], root=t / "none"), 2))
 
         # The launcher, over real git: a main checkout, a linked worktree of it, an unrelated repo.
@@ -277,13 +281,29 @@ def self_test(launcher: Path = REPO_ROOT / HOOKS_REL / LAUNCHER) -> int:
         other = _repo(t / "other", launcher)
         bare_dir = t / "nogit"
         bare_dir.mkdir()
+        (main_co / HOOKS_REL / "only-main.sh").write_text(_PROBE)  # untracked: the worktree never gets it
+        nested = _repo(main_co / "nested", launcher)  # a checkout INSIDE main, as a submodule root is
+        plain = t / "plain"  # a copy of the hooks with NO .git — not a checkout
+        (plain / HOOKS_REL).mkdir(parents=True)
+        shutil.copy(launcher, plain / HOOKS_REL / LAUNCHER)
+        (plain / HOOKS_REL / "probe.sh").write_text(_PROBE)
+        (plain / "sub").mkdir()
         more += [
             ("⭐ from a linked worktree's SUBDIRECTORY, with the project dir naming MAIN, the WORKTREE's hook runs",
              launch(wt / "sub", main_co, "probe.sh"), (0, f"{wt}|0|PAYLOAD")),
             ("from the main checkout's subdirectory, the main checkout's hook runs",
              launch(main_co / "sub", main_co, "probe.sh"), (0, f"{main_co}|0|PAYLOAD")),
-            ("from an UNRELATED repo that has the same hook, the PROJECT's hook runs, not that repo's",
-             launch(other / "sub", main_co, "probe.sh"), (0, f"{main_co}|0|PAYLOAD")),
+            ("from ANOTHER checkout with its own launcher, ITS hook runs — as the relative form did at its root",
+             launch(other / "sub", main_co, "probe.sh"), (0, f"{other}|0|PAYLOAD")),
+            ("⭐ an inherited GIT_CEILING_DIRECTORIES cannot steer it — the worktree's hook still runs (round 2)",
+             launch(wt / "sub", main_co, "probe.sh", extra_env={"GIT_CEILING_DIRECTORIES": str(wt)}),
+             (0, f"{wt}|0|PAYLOAD")),
+            ("⭐ a hook MISSING in the worktree is NOT RUN — main's copy is never substituted (round 2)",
+             launch(wt / "sub", main_co, "only-main.sh"), (1, "")),
+            ("a checkout nested inside main (a submodule root) keeps ITS hooks (round 2)",
+             launch(nested / "sub", main_co, "probe.sh"), (0, f"{nested}|0|PAYLOAD")),
+            ("a hooks copy with no .git is not a checkout — the project's hook runs",
+             launch(plain / "sub", main_co, "probe.sh"), (0, f"{main_co}|0|PAYLOAD")),
             ("from outside any git repo, the project's hook runs",
              launch(bare_dir, main_co, "probe.sh"), (0, f"{main_co}|0|PAYLOAD")),
             ("with the project dir UNSET, from the checkout root, the old relative behaviour holds",

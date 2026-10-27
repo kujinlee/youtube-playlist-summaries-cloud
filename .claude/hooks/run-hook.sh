@@ -12,13 +12,17 @@
 #   checkout's hooks, and those read the main checkout's state. Codex measured it: a pending plan gate
 #   in the worktree was enforced (exit 2) by the old command and IGNORED (exit 0) by the anchored one.
 #
-# THE RULE. Use the checkout that CONTAINS the cwd, so behaviour at any checkout root is exactly what
-# the relative form gave, and a subdirectory now works too. Fall back to the project dir only when
-# the cwd's checkout is not THIS repository, or is not in git at all:
-#   1. top = `git rev-parse --show-toplevel` from the cwd;
-#   2. it counts only if it shares the project's `--git-common-dir`, so it is a worktree of this repo
-#      and not an unrelated one, AND it has the hook file;
-#   3. otherwise the project dir, `${CLAUDE_PROJECT_DIR:-.}`. The `:-.` default is the old behaviour.
+# THE RULE (round 3 — no git process). Walk up from the PHYSICAL cwd to the nearest directory that holds
+# BOTH `.git` (a directory, or the file a worktree or submodule has) AND `.claude/hooks/run-hook.sh`. That
+# checkout is used. With no such ancestor, use the project dir, `${CLAUDE_PROJECT_DIR:-.}`; the `:-.`
+# default is the old behaviour. This is the old relative form EXTENDED TO SUBDIRECTORIES: at any checkout
+# root it picks exactly the copy `bash .claude/hooks/<name>.sh` picked, a submodule with its own hooks
+# keeps them, and no environment variable can steer it.
+# ⟳ Round 2 refuted asking git: an inherited `GIT_CEILING_DIRECTORIES` made discovery fail, and the
+# fallback ran the MAIN checkout's plan gate from a worktree (2 -> 0). And because the hook's own
+# existence took part in selection, a hook missing in the worktree ran MAIN's copy. Now the marker is
+# the LAUNCHER, never the hook: once a checkout is chosen, a missing hook there is NOT RUN, never
+# another checkout's copy.
 #
 # ⛔ NO ARGUMENT IS PASSED THROUGH. `surface-recall.sh` relies on receiving none (see its comment on
 # `$1`). stdin, which carries the hook payload, is inherited by `exec`.
@@ -34,15 +38,14 @@ case "$name" in
 esac
 
 project="${CLAUDE_PROJECT_DIR:-.}"
-root="$project"
-top=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR git rev-parse --show-toplevel 2>/dev/null) || top=""
-if [ -n "$top" ] && [ "$top" != "$project" ] && [ -f "$top/.claude/hooks/$name" ]; then
-  mine=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR git -C "$top" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || mine=""
-  theirs=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR git -C "$project" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || theirs=""
-  if [ -n "$mine" ] && [ "$mine" = "$theirs" ]; then
-    root="$top"
-  fi
-fi
+root=""
+dir=$(pwd -P 2>/dev/null) || dir=""
+while [ -n "$dir" ]; do
+  if [ -e "$dir/.git" ] && [ -f "$dir/.claude/hooks/run-hook.sh" ]; then root="$dir"; break; fi
+  [ "$dir" = "/" ] && break
+  dir=$(dirname "$dir")
+done
+[ -n "$root" ] || root="$project"
 
 if [ ! -f "$root/.claude/hooks/$name" ]; then
   echo "run-hook.sh: no hook '$name' under $root/.claude/hooks — NOT RUN" >&2
