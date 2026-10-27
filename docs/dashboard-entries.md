@@ -17812,3 +17812,14 @@ for the block and every update, an `O_NOFOLLOW` lock, UTF-8 writes. 51 cases; 25
 ⟳ r2 (Codex, DEFER with the skip reasoned): attacks that tamper with the ledger's directory mid-write (sidecar deleted,
 `.claude` retargeted, a hard link) still lose a job — out of scope for a cooperative scratch file, filed as backlog #372.
 
+
+## 2026-10-27
+Three read-only commands no longer ask for permission: watching a CI run, asking git whether a file is ignored, and
+reading a container image's manifest.
+<!--tech-->
+`.claude/settings.json` gains `permissions.allow`: `Bash(gh run watch *)` (14 uses), `Bash(git check-ignore *)` (5),
+`Bash(docker buildx imagetools inspect *)` (4) — from the built-in `/fewer-permission-prompts` skill over the 50 most
+recent transcripts (2,344 Bash calls). Everything else was mutating, could run code (`python3`, `node`, `awk`, `gh api`),
+or is already auto-allowed. ⚠ The prompts actually seen tonight came from `dangerouslyDisableSandbox` Codex runs; these
+rules do not touch them.
+
