@@ -17687,3 +17687,26 @@ first version asked `git`, which an old git, `GIT_DIR` and a moved main checkout
 is now `shlex.join`ed; every state command (`--plan` included) is witnessed. 9 cases over a real repo and a real
 linked worktree (136 total), 6 mutations (2115 -> 2121 after merging master); the suite's state-path `global` moved
 to the top of `_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).
+
+
+## 2026-10-26
+The CI install of a video tool that some tests need now keeps a copy of what it downloaded and reuses it,
+after checking each file against the official package list, so a slow package mirror no longer stalls most runs. On the day this was written the download stalled on
+about a third of runs, and each stall needed a manual re-run before anything could merge.
+<!--tech-->
+Branch `ffmpeg-deb-cache` (backlog #358, the owner's option A). `ci.yml` `verify`: a key step runs one bounded
+`apt-get update`, then `--print-uris -o Acquire::ForceHash=SHA256` (bounded, status checked) into a manifest of every
+file's name and SHA256 from this run's signed index; the key is a hash of that manifest. `actions/cache/restore` into
+`~/ffmpeg-debs`; a separate bounded `Seed` step copies into `/var/cache/apt/archives` ONLY restored files whose
+`sha256sum` matches the manifest; the install step itself is master's, except that it reuses the key step's index
+(no second update, so nothing drifts) and its cap is 13 min on that path, 20 otherwise. ⟳ r2: cache preparation was moved OUT of the install into its own `continue-on-error` step, which rebuilds
+`~/ffmpeg-debs` from scratch with exactly the manifest's files, each re-hashed; the save runs only if all were staged.
+⟳ r1 (both halves) corrected two false claims of the first version: apt accepts a cached .deb by SIZE, not hash (a forged
+package installed, in a container), and a failing cache step could skip the install — now every cache step is
+`continue-on-error` and bounded. Measured in CI: a miss saved 81 files; the next run restored 81, `Need to get 0 B`.
+Measured in an ubuntu:26.04 container: 194 files listed with SHA256, a forged same-size file rejected and re-downloaded.
+⟳ r3: cache work left the install step entirely (a stalled copy could hold it to its cap). ⟳ r4 (Codex, NOT CONVERGED, filed
+as backlog #360): the "28.3 / 27.3 / 21.3 by STEP CAPS" figures were FALSE — they added the measured runtime of the 77 steps
+that have NO cap. The explicit caps per path are 23 (index not reused) / 16 (reused, no key) / 19 (cache hit) / 21 (miss,
+then stage and save), each plus R, the uncapped remainder; only the job's 30-min limit bounds R, exactly as on master. Container: a forced copy failure still reached the install; staging after a
+partial restore kept 194 of 194 manifest files and no extra.
