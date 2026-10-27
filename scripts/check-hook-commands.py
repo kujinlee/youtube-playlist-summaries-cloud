@@ -31,9 +31,9 @@ does not exist, or a hook file nobody registers or explains.
   outside KNOWN_TYPES (the five in Claude Code 2.1.309's schema) is Malformed → CANNOT RUN instead of skipped;
   an `UNREGISTERED` reason must be a non-empty STRING. A type Claude Code ships AFTER 2.1.309 fails loudly
   here until it is named, which is the safe direction.
-⚠ NOT CHECKED (backlog #368): a canonical command with an `args` field, which Claude Code 2.1.309 runs as ONE
-  executable with no shell (so `bash .claude/hooks/x.sh` would launch nothing); and a non-default `shell`
-  (`powershell` runs the command through `pwsh`, not bash — a different failure, not verified here).
+⚠ NOT CHECKED (backlog #368): a command hook with an `args` field (Claude Code 2.1.309's runner code spawns
+  `command` as one executable with no shell — read, not run end to end), or with a non-default `shell`, which
+  changes which shell runs the command (its outcome here is not verified).
 
     python3 scripts/check-hook-commands.py --self-test  # 29 cases
 
