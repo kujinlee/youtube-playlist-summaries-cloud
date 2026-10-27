@@ -1870,6 +1870,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 6,
+    "scripts/session-state.py": 17,
     "scripts/check-hook-commands.py": 16,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -4284,7 +4285,8 @@ def _self_test() -> int:
                                       # ⟳ 2026-09-29, backlog #191: the LLM recall
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
-                                      "scripts/recall-llm.py"])
+                                      "scripts/recall-llm.py",
+                                      "scripts/session-state.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -6054,7 +6056,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2154)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2171)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

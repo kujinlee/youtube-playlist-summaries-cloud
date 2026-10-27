@@ -17752,6 +17752,24 @@ pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review co
 
 
 ## 2026-10-26
+Every new session, and every time the conversation is automatically compacted, now begins with a short
+block listing what is in flight: each open pull request with its state, its checks and which of them are
+failing, and any background job someone recorded (as long as the session is working in the project's top folder). It is read from GitHub at that moment, and where it
+cannot find something out it says so. Showing what each pull request is waiting on is split out for a
+design review of its own, after two attempts each showed one pull request's state as another's.
+<!--tech-->
+Branch `session-state` (backlog #362, PR #410), the STABLE half after a SPLIT. `scripts/session-state.py` + SessionStart
+hook `.claude/hooks/session-state.sh` (startup, resume, compact; reads no stdin; always exits 0). Per PR, from `gh` alone
+and keyed by number: head, draft, mergeability, check summary (`NO CHECKS`), failing check NAMES. Ledger: regular file
+under 64 KiB, split on `\n`, ASCII-escaped, flock + atomic replace, damaged bytes kept, empty id refused. `clean()` by
+Unicode category. ⟳ r1: nine ways falsely reassuring. r2 + r3: the previous fold mis-attributed one PR's state to
+another (filename conventions; then `origin/master..<head>` on a stacked branch) — THRASHING, so per-branch attribution
+is backlog #367, architecture review first. 36 cases; 17 mutations. Delivery after compaction verified.
+⟳ r4 (Codex, DEFER): the ledger erases its jobs once past its 64 KiB cap, and a `gh` element missing its checks reads
+as NO CHECKS — filed as backlog #369, not folded; the loop stops.
+
+
+## 2026-10-26
 The check that every hook is registered one way now also refuses a hook entry it does not recognise and an
 exemption with no reason written down, instead of quietly letting both through.
 <!--tech-->
