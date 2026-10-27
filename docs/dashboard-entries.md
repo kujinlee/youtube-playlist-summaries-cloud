@@ -17908,6 +17908,10 @@ in CI: builders are found by git's subcommand; the declared `GIT_SUITES` cover s
 import-time captures in other modules, rebound names, decoy dispatch and a false refusal — #380, a fresh child
 interpreter per suite. The falsifier population is derived: all 80 scripts with `--self-test`, under 8 families. The only hits
 were `brief-compose`'s (6–9 per family, in the real checkout), now wrapped, and there were 0 victim changes. Over the
-29 git-running suites: master 4–5 victim changes and up to 469 caller-config runs per family; branch 0 and 0. Three
-nonzero exits are not findings: `subject_status` (pre-existing 16/17), and `check-plan-code` and
-`check-paid-caller-arrival` (no `node_modules` in the snapshot).
+29 git-running suites: master 4–5 victim changes and up to 469 caller-config runs per family; branch 0 and 0. Two
+nonzero exits are not findings: `check-plan-code` and `check-paid-caller-arrival` (no `node_modules` in the
+snapshot). Round 3 (DEFER, after thrashing convened an architecture review): 720/720 clean, all 80 suites ×
+9 families. ⟳ Corrected: `subject_status` (pre-existing 16/17), `gen-dashboard`, `check-ci-watched` and `peer-sites`
+run read-only git on the checkout with the caller's environment and are not on `GIT_SUITES` (`subject_status`
+drops to 12/17 under `GIT_DIR`). They and the builder detector's precision are backlog #382: wrap every entry and
+delete the detector. Escape shapes are backlog #380.

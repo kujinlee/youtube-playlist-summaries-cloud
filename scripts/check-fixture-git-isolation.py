@@ -29,15 +29,18 @@ WHAT IT CHECKS, per `scripts/**/*.py`, parsed with `ast`:
      `page_chrome.provenance()`, which runs `git status` on the checkout) needs isolation too. Such suites
      are a DECLARED list, `GIT_SUITES`, each with its reason — chosen over detecting calls into known git
      readers because a reader list would be a second, partial copy of every module's call graph. A listed
-     file is checked as if it built a repository; a listed file that no longer exists is refused. The
-     population that FILLS the list is the falsifier run over every `--self-test` in `scripts/`.
+     file is checked as if it built a repository; a listed file that no longer exists is refused. The list
+     was filled by a hook/fsmonitor-marker falsifier, so it holds the suites in which git ran CALLER CONFIG.
+     That instrument cannot see read-only git, and the list misses such suites (see DETECTOR PRECISION).
   2. if so, it has a self-test ENTRY (a module-level function named `self_test`, `_self_test`, `selftest`
      — underscores and case ignored) and every entry's body is, after an optional docstring and
      `import fixture_git`, exactly ONE `with fixture_git.isolated():` statement (any import alias) with ONE
      item, the call taking NO arguments (⟳ r2 X4: `with earlier(), fixture_git.isolated():` ran `earlier`
      before isolation, and `isolated(HOME=os.environ["HOME"])` handed the caller's HOME back in).
-  3. every module-level function that block calls is called from NOWHERE else in the file — otherwise the
-     suite has a second, unisolated way in.
+  3. every module-level function that block calls DIRECTLY by name is named NOWHERE else in the file.
+     ⟳ r3: this closes one second way in, not every one. It is direct-call only and not transitive (a
+     callee's own callees are not checked), it sees functions but not classes, and it says nothing about
+     WHEN the code runs. LIMITS below names what that lets through.
   4. no repository is built at module level (it would run at import, before any block), and no copy of
      `os.environ` is taken where it is evaluated before the block: at module level, in a default argument
      or a decorator, or stored from a module-level call to a function that reads `os.environ`.
@@ -71,7 +74,31 @@ backlog #380). Each was executed by Codex against an accepted program and wrote 
   * X7 — `os.putenv`, which writes the C environment that restoring `os.environ` never sees;
   * X9 (a false refusal) — a builder helper module with no self-test of its own, imported by an isolated
     entry, is refused.
+⟳ round 3 (`docs/reviews/codex/fixture-git-isolation-r3-codex.md`, `docs/reviews/claude/fixture-git-isolation-r3-
+claude.md`), also backlog #380, each executed against an accepted program that wrote the victim:
+  * IMPORT-TIME git (r3 Codex X1): a module-level `subprocess.run(["git", "config", ...])` that builds nothing.
+    Rule 4 refuses import-time BUILDS and environment copies, not every import-time git launch;
+  * SUITE WORK AFTER THE BLOCK EXITS (r3 Claude M1): a generator body, a lazy `map`, or an uncalled function
+    returned from the block, each consumed by the caller after `isolated()` has restored the environment;
+  * RULE 3's REACH (r3 Claude M1): a callee of the suite that is also reached from outside it through
+    another function (rule 3 is not transitive), or through a CLASS method (rule 3 sees functions only);
+  * `main()` BUILDING BEFORE THE ENTRY (r3 Claude M1): on `--self-test`, `main` runs setup (a build, a
+    `git config`) and only then calls the isolated entry — not X5, because the dispatch does reach the entry.
 No script in `scripts/` does any of these; the derived falsifier is that evidence, not this guard.
+
+⛔ DETECTOR PRECISION — which files must isolate (backlog #382 dissolves this, by wrapping EVERY `--self-test`
+entry and deleting the builder detector). Each is a builder or git-running suite this does NOT require to isolate:
+  * a wrapper whose cwd argument is a LITERAL (`git("/tmp/x", "init")`): leading arguments are skipped only up
+    to the first constant, so the cwd itself is read as the subcommand (r3 Codex X2). It also refuses
+    `git("init", "status")`, which builds nothing (r3 Codex Xm4);
+  * `*args` inside a git argv before the subcommand (`["git", *ID, "init"]`): `_subcommand` stops at the first
+    `Starred` (r3 Claude M3, caused by r2's X8 fix);
+  * a shell string with a QUOTED `-C` value (`git -C "my dir" init`), or with `--config-env`/`--super-prefix`,
+    which `GIT_VALUE_OPTS` takes but `SHELL_BUILD` does not (r3 Codex X3, Claude M3);
+  * suites that run READ-ONLY git on the checkout with the caller's environment and are not on `GIT_SUITES`:
+    `subject_status`, `gen-dashboard`, `check-ci-watched` and `peer-sites` (r3 Claude M2). They write nothing
+    and ran no marker, but their verdicts depend on the caller: `subject_status` goes 16/17 → 12/17 under
+    `GIT_DIR`, because it reads the victim's history.
 
     python3 scripts/check-fixture-git-isolation.py
     python3 scripts/check-fixture-git-isolation.py --self-test  # 84 cases
