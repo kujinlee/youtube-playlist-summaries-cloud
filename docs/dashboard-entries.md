@@ -17665,13 +17665,14 @@ about a third of runs, and each stall needed a manual re-run before anything cou
 Branch `ffmpeg-deb-cache` (backlog #358, the owner's option A). `ci.yml` `verify`: a key step runs one bounded
 `apt-get update`, then `--print-uris -o Acquire::ForceHash=SHA256` (bounded, status checked) into a manifest of every
 file's name and SHA256 from this run's signed index; the key is a hash of that manifest. `actions/cache/restore` into
-`~/ffmpeg-debs`; the existing install copies into `/var/cache/apt/archives` ONLY restored files whose `sha256sum` matches
-the manifest (in a subshell: a failure there only warns) and reuses the key step's index (no second update, so nothing
-drifts). ⟳ r2: cache preparation was moved OUT of the install into its own `continue-on-error` step, which rebuilds
+`~/ffmpeg-debs`; a separate bounded `Seed` step copies into `/var/cache/apt/archives` ONLY restored files whose
+`sha256sum` matches the manifest; the install step itself is master's, except that it reuses the key step's index
+(no second update, so nothing drifts) and its cap is 13 min on that path, 20 otherwise. ⟳ r2: cache preparation was moved OUT of the install into its own `continue-on-error` step, which rebuilds
 `~/ffmpeg-debs` from scratch with exactly the manifest's files, each re-hashed; the save runs only if all were staged.
 ⟳ r1 (both halves) corrected two false claims of the first version: apt accepts a cached .deb by SIZE, not hash (a forged
 package installed, in a container), and a failing cache step could skip the install — now all three are
 `continue-on-error` and bounded. Measured in CI: a miss saved 81 files; the next run restored 81, `Need to get 0 B`.
 Measured in an ubuntu:26.04 container: 194 files listed with SHA256, a forged same-size file rejected and re-downloaded.
-Worst case per path 28.3 / 28.0 of 30 min. Container: a forced copy failure still reached the install; staging after a
+⟳ r3: cache work left the install step entirely (a stalled copy could hold it to its cap), and the budget is now a sum
+of STEP CAPS per path — 28.3 (uncached) / 27.3 (cached) / 21.3 of 30 min. Container: a forced copy failure still reached the install; staging after a
 partial restore kept 194 of 194 manifest files and no extra.
