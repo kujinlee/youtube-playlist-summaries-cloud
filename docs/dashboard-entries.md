@@ -17864,8 +17864,8 @@ cases; 30 mutations, each killed by its case. ⟳ r3: real hook loads found no c
 ## 2026-10-27
 Every safety hook now runs from the checkout actually being worked in — a subfolder of the main checkout, or a
 separate worktree of a branch — instead of failing silently after a change of folder. If that checkout has no copy of
-a hook, the hook is reported as not run rather than borrowed from another checkout. Whether a real push to master is
-refused from a subfolder in a live session has not been checked yet.
+a hook, the hook is reported as not run rather than borrowed from another checkout. Tried live: a push to master from a
+subfolder is now refused, where on master today it goes through.
 <!--tech-->
 Backlog #364, candidate (a). All 14 commands in `.claude/settings.json` become
 `bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh <name>.sh` (nothing else in the file changes). New
@@ -17873,4 +17873,6 @@ Backlog #364, candidate (a). All 14 commands in `.claude/settings.json` become
 RUN exit 1 when that checkout lacks the hook; refuses an empty name, `/`, a leading `.`, and any argument count but one.
 `check-hook-commands.py` pins the shape (45 cases, 34 mutations). New `check-run-hook.py --self-test` in CI: 31 real-git
 worlds asserting exit code and the file that ran, the hook's stdout/stderr/exit code asserted exactly, 19 launcher
-mutants each killed by its named world, 72 cases, 12 mutations. ⚠ The live falsifier (push to master refused from `scripts/`) is UNVERIFIED.
+mutants each killed by its named world, 72 cases, 12 mutations. The live falsifier was RUN (backlog #364 row): branch blocks, master's control lets it through.
+⟳ r2 (Codex, SPLIT): the shell's startup environment (`BASH_ENV` and kin) is a trusted input, stated as limit L8 —
+hardening it for every hook is backlog #379.

@@ -139,7 +139,7 @@
       ]
     ],
     "expect": [
-      "exit 0 with JSON-shaped stdout (the push gate's DENY): stdout, stderr and code arrive exactly"
+      "exit 0 with stdout (the shape of the push gate's DENY): stdout, stderr and code arrive exactly"
     ]
   },
   {

@@ -35,6 +35,9 @@
 #   L5 NOT RUN exits 1: visible, not blocking.
 #   L6 the hooks' internal `git` calls still follow the cwd and the GIT_* environment.
 #   L7 Windows / PowerShell are not considered.
+#   L8 the SHELL'S STARTUP ENVIRONMENT is trusted: an inherited BASH_ENV, ENV, SHELLOPTS or BASHOPTS is honoured by
+#      bash before this file's first line runs (PR #419 r2: a BASH_ENV doing `cd "$CLAUDE_PROJECT_DIR"` made main's
+#      hook run). The old relative form had the same exposure; hardening it for every hook is backlog #379.
 #
 # Tested over real `git worktree add` / `git submodule add` worlds, with every lost design applied as a
 # mutant and killed, by `python3 scripts/check-run-hook.py --self-test`.

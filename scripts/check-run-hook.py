@@ -15,8 +15,8 @@ world asserts that NO probe ran, so main's copy running in a worktree's place is
 WHY THE LAUNCHER'S MUTANTS ARE KILLED HERE. `check-plan-code.py --mutate .` mutates `scripts/<stem>.py`
 only, so it can never mutate a shell file. `--self-test` therefore applies each mutant — every lost
 design (m1–m10, m3b) and the review's three extra classes (one per refused name shape, extra arguments
-forwarded, stdin not forwarded) — as a text edit to a copy of the launcher, re-runs every world, and
-fails if a mutant's NAMED world stays green. A surviving mutant prints its own `[FAIL]` line. The
+forwarded, stdin not forwarded) — as a text edit to a copy of the launcher, runs the worlds it NAMES, and
+fails if any of them stays green. A surviving mutant prints its own `[FAIL]` line. The
 Python rules of this file have their own manifest, `scripts/mutations/check-run-hook.json`.
 
 ⛔ FIXTURE git NEVER INHERITS GIT_*: every fixture process gets an environment CONSTRUCTED from
@@ -337,7 +337,7 @@ def verdict(got: tuple, want: tuple) -> bool:
 
 W10 = "W10 cwd outside any checkout: the project dir's hook"
 IO_CASES = ("stdin reaches the hook, byte for byte", "the hook is passed NO argument (its name is not forwarded)")
-STREAM_CASES = ("exit 0 with JSON-shaped stdout (the push gate's DENY): stdout, stderr and code arrive exactly",
+STREAM_CASES = ("exit 0 with stdout (the shape of the push gate's DENY): stdout, stderr and code arrive exactly",
                 "exit 2 (a blocking hook): stdout, stderr and code arrive exactly")
 MSG_CASE = "NOT RUN names the hook and says no other checkout's copy is used"
 
