@@ -178,3 +178,4 @@ docs/explainers/questions.md
 # backlog #362: the in-flight ledger — one line per running background job, what it is FOR and what to do
 # when it ends. Per-checkout and per-session by nature; `scripts/session-state.py` prints it at session start.
 .claude/inflight.jsonl
+.claude/inflight.jsonl.lock

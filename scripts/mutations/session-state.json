@@ -39,42 +39,42 @@
     ]
   },
   {
-    "name": "the newest record is picked by name, not round number",
+    "name": "⭐ clean() keeps Unicode separators (r2 P1)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        if m and int(m.group(1)) > best_n:",
-        "        if m and (best is None or n.strip() > best):"
+        "        if cat in (\"Cc\", \"Zl\", \"Zp\"):",
+        "        if cat == \"Cc\":"
       ]
     ],
     "expect": [
-      "the newest record is the highest ROUND, numerically, whatever the subject is called"
+      "⭐ clean() strips Unicode separators and invisible characters too (r2 P1)"
     ]
   },
   {
-    "name": "closed bets are shown as open",
+    "name": "⭐ clean() keeps invisible format characters (r2 P1)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        if r.get(\"outcome\") is not None:\n            continue\n",
+        "        elif cat == \"Cf\":\n            continue\n",
         ""
       ]
     ],
     "expect": [
-      "only ADDED rows still awaiting an outcome are open; a bad added row is COUNTED"
+      "⭐ clean() strips Unicode separators and invisible characters too (r2 P1)"
     ]
   },
   {
-    "name": "⭐ clean() no longer strips newlines (block forgery returns)",
+    "name": "clean() no longer breaks `===`",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    s = CONTROL.sub(\" \", str(value))",
-        "    s = str(value)"
+        "    s = re.sub(r\"={2,}\", lambda m: \" \".join(m.group(0)), s)\n",
+        ""
       ]
     ],
     "expect": [
-      "⭐ clean() makes a value one inert line: no newline, no control char, no `===`"
+      "⭐ clean() strips ASCII line breaks and breaks `===`"
     ]
   },
   {
@@ -104,20 +104,7 @@
     ]
   },
   {
-    "name": "⭐ a branch that added no record prints nothing (r1 B1)",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "                L.append(f\"      latest review: {clean(info['record']) if info['record'] else none}\")",
-        "                if info['record']:\n                    L.append(f\"      latest review: {clean(info['record'])}\")"
-      ]
-    ],
-    "expect": [
-      "⭐ a branch that added no record SAYS so — absence is never silent (r1 CLAUDE B1)"
-    ]
-  },
-  {
-    "name": "⭐ an empty ledger reads as 'empty' again (r1 B2)",
+    "name": "⭐ an empty ledger reads as 'empty' again",
     "file": "scripts/session-state.py",
     "edits": [
       [
@@ -126,37 +113,54 @@
       ]
     ],
     "expect": [
-      "⭐ an empty ledger says none RECORDED — never 'nothing running' (r1 CLAUDE B2)"
+      "⭐ an empty ledger says none RECORDED — never 'nothing running'"
     ]
   },
   {
-    "name": "⭐ an unreadable ledger line is dropped on the next write (r1 P2)",
+    "name": "⭐ facts keyed by BRANCH NAME, not PR number (r2 P1)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "_write(path, entries, raw)\n\n\ndef ledger_done",
-        "_write(path, entries, [])\n\n\ndef ledger_done"
+        "        facts[num] = f\n",
+        "        facts[b] = f\n"
+      ],
+      [
+        "            f = facts.get(p.get(\"number\"), {})",
+        "            f = facts.get(p.get(\"headRefName\"), {})"
       ]
     ],
     "expect": [
-      "⭐ ...and an update KEEPS them verbatim instead of erasing them (r1 CODEX P2)"
+      "⭐ two PRs with the SAME branch name keep their OWN facts — keyed by number (r2 P1)"
     ]
   },
   {
-    "name": "⭐ the ledger lock is dropped (r1 P1 race)",
+    "name": "⭐ the latest commit is read from ALL reachable commits (master merged in counts) (r2)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        fcntl.flock(fh, fcntl.LOCK_EX)\n",
-        ""
+        "f\"origin/master..{head}\"])",
+        "head])"
       ]
     ],
     "expect": [
-      "⭐ 20 concurrent adds keep all 20 jobs (r1: an unlocked write kept 3)"
+      "⭐ the latest commit is read from the branch's OWN range, never master's commits merged in"
     ]
   },
   {
-    "name": "records are read from a FORK's same-named branch",
+    "name": "⭐ an EDITED inherited review file counts as added (r2 P1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"--diff-filter=A\", f\"origin/master...{head}\"",
+        "\"--diff-filter=AM\", f\"origin/master...{head}\""
+      ]
+    ],
+    "expect": [
+      "⭐ only ADDED review files are counted, and the facts read the PR's exact HEAD"
+    ]
+  },
+  {
+    "name": "a same-named fork's facts are read from our branch",
     "file": "scripts/session-state.py",
     "edits": [
       [
@@ -165,20 +169,72 @@
       ]
     ],
     "expect": [
-      "a fork PR says its records were NOT READ instead of showing this repo's same-named branch"
+      "⭐ a same-named FORK keeps its own 'NOT READ' note and the local PR its own facts (r2 P1)"
     ]
   },
   {
-    "name": "⭐ no total deadline (r1 P1)",
+    "name": "ref drift shows another commit's facts",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        if left() <= 1:",
-        "        if False:"
+        "                              \"branch facts NOT SHOWN rather than another commit's\")\n            continue",
+        "                              \"branch facts NOT SHOWN rather than another commit's\")"
       ]
     ],
     "expect": [
-      "⭐ a total DEADLINE stops branch reads and the block still prints, counting what was NOT READ (r1 P1)"
+      "a local ref at another commit than the PR head shows NO branch facts, only the note"
+    ]
+  },
+  {
+    "name": "⭐ damaged ledger lines are not written back",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "_write(path, entries, raw)\n\n\ndef ledger_done",
+        "_write(path, entries, [])\n\n\ndef ledger_done"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and an update writes them back BYTE-FOR-BYTE (r2 P2: U+FFFD replaced the byte)"
+    ]
+  },
+  {
+    "name": "⭐ the ledger is split on every Unicode line break (r2 P2)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    for i, line in enumerate(path.read_bytes().split(b\"\\n\"), 1):",
+        "    for i, line in enumerate((x.encode(\"utf-8\", \"surrogateescape\") for x in path.read_bytes().decode(\"utf-8\", \"surrogateescape\").splitlines()), 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ a line written elsewhere with a RAW U+2028 in a value is still ONE readable job — split on \\n only"
+    ]
+  },
+  {
+    "name": "⭐ the ledger lock is dropped",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        fcntl.flock(fh, fcntl.LOCK_EX)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ 20 concurrent adds keep all 20 jobs"
+    ]
+  },
+  {
+    "name": "⭐ calls are launched past the budget (r2 P2)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if left < 1:\n            return None\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the DEADLINE stops LAUNCHING calls — none is started with under a second left (r2 P2)"
     ]
   },
   {
@@ -191,7 +247,7 @@
       ]
     ],
     "expect": [
-      "⭐ main() PRINTS the block — the hook's whole output (r1: removing the print stayed green)"
+      "⭐ main() PRINTS the block — the hook's whole output"
     ]
   }
 ]

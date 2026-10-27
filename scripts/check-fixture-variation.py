@@ -313,7 +313,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
-    # backlog #362 (2026-10-26): every parameter varied by a case; none exempt.
+    # backlog #362 (2026-10-26; keys re-pinned at the r2 REDESIGN, which removed the record and bet readers).
     "session-state.py": (
         "check_summary.rollup",
         "clean.value",
@@ -333,14 +333,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "main.argv",
         "main.root",
         "main.run",
-        "newest_record.names",
-        "open_bets.diff_text",
         "read_ledger.path",
+        "render.facts",
         "render.fetch_ok",
         "render.ledger",
         "render.ledger_problems",
         "render.now",
-        "render.per_branch",
         "render.pr_error",
         "render.not_read",
         "render.prs",

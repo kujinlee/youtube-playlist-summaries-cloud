@@ -17753,17 +17753,15 @@ pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review co
 
 ## 2026-10-26
 Every new session, and every time the conversation is automatically compacted, now begins with a short
-block listing what is in flight: each open pull request with its state and checks, the latest review it
-added and the bet that review is testing, and any background job someone recorded. It is worked out from
-GitHub and git at that moment rather than written down earlier, and where it cannot find something out it
-says so instead of showing nothing.
+block listing what is in flight: each open pull request with its state and checks, the last step written on
+that pull request's own branch, how many review files it added, and any background job someone recorded.
+It is worked out from GitHub and git at that moment, and where it cannot find something out it says so.
 <!--tech-->
 Branch `session-state` (backlog #362, PR #410). `scripts/session-state.py` + SessionStart hook
-`.claude/hooks/session-state.sh` (startup, resume, compact; always exits 0). Per PR: head, draft, mergeability,
-check summary (`NO CHECKS`), and what the PR ITSELF added (`git diff origin/master...origin/<b> -- docs/reviews/`):
-newest coordinator record, review-half count, decision-log rows with `outcome: null`. ⟳ r1 (both halves, nine ways
-falsely reassuring): records keyed by branch missed PR #392/#371; an unwritten ledger read "empty"; a 60 s kill printed
-nothing; unlocked writes lost jobs; a fork showed our review; untrusted text could forge the block's end. Fixed: diff-
-keyed records, "none RECORDED", a 40 s total deadline, flock + atomic replace keeping unreadable lines, fork/ref-drift
-notes, `clean()` on every value. Delivery after compaction verified (Claude Code 2.1.309). 40 cases; 15 mutations.
-Filed backlog #366 (automatic ledger writes).
+`.claude/hooks/session-state.sh` (startup, resume, compact; reads no stdin; always exits 0). Keyed by PR NUMBER:
+head, draft, mergeability, check summary (`NO CHECKS`), latest non-merge subject in `origin/master..<head>`, count of
+review files ADDED (`--diff-filter=A`). ⟳ r1 (both halves): nine ways falsely reassuring. ⟳ r2 (Codex): the r1 fold
+still read review semantics from filenames — a same-named fork shared a review, an edited inherited record became this
+PR's verdict, U+2028/zero-width forged lines — so REDESIGNED to say less: no record headings, no bets; `clean()` by
+Unicode category; a regular-file ledger split on `\n`, ASCII-escaped, damaged bytes kept; no call launched past a 40 s
+budget. 38 cases; 19 mutations. Delivery after compaction verified (Claude Code 2.1.309). Filed backlog #366.

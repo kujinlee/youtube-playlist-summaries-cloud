@@ -9,6 +9,7 @@
 # ⚠ Registered by the repo's one relative shape (`check-hook-commands.py`), so it shares backlog #364's
 # limit: after a compaction in a session whose cwd is a subdirectory, it does not launch.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cat >/dev/null 2>&1 || true   # the payload is not needed; drain stdin so the harness never blocks writing it
-python3 "$REPO_ROOT/scripts/session-state.py" 2>&1 || echo "=== IN FLIGHT: CANNOT RUN — session-state.py exited $? ==="
+# ⛔ stdin is NOT read: the payload is not needed, and draining it blocked the hook when the pipe was held
+# open (PR #410 r2: 60 s, empty output). The python child gets /dev/null for every subprocess it starts.
+python3 "$REPO_ROOT/scripts/session-state.py" </dev/null 2>&1 || echo "=== IN FLIGHT: CANNOT RUN — session-state.py exited $? ==="
 exit 0
