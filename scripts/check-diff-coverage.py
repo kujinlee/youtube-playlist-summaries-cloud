@@ -23,6 +23,11 @@ path are NOT here: the step never ran (it followed a gate that is red on every d
 annotations at 10 per step, deletions mis-scoped renames and counted moved lines, and the volume reached
 420 warnings on one PR, which a reader stops reading (backlog #56). That half is backlog #370.
 
+⚠ KNOWN DEFECTS, FILED (PR #411 round 4, DEFERRED by the pre-committed route — backlog #371): `git show` output is
+read with `text=True`, which translates a lone CR before `measurable()` sees it, so that protection does not hold; a
+`textconv` diff driver can empty the diff (no `--no-textconv`); and manifests are read from the WORKING TREE while
+sources come from HEAD, so an uncommitted manifest can clear a committed change. Each yields a clean zero.
+
 ⚠ WARN, NOT BLOCK. A warning says only that NO MUTATION EDITS the line; whether a test would notice
 reverting it is what a mutation measures, and this does not run one. It cannot see behaviour that changed
 without a decision line changing, a `match` statement's arms, a decision expressed through a plain

@@ -17779,6 +17779,8 @@ Branch `diff-coverage` (backlog #251, PR #411), the STABLE half after a SPLIT. `
 manifested script changed in `base...HEAD`, WARN on each changed decision line (every line of an if/elif/while header
 and test, return, raise, assert, except header, exit call, conditional-expression test, comprehension if) that no
 mutation EDITS — applying the edit, the lines that do not survive unchanged. Sources from `git show HEAD:<path>`; diff
-pinned (`--no-ext-diff`, a/ b/ prefixes); binary / unparseable / lone-CR files NOT CHECKED. ⟳ r1 over-coverage and
+pinned (`--no-ext-diff`, a/ b/ prefixes); binary / unparseable files NOT CHECKED. ⟳ r1 over-coverage and
 tracebacks; r2 a text-alignment rule that let an insertion "cover" its neighbour (redesigned); r3 the CI step never ran
 and volume hit 420/PR — CI delivery and deleted lines split out as backlog #370. 45 cases; 24 mutations.
+⟳ r4 (Codex, DEFER): three clean zeros remain — a lone CR translated before the check, a textconv driver, working-tree
+manifests — filed as backlog #371, not folded; the loop stops.
