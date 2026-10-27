@@ -27,6 +27,8 @@ WHAT WOULD MAKE THIS FAIL (its falsifier): a hook command in a second shape, a r
 does not exist, or a hook file nobody registers or explains.
 
 ⚠ BOUND: only the TRACKED `.claude/settings.json` is read; `settings.local.json` is per-machine.
+⚠ NOT CHECKED (PR #409 round 4, filed as backlog #365): a hook entry with no `type` or an unknown one
+  (`{}`, `"commmand"`) is skipped, not refused; an `UNREGISTERED` entry with an EMPTY reason is accepted.
 
     python3 scripts/check-hook-commands.py --self-test  # 22 cases
 

@@ -17747,3 +17747,5 @@ file registered or in `UNREGISTERED` with a reason (`check-memory-index-budget.s
 master. 22 cases; 12 mutations (2138 -> 2150), each killed by its named case. Split out: backlog #364, the launcher,
 after r1 (project dir ran main's hooks from a worktree), r2 (git discovery steerable), r3 (a marker walk skipped
 pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review comes first.
+⟳ r4 (Codex, last — DEFER): `.claude/` byte-identical to master confirmed; the guard skips an entry with no or an unknown
+`type` and accepts an empty UNREGISTERED reason — filed as backlog #365 and stated in the guard's docstring.

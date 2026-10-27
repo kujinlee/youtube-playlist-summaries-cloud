@@ -396,9 +396,9 @@ jobs:
         run: python3 scripts/check-review-recorded.py --self-test
       - name: check-hook-commands self-test
         run: python3 scripts/check-hook-commands.py --self-test
-      # backlog #223: a hook named by a relative path is inert whenever the session's cwd is not the
-      # repo root, and the harness reports that as NON-BLOCKING — nothing stops.
-      - name: every hook command is anchored at the project dir
+      # backlog #223 (stable half): one registration shape, a registered hook exists, every hook file is
+      # registered or explained. The cwd defect itself is backlog #364.
+      - name: every hook is registered in the one shape and wired up
         run: python3 scripts/check-hook-commands.py
 
       - name: brief-compose self-test
