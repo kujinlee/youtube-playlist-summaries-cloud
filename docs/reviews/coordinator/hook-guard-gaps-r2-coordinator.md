@@ -19,7 +19,8 @@ missing or unknown `type` each exit 2 with no crash; reasons `None`, `0`, `False
 exit 1; 29/29; 16/16 mutations real (killed, attributed, green control and re-control).
 
 - **XL1 (fixed, prose):** the docstring and backlog #368 said a non-default `shell` launches nothing, like `args`. Without
-  `args` the command runs through a shell, and `shell: "powershell"` selects `pwsh`. (⟳ r3: the replacement guess was
+  `args` the command runs through a shell, and `shell: "powershell"` prefers `pwsh`, falls back to `powershell`,
+  and throws if neither is on PATH (⟳ r4). (⟳ r3: the replacement guess was
   itself partly wrong — with no PowerShell on PATH it does fail to launch — so the prose now claims only that `shell`
   changes which shell runs the command, outcome unverified.)
 
