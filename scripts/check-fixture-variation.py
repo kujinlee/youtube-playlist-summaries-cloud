@@ -315,18 +315,22 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
-        "anchor_lines.anchors",
-        "anchor_lines.source",
-        "changed_lines.diff_text",
         "decision_lines.source",
+        "deleted.old_source",
+        "deleted.removed",
+        "diff_path.raw",
+        "edited_lines.edits",
+        "edited_lines.source",
         "main.argv",
         "main.root",
-        "non_behaviour.source",
+        "parse_diff.diff_text",
         "run_check.base",
+        "run_check.env",
         "run_check.root",
         "run_check.run",
-        "uncovered.anchors",
+        "self_test_lines.source",
         "uncovered.changed",
+        "uncovered.edits",
         "uncovered.sources",
     ),
     # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.

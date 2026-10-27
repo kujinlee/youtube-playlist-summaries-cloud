@@ -1,106 +1,197 @@
 [
   {
-    "name": "an if/while test is no longer a decision line",
+    "name": "⭐ a multi-line if keeps only its first line (r1 survivor)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        if isinstance(node, (ast.If, ast.While)):",
-        "        if False:"
+        "            out.update(range(node.lineno, (node.test.end_lineno or node.test.lineno) + 1))",
+        "            out.add(node.lineno)"
       ]
     ],
     "expect": [
-      "decision lines are the if-test, the return and the exit call — not the plain assignment"
+      "⭐ a multi-line if: the header AND every test line are decision lines (r1)"
     ]
   },
   {
-    "name": "a return is no longer a decision line",
+    "name": "⭐ a multi-line return/raise/assert keeps only its first line (r1)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        elif isinstance(node, (ast.Return, ast.Raise, ast.Assert, ast.ExceptHandler)):",
-        "        elif isinstance(node, (ast.Raise, ast.Assert, ast.ExceptHandler)):"
+        "        elif isinstance(node, (ast.Return, ast.Raise, ast.Assert)):\n            out.update(_span(node))",
+        "        elif isinstance(node, (ast.Return, ast.Raise, ast.Assert)):\n            out.add(node.lineno)"
       ]
     ],
     "expect": [
-      "decision lines are the if-test, the return and the exit call — not the plain assignment"
+      "⭐ a multi-line return, except header and raise are decision lines on EVERY line (r1)"
     ]
   },
   {
-    "name": "a self_test body counts as behaviour",
+    "name": "⭐ except clauses are no longer decisions (r1 survivor)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and \"self_test\" in node.name:",
+        "        elif isinstance(node, ast.ExceptHandler):",
         "        elif False:"
       ]
     ],
     "expect": [
-      "a self_test function's body is not behaviour"
+      "⭐ a multi-line return, except header and raise are decision lines on EVERY line (r1)"
     ]
   },
   {
-    "name": "a literal module pin counts as behaviour",
+    "name": "conditional-expression tests are not decisions",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "                continue\n            skip.update(span(node))",
-        "                continue"
+        "        elif isinstance(node, ast.IfExp):",
+        "        elif False:"
       ]
     ],
     "expect": [
-      "docstring, import, literal pin, blank and comment lines are not behaviour"
+      "...including a conditional expression in a PLAIN assignment, where nothing else makes it a decision"
     ]
   },
   {
-    "name": "an anchor covers only its FIRST line",
+    "name": "exit calls are not decisions",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "            covered.update(range(first, first + a.count(\"\\n\") + 1))",
-        "            covered.add(first)"
+        "            if name == \"exit\":",
+        "            if False:"
       ]
     ],
     "expect": [
-      "an anchor covers every line its text spans"
+      "an exit call is a decision line"
     ]
   },
   {
-    "name": "an empty anchor covers everything",
+    "name": "self_test bodies are code under test",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        if not a:\n            continue\n",
+        "        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and \"self_test\" in node.name:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a self_test function's lines are cases, not code under test"
+    ]
+  },
+  {
+    "name": "⭐ an edit covers its whole find span again (r1: context lines covered)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                if tag == \"equal\":\n                    continue\n",
         ""
       ]
     ],
     "expect": [
-      "an empty anchor covers nothing (not every line)"
+      "⭐ an edit COVERS only the lines its find and replace differ on (r1: context lines covered too)"
     ]
   },
   {
-    "name": "an anchored line is warned anyway",
+    "name": "an empty find text is not skipped",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "            if n in skip or n in covered or n not in decide or n > len(lines):",
-        "            if n in skip or n not in decide or n > len(lines):"
+        "        if not find:\n            continue\n",
+        ""
       ]
     ],
     "expect": [
-      "...and anchoring it silences the warning"
+      "an empty find text covers nothing (not every line)"
     ]
   },
   {
-    "name": "a deletion hunk counts one added line",
+    "name": "⭐ a path keeps git's trailing TAB (r1)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "            start, count = int(m.group(1)), int(m.group(2) or \"1\")",
-        "            start, count = int(m.group(1)), int(m.group(2) or \"1\") or 1"
+        "    p = raw.split(\"\\t\", 1)[0]",
+        "    p = raw"
       ]
     ],
     "expect": [
-      "a pure deletion hunk (+N,0) adds no line"
+      "⭐ a path with a SPACE is read without git's trailing TAB (r1)"
+    ]
+  },
+  {
+    "name": "removed lines are not recorded",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            out[key][1].update(range(o_start, o_start + o_count))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "added lines are read on the NEW side, removed on the OLD side, per hunk — a pure insertion removes none"
+    ]
+  },
+  {
+    "name": "⭐ deleted decision lines are not warned (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                found += [(p, n, text, \"deleted\") for n, text in deleted(removed, o.stdout)]",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "...and the same line DELETED is warned too, read from the merge-base"
+    ]
+  },
+  {
+    "name": "⭐ the diff is two-dot, not three-dot (r1 survivor)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        r = git(\"diff\", \"-U0\", \"--no-color\", f\"{base}...HEAD\", \"--\", \"scripts/*.py\")",
+        "        r = git(\"diff\", \"-U0\", \"--no-color\", f\"{base}..HEAD\", \"--\", \"scripts/*.py\")"
+      ]
+    ],
+    "expect": [
+      "...and the diff is the THREE-dot range against the base"
+    ]
+  },
+  {
+    "name": "⭐ the per-file cap is never applied (r1 survivor)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if per_file[p] > CAP:\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "at most CAP warnings are shown per file, and the rest are COUNTED"
+    ]
+  },
+  {
+    "name": "no annotation in Actions",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    annotate = env.get(\"GITHUB_ACTIONS\") == \"true\"",
+        "    annotate = False"
+      ]
+    ],
+    "expect": [
+      "...and in GitHub Actions it is ALSO an annotation on the diff (r1: plain text nobody read)"
+    ]
+  },
+  {
+    "name": "⭐ git missing is a traceback again (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    except OSError as exc:  # git itself missing",
+        "    except ValueError as exc:  # git itself missing"
+      ]
+    ],
+    "expect": [
+      "⭐ git itself missing is CANNOT RUN, not a traceback (r1)"
     ]
   },
   {
@@ -117,6 +208,19 @@
     ]
   },
   {
+    "name": "⭐ a raising loader reports a clean pass (r1 survivor)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — loading the mutation manifests failed: {exc}. Treat as NOT CHECKED.\"]",
+        "        return 0, [f\"CANNOT RUN — loading the mutation manifests failed: {exc}. Treat as NOT CHECKED.\"]"
+      ]
+    ],
+    "expect": [
+      "a loader that RAISES is CANNOT RUN, never a clean pass (r1: this arm was unwitnessed)"
+    ]
+  },
+  {
     "name": "refused manifests report a clean pass",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
@@ -127,6 +231,32 @@
     ],
     "expect": [
       "manifests the loader refuses (here: none at all) are CANNOT RUN, never a clean pass"
+    ]
+  },
+  {
+    "name": "⭐ a non-UTF-8 script is a traceback again (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            except (OSError, UnicodeDecodeError) as exc:",
+        "            except OSError as exc:"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifested script that is not UTF-8 is NOT CHECKED, not a traceback (r1)"
+    ]
+  },
+  {
+    "name": "an unreadable base side is silent",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                not_checked.append(f\"NOT CHECKED {p}: cannot read the base side, so deleted lines are unknown\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a base side that cannot be read is NOT CHECKED, not a silent zero"
     ]
   }
 ]
