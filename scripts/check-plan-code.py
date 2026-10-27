@@ -1883,7 +1883,9 @@ EXPECTED_MUTATIONS = {
     # swallowed into no problems. Five entries were RETARGETED onto the rewritten lines, and the
     # exact-match stale entry was REPLACED by one reverting to any-descendant (Claude M1). Then
     # 27 -> 28: an unreadable backlog treated as an empty one, burying its cause under 22 stale lines.
-    "scripts/check-features.py": 28,
+    # ⟳ 2026-10-27, backlog #381 r3 — 28 -> 30: the parser's unread lines ignored, and `unread=` no
+    # longer handed to it (Codex X1 = Claude C1, a decorated row number dropped from the gate).
+    "scripts/check-features.py": 30,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -6090,7 +6092,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2327)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2329)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

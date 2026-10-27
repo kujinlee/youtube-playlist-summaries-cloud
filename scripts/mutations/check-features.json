@@ -306,5 +306,27 @@
       ]
     ],
     "expect": "an UNREADABLE backlog (areas None) asks no per-area question, so the one real cause is not buried"
+  },
+  {
+    "name": "the parser's unread lines are collected and then IGNORED, so a decorated row and its tags vanish from the gate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    bad += [f\"docs/backlog.md has a line inside an item table",
+        "    bad += [] and [f\"docs/backlog.md has a line inside an item table"
+      ]
+    ],
+    "expect": "a decorated or non-integer row number is a gate FAILURE naming the line, for every shape"
+  },
+  {
+    "name": "the gate stops handing `unread=` to the parser, the shape round 3 found",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        rows = bp.parse(text.split(\"\\n\"), unread=unread)",
+        "        rows = bp.parse(text.split(\"\\n\"))"
+      ]
+    ],
+    "expect": "a decorated row inside a copy of the REAL `## Items` table fails the gate, naming it"
   }
 ]

@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 45 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 47 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -184,8 +184,9 @@ def backlog_areas(text: str) -> tuple[set[str], list[str]]:
     "no areas", which would be CANNOT RUN and read as a different thing. A malformed cell is a
     problem too, carrying its row number."""
     bp = tags()
+    unread: list[str] = []
     try:
-        rows = bp.parse(text.split("\n"))
+        rows = bp.parse(text.split("\n"), unread=unread)
     except bp.ShapeError as e:
         return set(), [f"docs/backlog.md cannot be read as a table, so no area in it can be "
                        f"trusted — {e}"]
@@ -198,6 +199,16 @@ def backlog_areas(text: str) -> tuple[set[str], list[str]]:
             bad.append(f"backlog.md row {r['num']} — its Bundle cell {r['bundle'][:40]!r} is not a run "
                        f"of `(tag)` groups, so it was read as ONE tag by guesswork; write every tag "
                        f"in its own parentheses, and no `|` inside one")
+    # ⛔ THE GATE FAILS ON EVERY PROBLEM THE PARSER REPORTS (backlog #381 r3, Codex X1 = Claude C1).
+    # `parse` is forgiving BY DESIGN — the page reports drift and keeps rendering — and it reports a
+    # row-like line it could not read (`| ⭐999 |`, `| #999 |`, `| 999a |`, `| abc |`) only to a
+    # caller that hands it `unread=`. This gate handed none, so such a row and its tags vanished:
+    # master's `cells[-3]` read had failed on them, and this passed. Adopting the page's parser
+    # without its strictness was the root of rounds 2 and 3 both; `ShapeError` above and this list
+    # are the parser's two channels, and the gate now listens to both.
+    bad += [f"docs/backlog.md has a line inside an item table that the parser cannot read as a row, "
+            f"so its tags reach no reader — {line.strip()[:80]!r}; the number cell must be a bare "
+            f"integer" for line in unread]
     return out, bad
 
 
@@ -440,6 +451,19 @@ expected-because: standard for a hosted multi-tenant service.
     fam = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud)"))[0]
     check("an in-use leaf is claimed by its family's area, and that area is not stale",
           check_cross(fam, set(), {"cloud / new"}), [])
+    # ⛔ backlog #381 r3, Codex X1 = Claude C1: a row-like line the parser cannot read is a gate
+    # FAILURE naming the line — each was green at 988a5dbf, where master's gate was red.
+    _decorated = ("⭐999", "#999", "**999**", "999a", "abc")
+    _undecor = [backlog_areas(_bl(f"| {n} | x | f | S | (not-claimed) | open |")) for n in _decorated]
+    check("a decorated or non-integer row number is a gate FAILURE naming the line, for every shape",
+          [(len(b), f"| {n} |" in " ".join(b)) for n, (_a, b) in zip(_decorated, _undecor)],
+          [(1, True)] * len(_decorated))
+    _real = BACKLOG.read_text().split("\n")
+    _at = next(i for i, l in enumerate(_real) if l.startswith("| 381 |"))
+    _inside = backlog_areas("\n".join(_real[:_at + 1] + ["| ⭐999 | 🟡 **Probe** | f | S | (not-claimed) | open |"]
+                                       + _real[_at + 1:]))
+    check("a decorated row inside a copy of the REAL `## Items` table fails the gate, naming it",
+          [p for p in _inside[1] if "⭐999" in p] != [] and len(_inside[1]) == 1, True)
     # ⛔ backlog #381 r2, Codex X1: a header that misspells `Bundle` is a gate FAILURE, not a table
     # whose every row is untagged — master FAILED on this probe, and the round-1 fold passed it.
     _bundel = backlog_areas(_bl("| 1 | x | f | S | (worker) | open |")

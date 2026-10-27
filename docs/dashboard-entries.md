@@ -17937,9 +17937,11 @@ lists it in its drift box and `check-features` fails; a `|` inside a tag group c
 because the page's filter splits its tag list on `|`. `check-features` reads rows through the
 page's own header-aware parser, so a row with a wrong number of cells fails the gate, naming the
 row, and a table whose header is not one of the two declared backlog tables (a misspelled
-`Bundle`, say) fails it naming the table. Measured on the real backlog: 334 rows,
-0 differ from the old rule, 0 malformed, and the features page's 329 backlog links are identical
-to master's, node by node. Mutations: gen-backlog-page 5 → 18, gen-features-page 10 → 15,
+`Bundle`, say) fails it naming the table, and so does any row-like line inside an item table that
+the parser cannot read (a decorated or non-integer row number). Measured at the parser commit
+`677465b0`, over the 334 rows the backlog had then: 0 differ from the old rule, 0 malformed, and
+the features page's 329 backlog links are identical to master's, node by node. The self-test
+re-checks every row on each run; HEAD's backlog has 337. Mutations: gen-backlog-page 5 → 18, gen-features-page 10 → 15,
 check-features 22 → 28 (one retired with the code it guarded, several retargeted); gen-backlog-page
 reaches 18 with two on the header check. A family area that is nobody's nearest claimant is stale,
 which keeps the stale-area rule as strict as master's.
