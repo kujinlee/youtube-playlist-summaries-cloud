@@ -17759,8 +17759,11 @@ later found a real gap.
 <!--tech-->
 Branch `diff-coverage` (backlog #251, PR #411). `scripts/check-diff-coverage.py`: per manifested script changed against
 the PR base, WARN on each changed decision line (every line of an if/elif/while header+test, return, raise, assert,
-except header, exit call, conditional-expression test, comprehension if) that no mutation EDITS — the lines where an
-edit's find and replace differ — and on each DELETED decision line, read from the merge-base. `::warning` annotations
+except header, exit call, conditional-expression test, comprehension if) that no mutation EDITS — applying the edit,
+the lines that do not survive unchanged (r2 redesign: an insertion edits none) — and on each DELETED decision line,
+read from the merge-base (a script deleted with its manifest stays in scope). `::warning` annotations
 in Actions; exit 2 only on CANNOT RUN; NOT CHECKED for an unreadable or unparseable file. ⟳ r1 (both halves): anchor
 spans over-covered (21%), multi-line statements counted one line, deletions invisible, spaced paths lost, tracebacks —
-fixed. Measured: 57 (`session-state` @ `16bed21b`), 32 (`hooks-absolute-path` @ `b6e46a3a`). 39 cases; 20 mutations.
+fixed. ⟳ r2 (Codex): binary diffs, non-UTF-8 output, Unicode-quoted paths and an unparseable base side are NOT CHECKED
+or decoded, never a clean zero or a traceback. Measured: 57 (`session-state` @ `16bed21b`), 32 (`hooks-absolute-path` @
+`b6e46a3a`). 48 cases; 24 mutations.

@@ -315,6 +315,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
+        "binary_paths.diff_text",
         "decision_lines.source",
         "deleted.old_source",
         "deleted.removed",

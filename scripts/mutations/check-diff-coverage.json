@@ -78,16 +78,20 @@
     ]
   },
   {
-    "name": "⭐ an edit covers its whole find span again (r1: context lines covered)",
+    "name": "⭐ an INSERT counts as editing the lines around it again (r2)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "                if tag == \"equal\":\n                    continue\n",
-        ""
+        "                if tag in (\"replace\", \"delete\"):  # an INSERT leaves every original line intact",
+        "                if tag != \"equal\":"
+      ],
+      [
+        "                    covered.update(first + r for r in range(i1, i2))",
+        "                    covered.update(first + r for r in range(i1, max(i2, i1 + 1)))"
       ]
     ],
     "expect": [
-      "⭐ an edit COVERS only the lines its find and replace differ on (r1: context lines covered too)"
+      "⭐ an INSERTION edit covers NO original line — the decision it sits beside is unchanged (r2)"
     ]
   },
   {
@@ -134,8 +138,8 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "                found += [(p, n, text, \"deleted\") for n, text in deleted(removed, o.stdout)]",
-        "                pass"
+        "                    found += [(p, n, text, \"deleted\") for n, text in gone]",
+        "                    pass"
       ]
     ],
     "expect": [
@@ -257,6 +261,58 @@
     ],
     "expect": [
       "a base side that cannot be read is NOT CHECKED, not a silent zero"
+    ]
+  },
+  {
+    "name": "⭐ a binary diff is dropped silently again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            not_checked.append(f\"NOT CHECKED {p}: git reports a BINARY diff, so its lines are unknown\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifested script with a BINARY diff is NOT CHECKED, not a clean zero (r2)"
+    ]
+  },
+  {
+    "name": "⭐ an unparseable base side reads as no deletions (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    decide = decision_lines(old_source)\n    if decide is None:\n        return None",
+        "    decide = decision_lines(old_source) or set()"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNPARSEABLE base side is None — never 'no decisions were deleted' (r2)"
+    ]
+  },
+  {
+    "name": "⭐ git output is decoded strictly again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                   errors=\"replace\")  # a non-UTF-8 byte in a diff must not be a traceback (PR #411 r2)",
+        "                   )  # a non-UTF-8 byte in a diff must not be a traceback (PR #411 r2)"
+      ]
+    ],
+    "expect": [
+      "⭐ every git call decodes with replacement — a non-UTF-8 byte is not a traceback (r2)"
+    ]
+  },
+  {
+    "name": "⭐ a script deleted with its manifest is out of scope again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            added = set()\n        n_files += 1",
+        "            continue\n        n_files += 1"
+      ]
+    ],
+    "expect": [
+      "⭐ a script DELETED with its manifest still warns on its deleted decisions — scope from the merge-base (r2)"
     ]
   }
 ]

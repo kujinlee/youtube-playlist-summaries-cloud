@@ -29,7 +29,7 @@ measures, and this does not run one. In GitHub Actions each warning is also an a
 a `match` statement's arms, or a decision expressed through a plain assignment.
 
     python3 scripts/check-diff-coverage.py --base origin/master
-    python3 scripts/check-diff-coverage.py --self-test  # 39 cases
+    python3 scripts/check-diff-coverage.py --self-test  # 48 cases
 
 EXIT CODES: 0 = ran (warnings, if any, are printed; a file it could not read says NOT CHECKED) · 2 = CANNOT
 RUN (no git, an unknown base, or manifests the loader refuses). There is no 1: this is a warning instrument.
@@ -65,6 +65,30 @@ def _plan_code(root: Path):
     return mod
 
 
+_ESC = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
+
+
+def _unquote(body: str) -> str:
+    """Git's C-quoting, decoded BYTE-wise: octal escapes are UTF-8 bytes, literal characters stay literal
+    (PR #411 r2: a Latin-1 round trip raised on a literal Unicode character)."""
+    out, i = bytearray(), 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "\\" and i + 1 < len(body):
+            nxt = body[i + 1]
+            if nxt in "01234567" and i + 3 < len(body) + 1 and all(c in "01234567" for c in body[i + 1:i + 4]):
+                out.append(int(body[i + 1:i + 4], 8))
+                i += 4
+                continue
+            if nxt in _ESC:
+                out.append(_ESC[nxt])
+                i += 2
+                continue
+        out += ch.encode("utf-8")
+        i += 1
+    return out.decode("utf-8", errors="replace")
+
+
 def diff_path(raw: str) -> str | None:
     """The repo path in a `---`/`+++` line's payload: git appends a TAB after a path with spaces, and
     C-quotes a path with special characters (PR #411 r1: `scripts/a b.py<TAB>` matched nothing)."""
@@ -72,8 +96,25 @@ def diff_path(raw: str) -> str | None:
     if p == "/dev/null":
         return None
     if len(p) >= 2 and p[0] == p[-1] == '"':
-        p = p[1:-1].encode("latin-1", "backslashreplace").decode("unicode_escape").encode("latin-1").decode("utf-8")
+        p = _unquote(p[1:-1])
     return p[2:] if p[:2] in ("a/", "b/") else p
+
+
+BINARY = re.compile(r"^Binary files (.+) and (.+) differ$")
+
+
+def binary_paths(diff_text: str) -> set[str]:
+    """Paths git reports as `Binary files … differ` — no hunks, so they must be NOT CHECKED, never a clean zero."""
+    out = set()
+    for line in diff_text.splitlines():
+        m = BINARY.match(line)
+        if m:
+            for side in (m.group(2), m.group(1)):
+                p = diff_path(side)
+                if p:
+                    out.add(p)
+                    break
+    return out
 
 
 def parse_diff(diff_text: str) -> dict[str, tuple[set[int], set[int], str | None]]:
@@ -146,21 +187,26 @@ def self_test_lines(source: str) -> set[int]:
 
 
 def edited_lines(source: str, edits: list[tuple[str, str]]) -> set[int]:
-    """The source lines each edit actually CHANGES: where its find and replace text differ, never the
-    whole span its find text covers."""
+    """The source lines a mutation actually CHANGES: apply the edit, and an original line is edited exactly when it
+    does not survive unchanged. ⟳ PR #411 r2 REDESIGN: r1 aligned the edit's find/replace TEXT and guessed which
+    source line an insertion touched; an inserted `audit = 1` above `if bad:` then "covered" the unchanged `if bad:`.
+    Only the whole lines containing the find text can change, so only they are compared."""
     covered: set[int] = set()
     for find, repl in edits:
         if not find:
             continue
         start = 0
         while (i := source.find(find, start)) >= 0:
-            first = source.count("\n", 0, i) + 1
-            a, b = find.split("\n"), repl.split("\n")
-            for tag, i1, i2, _j1, _j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
-                if tag == "equal":
-                    continue
-                rows = range(i1, i2) if i2 > i1 else range(max(i1 - 1, 0), max(i1 - 1, 0) + 1)
-                covered.update(first + r for r in rows if r < len(a) and (a[r] or len(a) == 1))
+            line_start = source.rfind("\n", 0, i) + 1
+            line_end = source.find("\n", i + len(find))
+            line_end = len(source) if line_end < 0 else line_end
+            before = source[line_start:line_end]
+            after = before[:i - line_start] + repl + before[i - line_start + len(find):]
+            first = source.count("\n", 0, line_start) + 1
+            matcher = difflib.SequenceMatcher(a=before.split("\n"), b=after.split("\n"), autojunk=False)
+            for tag, i1, i2, _j1, _j2 in matcher.get_opcodes():
+                if tag in ("replace", "delete"):  # an INSERT leaves every original line intact
+                    covered.update(first + r for r in range(i1, i2))
             start = i + 1
     return covered
 
@@ -182,19 +228,27 @@ def uncovered(changed: dict[str, set[int]], sources: dict[str, str],
     return out
 
 
-def deleted(removed: set[int], old_source: str) -> list[tuple[int, str]]:
-    """The rule for REMOVED lines, pure: (old line, text) for each deleted decision line outside a self-test."""
-    decide = decision_lines(old_source) or set()
+def deleted(removed: set[int], old_source: str) -> list[tuple[int, str]] | None:
+    """The rule for REMOVED lines, pure: (old line, text) for each deleted decision line outside a self-test;
+    None when the base source does not parse (PR #411 r2: that read as a clean zero)."""
+    decide = decision_lines(old_source)
+    if decide is None:
+        return None
     skip = self_test_lines(old_source)
     lines = old_source.splitlines()
     return [(n, lines[n - 1].strip()) for n in sorted(removed) if n in decide and n not in skip and n <= len(lines)]
+
+
+def _manifest_of(path: str) -> str:
+    return f"scripts/mutations/{Path(path).stem}.json"
 
 
 def run_check(root: Path, base: str, run=subprocess.run, env=None) -> tuple[int, list[str]]:
     env = os.environ if env is None else env
 
     def git(*args):
-        return run(["git", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True, text=True)
+        return run(["git", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True, text=True,
+                   errors="replace")  # a non-UTF-8 byte in a diff must not be a traceback (PR #411 r2)
 
     try:
         r = git("diff", "-U0", "--no-color", f"{base}...HEAD", "--", "scripts/*.py")
@@ -214,11 +268,23 @@ def run_check(root: Path, base: str, run=subprocess.run, env=None) -> tuple[int,
     edits: dict[str, list[tuple[str, str]]] = {}
     for e in entries:
         edits.setdefault(e["file"], []).extend((ed[0], ed[1]) for ed in e.get("edits", []))
-    msgs, found, not_checked, n_files = [], [], [], 0
+    found: list[tuple[str, int, str, str]] = []
+    msgs: list[str] = []
+    not_checked: list[str] = []
+    n_files = 0
     sources: dict[str, str] = {}
+    base_ok = mb is not None and mb.returncode == 0
+    for p in sorted(binary_paths(r.stdout)):
+        if p in edits or (base_ok and git("cat-file", "-e", f"{mb.stdout.strip()}:{_manifest_of(p)}").returncode == 0):
+            n_files += 1
+            not_checked.append(f"NOT CHECKED {p}: git reports a BINARY diff, so its lines are unknown")
     for p, (added, removed, old_path) in sorted(parsed.items()):
         if p not in edits:
-            continue
+            # A script deleted TOGETHER WITH its manifest is still in scope: its decisions are what was removed
+            # (PR #411 r2). Membership then comes from the merge-base's manifests.
+            if (root / p).exists() or not base_ok or git("cat-file", "-e", f"{mb.stdout.strip()}:{_manifest_of(old_path or p)}").returncode != 0:
+                continue
+            added = set()
         n_files += 1
         if added and (root / p).is_file():
             try:
@@ -232,11 +298,15 @@ def run_check(root: Path, base: str, run=subprocess.run, env=None) -> tuple[int,
             sources[p] = src
             found += [(p, n, text, "changed") for p, n, text in uncovered({p: added}, sources, edits)]
         if removed:
-            o = git("show", f"{mb.stdout.strip()}:{old_path or p}") if mb is not None and mb.returncode == 0 else None
+            o = git("show", f"{mb.stdout.strip()}:{old_path or p}") if base_ok else None
             if o is None or o.returncode != 0:
                 not_checked.append(f"NOT CHECKED {p}: cannot read the base side, so deleted lines are unknown")
             else:
-                found += [(p, n, text, "deleted") for n, text in deleted(removed, o.stdout)]
+                gone = deleted(removed, o.stdout)
+                if gone is None:
+                    not_checked.append(f"NOT CHECKED {p}: its base side does not parse, so deleted lines are unknown")
+                else:
+                    found += [(p, n, text, "deleted") for n, text in gone]
     per_file: dict[str, int] = {}
     annotate = env.get("GITHUB_ACTIONS") == "true"
     for p, n, text, kind in found:
@@ -295,6 +365,13 @@ def self_test() -> int:
     case("⭐ a path with a SPACE is read without git's trailing TAB (r1)",
          list(parse_diff("--- a/scripts/a b.py\t\n+++ b/scripts/a b.py\t\n@@ -1 +1 @@\n")), ["scripts/a b.py"])
     case("a C-quoted path is unquoted", diff_path('"b/scripts/t\\tx.py"'), "scripts/t\tx.py")
+    case("⭐ a C-quoted path with LITERAL Unicode and octal UTF-8 decodes, never raises (r2)",
+         (diff_path('"b/scripts/\ud55c\\tx.py"'), diff_path('"b/scripts/\\355\\225\\234.py"')),
+         ("scripts/\ud55c\tx.py", "scripts/\ud55c.py"))
+    case("⭐ a BINARY diff names its path, so it can be NOT CHECKED (r2: it vanished)",
+         binary_paths("diff --git a/scripts/b.py b/scripts/b.py\nBinary files a/scripts/b.py and b/scripts/b.py differ\n"),
+         {"scripts/b.py"})
+    case("a text diff names no binary path", binary_paths("--- a/scripts/x.py\n+++ b/scripts/x.py\n"), set())
     case("/dev/null is no path, and a/ is stripped", (diff_path("/dev/null"), diff_path("a/scripts/o.py")), (None, "scripts/o.py"))
 
     src = '''"""Doc."""
@@ -338,6 +415,10 @@ def _self_test():
     case("⭐ a trailing newline in an anchor covers no extra line (r1: `PIN = 1\\n` covered the next line)",
          edited_lines(src, [('PINS = {"a": 1}\n', 'PINS = {}\n')]), {3})
     case("a deletion edit covers the line it removes", edited_lines(src, [("    y = len(items)\n", "")]), {7})
+    case("⭐ an INSERTION edit covers NO original line — the decision it sits beside is unchanged (r2)",
+         edited_lines(src, [("    if (problems\n", "    audit = 1\n    if (problems\n")]), set())
+    case("...and an edit inside one line covers exactly that line, mid-line anchors included",
+         edited_lines(src, [("and y):", "or y):")]), {9})
     case("an edit whose text does not occur covers nothing", edited_lines(src, [("nope", "x")]), set())
     case("an empty find text covers nothing (not every line)", edited_lines(src, [("", "x")]), set())
 
@@ -355,6 +436,8 @@ def _self_test():
          uncovered({"scripts/g.py": {1}}, {"scripts/g.py": "if x:\n    pass\n"}, {"scripts/g.py": []})[0][1:], (1, "if x:"))
     case("⭐ a DELETED decision line is reported with its text — the PR #364 sever (r1)",
          deleted({8, 7, 23}, src), [(8, "if (problems")])
+    case("⭐ an UNPARSEABLE base side is None — never 'no decisions were deleted' (r2)",
+         deleted({1}, "if good:\n    x = (\n"), None)
     case("...and nothing is reported for deleted plain lines of another source",
          deleted({1, 2}, "x = 1\ny = 2\n"), [])
 
@@ -409,6 +492,27 @@ def _self_test():
          any(m.startswith(f"WARN {target} (base line {n})") for m in msgs), True)
     rc, msgs = run_check(REPO_ROOT, "HEAD", run=fake, env={})
     case("outside Actions there is no annotation", any(m.startswith("::warning") for m in msgs), False)
+    kw: list = []
+    run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: (kw.append(k), R(0, ""))[1], env={})
+    case("⭐ every git call decodes with replacement — a non-UTF-8 byte is not a traceback (r2)",
+         all(k.get("errors") == "replace" for k in kw) and bool(kw), True)
+    bin_diff = f"diff --git a/{target} b/{target}\nBinary files a/{target} and b/{target} differ\n"
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(0, bin_diff) if "diff" in cmd else R(0, "abc\n"), env={})
+    case("⭐ a manifested script with a BINARY diff is NOT CHECKED, not a clean zero (r2)",
+         (rc, any(m.startswith(f"NOT CHECKED {target}: git reports a BINARY diff") for m in msgs)), (0, True))
+    gone_src = "def f(x):\n    if good(x):\n        return 1\n"
+
+    def gone_world(cmd, **k):
+        if "diff" in cmd:
+            return R(0, "--- a/scripts/old-guard.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n")
+        if "merge-base" in cmd:
+            return R(0, "abc\n")
+        if "cat-file" in cmd:
+            return R(0 if cmd[-1] == "abc:scripts/mutations/old-guard.json" else 1, "")
+        return R(0, gone_src)
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=gone_world, env={})
+    case("⭐ a script DELETED with its manifest still warns on its deleted decisions — scope from the merge-base (r2)",
+         any(m.startswith("WARN scripts/old-guard.py (base line 2)") for m in msgs), True)
     many = "".join(f"@@ -{k} +{k} @@\n" for k in open_)
     rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(0, f"--- a/{target}\n+++ b/{target}\n{many}")
                          if "diff" in cmd else R(1, ""), env={})
