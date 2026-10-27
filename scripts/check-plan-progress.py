@@ -643,6 +643,13 @@ def run_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
     # declared here because Python refuses a `global` after the name's first use.
     global record_last_plan, current_branch, _write_record, refresh_work_lines

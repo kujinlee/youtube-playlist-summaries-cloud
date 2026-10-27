@@ -218,6 +218,13 @@ def _d(path: str, *lines: str) -> str:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     failed = 0
     cases = 0
 

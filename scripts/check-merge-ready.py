@@ -1119,6 +1119,13 @@ def main(argv: list[str]) -> int:
 
 # ── SELF-TEST ─────────────────────────────────────────────────────────────────────────────────
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases, failures = 0, 0
 
     def check(name, got, want):

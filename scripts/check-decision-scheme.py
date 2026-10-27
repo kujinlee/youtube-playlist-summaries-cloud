@@ -1575,6 +1575,13 @@ def _try(fn):
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import os as _os
     import tempfile as _tf
     cases = failures = 0

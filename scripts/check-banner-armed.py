@@ -1570,6 +1570,13 @@ def run_decide(payload: str) -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:

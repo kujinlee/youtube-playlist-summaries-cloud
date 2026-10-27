@@ -27,7 +27,7 @@
     ]
   },
   {
-    "name": "an extra that points git at the host is accepted",
+    "name": "an extra off the allow-list is accepted",
     "file": "scripts/fixture_git.py",
     "edits": [
       [
@@ -36,21 +36,21 @@
       ]
     ],
     "expect": [
-      "an extra that would point git back at the host is refused (GIT_DIR)",
-      "an extra that would point git back at the host is refused (GIT_CONFIG_COUNT)"
+      "an extra that is not on the allow-list is refused (GIT_INDEX_FILE)",
+      "an extra that is not on the allow-list is refused (GIT_SHALLOW_FILE)"
     ]
   },
   {
-    "name": "a GIT_CONFIG_* extra is accepted",
+    "name": "an allowed identity variable is dropped from the allow-list (r1 Cm4)",
     "file": "scripts/fixture_git.py",
     "edits": [
       [
-        " or k.startswith(\"GIT_CONFIG\"))",
-        ")"
+        "ALLOWED_EXTRA = (\"HOME\", \"GIT_AUTHOR_NAME\", \"GIT_AUTHOR_EMAIL\", \"GIT_AUTHOR_DATE\",",
+        "ALLOWED_EXTRA = (\"HOME\", \"GIT_AUTHOR_NAME\", \"GIT_AUTHOR_EMAIL\","
       ]
     ],
     "expect": [
-      "an extra that would point git back at the host is refused (GIT_CONFIG_COUNT)"
+      "an allowed extra is kept (GIT_AUTHOR_DATE)"
     ]
   },
   {
@@ -63,7 +63,7 @@
       ]
     ],
     "expect": [
-      "an extra the caller passes is kept (an author identity)"
+      "an allowed extra is kept (GIT_AUTHOR_NAME)"
     ]
   },
   {
@@ -81,6 +81,84 @@
     ],
     "expect": [
       "env() reads os.environ at CALL time, not once at import"
+    ]
+  },
+  {
+    "name": "isolated() does not swap os.environ at all",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        _replace_environ(inner)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a child launched with NO env= inherits the isolated environment"
+    ]
+  },
+  {
+    "name": "isolated() keeps the caller's other variables (a filter, not a replacement)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "    for k in [k for k in os.environ if k not in target]:\n        del os.environ[k]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...with no planted GIT_* variable"
+    ]
+  },
+  {
+    "name": "isolated() never restores os.environ",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        finally:\n            _replace_environ(saved)\n",
+        "        finally:\n            pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ on leaving isolated() os.environ is restored EXACTLY"
+    ]
+  },
+  {
+    "name": "isolated() restores only on a normal exit",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        try:\n            yield inner\n        finally:\n            _replace_environ(saved)\n",
+        "        yield inner\n        _replace_environ(saved)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ an exception inside isolated() still restores os.environ exactly"
+    ]
+  },
+  {
+    "name": "isolated() keeps the caller's HOME (r1 XM2)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "    home = None if \"HOME\" in extra else tempfile.mkdtemp(prefix=\"fixture-home-\")",
+        "    home = None"
+      ]
+    ],
+    "expect": [
+      "...with HOME a fresh EMPTY directory, not the caller's (r1 XM2)"
+    ]
+  },
+  {
+    "name": "isolated() drops the interpreter settings a self-test's Python children need",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        inner = {**{k: saved[k] for k in PROCESS_PASSED if k in saved},",
+        "        inner = {**{},"
+      ]
+    ],
+    "expect": [
+      "...and the interpreter's own settings kept (PYTHONDONTWRITEBYTECODE)"
     ]
   }
 ]

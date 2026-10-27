@@ -17892,17 +17892,17 @@ mutants each killed by its named world, 72 cases, 12 mutations. The live falsifi
 hardening it for every hook is backlog #379.
 
 ## 2026-10-27
-The self-tests that build a throwaway git repository can no longer write into a real one. On master, when a variable
-pointing git at another repository was set (as a git hook sets it), four of them committed into that repository; now
-all of them work only in their own temporary folder, and a new check refuses any new test that builds a repository
-without the same protection.
+The self-tests that build a throwaway git repository can no longer write into a real one, nor run commands
+from the caller's git settings. On master, when git was pointed at another repository (as a git hook does),
+five of them changed that repository, and settings from the caller's configuration ran hundreds of times
+inside green test runs. Now every such test runs in a cleaned environment for its whole run, and a new check
+refuses any test that builds a repository without it.
 <!--tech-->
-Backlog #373, branch `fixture-git-isolation`. New `scripts/fixture_git.py`: `env(**extra)`, built at call time from an
-allow-list (no `GIT_*`), with `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0` (14 cases, 6
-mutations). Migrated eight fixtures — the row's five plus `begin-plan.py`, `check-merge-ready.py`, `gen-work-lines.py`,
-which the guard found. New `scripts/check-fixture-git-isolation.py` in CI (28 cases, 17 mutations): every fixture git
-launch in a repository-building file passes `env=` a call of `fixture_git.env`, or the file is EXEMPT with a reason.
-Falsifier run with `GIT_DIR` exported to a victim under `mktemp -d`: on master four self-tests changed it
-(`check-reference-namespace`, `page_chrome`, `begin-plan`, `check-merge-ready` — the last also wrote `diff.external=true`
-into its config); on the branch all eight leave it byte-identical. Five still go red under `GIT_DIR` because the
-production readers they test inherit it — a read, not a write, left as is.
+Backlog #373, branch `fixture-git-isolation` (PR #420), redesigned in round 1. `scripts/fixture_git.py`:
+`isolated()` swaps `os.environ` in place — allow-list, no `GIT_*`, host config off, `HOME` an empty directory —
+and restores it exactly on every path. Extras come from an allow-list (42 cases, 12 mutations). Fifteen
+self-test entries are `with fixture_git.isolated(): return _self_test_body()`, and EXEMPT is empty.
+`scripts/check-fixture-git-isolation.py` in CI checks that closed shape, and its self-test executes every round-1
+bypass both ways (70 cases, 36 mutations). The widened falsifier ran 9 variable families, with hook and
+fsmonitor markers, over 29 git-running self-tests. On master, 4–5 suites changed a victim repository and up to
+469 caller-config commands ran in 8 suites. On the branch: 0 and 0 in every family.

@@ -1,146 +1,393 @@
 [
   {
-    "name": "a positional \"init\" is no longer a repository build",
+    "name": "a git argv holding init or clone is not a repository build",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            if any(_const(a) == \"init\" for a in n.args):\n",
-        "            if False:\n"
+        "        if _git_argv(n) and any(_const(e) in BUILD_VERBS for e in n.elts):\n",
+        "        if False:\n"
       ]
     ],
     "expect": [
-      "⭐ a helper lambda called with \"init\" is checked through the git call it makes"
+      "`git -C <tmp> init` builds a repository"
     ]
   },
   {
-    "name": "an argv literal holding git and init is no longer a repository build",
+    "name": "a shell git init handed to a launcher is not a repository build",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "                    if \"git\" in vals and \"init\" in vals:",
-        "                    if False:"
+        "if _launches(n, aliases) and n.args and any(SHELL_BUILD.search(s) for s in _strings(n.args[0])):",
+        "if False:"
       ]
     ],
     "expect": [
-      "`git -C <tmp> init` is a repository build too"
+      "a shell string to os.system builds one"
     ]
   },
   {
-    "name": "the iterated [\"init\", \"-q\"] form is no longer a repository build",
+    "name": "a call with \"init\" to a git wrapper is not a repository build",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            if isinstance(second, str) and second.startswith(\"-\"):",
-        "            if False:"
+        "                    and any(_const(a) in BUILD_VERBS for a in n.args):",
+        "                    and False:"
       ]
     ],
     "expect": [
-      "⭐ the iterated `[\"init\", \"-q\"]` form reaches a `test`-named module-level helper"
+      "a call with \"init\" to a lambda WRAPPER builds one"
     ]
   },
   {
-    "name": "any tuple starting with \"init\" is a repository build",
+    "name": "any Name call with a positional \"init\" is a repository build (r1 Xm5/Cm2)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        " and second.startswith(\"-\"):",
+        "            elif isinstance(n.func, ast.Name) and n.func.id in wrappers \\",
+        "            elif isinstance(n.func, ast.Name) \\"
+      ]
+    ],
+    "expect": [
+      "...nor a plain call `count(\"init\")` to a function that is not a git wrapper"
+    ]
+  },
+  {
+    "name": "the iterated [\"init\", \"-q\"] form is not a repository build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        elif wrappers and isinstance(n, (ast.List, ast.Tuple)) and len(n.elts) >= 2 \\",
+        "        elif False \\"
+      ]
+    ],
+    "expect": [
+      "an iterated `[\"init\", \"-q\"]` handed to a wrapper builds one"
+    ]
+  },
+  {
+    "name": "any literal starting with \"init\" in a wrapper file is a repository build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        " and str(_const(n.elts[1])).startswith(\"-\"):",
         ":"
       ]
     ],
     "expect": [
-      "a tuple that merely STARTS with \"init\" (a docs table row) is not a repository build"
+      "...even in a file that HAS a git wrapper (the iterated form needs a FLAG second)"
     ]
   },
   {
-    "name": "any module's .env() counts as the helper",
+    "name": "a git named by a variable is not git",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "if isinstance(f, ast.Attribute) and f.attr == \"env\" and isinstance(f.value, ast.Name) and f.value.id in mods:",
-        "if isinstance(f, ast.Attribute) and f.attr == \"env\":"
+        "        return \"git\" in n.id.lower()",
+        "        return False"
       ]
     ],
     "expect": [
-      "an `env()` of some OTHER module is not the helper"
+      "a git named by a variable (`[GIT, \"init\"]`) builds one"
     ]
   },
   {
-    "name": "any env= at all is accepted, a precomputed name included",
+    "name": "which(\"git\") is not git",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "        elif not _calls_helper(env, mods, funcs):",
+        "        return name == \"which\" and bool(n.args) and _const(n.args[0]) == \"git\"",
+        "        return False"
+      ]
+    ],
+    "expect": [
+      "`which(\"git\")` as argv[0] builds one"
+    ]
+  },
+  {
+    "name": "an aliased launcher is not a launcher",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    return names\n\n\ndef _launches",
+        "    return set()\n\n\ndef _launches"
+      ]
+    ],
+    "expect": [
+      "a shell string handed to an ALIASED launcher builds one"
+    ]
+  },
+  {
+    "name": "an entry passes if a block appears anywhere in its body (the decoy)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if len(body) == 1 and isinstance(body[0], ast.With) and any(_isolates(i, mods, funcs) for i in body[0].items):\n        return body[0]\n",
+        "    if any(isinstance(b, ast.With) and any(_isolates(i, mods, funcs) for i in b.items) for b in body):\n        return next(b for b in body if isinstance(b, ast.With))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a DECOY block beside the real suite is refused, and the suite really writes the victim",
+      "a statement BEFORE the block is refused (it runs unisolated)"
+    ]
+  },
+  {
+    "name": "an isolated() of any module counts",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        return f.attr == \"isolated\" and isinstance(f.value, ast.Name) and f.value.id in mods",
+        "        return f.attr == \"isolated\""
+      ]
+    ],
+    "expect": [
+      "an `isolated()` of some OTHER module is not the helper"
+    ]
+  },
+  {
+    "name": "any with-statement counts as isolation",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    c = item.context_expr\n    if not isinstance(c, ast.Call):\n        return False\n",
+        "    c = item.context_expr\n    if True:\n        return True\n"
+      ]
+    ],
+    "expect": [
+      "a `with` that is not isolated() is refused"
+    ]
+  },
+  {
+    "name": "`from fixture_git import isolated` is not followed",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            funcs |= {a.asname or a.name for a in n.names if a.name == \"isolated\"}",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "...with `from fixture_git import isolated`"
+    ]
+  },
+  {
+    "name": "an entry's docstring breaks the shape",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if body and isinstance(body[0], ast.Expr) and isinstance(_const(body[0].value), str):\n        body = body[1:]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...with a docstring first"
+    ]
+  },
+  {
+    "name": "the entry's lazy `import fixture_git` breaks the shape",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    body = [s for s in body if not _is_helper_import(s)]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "the canonical entry is accepted"
+    ]
+  },
+  {
+    "name": "an entry named `selftest` is not an entry",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "and n.name.replace(\"_\", \"\").lower() == \"selftest\"]",
+        "and n.name in (\"self_test\", \"_self_test\")]"
+      ]
+    ],
+    "expect": [
+      "...and accepted when it isolates"
+    ]
+  },
+  {
+    "name": "a builder with no self-test entry passes",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if not entries:\n        msgs.append(",
+        "    if False:\n        msgs.append("
+      ]
+    ],
+    "expect": [
+      "a builder with NO self-test entry is refused"
+    ]
+  },
+  {
+    "name": "a repository built at module level passes",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if enclosing_fn(s) is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a repository built at MODULE level is refused even with an isolated entry"
+    ]
+  },
+  {
+    "name": "the isolated suite reached outside the block passes",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if isinstance(m, ast.Name) and m.id == name and id(m) not in inside and id(m) not in own:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ the isolated suite ALSO reached outside the block is refused, and that way in writes the victim"
+    ]
+  },
+  {
+    "name": "nothing at import is examined for a copy of os.environ",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    visit(tree.body)\n    return out\n",
+        "    return out\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a module-level dict(os.environ) inside isolated() is refused, and executed it really writes the victim"
+    ]
+  },
+  {
+    "name": "default arguments are not examined",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "                out.extend(d for d in s.args.defaults + s.args.kw_defaults if d is not None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a default argument os.environ.copy() inside isolated() is refused, and executed it really writes the victim"
+    ]
+  },
+  {
+    "name": "module-level if blocks are not examined",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "                visit(s.body)\n                visit(s.orelse)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a capture inside `if __name__` at module level is refused"
+    ]
+  },
+  {
+    "name": "a module-level call of a function that copies os.environ is not examined",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    env_readers = {name for name, fn in module_fns.items() if _reads_environ(fn, env_names)}",
+        "    env_readers = set()"
+      ]
+    ],
+    "expect": [
+      "⭐ a module-level call of a function that copies os.environ inside isolated() is refused, and executed it really writes the victim"
+    ]
+  },
+  {
+    "name": "os.environ.copy() is not a copy",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if isinstance(f, ast.Attribute) and f.attr == \"copy\" and _is_environ(f.value, names):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a default argument os.environ.copy() inside isolated() is refused, and executed it really writes the victim"
+    ]
+  },
+  {
+    "name": "dict(os.environ) is not a copy",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if isinstance(f, ast.Name) and f.id == \"dict\" and n.args and _reads_environ(n.args[0], names):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a module-level dict(os.environ) inside isolated() is refused, and executed it really writes the victim"
+    ]
+  },
+  {
+    "name": "{**os.environ} is not a copy",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        elif isinstance(n, ast.Dict) and any(k is None and _reads_environ(v, names) for k, v in zip(n.keys, n.values)):",
         "        elif False:"
       ]
     ],
     "expect": [
-      "an env= that is a NAME computed up front is refused (PR #415 r3)",
-      "an env= that FILTERS os.environ is refused (PR #415 r2)"
+      "`{**os.environ}` at module level is refused"
     ]
   },
   {
-    "name": "a builder with no checkable git call passes",
+    "name": "a comprehension over os.environ is not a copy",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    if not seen:\n        return 1, [",
-        "    if not seen:\n        return 0, ["
+        "        elif isinstance(n, (ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp)) and \\",
+        "        elif False and \\"
       ]
     ],
     "expect": [
-      "a repository build whose git this guard cannot see is refused, not passed"
+      "`from os import environ` copied at module level is refused"
     ]
   },
   {
-    "name": "no function is fixture scope by its test-word name",
+    "name": "os.environ | {...} is not a copy",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "TEST_WORD = re.compile(r\"(?:^|_)test(?:_|$)\")",
-        "TEST_WORD = re.compile(r\"(?!x)x\")"
+        "        elif isinstance(n, ast.BinOp) and isinstance(n.op, ast.BitOr) and \\",
+        "        elif False and \\"
       ]
     ],
     "expect": [
-      "...which passes once it takes the helper's env"
+      "`os.environ | {...}` at module level is refused"
     ]
   },
   {
-    "name": "every function is fixture scope, production included",
+    "name": "`from os import environ` is not os.environ",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            and (n.name in SELF_TEST_NAMES or TEST_WORD.search(n.name))]",
-        "            ]"
+        "isinstance(n, ast.ImportFrom) and n.module == \"os\"\n            for a in n.names if a.name == \"environ\"}",
+        "isinstance(n, ast.ImportFrom) and n.module == \"nope\"\n            for a in n.names if a.name == \"environ\"}"
       ]
     ],
     "expect": [
-      "a PRODUCTION git call outside the test scope is not demanded an env"
+      "`from os import environ` copied at module level is refused"
     ]
   },
   {
-    "name": "a git argv handed to anything is a git call",
+    "name": "any module-level READ of os.environ counts as a copy",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    return (f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None) in LAUNCHERS",
-        "    return True"
+        "    return False\n\n\ndef _reads_environ",
+        "    return _reads_environ(expr, names)\n\n\ndef _reads_environ"
       ]
     ],
     "expect": [
-      "a git argv handed to a READER (not a process launcher) is not itself a git call"
-    ]
-  },
-  {
-    "name": "Popen is not a launcher",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "LAUNCHERS = frozenset({\"run\", \"Popen\", ",
-        "LAUNCHERS = frozenset({\"run\", "
-      ]
-    ],
-    "expect": [
-      "...but the same argv handed to `Popen` is"
+      "a module-level os.environ READ that copies nothing is allowed"
     ]
   },
   {
@@ -192,7 +439,7 @@
       ]
     ],
     "expect": [
-      "⭐ main() over a world with one unisolated fixture, in a SUBDIRECTORY, exits 1 naming it"
+      "⭐ main() over a world with one unisolated builder, in a SUBDIRECTORY, exits 1 naming it"
     ]
   },
   {
@@ -218,7 +465,7 @@
       ]
     ],
     "expect": [
-      "⭐ main() over a world with one unisolated fixture, in a SUBDIRECTORY, exits 1 naming it",
+      "⭐ main() over a world with one unisolated builder, in a SUBDIRECTORY, exits 1 naming it",
       "main() over a world with no scripts is CANNOT RUN, never a pass",
       "a file that does not parse makes the whole run CANNOT RUN"
     ]

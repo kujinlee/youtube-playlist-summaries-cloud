@@ -983,6 +983,13 @@ def cmd_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     # Rebound by the r1 Codex 3 cases to inject a raising recorder / branch lookup; declared
     # first because Python refuses a `global` after the name's first use.
     global _load_plan_progress

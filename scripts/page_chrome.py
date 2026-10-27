@@ -1438,6 +1438,13 @@ def _scripts(page: str) -> str:
 
 # ---------------------------------------------------------------- self-test
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def _ordered_in(hay: str, *needles: str) -> bool:
