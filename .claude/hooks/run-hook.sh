@@ -30,6 +30,8 @@
 #      whose path ends in one the hook can read a sibling's state (backlog #375; not this file).
 #   L4 a stray `.git` between the cwd and the checkout root (a fixture repo, a vendored clone) is the
 #      checkout — NOT RUN when it has no hooks, the same as the old relative form at that root.
+#      In THIS repo: `.remember/.git` is a nested repo inside the main checkout, so a session whose cwd
+#      is under `.remember/` runs every hook NOT RUN, the push gate included (the old form: 127 there).
 #   L5 NOT RUN exits 1: visible, not blocking.
 #   L6 the hooks' internal `git` calls still follow the cwd and the GIT_* environment.
 #   L7 Windows / PowerShell are not considered.

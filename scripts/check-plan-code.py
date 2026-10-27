@@ -1875,7 +1875,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
-    "scripts/check-run-hook.py": 9,
+    "scripts/check-run-hook.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
     # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
@@ -6062,7 +6062,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2230)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2233)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

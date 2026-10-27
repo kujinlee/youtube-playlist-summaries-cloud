@@ -23,8 +23,12 @@ Python rules of this file have their own manifest, `scripts/mutations/check-run-
 ENV_ALLOW plus `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1` (backlog #373: a fixture that
 inherited `GIT_DIR` once wrote into the live repository).
 
-WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code or hook file differs from the
-review's table, or a mutant whose named world stays green.
+⟳ r1: the probe also prints known bytes on stdout and stderr and two cases assert them, with the exit
+code, EXACTLY (the push gate denies through stdout); and W10 proves its own precondition — its cwd has
+no `.git` ancestor — or is NOT RUN, a failure, instead of blaming the launcher for the host's TMPDIR.
+
+WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code, hook file or output streams differ
+from the review's table, or a mutant whose named world stays green.
 
 ⚠ BOUNDS. It runs the launcher as `/bin/sh -c '<the registered command>'` with `CLAUDE_PROJECT_DIR` set,
 which is how Claude Code 2.1.309 spawns a hook (the review's §0, read from the binary) — not inside the
@@ -33,7 +37,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 63 cases
+    python3 scripts/check-run-hook.py --self-test  # 72 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -58,11 +62,18 @@ COMMAND = 'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh'
 ENV_ALLOW = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "USER")
 PROBE_RC = 7  # distinct from the launcher's own 1 (NOT RUN) and 2 (refused), and from bash's 127
 PAYLOAD = "hook-payload-364\n"
+PROBE_STDOUT = "probe-stdout-364\n"
+PROBE_STDERR = "probe-stderr-364\n"
+# ⟳ r1 (Claude M1): the probe also writes KNOWN bytes to stdout and stderr. The push gate DENIES by
+# printing JSON on stdout and exiting 0, so a launcher that lost stdout would let every push through
+# while each world above still passed on its exit code and file. PROBE_EXIT sets its exit code.
 PROBE = """#!/usr/bin/env bash
 printf '%s' "${BASH_SOURCE[0]}" > "$PROBE_OUT.src"
 printf '%s' "$#" > "$PROBE_OUT.argc"
 cat > "$PROBE_OUT.stdin"
-exit 7
+printf 'probe-stdout-364\\n'
+printf 'probe-stderr-364\\n' >&2
+exit "${PROBE_EXIT:-7}"
 """
 SEG = "d" * 100  # one path segment of the long-path world
 
@@ -118,6 +129,7 @@ class Result:
     argc: str | None
     stdin: str | None
     err: str
+    out: str = ""
 
 
 def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str], out: Path) -> Result:
@@ -145,17 +157,47 @@ def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str
     def read(suffix: str) -> str | None:
         p = Path(str(out) + suffix)
         return p.read_text() if p.exists() else None
-    return Result(r.returncode, read(".src"), read(".argc"), read(".stdin"), r.stderr)
+    return Result(r.returncode, read(".src"), read(".argc"), read(".stdin"), r.stderr, r.stdout)
 
 
 @dataclass
 class World:
     x: Path      # the scratch root every world lives under
     main: Path   # the project dir: CLAUDE_PROJECT_DIR, and where the launcher under test lives
-    paths: dict[str, Path] = field(default_factory=dict)
+    paths: dict[str, Path | None] = field(default_factory=dict)
+    cleanup: list[Path] = field(default_factory=list)  # built OUTSIDE `x`, so removed by discard()
 
     def hook(self, root: Path, name: str = "probe.sh") -> str:
         return str(root / ".claude/hooks" / name)
+
+
+def has_git_ancestor(path: Path) -> bool:
+    """True when `path` or any ancestor of it holds a `.git` — then it is INSIDE some checkout."""
+    p = path.resolve()
+    return any((d / ".git").exists() for d in (p, *p.parents))
+
+
+def no_git_base(candidates: list[Path]) -> Path | None:
+    """The first existing candidate with no `.git` in itself or any ancestor, or None.
+
+    ⟳ r1 (Codex P2, Claude m5): W10 ("outside any checkout") was built under the suite's own
+    TemporaryDirectory, which honours TMPDIR — with TMPDIR inside a repository the launcher correctly
+    picked THAT checkout and the suite blamed the launcher. The world now establishes its own
+    precondition, and with no qualifying base the case is NOT RUN, which is a failure."""
+    for c in candidates:
+        if c.is_dir() and not has_git_ancestor(c):
+            return c.resolve()
+    return None
+
+
+def outside_candidates() -> list[Path]:
+    return [Path(tempfile.gettempdir()), Path("/tmp"), Path("/var/tmp")]
+
+
+def discard(w: World) -> None:
+    import shutil
+    for d in w.cleanup:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def build(x: Path, launcher: Path) -> World:
@@ -195,8 +237,10 @@ def build(x: Path, launcher: Path) -> World:
     p["nohooks"] = main / "nohooks"                         # W9: a nested repo with NO hooks
     (p["nohooks"] / "sub").mkdir(parents=True)
     git(main, "init", "-q", str(p["nohooks"]))
-    p["outside"] = x / "outside"                            # W10: no checkout at all
-    p["outside"].mkdir()
+    base = no_git_base(outside_candidates())                # W10: no checkout at all — verified
+    p["outside"] = Path(tempfile.mkdtemp(prefix="run-hook-outside-", dir=base)).resolve() if base else None
+    if p["outside"] is not None:
+        w.cleanup.append(p["outside"])
     p["wtlink"] = x / "wtlink"                              # W11: a symlinked cwd
     p["wtlink"].symlink_to(p["wt"])
     p["mainlink"] = main / "link"                           # W11: a symlink INSIDE main, into a worktree
@@ -260,7 +304,7 @@ def cases(w: World) -> list[Case]:
         Case("W8 submodule, at its root: the SUBMODULE's hook", p["vend"], PROBE_RC, ran(p["vend"])),
         Case("W8 submodule, a subdirectory: the SUBMODULE's hook", p["vend"] / "scripts", PROBE_RC, ran(p["vend"])),
         Case("W9 nested repo with no hooks: NOT RUN, and main's copy is NOT run", p["nohooks"] / "sub", 1, NOT_RAN),
-        Case("W10 cwd outside any checkout: the project dir's hook", p["outside"], PROBE_RC, ran(m)),
+        Case(W10, p["outside"], PROBE_RC, ran(m)),
         Case("W11 symlinked cwd into a worktree: the PHYSICAL checkout's hook", p["wtlink"] / "scripts", PROBE_RC,
              ran(p["wt"])),
         Case("W11 symlink inside main pointing into a worktree: the PHYSICAL checkout's hook", p["mainlink"],
@@ -291,7 +335,10 @@ def verdict(got: tuple, want: tuple) -> bool:
     return got == want
 
 
+W10 = "W10 cwd outside any checkout: the project dir's hook"
 IO_CASES = ("stdin reaches the hook, byte for byte", "the hook is passed NO argument (its name is not forwarded)")
+STREAM_CASES = ("exit 0 with JSON-shaped stdout (the push gate's DENY): stdout, stderr and code arrive exactly",
+                "exit 2 (a blocking hook): stdout, stderr and code arrive exactly")
 MSG_CASE = "NOT RUN names the hook and says no other checkout's copy is used"
 
 
@@ -303,12 +350,20 @@ def run_worlds(w: World, markers: Path, only: frozenset[str] | None = None) -> l
         if only is not None and c.name not in only:
             continue
         project = str(w.main) if c.project == "main" else c.project
+        if c.cwd is None:
+            out.append((c.name, (f"NOT RUN — no base without a .git ancestor among "
+                                 f"{[str(b) for b in outside_candidates()]}",), (c.want_rc, c.want_ran)))
+            continue
         r = launch(c.cwd, project, c.args, c.extra, markers / f"m{i}")
         out.append((c.name, (r.rc, r.ran), (c.want_rc, c.want_ran)))
     if only is None or not only.isdisjoint(IO_CASES):
         r = launch(w.main / "scripts", str(w.main), ["probe.sh"], {}, markers / "io")
         out.append((IO_CASES[0], (r.rc, r.stdin), (PROBE_RC, PAYLOAD)))
         out.append((IO_CASES[1], (r.rc, r.argc), (PROBE_RC, "0")))
+    for name, code in zip(STREAM_CASES, ("0", "2")):
+        if only is None or name in only:
+            r = launch(w.main / "scripts", str(w.main), ["probe.sh"], {"PROBE_EXIT": code}, markers / "streams")
+            out.append((name, (r.rc, r.out, r.err), (int(code), PROBE_STDOUT, PROBE_STDERR)))
     if only is None or MSG_CASE in only:
         r = launch(w.paths["wtmiss"] / "scripts", str(w.main), ["probe.sh"], {}, markers / "msg")
         out.append((MSG_CASE, ("NOT RUN probe.sh" in r.err, "no other checkout's copy is used" in r.err),
@@ -363,7 +418,7 @@ MUTANTS = [
            ("W7 GIT_DIR and GIT_WORK_TREE naming main do not steer it",)),
     Mutant("m10 the no-.git fallback is removed",
            'if [ -z "$root" ]; then root=${CLAUDE_PROJECT_DIR:-}; fi\n', "",
-           ("W10 cwd outside any checkout: the project dir's hook",)),
+           (W10,)),
     Mutant("m11 the empty-name refusal is removed",
            "  '') echo \"run-hook: refused an empty hook name\" >&2; exit 2;;\n", "",
            ("refused name `` (empty; exit 2, nothing runs)",)),
@@ -379,6 +434,12 @@ MUTANTS = [
     Mutant("m15 stdin is not forwarded",
            'exec bash "$hook"', 'exec bash "$hook" </dev/null',
            ("stdin reaches the hook, byte for byte",)),
+    Mutant("m16 the hook's stdout is dropped (r1 M1: every push gate DENY is lost)",
+           'exec bash "$hook"', 'exec bash "$hook" >/dev/null', (STREAM_CASES[0],)),
+    Mutant("m17 the hook's stderr is dropped", 'exec bash "$hook"', 'exec bash "$hook" 2>/dev/null',
+           (STREAM_CASES[1],)),
+    Mutant("m18 the hook's stderr is merged into stdout", 'exec bash "$hook"', 'exec bash "$hook" 2>&1',
+           (STREAM_CASES[0],)),
 ]
 
 
@@ -396,7 +457,7 @@ def red_names(results: list[tuple[str, tuple, tuple]]) -> set[str]:
 def kill_report(w: World, markers: Path, real: str, mutants: list[Mutant]) -> list[tuple[str, object, object]]:
     """One case per mutant: it must be bound AND its named worlds must go red. Restores the launcher."""
     target = w.main / LAUNCHER_REL
-    known = {c.name for c in cases(w)} | set(IO_CASES) | {MSG_CASE}
+    known = {c.name for c in cases(w)} | set(IO_CASES) | set(STREAM_CASES) | {MSG_CASE}
     out = []
     try:
         for m in mutants:
@@ -428,7 +489,10 @@ def check(launcher: Path, scratch: Path) -> tuple[int, list[tuple[str, tuple, tu
         return 2, [("CANNOT RUN", (str(exc),), ("worlds built",))]
     markers = scratch / "markers"
     markers.mkdir()
-    results = run_worlds(w, markers)
+    try:
+        results = run_worlds(w, markers)
+    finally:
+        discard(w)
     return (1 if red_names(results) else 0), results
 
 
@@ -468,32 +532,10 @@ def self_test(launcher: Path = REPO_ROOT / LAUNCHER_REL) -> int:
         except (CannotRun, OSError) as exc:
             print(f"CANNOT RUN — the worlds could not be built: {exc}. Treat this as NOT RUN.", file=sys.stderr)
             return 2
-        markers = x / "markers"
-        markers.mkdir()
-        results = run_worlds(w, markers)
-        rows.extend(results)
-        real = (w.main / LAUNCHER_REL).read_text()
-        if red_names(results):
-            rows.append(("the control is green, so the mutants mean something", "RED", "green"))
-        else:
-            only = frozenset({cases(w)[0].name})
-            rows.append(("run_worlds(only=…) runs the named world and no other",
-                         [n for n, _, _ in run_worlds(w, markers, only)], sorted(only)))
-            # A no-op edit must SURVIVE: the kill check can tell a mutant that changes nothing.
-            target = w.main / LAUNCHER_REL
-            target.write_text(real + "# a no-op edit\n")
-            try:
-                noop_red = red_names(run_worlds(w, markers))
-            finally:
-                target.write_text(real)
-            rows.append(("a no-op edit turns no world red (the kill check is not vacuous)", sorted(noop_red), []))
-            named = Mutant("no-op (a comment)", 'exec bash "$hook"', 'exec bash "$hook"  # same', tuple(only))
-            rows.append(("a mutant that changes nothing is reported SURVIVED, not killed",
-                         kill_report(w, markers, real, [named])[0][1].startswith("SURVIVED"), True))
-            rows.extend(kill_report(w, markers, real, MUTANTS))
-        m1 = x / "m1.sh"
-        m1.write_text(apply_mutant(launcher.read_text(), MUTANTS[0]) or "")
-        rows.extend(_main_cases(launcher, m1, x / "no-such-launcher.sh"))
+        try:
+            _suite_over_world(rows, w, x, launcher)
+        finally:
+            discard(w)
 
     failures = 0
     print("check-run-hook --self-test")
@@ -505,7 +547,49 @@ def self_test(launcher: Path = REPO_ROOT / LAUNCHER_REL) -> int:
     return 1 if failures else 0
 
 
-def _main_cases(real: Path, mutant: Path, missing: Path) -> list[tuple[str, object, object]]:
+def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
+    """Every world, the stream and precondition cases, the mutants and main(), appended to `rows`."""
+    markers = x / "markers"
+    markers.mkdir()
+    results = run_worlds(w, markers)
+    rows.extend(results)
+    real = (w.main / LAUNCHER_REL).read_text()
+    if red_names(results):
+        rows.append(("the control is green, so the mutants mean something", "RED", "green"))
+    else:
+        only = frozenset({cases(w)[0].name})
+        rows.append(("run_worlds(only=…) runs the named world and no other",
+                     [n for n, _, _ in run_worlds(w, markers, only)], sorted(only)))
+        # A no-op edit must SURVIVE: the kill check can tell a mutant that changes nothing.
+        target = w.main / LAUNCHER_REL
+        target.write_text(real + "# a no-op edit\n")
+        try:
+            noop_red = red_names(run_worlds(w, markers))
+        finally:
+            target.write_text(real)
+        rows.append(("a no-op edit turns no world red (the kill check is not vacuous)", sorted(noop_red), []))
+        named = Mutant("no-op (a comment)", 'exec bash "$hook"', 'exec bash "$hook"  # same', tuple(only))
+        rows.append(("a mutant that changes nothing is reported SURVIVED, not killed",
+                     kill_report(w, markers, real, [named])[0][1].startswith("SURVIVED"), True))
+        rows.extend(kill_report(w, markers, real, MUTANTS))
+    # W10's precondition (r1 Codex P2 / Claude m5): the world proves its cwd is outside every checkout.
+    inside = w.main / "scripts"
+    rows.append(("W10's base: a directory inside a checkout does not qualify", no_git_base([inside]), None))
+    rows.append(("W10's base: the first candidate with no .git ancestor is chosen",
+                 no_git_base([inside, Path("/nonexistent-364"), w.cleanup[0].parent] if w.cleanup else [inside]),
+                 w.cleanup[0].parent if w.cleanup else "a qualifying base"))
+    unmeasured = World(w.x, w.main, {**w.paths, "outside": None})
+    got = run_worlds(unmeasured, markers, frozenset({W10}))[0]
+    rows.append(("W10 with no qualifying base is NOT RUN, and that is a FAILURE, not a pass",
+                 (str(got[1][0]).startswith("NOT RUN"), verdict(got[1], got[2])), (True, False)))
+    # A directory built HERE, not a parameter: check-main-drivable credits a main() call over a world
+    # only when it can see the world being constructed in the calling scope.
+    m1 = Path(tempfile.mkdtemp(dir=x)) / "m1.sh"
+    m1.write_text(apply_mutant(launcher.read_text(), MUTANTS[0]) or "")
+    rows.extend(_main_cases(launcher, m1, x / "no-such-launcher.sh", inside))
+
+
+def _main_cases(real: Path, mutant: Path, missing: Path, checkout: Path) -> list[tuple[str, object, object]]:
     """`main()` over three launchers, stdout captured. A small function on purpose: check-plan-code's
     `_budget_wiring` records why a `main()` call inside a long suite is expensive to analyse."""
     import io
@@ -519,11 +603,23 @@ def _main_cases(real: Path, mutant: Path, missing: Path) -> list[tuple[str, obje
     rc_real, out_real = captured(lambda: main([], launcher=real))
     rc_m1, out_m1 = captured(lambda: main([], launcher=mutant))
     rc_none, out_none = captured(lambda: main([], launcher=missing))
+    saved, cached = os.environ.get("TMPDIR"), tempfile.tempdir
+    os.environ["TMPDIR"], tempfile.tempdir = str(checkout), None   # every world now sits INSIDE a checkout
+    try:
+        rc_in, out_in = captured(lambda: main([], launcher=real))
+    finally:
+        if saved is None:
+            os.environ.pop("TMPDIR", None)
+        else:
+            os.environ["TMPDIR"] = saved
+        tempfile.tempdir = cached
     return [
         ("main() over the real launcher exits 0 and says so", (rc_real, "every world" in out_real), (0, True)),
         ("main() over the m1 mutant exits 1 and NAMES a red world",
          (rc_m1, "[FAIL] W4 pre-launcher worktree outside main" in out_m1), (1, True)),
         ("main() over a missing launcher exits 2 (CANNOT RUN)", (rc_none, "CANNOT RUN" in out_none), (2, True)),
+        ("⭐ with TMPDIR INSIDE a checkout, main() still measures W10 and exits 0 (r1 Codex P2)",
+         (rc_in, "every world" in out_in), (0, True)),
     ]
 
 

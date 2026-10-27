@@ -17871,6 +17871,6 @@ Backlog #364, candidate (a). All 14 commands in `.claude/settings.json` become
 `bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh <name>.sh` (nothing else in the file changes). New
 `.claude/hooks/run-hook.sh`: nearest ancestor of `pwd -P` holding `.git`, `$CLAUDE_PROJECT_DIR` only when none does, NOT
 RUN exit 1 when that checkout lacks the hook; refuses an empty name, `/`, a leading `.`, and any argument count but one.
-`check-hook-commands.py` pins the shape (32 cases, 20 mutations). New `check-run-hook.py --self-test` in CI: 31 real-git
-worlds asserting exit code and the file that ran, 16 launcher mutants each killed by its named world, 63 cases, 9
-mutations. ⚠ The live falsifier (push to master refused from `scripts/`) is UNVERIFIED.
+`check-hook-commands.py` pins the shape (45 cases, 34 mutations). New `check-run-hook.py --self-test` in CI: 31 real-git
+worlds asserting exit code and the file that ran, the hook's stdout/stderr/exit code asserted exactly, 19 launcher
+mutants each killed by its named world, 72 cases, 12 mutations. ⚠ The live falsifier (push to master refused from `scripts/`) is UNVERIFIED.
