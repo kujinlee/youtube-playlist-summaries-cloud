@@ -142,11 +142,13 @@ areas: (comprehensibility)
 state: built
 for: Lets anyone find what the system does, what it omits on purpose, and the fragments that define each.
 anchors: feature-map
+areas: (comprehensibility/feature-map)
 
 ### explainer-pages
 state: built
 for: Lets a person have a subject they choose explained in a page they can ask questions inside.
 anchors: explanation-on-demand
+areas: (comprehensibility/explainers)
 
 ### review-loop
 state: built

@@ -17893,9 +17893,11 @@ hardening it for every hook is backlog #379.
 
 ## 2026-10-27
 A backlog item can now carry more than one tag, written as `(tooling) (comprehensibility)`, and it
-shows up under each one, both in the backlog page's tag filter and on the features page. Nothing
-on either page moved yet: every existing row still gets exactly the tags it had before, checked
-row by row against the old rule. Retagging the open rows comes next, as its own step.
+shows up under each one, both in the backlog page's tag filter and on the features page. That made
+it possible to show the comprehensibility suite's real state: the features page now lists 30 open
+items across its three suite features (status pages 10, the feature map 3, explainer pages 18),
+where it showed 16 before, because work tagged as tooling or process was invisible there. Four
+items that were filed under the suite but are not page work moved to process or tooling.
 <!--tech-->
 Backlog #381. ONE parser for the Bundle cell, `gen-backlog-page.cell_tags`, now read by all three
 readers: the backlog page (filter tags and chips), `gen-features-page.match_rows` (which node a
@@ -17909,3 +17911,12 @@ lists it in its drift box and `check-features` fails. Measured on the real backl
 0 differ from the old rule, 0 malformed, and the features page's 329 backlog links are identical
 to master's, node by node. Mutations: gen-backlog-page 5 → 15, gen-features-page 10 → 15,
 check-features 22 → 27 (plus 2 retargets); `EXPECTED_MUTATIONS` sum 2246 → 2266.
+
+The retag (second commit): the suite is everything under `(comprehensibility)`. `status-pages` keeps
+`(comprehensibility)`, `feature-map` claims `(comprehensibility/feature-map)` and `explainer-pages`
+claims `(comprehensibility/explainers)`, which it never had. 32 open rows changed: 18 gained a
+suite tag beside their own area, 10 suite rows were refined to a sub-area, and 4 moved out
+(backlog #39 and backlog #90 to `(process)`, backlog #100 and backlog #101 to `(tooling)`). Open
+by severity: status-pages 🟠3 🟡6 🟢1, feature-map 🟠1 🟡2, explainer-pages 🟠4 🟡9 🟢5. Touched
+rows had their old bare `#N` references qualified, 42 of them, because the namespace guard reads
+a touched line as new.
