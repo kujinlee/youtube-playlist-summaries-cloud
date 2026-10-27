@@ -140,11 +140,95 @@ jobs:
       #   3 x (120+10 + 150+10) + 2 x 15 + (180+10) = 870 + 30 + 190 = 1,090s = 18.2 min
       # inside this step's `timeout-minutes: 20` (1,200s) — the backstop over all of it, leaving
       # 110s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
-      # inside the job's 30. Exhausting any phase is a FAILURE that names THAT phase with
+      # inside the job's 30. ⟳ backlog #358 adds five bounded, optional cache steps, and the job budget is a sum of
+      # STEP CAPS per path (r3: an earlier sum used inner bounds and omitted steps; caps are what GitHub enforces):
+      #   key FAILED (no update reused): key 3 + install 20 (+ cache steps skip) + ~5.3 rest = 28.3 min
+      #   key OK: key 3 + restore 2 + seed 1 + install 13 + stage 1 + save 2 + ~5.3 rest = 27.3 min
+      #   index reused but no key (print-uris failed): key 3 + install 13 + ~5.3 = 21.3 min
+      # The install cap is 13 when its update is reused (its own bounds then total 700s = 11.7 min). ~5.3 is measured.
       # CANNOT RUN — never a skip, because the slide-crop tests need the binaries.
+      # ⛔ THE PACKAGES COME FROM A CACHE WHEN THEY CAN — backlog #358. Measured 2026-10-26: this step either
+      # finished in 16-19s or exceeded its 150s download bound on EVERY attempt (7+ runs that day). apt's own
+      # output showed a CRAWL, not a hang: each attempt fetched a few small packages from
+      # azure.archive.ubuntu.com's `amd64v3` pool and stalled on a large one (libcodec2, 9 MB), resuming there
+      # next attempt. The cause is outside this repo, so the fix removes the dependence rather than tuning the
+      # bound: `apt-get install --download-only` SKIPS a .deb already in /var/cache/apt/archives, so restoring
+      # last run's .debs there makes a hit a download of nothing (measured: 81 packages, `Need to get 0 B`).
+      # ⛔ apt ACCEPTS A CACHED .deb BY SIZE, NOT BY HASH (r1, both halves, executed in a container: a forged
+      # package of the right size was installed). So the restored files are checked HERE, before apt sees them:
+      # the key step writes a manifest of every file's name and SHA256 from THIS run's signed index
+      # (`-o Acquire::ForceHash=SHA256`), and only a restored file whose `sha256sum` matches its entry is copied
+      # in; anything else is left for apt to download. The KEY is a hash of that manifest, so a changed package
+      # set misses and is saved anew rather than being served stale.
+      # ⛔ AND NO CACHE WORK CAN SKIP OR FAIL THE INSTALL (r1, r2, r3): every cache step is a separate
+      # `continue-on-error` step with its own cap, and NONE of them runs inside the install step.
+      - name: Key the ffmpeg package cache (backlog #358)
+        id: ffkey
+        timeout-minutes: 3
+        continue-on-error: true
+        run: |
+          set +e
+          sudo timeout --kill-after=10 120 apt-get update -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0" > /tmp/ffkey-update.log 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::ffmpeg cache NOT used: apt-get update exited $rc; the install below runs uncached"
+            tail -n 20 /tmp/ffkey-update.log
+            exit 0
+          fi
+          echo "updated=yes" >> "$GITHUB_OUTPUT"      # the install reuses THIS index, so the manifest cannot drift from it
+          timeout 30 apt-get install -y --no-install-recommends --print-uris \
+            -o Acquire::ForceHash=SHA256 ffmpeg > /tmp/ffkey-uris.txt 2>/tmp/ffkey-uris.err
+          rc=$?
+          # `'URI' FILENAME SIZE SHA256:<hex>` -> `FILENAME <hex>`
+          grep "^'" /tmp/ffkey-uris.txt | awk '{h=$4; sub(/^SHA256:/,"",h); if ($4 ~ /^SHA256:/) print $2, h}' \
+            | sort > "$HOME/ffmpeg-manifest.txt"
+          listed=$(grep -c "^'" /tmp/ffkey-uris.txt)
+          kept=$(wc -l < "$HOME/ffmpeg-manifest.txt")
+          if [ "$rc" -ne 0 ] || [ "$listed" -eq 0 ] || [ "$kept" -ne "$listed" ]; then
+            echo "::warning::ffmpeg cache NOT used: --print-uris exited $rc, listed $listed file(s), $kept with a SHA256; the install below runs uncached"
+            cat /tmp/ffkey-uris.err
+            rm -f "$HOME/ffmpeg-manifest.txt"
+            exit 0
+          fi
+          echo "ffmpeg's package set: $kept file(s), each with its SHA256 from this run's signed index"
+          echo "key=ffmpeg-debs-$(sha256sum < "$HOME/ffmpeg-manifest.txt" | cut -c1-32)" >> "$GITHUB_OUTPUT"
+      - name: Restore the ffmpeg packages (backlog #358)
+        id: ffcache
+        if: steps.ffkey.outputs.key != ''
+        timeout-minutes: 2
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/ffmpeg-debs
+          key: ${{ steps.ffkey.outputs.key }}
+      # ⛔ r3: CACHE WORK IS NEVER INSIDE THE REQUIRED STEP — not even a subshell, because a STALLED command is not a
+      # failure exit and only the step cap can end it. This step seeds apt's cache, bounded and optional: a restored
+      # .deb reaches /var/cache/apt/archives ONLY if its SHA256 matches this run's signed index (the key step's
+      # manifest) — apt itself would accept any file of the right SIZE.
+      - name: Seed apt's cache from the verified packages (backlog #358)
+        if: steps.ffcache.outputs.cache-hit == 'true'
+        timeout-minutes: 1
+        continue-on-error: true
+        run: |
+          ok=0; bad=0
+          while read -r name want; do
+            f="$HOME/ffmpeg-debs/$name"
+            [ -f "$f" ] || continue
+            if [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$want" ]; then
+              sudo cp "$f" /var/cache/apt/archives/ && ok=$((ok+1))
+            else
+              bad=$((bad+1))
+            fi
+          done < "$HOME/ffmpeg-manifest.txt"
+          echo "ffmpeg cache: restored $ok package(s) verified against the signed index; $bad rejected"
+          [ "$bad" -eq 0 ] || echo "::warning::ffmpeg cache: $bad restored file(s) did not match the signed index and were NOT used"
+      # ⟳ r3: the cap is 13 min when this step REUSES the key step's index — its own bounds then total 700s = 11.7 min —
+      # and 20 otherwise (its full uncached sequence, 18.2 min), so every path's caps fit the job's 30.
       - name: Install ffmpeg (required by the slide-crop tests)
-        timeout-minutes: 20
+        timeout-minutes: ${{ steps.ffkey.outputs.updated == 'yes' && 13 || 20 }}
         env:
+          FFKEY_UPDATED: ${{ steps.ffkey.outputs.updated }}
           FFMPEG_ATTEMPTS: 3
           APT_UPDATE_LIMIT_S: 120
           APT_DOWNLOAD_LIMIT_S: 150
@@ -184,7 +268,7 @@ jobs:
             return 1
           }
           lock=(-o DPkg::Lock::Timeout="$DPKG_LOCK_WAIT_S")
-          updated=no
+          updated="${FFKEY_UPDATED:-no}"           # backlog #358: the key step's index, so nothing drifts from its manifest
           downloaded=no
           why=""
           for attempt in $(seq 1 "$FFMPEG_ATTEMPTS"); do
@@ -221,6 +305,34 @@ jobs:
           : > "$log"
           ffmpeg -version > /dev/null || cannot_run "ffmpeg was installed but does not execute"
           ffprobe -version > /dev/null || cannot_run "ffprobe was installed but does not execute"
+
+      # ⛔ r2 SPLIT: preparing the cache is its OWN step, never part of the install. It rebuilds `~/ffmpeg-debs` from
+      # scratch with exactly the manifest's files, each re-checked against its SHA256, so an unlisted or forged file
+      # restored earlier can never be saved back.
+      - name: Stage the ffmpeg packages for the cache (backlog #358)
+        id: ffstage
+        if: steps.ffkey.outputs.key != '' && steps.ffcache.outputs.cache-hit != 'true'
+        timeout-minutes: 1
+        continue-on-error: true
+        run: |
+          rm -rf "$HOME/ffmpeg-debs" && mkdir -p "$HOME/ffmpeg-debs" || exit 1
+          n=0
+          while read -r name want; do
+            f="/var/cache/apt/archives/$name"
+            [ -f "$f" ] && [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$want" ] && cp "$f" "$HOME/ffmpeg-debs/" && n=$((n+1))
+          done < "$HOME/ffmpeg-manifest.txt"
+          total=$(wc -l < "$HOME/ffmpeg-manifest.txt")
+          echo "ffmpeg cache: staged $n of $total manifest file(s)"
+          [ "$n" -eq "$total" ] || { echo "::warning::ffmpeg cache NOT saved: staged $n of $total"; exit 1; }
+          echo "complete=yes" >> "$GITHUB_OUTPUT"
+      - name: Save the ffmpeg packages (backlog #358)
+        if: steps.ffstage.outputs.complete == 'yes'
+        timeout-minutes: 2
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/ffmpeg-debs
+          key: ${{ steps.ffkey.outputs.key }}
 
       # ⛔ FIRST, because every guard below runs on this interpreter. If the pin did not take
       # effect, their results are not evidence about anything — and a `setup-python` step that is
