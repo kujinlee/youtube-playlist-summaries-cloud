@@ -911,14 +911,6 @@ jobs:
           printf '%s' "$BODY" > /tmp/review-pr-body.md
           python3 scripts/check-review-recorded.py \
             --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/review-pr-body.md
-      # backlog #251: WARN on each changed or deleted DECISION line of a manifested script that no mutation
-      # EDITS — the sweep defends what was enumerated and is blind to what was just written (PR #364:
-      # severing `if problems:` left the suite 104/104 green). Warn-only, with an annotation on the diff per
-      # warning; it exits 2 only on CANNOT RUN. ⚠ Placed AFTER check-review-recorded so a CANNOT RUN here cannot
-      # skip that gate (PR #411 r1: it sat between that step and its own comment block).
-      - name: diff coverage — changed decision lines no mutation reaches (PR only, warn)
-        if: github.event_name == 'pull_request'
-        run: python3 scripts/check-diff-coverage.py --base "origin/$GITHUB_BASE_REF"
 
 
   mutation-sweep:

@@ -17770,18 +17770,15 @@ as NO CHECKS — filed as backlog #369, not folded; the loop stops.
 
 
 ## 2026-10-26
-A new check runs on every pull request and points at each changed or deleted line that makes a decision — an
-`if`, a `return`, a `raise` — where none of the project's planted-fault tests edits that line. It only warns,
-and shows each warning on the pull request's diff. On tonight's own work it pointed at a line where a reviewer
-later found a real gap.
+A new local check points at each changed line that makes a decision — an `if`, a `return`, a `raise` — where none
+of the project's planted-fault tests edits that line. It only warns. On tonight's own work it pointed at a line where
+a reviewer later found a real gap. Running it on every pull request is split out: tried in CI, it produced up to 420
+warnings on one pull request, which nobody would read.
 <!--tech-->
-Branch `diff-coverage` (backlog #251, PR #411). `scripts/check-diff-coverage.py`: per manifested script changed against
-the PR base, WARN on each changed decision line (every line of an if/elif/while header+test, return, raise, assert,
-except header, exit call, conditional-expression test, comprehension if) that no mutation EDITS — applying the edit,
-the lines that do not survive unchanged (r2 redesign: an insertion edits none) — and on each DELETED decision line,
-read from the merge-base (a script deleted with its manifest stays in scope). `::warning` annotations
-in Actions; exit 2 only on CANNOT RUN; NOT CHECKED for an unreadable or unparseable file. ⟳ r1 (both halves): anchor
-spans over-covered (21%), multi-line statements counted one line, deletions invisible, spaced paths lost, tracebacks —
-fixed. ⟳ r2 (Codex): binary diffs, non-UTF-8 output, Unicode-quoted paths and an unparseable base side are NOT CHECKED
-or decoded, never a clean zero or a traceback. Measured: 57 (`session-state` @ `16bed21b`), 32 (`hooks-absolute-path` @
-`b6e46a3a`). 48 cases; 24 mutations.
+Branch `diff-coverage` (backlog #251, PR #411), the STABLE half after a SPLIT. `scripts/check-diff-coverage.py`: per
+manifested script changed in `base...HEAD`, WARN on each changed decision line (every line of an if/elif/while header
+and test, return, raise, assert, except header, exit call, conditional-expression test, comprehension if) that no
+mutation EDITS — applying the edit, the lines that do not survive unchanged. Sources from `git show HEAD:<path>`; diff
+pinned (`--no-ext-diff`, a/ b/ prefixes); binary / unparseable / lone-CR files NOT CHECKED. ⟳ r1 over-coverage and
+tracebacks; r2 a text-alignment rule that let an insertion "cover" its neighbour (redesigned); r3 the CI step never ran
+and volume hit 420/PR — CI delivery and deleted lines split out as backlog #370. 45 cases; 24 mutations.
