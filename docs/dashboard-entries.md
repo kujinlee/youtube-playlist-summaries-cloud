@@ -17823,3 +17823,15 @@ recent transcripts (2,344 Bash calls). Everything else was mutating, could run c
 or is already auto-allowed. ⚠ The prompts actually seen tonight came from `dangerouslyDisableSandbox` Codex runs; these
 rules do not touch them.
 
+
+## 2026-10-27
+The design for running each safety hook from the checkout actually being worked in is settled, and both of its open
+choices were made by the owner: a hook that cannot be found is reported but does not block, and worktrees keep being
+used the way they are today.
+<!--tech-->
+Docs only. Files `docs/reviews/architecture-review-2026-10-26-hook-launch.md` (backlog #364: candidate (a) — the nearest
+`.git` above the physical cwd is the checkout, no fallback beyond "no checkout"; prototype passed 14/14 worlds, 12/12
+mutants, live in the harness). Backlog #364 records the two owner decisions (NOT RUN exit 1; launcher over
+`EnterWorktree`). Files backlog #374 (a waiver HOLD should be cleared by a recorded review, not the owner) and #375
+(eleven hooks' `cd && pwd` root strips a trailing newline).
+

@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code skills</title>
+
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* literal values (backlog #351: var() aliases here and in the shim form a cycle) */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+    --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+    --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+    --good:#8fcaa2; --defect:#e08f8f;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+  --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+  --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+  --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+  --good:#8fcaa2; --defect:#e08f8f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:900px;margin:0 auto;padding:40px 18px 120px}
+h1{font-size:29px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:44px 0 12px;padding-top:16px;border-top:1px solid var(--rule);position:relative}
+h3{font-size:16.5px;margin:26px 0 8px;position:relative}
+p{margin:11px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:12px 16px;
+  font-size:14px;color:var(--fg2);margin:16px 0}
+.howto code{font-size:12.5px}
+.callout{border-radius:6px;padding:12px 16px;margin:16px 0;font-size:15px}
+.callout.ok{background:var(--greenbg);border:1px solid var(--verified-br)}
+.callout.warn{background:var(--amberbg);border:1px solid var(--amber)}
+.tablewrap{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--rule)}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg3);font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 4px;border-radius:3px}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;
+  overflow-x:auto;white-space:pre;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;padding:0}
+.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;border:1px solid var(--rule);white-space:nowrap}
+.tag.done{background:var(--greenbg);color:var(--green);border-color:var(--verified-br)}
+.tag.wait{background:var(--amberbg);color:var(--amber);border-color:var(--amber)}
+.tag.next{color:var(--fg3)}
+ol li,ul li{margin:4px 0}
+.small{font-size:13.5px;color:var(--fg3)}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<h1>Claude Code skills: you don't have to remember the names</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><span class="chrome-when">generated <time>2026-10-27 02:56 · a50ddc36 · uncommitted changes</time></span></div></div>
+<p class="horizon">As of <b>2026-10-27 ~03:00 PDT</b>, master <code>2ccda14b</code>, Claude Code <b>2.1.309</b>. Read from this session's own skill listing, the installed binary and this repository.</p>
+
+<div class="reading"><b>Reading chosen:</b> skills in Claude Code: where the ones in this session come from, how one gets picked, and how you can find the right one without memorising names. Not how to <i>write</i> a skill (that's <code>/write-a-skill</code> or <code>skill-creator</code>).</div>
+
+<div class="howto">
+<b>This page:</b> <code>http://127.0.0.1:7391/latest</code> always shows the newest page.
+<b>To ask:</b> select text or hover a heading → <i>ask</i> → type → <b>Send</b>, then say <i>"read my questions"</i>.
+<b>If that URL does not load</b> (a reboot stops the server): run <code>python3 scripts/explainer-serve.py</code>. It's safe to run twice.
+A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.
+<span id="modechip"></span>
+</div>
+
+<div class="callout ok"><b>The short answer.</b> Claude already knows every skill in the session, with its description, and is told to use one when your task matches. So you never need a name. Say what you want in plain words, or ask outright: <i>"is there a skill for this?"</i>. The weak link isn't your memory. It's Claude <i>noticing</i> a match without being asked.</div>
+
+<h2>1. What a skill is</h2>
+<p>A skill is a packaged set of instructions (a <code>SKILL.md</code> file, sometimes with scripts) for one kind of task. When it's invoked, its instructions are loaded into the conversation and Claude follows them instead of its default approach. You can invoke one by typing <code>/name</code>, or Claude can invoke it itself through its <code>Skill</code> tool.</p>
+<p>The part that answers your question: <b>at the start of every session Claude receives the whole list</b>, one line per skill with its description, in a block that begins <i>"The following skills are available for use with the Skill tool"</i>. That list is in Claude's context right now. It isn't something you have to recall.</p>
+
+<h2>2. Where this session's skills come from</h2>
+<p>There are four sources. The prefix in front of a name tells you which one it belongs to.</p>
+<div class="tablewrap"><table>
+<tr><th>Source</th><th>How it's named</th><th>Examples in this session</th><th>Where it lives</th></tr>
+<tr><td><b>Bundled with Claude Code</b></td><td>no prefix</td><td><code>code-review</code>, <code>simplify</code>, <code>fewer-permission-prompts</code>, <code>loop</code>, <code>schedule</code>, <code>update-config</code>, <code>keybindings-help</code>, <code>init</code>, <code>security-review</code>, <code>run</code>, <code>claude-api</code>, <code>dataviz</code>, <code>artifact-design</code>, <code>workflow-authoring</code>, <code>plugin-authoring</code>, <code>claude-in-chrome</code></td><td>inside the Claude Code program itself</td></tr>
+<tr><td><b>This project</b></td><td>no prefix</td><td><code>brief</code>, <code>dashboard</code>, <code>explain-topic</code>, <code>explain-diff</code>, <code>explain-findings</code>, <code>handoff</code>, <code>grill-me</code>, <code>grill-with-docs</code>, <code>diagnose</code>, <code>tdd</code>, <code>prototype</code>, <code>zoom-out</code>, <code>triage</code>, <code>to-prd</code>, <code>to-issues</code>, <code>sync-docs</code>, <code>caveman</code>, <code>write-a-skill</code>, <code>improve-codebase-architecture</code>, <code>setup-matt-pocock-skills</code></td><td><code>.claude/skills/</code> (mirrored in <code>.agents/skills/</code>). Many come from <code>mattpocock/skills</code>, and some are local</td></tr>
+<tr><td><b>Plugins</b></td><td><code>plugin:skill</code></td><td><code>superpowers:*</code>, <code>codex:*</code>, <code>pr-review-toolkit:*</code>, <code>hookify:*</code>, <code>remember:*</code>, <code>commit-commands:*</code>, <code>feature-dev:*</code>, <code>claude-md-management:*</code>, <code>ralph-loop:*</code>, <code>frontend-design:*</code>, <code>skill-creator:*</code>, <code>supabase:*</code>, <code>claude-code-setup:*</code></td><td>installed with <code>/plugin install</code></td></tr>
+<tr><td><b>Your Claude account</b></td><td><code>anthropic-skills:</code></td><td><code>docs</code>, <code>docx</code>, <code>pdf</code>, <code>pptx</code>, <code>xlsx</code>, <code>deep-research</code>, <code>chrome-browser</code>, <code>computer-use</code>, <code>morning</code>, <code>import-memory</code></td><td>attached to your claude.ai account</td></tr>
+</table></div>
+<p>⚠ <b>A bundled skill and a project skill look the same</b>, since neither has a prefix. The lists above come from this session's listing and the repo's directories.</p>
+
+<h3>Tonight's example of a bundled skill</h3>
+<p><code>/fewer-permission-prompts</code> is bundled: its whole prompt is compiled into the binary at <code>~/.local/share/claude/versions/2.1.309</code>. Run over the 50 most recent transcripts (2,344 Bash calls), it found only <b>three</b> patterns that qualified. Everything else was mutating, could run code, or was already allowed. That became PR #416, merged <code>2ccda14b</code>.</p>
+
+<h3>The binary's list of bundled names — partly explained</h3>
+<p>The 2.1.309 binary contains an exported list (<code>OZn</code>) of 18 bundled-skill names: artifact-diagramming, batch, claude-code-docs, code-review, commit, dataviz, debug, explain-usage, fewer-permission-prompts, keybindings-help, loop, memory-types, plugin-authoring, pr, simplify, update-config, verify, workflow-authoring. Bundled skills can be switched off with the environment variable <code>CLAUDE_CODE_DISABLE_BUNDLED_SKILLS</code> or the setting <code>disableBundledSkills</code>.</p>
+<div class="callout warn"><b>UNVERIFIED: what that list is for.</b> It doesn't match this session. Eight of its names (batch, commit, debug, pr, verify, explain-usage, memory-types, claude-code-docs) are not in this session's listing. Several bundled skills that <i>are</i> listed (init, security-review, run, schedule, claude-api) are not in it. So it's not simply "the bundled skills you have". Treat the listing in your session as the truth.</div>
+
+<h2>3. How a skill gets picked</h2>
+<ol>
+<li><b>You type <code>/name</code></b>. That's explicit, and always works.</li>
+<li><b>Claude matches your words to a description</b> and invokes it unasked. This is the path that's meant to save you from remembering names. It is <i>passive</i>: it works only if Claude notices.</li>
+<li><b>A hook nudges at a known moment</b>. This repo already has one: <code>.claude/hooks/suggest-explainer.sh</code> suggests <code>/explain-diff</code> when <code>gh pr create</code> runs. Its own header says it is <i>"A REMINDER, NEVER A GATE — always exits 0"</i>.</li>
+</ol>
+<p><b>Why path 2 is the weak one.</b> Matching a task to a one-line description is the same shape of problem as matching a situation to a memory. This repo measured that for memory recall (backlog #191): keyword matching found the right memory in <b>3 of 20</b> situations, and semantic matching in <b>20 of 20</b>. ⚠ <i>That's an analogy. It measured memories, not skills, and nothing here has measured skill matching.</i> It still suggests that "Claude will notice" isn't a guarantee.</p>
+<p>One thing pushes path 2 harder in this session. The <code>superpowers</code> plugin injects an instruction at session start telling Claude to check for an applicable skill <i>before every response</i>. That's visible in this session's context. It makes Claude look; it doesn't make the match good.</p>
+
+<h2>4. When to use which: the ones most useful to you</h2>
+<div class="tablewrap"><table>
+<tr><th>When you'd say…</th><th>Skill</th></tr>
+<tr><td>"where are we?" / "catch me up"</td><td><code>/brief</code></td></tr>
+<tr><td>"how does X work?" / "explain X to me"</td><td><code>/explain-topic</code> (this page)</td></tr>
+<tr><td>"what does this PR actually change?" before merging</td><td><code>/explain-diff</code></td></tr>
+<tr><td>"should these findings be backlog items?"</td><td><code>/explain-findings</code></td></tr>
+<tr><td>"record what changed for someone who was away"</td><td><code>/dashboard</code></td></tr>
+<tr><td>"I'm stopping; let the next session pick up"</td><td><code>/handoff</code></td></tr>
+<tr><td>"review this diff for bugs" / "clean it up"</td><td><code>/code-review</code> / <code>/simplify</code></td></tr>
+<tr><td>"stop asking me permission for safe commands"</td><td><code>/fewer-permission-prompts</code></td></tr>
+<tr><td>"from now on, whenever X happens, do Y"</td><td><code>/update-config</code> (a hook; memory can't do this)</td></tr>
+<tr><td>"keep checking this every few minutes"</td><td><code>/loop</code></td></tr>
+<tr><td>"do this tomorrow at 9" / "every weekday"</td><td><code>/schedule</code></td></tr>
+<tr><td>"poke holes in my plan"</td><td><code>/grill-me</code> (or <code>/grill-with-docs</code> against the project's docs)</td></tr>
+<tr><td>"let's build a new thing"</td><td><code>superpowers:brainstorming</code> first</td></tr>
+</table></div>
+
+<h2>5. How to get reminded</h2>
+<div class="callout ok"><b>Three ways, in the order to try them:</b>
+<ol>
+<li><b>Ask in plain words.</b> "Is there a skill for X?" or just describe the task. Claude has every description, so this is the most reliable lookup there is.</li>
+<li><b>Type <code>/</code> and then a word.</b> The menu lists skills and commands. ⚠ <i>UNVERIFIED: whether it filters on the description or only the name.</i> Try a word from what you want to do.</li>
+<li><b>For a moment that keeps recurring, ask for a reminder hook</b>, like the <code>suggest-explainer</code> one. It works only where the moment is something a machine can see (a command being run, a file being touched).</li>
+</ol></div>
+<p><b>What a cheat sheet can and can't do.</b> <code>docs/available-skills.md</code> lists every skill by source. It was <b>generated 2026-08-29</b> by <code>scripts/regen-skills-doc.py</code>, so it's two months old and may be missing skills added since. <code>/sync-docs</code> regenerates it. It's good for browsing, but it doesn't remind you of anything.</p>
+<p><b>The idea that would remind you every time, and its cost.</b> A hook can run on <i>every prompt</i> you send (<code>UserPromptSubmit</code>). Matching your prompt by keywords would be weak, for the reason in §3. A hook of type <code>"prompt"</code>, which asks a model to judge, could match by meaning. ⚠ <i>UNVERIFIED: its cost and the delay it would add to every message. Nothing here has measured them.</i> It's worth trying only if the three ways above keep failing you.</p>
+
+<h2>6. What was measured and what was inferred</h2>
+<div class="tablewrap"><table>
+<tr><th>Claim</th><th>Status</th><th>How</th></tr>
+<tr><td>The full skill list, with descriptions, is in Claude's context every session</td><td><span class="tag done">measured</span></td><td>read from this session's own context</td></tr>
+<tr><td>The four sources and their members</td><td><span class="tag done">measured</span></td><td>this session's listing; <code>ls .claude/skills .agents/skills</code></td></tr>
+<tr><td><code>fewer-permission-prompts</code> is bundled; 3 patterns from 2,344 calls</td><td><span class="tag done">measured</span></td><td>prompt text found in the 2.1.309 binary; PR #416</td></tr>
+<tr><td><code>OZn</code>'s 18 names; the off switches</td><td><span class="tag done">measured</span></td><td><code>strings</code> on the binary</td></tr>
+<tr><td>What <code>OZn</code> is for</td><td><span class="tag wait">unverified</span></td><td>it doesn't match the session listing either way</td></tr>
+<tr><td><code>suggest-explainer.sh</code> is a never-blocking reminder on <code>gh pr create</code></td><td><span class="tag done">measured</span></td><td>its header; its registration in <code>.claude/settings.json</code></td></tr>
+<tr><td>superpowers tells Claude to check skills before every response</td><td><span class="tag done">measured</span></td><td>its SessionStart text, visible in this session</td></tr>
+<tr><td>Keyword matching 3/20 vs semantic 20/20</td><td><span class="tag done">measured</span>, for <b>memories</b></td><td>backlog #191. Applying it to skills is an <b>inference</b></td></tr>
+<tr><td>The <code>/</code> menu filters on descriptions</td><td><span class="tag wait">unverified</span></td><td>not tested in this session</td></tr>
+<tr><td>A <code>type: "prompt"</code> hook's cost and latency</td><td><span class="tag wait">unverified</span></td><td>not measured</td></tr>
+<tr><td><code>docs/available-skills.md</code> may be stale</td><td><span class="tag done">measured</span> date; staleness inferred</td><td>its header says generated 2026-08-29</td></tr>
+</table></div>
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
