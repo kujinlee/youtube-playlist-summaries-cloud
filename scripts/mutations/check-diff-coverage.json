@@ -203,8 +203,8 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        r = git(\"diff\", \"--no-ext-diff\", \"--src-prefix=a/\", \"--dst-prefix=b/\", \"-U0\", \"--no-color\",",
-        "        r = git(\"diff\", \"-U0\", \"--no-color\","
+        "        r = git(\"diff\", \"--no-ext-diff\", \"--no-textconv\", \"--src-prefix=a/\", \"--dst-prefix=b/\", \"-U0\", \"--no-color\",",
+        "        r = git(\"diff\", \"--no-textconv\", \"-U0\", \"--no-color\","
       ]
     ],
     "expect": [
@@ -234,7 +234,7 @@
       ]
     ],
     "expect": [
-      "⭐ every git call decodes with replacement — a non-UTF-8 byte is not a traceback"
+      "⭐ every TEXT git call decodes with replacement — a non-UTF-8 byte is not a traceback"
     ]
   },
   {
@@ -281,7 +281,7 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "            not_checked.append(f\"NOT CHECKED {p}: cannot read it at HEAD ({shown.stderr.strip()[:80]})\")",
+        "            not_checked.append(f\"NOT CHECKED {p}: cannot read it at HEAD ({err[:80]})\")",
         "            pass"
       ]
     ],
@@ -307,12 +307,51 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        shown = git(\"show\", f\"HEAD:{p}\")  # the committed tree the diff describes, never the working tree",
-        "        shown = git(\"show\", f\":{p}\")  # the INDEX, not the committed tree"
+        "        shown = git_bytes(\"show\", \"--no-textconv\", f\"HEAD:{p}\")  # the committed tree, never the working tree",
+        "        shown = git_bytes(\"show\", \"--no-textconv\", f\":{p}\")  # the INDEX, not the committed tree"
       ]
     ],
     "expect": [
       "⭐ the source is read from the committed HEAD, not the working tree (r3)"
+    ]
+  },
+  {
+    "name": "⭐ the source is newline-TRANSLATED again, as `text=True` did — a lone CR becomes LF (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "source = shown.stdout.decode(\"utf-8\", \"replace\")",
+        "source = shown.stdout.decode(\"utf-8\", \"replace\").replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\")"
+      ]
+    ],
+    "expect": [
+      "⭐ a committed lone CR, read by REAL git, is NOT CHECKED — never 'every one is edited' (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ the diff lets a textconv driver run again (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "r = git(\"diff\", \"--no-ext-diff\", \"--no-textconv\", \"--src-prefix=a/\",",
+        "r = git(\"diff\", \"--no-ext-diff\", \"--src-prefix=a/\","
+      ]
+    ],
+    "expect": [
+      "⭐ a textconv driver that empties the diff still WARNS the new decision line (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ uncommitted manifests are trusted again (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    if dirty.returncode != 0 or dirty.stdout.strip():\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCOMMITTED manifest edit is CANNOT RUN — it cannot clear a committed line (backlog #371)"
     ]
   }
 ]

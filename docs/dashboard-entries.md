@@ -17812,3 +17812,14 @@ for the block and every update, an `O_NOFOLLOW` lock, UTF-8 writes. 51 cases; 25
 ⟳ r2 (Codex, DEFER with the skip reasoned): attacks that tamper with the ledger's directory mid-write (sidecar deleted,
 `.claude` retargeted, a hard link) still lose a job — out of scope for a cooperative scratch file, filed as backlog #372.
 
+
+## 2026-10-27
+The local check that points at changed decision lines no planted fault edits can no longer say "every one is edited"
+in three cases where it had not really looked: a file with a stray carriage return, a repository with a custom diff
+filter, and an uncommitted change to the planted-fault lists.
+<!--tech-->
+Branch `diff-coverage-zeros` (backlog #371, from PR #411 round 4). `scripts/check-diff-coverage.py`: `git show` read as
+bytes (no universal-newline translation, so a lone CR is NOT CHECKED); `--no-textconv` on the diff (measured: a textconv
+driver emptied a 4-line diff) and, as a pin, on `show`; a dirty `scripts/mutations/` is CANNOT RUN. Each is a case over a
+real repository, not a fake `run`. 51 cases; 27 mutations, each killed by its named case.
+
