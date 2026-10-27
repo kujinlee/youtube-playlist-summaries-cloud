@@ -17710,3 +17710,25 @@ as backlog #360): the "28.3 / 27.3 / 21.3 by STEP CAPS" figures were FALSE — t
 that have NO cap. The explicit caps per path are 23 (index not reused) / 16 (reused, no key) / 19 (cache hit) / 21 (miss,
 then stage and save), each plus R, the uncapped remainder; only the job's 30-min limit bounds R, exactly as on master. Container: a forced copy failure still reached the install; staging after a
 partial restore kept 194 of 194 manifest files and no extra.
+
+
+## 2026-10-26
+Two notes on the merge checker and one on the mutation count. The merge checker's false alarms, where it
+holds a pull request that only added to a line, turned out to be wider than first filed: a line that was
+only re-indented, or whose comment changed, is held too. And the hand-typed total of mutation tests now
+clashes between every two open pull requests that add tests, so it is filed with a fix that cannot clash.
+Also saved: the page explaining the day's progress.
+<!--tech-->
+Docs only. backlog #355 gains PR #404's three held lines: one EXTENDED (`+ 3` -> `+ 3 + 10`), one re-indented
+into a `try:` with identical text, one with only a `# 236 cases` comment changed — the latter two are the cheap,
+safe half (compare after stripping indentation and a trailing comment). Filed backlog #359: the literal total in
+`check-plan-code.py`'s `_self_test` is the shrink ratchet, and it conflicts on every concurrent mutation PR (once
+merged silently wrong, 2115 + 2115 for a real 2125); candidate is a branch-sum >= base-sum comparison in CI.
+Filed backlog #360: `verify` has 78 steps on master and one step cap, so its budget is bounded only by the job limit — PR #407's
+round 4 refuted my per-path "step caps" figures, which had added the uncapped steps' measured runtime.
+Filed at the owner's request: backlog #361 (tell compaction what must survive; falsified by one `/compact`) and backlog #362
+(derive a handoff's in-flight state from git and `gh` when it is read — the hand-written one missed PR #407's conflict).
+New `/goal-tree` command: prints every work thread under the request it serves — tagged fix, blocker,
+bookkeeping or side question, named by backlog row, PR state read live. Filed backlog #363 to have the work-lines
+page draw that tree from recorded data instead.
+Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.

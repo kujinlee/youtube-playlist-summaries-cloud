@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Progress and plan — 2026-10-26</title>
+
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* literal values (backlog #351: var() aliases here and in the shim form a cycle) */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+    --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+    --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+    --good:#8fcaa2; --defect:#e08f8f;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+  --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+  --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+  --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+  --good:#8fcaa2; --defect:#e08f8f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:900px;margin:0 auto;padding:40px 18px 120px}
+h1{font-size:29px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:44px 0 12px;padding-top:16px;border-top:1px solid var(--rule);position:relative}
+h3{font-size:16.5px;margin:26px 0 8px;position:relative}
+p{margin:11px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:12px 16px;
+  font-size:14px;color:var(--fg2);margin:16px 0}
+.howto code{font-size:12.5px}
+.callout{border-radius:6px;padding:12px 16px;margin:16px 0;font-size:15px}
+.callout.ok{background:var(--greenbg);border:1px solid var(--verified-br)}
+.callout.warn{background:var(--amberbg);border:1px solid var(--amber)}
+.tablewrap{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--rule)}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg3);font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 4px;border-radius:3px}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;
+  overflow-x:auto;white-space:pre;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;padding:0}
+.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;border:1px solid var(--rule);white-space:nowrap}
+.tag.done{background:var(--greenbg);color:var(--green);border-color:var(--verified-br)}
+.tag.wait{background:var(--amberbg);color:var(--amber);border-color:var(--amber)}
+.tag.next{color:var(--fg3)}
+ol li,ul li{margin:4px 0}
+.small{font-size:13.5px;color:var(--fg3)}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<h1>Progress and plan — 2026-10-26</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><span class="chrome-when">generated <time>2026-10-26 14:13 · a50ddc36 · uncommitted changes</time></span></div></div>
+<p class="horizon">As of <b>2026-10-26 14:09 PDT</b>. Read from GitHub and git at that moment; background reviews and CI were still running, so states below may have moved since.</p>
+
+<div class="reading"><b>Reading chosen:</b> what this session (2026-10-26, from about 09:20 PDT) changed in the project's own checking tools — the "guard-and-gate harness" — what is still in flight, and the plan from here. Not the product itself.</div>
+
+<div class="howto">
+<b>This page:</b> <code>http://127.0.0.1:7391/latest</code> always shows the newest page.
+<b>To ask:</b> select text or hover a heading → <i>ask</i> → type → <b>Send</b>, then say <i>"read my questions"</i>.
+<b>If that URL does not load</b> (a reboot stops the server): run <code>python3 scripts/explainer-serve.py</code> — safe to run twice.
+A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.
+<span id="modechip"></span>
+</div>
+
+<div class="callout ok"><b>Nothing needs you right now.</b> No PR is waiting on your decision. Four PRs merged today; four more are in review or CI and merge on their own when the merge rule says READY. The open owner decisions are the 22 backlog rows the audit marked <i>NEEDS-OWNER</i> — none of them blocks today's work.</div>
+
+<p class="lede">Today had two halves. In the morning the merge rule went live and its first false alarm was handled. After you asked, the tooling backlog was audited row by row, and the highest-priority fixable rows became four PRs. A flaky CI download kept failing merges, so it got its own fix too.</p>
+
+<h3>Four words used below</h3>
+<div class="tablewrap"><table>
+<tr><th>Word</th><th>Means</th></tr>
+<tr><td><b>READY</b> / <b>HOLD</b></td><td>The two answers of <code>check-merge-ready</code>. READY means every check CI runs is green and the PR merges under the house rule. HOLD means it is ready but touches something the rule reserves for you (for example a change near a gate's failure line), so it waits for you.</td></tr>
+<tr><td><b>round</b></td><td>One pass of adversarial review — a Codex half, a Claude half, or both — over the current code, followed by a fold of what they found.</td></tr>
+<tr><td><b>mutation</b></td><td>A deliberate small break in a checking script (for example deleting a check). Its named test case must turn red; if nothing turns red, the test does not really protect that line.</td></tr>
+<tr><td><b>bet</b></td><td>A prediction written in the decision log <i>before</i> a round (e.g. "round 2 finds no High"). A lost bet forces a change of approach instead of another patch.</td></tr>
+</table></div>
+
+<h2>1. Where things stand</h2>
+<div class="tablewrap"><table>
+<tr><th>Thread</th><th>What it fixes</th><th>PR</th><th>State at 14:09</th><th>Next</th></tr>
+<tr><td>T1</td><td>The merge rule now treats TypeScript/JavaScript checks as checks.</td><td>PR #402</td><td><span class="tag done">merged b59f74d6</span></td><td>—</td></tr>
+<tr><td>T2</td><td>The tooling backlog was audited against the code.</td><td>PR #403</td><td><span class="tag done">merged 2e8714ec</span></td><td>—</td></tr>
+<tr><td>T3</td><td>Four checks that could say "fine" (or crash into a warning) without having checked now say they could not run.</td><td>PR #404</td><td><span class="tag wait">CI running</span> review converged</td><td>merge on READY</td></tr>
+<tr><td>T4</td><td>A broken mutation hook is now caught in half a second, before a run starts, not 15 minutes into CI.</td><td>PR #405</td><td><span class="tag wait">CI running</span> review converged</td><td>merge on READY</td></tr>
+<tr><td>T5</td><td>The tool that arms the "don't stop mid-job" guard refuses to run from a side copy (worktree) where the guard never looks.</td><td>PR #406</td><td><span class="tag wait">round 2 lost its bet (14:15) → round 3 fix built locally</span></td><td>fold or merge</td></tr>
+<tr><td>T6</td><td>CI keeps a copy of the video tool's packages, so a slow download mirror stops failing PRs.</td><td>PR #407</td><td><span class="tag wait">round 1 NOT CONVERGED (14:15): fix in progress</span></td><td>prove the cache hit, then merge</td></tr>
+</table></div>
+<p class="small">PR #407 showed one failed check at 14:09; it belongs to an earlier, cancelled run (40397292037). A fresh run (40400167030) was queued.</p>
+
+<h2>2. What landed today</h2>
+<div class="tablewrap"><table>
+<tr><th>PR</th><th>Merged as</th><th>Effect, plainly</th></tr>
+<tr><td>PR #400</td><td><code>ba4d2c28</code></td><td>A full mutation sweep on the laptop now refuses to start if it would take over 10 minutes; the full sweep belongs to CI's 12 parallel shards. <code>--allow-long-local</code> overrides it for one run only. It was the merge rule's first HOLD; you approved it.</td></tr>
+<tr><td>PR #401</td><td><code>778f0169</code></td><td>Filed backlog #355: that HOLD was a false alarm (a line only gained arguments next to a failure line).</td></tr>
+<tr><td>PR #402</td><td><code>b59f74d6</code></td><td>Backlog #354: a TypeScript check switched to "always pass" (<code>process.exit(1)</code> → <code>0</code>) now makes the merge rule HOLD instead of printing READY. Two harder parts were tried, found broken in review, and split off as backlog #356.</td></tr>
+<tr><td>PR #403</td><td><code>2e8714ec</code></td><td>The audit you asked for: every open tooling row checked against the code by four read-only auditors. 9 closed (5 superseded, 4 duplicates), 11 rated down, 22 marked as waiting on you. Open rows in that section: <b>115 → 106</b>; urgent ones (🔴/🟠) <b>32 → 26</b>.</td></tr>
+</table></div>
+
+<h2>3. The four PRs still in flight</h2>
+<h3>T3 — PR #404: four checks that failed open</h3>
+<p>Backlog #253, #255, #152, #111. Each fix is small; the review kept finding paths the first fix did not reach.</p>
+<ul>
+<li><b>Round 1</b> (both halves): the transcript fix was only half done — a second consumer still crashed; the handoff hook did not check its own payload copy. Folded.</li>
+<li><b>Round 2</b> (Codex): <b>bet lost</b>. The round-1 fix decided "real verdict or broken tool" by matching the checker's English, so a reworded message would silently downgrade a block. Route changed to <b>redesign</b>: the checker now writes a small <i>receipt</i> file with its verdict, and the hook acts on the receipt alone. Five older malformed-input crashes were filed as backlog #357, as the stop rule required.</li>
+<li><b>Round 3</b>: converged; bet won. <b>Round 4</b>: confirmed a merge with master.</li>
+</ul>
+<h3>T4 — PR #405: catch broken mutation hooks early (backlog #252)</h3>
+<p>Each mutation is anchored to an exact piece of text. Editing that text elsewhere silently breaks the anchor, and the old code only noticed when the mutation ran — measured once at 14m58s into a CI shard. Now every one of 2,121 anchors is checked in about 0.5 s before anything starts. Both halves converged in round 1; rounds 2–4 fixed a duplicate anchor I added and confirmed a merge. ⚠ Only the anchor half is done; the other half (a test name that matches nothing) stays open under backlog #208.</p>
+<h3>T5 — PR #406: no arming from a worktree (backlog #301)</h3>
+<p>A worktree is a second working copy of the repo. Arming a job from one wrote the marker where the stop guard never looks — and still printed <code>armed:</code>. Round 1 (both halves) broke the first version three ways because it asked <code>git</code> (an old git, a <code>GIT_DIR</code> setting, a moved main copy). <b>Redesign:</b> it now reads the <code>.git</code> entry directly — a folder means the main copy, a file pointing into <code>worktrees/</code> means a side copy. The refusal also prints a correctly quoted command. <b>⟳ 14:15 — round 2 lost its bet:</b> reading <code>.git</code> by its path shape was bypassed by two valid layouts (a <code>.git</code> that is a symlink, and a <code>gitdir:</code> through a symlinked alias), and it wrongly refused one unusual main copy. The route moved to <b>split</b>: git is the authority again, asked so none of round 1's failures can reach it (no <code>GIT_*</code> variables, a flag old git understands, exactly two path lines); the <code>.git</code> file is read only when git cannot answer, and then it refuses. Built and tested locally (139 cases, 9 mutations each turning its own case red); round 3 is the last.</p>
+<h3>T6 — PR #407: the ffmpeg package cache (backlog #358)</h3>
+<p>Your choice A. See the next section. <b>⟳ 14:15 — round 1 (Codex) found two serious problems and a false claim of mine</b>, below.</p>
+
+<h2>4. The ffmpeg question</h2>
+<p>You asked whether we know the root cause. <b>Not proven.</b> Here is what is measured and what is not.</p>
+<div class="tablewrap"><table>
+<tr><th>Measured</th><th>How</th></tr>
+<tr><td>The step either finishes in 16–19 s or exceeds its 150 s download limit on all 3 tries.</td><td>step timings from 3 good runs; the failure messages</td></tr>
+<tr><td>4 of 14 <code>verify</code> attempts failed this way by early afternoon, and at least 3 more after.</td><td>job/step results per attempt via the GitHub API</td></tr>
+<tr><td>It is a <b>crawl</b>, not a hang: each try fetched a few small packages from <code>azure.archive.ubuntu.com</code> (<code>amd64v3</code> pool), stalled on a large one (libcodec2, 9 MB), and the next try resumed from there.</td><td>apt's own output in a failed run's log</td></tr>
+<tr><td><code>apt-get update</code> always succeeds; only the package download fails.</td><td>same log</td></tr>
+</table></div>
+<p><b>Inferred, not verified:</b> the Azure mirror serves the new <code>amd64v3</code> pool poorly at times. A per-runner network problem would look the same. Either way it is outside this repo.</p>
+<p><b>The fix (option A):</b> keep a copy of the downloaded packages in GitHub's cache. The cache key is a hash of the exact package list apt prints for that run, so a changed list is never served stale. apt skips a file already in its cache, so a cache hit downloads nothing.</p>
+<div class="callout"><p><b>⚠ Correction (14:15, found by review, executed in an Ubuntu container).</b> This page, the PR and the dashboard entry said apt checks a cached file against the <i>checksum</i> in its signed index. <b>It does not:</b> apt accepted a fabricated package of the right <i>size</i>, and installed it. So the cache must check each restored file's SHA256 against the signed index <i>before</i> handing it to apt. The page also said a failure in the new steps leaves the install untouched; <b>also false</b> — a hang in the key step, or a restore error, can make GitHub skip the install. Both are being fixed before merge; neither has reached master.</p></div>
+<p><b>How it will be proven:</b> the first run should miss and save; a later run must log <code>ffmpeg cache: restored N package(s)</code> with a short step. The first half was seen (all four new steps succeeded on run 40397292029's job). <b>⟳ 14:15 — the second half was seen too:</b> run 40400167030 hit the same key, logged <code>ffmpeg cache: restored 81 package(s)</code> and <code>Need to get 0 B/66.4 MB</code>, and skipped the save (read from the run log by the Claude review half). The cache works; the corrections above must still land before it merges.</p>
+
+<h2>5. What went wrong in my process today, and what now prevents it</h2>
+<div class="tablewrap"><table>
+<tr><th>What happened</th><th>Effect</th><th>Prevention now</th></tr>
+<tr><td>Step banners stopped once several threads ran at once.</td><td>You could not follow the work.</td><td>A thread map (T1–T6) plus a one-line banner per step; saved to memory.</td></tr>
+<tr><td>Three PRs were pushed without running the PR-only checks (unqualified <code>#N</code> references; a function parameter given only one value in tests).</td><td>CI went red; one red was hidden for an hour behind ffmpeg failures.</td><td>A pre-push checklist in memory.</td></tr>
+<tr><td>My gate loop printed <code>rc=$?</code> after <code>$(basename …)</code>, so every "rc=0" was basename's exit code.</td><td>Real failures on three branches looked green.</td><td>Re-ran every gate on every branch with the exit code read on its own; all fixed.</td></tr>
+<tr><td>Two Codex rounds wrote files instead of returning their review; one also added a backlog row, which I committed unread.</td><td>One review gate never actually ran.</td><td>Recorded as a review gap and repaired; every prompt now says "write no file"; I read the wrapper's verdict line, not the file.</td></tr>
+<tr><td>Two branches both wrote the mutation total <code>2115</code>, so git merged it without a conflict — but the real total was 2125.</td><td>Would have failed the self-test.</td><td>Caught by summing the manifests after each merge.</td></tr>
+<tr><td>Edits orphaned existing mutation anchors, three times.</td><td>Sweeps reported "not measured".</td><td>PR #405 (backlog #252) makes this a half-second check before any run.</td></tr>
+</table></div>
+
+<h2>6. The plan from here</h2>
+<ol>
+<li>Merge PR #404, #405, #406 and #407, each only when <code>check-merge-ready</code> prints READY; a HOLD comes to you.</li>
+<li>For PR #407, see the cache hit in a real run before merging.</li>
+<li>Backlog #223: every hook in <code>.claude/settings.json</code> is registered by a relative path, so none runs if the session starts elsewhere. Deferred until now because it changes the hooks this very session depends on.</li>
+<li>Backlog #251, the one remaining 🔴 tooling row: code can change with no mutation covering it.</li>
+<li>Filed follow-ups: backlog #355 (false HOLD on a lengthened line), #356 (TypeScript call sites and comments), #357 (five malformed inputs).</li>
+<li>The 22 NEEDS-OWNER rows are yours whenever you want them; each row now names the decision it waits on.</li>
+</ol>
+
+<h2>7. Measured vs inferred</h2>
+<div class="tablewrap"><table>
+<tr><th>Claim</th><th>Status</th><th>How</th></tr>
+<tr><td>PR #400–#403 merged with the SHAs above</td><td>measured</td><td><code>gh pr view</code>, <code>git log origin/master</code> at 14:09</td></tr>
+<tr><td>PR #404–#407 states</td><td>measured at 14:09</td><td><code>gh pr checks</code>; may have moved since</td></tr>
+<tr><td>Tooling section 115 → 106 open, 🔴/🟠 32 → 26</td><td>measured</td><td>the backlog page's own parser, before and after</td></tr>
+<tr><td>ffmpeg timings, failure counts, the crawl pattern</td><td>measured</td><td>CI step timings and apt's log output</td></tr>
+<tr><td>Azure's <code>amd64v3</code> pool is the cause</td><td><b>inferred</b></td><td>fits the logs; not tested against another mirror</td></tr>
+<tr><td>The cache will hit on later runs</td><td><b>not yet measured</b></td><td>first run missed and saved; the hit run had not finished</td></tr>
+<tr><td>Review verdicts per round</td><td>measured</td><td>the review files and the wrapper's <code>gate_ran</code> verdicts</td></tr>
+</table></div>
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
