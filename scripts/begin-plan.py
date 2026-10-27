@@ -983,6 +983,13 @@ def cmd_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     # Rebound by the r1 Codex 3 cases to inject a raising recorder / branch lookup; declared
     # first because Python refuses a `global` after the name's first use.
     global _load_plan_progress
@@ -1018,7 +1025,9 @@ def _self_test() -> int:
     # Stop hook (registered in the MAIN checkout) never looks — and `armed:` printed anyway. Real git, real worktree.
     with tempfile.TemporaryDirectory() as _wtd:
         _main_r = Path(_wtd) / "main"; _main_r.mkdir()
-        _g = lambda *a, cwd=_main_r: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
+        import fixture_git  # backlog #373: this fixture once committed into an exported GIT_DIR
+        _g = lambda *a, cwd=_main_r: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True,
+                                                    env=fixture_git.env())
         _g("init", "-q"); _g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base")
         _wt_r = Path(_wtd) / "linked"
         _g("worktree", "add", "-q", "-b", "side", str(_wt_r))

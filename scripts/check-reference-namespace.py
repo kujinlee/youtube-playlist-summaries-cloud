@@ -218,6 +218,13 @@ def _d(path: str, *lines: str) -> str:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     failed = 0
     cases = 0
 
@@ -292,17 +299,18 @@ def self_test() -> int:
 
     # ── ADR-0014: drive main() over worlds THIS CASE BUILT, in both directions ────────────
     import tempfile
+    import fixture_git  # backlog #373: no inherited GIT_DIR or host config reaches a fixture's git
     with tempfile.TemporaryDirectory() as td:
         bad = Path(td) / "bad"
-        subprocess.run(["git", "init", "-q", str(bad)], check=True)
+        subprocess.run(["git", "init", "-q", str(bad)], check=True, env=fixture_git.env())
         (bad / "docs").mkdir(parents=True)
         (bad / "docs" / "dev-process.md").write_text("a line with no reference\n")
         subprocess.run(["git", "-C", str(bad), "add", "-A"], check=True,
-                       capture_output=True)
+                       capture_output=True, env=fixture_git.env())
         subprocess.run(["git", "-C", str(bad), "-c", "user.email=t@t", "-c", "user.name=t",
-                        "commit", "-qm", "base"], check=True, capture_output=True)
+                        "commit", "-qm", "base"], check=True, capture_output=True, env=fixture_git.env())
         base_sha = subprocess.run(["git", "-C", str(bad), "rev-parse", "HEAD"],
-                                  capture_output=True, text=True).stdout.strip()
+                                  capture_output=True, text=True, env=fixture_git.env()).stdout.strip()
         (bad / "docs" / "dev-process.md").write_text("a line with no reference\nsee #291 here\n")
         import contextlib, io
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
@@ -325,14 +333,15 @@ def self_test() -> int:
         # spellings of one: this one puts the violation in a HOOK, where the earlier world put it
         # in a spine doc.
         hookworld = Path(td) / "hookworld"
-        subprocess.run(["git", "init", "-q", str(hookworld)], check=True)
+        subprocess.run(["git", "init", "-q", str(hookworld)], check=True, env=fixture_git.env())
         (hookworld / ".claude" / "hooks").mkdir(parents=True)
         (hookworld / ".claude" / "hooks" / "x.sh").write_text("# nothing to see\n")
-        subprocess.run(["git", "-C", str(hookworld), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(hookworld), "add", "-A"], check=True, capture_output=True,
+                       env=fixture_git.env())
         subprocess.run(["git", "-C", str(hookworld), "-c", "user.email=t@t", "-c", "user.name=t",
-                        "commit", "-qm", "base"], check=True, capture_output=True)
+                        "commit", "-qm", "base"], check=True, capture_output=True, env=fixture_git.env())
         hw_base = subprocess.run(["git", "-C", str(hookworld), "rev-parse", "HEAD"],
-                                 capture_output=True, text=True).stdout.strip()
+                                 capture_output=True, text=True, env=fixture_git.env()).stdout.strip()
         (hookworld / ".claude" / "hooks" / "x.sh").write_text("# nothing to see\n# see #291\n")
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
             rc_hook = main(["--base", hw_base], root=hookworld)

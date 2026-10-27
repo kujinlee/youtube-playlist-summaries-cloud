@@ -1119,6 +1119,13 @@ def main(argv: list[str]) -> int:
 
 # ── SELF-TEST ─────────────────────────────────────────────────────────────────────────────────
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases, failures = 0, 0
 
     def check(name, got, want):
@@ -1528,11 +1535,11 @@ def _self_test() -> int:
     # SAME collection `main()` runs (`gather`). Fixture text proves what the parser does to
     # the fixture; only git's own output proves what it does to git's output.
     _gw = Path(tempfile.mkdtemp())
-    _genv = dict(os.environ, HOME=str(_gw), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    import fixture_git  # backlog #373: this fixture once committed into an exported GIT_DIR
     def _grun(cmd, **kw):
         kw.setdefault("text", True)
         return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_gw,
-                              capture_output=True, env=_genv, **kw)
+                              capture_output=True, env=fixture_git.env(HOME=str(_gw)), **kw)
     _gread = git_reader(_grun)
     def _g(*a):
         return _gread(["git", *a])

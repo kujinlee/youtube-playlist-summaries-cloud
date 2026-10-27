@@ -545,11 +545,11 @@ def test_git(root: Path, *argv: str) -> str | None:
     ⛔ ISOLATED FROM THE CALLER'S GIT: inherited `GIT_*` variables are dropped (a hook context
     sets `GIT_DIR`, which `-C` does not override), and signing and hooks are off, so a developer's
     global config cannot make the suite's result depend on whose machine it runs on."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    import fixture_git  # backlog #373: CONSTRUCTED (allow-list), with host config off
     cfg = ["-c", "user.name=self-test", "-c", "user.email=self-test@example.invalid",
            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
     try:
-        r = subprocess.run(["git", *cfg, "-C", str(root), *argv], env=env,
+        r = subprocess.run(["git", *cfg, "-C", str(root), *argv], env=fixture_git.env(),
                            capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         return f"git {argv[0]} could not run ({type(exc).__name__})"
@@ -643,6 +643,13 @@ def run_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
     # declared here because Python refuses a `global` after the name's first use.
     global record_last_plan, current_branch, _write_record, refresh_work_lines

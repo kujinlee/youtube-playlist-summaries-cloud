@@ -496,7 +496,14 @@ def check(launcher: Path, scratch: Path) -> tuple[int, list[tuple[str, tuple, tu
     return (1 if red_names(results) else 0), results
 
 
-def self_test(launcher: Path = REPO_ROOT / LAUNCHER_REL) -> int:
+def self_test(*args, **kwargs) -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body(*args, **kwargs)
+
+
+def _self_test_body(launcher: Path = REPO_ROOT / LAUNCHER_REL) -> int:
     rows: list[tuple[str, object, object]] = []
     # The fixture environment: constructed, never inherited (backlog #373).
     planted = {"GIT_DIR": "/nonexistent-364", "GIT_WORK_TREE": "/nonexistent-364", "SECRET_364": "x"}

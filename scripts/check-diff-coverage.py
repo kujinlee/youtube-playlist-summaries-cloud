@@ -369,6 +369,13 @@ def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import io
     import json
     import shutil
