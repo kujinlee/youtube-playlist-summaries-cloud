@@ -372,8 +372,8 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "capture_output=True, env=unredirected())",
-        "capture_output=True, env=dict(os.environ))"
+        "                env=constructed_env())",
+        "                env=dict(os.environ))"
       ]
     ],
     "expect": [
@@ -433,16 +433,55 @@
     ]
   },
   {
-    "name": "⭐ the redirect filter keeps GIT_DIR (r1 H1)",
+    "name": "⭐ the constructed environment passes GIT_* through again (r2 REDESIGN)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "if k not in REDIRECTING}",
-        "if k not in REDIRECTING[1:]}"
+        "return {k: os.environ[k] for k in PASSED_ENV if k in os.environ}",
+        "return {k: v for k, v in os.environ.items() if k in PASSED_ENV or k.startswith(\"GIT_\")}"
       ]
     ],
     "expect": [
-      "⭐ under an exported GIT_DIR naming ANOTHER repo, `root` is still measured and the other is untouched (r1 H1)"
+      "⭐ every git call gets a CONSTRUCTED environment — no GIT_* variable at all reaches it (r2 REDESIGN)"
+    ]
+  },
+  {
+    "name": "⭐ attributes are read from the WORKING TREE again (r2 REDESIGN)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "r = run([\"git\", \"--attr-source=HEAD\", \"-c\", \"core.quotepath=off\", *args]",
+        "r = run([\"git\", \"-c\", \"core.quotepath=off\", *args]"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCOMMITTED .gitattributes cannot change what is measured — attributes come from HEAD (r2)"
+    ]
+  },
+  {
+    "name": "⭐ a non-regular manifest at HEAD is read as one again — a symlink's link text (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "parts[1] != \"blob\" or parts[0] not in (\"100644\", \"100755\")):",
+        "parts[1] != \"blob\"):"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifest that is a SYMLINK at HEAD is CANNOT RUN — its link text is not a manifest (r2)"
+    ]
+  },
+  {
+    "name": "⭐ the fixtures inherit the environment again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return dict(constructed_env(), GIT_CONFIG_GLOBAL=os.devnull,",
+        "        return dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,"
+      ]
+    ],
+    "expect": [
+      "⭐ command-scope git config (GIT_CONFIG_COUNT: a failing pre-commit hook) cannot reach a fixture (r2)"
     ]
   }
 ]

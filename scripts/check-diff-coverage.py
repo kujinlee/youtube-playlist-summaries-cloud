@@ -35,7 +35,7 @@ without a decision line changing, a `match` statement's arms, a decision express
 assignment, or a DELETED line.
 
     python3 scripts/check-diff-coverage.py --base origin/master
-    python3 scripts/check-diff-coverage.py --self-test  # 57 cases
+    python3 scripts/check-diff-coverage.py --self-test  # 61 cases
 
 EXIT CODES: 0 = ran (warnings, if any, are printed; a file it could not measure says NOT CHECKED) · 2 =
 CANNOT RUN (no git, an unknown base, HEAD's tree unreadable, or manifests the loader refuses). There is no 1: it only
@@ -60,15 +60,17 @@ CAP = 12  # warnings shown per file; the rest are counted
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 BINARY = re.compile(r"^Binary files (.+) and (.+) differ$")
 SELF_TEST_NAMES = frozenset({"self_test", "_self_test"})
-# Variables that point git at ANOTHER repository. Stripped from every call: the subject is `root`, and a fixture run
-# under an exported GIT_DIR once committed into the live checkout (`codex-review.py` r11, 2026-09-14 — its leaked
-# identity sat in `.git/config` for six weeks). The class across fixtures is backlog #373.
-REDIRECTING = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
-               "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
+# ⛔ The environment every git call gets is CONSTRUCTED from an allow-list, never filtered from a deny-list (backlog #371,
+# PR #415 r2 REDESIGN). Filtering failed twice: r1 stripped GIT_DIR and its neighbours, and r2 measured command-scope
+# config (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`, `GIT_CONFIG_PARAMETERS`) still arriving. NO
+# `GIT_*` variable passes, so nothing in the environment can point git at another repository or reconfigure it — a
+# fixture run under an exported GIT_DIR once committed into the live checkout (`codex-review.py` r11, 2026-09-14; its
+# leaked identity sat in `.git/config` for six weeks). The class across fixtures is backlog #373.
+PASSED_ENV = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SYSTEMROOT")
 
 
-def unredirected() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k not in REDIRECTING}
+def constructed_env() -> dict[str, str]:
+    return {k: os.environ[k] for k in PASSED_ENV if k in os.environ}
 
 
 _ESC = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
@@ -266,12 +268,17 @@ def snapshot_head_manifests(git, snap: Path) -> str | None:
     for rec in filter(None, r.stdout.split("\0")):
         meta, _, path = rec.partition("\t")
         parts = meta.split()
+        rel = path.split("/")
+        manifest = len(rel) == 3 and rel[1] == "mutations" and path.endswith(".json")
+        if manifest and (len(parts) != 3 or parts[1] != "blob" or parts[0] not in ("100644", "100755")):
+            # A symlink's blob is its LINK TEXT — valid JSON there was read as a manifest (r2) — and a submodule has
+            # no blob at all. The working-tree loader refuses both, so the snapshot must too.
+            return f"{path} at HEAD is not a regular file (mode {parts[0] if parts else '?'}), so it is not a manifest"
         if len(parts) != 3 or parts[1] != "blob":
             continue
-        rel = path.split("/")
         if len(rel) == 2 and path.endswith(".py"):
             (snap / path).touch()
-        elif len(rel) == 3 and rel[1] == "mutations" and path.endswith(".json"):
+        elif manifest:
             blob = git("cat-file", "blob", parts[2])
             if blob.returncode != 0:
                 return f"cannot read {path} at HEAD: {blob.stderr.strip()[:120]}"
@@ -286,7 +293,11 @@ def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]
         # ⛔ BYTES, decoded with replacement and NO newline translation (backlog #371): `text=True` turns on universal
         # newlines, which rewrote a lone CR — in a source it hid from `measurable()`; in the DIFF it split a deleted line
         # into a fake `diff --git` header and dropped the file's later hunks (PR #415 r1).
-        r = run(["git", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True, env=unredirected())
+        # `--attr-source=HEAD`: attributes come from the committed tree, like the sources and manifests — an
+        # uncommitted `*.py -diff` turned a WARN into a binary NOT CHECKED (r2). Needs git 2.40; an older git refuses
+        # the option, which is CANNOT RUN, never a silent fallback to the working tree.
+        r = run(["git", "--attr-source=HEAD", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True,
+                env=constructed_env())
         return subprocess.CompletedProcess(r.args if hasattr(r, "args") else args, r.returncode,
                                            r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace"))
 
@@ -539,14 +550,18 @@ def self_test_lines_helper():
     case("⭐ the diff is THREE-dot, and pinned: no external driver, standard prefixes (r3)",
          ("HEAD...HEAD" in diffcmd, "--no-ext-diff" in diffcmd, "--src-prefix=a/" in diffcmd, "--dst-prefix=b/" in diffcmd),
          (True, True, True, True))
+    def sub(c):  # the git subcommand: whatever follows the pinned `-c core.quotepath=off`
+        return c[c.index("core.quotepath=off") + 1] if "core.quotepath=off" in c else None
     case("⭐ the source is read from the committed HEAD, not the working tree (r3)",
-         any(c[:4] == ["git", "-c", "core.quotepath=off", "show"] and c[-1] == f"HEAD:{target}" for c, _ in seen), True)
+         any(sub(c) == "show" and c[-1] == f"HEAD:{target}" for c, _ in seen), True)
+    case("⭐ every git call reads ATTRIBUTES from HEAD (`--attr-source=HEAD`), never the working tree (r2 REDESIGN)",
+         (len(seen) > 2, all(c[1] == "--attr-source=HEAD" for c, _ in seen)), (True, True))
     case("⭐ every git call is read as BYTES — `text=True` would translate a lone CR first (backlog #371)",
          (len(seen) > 2, all("text" not in k and "errors" not in k for _, k in seen)), (True, True))
-    case("⭐ every git call strips GIT_DIR and its neighbours — the subject is `root` (backlog #371 r1)",
-         all(not set(REDIRECTING) & set(k.get("env") or {"GIT_DIR": 1}) for _, k in seen), True)
+    case("⭐ every git call gets a CONSTRUCTED environment — no GIT_* variable at all reaches it (r2 REDESIGN)",
+         all(k.get("env") is not None and not any(v.startswith("GIT_") for v in k["env"]) for _, k in seen), True)
     case("⭐ both git reads pass --no-textconv — a textconv driver cannot rewrite what is measured (backlog #371)",
-         sorted(c[3] for c, _ in seen if "--no-textconv" in c and c[3] in ("diff", "show")), ["diff", "show"])
+         sorted(sub(c) for c, _ in seen if "--no-textconv" in c and sub(c) in ("diff", "show")), ["diff", "show"])
     res = caught(lambda: run_check(REPO_ROOT, "HEAD", run=via((hdr + "@@ -1 +1 @@\n").encode() + b"\xff\xfe\n")))
     case("⭐ a non-UTF-8 byte in git's output is decoded with replacement, not a traceback",
          res[0] if len(res) == 2 else res, 0)
@@ -576,11 +591,12 @@ def self_test_lines_helper():
     # gets, so only real git can show what `text=True` or a textconv driver does.
     # ⛔ ISOLATED (PR #415 r1 H1): no inherited GIT_DIR (the fixture once committed into a victim repo and still passed),
     # and no host config (`commit.gpgsign=true` or a failing global hook crashed the suite).
-    iso = dict(unredirected(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+    def iso():  # built at CALL time: computed once up front, a case that changes os.environ later tests nothing (r2)
+        return dict(constructed_env(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
 
     def world(td: Path, head_src: bytes, extra=None, base_src: bytes = b"x = 1\n") -> str:
         def g(*a):
-            subprocess.run(["git", *a], cwd=td, check=True, capture_output=True, env=iso)
+            subprocess.run(["git", *a], cwd=td, check=True, capture_output=True, env=iso())
         g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
         (td / "scripts" / "mutations").mkdir(parents=True)
         shutil.copy(REPO_ROOT / "scripts" / "check-plan-code.py", td / "scripts" / "check-plan-code.py")
@@ -588,7 +604,7 @@ def self_test_lines_helper():
         (td / "scripts" / "mutations" / "g.json").write_text(json.dumps([{"name": "m", "file": "scripts/g.py",
             "edits": [["x = 1", "x = 2"]], "expect": ["c"]}]))
         g("add", "-A"); g("commit", "-qm", "base")
-        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=td, capture_output=True, text=True, env=iso).stdout.strip()
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=td, capture_output=True, text=True, env=iso()).stdout.strip()
         if extra:
             extra(g)
         (td / "scripts" / "g.py").write_bytes(head_src)
@@ -633,13 +649,13 @@ def self_test_lines_helper():
         rc, msgs = run_check(w, base, run=iso_run)
         case("⭐ an UNCOMMITTED or IGNORED manifest cannot clear a committed line — manifests come from HEAD (backlog #371)",
              (rc, any(m.startswith("WARN scripts/g.py:2:") for m in msgs)), (0, True))
-        subprocess.run(["git", "commit", "-qam", "cover"], cwd=w, check=True, capture_output=True, env=iso)
+        subprocess.run(["git", "commit", "-qam", "cover"], cwd=w, check=True, capture_output=True, env=iso())
         rc, msgs = run_check(w, base, run=iso_run)
         case("...and once that manifest is COMMITTED, the same line is covered (the control: HEAD's manifests are read)",
              (rc, any(m.startswith("WARN scripts/g.py:2:") for m in msgs)), (0, False))
         with tempfile.TemporaryDirectory() as td7:
             victim = Path(td7)
-            subprocess.run(["git", "init", "-q"], cwd=victim, check=True, capture_output=True, env=iso)
+            subprocess.run(["git", "init", "-q"], cwd=victim, check=True, capture_output=True, env=iso())
             before = sorted(p.name for p in (victim / ".git").iterdir())
             old = os.environ.get("GIT_DIR")
             os.environ["GIT_DIR"] = str(victim / ".git")
@@ -653,8 +669,50 @@ def self_test_lines_helper():
             case("⭐ under an exported GIT_DIR naming ANOTHER repo, `root` is still measured and the other is untouched (r1 H1)",
                  (rc, any(m.startswith("diff coverage: 0 changed decision line(s) no mutation edits, across 1") for m in msgs),
                   sorted(p.name for p in (victim / ".git").iterdir()) == before), (0, True, True))
-    with redirect_stderr(io.StringIO()):
-        case("main() over an unknown base exits 2", main(["--base", "no-such-ref-xyz"], root=REPO_ROOT), 2)
+    with tempfile.TemporaryDirectory() as td8:
+        w = Path(td8)
+        base = world(w, b"x = 1\nif bad:\n    pass\n")
+        (w / ".gitattributes").write_text("*.py -diff\n")  # UNCOMMITTED: would make git call the source binary
+        rc, msgs = run_check(w, base, run=iso_run)
+        case("⭐ an UNCOMMITTED .gitattributes cannot change what is measured — attributes come from HEAD (r2)",
+             (rc, any(m.startswith("WARN scripts/g.py:2:") for m in msgs)), (0, True))
+        (w / ".gitattributes").unlink()
+
+        def symlinked(g):  # a DANGLING symlink whose link text is valid manifest JSON covering line 2
+            (w / "scripts" / "mutations" / "g.json").unlink()
+            os.symlink(json.dumps([{"name": "m", "file": "scripts/g.py", "edits": [["if bad:", "if not bad:"]],
+                                    "expect": ["c"]}]), w / "scripts" / "mutations" / "g.json")
+        with tempfile.TemporaryDirectory() as td9:
+            w2 = Path(td9)
+            w = w2
+            base2 = world(w2, b"x = 1\nif bad:\n    pass\n", symlinked)
+            rc, msgs = run_check(w2, base2, run=iso_run)
+            case("⭐ a manifest that is a SYMLINK at HEAD is CANNOT RUN — its link text is not a manifest (r2)",
+                 (rc, msgs[0].startswith("CANNOT RUN — scripts/mutations/g.json at HEAD is not a regular file")), (2, True))
+        with tempfile.TemporaryDirectory() as tdh:
+            hooks = Path(tdh)
+            (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n")
+            (hooks / "pre-commit").chmod(0o755)
+            saved = {k: os.environ.get(k) for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")}
+            os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="core.hooksPath", GIT_CONFIG_VALUE_0=str(hooks))
+            try:
+                with tempfile.TemporaryDirectory() as tdc:
+                    wc = Path(tdc)
+                    res = caught(lambda: (lambda b: run_check(wc, b, run=iso_run))(world(wc, b"x = 1\nif bad:\n    pass\n")))
+            finally:
+                for k, v in saved.items():
+                    os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            case("⭐ command-scope git config (GIT_CONFIG_COUNT: a failing pre-commit hook) cannot reach a fixture (r2)",
+                 (res[0], any(m.startswith("WARN scripts/g.py:2:") for m in res[1])) if len(res) == 2 else res, (0, True))
+    with tempfile.TemporaryDirectory() as tdu:
+        wu = Path(tdu)
+        world(wu, b"x = 1\nif bad:\n    pass\n")
+        with redirect_stderr(io.StringIO()) as err:
+            rc = main(["--base", "no-such-ref-xyz"], root=wu)
+        # In a REAL repository with a valid HEAD, so the exit can only come from the unknown base (r2: in a directory
+        # with no repository at all the old case passed too, for a reason it did not name).
+        case("main() over an unknown base exits 2, BECAUSE the base is unknown",
+             (rc, "no-such-ref-xyz" in err.getvalue() and "CANNOT RUN — `git diff" in err.getvalue()), (2, True))
     with tempfile.TemporaryDirectory() as td2:  # a world with no git at all: CANNOT RUN, never a clean zero
         with redirect_stderr(io.StringIO()) as err:
             rc = main(["--base", "HEAD"], root=Path(td2))
