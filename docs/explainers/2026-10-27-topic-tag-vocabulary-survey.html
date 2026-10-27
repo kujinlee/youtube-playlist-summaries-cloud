@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared glue and a common tag vocabulary</title>
+
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="wrap ex-body">
+
+<h1>Shared glue, and whether the line items can share one tag vocabulary</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-27 11:55 · 9ac7c80d · uncommitted changes</time></span></div></div>
+<p class="horizon">as of <code>9ac7c80d</code> (master) · 2026-10-27 11:56 PDT · read from the <b>working tree</b> of the main checkout (several explainer pages carry uncommitted edits) · every number below comes from a command run against these files, using the repo's own parsers where they exist</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>which building blocks do the explainer pages share, and can the TAGS on the line items those pages list (backlog rows, features, goals, dashboard entries, work lines, review findings…) share one vocabulary, given that the same concept is often tagged differently?</i> Part A measures the shared pieces and how widely they're actually used. Part B lists every tag-like field, its values and who reads it, finds the synonyms, and weighs three ways to unify them. <b>Not covered:</b> the product's own data (playlists, summaries). This is about the harness pages only.
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session and the answer gets written into this page, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#reframe">The idea: not one vocabulary but several axes, flattened into one</a></li>
+<li><a href="#glue">Part A — the shared building blocks</a></li>
+<li><a href="#adoption">Adoption: who actually uses them</a></li>
+<li><a href="#vocabs">Part B — every tag-like field, measured</a></li>
+<li><a href="#synonyms">Synonym clusters: one concept, many tags</a></li>
+<li><a href="#options">Three ways to a common vocabulary</a></li>
+<li><a href="#rec">Recommendation, and what would make it fail</a></li>
+<li><a href="#measured">What was measured, and what was inferred</a></li>
+</ol>
+</div>
+
+<h2 id="reframe">The idea: not one vocabulary but several axes, flattened into one</h2>
+
+<p class="lede">The repo's line items are tagged in <b>eleven separate vocabularies</b>, and <b>only three have a closed list that anything enforces</b>. But the deeper problem isn't synonyms. Single tag fields hold <b>several kinds of thing at once</b>: <i>which part of the system</i>, <i>which goal</i>, <i>what kind of item</i>, and sometimes <i>its status</i>. One example: the backlog's severity column has a value <code>✅ done</code> on <b>117</b> of its 333 rows, so that column holds a status, not a severity.</p>
+
+<p>So "common tag names" is feasible, but only if the vocabulary is split into <b>facets</b>, meaning separate axes such as <i>area</i>, <i>goal</i>, <i>kind</i>, <i>severity</i> and <i>status</i>, each with its own small closed list. One flat merged list would give the same words several meanings, and that, not spelling, is what makes today's tags hard to use. Backlog #90 (stories vs tasks, raised 2026-09-03) is the same finding seen from the backlog alone.</p>
+
+<div class="k warn"><b>The comprehensibility suite is the clearest example.</b> It has <b>five names in four vocabularies</b>: the backlog tag <code>(comprehensibility)</code> (38 rows), the anchors <code>status-visibility</code> / <code>explanation-on-demand</code> / <code>feature-map</code>, the feature nodes <code>status-pages</code> / <code>feature-map</code> / <code>explainer-pages</code>, "goal 1" in the roadmap, and "D2" for the deliverable. Nothing connects them except prose, and the <code>explainer-pages</code> feature claims <b>no</b> backlog tag at all.</div>
+
+<h2 id="glue">Part A — the shared building blocks</h2>
+
+<p>These are the pieces a page can get from shared code instead of copying them. Each is one function or one script, and that's the whole design. Every inline copy is a place where defects come back.</p>
+
+<div class="scroll"><table>
+<tr><th>Building block</th><th>Owner (one place)</th><th>What it gives a page</th></tr>
+<tr><td>Ask tray (the question box)</td><td><code>brief-compose.py</code>, lifted <b>verbatim</b> from a known-good page</td><td>ask from a heading or a text selection → <code>POST /questions</code> → the live session</td></tr>
+<tr><td>Theme switcher</td><td><code>page_chrome.theme_control()</code> (:643), <code>has_control()</code> (:272), <code>missing_palettes()</code> (:244)</td><td>light/dark/auto; withheld if the page lacks either explicit palette</td></tr>
+<tr><td>Text-style switcher and colour roles</td><td><code>page_chrome.text_style_control()</code> (:742), <code>text_style_css()</code> (:761)</td><td>heading/prose/emphasis colours, inside <code>.ex-body</code> only</td></tr>
+<tr><td>Chrome bar, stamp, provenance</td><td><code>page_chrome.chrome_bar()</code> (:1302), <code>stamp()</code>, <code>provenance()</code> (:1275)</td><td>build time and source commit, refresh button</td></tr>
+<tr><td>Inline markdown</td><td><code>page_markup.render_inline()</code> (:242)</td><td>one rule for <code>`code`</code>, <b>bold</b>, links (backlog #71 closed four drifting copies)</td></tr>
+<tr><td>OS-dark shim</td><td><code>brief-compose.py</code> SHIM</td><td>tokens a fragment forgot; heading-button positioning</td></tr>
+<tr><td>Live reload</td><td><code>explainer-serve.py</code>, <b>injected</b> into every page it serves</td><td>answers appear without a refresh; never while a draft is open</td></tr>
+<tr><td>Colour tokens</td><td><code>CONTEXT.md</code> → <i>The common look</i></td><td><code>--accent</code>, <code>--verified</code>, <code>--hot</code>…; a convention, see #308</td></tr>
+</table></div>
+
+<h2 id="adoption">Adoption: who actually uses them</h2>
+
+<p>There are 73 pages in <code>docs/explainers/</code>, not counting fragments. Families are by filename: <b>generated</b> = dashboard, goals, backlog-table, features, work-lines; <b>brief</b> 49; <b>topic</b> 9; <b>findings</b> 1; and <b>older/other</b> 9 (the <code>explanation-*</code> pages, the RLS explainer, one fragment-named page). The markers are <code>page_chrome</code>'s own predicates, run on each page, except the tray (which uses <code>id="tray"</code>) and the inline-theme row (which uses <code>data-theme</code> anywhere).</p>
+
+<div class="scroll"><table class="num">
+<tr><th>Block</th><th>generated (5)</th><th>brief (49)</th><th>topic (9)</th><th>findings (1)</th><th>older (9)</th><th>All (73)</th></tr>
+<tr><td>Ask tray</td><td>4</td><td>49</td><td>9</td><td>1</td><td>6</td><td><b>69</b></td></tr>
+<tr><td>Some theme switching (<code>data-theme</code>)</td><td>5</td><td>48</td><td>9</td><td>0</td><td>7</td><td><b>69</b></td></tr>
+<tr><td>…via the <b>shared</b> control (<code>has_control</code>)</td><td>5</td><td>11</td><td>4</td><td>0</td><td>0</td><td><b>20</b></td></tr>
+<tr><td>Text-style switcher (<code>has_text_control</code>)</td><td>0</td><td>3</td><td>5</td><td>0</td><td>0</td><td><b>8</b></td></tr>
+<tr><td><code>.ex-body</code> opt-in (<code>has_text_consumer</code>)</td><td>0</td><td>3</td><td>4</td><td>0</td><td>0</td><td><b>7</b></td></tr>
+<tr><td>Palette incomplete (<code>missing_palettes</code> ≠ ∅)</td><td>0</td><td>7</td><td>0</td><td>0</td><td>0</td><td><b>7</b></td></tr>
+<tr><td>Control bar unreachable (<code>bar_unreachable</code>)</td><td>0</td><td>7</td><td>0</td><td>0</td><td>0</td><td><b>7</b></td></tr>
+<tr><td>Fragment kept beside the page</td><td>4</td><td>17</td><td>9</td><td>0</td><td>0</td><td><b>30</b></td></tr>
+</table></div>
+
+<div class="k red"><b>What the matrix says:</b> the <b>tray</b> is effectively universal (69/73), because it's always lifted, never retyped. <b>Theme switching</b> looks universal (69) but only <b>20</b> pages use the shared control, so <b>~49 pages carry an inline copy</b>. The <b>text-style switcher</b> is on <b>8</b> pages, and on <b>none</b> of the generated ones. Of the four, the theme switcher is where copies have piled up.</div>
+
+<p>Where the filed backlog rows sit in this matrix:</p>
+<div class="scroll"><table>
+<tr><th>Row</th><th>Cell it lives in</th></tr>
+<tr><td>#226 typography contract</td><td>text-style / <code>.ex-body</code> — 7 pages opt in</td></tr>
+<tr><td>#237 text-style switcher was a one-off copy</td><td>text-style — now a shared control, adopted by 8</td></tr>
+<tr><td>#376 make text-style the default</td><td>text-style — the row says 9 of 89; this measurement says <b>8 of 73</b>. The 89 probably counted fragments too. <span class="tag">UNVERIFIED</span></td></tr>
+<tr><td>#300 / #304 controls wired but unreachable</td><td>bar unreachable — 7 brief pages</td></tr>
+<tr><td>#349 <code>missing_palettes</code> can't decide from text</td><td>palette incomplete — the same 7 pages</td></tr>
+<tr><td>#351 <code>--fg</code>/<code>--fg2</code> cycle</td><td>colour tokens — inside the copied palette blocks</td></tr>
+<tr><td>#308 accent colour is a repeated literal</td><td>colour tokens — 177 inline copies (per the row)</td></tr>
+</table></div>
+
+<h2 id="vocabs">Part B — every tag-like field, measured</h2>
+
+<div class="scroll"><table class="num">
+<tr><th>Field</th><th>Values (count)</th><th>Written by</th><th>Read by</th><th>Closed list?</th></tr>
+<tr><td>Backlog <b>Bundle</b> column</td><td>23 raw strings → 22 tags via <code>bundle_tags</code>; <code>(tooling)</code> 176 of 333</td><td>hand</td><td>backlog page filter (slash = hierarchy); features page (raw exact match)</td><td>no — includes <code>''</code> ×3, <code>—</code> ×2</td></tr>
+<tr><td>Backlog <b>severity</b> glyph</td><td>🔴1 🟠52 🟡113 🟢45 <b>✅117</b> none 5</td><td>hand</td><td><code>gen-backlog-page.SEVERITY</code> (:100)</td><td>yes — but ✅ is a <b>status</b></td></tr>
+<tr><td>Features <code>areas:</code></td><td>21, incl. both <code>(cloud/money)</code> and <code>(cloud / money)</code></td><td>hand, <code>docs/features.md</code></td><td><code>gen-features-page.collect</code></td><td>implicitly: the in-use Bundle values</td></tr>
+<tr><td>Feature <b>nodes</b></td><td>29 (3 group headings + 26 nodes)</td><td>hand</td><td>features page</td><td>the tree itself</td></tr>
+<tr><td><b>Anchors</b> (ADR-0010)</td><td>13 registered in <code>docs/anchors.md</code></td><td>hand, registry</td><td>goals page, features page, <code>check-anchors.py</code></td><td><b>yes</b> — the one real registry</td></tr>
+<tr><td>Roadmap <b>goals</b> / deliverables</td><td>3 goals; D1, D2</td><td>hand, roadmap prose</td><td>people</td><td>no machine reader found <span class="tag">UNVERIFIED</span></td></tr>
+<tr><td>Dashboard entry <b>kind</b></td><td><code>[needs-you]</code> 60, <code>[resolved:…]</code> 16, <code>[heads-up]</code> 2; untagged 298 of 376</td><td>hand / skill</td><td><code>check-dashboard-entry.py</code>, dashboard page</td><td>grammar only</td></tr>
+<tr><td>Dashboard → backlog / goal link</td><td>106 of 376 entries name a backlog row; 119 name a goal or anchor (keyword)</td><td>prose</td><td>nobody</td><td>no</td></tr>
+<tr><td>Review <code>component:</code></td><td><b>232 distinct</b> over 746 findings in 126 records; <b>146 appear in only one record</b></td><td>coordinator, per round</td><td><code>check-review-decision</code> ranker (counts per component)</td><td>no — free text</td></tr>
+<tr><td>Review <code>aim:</code></td><td>deliverable 547, instrument 177, records 20, process 2</td><td>coordinator</td><td>review tooling</td><td>small set</td></tr>
+<tr><td>Review <code>disposition:</code></td><td>fixed 584, filed 100, declined 39, deferred 11, split 5, refuted 3, retreat 2, redesigned 1, moot 1</td><td>coordinator</td><td><code>check-review-decision</code> (<code>ANSWERED</code>, :534)</td><td>partly — 3 values are "answered"</td></tr>
+<tr><td>Review <b>severity</b></td><td>Medium 293, Low 267, High 161, Blocking 24, Info 1</td><td>coordinator</td><td>convergence rule</td><td>by convention</td></tr>
+<tr><td>Decision-log <code>route</code> / <code>outcome</code></td><td>accrete 29, redesign 22, split 20, defer 18 / continued 60, stopped 27, null 2</td><td>coordinator</td><td><code>check-decision-scheme.py</code> (<code>LADDER</code>, :142)</td><td><b>yes</b></td></tr>
+<tr><td>Memory <code>type</code></td><td>feedback 92, project 74, reference 2, missing 3</td><td>me</td><td>recall</td><td>by convention (4 values)</td></tr>
+<tr><td>Work-line thread tag</td><td><code>fix · blocker · bookkeeping · side</code></td><td>my banners only</td><td>nobody — no script reads it (grep)</td><td>no</td></tr>
+</table></div>
+
+<h2 id="synonyms">Synonym clusters: one concept, many tags</h2>
+
+<div class="scroll"><table class="num">
+<tr><th>Concept</th><th>Its names today</th><th>Size</th></tr>
+<tr><td><b>Money / spend</b></td><td><code>(cloud/money)</code> 4 + <code>(cloud / money)</code> 2; feature node <code>spend-control</code>; anchor <code>serve-money-guard</code></td><td>2 spellings the backlog page merges but the features page doesn't (so features.md lists both)</td></tr>
+<tr><td><b>Testing</b></td><td><code>(test infra)</code> 9, <code>(cloud/test)</code> 4; node <code>automated-test-suites</code>; review components <code>tests</code>, <code>suite</code>, <code>coverage</code>, <code>manifests</code>, <code>mutation-manifest</code>…</td><td><b>26</b> component values, 95 findings</td></tr>
+<tr><td><b>Pages / comprehensibility</b></td><td><code>(comprehensibility)</code> 38; 3 anchors; 3 feature nodes; goal 1; D2; components <code>page_chrome</code>, <code>stub-page</code>, <code>palette-detection</code>, <code>em-dark-state</code>, <code>explainer-page</code>…</td><td><b>14</b> component values, 66 findings</td></tr>
+<tr><td><b>Prose / documentation</b></td><td>components <code>prose</code>, <code>contract-text</code>, <code>stale-prose</code>, <code>delivery-figures</code>, <code>calibration-claims</code>, <code>docstrings</code>…</td><td><b>19</b> values, 97 findings</td></tr>
+<tr><td><b>Git / diff handling</b></td><td><code>diff-parse</code>, <code>diff-extraction</code>, <code>main-diff</code>, <code>hunk-ownership</code>, <code>parse-hunks</code>, <code>git-invocation</code>…</td><td><b>12</b> values, 48 findings</td></tr>
+<tr><td><b>Process / harness</b></td><td><code>(process)</code> 25, <code>(process / deliverable #2)</code> 23; nodes <code>review-loop</code>, <code>process-harness</code>, <code>guard-and-gate-harness</code>; D2; <code>(tooling)</code> 176</td><td>"process", "tooling" and "harness" overlap with no rule between them</td></tr>
+<tr><td><b>Severity</b></td><td>backlog 🔴🟠🟡🟢; reviews Blocking/High/Medium/Low; Codex text also Major/Minor and P1/P2/P3</td><td><b>3 scales</b>; in Codex reviews, Major 21 and P2 34 appear beside High 102</td></tr>
+</table></div>
+
+<p>The component clusters come from a keyword search, so they're a <b>lower bound</b> on synonyms, and a value can fall in two clusters (<code>dashboard-text</code> is both prose and page). The important number is <b>146 of 232 component values used in only one review record</b>. A field where most values are used once records a description, not a category. That's fine for the ranker, which only compares within one subject, but those values can't be used to group findings across subjects.</p>
+
+<h2 id="options">Three ways to a common vocabulary</h2>
+
+<div class="scroll"><table>
+<tr><th>Option</th><th>What it is</th><th>Cost</th><th>What it breaks or misses</th></tr>
+<tr><td><b>1 — Registry and guard</b></td><td>one file listing the allowed tags (like <code>docs/anchors.md</code>); a guard refuses an unregistered tag</td><td>a file, a guard, a migration of 23 Bundle values</td><td>stops <b>new</b> drift. Applied to <code>component:</code> it would refuse 146 one-off values, so either that field gets a separate free-text description beside its tag, or the guard is switched off (backlog #56: a guard red from birth gets turned off)</td></tr>
+<tr><td><b>2 — Alias map</b></td><td>canonical tags, with old spellings mapped to them at read time</td><td>small; no edits to old records</td><td>fixes <i>spellings</i> (<code>cloud/money</code>), not <i>meanings</i>. It merges what should stay separate — status into severity, tooling into comprehensibility</td></tr>
+<tr><td><b>3 — Facets</b></td><td>several small closed axes: <b>area</b> (part of the system), <b>goal</b> (= anchor, already a registry), <b>kind</b> (defect / story / task, #90), <b>severity</b>, <b>status</b></td><td>the largest: a grammar change, plus a retag</td><td>nothing is overloaded, so each page filters on the axis it needs. Asks one more decision per item, which is friction</td></tr>
+</table></div>
+
+<h2 id="rec">Recommendation, and what would make it fail</h2>
+
+<ol>
+<li><b>Treat the anchors registry as the goal facet</b> and stop inventing goal-ish backlog tags. Anchors are the one vocabulary that's registered, guarded, and already read by both the goals and features pages. Let a backlog row name an anchor directly, which backlog #381's multi-tag parser can carry: <code>(tooling) (status-visibility)</code>.</li>
+<li><b>Keep area as a small closed list</b> (about 10 values after merging the spellings), registered and guarded. That's option 1, applied to area alone.</li>
+<li><b>Take status out of severity:</b> <code>✅</code> becomes a status, so the backlog has two columns where it has one today. This is #90's split.</li>
+<li><b>Leave <code>component:</code> as free text</b>, because the ranker needs exact descriptions within one subject. If it's ever needed across subjects, add an <i>area</i> beside it rather than forcing a closed list onto it.</li>
+<li><b>Glue:</b> the next win is the theme switcher. ~49 inline copies should become the shared control, the way the tray already is. #376 (text-style on by default) is the same move for the second control.</li>
+</ol>
+
+<div class="k green"><b>It fails if</b> after the retag, any one concept still appears under two values of the same facet (e.g. <code>cloud/money</code> and <code>cloud / money</code> both in use), <b>or</b> the features page's comprehensibility nodes still miss an open suite row that a keyword search finds, <b>or</b> the area guard has to be widened within a month of shipping. That last one would mean the closed list was guessed rather than derived.</div>
+
+<h2 id="measured">What was measured, and what was inferred</h2>
+
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Measured / inferred</th><th>How</th></tr>
+<tr><td>73 pages; per-family counts in the adoption matrix</td><td><span class="tag m">measured</span></td><td><code>page_chrome</code> predicates run on every non-fragment <code>docs/explainers/*.html</code> (working tree)</td></tr>
+<tr><td>~49 inline theme copies</td><td><span class="tag m">measured</span> as 69 − 20</td><td><code>data-theme</code> present but <code>has_control</code> false. Assumes no other shared mechanism exists</td></tr>
+<tr><td>Bundle: 23 raw values, 22 tags, tooling 176</td><td><span class="tag m">measured</span></td><td><code>gen-backlog-page.parse</code> + <code>bundle_tags</code></td></tr>
+<tr><td>Severity ✅ = 117 rows</td><td><span class="tag m">measured</span></td><td>same parser, <code>sev == "done"</code></td></tr>
+<tr><td>232 component values, 146 used once, 746 findings</td><td><span class="tag m">measured</span></td><td>regex over the coordinator records' finding yaml</td></tr>
+<tr><td>Synonym cluster sizes</td><td><b>inferred</b> (keyword lower bound)</td><td>a regex per cluster; a value can fall in two</td></tr>
+<tr><td>Dashboard → backlog 106, → goal 119</td><td><b>inferred</b> (keyword)</td><td>regex over entry text; mentions, not links</td></tr>
+<tr><td>Work-line tags have no reader; goals have no machine reader</td><td><b>inferred</b> from a grep that found nothing</td><td>an empty grep isn't proof</td></tr>
+<tr><td>#376's "9 of 89" vs this page's 8 of 73</td><td><b>unresolved</b></td><td>different populations; not reconciled</td></tr>
+<tr><td>Recommendation and its cost</td><td><b>judgement</b></td><td>the cost of each option was estimated, not built</td></tr>
+</table></div>
+
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
