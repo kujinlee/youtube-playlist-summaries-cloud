@@ -313,13 +313,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
-    # backlog #362 (2026-10-26; keys re-pinned at the r2 REDESIGN, which removed the record and bet readers).
+    # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
         "check_summary.rollup",
         "clean.value",
         "clean.width",
-        "collect.clock",
-        "collect.deadline",
+        "failing_names.rollup",
         "collect.now",
         "collect.root",
         "collect.run",
@@ -334,13 +333,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "main.root",
         "main.run",
         "read_ledger.path",
-        "render.facts",
-        "render.fetch_ok",
         "render.ledger",
         "render.ledger_problems",
         "render.now",
         "render.pr_error",
-        "render.not_read",
         "render.prs",
         "render.truncated",
     ),

@@ -17753,15 +17753,15 @@ pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review co
 
 ## 2026-10-26
 Every new session, and every time the conversation is automatically compacted, now begins with a short
-block listing what is in flight: each open pull request with its state and checks, the last step written on
-that pull request's own branch, how many review files it added, and any background job someone recorded.
-It is worked out from GitHub and git at that moment, and where it cannot find something out it says so.
+block listing what is in flight: each open pull request with its state, its checks and which of them are
+failing, and any background job someone recorded. It is read from GitHub at that moment, and where it
+cannot find something out it says so. Showing what each pull request is waiting on is split out for a
+design review of its own, after two attempts each showed one pull request's state as another's.
 <!--tech-->
-Branch `session-state` (backlog #362, PR #410). `scripts/session-state.py` + SessionStart hook
-`.claude/hooks/session-state.sh` (startup, resume, compact; reads no stdin; always exits 0). Keyed by PR NUMBER:
-head, draft, mergeability, check summary (`NO CHECKS`), latest non-merge subject in `origin/master..<head>`, count of
-review files ADDED (`--diff-filter=A`). ⟳ r1 (both halves): nine ways falsely reassuring. ⟳ r2 (Codex): the r1 fold
-still read review semantics from filenames — a same-named fork shared a review, an edited inherited record became this
-PR's verdict, U+2028/zero-width forged lines — so REDESIGNED to say less: no record headings, no bets; `clean()` by
-Unicode category; a regular-file ledger split on `\n`, ASCII-escaped, damaged bytes kept; no call launched past a 40 s
-budget. 38 cases; 19 mutations. Delivery after compaction verified (Claude Code 2.1.309). Filed backlog #366.
+Branch `session-state` (backlog #362, PR #410), the STABLE half after a SPLIT. `scripts/session-state.py` + SessionStart
+hook `.claude/hooks/session-state.sh` (startup, resume, compact; reads no stdin; always exits 0). Per PR, from `gh` alone
+and keyed by number: head, draft, mergeability, check summary (`NO CHECKS`), failing check NAMES. Ledger: regular file
+under 64 KiB, split on `\n`, ASCII-escaped, flock + atomic replace, damaged bytes kept, empty id refused. `clean()` by
+Unicode category. ⟳ r1: nine ways falsely reassuring. r2 + r3: the previous fold mis-attributed one PR's state to
+another (filename conventions; then `origin/master..<head>` on a stacked branch) — THRASHING, so per-branch attribution
+is backlog #367, architecture review first. 36 cases; 17 mutations. Delivery after compaction verified.
