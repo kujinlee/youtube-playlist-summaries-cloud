@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 165 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 186 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -916,6 +916,58 @@ class ShapeError(Exception):
     cell is how a closed marker written for something else once closed two open items."""
 
 
+# ⛔ THE DECLARED TABLE SCHEMAS (backlog #381 r2, Codex X1). `parse` validated SHAPE — a row's width
+# against its header — and not SCHEMA: a six-column table headed `Bundel` gave every row
+# `bundle=""` through `col.get`, so its tags vanished from every reader and `check-features`
+# passed where master failed. A `| # |` header must now be one of these, compared after
+# lowercasing and collapsing spaces, or `parse` raises `ShapeError` naming the table. Measured
+# 2026-10-27 over `docs/backlog.md`: exactly two `| # |` headers exist, one of each.
+TABLE_SCHEMAS = (
+    ("#", "item", "touches", "size", "bundle", "status"),   # ## Items
+    ("#", "item", "status"),                                 # ## Found during testing
+)
+
+
+# Non-item tables a block may legitimately begin with — legends, keys. Measured 2026-10-27: the real
+# `docs/backlog.md` has NONE (its only two table blocks are the item tables above), so this is empty
+# on purpose. A block it names is not read for rows; a numbered line inside one still raises.
+LEGEND_SCHEMAS: tuple[tuple[str, ...], ...] = ()
+
+
+def block_error(first: str, section: str) -> str | None:
+    """PURE. Why a table BLOCK — a maximal run of lines starting with `|` — may not begin with
+    `first`, or None when `first` is a declared header (an item schema's `| # |`, or a legend).
+
+    ⛔ backlog #381 r4, Codex X1, and the CLASS three rounds entered by three routes: a row that
+    master's positional read saw and this parser loses. Rounds 2 and 3 closed a misspelled header
+    and an unread decorated row UNDER a `| # |` header; round 4 put the decorated row under a
+    header that is not `| # |` at all (`| No |`), or under none, where `header` is never live and
+    the row was skipped before `unread` could see it. So every block must BEGIN with a declared
+    header, and an undeclared or missing one names the block's first line.
+
+    ⚠ FENCES ARE NOT SPECIAL, deliberately: `parse` already reads a fenced table as real rows (see
+    its fence note), and master's `check-features` read a fenced row too, so skipping fenced blocks
+    here would be the one way to make master red and this green. `docs/backlog.md` has 0 fences."""
+    if re.match(r"^\|\s*#\s*\|", first):
+        return None                     # an item header; `header_error` checks its columns
+    cells = tuple(" ".join(c.strip().lower().split()) for c in CELL_SPLIT.split(first)[1:-1])
+    if cells in LEGEND_SCHEMAS:
+        return None
+    return (f"a table block under `## {section}` begins with {first.strip()[:70]!r}, which is not a "
+            f"declared header — every table in docs/backlog.md must open with `| # | Item | … |` "
+            f"(or a legend named in LEGEND_SCHEMAS); a block with no header, or another one, hides "
+            f"its rows from every reader")
+
+
+def header_error(header: list[str], section: str) -> str | None:
+    """PURE. Why a `| # |` header is not a declared schema, or None when it is one."""
+    if tuple(" ".join(c.split()) for c in header) in TABLE_SCHEMAS:
+        return None
+    return (f"the table under `## {section}` has header {' | '.join(header)!r}, which is not a "
+            f"declared backlog table — expected one of: "
+            + "; ".join(" | ".join(t) for t in TABLE_SCHEMAS))
+
+
 DELIMITER_CELL = re.compile(r"^:?-+:?$")
 
 
@@ -1054,7 +1106,14 @@ def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
     # rows. Trading "the warning is noisy" for "rows disappear" is a bad trade, and `docs/backlog.md`
     # has 0 fences today, so the trade bought nothing. A fenced example table is therefore still
     # READ as real rows — pre-existing, older and worse than the noise beside it, and its own slice.
+    in_block = False
     for line in lines:
+        starts_block = line.startswith("|") and not in_block
+        in_block = line.startswith("|")
+        if starts_block:
+            why = block_error(line, section)
+            if why:
+                raise ShapeError(why)
         if line.startswith("## "):
             # ⚠ `seen_delimiter` is NOT reset here (r4 L-3): `header` is emptied, and nothing is
             # reported while `header` is falsy, so this reset could be removed with the suite
@@ -1064,6 +1123,9 @@ def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
             continue
         if re.match(r"^\|\s*#\s*\|", line):
             header = [c.strip().lower() for c in CELL_SPLIT.split(line)[1:-1]]
+            why = header_error(header, section)
+            if why:
+                raise ShapeError(why)
             seen_delimiter = False
             continue
         if not re.match(r"^\|\s*\d+\s*\|", line):
@@ -1158,24 +1220,116 @@ def attach_history(rows: list[dict], working_text: str) -> None:
         r["hist"] = dict(h, raw=live.get(r["num"], "")) if h else None
 
 
-def bundle_tags(raw: str) -> list[str]:
-    """PURE. The Bundle cell as the TAGS it assigns, broadest first.
+# ─── the Bundle cell — ONE owner, three readers ─────────────────────────────────────────────────
+# ⛔ backlog #381. `bundle_tags` used to be the only reader that understood this cell; the features
+# page compared the RAW string (`r["bundle"] in n.areas`) and `check-features` collected raw strings
+# too, so `docs/features.md` had to list `(cloud/money)` AND `(cloud / money)` and a row could carry
+# ONE tag. Every reader now goes through `cell_tags`: this page for its filter and chips,
+# `gen-features-page` for which node a row lands under, `check-features` for what is "in use".
+#
+# THE GRAMMAR. A cell is one or more `(tag)` groups separated by whitespace and/or commas —
+# `(tooling) (comprehensibility)`, `(cloud/money), (tooling)`. Inside a group a slash is a family,
+# as it always was. Parentheses delimit, rather than a comma or a space, because 49 rows already
+# write a space INSIDE a tag (`(test infra)`, `(concurrency safety)`, `(process / deliverable #2)`)
+# and every one of them had to keep its meaning — a whitespace grammar would have split them all.
+TAG_SENTINELS = {"", "—", "-", "Item"}
+TAG_GROUP = re.compile(r"\(([^()]*)\)")
+# ⛔ NO `|` INSIDE A GROUP, escaped or not (backlog #381 r1, Codex M1 = Claude m5). The card joins
+# `data-tags` with `|` and the filter script splits on it, so `(a \| b)` would be offered as a filter
+# that matches nothing. Refused here, so such a cell is MALFORMED and reported like the others.
+TAG_CELL = re.compile(r"^\(([^()|]*)\)(?:[\s,]*\(([^()|]*)\))*$")
 
-    The cell holds one hand-written value — `(cloud/money)`, `(comprehensibility)`, `A`, `—`.
-    A slash is a family, so `(cloud/money)` assigns BOTH `cloud` and `cloud/money`: asking for
+
+def normalise_tag(raw: str) -> str:
+    """PURE. One tag in its comparable form: lowercase, runs of space collapsed, ` / ` between
+    levels, one pair of outer parentheses dropped. `(Cloud/ money)` and `cloud / money` are equal."""
+    parts = [" ".join(x.lower().split()) for x in raw.strip().strip("()").strip().split("/")]
+    return " / ".join(x for x in parts if x)
+
+
+def cell_tags(raw: str) -> tuple[list[str], bool]:
+    """PURE. `(leaf tags, malformed)` — the tags the cell WRITES, in cell order, each normalised.
+
+    `—`, `-`, an empty cell and the `Item` header are no tags. ⛔ A MALFORMED CELL IS NOT DROPPED
+    AND NOT REFUSED HERE: anything that is not a run of `(…)` groups — `cloud`, `(a) (b`, `x (y)` —
+    is read as ONE tag by the pre-#381 rule (outer parens stripped, slash still a family) and
+    flagged. Not dropped, because a row with no tag falls out of every feature and every filter
+    but `untagged`, which is a silent loss. Not refused, because the owner ruled 2026-09-09 that a
+    page refuses to refresh over drift is worse than a page that SAYS it drifted
+    (`sanitise_groups`). The flag is what makes it loud: this page lists the row in its drift box,
+    and `check-features` — the CI gate over the same cell — FAILS on it."""
+    s = (raw or "").strip()
+    if s in TAG_SENTINELS:
+        return [], False
+    if TAG_CELL.match(s):
+        out: list[str] = []
+        empty = False
+        for g in TAG_GROUP.findall(s):
+            if g.strip() and g.strip() in TAG_SENTINELS:
+                continue                    # `(—)`: a group that says "no tag", by design
+            t = normalise_tag(g)
+            if not t:
+                # ⛔ AN EMPTY GROUP IS MALFORMED, not silently nothing (backlog #381, the DEFER
+                # termination probes): `()`, `( )` or `( / )` names no tag and no sentinel. Dropping
+                # it in silence made master's gate red (it read `()` as an area no node claims) and
+                # this one green. The other groups' tags are still returned.
+                empty = True
+                continue
+            if t not in out:
+                out.append(t)
+        return out, empty
+    legacy = s.strip("()").strip()
+    t = "" if legacy in TAG_SENTINELS else normalise_tag(legacy)
+    return ([t] if t else []), True
+
+
+def tag_lineage(tag: str) -> list[str]:
+    """PURE. `cloud / money` → `["cloud", "cloud / money"]`: the tag and every family above it."""
+    parts = tag.split(" / ")
+    return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+
+
+def nearest_claim(tag: str, areas) -> str | None:
+    """PURE. The area in `areas` (normalised tags) that CLAIMS `tag`: the longest one that equals it
+    or is a family above it. `None` when nothing does.
+
+    ⚠ NEAREST, not ANY. `docs/features.md` has a node for `(cloud)` and another for
+    `(cloud/money)`; under "any ancestor matches" every money row would also land under the
+    `(cloud)` node, and "claimed by exactly one node" would stop being true of a single tag.
+    Nearest keeps each tag with one node, and still lets an UNCLAIMED leaf (`cloud / new`) fall
+    to its family's node instead of to nowhere."""
+    best = None
+    for a in areas:
+        if (tag == a or tag.startswith(a + " / ")) and (best is None or len(a) > len(best)):
+            best = a
+    return best
+
+
+def bundle_tags(raw: str) -> list[str]:
+    """PURE. The Bundle cell as the FILTER tags it assigns: every leaf and every family above it.
+
+    A slash is a family, so `(cloud/money)` assigns BOTH `cloud` and `cloud / money`: asking for
     `cloud` must find the money, test, UX, security, quality and frontend items too, which was
     the whole complaint that prompted this ("I could not see backlogs in bundle such as
-    Comprehensibility"). An untagged row gets `untagged` rather than nothing, because a filter
-    option with no name cannot be chosen, and a row with no tag must still be reachable.
+    Comprehensibility"). Several groups assign the union, each tag once. An untagged row gets
+    `untagged` rather than nothing, because a filter option with no name cannot be chosen, and a
+    row with no tag must still be reachable.
     """
-    s = (raw or "").strip().strip("()").strip()
-    if not s or s in {"—", "-", "Item"}:
-        return ["untagged"]
-    parts = [" ".join(x.lower().split()) for x in s.split("/")]
-    parts = [x for x in parts if x]
-    if not parts:
-        return ["untagged"]
-    return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+    out: list[str] = []
+    for leaf in cell_tags(raw)[0]:
+        for t in tag_lineage(leaf):
+            if t not in out:
+                out.append(t)
+    return out or ["untagged"]
+
+
+def malformed_tag_errors(rows: list[dict]) -> list[str]:
+    """PURE. One drift note naming every row whose Bundle cell `cell_tags` had to guess at."""
+    bad = sorted(r["num"] for r in rows if cell_tags(r.get("bundle", ""))[1])
+    if not bad:
+        return []
+    return [f"rows whose Bundle cell is not a run of `(tag)` groups: {bad} — each is read as ONE "
+            f"tag; write every tag in its own parentheses, e.g. `(tooling) (comprehensibility)`"]
 
 
 def bundle_options(rows: list[dict]) -> list[tuple[str, int, int]]:
@@ -1285,6 +1439,7 @@ def drift_notes_for(rows: list[dict], unread: Sequence[str] = ()) -> list[str]:
     missing one."""
     open_nums = {r["num"] for r in rows if not r["closed"]}
     notes = contradiction_errors(rows)
+    notes += malformed_tag_errors(rows)
     notes += sanitise_groups(GROUPS, open_nums)[1]
     notes += [f"DEPENDS: {e}" for e in depends_errors(DEPENDS, ROOTS, open_nums)]
     if not unread:
@@ -1304,14 +1459,15 @@ def card(r: dict) -> str:
         if val and val not in {"—", "-"})
 
     # THE TAGS ARE SHOWN, not merely filterable — the user asked for both, and a filter over a
-    # value the card never displays is a control with no referent. Only the LEAF is drawn: an item
-    # tagged `cloud / money` shows one chip, while `data-tags` still carries `cloud` so the family
-    # filter finds it. Drawing both would put "cloud" on the card twice and say nothing extra.
+    # value the card never displays is a control with no referent. Only the LEAVES are drawn: an
+    # item tagged `cloud / money` shows one chip, while `data-tags` still carries `cloud` so the
+    # family filter finds it. Drawing both would put "cloud" on the card twice and say nothing
+    # extra. A row with several tags draws one chip per tag it WRITES (backlog #381).
     tags = bundle_tags(r["bundle"])
     tagchips = "".join(
         f'<button class="tag" data-tag="{html.escape(tg)}" '
         f'title="show every item tagged {html.escape(tg)}">{html.escape(tg)}</button>'
-        for tg in ([tags[-1]] if tags != ["untagged"] else []))
+        for tg in cell_tags(r["bundle"])[0])
 
     h = r.get("hist")
     # ⚠ VISIBLE, not silent. An item whose history could not be reconstructed — renumbered, or the
@@ -2428,19 +2584,33 @@ def _self_test_body() -> int:
     # ── THE POPULATION, asserted separately from the rule (portable-practices §21) ───────────────
     case("the delimiter under the header is not reported",
          lambda: not any(set(ln.strip()) <= set("|-: ") for ln in _dropped()))
-    case("a table with no `| # |` header of its own reports nothing",
-         lambda: _unread_of(["## Items", "| Key | Meaning |", "|---|---|",
-                             "| A | Bundle A |"]) == [])
+    # ⟳ backlog #381 r4: a table that is not a declared one is REFUSED, naming its first line. This
+    # case used to assert that such a table reported NOTHING — the silence the round-4 probe used.
+    case("a table with no `| # |` header of its own REFUSES, naming the block",
+         lambda: "'| Key | Meaning |'" in _shape_of(["## Items", "| Key | Meaning |", "|---|---|",
+                                                      "| A | Bundle A |"]))
+    case("…and a headerless block (it opens on a data row or a delimiter) REFUSES too",
+         lambda: "⭐999" in _shape_of(["## Probe", "| ⭐999 | x | f | S | (n) | open |"])
+         and "'|---|---|'" in _shape_of(["## Probe", "|---|---|", "| a | b |"]))
+    # Codex r4's probe verbatim: master's gate read this row, and the round-3 parser skipped it.
+    case("a table headed `| No |` REFUSES — the r4 probe",
+         lambda: "'| No | Item | Touches | Size | Bundle | Status |'" in _shape_of(
+             ["## Probe", "| No | Item | Touches | Size | Bundle | Status |", "|---|---|---|---|---|---|",
+              "| ⭐999 | 🟡 **Probe** | f | S | (not-claimed) | open |"]))
     # ⛔ r1 finding H-1 was REVERSED by r3's Blocking, and this case records the reversal rather
     # than quietly dropping it. r1 asked for a legend table in the Items section to report nothing;
     # r2 delivered that by narrowing the report to a contiguous block, and r3 measured what the
     # narrowing cost — a decorated row below the block vanished exactly where a plain one rendered.
     # In a section where `header` is live, a legend row is NOT harmless: `| 5 | Bundle E |` there is
     # read as item 5, or raises on its width. So it is reported, and the delimiter is not.
+    # ⟳ backlog #381 r4: an UNDECLARED legend now refuses outright; a DECLARED one in a section
+    # where `header` is live is still reported, row by row.
+    _LEGEND_DOC = ["## Items", "| # | Item | Status |", "|---|---|---|",
+                   "| 5 | x | y |", "", "Markers used above:", "",
+                   "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]
     case("a legend table in the SAME section is reported — it is a hazard, not decoration",
-         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
-                             "| 5 | x | y |", "", "Markers used above:", "",
-                             "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"])
+         lambda: "'| Marker | Meaning |'" in _shape_of(_LEGEND_DOC)
+         and _with_legend(lambda: _unread_of(_LEGEND_DOC))
          == ["| Marker | Meaning |", "|---|---|", "| 🟠 | high |"])
     # ⚠ r4 L-3. TWO `| # |` tables, which is what `docs/backlog.md` actually is — this is the
     # input that makes the header branch's `seen_delimiter` reset load-bearing.
@@ -2453,10 +2623,22 @@ def _self_test_body() -> int:
     case("a table whose columns are named differently REFUSES rather than crashing",
          lambda: _raises(lambda: parse(["## Items", "| # | Key | Note |", "|---|---|---|",
                                         "| 7 | a | b |"]), ShapeError))
-    case("a legend table in its OWN section reports nothing",
-         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
-                             "| 5 | x | y |", "", "## Markers", "",
-                             "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]) == [])
+    # ⛔ backlog #381 r2, Codex X1 — SCHEMA, not only shape. The probe verbatim: a six-column table
+    # whose header misspells `Bundle` used to parse, giving every row an empty Bundle cell.
+    _PROBE = ["## Probe", "| # | Item | Touches | Size | Bundel | Status |", "|---|---|---|---|---|---|",
+              "| 999 | 🟡 **Probe** | f | S | (not-claimed) | open |"]
+    case("a six-column table whose header misspells Bundle REFUSES, naming the table",
+         lambda: "`## Probe`" in _shape_of(_PROBE) and "bundel" in _shape_of(_PROBE))
+    case("both declared schemas parse, in any spacing and case",
+         lambda: len(parse(["## Items", "|  #  | ITEM | Touches | Size |  Bundle  | Status |",
+                            "|---|---|---|---|---|---|", "| 1 | x | f | S | (a) | open |",
+                            "## Found", "| # | Item | Status |", "|---|---|---|", "| 2 | y | open |"])) == 2)
+    _OWN = ["## Items", "| # | Item | Status |", "|---|---|---|",
+            "| 5 | x | y |", "", "## Markers", "",
+            "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]
+    case("a legend table in its OWN section reports nothing — once it is DECLARED",
+         lambda: _with_legend(lambda: (_unread_of(_OWN), len(parse(_OWN)))) == ([], 1)
+         and "'| Marker | Meaning |'" in _shape_of(_OWN))
 
     # ⭐⭐ THE BLOCKING FROM r3, AND ITS FALSIFIER. The two populations are asserted against EACH
     # OTHER, not each alone — which is the only form that can catch a report gate drifting narrower
@@ -2479,23 +2661,28 @@ def _self_test_body() -> int:
             read = any(r["num"] == 111 for r in parse(head + ["| 111 | new | pending |"]))
         except ShapeError:
             read = False
+        # ⟳ backlog #381 r4: the decorated row has THREE outcomes now — reported in `unread`,
+        # REFUSED (a `ShapeError`, as loud as a report), or silent. Silent is the defect.
         seen: list[str] = []
-        parse(head + ["| ⭐111 | new | pending |"], unread=seen)
-        return read, any("⭐111" in ln for ln in seen)
+        try:
+            parse(head + ["| ⭐111 | new | pending |"], unread=seen)
+        except ShapeError:
+            return read, "refused"
+        return read, "reported" if any("⭐111" in ln for ln in seen) else "silent"
 
     case("wherever a plain row would be READ, a decorated one is REPORTED",
-         lambda: all(_read_vs_reported(c)[0] == _read_vs_reported(c)[1] for c in _CONTEXTS))
+         lambda: all(_read_vs_reported(c)[1] != "silent" for c in _CONTEXTS)
+         and all(_read_vs_reported(c)[1] == "reported" for c in _CONTEXTS if _read_vs_reported(c)[0]))
     case("…and the pairing is not vacuous — it covers both answers",
-         lambda: {_read_vs_reported(c)[0] for c in _CONTEXTS} == {True, False})
+         lambda: {_read_vs_reported(c)[0] for c in _CONTEXTS} == {True, False}
+         and {_read_vs_reported(c)[1] for c in _CONTEXTS} == {"reported", "refused"})
 
-    # ⚠ THE RESIDUE, PINNED SO IT IS VISIBLE. Where no `| # |` header is live, `parse` reads
-    # nothing, so a decorated row there is neither read nor reported. Its plain counterpart RAISES
-    # (`ShapeError`, "row has N cells, header has 0"), so the ordinary mistake is loud; the
-    # decorated one is not. Closing this needs a way to say "that first cell was MEANT to be a
-    # number", which is an allowlist of decorations — the shape this slice has already paid for
-    # twice. Stated, not hidden, and left as follow-up work.
-    case("a decorated row where NO item table is open is silent — the one stated gap",
-         lambda: _unread_of(["## Notes", "| ⭐111 | new | pending |"]) == []
+    # ⟳ THE RESIDUE THAT WAS PINNED HERE IS CLOSED (backlog #381 r4). Where no `| # |` header is
+    # live a decorated row was neither read nor reported, and this case asserted that silence as
+    # "the one stated gap". It needed no allowlist of decorations after all: a row with no header is
+    # a table BLOCK with no header, and `block_error` refuses the block, whatever its first cell.
+    case("a decorated row where NO item table is open is REFUSED — the stated gap is closed",
+         lambda: _raises(lambda: parse(["## Notes", "| ⭐111 | new | pending |"]), ShapeError)
          and _raises(lambda: parse(["## Notes", "| 111 | new | pending |"]), ShapeError))
 
     # ⭐ r3, both halves. `row_ish`'s three-character prefix is a judgement, so both sides of it are
@@ -2543,9 +2730,11 @@ def _self_test_body() -> int:
          lambda: row_ish("abc| 5 | x |") and not row_ish("abcd| 5 | x |"))
     # ⚠ r2 finding L-1. The comment claimed a blank line AND `## ` both end the block; only the
     # first was pinned, and deleting the `## ` reset killed 0 of 110 cases. Same class as r1's L-3.
+    # ⟳ backlog #381 r4: the row after the new section opens a NEW block, which has no header and
+    # refuses — so the case still proves the `## ` line ended the first block.
     case("a new `## ` section closes the block",
-         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
-                             "| 5 | x | y |", "## Notes", "| ⭐9 | x | y |"]) == [])
+         lambda: "`## Notes`" in _shape_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                                           "| 5 | x | y |", "## Notes", "| ⭐9 | x | y |"]))
     case("the block ends at a blank line",
          lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
                              "| 5 | x | y |", "", "ordinary prose"]) == [])
@@ -2981,6 +3170,51 @@ def _self_test_body() -> int:
          lambda: bundle_options([{"bundle": "(x)", "closed": True},
                                  {"bundle": "(x)", "closed": False}]) == [("x", 1, 2)])
 
+    # ─ several tags in one cell (backlog #381) ──────────────────────────────
+    case("a cell with TWO tags assigns both, in cell order",
+         lambda: bundle_tags("(tooling) (comprehensibility)") == ["tooling", "comprehensibility"])
+    case("a comma between groups separates them exactly as a space does",
+         lambda: cell_tags("(tooling), (comprehensibility)") == (["tooling", "comprehensibility"], False)
+         and cell_tags("(tooling),(comprehensibility)") == (["tooling", "comprehensibility"], False))
+    case("hierarchy and several tags together: each group keeps its own family",
+         lambda: bundle_tags("(cloud/money) (tooling)") == ["cloud", "cloud / money", "tooling"])
+    case("a tag is normalised — case, runs of space, spaces around the slash",
+         lambda: cell_tags("( Cloud/  Money )") == (["cloud / money"], False)
+         and normalise_tag("(cloud / money)") == normalise_tag("cloud/money") == "cloud / money")
+    case("two spellings of one tag in one cell are ONE tag, not two",
+         lambda: cell_tags("(cloud/money) (cloud / money)") == (["cloud / money"], False))
+    case("an EMPTY group is MALFORMED, and the cell's other tags survive it",
+         lambda: (cell_tags("()"), cell_tags("( )"), cell_tags("( / )"), cell_tags("(tooling) ()"))
+         == (([], True), ([], True), ([], True), (["tooling"], True))
+         and malformed_tag_errors([{"num": 6, "bundle": "()"}]) != [])
+    case("a sentinel inside parentheses is still no tag",
+         lambda: cell_tags("(—)") == ([], False) and bundle_tags("()") == ["untagged"])
+    # ⛔ THE MALFORMED RULE: read as ONE tag by the pre-#381 rule and FLAGGED — never dropped.
+    case("a malformed cell is read as ONE tag and flagged, never dropped",
+         lambda: (cell_tags("cloud"), cell_tags("(cloud/money"), cell_tags("(a) (b"))
+         == ((["cloud"], True), (["cloud / money"], True), (["a) (b"], True)))
+    case("a `|` inside a tag group, escaped or not, is MALFORMED",
+         lambda: cell_tags("(a \\| b) (tooling)")[1] is True and cell_tags("(a | b)")[1] is True
+         and cell_tags("(tooling) (comprehensibility)")[1] is False)
+    case("a malformed cell reaches the drift notes, naming the row",
+         lambda: malformed_tag_errors([{"num": 7, "bundle": "cloud"}, {"num": 8, "bundle": "(x)"}])
+         and "[7]" in malformed_tag_errors([{"num": 7, "bundle": "cloud"}])[0]
+         and malformed_tag_errors([{"num": 8, "bundle": "(x) (y)"}]) == [])
+    case("drift_notes_for carries the malformed-cell note",
+         lambda: any("not a run of `(tag)` groups" in n for n in drift_notes_for(
+             [dict(num=9, sev="high", closed=False, bundle="cloud")])))
+    case("the nearest claiming area wins, and an unclaimed leaf falls to its family",
+         lambda: (nearest_claim("cloud / money", ["cloud", "cloud / money"]),
+                  nearest_claim("cloud / new", ["cloud", "cloud / money"]),
+                  nearest_claim("cloudy", ["cloud"]), nearest_claim("tooling", ["cloud"]))
+         == ("cloud / money", "cloud", None, None))
+    # ⛔ THE FAILS-IF, filter half: a two-tag row is counted under BOTH tags, per tag.
+    case("the filter lists a two-tag row under EACH of its tags, counts derived per tag",
+         lambda: {k: (o, tt) for k, o, tt in bundle_options(
+             [{"bundle": "(tooling) (comprehensibility)", "closed": False},
+              {"bundle": "(tooling)", "closed": True}])}
+         == {"tooling": (1, 2), "comprehensibility": (1, 1)})
+
     # ⟳ 2026-09-09. These pin a refusal that USED TO BE A `KeyError` — see `contradiction_errors`.
     _row = lambda n, sev, closed: dict(num=n, sev=sev, closed=closed)
     case("a ✅ marker with no ✅ in Status REFUSES, naming the rows",
@@ -3247,6 +3481,48 @@ def _self_test_body() -> int:
          and set(_placed).isdisjoint(_indexed)
          and set(_placed) | _indexed == _open_real)
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
+    # ⟳ backlog #381 r4: with every block required to open on a declared header, the real file must
+    # still give one row per item line — relative to the file, never a constant (337 today).
+    case("the REAL backlog yields one row per `| <number> |` line under the block-header rule",
+         lambda: len(real) == sum(bool(re.match(r"^\|\s*\d+\s*\|", ln))
+                                  for ln in BACKLOG.read_text().splitlines()) > 0)
+    # ⛔ backlog #381: EVERY CELL PARSES TO EXACTLY WHAT THE PRE-#381 RULE GIVES IT, GROUP BY GROUP.
+    # `_legacy` is the pre-#381 `bundle_tags`, copied VERBATIM and frozen here, so the comparison is
+    # against an independent copy rather than the code under test. A multi-tag cell has no pre-#381
+    # reading as a whole, so the oracle applies the old rule to EACH `(…)` group and takes the union
+    # in order; a cell that is not purely groups gets the old rule over the whole cell.
+    # ⟳ r1: this compared single-group rows only, above a constant floor of 300 — 315 remained after
+    # the retag, so ~15 more multi-tagged rows would have turned it red for no defect. It now
+    # compares EVERY row, and the comparison set must BE every row and must not be empty.
+    def _legacy(raw: str) -> list[str]:
+        s = (raw or "").strip().strip("()").strip()
+        if not s or s in {"—", "-", "Item"}:
+            return ["untagged"]
+        parts = [" ".join(x.lower().split()) for x in s.split("/")]
+        parts = [x for x in parts if x]
+        if not parts:
+            return ["untagged"]
+        return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+
+    def _oracle(raw: str) -> list[str]:
+        groups = re.findall(r"\([^()]*\)", raw or "")
+        if not groups or re.sub(r"\([^()]*\)|[\s,]", "", raw):
+            return _legacy(raw)
+        out = [t for g in groups for t in _legacy(g) if t != "untagged"]
+        return list(dict.fromkeys(out)) or ["untagged"]
+    case("every REAL row parses to exactly the tags the pre-#381 rule gives each of its groups",
+         lambda: bool(real)
+         and [r["num"] for r in real if bundle_tags(r["bundle"]) != _oracle(r["bundle"])] == [])
+    case("the REAL backlog has no malformed Bundle cell",
+         lambda: malformed_tag_errors(real) == [])
+    # ⛔ THE FAILS-IF, card half: a two-tag row DRAWS both chips and its `data-tags` carries both
+    # families, which is what the filter's `split('|')` reads.
+    _two = card(dict(real[0], bundle="(cloud/money) (tooling)", hist=None))
+    _one = card(dict(real[-1], bundle="(tooling)", hist=None))
+    case("a two-tag card draws a chip per tag and carries every filter tag",
+         lambda: _two.count('class="tag"') == 2
+         and 'data-tags="cloud|cloud / money|tooling"' in _two
+         and _one.count('class="tag"') == 1 and 'data-tags="tooling"' in _one)
     # ⭐ THE RATCHET the floor above only pretends to be. `> 20` tolerates losing 88 of 110 rows;
     # this fails on the FIRST row the parser cannot read, and names it. Anchored to the file's own
     # lines rather than to `parse`'s output, which is the whole of backlog #110.
@@ -3283,6 +3559,27 @@ def _self_test_body() -> int:
         failed += not ok
     print(f"\n{len(cases) - failed}/{len(cases)} passed")
     return 1 if failed else 0
+
+
+def _with_legend(fn):
+    """Run `fn` with `| Marker | Meaning |` declared in LEGEND_SCHEMAS, then restore it. The real file
+    declares no legend, so a DECLARED legend can only be exercised by declaring one here."""
+    global LEGEND_SCHEMAS
+    saved = LEGEND_SCHEMAS
+    LEGEND_SCHEMAS = (("marker", "meaning"),)
+    try:
+        return fn()
+    finally:
+        LEGEND_SCHEMAS = saved
+
+
+def _shape_of(lines: Sequence[str]) -> str:
+    """The `ShapeError` text `parse` raises over `lines`, or "" when it raises none."""
+    try:
+        parse(lines)
+    except ShapeError as e:
+        return str(e)
+    return ""
 
 
 def _raises(fn, exc: type[BaseException]) -> bool:

@@ -1041,7 +1041,10 @@ EXPECTED_MUTATIONS = {
     # the clock), and the tenth guards `sev_glyphs`, which earned a mutation only after review
     # round 1 found its "derived" comment sitting above a hand-written literal. A renderer that
     # decides nothing is a claim worth testing before it is used to skip coverage.
-    "scripts/gen-features-page.py": 10,
+    # ⟳ 2026-10-27, backlog #381 — 10 -> 15. Five on the per-tag match: the raw cell read as one
+    # tag, the first tag only, un-normalised `areas:`, a row listed once per tag, and `collect`
+    # bypassing `match_rows` at its CALL SITE.
+    "scripts/gen-features-page.py": 15,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1051,7 +1054,18 @@ EXPECTED_MUTATIONS = {
     # being emptied behind two source-shape proxies, half the drift qualification, the ⚠ prefix the
     # Refresh button collects, and the delimiter cell's end anchor. Five that can only rise beats
     # zero; the rest is its own slice.
-    "scripts/gen-backlog-page.py": 5,
+    # ⟳ 2026-10-27, backlog #381 — 5 -> 15. Ten on the Bundle-cell grammar this file now owns for
+    # three readers: a group dropped, the comma separator, normalisation, de-duplication, the
+    # malformed cell dropped and its drift note lost, nearest-vs-first claim, a bare prefix taken
+    # for a family, the filter's per-tag count and the card's per-tag chips.
+    # ⟳ 2026-10-27, backlog #381 r1 — 15 -> 16: a `|` inside a tag group accepted again (Codex M1).
+    # The comma entry was RETARGETED onto a substring of the rewritten `TAG_CELL` line, not added.
+    # ⟳ 2026-10-27, backlog #381 r2 — 16 -> 18: the table-header SCHEMA check dropped, and loosened to
+    # width only (Codex X1, a `Bundel` header that emptied every row's tags).
+    # ⟳ 2026-10-27, backlog #381 r4 — 18 -> 20: the block-header check dropped, and any non-`#`
+    # header accepted as a legend (Codex X1, a `| No |` table whose row master's gate saw).
+    # ⟳ 2026-10-27, backlog #381 DEFER probes — 20 -> 21: an empty tag group dropped in silence.
+    "scripts/gen-backlog-page.py": 21,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1862,7 +1876,19 @@ EXPECTED_MUTATIONS = {
     # so a repair that reports a duplicate and overwrites anyway would have been indistinguishable
     # from a correct one. ⚠ The wrapped-continuation entry was RETARGETED in the same commit (its
     # anchor was the line the fix rewrote) — a retarget, not an addition, so it is not in the +3.
-    "scripts/check-features.py": 22,
+    # ⟳ 2026-10-27, backlog #381 — 22 -> 27, and two RETARGETS that are not in the +5: the stale-
+    # alias and unclaimed-area lines were rewritten to compare per tag. The five: item rows only,
+    # every tag of a cell in use, the malformed cell reported, `areas:` normalised, and a family
+    # area over its leaves not called stale.
+    # ⟳ 2026-10-27, backlog #381 r1 — 27 stays 27, by one retirement and one addition. RETIRED
+    # with its subject: the escaped-pipe entry anchored `check-features`' own `CELL_SPLIT`, which is
+    # gone — rows are read through `gen-backlog-page.parse` now (Codex M2). ADDED: a `ShapeError`
+    # swallowed into no problems. Five entries were RETARGETED onto the rewritten lines, and the
+    # exact-match stale entry was REPLACED by one reverting to any-descendant (Claude M1). Then
+    # 27 -> 28: an unreadable backlog treated as an empty one, burying its cause under 22 stale lines.
+    # ⟳ 2026-10-27, backlog #381 r3 — 28 -> 30: the parser's unread lines ignored, and `unread=` no
+    # longer handed to it (Codex X1 = Claude C1, a decorated row number dropped from the gate).
+    "scripts/check-features.py": 30,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -6069,7 +6095,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2303)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2332)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

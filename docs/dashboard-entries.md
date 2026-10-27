@@ -17915,3 +17915,46 @@ snapshot). Round 3 (DEFER, after thrashing convened an architecture review): 720
 run read-only git on the checkout with the caller's environment and are not on `GIT_SUITES` (`subject_status`
 drops to 12/17 under `GIT_DIR`). They and the builder detector's precision are backlog #382: wrap every entry and
 delete the detector. Escape shapes are backlog #380.
+
+## 2026-10-27
+A backlog item can now carry more than one tag, written as `(tooling) (comprehensibility)`, and it
+shows up under each one, both in the backlog page's tag filter and on the features page. That made
+it possible to show the comprehensibility suite's real state: the features page now lists 31 open
+items across its three suite features (status pages 14, the feature map 3, explainer pages 19;
+an item can sit under two), where it showed 15 before, because work tagged as tooling or process
+was invisible there. Four items that were filed under the suite but are not page work moved to
+process or tooling.
+<!--tech-->
+Backlog #381. ONE parser for the Bundle cell, `gen-backlog-page.cell_tags`, now read by all three
+readers: the backlog page (filter tags and chips), `gen-features-page.match_rows` (which node a
+row lands under) and `check-features` (what is in use, what is claimed). Grammar: one or more
+`(…)` groups separated by whitespace and/or commas; a slash inside a group is still a family.
+Tags compare normalised, so `docs/features.md` drops its duplicate `(cloud / money)` spelling,
+and `check-features` now refuses two spellings of one tag. A tag is claimed by the NEAREST area
+equal to it or above it, so a money row stays under `spend-control` and not also under the
+`(cloud)` node. A malformed cell is read as one tag by the old rule and flagged: the backlog page
+lists it in its drift box and `check-features` fails; a `|` inside a tag group counts as malformed,
+because the page's filter splits its tag list on `|`. `check-features` reads rows through the
+page's own header-aware parser, so a row with a wrong number of cells fails the gate, naming the
+row, and a table whose header is not one of the two declared backlog tables (a misspelled
+`Bundle`, say) fails it naming the table, and so does any row-like line inside an item table that
+the parser cannot read (a decorated or non-integer row number), and any table block that
+opens on anything but a declared header. Measured at the parser commit
+`677465b0`, over the 334 rows the backlog had then: 0 differ from the old rule, 0 malformed, and
+the features page's 329 backlog links are identical to master's, node by node. The self-test
+re-checks every row on each run; HEAD's backlog has 337. Mutations: gen-backlog-page 5 → 21, gen-features-page 10 → 15,
+check-features 22 → 30 (one retired with the code it guarded, several retargeted); gen-backlog-page
+reaches 21 with two on the header check, two on the table-block check and one on the empty tag group. A family area that is nobody's nearest claimant is stale,
+which keeps the stale-area rule as strict as master's.
+
+The retag (second commit): the suite is everything under `(comprehensibility)`. `status-pages` keeps
+`(comprehensibility)`, `feature-map` claims `(comprehensibility/feature-map)` and `explainer-pages`
+claims `(comprehensibility/explainers)`, which it never had. 33 open rows changed: 19 gained a
+suite tag beside their own area, 10 suite rows were refined to a sub-area, and 4 moved out
+(backlog #39 and backlog #90 to `(process)`, backlog #100 and backlog #101 to `(tooling)`). The
+five page-chrome rows also carry `(comprehensibility)`, since the status pages render through
+that chrome. Open by severity, counted by the features page's own `collect` with ✅ rows
+excluded: status-pages 🟠3 🟡8 🟢3, feature-map 🟡3, explainer-pages 🟠4 🟡10 🟢5; 31 distinct
+(one of them backlog #383, filed by the round-3 fold).
+42 bare `#N` references were qualified: 22 already on six retagged rows, which the namespace
+guard reads as new once the line is touched, and 20 in backlog #381's own status text.

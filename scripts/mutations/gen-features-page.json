@@ -108,5 +108,60 @@
    ]
   ],
   "expect": "the severity glyphs are derived from the backlog page's map, not a second copy"
+ },
+ {
+  "name": "match_rows reads the RAW cell as one tag again, so a two-tag row lands nowhere",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        for leaf in bp.cell_tags(r[\"bundle\"])[0]:",
+    "        for leaf in [r[\"bundle\"]]:"
+   ]
+  ],
+  "expect": "a two-tag row appears under BOTH nodes that claim its tags"
+ },
+ {
+  "name": "match_rows places a row by its first tag only",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "bp.cell_tags(r[\"bundle\"])[0]:",
+    "bp.cell_tags(r[\"bundle\"])[0][:1]:"
+   ]
+  ],
+  "expect": "a two-tag row appears under BOTH nodes that claim its tags"
+ },
+ {
+  "name": "a node's `areas:` entries are not normalised, so `(cloud/money)` claims no row",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            claims.setdefault(bp.normalise_tag(a), n.slug)",
+    "            claims.setdefault(a, n.slug)"
+   ]
+  ],
+  "expect": "both spellings of a slashed tag land under the one node that claims it, and only there"
+ },
+ {
+  "name": "a row is listed once per claimed tag instead of once per node",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "            if area is not None and r not in out[claims[area]]:",
+    "            if area is not None:"
+   ]
+  ],
+  "expect": "a row is listed ONCE under a node however many of its tags that node claims"
+ },
+ {
+  "name": "collect matches the raw cell again instead of calling match_rows",
+  "file": "scripts/gen-features-page.py",
+  "edits": [
+   [
+    "        mine = sorted(matched[n.slug], key=",
+    "        mine = sorted([r for r in rows if r[\"bundle\"] in n.areas], key="
+   ]
+  ],
+  "expect": "the page's backlog band lists exactly the rows match_rows places, for every node"
  }
 ]

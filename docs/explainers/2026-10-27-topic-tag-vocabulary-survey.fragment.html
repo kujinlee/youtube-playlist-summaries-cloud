@@ -1,0 +1,295 @@
+<title>Shared glue and a common tag vocabulary</title>
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+</style>
+<div class="wrap ex-body">
+
+<h1>Shared glue, and whether the line items can share one tag vocabulary</h1>
+<p class="horizon">as of <code>9ac7c80d</code> (master) · 2026-10-27 11:56 PDT · read from the <b>working tree</b> of the main checkout (several explainer pages carry uncommitted edits) · every number below comes from a command run against these files, using the repo's own parsers where they exist</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>which building blocks do the explainer pages share, and can the TAGS on the line items those pages list (backlog rows, features, goals, dashboard entries, work lines, review findings…) share one vocabulary, given that the same concept is often tagged differently?</i> Part A measures the shared pieces and how widely they're actually used. Part B lists every tag-like field, its values and who reads it, finds the synonyms, and weighs three ways to unify them. <b>Not covered:</b> the product's own data (playlists, summaries). This is about the harness pages only.
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session and the answer gets written into this page, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#reframe">The idea: not one vocabulary but several axes, flattened into one</a></li>
+<li><a href="#glue">Part A — the shared building blocks</a></li>
+<li><a href="#adoption">Adoption: who actually uses them</a></li>
+<li><a href="#vocabs">Part B — every tag-like field, measured</a></li>
+<li><a href="#synonyms">Synonym clusters: one concept, many tags</a></li>
+<li><a href="#options">Three ways to a common vocabulary</a></li>
+<li><a href="#rec">Recommendation, and what would make it fail</a></li>
+<li><a href="#measured">What was measured, and what was inferred</a></li>
+</ol>
+</div>
+
+<h2 id="reframe">The idea: not one vocabulary but several axes, flattened into one</h2>
+
+<p class="lede">The repo's line items are tagged in <b>eleven separate vocabularies</b>, and <b>only three have a closed list that anything enforces</b>. But the deeper problem isn't synonyms. Single tag fields hold <b>several kinds of thing at once</b>: <i>which part of the system</i>, <i>which goal</i>, <i>what kind of item</i>, and sometimes <i>its status</i>. One example: the backlog's severity column has a value <code>✅ done</code> on <b>117</b> of its 333 rows, so that column holds a status, not a severity.</p>
+
+<p>So "common tag names" is feasible, but only if the vocabulary is split into <b>facets</b>, meaning separate axes such as <i>area</i>, <i>goal</i>, <i>kind</i>, <i>severity</i> and <i>status</i>, each with its own small closed list. One flat merged list would give the same words several meanings, and that, not spelling, is what makes today's tags hard to use. Backlog #90 (stories vs tasks, raised 2026-09-03) is the same finding seen from the backlog alone.</p>
+
+<div class="k warn"><b>The comprehensibility suite is the clearest example.</b> It has <b>five names in four vocabularies</b>: the backlog tag <code>(comprehensibility)</code> (38 rows), the anchors <code>status-visibility</code> / <code>explanation-on-demand</code> / <code>feature-map</code>, the feature nodes <code>status-pages</code> / <code>feature-map</code> / <code>explainer-pages</code>, "goal 1" in the roadmap, and "D2" for the deliverable. Nothing connects them except prose, and the <code>explainer-pages</code> feature claims <b>no</b> backlog tag at all.</div>
+
+<h2 id="glue">Part A — the shared building blocks</h2>
+
+<p>These are the pieces a page can get from shared code instead of copying them. Each is one function or one script, and that's the whole design. Every inline copy is a place where defects come back.</p>
+
+<div class="scroll"><table>
+<tr><th>Building block</th><th>Owner (one place)</th><th>What it gives a page</th></tr>
+<tr><td>Ask tray (the question box)</td><td><code>brief-compose.py</code>, lifted <b>verbatim</b> from a known-good page</td><td>ask from a heading or a text selection → <code>POST /questions</code> → the live session</td></tr>
+<tr><td>Theme switcher</td><td><code>page_chrome.theme_control()</code> (:643), <code>has_control()</code> (:272), <code>missing_palettes()</code> (:244)</td><td>light/dark/auto; withheld if the page lacks either explicit palette</td></tr>
+<tr><td>Text-style switcher and colour roles</td><td><code>page_chrome.text_style_control()</code> (:742), <code>text_style_css()</code> (:761)</td><td>heading/prose/emphasis colours, inside <code>.ex-body</code> only</td></tr>
+<tr><td>Chrome bar, stamp, provenance</td><td><code>page_chrome.chrome_bar()</code> (:1302), <code>stamp()</code>, <code>provenance()</code> (:1275)</td><td>build time and source commit, refresh button</td></tr>
+<tr><td>Inline markdown</td><td><code>page_markup.render_inline()</code> (:242)</td><td>one rule for <code>`code`</code>, <b>bold</b>, links (backlog #71 closed four drifting copies)</td></tr>
+<tr><td>OS-dark shim</td><td><code>brief-compose.py</code> SHIM</td><td>tokens a fragment forgot; heading-button positioning</td></tr>
+<tr><td>Live reload</td><td><code>explainer-serve.py</code>, <b>injected</b> into every page it serves</td><td>answers appear without a refresh; never while a draft is open</td></tr>
+<tr><td>Colour tokens</td><td><code>CONTEXT.md</code> → <i>The common look</i></td><td><code>--accent</code>, <code>--verified</code>, <code>--hot</code>…; a convention, see #308</td></tr>
+</table></div>
+
+<h2 id="adoption">Adoption: who actually uses them</h2>
+
+<p>There are 73 pages in <code>docs/explainers/</code>, not counting fragments. Families are by filename: <b>generated</b> = dashboard, goals, backlog-table, features, work-lines; <b>brief</b> 49; <b>topic</b> 9; <b>findings</b> 1; and <b>older/other</b> 9 (the <code>explanation-*</code> pages, the RLS explainer, one fragment-named page). The markers are <code>page_chrome</code>'s own predicates, run on each page, except the tray (which uses <code>id="tray"</code>) and the inline-theme row (which uses <code>data-theme</code> anywhere).</p>
+
+<div class="scroll"><table class="num">
+<tr><th>Block</th><th>generated (5)</th><th>brief (49)</th><th>topic (9)</th><th>findings (1)</th><th>older (9)</th><th>All (73)</th></tr>
+<tr><td>Ask tray</td><td>4</td><td>49</td><td>9</td><td>1</td><td>6</td><td><b>69</b></td></tr>
+<tr><td>Some theme switching (<code>data-theme</code>)</td><td>5</td><td>48</td><td>9</td><td>0</td><td>7</td><td><b>69</b></td></tr>
+<tr><td>…via the <b>shared</b> control (<code>has_control</code>)</td><td>5</td><td>11</td><td>4</td><td>0</td><td>0</td><td><b>20</b></td></tr>
+<tr><td>Text-style switcher (<code>has_text_control</code>)</td><td>0</td><td>3</td><td>5</td><td>0</td><td>0</td><td><b>8</b></td></tr>
+<tr><td><code>.ex-body</code> opt-in (<code>has_text_consumer</code>)</td><td>0</td><td>3</td><td>4</td><td>0</td><td>0</td><td><b>7</b></td></tr>
+<tr><td>Palette incomplete (<code>missing_palettes</code> ≠ ∅)</td><td>0</td><td>7</td><td>0</td><td>0</td><td>0</td><td><b>7</b></td></tr>
+<tr><td>Control bar unreachable (<code>bar_unreachable</code>)</td><td>0</td><td>7</td><td>0</td><td>0</td><td>0</td><td><b>7</b></td></tr>
+<tr><td>Fragment kept beside the page</td><td>4</td><td>17</td><td>9</td><td>0</td><td>0</td><td><b>30</b></td></tr>
+</table></div>
+
+<div class="k red"><b>What the matrix says:</b> the <b>tray</b> is effectively universal (69/73), because it's always lifted, never retyped. <b>Theme switching</b> looks universal (69) but only <b>20</b> pages use the shared control, so <b>~49 pages carry an inline copy</b>. The <b>text-style switcher</b> is on <b>8</b> pages, and on <b>none</b> of the generated ones. Of the four, the theme switcher is where copies have piled up.</div>
+
+<p>Where the filed backlog rows sit in this matrix:</p>
+<div class="scroll"><table>
+<tr><th>Row</th><th>Cell it lives in</th></tr>
+<tr><td>#226 typography contract</td><td>text-style / <code>.ex-body</code> — 7 pages opt in</td></tr>
+<tr><td>#237 text-style switcher was a one-off copy</td><td>text-style — now a shared control, adopted by 8</td></tr>
+<tr><td>#376 make text-style the default</td><td>text-style — the row says 9 of 89; this measurement says <b>8 of 73</b>. The 89 probably counted fragments too. <span class="tag">UNVERIFIED</span></td></tr>
+<tr><td>#300 / #304 controls wired but unreachable</td><td>bar unreachable — 7 brief pages</td></tr>
+<tr><td>#349 <code>missing_palettes</code> can't decide from text</td><td>palette incomplete — the same 7 pages</td></tr>
+<tr><td>#351 <code>--fg</code>/<code>--fg2</code> cycle</td><td>colour tokens — inside the copied palette blocks</td></tr>
+<tr><td>#308 accent colour is a repeated literal</td><td>colour tokens — 177 inline copies (per the row)</td></tr>
+</table></div>
+
+<h2 id="vocabs">Part B — every tag-like field, measured</h2>
+
+<div class="scroll"><table class="num">
+<tr><th>Field</th><th>Values (count)</th><th>Written by</th><th>Read by</th><th>Closed list?</th></tr>
+<tr><td>Backlog <b>Bundle</b> column</td><td>23 raw strings → 22 tags via <code>bundle_tags</code>; <code>(tooling)</code> 176 of 333</td><td>hand</td><td>backlog page filter (slash = hierarchy); features page (raw exact match)</td><td>no — includes <code>''</code> ×3, <code>—</code> ×2</td></tr>
+<tr><td>Backlog <b>severity</b> glyph</td><td>🔴1 🟠52 🟡113 🟢45 <b>✅117</b> none 5</td><td>hand</td><td><code>gen-backlog-page.SEVERITY</code> (:100)</td><td>yes — but ✅ is a <b>status</b></td></tr>
+<tr><td>Features <code>areas:</code></td><td>21, incl. both <code>(cloud/money)</code> and <code>(cloud / money)</code></td><td>hand, <code>docs/features.md</code></td><td><code>gen-features-page.collect</code></td><td>implicitly: the in-use Bundle values</td></tr>
+<tr><td>Feature <b>nodes</b></td><td>29 (3 group headings + 26 nodes)</td><td>hand</td><td>features page</td><td>the tree itself</td></tr>
+<tr><td><b>Anchors</b> (ADR-0010)</td><td>13 registered in <code>docs/anchors.md</code></td><td>hand, registry</td><td>goals page, features page, <code>check-anchors.py</code></td><td><b>yes</b> — the one real registry</td></tr>
+<tr><td>Roadmap <b>goals</b> / deliverables</td><td>3 goals; D1, D2</td><td>hand, roadmap prose</td><td>people</td><td>no machine reader found <span class="tag">UNVERIFIED</span></td></tr>
+<tr><td>Dashboard entry <b>kind</b></td><td><code>[needs-you]</code> 60, <code>[resolved:…]</code> 16, <code>[heads-up]</code> 2; untagged 298 of 376</td><td>hand / skill</td><td><code>check-dashboard-entry.py</code>, dashboard page</td><td>grammar only</td></tr>
+<tr><td>Dashboard → backlog / goal link</td><td>106 of 376 entries name a backlog row; 119 name a goal or anchor (keyword)</td><td>prose</td><td>nobody</td><td>no</td></tr>
+<tr><td>Review <code>component:</code></td><td><b>232 distinct</b> over 746 findings in 126 records; <b>146 appear in only one record</b></td><td>coordinator, per round</td><td><code>check-review-decision</code> ranker (counts per component)</td><td>no — free text</td></tr>
+<tr><td>Review <code>aim:</code></td><td>deliverable 547, instrument 177, records 20, process 2</td><td>coordinator</td><td>review tooling</td><td>small set</td></tr>
+<tr><td>Review <code>disposition:</code></td><td>fixed 584, filed 100, declined 39, deferred 11, split 5, refuted 3, retreat 2, redesigned 1, moot 1</td><td>coordinator</td><td><code>check-review-decision</code> (<code>ANSWERED</code>, :534)</td><td>partly — 3 values are "answered"</td></tr>
+<tr><td>Review <b>severity</b></td><td>Medium 293, Low 267, High 161, Blocking 24, Info 1</td><td>coordinator</td><td>convergence rule</td><td>by convention</td></tr>
+<tr><td>Decision-log <code>route</code> / <code>outcome</code></td><td>accrete 29, redesign 22, split 20, defer 18 / continued 60, stopped 27, null 2</td><td>coordinator</td><td><code>check-decision-scheme.py</code> (<code>LADDER</code>, :142)</td><td><b>yes</b></td></tr>
+<tr><td>Memory <code>type</code></td><td>feedback 92, project 74, reference 2, missing 3</td><td>me</td><td>recall</td><td>by convention (4 values)</td></tr>
+<tr><td>Work-line thread tag</td><td><code>fix · blocker · bookkeeping · side</code></td><td>my banners only</td><td>nobody — no script reads it (grep)</td><td>no</td></tr>
+</table></div>
+
+<h2 id="synonyms">Synonym clusters: one concept, many tags</h2>
+
+<div class="scroll"><table class="num">
+<tr><th>Concept</th><th>Its names today</th><th>Size</th></tr>
+<tr><td><b>Money / spend</b></td><td><code>(cloud/money)</code> 4 + <code>(cloud / money)</code> 2; feature node <code>spend-control</code>; anchor <code>serve-money-guard</code></td><td>2 spellings the backlog page merges but the features page doesn't (so features.md lists both)</td></tr>
+<tr><td><b>Testing</b></td><td><code>(test infra)</code> 9, <code>(cloud/test)</code> 4; node <code>automated-test-suites</code>; review components <code>tests</code>, <code>suite</code>, <code>coverage</code>, <code>manifests</code>, <code>mutation-manifest</code>…</td><td><b>26</b> component values, 95 findings</td></tr>
+<tr><td><b>Pages / comprehensibility</b></td><td><code>(comprehensibility)</code> 38; 3 anchors; 3 feature nodes; goal 1; D2; components <code>page_chrome</code>, <code>stub-page</code>, <code>palette-detection</code>, <code>em-dark-state</code>, <code>explainer-page</code>…</td><td><b>14</b> component values, 66 findings</td></tr>
+<tr><td><b>Prose / documentation</b></td><td>components <code>prose</code>, <code>contract-text</code>, <code>stale-prose</code>, <code>delivery-figures</code>, <code>calibration-claims</code>, <code>docstrings</code>…</td><td><b>19</b> values, 97 findings</td></tr>
+<tr><td><b>Git / diff handling</b></td><td><code>diff-parse</code>, <code>diff-extraction</code>, <code>main-diff</code>, <code>hunk-ownership</code>, <code>parse-hunks</code>, <code>git-invocation</code>…</td><td><b>12</b> values, 48 findings</td></tr>
+<tr><td><b>Process / harness</b></td><td><code>(process)</code> 25, <code>(process / deliverable #2)</code> 23; nodes <code>review-loop</code>, <code>process-harness</code>, <code>guard-and-gate-harness</code>; D2; <code>(tooling)</code> 176</td><td>"process", "tooling" and "harness" overlap with no rule between them</td></tr>
+<tr><td><b>Severity</b></td><td>backlog 🔴🟠🟡🟢; reviews Blocking/High/Medium/Low; Codex text also Major/Minor and P1/P2/P3</td><td><b>3 scales</b>; in Codex reviews, Major 21 and P2 34 appear beside High 102</td></tr>
+</table></div>
+
+<p>The component clusters come from a keyword search, so they're a <b>lower bound</b> on synonyms, and a value can fall in two clusters (<code>dashboard-text</code> is both prose and page). The important number is <b>146 of 232 component values used in only one review record</b>. A field where most values are used once records a description, not a category. That's fine for the ranker, which only compares within one subject, but those values can't be used to group findings across subjects.</p>
+
+<h2 id="options">Three ways to a common vocabulary</h2>
+
+<div class="scroll"><table>
+<tr><th>Option</th><th>What it is</th><th>Cost</th><th>What it breaks or misses</th></tr>
+<tr><td><b>1 — Registry and guard</b></td><td>one file listing the allowed tags (like <code>docs/anchors.md</code>); a guard refuses an unregistered tag</td><td>a file, a guard, a migration of 23 Bundle values</td><td>stops <b>new</b> drift. Applied to <code>component:</code> it would refuse 146 one-off values, so either that field gets a separate free-text description beside its tag, or the guard is switched off (backlog #56: a guard red from birth gets turned off)</td></tr>
+<tr><td><b>2 — Alias map</b></td><td>canonical tags, with old spellings mapped to them at read time</td><td>small; no edits to old records</td><td>fixes <i>spellings</i> (<code>cloud/money</code>), not <i>meanings</i>. It merges what should stay separate — status into severity, tooling into comprehensibility</td></tr>
+<tr><td><b>3 — Facets</b></td><td>several small closed axes: <b>area</b> (part of the system), <b>goal</b> (= anchor, already a registry), <b>kind</b> (defect / story / task, #90), <b>severity</b>, <b>status</b></td><td>the largest: a grammar change, plus a retag</td><td>nothing is overloaded, so each page filters on the axis it needs. Asks one more decision per item, which is friction</td></tr>
+</table></div>
+
+<h2 id="rec">Recommendation, and what would make it fail</h2>
+
+<ol>
+<li><b>Treat the anchors registry as the goal facet</b> and stop inventing goal-ish backlog tags. Anchors are the one vocabulary that's registered, guarded, and already read by both the goals and features pages. Let a backlog row name an anchor directly, which backlog #381's multi-tag parser can carry: <code>(tooling) (status-visibility)</code>.</li>
+<li><b>Keep area as a small closed list</b> (about 10 values after merging the spellings), registered and guarded. That's option 1, applied to area alone.</li>
+<li><b>Take status out of severity:</b> <code>✅</code> becomes a status, so the backlog has two columns where it has one today. This is #90's split.</li>
+<li><b>Leave <code>component:</code> as free text</b>, because the ranker needs exact descriptions within one subject. If it's ever needed across subjects, add an <i>area</i> beside it rather than forcing a closed list onto it.</li>
+<li><b>Glue:</b> the next win is the theme switcher. ~49 inline copies should become the shared control, the way the tray already is. #376 (text-style on by default) is the same move for the second control.</li>
+</ol>
+
+<div class="k green"><b>It fails if</b> after the retag, any one concept still appears under two values of the same facet (e.g. <code>cloud/money</code> and <code>cloud / money</code> both in use), <b>or</b> the features page's comprehensibility nodes still miss an open suite row that a keyword search finds, <b>or</b> the area guard has to be widened within a month of shipping. That last one would mean the closed list was guessed rather than derived.</div>
+
+<h2 id="measured">What was measured, and what was inferred</h2>
+
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Measured / inferred</th><th>How</th></tr>
+<tr><td>73 pages; per-family counts in the adoption matrix</td><td><span class="tag m">measured</span></td><td><code>page_chrome</code> predicates run on every non-fragment <code>docs/explainers/*.html</code> (working tree)</td></tr>
+<tr><td>~49 inline theme copies</td><td><span class="tag m">measured</span> as 69 − 20</td><td><code>data-theme</code> present but <code>has_control</code> false. Assumes no other shared mechanism exists</td></tr>
+<tr><td>Bundle: 23 raw values, 22 tags, tooling 176</td><td><span class="tag m">measured</span></td><td><code>gen-backlog-page.parse</code> + <code>bundle_tags</code></td></tr>
+<tr><td>Severity ✅ = 117 rows</td><td><span class="tag m">measured</span></td><td>same parser, <code>sev == "done"</code></td></tr>
+<tr><td>232 component values, 146 used once, 746 findings</td><td><span class="tag m">measured</span></td><td>regex over the coordinator records' finding yaml</td></tr>
+<tr><td>Synonym cluster sizes</td><td><b>inferred</b> (keyword lower bound)</td><td>a regex per cluster; a value can fall in two</td></tr>
+<tr><td>Dashboard → backlog 106, → goal 119</td><td><b>inferred</b> (keyword)</td><td>regex over entry text; mentions, not links</td></tr>
+<tr><td>Work-line tags have no reader; goals have no machine reader</td><td><b>inferred</b> from a grep that found nothing</td><td>an empty grep isn't proof</td></tr>
+<tr><td>#376's "9 of 89" vs this page's 8 of 73</td><td><b>unresolved</b></td><td>different populations; not reconciled</td></tr>
+<tr><td>Recommendation and its cost</td><td><b>judgement</b></td><td>the cost of each option was estimated, not built</td></tr>
+</table></div>
+
+</div>

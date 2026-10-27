@@ -169,7 +169,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "            if area not in areas_in_use:",
+        "            if nt(raw) not in placing:",
         "            if False:"
       ]
     ],
@@ -180,7 +180,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "    for area in sorted(areas_in_use - set(area_claims)):",
+        "    for area in sorted(u for u in (areas_in_use or ()) if nearest(u, area_claims) is None):",
         "    for area in sorted(set()):"
       ]
     ],
@@ -198,26 +198,15 @@
     "expect": "an area claimed by TWO nodes fails"
   },
   {
-    "name": "the backlog area is read from the wrong cell of the row",
+    "name": "the tags are read from the WRONG column of the parsed row",
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "        cell = cells[-3].strip()",
-        "        cell = cells[-4].strip()"
+        "        leaves, malformed = bp.cell_tags(r[\"bundle\"])",
+        "        leaves, malformed = bp.cell_tags(r[\"status\"])"
       ]
     ],
     "expect": "backlog areas are read from the area cell"
-  },
-  {
-    "name": "CELL_SPLIT loses its escaped-pipe lookbehind, so a row with an escaped pipe is dropped",
-    "file": "scripts/check-features.py",
-    "edits": [
-      [
-        "CELL_SPLIT = re.compile(r\"(?<!\\\\)\\|\")",
-        "CELL_SPLIT = re.compile(r\"\\|\")"
-      ]
-    ],
-    "expect": "a row with an ESCAPED PIPE is not dropped"
   },
   {
     "name": "the duplicate remedy stops depending on the field kind, so a scalar is told to use a comma list",
@@ -240,5 +229,104 @@
       ]
     ],
     "expect": "a refused line states the GRAMMAR an author needs, not only the rationale"
+  },
+  {
+    "name": "a ShapeError is reported without the row it names, so the author cannot find it",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "f\"trusted \u2014 {e}\"]",
+        "f\"trusted\"]"
+      ]
+    ],
+    "expect": "an EXTRA column separator is a gate FAILURE naming the row"
+  },
+  {
+    "name": "the RAW cell is collected again, so a two-tag row puts one unparsed string in use",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        out.update(leaves)",
+        "        out.add(r[\"bundle\"])"
+      ]
+    ],
+    "expect": "a cell with two tags puts BOTH in use"
+  },
+  {
+    "name": "a malformed Bundle cell is no longer reported, so a guessed tag passes the gate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if malformed:\n            bad.append(",
+        "        if False:\n            bad.append("
+      ]
+    ],
+    "expect": "a malformed cell is REPORTED with its row, and its one guessed tag is still in use"
+  },
+  {
+    "name": "an `areas:` entry is compared RAW, so two spellings of one tag count as two areas",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            area_claims.setdefault(nt(raw), []).append(n.slug)",
+        "            area_claims.setdefault(raw, []).append(n.slug)"
+      ]
+    ],
+    "expect": "two spellings of one tag on ONE node are a duplicate claim, not two areas"
+  },
+  {
+    "name": "the stale-area rule reverts to any-descendant, so a family area that places no row passes",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    placing = {nearest(u, area_claims) for u in (areas_in_use or ())}",
+        "    placing = {a for a in area_claims if any(nearest(u, [a]) for u in (areas_in_use or ()))}"
+      ]
+    ],
+    "expect": "a family area that is nobody's NEAREST claimant is stale"
+  },
+  {
+    "name": "a ShapeError is swallowed, so a corrupted table passes the gate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        return set(), [f\"docs/backlog.md cannot be read as a table",
+        "        return set(), [] and [f\"docs/backlog.md cannot be read as a table"
+      ]
+    ],
+    "expect": "a MISSING column separator is a gate FAILURE naming the row"
+  },
+  {
+    "name": "an unreadable backlog is treated as an EMPTY one, so every area is called stale and the real cause is buried",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    for n in (nodes if areas_in_use is not None else ()):",
+        "    for n in nodes:"
+      ]
+    ],
+    "expect": "an UNREADABLE backlog (areas None) asks no per-area question, so the one real cause is not buried"
+  },
+  {
+    "name": "the parser's unread lines are collected and then IGNORED, so a decorated row and its tags vanish from the gate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    bad += [f\"docs/backlog.md has a line inside an item table",
+        "    bad += [] and [f\"docs/backlog.md has a line inside an item table"
+      ]
+    ],
+    "expect": "a decorated or non-integer row number is a gate FAILURE naming the line, for every shape"
+  },
+  {
+    "name": "the gate stops handing `unread=` to the parser, the shape round 3 found",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        rows = bp.parse(text.split(\"\\n\"), unread=unread)",
+        "        rows = bp.parse(text.split(\"\\n\"))"
+      ]
+    ],
+    "expect": "a decorated row inside a copy of the REAL `## Items` table fails the gate, naming it"
   }
 ]
