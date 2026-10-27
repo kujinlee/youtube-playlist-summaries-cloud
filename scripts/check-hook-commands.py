@@ -27,12 +27,14 @@ WHAT WOULD MAKE THIS FAIL (its falsifier): a hook command in a second shape, a r
 does not exist, or a hook file nobody registers or explains.
 
 ⚠ BOUND: only the TRACKED `.claude/settings.json` is read; `settings.local.json` is per-machine.
-⟳ backlog #365 (from PR #409 round 4): a hook entry with no `type`, or one this guard does not know
-  (`{}`, `"commmand"`), is now Malformed → CANNOT RUN instead of skipped; an `UNREGISTERED` entry with an
-  empty or whitespace reason is refused. A type Claude Code adds later fails LOUDLY here until it is named
-  in KNOWN_TYPES, which is the safe direction.
+⟳ backlog #365 (from PR #409 round 4): a hook entry with no `type`, a `type` that is not a string, or one
+  outside KNOWN_TYPES (the five in Claude Code 2.1.309's schema) is Malformed → CANNOT RUN instead of skipped;
+  an `UNREGISTERED` reason must be a non-empty STRING. A type Claude Code ships AFTER 2.1.309 fails loudly
+  here until it is named, which is the safe direction.
+⚠ NOT CHECKED (backlog #368): a canonical command with an `args` field, or a non-default `shell`, which the
+  harness runs as an executable with no shell — the hook would launch nothing.
 
-    python3 scripts/check-hook-commands.py --self-test  # 25 cases
+    python3 scripts/check-hook-commands.py --self-test  # 29 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -49,7 +51,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SETTINGS_REL = ".claude/settings.json"
 HOOKS_REL = ".claude/hooks"
-KNOWN_TYPES = frozenset({"command", "prompt"})  # hook types this guard knows; anything else is CANNOT RUN
+# Every hook type in Claude Code 2.1.309's hook schema (PR #412 r1, both halves: `agent`, `http` and `mcp_tool` were
+# missing, so a legitimate hook of those types would have read as CANNOT RUN in CI). Anything else is CANNOT RUN.
+KNOWN_TYPES = frozenset({"command", "prompt", "agent", "http", "mcp_tool"})
 CANONICAL = re.compile(r"bash \.claude/hooks/([A-Za-z0-9_][A-Za-z0-9._-]*\.sh)")
 
 # Hook files that are deliberately NOT registered, each with its reason. A file not here and not
@@ -80,7 +84,7 @@ def hook_commands(settings: dict) -> list[tuple[str, str]]:
             for h in inner:
                 if not isinstance(h, dict):
                     raise Malformed(f"a `hooks.{event}` hook is not an object")
-                if h.get("type") not in KNOWN_TYPES:
+                if not isinstance(h.get("type"), str) or h.get("type") not in KNOWN_TYPES:
                     raise Malformed(f"a `hooks.{event}` hook has type {h.get('type')!r}, which this guard does not "
                                     f"know (known: {sorted(KNOWN_TYPES)})")
                 if h.get("type") == "command":
@@ -107,7 +111,7 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
         if f.endswith(".sh") and f not in unregistered:
             out.append(f"{HOOKS_REL}/{f} is registered by no command and has no UNREGISTERED reason — a gate with no caller")
     for f in sorted(unregistered):
-        if not str(unregistered[f]).strip():
+        if not isinstance(unregistered[f], str) or not unregistered[f].strip():
             out.append(f"UNREGISTERED lists {f} with an EMPTY reason — an exemption must say why")
         if f in registered:
             out.append(f"UNREGISTERED lists {f}, which IS registered — stale entry")
@@ -172,6 +176,8 @@ def self_test() -> int:
          problems(cmds(good), disk, {**reg, "x.sh": "why"}), 1),
         ("⭐ an UNREGISTERED entry with an EMPTY reason is refused (backlog #365)",
          problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": "  "}), 1),
+        ("⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason",
+         problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": None}), 1),
         ("a stale UNREGISTERED entry — no such file — is refused",
          problems(cmds(good), disk, {**reg, "q.sh": "why"}), 1),
     ]
@@ -222,10 +228,16 @@ def self_test() -> int:
             rc = main([], root=root, unregistered={})
         more.append(("⭐ main() over a divergent registration exits 1 and NAMES the shape",
                      (rc, "is not the one registration form" in err.getvalue()), (1, True)))
-        for bad in ({}, {"type": "commmand", "command": "bash .claude/hooks/x.sh"}):
+        for bad in ({}, {"type": "commmand", "command": "bash .claude/hooks/x.sh"}, {"type": []}, {"type": {}}):
             p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}, bad]}]}}))
-            more.append((f"⭐ a hook entry with type {bad.get('type')!r} is CANNOT RUN, not skipped (backlog #365)",
+            more.append((f"⭐ a hook entry with type {bad.get('type')!r} is CANNOT RUN, not skipped or a crash (backlog #365)",
                          check(p, root, {})[0], 2))
+        # ⚠ An INDEPENDENT copy of the schema's types, not derived from KNOWN_TYPES: derived, a dropped type
+        # vanished from this list too and the case stayed green (the r1 fold's own first attempt).
+        others = [{"type": k} for k in ("prompt", "agent", "http", "mcp_tool")]
+        p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}] + others}]}}))
+        more.append(("⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)",
+                     check(p, root, {})[0], 0))
         more.append(("main() over a world with no settings file exits 2 (CANNOT RUN)", main([], root=t / "none"), 2))
     for name, got, want in more:
         ok = got == want
