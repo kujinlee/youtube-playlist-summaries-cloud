@@ -17813,12 +17813,14 @@ for the block and every update, an `O_NOFOLLOW` lock, UTF-8 writes. 51 cases; 25
 `.claude` retargeted, a hard link) still lose a job — out of scope for a cooperative scratch file, filed as backlog #372.
 
 
-## 2026-10-26
-The check that every hook is registered one way now also refuses two settings that would make a hook run
-differently from how the rest assume: a list of arguments, and a choice of shell.
+## 2026-10-27
+The check that every hook is registered one way now refuses any hook setting it has not been told about, and five it
+has: a list of arguments, a choice of shell, and three that let a safety check look as though it ran when it did not
+(running in the background, or only once).
 <!--tech-->
-Branch `hook-args-shell` (backlog #368, from PR #412 round 1). `check-hook-commands.py`: `execution_overrides(settings)`
-refuses a `type: command` hook carrying `args` (Claude Code 2.1.309 then spawns `command` as one executable, no shell)
-or `shell`; non-command hooks are untouched. Falsifier: `"args": []` and `"shell": "powershell"` each exit 1. 33 cases;
-19 mutations (3 new), each killed by its named case. The live check still passes over today's 14 commands.
+Branch `hook-args-shell` (backlog #368, PR #414, from PR #412 round 1). `check-hook-commands.py`: `FIELD_POLICY` classifies
+every field of a command hook, deny by default. Refused: `args`, `shell` (a policy — even `bash`), and `async`/
+`asyncRewake`/`once`, which let a gate look as though it ran. Accepted: the five in live use; `timeout` and `if` values are
+NOT checked, said in the docstring. ⟳ r1 (both halves): the first version refused only `args`/`shell`, and walked the
+hooks a second time with three unseen regressions — now ONE walk (`_walk`). 38 cases; 25 mutations, each killed by its case.
 

@@ -31,11 +31,16 @@ does not exist, or a hook file nobody registers or explains.
   outside KNOWN_TYPES (the five in Claude Code 2.1.309's schema) is Malformed → CANNOT RUN instead of skipped;
   an `UNREGISTERED` reason must be a non-empty STRING. A type Claude Code ships AFTER 2.1.309 fails loudly
   here until it is named, which is the safe direction.
-⟳ backlog #368: a command hook carrying `args` (Claude Code 2.1.309's runner code spawns `command` as ONE
-  executable with no shell — read, not run end to end) or `shell` (it changes which shell runs the command) is
-  REFUSED: either way it is not run the way the one registration shape assumes.
+⟳ backlog #368: every FIELD of a command hook is classified in FIELD_POLICY, and an UNCLASSIFIED field is refused —
+  deny by default, because the defect was a field the guard had never heard of changing how a hook runs. Refused:
+  `args` (Claude Code 2.1.309 then spawns `command` as one executable, no shell — read from its code, not run end to
+  end), `shell` (a POLICY: even the default `bash` is refused, so there stays one registration shape), and `async`,
+  `asyncRewake` and `once`, which let a gate LOOK as though it ran — it stops blocking, or is removed after one run.
+  ⚠ ACCEPTED, AND THE GUARD CANNOT SEE THEIR VALUES: `timeout` and `if` are in live use (1 and 3 hooks), and either
+  could still neuter a gate (`timeout: 0.001`, `if` matching nothing); so can a group's `matcher`, which this guard
+  does not read. Refusing them would make the guard red from birth on today's settings.
 
-    python3 scripts/check-hook-commands.py --self-test  # 33 cases
+    python3 scripts/check-hook-commands.py --self-test  # 38 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -69,12 +74,13 @@ class Malformed(Exception):
     """The hooks block does not have the shape the harness reads: CANNOT RUN, never a pass."""
 
 
-def hook_commands(settings: dict) -> list[tuple[str, str]]:
-    """(event, command) for every hook of type "command". Raises Malformed on an unexpected shape."""
+def _walk(settings: dict):
+    """(event, hook) for EVERY hook, validating the structure on the way. Raises Malformed on an unexpected shape.
+    The one walk: `hook_commands` and `field_problems` both read it (backlog #368 r1: a second walk's
+    `break`/first-group/first-event regressions went unseen)."""
     hooks = settings.get("hooks", {})
     if not isinstance(hooks, dict):
         raise Malformed("`hooks` is not an object")
-    out = []
     for event, groups in hooks.items():
         if not isinstance(groups, list):
             raise Malformed(f"`hooks.{event}` is not a list")
@@ -88,12 +94,14 @@ def hook_commands(settings: dict) -> list[tuple[str, str]]:
                 if not isinstance(h.get("type"), str) or h.get("type") not in KNOWN_TYPES:
                     raise Malformed(f"a `hooks.{event}` hook has type {h.get('type')!r}, which this guard does not "
                                     f"know (known: {sorted(KNOWN_TYPES)})")
-                if h.get("type") == "command":
-                    cmd = h.get("command")
-                    if not isinstance(cmd, str):
-                        raise Malformed(f"a `hooks.{event}` command is not a string")
-                    out.append((event, cmd))
-    return out
+                if h.get("type") == "command" and not isinstance(h.get("command"), str):
+                    raise Malformed(f"a `hooks.{event}` command is not a string")
+                yield event, h
+
+
+def hook_commands(settings: dict) -> list[tuple[str, str]]:
+    """(event, command) for every hook of type "command". Raises Malformed on an unexpected shape."""
+    return [(event, h.get("command")) for event, h in _walk(settings) if h.get("type") == "command"]
 
 
 def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: dict[str, str]) -> list[str]:
@@ -121,22 +129,32 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
     return out
 
 
-EXECUTION_OVERRIDES = ("args", "shell")
+# Every field a COMMAND hook may carry, with why. Deny by default: a field missing here is refused as UNCLASSIFIED.
+FIELD_POLICY: dict[str, tuple[bool, str]] = {
+    "type": (True, "the hook kind"),
+    "command": (True, "the one registration shape"),
+    "statusMessage": (True, "spinner text only"),
+    "timeout": (True, "in live use; its value is NOT checked"),
+    "if": (True, "in live use; its value is NOT checked"),
+    "args": (False, "spawns `command` as one executable with no shell"),
+    "shell": (False, "chooses the shell; even the default is refused, so there stays one shape"),
+    "async": (False, "the hook runs in the background and no longer blocks — a gate stops gating"),
+    "asyncRewake": (False, "the hook runs in the background — a gate stops gating"),
+    "once": (False, "the hook is removed after one run — a gate stops gating"),
+}
 
 
-def execution_overrides(settings: dict) -> list[str]:
-    """The rule, pure: a command hook carrying a field that changes HOW its command runs (backlog #368).
-    Call only after `hook_commands` has accepted the structure."""
+def field_problems(settings: dict) -> list[str]:
+    """The rule, pure: a command hook carrying a refused or UNCLASSIFIED field (backlog #368).
+    Raises Malformed on an unexpected shape, as `hook_commands` does — they share `_walk`."""
     out = []
-    for event, groups in settings.get("hooks", {}).items():
-        for g in groups:
-            for h in g.get("hooks", []):
-                if h.get("type") != "command":
-                    continue
-                for key in EXECUTION_OVERRIDES:
-                    if key in h:
-                        out.append(f"{event}: {h.get('command')!r} carries `{key}`, which changes how the command runs — "
-                                   "the one registration shape assumes a plain shell command")
+    for event, h in _walk(settings):
+        if h.get("type") != "command":
+            continue
+        for key in h:
+            allowed, why = FIELD_POLICY.get(key, (False, "UNCLASSIFIED — add it to FIELD_POLICY with a reason"))
+            if not allowed:
+                out.append(f"{event}: {h.get('command')!r} carries `{key}` — {why}")
     return out
 
 
@@ -158,7 +176,7 @@ def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -
         return 2, [f"CANNOT RUN — {path} registers ZERO hook commands. Treat this as NOT RUN."]
     hooks_dir = root / HOOKS_REL
     on_disk = {p.name for p in hooks_dir.iterdir() if p.is_file()} if hooks_dir.is_dir() else set()
-    found = problems(commands, on_disk, unregistered) + execution_overrides(settings)
+    found = problems(commands, on_disk, unregistered) + field_problems(settings)
     return (1 if found else 0), found or [f"{len(commands)} hook command(s), every one canonical and present"]
 
 
@@ -180,6 +198,14 @@ def self_test() -> int:
         "FOO=.claude/hooks/x.sh bash $FOO", "bash .claude/hooks/x.sh||true", "bash ./.claude/hooks/x.sh",
         'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/x.sh', "bash /opt/hooks/x.sh",
     ]
+    def fp(settings):
+        # A case must not RAISE inside its arguments: a mutated `_walk` would crash the whole table, and a crash with
+        # no `[FAIL]` line is a kill nothing can see. A raise becomes one finding the case's count can disagree with.
+        try:
+            return field_problems(settings)
+        except Malformed as exc:
+            return [f"RAISED {exc}"]
+
     cases = [
         ("the one registration form passes", problems(cmds(good), disk, reg), 0),
         ("every divergent shape is refused — one finding each", on_cmd(problems(cmds(*divergent), disk, reg)),
@@ -198,12 +224,21 @@ def self_test() -> int:
          problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": "  "}), 1),
         ("⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason",
          problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": None}), 1),
-        ("a plain command hook carries no execution override",
-         execution_overrides({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}]}]}}), 0),
+        ("⭐ every field today's live settings use is ACCEPTED (an independent list, from the live file 2026-10-27)",
+         fp({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, "if": "Bash(git *)",
+                                                         "statusMessage": "s", "timeout": 30}]}]}}), 0),
         ("⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)",
-         execution_overrides({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, "args": []},
-                                                            {"type": "command", "command": good, "shell": "bash"},
-                                                            {"type": "prompt", "args": [], "shell": "x"}]}]}}), 2),
+         fp({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, "args": []},
+                                                        {"type": "command", "command": good, "shell": "bash"},
+                                                        {"type": "prompt", "args": [], "shell": "x"}]}]}}), 2),
+        ("⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)",
+         fp({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}]}],
+                                   "PreToolUse": [{"hooks": [{"type": "command", "command": good}]},
+                                                  {"hooks": [{"type": "prompt"},
+                                                             {"type": "command", "command": good, "once": True}]}]}}), 1),
+        ("⭐ an UNCLASSIFIED field is refused — deny by default (backlog #368 r1)",
+         [m for m in fp({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, "onFailure": "x"}]}]}})
+          if "UNCLASSIFIED" in m], 1),
         ("a stale UNREGISTERED entry — no such file — is refused",
          problems(cmds(good), disk, {**reg, "q.sh": "why"}), 1),
     ]
@@ -258,13 +293,15 @@ def self_test() -> int:
             p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}, bad]}]}}))
             more.append((f"⭐ a hook entry with type {bad.get('type')!r} is CANNOT RUN, not skipped or a crash (backlog #365)",
                          check(p, root, {})[0], 2))
-        # ⚠ An INDEPENDENT copy of the schema's types, not derived from KNOWN_TYPES: derived, a dropped type
-        # vanished from this list too and the case stayed green (the r1 fold's own first attempt).
-        for key, val in (("args", []), ("shell", "powershell")):
+        # ⚠ An INDEPENDENT list, not derived from FIELD_POLICY: derived, a field flipped to accepted would vanish from
+        # this list too and the case would stay green (`a-class-fix-needs-an-independent-copy`).
+        for key, val in (("args", []), ("shell", "bash"), ("async", True), ("asyncRewake", True), ("once", True)):
             p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, key: val}]}]}}))
             rc_, msgs_ = check(p, root, {})
-            more.append((f"⭐ a command hook carrying `{key}` is REFUSED — it would not run as a plain shell command (backlog #368)",
+            more.append((f"⭐ a command hook carrying `{key}` is REFUSED (backlog #368)",
                          (rc_, any(f"carries `{key}`" in m for m in msgs_)), (1, True)))
+        # ⚠ An INDEPENDENT copy of the schema's types, not derived from KNOWN_TYPES: derived, a dropped type
+        # vanished from this list too and the case stayed green (the r1 fold's own first attempt).
         others = [{"type": k} for k in ("prompt", "agent", "http", "mcp_tool")]
         p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}] + others}]}}))
         more.append(("⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)",

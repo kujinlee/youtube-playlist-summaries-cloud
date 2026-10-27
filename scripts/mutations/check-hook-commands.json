@@ -208,29 +208,94 @@
     ]
   },
   {
-    "name": "⭐ execution overrides are no longer checked (backlog #368)",
+    "name": "⭐ the field policy is no longer checked (backlog #368)",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "    found = problems(commands, on_disk, unregistered) + execution_overrides(settings)",
+        "    found = problems(commands, on_disk, unregistered) + field_problems(settings)",
         "    found = problems(commands, on_disk, unregistered)"
       ]
     ],
     "expect": [
-      "⭐ a command hook carrying `args` is REFUSED — it would not run as a plain shell command (backlog #368)"
+      "⭐ a command hook carrying `args` is REFUSED (backlog #368)"
     ]
   },
   {
-    "name": "`shell` is dropped from the override set (backlog #368)",
+    "name": "`shell` is ACCEPTED (backlog #368)",
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "EXECUTION_OVERRIDES = (\"args\", \"shell\")",
-        "EXECUTION_OVERRIDES = (\"args\",)"
+        "    \"shell\": (False,",
+        "    \"shell\": (True,"
       ]
     ],
     "expect": [
-      "⭐ a command hook carrying `shell` is REFUSED — it would not run as a plain shell command (backlog #368)"
+      "⭐ a command hook carrying `shell` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ `async` is ACCEPTED — a gate would stop blocking (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"async\": (False,",
+        "    \"async\": (True,"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `async` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "`asyncRewake` is ACCEPTED (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"asyncRewake\": (False,",
+        "    \"asyncRewake\": (True,"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `asyncRewake` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ `once` is ACCEPTED — a gate would run once (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"once\": (False,",
+        "    \"once\": (True,"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `once` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ an UNCLASSIFIED field is ACCEPTED — allow by default (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "FIELD_POLICY.get(key, (False, \"UNCLASSIFIED",
+        "FIELD_POLICY.get(key, (True, \"UNCLASSIFIED"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCLASSIFIED field is refused — deny by default (backlog #368 r1)"
+    ]
+  },
+  {
+    "name": "⭐ a live field (`if`) is refused — the guard would be red on today's settings",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"if\": (True,",
+        "    \"if\": (False,"
+      ]
+    ],
+    "expect": [
+      "⭐ every field today's live settings use is ACCEPTED (an independent list, from the live file 2026-10-27)"
     ]
   },
   {
@@ -238,12 +303,25 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "                if h.get(\"type\") != \"command\":\n                    continue\n                for key in EXECUTION_OVERRIDES:",
-        "                for key in EXECUTION_OVERRIDES:"
+        "        if h.get(\"type\") != \"command\":\n            continue\n        for key in h:",
+        "        for key in h:"
       ]
     ],
     "expect": [
       "⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ the walk reads only the FIRST group of each event (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        for g in groups:\n",
+        "        for g in groups[:1]:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
     ]
   }
 ]
