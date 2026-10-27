@@ -31,7 +31,7 @@ does not exist, or a hook file nobody registers or explains.
   outside KNOWN_TYPES (the five in Claude Code 2.1.309's schema) is Malformed → CANNOT RUN instead of skipped;
   an `UNREGISTERED` reason must be a non-empty STRING. A type Claude Code ships AFTER 2.1.309 fails loudly
   here until it is named, which is the safe direction.
-⟳ backlog #368: every FIELD of a command hook is classified in FIELD_POLICY, and an UNCLASSIFIED field is refused —
+⟳ backlog #368: every FIELD of a command hook is classified in ACCEPTED (with its exact types) or REFUSED, and an UNCLASSIFIED field is refused —
   deny by default, because the defect was a field the guard had never heard of changing how a hook runs. Refused:
   `args` (Claude Code 2.1.309 then spawns `command` as one executable, no shell — read from its code, not run end to
   end), `shell` (a POLICY: even the default `bash` is refused, so there stays one registration shape), and `async`,
@@ -131,9 +131,10 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
 
 # Every field a COMMAND hook may carry: accepted with the EXACT types it may have, or refused — with why. Deny by
 # default: a field missing here is refused as UNCLASSIFIED. ⟳ r2 REDESIGN (backlog #368): an accepted field carries its
-# type, because Claude Code 2.1.309 REFUSES TO LOAD a settings file whose field has the wrong type ("These settings files
-# did not load, so nothing in them is in effect, including hooks" — Codex, executed, `statusMessage: {}`), so a wrong
-# type switches off every hook in the file while the shape looks canonical. Types are matched EXACTLY (`type(v) in`):
+# type, because Claude Code 2.1.309 does NOT RUN a hook whose field has the wrong type — measured twice, two ways: r2
+# (interactive) refused the whole settings file ("These settings files did not load, so nothing in them is in effect,
+# including hooks", `statusMessage: {}`); r3 (print mode) skipped the bad ENTRY and kept the rest. Either way the hook is
+# not run while its shape looks canonical, so a wrong type is refused here. Types are matched EXACTLY (`type(v) in`):
 # `True` is an `int` to `isinstance`, and `timeout: true` is not a number of seconds.
 ACCEPTED: dict[str, tuple[tuple[type, ...], str]] = {
     "type": ((str,), "the hook kind"),
@@ -163,7 +164,7 @@ def field_problems(settings: dict) -> list[str]:
                 types, _ = ACCEPTED[key]
                 if type(val) not in types:
                     out.append(f"{event}: {h.get('command')!r} carries `{key}` — a {type(val).__name__}, not "
-                               f"{'/'.join(x.__name__ for x in types)}: Claude Code would not load this settings file")
+                               f"{'/'.join(x.__name__ for x in types)}: Claude Code would not run this hook")
             else:
                 why = REFUSED.get(key, "UNCLASSIFIED — add it to ACCEPTED or REFUSED with a reason")
                 out.append(f"{event}: {h.get('command')!r} carries `{key}` — {why}")
@@ -291,7 +292,7 @@ def self_test() -> int:
             p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}, bad]}]}}))
             more.append((f"⭐ a hook entry with type {bad.get('type')!r} is CANNOT RUN, not skipped or a crash (backlog #365)",
                          check(p, root, {})[0], 2))
-        # ⚠ An INDEPENDENT list, not derived from FIELD_POLICY: derived, a field flipped to accepted would vanish from
+        # ⚠ An INDEPENDENT list, not derived from ACCEPTED/REFUSED: derived, a field flipped to accepted would vanish from
         # this list too and the case would stay green (`a-class-fix-needs-an-independent-copy`).
         for key, val in (("args", []), ("shell", "bash"), ("async", True), ("asyncRewake", True), ("once", True)):
             p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, key: val}]}]}}))
