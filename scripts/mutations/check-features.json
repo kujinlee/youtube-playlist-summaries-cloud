@@ -169,7 +169,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "            if area not in areas_in_use:",
+        "            if not any(nearest(u, [area]) for u in areas_in_use):",
         "            if False:"
       ]
     ],
@@ -180,7 +180,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "    for area in sorted(areas_in_use - set(area_claims)):",
+        "    for area in sorted(u for u in areas_in_use if nearest(u, area_claims) is None):",
         "    for area in sorted(set()):"
       ]
     ],
@@ -240,5 +240,60 @@
       ]
     ],
     "expect": "a refused line states the GRAMMAR an author needs, not only the rationale"
+  },
+  {
+    "name": "backlog_areas reads every `| ` line again, so the table header's `Bundle` is taken for a tag cell",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if not ITEM_ROW.match(line):",
+        "        if not line.startswith(\"| \"):"
+      ]
+    ],
+    "expect": "a non-item row is not read as a tag cell"
+  },
+  {
+    "name": "the RAW cell is collected again, so a two-tag row puts one unparsed string in use",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        out.update(leaves)",
+        "        out.add(cell)"
+      ]
+    ],
+    "expect": "a cell with two tags puts BOTH in use"
+  },
+  {
+    "name": "a malformed Bundle cell is no longer reported, so a guessed tag passes the gate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        if malformed:\n            bad.append(",
+        "        if False:\n            bad.append("
+      ]
+    ],
+    "expect": "a malformed cell is REPORTED with its row, and its one guessed tag is still in use"
+  },
+  {
+    "name": "an `areas:` entry is compared RAW, so two spellings of one tag count as two areas",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "            area = nt(raw)",
+        "            area = raw"
+      ]
+    ],
+    "expect": "two spellings of one tag on ONE node are a duplicate claim, not two areas"
+  },
+  {
+    "name": "the stale-alias test wants an exact match, so a family area over its leaves reads as stale",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "any(nearest(u, [area]) for u",
+        "any(u == area for u"
+      ]
+    ],
+    "expect": "an in-use leaf is claimed by its family's area, and that area is not stale"
   }
 ]

@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 33 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 39 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -154,20 +154,45 @@ def check_nodes(nodes: list[Node]) -> list[str]:
 
 
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
+ITEM_ROW = re.compile(r"^\|\s*\d+\s*\|")
+_TAGS = None
 
 
-def backlog_areas(text: str) -> set[str]:
+def tags():
+    """`gen-backlog-page`, which OWNS the Bundle-cell rule (backlog #381) — loaded lazily and once,
+    so the parse and node rules above stay importable without it. A hyphenated file cannot be
+    named by a plain `import`."""
+    global _TAGS
+    if _TAGS is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "gen_backlog_page", pathlib.Path(__file__).with_name("gen-backlog-page.py"))
+        _TAGS = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_TAGS)
+    return _TAGS
+
+
+def backlog_areas(text: str) -> tuple[set[str], list[str]]:
+    """(every tag an item row WRITES, normalised; the item rows whose cell had to be guessed at).
+
+    ⛔ PER TAG, through `gen-backlog-page.cell_tags` — this used to collect the RAW cell, so
+    `(cloud/money)` and `(cloud / money)` were two areas and a row could hold one. ⚠ Item rows
+    only (`| <number> |`), not every row whose cell starts with `(`: that filter is what let a
+    bare-word cell through unseen, and a malformed cell is exactly what this gate must SEE."""
     out: set[str] = set()
+    bad: list[str] = []
     for line in text.split("\n"):
-        if not line.startswith("| "):
+        if not ITEM_ROW.match(line):
             continue
         cells = CELL_SPLIT.split(line)
         if len(cells) < 7:
             continue
         cell = cells[-3].strip()
-        if cell.startswith("(") and cell.endswith(")"):
-            out.add(cell)
-    return out
+        leaves, malformed = tags().cell_tags(cell)
+        out.update(leaves)
+        if malformed:
+            bad.append(f"{cells[1].strip()}: {cell[:40]!r}")
+    return out, bad
 
 
 def anchor_slugs(text: str) -> set[str]:
@@ -175,6 +200,12 @@ def anchor_slugs(text: str) -> set[str]:
 
 
 def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str]) -> list[str]:
+    """⛔ AREAS ARE COMPARED PER TAG, NORMALISED (backlog #381). An `areas:` entry and an in-use
+    tag are equal when `normalise_tag` makes them so, and a tag is claimed by the NEAREST area
+    that equals it or is a family above it — the rule `gen-features-page.match_rows` places rows
+    by. So "claimed by exactly one node" holds per tag: no two entries normalise alike, and every
+    in-use tag has a nearest claimant."""
+    nt, nearest = tags().normalise_tag, tags().nearest_claim
     problems: list[str] = []
     area_claims: dict[str, list[str]] = {}
     anchor_claims: dict[str, list[str]] = {}
@@ -184,18 +215,20 @@ def check_cross(nodes, anchors_declared: set[str], areas_in_use: set[str]) -> li
             if a not in anchors_declared:
                 problems.append(f"features.md:{n.line}: `{n.slug}` names anchor `{a}`, which is not "
                                 f"in docs/anchors.md")
-        for area in n.areas:
+        for raw in n.areas:
+            area = nt(raw)
             area_claims.setdefault(area, []).append(n.slug)
-            if area not in areas_in_use:
-                problems.append(f"features.md:{n.line}: `{n.slug}` claims area `{area}`, which no "
+            if not any(nearest(u, [area]) for u in areas_in_use):
+                problems.append(f"features.md:{n.line}: `{n.slug}` claims area `{raw}`, which no "
                                 f"backlog row uses — a stale alias looks like coverage")
     for area, owners in area_claims.items():
         if len(owners) > 1:
-            problems.append(f"area `{area}` is claimed by {len(owners)} nodes: {', '.join(owners)}")
+            problems.append(f"area `{area}` is claimed {len(owners)} times, by: {', '.join(owners)}"
+                            f" — two spellings of one tag are one tag; keep a single entry")
     for anchor, owners in anchor_claims.items():
         if len(owners) > 1:
             problems.append(f"anchor `{anchor}` is claimed by {len(owners)} nodes: {', '.join(owners)}")
-    for area in sorted(areas_in_use - set(area_claims)):
+    for area in sorted(u for u in areas_in_use if nearest(u, area_claims) is None):
         problems.append(f"backlog area `{area}` is claimed by no node — its rows cannot appear")
     for anchor in sorted(anchors_declared - set(anchor_claims)):
         problems.append(f"anchor `{anchor}` is claimed by no node — its specs, plans and ADRs "
@@ -222,10 +255,13 @@ def main() -> int:
     if not declared:
         print("CANNOT RUN — no anchors parsed from docs/anchors.md. Treat this as NOT RUN.", file=sys.stderr)
         return 2
-    areas = backlog_areas(BACKLOG.read_text())
+    areas, malformed = backlog_areas(BACKLOG.read_text())
     if not areas:
         print("CANNOT RUN — no `(area)` tags parsed from docs/backlog.md. Treat this as NOT RUN.", file=sys.stderr)
         return 2
+    problems += [f"backlog.md row {m} — its Bundle cell is not a run of `(tag)` groups, so it was "
+                 f"read as ONE tag by guesswork; write every tag in its own parentheses"
+                 for m in malformed]
     problems += check_nodes(nodes)
     problems += check_cross(nodes, declared, areas)
     if problems:
@@ -345,19 +381,37 @@ expected-because: standard for a hosted multi-tenant service.
     areas_tree, _ = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (product)"))
     check("an area no backlog row uses fails",
           any("no backlog row uses" in p
-              for p in check_cross(areas_tree, set(), {"(cloud)"})), True)
+              for p in check_cross(areas_tree, set(), {"cloud"})), True)
     check("an in-use area claimed by nobody fails",
-          any("claimed by no node" in p and "(cloud)" in p
-              for p in check_cross(areas_tree, set(), {"(product)", "(cloud)"})), True)
+          any("claimed by no node" in p and "`cloud`" in p
+              for p in check_cross(areas_tree, set(), {"product", "cloud"})), True)
     twice_area = (TREE.replace("anchors: cloud-publishing", "areas: (product)")
                   + "\n### another\nstate: built\nfor: A second claimant.\nareas: (product)\n")
     check("an area claimed by TWO nodes fails",
-          any("area `(product)` is claimed by 2 nodes" in p
-              for p in check_cross(parse_features(twice_area)[0], set(), {"(product)"})), True)
+          any("area `product` is claimed 2 times" in p
+              for p in check_cross(parse_features(twice_area)[0], set(), {"product"})), True)
     check("backlog areas are read from the area cell",
-          backlog_areas("| 1 | x | f | S | (worker) | open |"), {"(worker)"})
+          backlog_areas("| 1 | x | f | S | (worker) | open |"), ({"worker"}, []))
     ESCAPED = r"| 90 | a \| b | f | S | (comprehensibility) | open \| still |"
-    check("a row with an ESCAPED PIPE is not dropped", backlog_areas(ESCAPED), {"(comprehensibility)"})
+    check("a row with an ESCAPED PIPE is not dropped", backlog_areas(ESCAPED), ({"comprehensibility"}, []))
+    # ── PER TAG, NORMALISED (backlog #381) ───────────────────────────────────────────────────────
+    check("a cell with two tags puts BOTH in use",
+          backlog_areas("| 1 | x | f | S | (tooling) (cloud / Money) | open |"),
+          ({"tooling", "cloud / money"}, []))
+    check("a malformed cell is REPORTED with its row, and its one guessed tag is still in use",
+          backlog_areas("| 2 | x | f | S | cloud | open |"), ({"cloud"}, ["2: 'cloud'"]))
+    check("a non-item row is not read as a tag cell",
+          backlog_areas("| # | Item | Touches | Size | Bundle | Status |"), (set(), []))
+    spelled = parse_features(TREE.replace("anchors: cloud-publishing",
+                                          "areas: (cloud/money), (cloud / money)"))[0]
+    check("two spellings of one tag on ONE node are a duplicate claim, not two areas",
+          any("area `cloud / money` is claimed 2 times" in p
+              for p in check_cross(spelled, set(), {"cloud / money"})), True)
+    fam = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud)"))[0]
+    check("an in-use leaf is claimed by its family's area, and that area is not stale",
+          check_cross(fam, set(), {"cloud / new"}), [])
+    check("a tag that merely SHARES a prefix is not in the family",
+          any("claimed by no node" in p for p in check_cross(fam, set(), {"cloudy"})), True)
     # ── THE MESSAGES THEMSELVES — code review r3 (Claude), Medium ───────────────────────────────
     # ⛔ MEASURED BY THE REVIEWER: it put the pre-fix remedy string BACK — the exact defect round 3
     # reported — and this suite stayed 30/30 GREEN. Nothing read the text. The message is on its

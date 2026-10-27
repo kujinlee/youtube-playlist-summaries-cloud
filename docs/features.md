@@ -11,7 +11,10 @@ that holds state drifts, and this project has measured that twice (see `docs/anc
 **Fragments attach through declarations that already exist.** An `anchors:` line names goals from
 `docs/anchors.md`, which carry their specs, plans and ADRs with them; an `areas:` line names the
 `(area)` tags `docs/backlog.md` rows carry. Every anchor and every in-use area is claimed by exactly
-one node, so a rename or a new spelling turns the check red instead of vanishing from the page.
+one node, so a rename turns the check red instead of vanishing from the page. Areas compare PER TAG
+and normalised — `(cloud/money)` and `(cloud / money)` are one tag, so write it once — and a tag is
+claimed by the nearest area that equals it or is a family above it. A row carrying several tags,
+`(tooling) (comprehensibility)`, appears under the node claiming each one.
 
 ## PRODUCT
 
@@ -88,7 +91,7 @@ anchors: serve-path-bounding
 state: built
 for: Keeps one generation paid for once, and the total spend under a ceiling the operator chooses.
 anchors: serve-money-guard
-areas: (cloud/money), (cloud / money)
+areas: (cloud/money)
 
 ### artifact-addressing
 state: built

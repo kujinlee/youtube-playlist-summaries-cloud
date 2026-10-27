@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 165 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 179 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1158,24 +1158,103 @@ def attach_history(rows: list[dict], working_text: str) -> None:
         r["hist"] = dict(h, raw=live.get(r["num"], "")) if h else None
 
 
-def bundle_tags(raw: str) -> list[str]:
-    """PURE. The Bundle cell as the TAGS it assigns, broadest first.
+# ─── the Bundle cell — ONE owner, three readers ─────────────────────────────────────────────────
+# ⛔ backlog #381. `bundle_tags` used to be the only reader that understood this cell; the features
+# page compared the RAW string (`r["bundle"] in n.areas`) and `check-features` collected raw strings
+# too, so `docs/features.md` had to list `(cloud/money)` AND `(cloud / money)` and a row could carry
+# ONE tag. Every reader now goes through `cell_tags`: this page for its filter and chips,
+# `gen-features-page` for which node a row lands under, `check-features` for what is "in use".
+#
+# THE GRAMMAR. A cell is one or more `(tag)` groups separated by whitespace and/or commas —
+# `(tooling) (comprehensibility)`, `(cloud/money), (tooling)`. Inside a group a slash is a family,
+# as it always was. Parentheses delimit, rather than a comma or a space, because 49 rows already
+# write a space INSIDE a tag (`(test infra)`, `(concurrency safety)`, `(process / deliverable #2)`)
+# and every one of them had to keep its meaning — a whitespace grammar would have split them all.
+TAG_SENTINELS = {"", "—", "-", "Item"}
+TAG_GROUP = re.compile(r"\(([^()]*)\)")
+TAG_CELL = re.compile(r"^\(([^()]*)\)(?:[\s,]*\(([^()]*)\))*$")
 
-    The cell holds one hand-written value — `(cloud/money)`, `(comprehensibility)`, `A`, `—`.
-    A slash is a family, so `(cloud/money)` assigns BOTH `cloud` and `cloud/money`: asking for
+
+def normalise_tag(raw: str) -> str:
+    """PURE. One tag in its comparable form: lowercase, runs of space collapsed, ` / ` between
+    levels, one pair of outer parentheses dropped. `(Cloud/ money)` and `cloud / money` are equal."""
+    parts = [" ".join(x.lower().split()) for x in raw.strip().strip("()").strip().split("/")]
+    return " / ".join(x for x in parts if x)
+
+
+def cell_tags(raw: str) -> tuple[list[str], bool]:
+    """PURE. `(leaf tags, malformed)` — the tags the cell WRITES, in cell order, each normalised.
+
+    `—`, `-`, an empty cell and the `Item` header are no tags. ⛔ A MALFORMED CELL IS NOT DROPPED
+    AND NOT REFUSED HERE: anything that is not a run of `(…)` groups — `cloud`, `(a) (b`, `x (y)` —
+    is read as ONE tag by the pre-#381 rule (outer parens stripped, slash still a family) and
+    flagged. Not dropped, because a row with no tag falls out of every feature and every filter
+    but `untagged`, which is a silent loss. Not refused, because the owner ruled 2026-09-09 that a
+    page refuses to refresh over drift is worse than a page that SAYS it drifted
+    (`sanitise_groups`). The flag is what makes it loud: this page lists the row in its drift box,
+    and `check-features` — the CI gate over the same cell — FAILS on it."""
+    s = (raw or "").strip()
+    if s in TAG_SENTINELS:
+        return [], False
+    if TAG_CELL.match(s):
+        out: list[str] = []
+        for g in TAG_GROUP.findall(s):
+            t = "" if g.strip() in TAG_SENTINELS else normalise_tag(g)
+            if t and t not in out:
+                out.append(t)
+        return out, False
+    legacy = s.strip("()").strip()
+    t = "" if legacy in TAG_SENTINELS else normalise_tag(legacy)
+    return ([t] if t else []), True
+
+
+def tag_lineage(tag: str) -> list[str]:
+    """PURE. `cloud / money` → `["cloud", "cloud / money"]`: the tag and every family above it."""
+    parts = tag.split(" / ")
+    return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+
+
+def nearest_claim(tag: str, areas) -> str | None:
+    """PURE. The area in `areas` (normalised tags) that CLAIMS `tag`: the longest one that equals it
+    or is a family above it. `None` when nothing does.
+
+    ⚠ NEAREST, not ANY. `docs/features.md` has a node for `(cloud)` and another for
+    `(cloud/money)`; under "any ancestor matches" every money row would also land under the
+    `(cloud)` node, and "claimed by exactly one node" would stop being true of a single tag.
+    Nearest keeps each tag with one node, and still lets an UNCLAIMED leaf (`cloud / new`) fall
+    to its family's node instead of to nowhere."""
+    best = None
+    for a in areas:
+        if (tag == a or tag.startswith(a + " / ")) and (best is None or len(a) > len(best)):
+            best = a
+    return best
+
+
+def bundle_tags(raw: str) -> list[str]:
+    """PURE. The Bundle cell as the FILTER tags it assigns: every leaf and every family above it.
+
+    A slash is a family, so `(cloud/money)` assigns BOTH `cloud` and `cloud / money`: asking for
     `cloud` must find the money, test, UX, security, quality and frontend items too, which was
     the whole complaint that prompted this ("I could not see backlogs in bundle such as
-    Comprehensibility"). An untagged row gets `untagged` rather than nothing, because a filter
-    option with no name cannot be chosen, and a row with no tag must still be reachable.
+    Comprehensibility"). Several groups assign the union, each tag once. An untagged row gets
+    `untagged` rather than nothing, because a filter option with no name cannot be chosen, and a
+    row with no tag must still be reachable.
     """
-    s = (raw or "").strip().strip("()").strip()
-    if not s or s in {"—", "-", "Item"}:
-        return ["untagged"]
-    parts = [" ".join(x.lower().split()) for x in s.split("/")]
-    parts = [x for x in parts if x]
-    if not parts:
-        return ["untagged"]
-    return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+    out: list[str] = []
+    for leaf in cell_tags(raw)[0]:
+        for t in tag_lineage(leaf):
+            if t not in out:
+                out.append(t)
+    return out or ["untagged"]
+
+
+def malformed_tag_errors(rows: list[dict]) -> list[str]:
+    """PURE. One drift note naming every row whose Bundle cell `cell_tags` had to guess at."""
+    bad = sorted(r["num"] for r in rows if cell_tags(r.get("bundle", ""))[1])
+    if not bad:
+        return []
+    return [f"rows whose Bundle cell is not a run of `(tag)` groups: {bad} — each is read as ONE "
+            f"tag; write every tag in its own parentheses, e.g. `(tooling) (comprehensibility)`"]
 
 
 def bundle_options(rows: list[dict]) -> list[tuple[str, int, int]]:
@@ -1285,6 +1364,7 @@ def drift_notes_for(rows: list[dict], unread: Sequence[str] = ()) -> list[str]:
     missing one."""
     open_nums = {r["num"] for r in rows if not r["closed"]}
     notes = contradiction_errors(rows)
+    notes += malformed_tag_errors(rows)
     notes += sanitise_groups(GROUPS, open_nums)[1]
     notes += [f"DEPENDS: {e}" for e in depends_errors(DEPENDS, ROOTS, open_nums)]
     if not unread:
@@ -1304,14 +1384,15 @@ def card(r: dict) -> str:
         if val and val not in {"—", "-"})
 
     # THE TAGS ARE SHOWN, not merely filterable — the user asked for both, and a filter over a
-    # value the card never displays is a control with no referent. Only the LEAF is drawn: an item
-    # tagged `cloud / money` shows one chip, while `data-tags` still carries `cloud` so the family
-    # filter finds it. Drawing both would put "cloud" on the card twice and say nothing extra.
+    # value the card never displays is a control with no referent. Only the LEAVES are drawn: an
+    # item tagged `cloud / money` shows one chip, while `data-tags` still carries `cloud` so the
+    # family filter finds it. Drawing both would put "cloud" on the card twice and say nothing
+    # extra. A row with several tags draws one chip per tag it WRITES (backlog #381).
     tags = bundle_tags(r["bundle"])
     tagchips = "".join(
         f'<button class="tag" data-tag="{html.escape(tg)}" '
         f'title="show every item tagged {html.escape(tg)}">{html.escape(tg)}</button>'
-        for tg in ([tags[-1]] if tags != ["untagged"] else []))
+        for tg in cell_tags(r["bundle"])[0])
 
     h = r.get("hist")
     # ⚠ VISIBLE, not silent. An item whose history could not be reconstructed — renumbered, or the
@@ -2974,6 +3055,44 @@ def self_test() -> int:
          lambda: bundle_options([{"bundle": "(x)", "closed": True},
                                  {"bundle": "(x)", "closed": False}]) == [("x", 1, 2)])
 
+    # ─ several tags in one cell (backlog #381) ──────────────────────────────
+    case("a cell with TWO tags assigns both, in cell order",
+         lambda: bundle_tags("(tooling) (comprehensibility)") == ["tooling", "comprehensibility"])
+    case("a comma between groups separates them exactly as a space does",
+         lambda: cell_tags("(tooling), (comprehensibility)") == (["tooling", "comprehensibility"], False)
+         and cell_tags("(tooling),(comprehensibility)") == (["tooling", "comprehensibility"], False))
+    case("hierarchy and several tags together: each group keeps its own family",
+         lambda: bundle_tags("(cloud/money) (tooling)") == ["cloud", "cloud / money", "tooling"])
+    case("a tag is normalised — case, runs of space, spaces around the slash",
+         lambda: cell_tags("( Cloud/  Money )") == (["cloud / money"], False)
+         and normalise_tag("(cloud / money)") == normalise_tag("cloud/money") == "cloud / money")
+    case("two spellings of one tag in one cell are ONE tag, not two",
+         lambda: cell_tags("(cloud/money) (cloud / money)") == (["cloud / money"], False))
+    case("a sentinel inside parentheses is still no tag",
+         lambda: cell_tags("(—)") == ([], False) and bundle_tags("()") == ["untagged"])
+    # ⛔ THE MALFORMED RULE: read as ONE tag by the pre-#381 rule and FLAGGED — never dropped.
+    case("a malformed cell is read as ONE tag and flagged, never dropped",
+         lambda: (cell_tags("cloud"), cell_tags("(cloud/money"), cell_tags("(a) (b"))
+         == ((["cloud"], True), (["cloud / money"], True), (["a) (b"], True)))
+    case("a malformed cell reaches the drift notes, naming the row",
+         lambda: malformed_tag_errors([{"num": 7, "bundle": "cloud"}, {"num": 8, "bundle": "(x)"}])
+         and "[7]" in malformed_tag_errors([{"num": 7, "bundle": "cloud"}])[0]
+         and malformed_tag_errors([{"num": 8, "bundle": "(x) (y)"}]) == [])
+    case("drift_notes_for carries the malformed-cell note",
+         lambda: any("not a run of `(tag)` groups" in n for n in drift_notes_for(
+             [dict(num=9, sev="high", closed=False, bundle="cloud")])))
+    case("the nearest claiming area wins, and an unclaimed leaf falls to its family",
+         lambda: (nearest_claim("cloud / money", ["cloud", "cloud / money"]),
+                  nearest_claim("cloud / new", ["cloud", "cloud / money"]),
+                  nearest_claim("cloudy", ["cloud"]), nearest_claim("tooling", ["cloud"]))
+         == ("cloud / money", "cloud", None, None))
+    # ⛔ THE FAILS-IF, filter half: a two-tag row is counted under BOTH tags, per tag.
+    case("the filter lists a two-tag row under EACH of its tags, counts derived per tag",
+         lambda: {k: (o, tt) for k, o, tt in bundle_options(
+             [{"bundle": "(tooling) (comprehensibility)", "closed": False},
+              {"bundle": "(tooling)", "closed": True}])}
+         == {"tooling": (1, 2), "comprehensibility": (1, 1)})
+
     # ⟳ 2026-09-09. These pin a refusal that USED TO BE A `KeyError` — see `contradiction_errors`.
     _row = lambda n, sev, closed: dict(num=n, sev=sev, closed=closed)
     case("a ✅ marker with no ✅ in Status REFUSES, naming the rows",
@@ -3240,6 +3359,35 @@ def self_test() -> int:
          and set(_placed).isdisjoint(_indexed)
          and set(_placed) | _indexed == _open_real)
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
+    # ⛔ backlog #381: EVERY EXISTING CELL PARSES TO EXACTLY THE TAGS IT GOT BEFORE. `_legacy` is
+    # the pre-#381 `bundle_tags`, copied VERBATIM and frozen here, so the comparison is against an
+    # independent copy rather than against the code under test. It is restricted to cells that
+    # write at most ONE group, because a multi-tag cell has no pre-#381 reading to agree with —
+    # which is also what keeps this case true after the retag. The count floor stops it passing
+    # over an empty or shrunken corpus.
+    def _legacy(raw: str) -> list[str]:
+        s = (raw or "").strip().strip("()").strip()
+        if not s or s in {"—", "-", "Item"}:
+            return ["untagged"]
+        parts = [" ".join(x.lower().split()) for x in s.split("/")]
+        parts = [x for x in parts if x]
+        if not parts:
+            return ["untagged"]
+        return [" / ".join(parts[:k + 1]) for k in range(len(parts))]
+    _single = [r for r in real if len(cell_tags(r["bundle"])[0]) <= 1]
+    case("every REAL single-tag row parses to exactly the tags the pre-#381 rule gave it",
+         lambda: len(_single) > 300
+         and [r["num"] for r in _single if bundle_tags(r["bundle"]) != _legacy(r["bundle"])] == [])
+    case("the REAL backlog has no malformed Bundle cell",
+         lambda: malformed_tag_errors(real) == [])
+    # ⛔ THE FAILS-IF, card half: a two-tag row DRAWS both chips and its `data-tags` carries both
+    # families, which is what the filter's `split('|')` reads.
+    _two = card(dict(real[0], bundle="(cloud/money) (tooling)", hist=None))
+    _one = card(dict(real[-1], bundle="(tooling)", hist=None))
+    case("a two-tag card draws a chip per tag and carries every filter tag",
+         lambda: _two.count('class="tag"') == 2
+         and 'data-tags="cloud|cloud / money|tooling"' in _two
+         and _one.count('class="tag"') == 1 and 'data-tags="tooling"' in _one)
     # ⭐ THE RATCHET the floor above only pretends to be. `> 20` tolerates losing 88 of 110 rows;
     # this fails on the FIRST row the parser cannot read, and names it. Anchored to the file's own
     # lines rather than to `parse`'s output, which is the whole of backlog #110.

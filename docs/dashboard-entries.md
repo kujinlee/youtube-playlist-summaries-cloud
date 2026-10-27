@@ -17890,3 +17890,22 @@ worlds asserting exit code and the file that ran, the hook's stdout/stderr/exit 
 mutants each killed by its named world, 72 cases, 12 mutations. The live falsifier was RUN (backlog #364 row): branch blocks, master's control lets it through.
 ⟳ r2 (Codex, SPLIT): the shell's startup environment (`BASH_ENV` and kin) is a trusted input, stated as limit L8 —
 hardening it for every hook is backlog #379.
+
+## 2026-10-27
+A backlog item can now carry more than one tag, written as `(tooling) (comprehensibility)`, and it
+shows up under each one, both in the backlog page's tag filter and on the features page. Nothing
+on either page moved yet: every existing row still gets exactly the tags it had before, checked
+row by row against the old rule. Retagging the open rows comes next, as its own step.
+<!--tech-->
+Backlog #381. ONE parser for the Bundle cell, `gen-backlog-page.cell_tags`, now read by all three
+readers: the backlog page (filter tags and chips), `gen-features-page.match_rows` (which node a
+row lands under) and `check-features` (what is in use, what is claimed). Grammar: one or more
+`(…)` groups separated by whitespace and/or commas; a slash inside a group is still a family.
+Tags compare normalised, so `docs/features.md` drops its duplicate `(cloud / money)` spelling,
+and `check-features` now refuses two spellings of one tag. A tag is claimed by the NEAREST area
+equal to it or above it, so a money row stays under `spend-control` and not also under the
+`(cloud)` node. A malformed cell is read as one tag by the old rule and flagged: the backlog page
+lists it in its drift box and `check-features` fails. Measured on the real backlog: 334 rows,
+0 differ from the old rule, 0 malformed, and the features page's 329 backlog links are identical
+to master's, node by node. Mutations: gen-backlog-page 5 → 15, gen-features-page 10 → 15,
+check-features 22 → 27 (plus 2 retargets); `EXPECTED_MUTATIONS` sum 2246 → 2266.
