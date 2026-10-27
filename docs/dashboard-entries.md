@@ -17906,5 +17906,8 @@ argument-free `with fixture_git.isolated(): return <body>()`, and EXEMPT is empt
 in CI: builders are found by git's subcommand; the declared `GIT_SUITES` cover suites that only run git
 (`brief-compose`, `gen-backlog-page`); one-item block; 84 cases, 45 mutations. Its LIMITS name `os.putenv`, `atexit`,
 import-time captures in other modules, rebound names, decoy dispatch and a false refusal — #380, a fresh child
-interpreter per suite. The falsifier population is derived from every `--self-test` in `scripts/`. On the 29 git-running
-suites: master 4–5 victim changes and up to 469 caller-config runs per family; branch 0 and 0.
+interpreter per suite. The falsifier population is derived: all 80 scripts with `--self-test`, under 8 families. The only hits
+were `brief-compose`'s (6–9 per family, in the real checkout), now wrapped, and there were 0 victim changes. Over the
+29 git-running suites: master 4–5 victim changes and up to 469 caller-config runs per family; branch 0 and 0. Three
+nonzero exits are not findings: `subject_status` (pre-existing 16/17), and `check-plan-code` and
+`check-paid-caller-arrival` (no `node_modules` in the snapshot).
