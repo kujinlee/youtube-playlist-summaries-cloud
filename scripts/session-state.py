@@ -37,8 +37,9 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
   (categories Cc, Cf, Zl, Zp) and folds other spaces, and only then breaks `=` runs, so no value can
   start a line of its own or forge the END marker, visibly or invisibly.
 
-⚠ BOUNDS. Registered by the repo's one relative hook shape (`check-hook-commands.py`), so after a
-compaction in a session whose cwd is a subdirectory it does not launch (backlog #364).
+⚠ BOUNDS. Launched through `.claude/hooks/run-hook.sh` like every hook (backlog #364), so it runs from the
+checkout of the session's cwd, a subdirectory included; a session LAUNCHED in a subdirectory loads no project
+hooks at all (harness behaviour, the launcher review's L1).
 ⟳ backlog #369 (PR #410 round 4): an update REFUSES a ledger it cannot read whole (oversized, or not a regular
 file) and a write that would exceed MAX_LEDGER, leaving the file byte-identical — before, the next `--add` replaced an
 oversized ledger with only the new entry and `--done` reported a recorded id as "no such id". And a PR whose

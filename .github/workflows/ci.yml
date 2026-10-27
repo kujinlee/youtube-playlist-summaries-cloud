@@ -402,6 +402,11 @@ jobs:
       # registered or explained. The cwd defect itself is backlog #364.
       - name: every hook is registered in the one shape and wired up
         run: python3 scripts/check-hook-commands.py
+      # backlog #364: the launcher every hook goes through, RUN over real git worlds (worktrees made
+      # before and after it, a submodule, symlinks, a >1024-char path, a trailing newline), with every
+      # lost design applied to a copy of it as a mutant and killed.
+      - name: check-run-hook self-test
+        run: python3 scripts/check-run-hook.py --self-test
 
       - name: brief-compose self-test
         run: python3 scripts/brief-compose.py --self-test

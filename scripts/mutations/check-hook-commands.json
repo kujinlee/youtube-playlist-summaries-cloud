@@ -17,8 +17,8 @@
     "file": "scripts/check-hook-commands.py",
     "edits": [
       [
-        "[A-Za-z0-9._-]*\\.sh)\")",
-        "[A-Za-z0-9._-]*\\.sh)(?: .*)?\")"
+        "[A-Za-z0-9._-]*\\.sh)')",
+        "[A-Za-z0-9._-]*\\.sh)(?: .*)?')"
       ]
     ],
     "expect": [
@@ -205,6 +205,58 @@
     ],
     "expect": [
       "⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason"
+    ]
+  },
+  {
+    "name": "the launcher file is reported as a hook nobody registers (its exemption is gone)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    for f in sorted(on_disk - registered - {LAUNCHER}):",
+        "    for f in sorted(on_disk - registered):"
+      ]
+    ],
+    "expect": [
+      "the launcher on disk is NOT 'a hook nobody registers' — it is exempt by LAUNCHER"
+    ]
+  },
+  {
+    "name": "a command naming the launcher AS the hook passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if name == LAUNCHER:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "the one form naming the LAUNCHER as the hook is refused (it would launch nothing)"
+    ]
+  },
+  {
+    "name": "a missing launcher passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    if commands and LAUNCHER not in on_disk:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "the launcher file missing is refused — every command runs through it"
+    ]
+  },
+  {
+    "name": "the launcher is accepted without its `:-.` default",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "r'bash \"\\$\\{CLAUDE_PROJECT_DIR:-\\.\\}\"/",
+        "r'bash \"\\$\\{?CLAUDE_PROJECT_DIR(?::-\\.)?\\}?\"/"
+      ]
+    ],
+    "expect": [
+      "every divergent shape is refused — one finding each"
     ]
   },
   {

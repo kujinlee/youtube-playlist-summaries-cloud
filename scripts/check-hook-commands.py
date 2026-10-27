@@ -3,24 +3,27 @@
 
 This is the STABLE HALF of backlog #223, shipped by a true SPLIT (PR #409, the owner's choice A, 2026-10-26).
 
-THE OPEN DEFECT IT DOES NOT FIX, stated first so nobody reads this guard as the fix.
-  Every hook is registered as `bash .claude/hooks/<name>.sh`, and the harness runs that from the
-  SESSION's working directory. After one `cd scripts && …`, every hook, the push gate included,
-  fails to launch, and the harness calls that NON-BLOCKING (measured live 2026-10-02). Three designs
-  for launching from the right checkout each lost a review round (PR #409 r1–r3: the project dir ran
-  the MAIN checkout's hooks from a worktree; asking git was steerable by `GIT_CEILING_DIRECTORIES`; a
-  launcher marker skipped every worktree made before it existed). Rounds 2 and 3 were both caused by
-  the previous fold, which is the thrashing rule, so the launcher is its own subject (backlog #364),
-  designed after an architecture review. The shape below is TODAY's shape, known defective, and it
-  is the ONE place to change when that design lands.
+THE ONE SHAPE (backlog #364, 2026-10-27):
+
+    bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh <name>.sh
+
+  The old shape, `bash .claude/hooks/<name>.sh`, ran from the SESSION's working directory, so after
+  one `cd scripts && …` every hook, the push gate included, failed to launch, and the harness calls
+  that NON-BLOCKING (measured live 2026-10-02). The launcher runs <name>.sh from the nearest ancestor
+  of the physical cwd that contains `.git` — the checkout being worked in — and NOT RUN (exit 1) when
+  that checkout has no such hook, never another checkout's copy. Why that design and not the three
+  that lost PR #409 r1–r3: `docs/reviews/architecture-review-2026-10-26-hook-launch.md`. What the
+  launcher DOES is tested by `check-run-hook.py`; this guard pins only that every hook goes through it.
 
 WHAT IT REFUSES:
   1. a `type: command` hook whose command is not exactly CANONICAL — so a second, divergent way of
-     registering a hook (`sh -c '…'`, `"$PWD"/…`, `cd … &&`, an absolute path) cannot creep in, and the
-     launcher, when it comes, replaces one shape rather than many;
-  2. a canonical command naming a hook file that does not exist (it would launch nothing);
+     registering a hook (the old relative form, `sh -c '…'`, `"$PWD"/…`, `cd … &&`, an absolute path,
+     the launcher without its `:-.` default) cannot creep in;
+  2. a canonical command naming a hook file that does not exist (it would launch nothing), or naming
+     the LAUNCHER itself as the hook; and the launcher file missing while any command runs through it;
   3. a hook file in `.claude/hooks/` that no command registers and that is not in UNREGISTERED with a
      reason — a gate with no caller. A registry entry that IS registered, or names no file, is stale.
+     The launcher is exempt by its own constant, LAUNCHER: it is what every command runs, not a hook.
   Missing or unparseable settings, a malformed hooks block, and ZERO commands are CANNOT RUN.
 
 WHAT WOULD MAKE THIS FAIL (its falsifier): a hook command in a second shape, a registered hook that
@@ -40,7 +43,7 @@ does not exist, or a hook file nobody registers or explains.
   could still neuter a gate (`timeout: 0.001`, `if` matching nothing); so can a group's `matcher`, which this guard
   does not read. Refusing them would make the guard red from birth on today's settings.
 
-    python3 scripts/check-hook-commands.py --self-test  # 42 cases
+    python3 scripts/check-hook-commands.py --self-test  # 45 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -60,7 +63,11 @@ HOOKS_REL = ".claude/hooks"
 # Every hook type in Claude Code 2.1.309's hook schema (PR #412 r1, both halves: `agent`, `http` and `mcp_tool` were
 # missing, so a legitimate hook of those types would have read as CANNOT RUN in CI). Anything else is CANNOT RUN.
 KNOWN_TYPES = frozenset({"command", "prompt", "agent", "http", "mcp_tool"})
-CANONICAL = re.compile(r"bash \.claude/hooks/([A-Za-z0-9_][A-Za-z0-9._-]*\.sh)")
+CANONICAL = re.compile(r'bash "\$\{CLAUDE_PROJECT_DIR:-\.\}"/\.claude/hooks/run-hook\.sh ([A-Za-z0-9_][A-Za-z0-9._-]*\.sh)')
+# The launcher every command runs THROUGH (backlog #364). It is not a hook, so it is exempt from "a hook
+# file nobody registers" here rather than listed in UNREGISTERED: an UNREGISTERED reason explains a GATE
+# with no caller, and the launcher's caller is every command. A command naming it AS the hook is refused.
+LAUNCHER = "run-hook.sh"
 
 # Hook files that are deliberately NOT registered, each with its reason. A file not here and not
 # registered is refused: an unregistered hook is a gate with no caller.
@@ -110,13 +117,19 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
     for event, cmd in commands:
         m = CANONICAL.fullmatch(cmd)
         if not m:
-            out.append(f"{event}: {cmd!r} is not the one registration form — write bash .claude/hooks/<name>.sh")
+            out.append(f"{event}: {cmd!r} is not the one registration form — write "
+                       f'bash "${{CLAUDE_PROJECT_DIR:-.}}"/{HOOKS_REL}/{LAUNCHER} <name>.sh')
             continue
         name = m.group(1)
+        if name == LAUNCHER:
+            out.append(f"{event}: {cmd!r} names the launcher itself as the hook — it would launch nothing")
+            continue
         if name not in on_disk:
             out.append(f"{event}: {cmd!r} names {HOOKS_REL}/{name}, which does not exist — it would launch nothing")
         registered.add(name)
-    for f in sorted(on_disk - registered):
+    if commands and LAUNCHER not in on_disk:
+        out.append(f"{HOOKS_REL}/{LAUNCHER} does not exist — every command runs through it, so none would launch")
+    for f in sorted(on_disk - registered - {LAUNCHER}):
         if f.endswith(".sh") and f not in unregistered:
             out.append(f"{HOOKS_REL}/{f} is registered by no command and has no UNREGISTERED reason — a gate with no caller")
     for f in sorted(unregistered):
@@ -196,8 +209,8 @@ def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -
 def self_test() -> int:
     import tempfile
 
-    good = "bash .claude/hooks/x.sh"
-    disk = {"x.sh", "y.sh"}
+    good = 'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh x.sh'
+    disk = {"x.sh", "y.sh", LAUNCHER}
     reg = {"y.sh": "deliberately unregistered"}
 
     def cmds(*c):
@@ -206,10 +219,12 @@ def self_test() -> int:
     def on_cmd(found):  # only the findings ABOUT a command, not the registry lines they cause
         return [f for f in found if f.startswith("PreToolUse:")]
 
-    divergent = [  # second shapes — each would be one more thing the launcher has to replace
-        "sh -c 'bash .claude/hooks/x.sh'", 'bash "$PWD"/.claude/hooks/x.sh', "cd .claude/hooks && bash x.sh",
-        "FOO=.claude/hooks/x.sh bash $FOO", "bash .claude/hooks/x.sh||true", "bash ./.claude/hooks/x.sh",
-        'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/x.sh', "bash /opt/hooks/x.sh",
+    divergent = [  # second shapes — each one a hook that does not go through the launcher, or not this way
+        "bash .claude/hooks/x.sh", "bash .claude/hooks/run-hook.sh x.sh",
+        'bash "$CLAUDE_PROJECT_DIR"/.claude/hooks/run-hook.sh x.sh',
+        'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/x.sh',
+        "sh -c 'bash .claude/hooks/x.sh'", 'bash "$PWD"/.claude/hooks/run-hook.sh x.sh',
+        "cd .claude/hooks && bash run-hook.sh x.sh", good + "||true", "bash /opt/hooks/run-hook.sh x.sh",
     ]
     def fp(settings):
         """The (event, field) of every finding — compared EXACTLY, never counted. A case must not RAISE inside its
@@ -226,7 +241,13 @@ def self_test() -> int:
          len(divergent)),
         ("a trailing argument is a second shape too", on_cmd(problems(cmds(good + " --x"), disk, reg)), 1),
         ("the one form naming a hook that does not exist is refused",
-         on_cmd(problems(cmds("bash .claude/hooks/gone.sh"), disk, reg)), 1),
+         on_cmd(problems(cmds(good.replace("x.sh", "gone.sh")), disk, reg)), 1),
+        ("the one form naming the LAUNCHER as the hook is refused (it would launch nothing)",
+         on_cmd(problems(cmds(good, good.replace("x.sh", LAUNCHER)), disk, reg)), 1),
+        ("the launcher file missing is refused — every command runs through it",
+         problems(cmds(good), disk - {LAUNCHER}, reg), 1),
+        ("the launcher on disk is NOT 'a hook nobody registers' — it is exempt by LAUNCHER",
+         problems(cmds(good), disk, reg), 0),
         ("a hook file nobody registers and nobody explains is refused",
          problems(cmds(good), disk | {"z.sh"}, reg), 1),
         ("...and the SAME file passes once it has an UNREGISTERED reason",
@@ -254,6 +275,7 @@ def self_test() -> int:
         root = t / "w"
         (root / HOOKS_REL).mkdir(parents=True)
         (root / HOOKS_REL / "x.sh").write_text("exit 0\n")
+        (root / HOOKS_REL / LAUNCHER).write_text("exit 0\n")
         p = root / SETTINGS_REL
         more.append(("a missing settings file is CANNOT RUN", check(p, root, {})[0], 2))
         p.write_text("{not json")

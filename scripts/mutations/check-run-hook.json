@@ -1,0 +1,158 @@
+[
+  {
+    "name": "the fixture env inherits the whole environment, GIT_DIR included (backlog #373)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    env = {k: os.environ[k] for k in ENV_ALLOW if k in os.environ}",
+        "    env = dict(os.environ)"
+      ]
+    ],
+    "expect": [
+      "the fixture env inherits no GIT_* and nothing off the allow-list"
+    ]
+  },
+  {
+    "name": "the fixture env reads the user's global git config",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    env[\"GIT_CONFIG_GLOBAL\"] = \"/dev/null\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "the fixture env disables global and system git config"
+    ]
+  },
+  {
+    "name": "a world passes on its exit code alone",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    return got == want\n",
+        "    return got[0] == want[0]\n"
+      ]
+    ],
+    "expect": [
+      "an exit-code-only comparison is NOT a pass when a different file ran"
+    ]
+  },
+  {
+    "name": "a mutant anchor that occurs twice is applied anyway",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    if text.count(m.old) != 1:",
+        "    if m.old not in text:"
+      ]
+    ],
+    "expect": [
+      "a mutant whose anchor occurs twice is UNBOUND, not applied"
+    ]
+  },
+  {
+    "name": "every bound mutant is reported killed, whatever its worlds did",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "            missing = [k for k in m.killers if k not in red]",
+        "            missing = []"
+      ]
+    ],
+    "expect": [
+      "a mutant that changes nothing is reported SURVIVED, not killed"
+    ]
+  },
+  {
+    "name": "the launcher is run without the logical PWD a shell would export",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    env[\"PWD\"] = str(cwd)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "mutant m6 the logical pwd, not pwd -P is killed"
+    ]
+  },
+  {
+    "name": "the launcher is run with empty stdin",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "input=PAYLOAD,",
+        "input=\"\","
+      ]
+    ],
+    "expect": [
+      "stdin reaches the hook, byte for byte"
+    ]
+  },
+  {
+    "name": "main() reports a pass over a red world",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    return (1 if red_names(results) else 0), results",
+        "    return 0, results"
+      ]
+    ],
+    "expect": [
+      "main() over the m1 mutant exits 1 and NAMES a red world"
+    ]
+  },
+  {
+    "name": "an UNSET project dir is run as main's",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "        project = str(w.main) if c.project == \"main\" else c.project",
+        "        project = str(w.main)"
+      ]
+    ],
+    "expect": [
+      "W14 CLAUDE_PROJECT_DIR unset, below main's root: 127 and nothing runs (no worse than today)"
+    ]
+  },
+  {
+    "name": "W10's precondition is not checked: any base counts as outside every checkout (r1 Codex P2)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    return any((d / \".git\").exists() for d in (p, *p.parents))",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "⭐ with TMPDIR INSIDE a checkout, main() still measures W10 and exits 0 (r1 Codex P2)"
+    ]
+  },
+  {
+    "name": "the suite stops reading the hook's stdout (r1 Claude M1)",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "r.stderr, r.stdout)",
+        "r.stderr, \"\")"
+      ]
+    ],
+    "expect": [
+      "exit 0 with stdout (the shape of the push gate's DENY): stdout, stderr and code arrive exactly"
+    ]
+  },
+  {
+    "name": "W10 with no qualifying base reports a pass",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "            out.append((c.name, (f\"NOT RUN — no base",
+        "            out.append((c.name, (c.want_rc, c.want_ran), (c.want_rc, c.want_ran)) or (c.name, (f\"NOT RUN — no base"
+      ]
+    ],
+    "expect": [
+      "W10 with no qualifying base is NOT RUN, and that is a FAILURE, not a pass"
+    ]
+  }
+]
