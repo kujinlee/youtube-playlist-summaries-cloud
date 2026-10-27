@@ -1,0 +1,158 @@
+[
+  {
+    "name": "a command that merely CONTAINS the one form passes (||true and friends)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        m = CANONICAL.fullmatch(cmd)",
+        "        m = CANONICAL.search(cmd)"
+      ]
+    ],
+    "expect": [
+      "every divergent shape is refused — one finding each"
+    ]
+  },
+  {
+    "name": "the one form tolerates trailing arguments",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "[A-Za-z0-9._-]*\\.sh)\")",
+        "[A-Za-z0-9._-]*\\.sh)(?: .*)?\")"
+      ]
+    ],
+    "expect": [
+      "a trailing argument is a second shape too"
+    ]
+  },
+  {
+    "name": "a registered hook that does not exist passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if name not in on_disk:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "the one form naming a hook that does not exist is refused"
+    ]
+  },
+  {
+    "name": "an unregistered, unexplained hook file passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "and f not in unregistered:",
+        "and False:"
+      ]
+    ],
+    "expect": [
+      "a hook file nobody registers and nobody explains is refused"
+    ]
+  },
+  {
+    "name": "every file in the hooks directory counts as a hook",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if f.endswith(\".sh\") and",
+        "        if True and"
+      ]
+    ],
+    "expect": [
+      "a non-.sh file in the hooks directory is not a hook"
+    ]
+  },
+  {
+    "name": "a stale UNREGISTERED entry for a registered file passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if f in registered:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a stale UNREGISTERED entry — the file is registered — is refused"
+    ]
+  },
+  {
+    "name": "a stale UNREGISTERED entry for a missing file passes",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        elif f not in on_disk:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a stale UNREGISTERED entry — no such file — is refused"
+    ]
+  },
+  {
+    "name": "ZERO hook commands reports a pass instead of CANNOT RUN",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — {path} registers ZERO hook commands.",
+        "        return 0, [f\"CANNOT RUN — {path} registers ZERO hook commands."
+      ]
+    ],
+    "expect": [
+      "ZERO command hooks is CANNOT RUN — a zero over nothing is not a pass"
+    ]
+  },
+  {
+    "name": "a malformed hooks block reports a pass instead of CANNOT RUN",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — {path}: {exc}. Treat this as NOT RUN.\"]",
+        "        return 0, [f\"CANNOT RUN — {path}: {exc}. Treat this as NOT RUN.\"]"
+      ]
+    ],
+    "expect": [
+      "a malformed hooks block is CANNOT RUN, not a crash"
+    ]
+  },
+  {
+    "name": "a settings file that is not an object reports a pass",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — {path} is not a JSON object.",
+        "        return 0, [f\"CANNOT RUN — {path} is not a JSON object."
+      ]
+    ],
+    "expect": [
+      "a settings file that is a JSON array is CANNOT RUN, not a crash"
+    ]
+  },
+  {
+    "name": "hook files are listed from the REPO, not the root given",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    hooks_dir = root / HOOKS_REL",
+        "    hooks_dir = REPO_ROOT / HOOKS_REL"
+      ]
+    ],
+    "expect": [
+      "a registered hook that exists under ROOT passes"
+    ]
+  },
+  {
+    "name": "main() ignores the root it is given",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    code, messages = check(root / SETTINGS_REL, root, unregistered)",
+        "    code, messages = check(REPO_ROOT / SETTINGS_REL, REPO_ROOT, unregistered)"
+      ]
+    ],
+    "expect": [
+      "main() over a compliant world exits 0"
+    ]
+  }
+]
