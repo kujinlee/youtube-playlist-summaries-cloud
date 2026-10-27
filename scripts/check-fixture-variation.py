@@ -362,6 +362,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.
     "check-hook-commands.py": (
         "check.path", "check.root", "check.unregistered",
+        "field_problems.settings",
         "main.argv", "main.root", "main.unregistered", "problems.commands", "problems.on_disk",
         "problems.unregistered",),
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
@@ -1102,6 +1103,11 @@ EXEMPT: dict[str, str] = {
     # The dispatch IS covered — every `main([])` case reaches it and takes the other branch —
     # so what is unvaried here is a parameter whose second value is self-referential, not an
     # untested clause.
+    # ⚠ The suite drives `field_problems` through a local `fp()` wrapper — a case must not RAISE inside its arguments, or
+    # a mutated `_walk` crashes the table with no `[FAIL]` line (backlog #368 r1). Its ONE syntactic call site is that
+    # wrapper; the variation is at `fp`'s four call sites, each a different settings literal, and the CLI cases vary it
+    # again through `check()`.
+    "check-hook-commands.py:field_problems.settings": "driven through the suite's local fp() wrapper (a case must not raise); the variation is at fp's four call sites, each a different settings literal, and again through check()",
     "check-hook-commands.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the three main([]) cases",
     "check-goal-status.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by every other case",
     # ⟳⟳ 2026-09-16 — TWO `peer-sites.py:changed_lines.*` EXEMPTIONS STOOD HERE AND ARE GONE,

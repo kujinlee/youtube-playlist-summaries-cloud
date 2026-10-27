@@ -17845,3 +17845,18 @@ and recomposed — verified in the browser: `#schemer`'s three buttons reachable
 between *colour* and *plain*. Files backlog #376: the switcher is opt-in (`brief-compose.py:814`), so it is on 9 of 89
 tracked pages; default it on, and recompose the 24 pages that have fragments.
 
+
+## 2026-10-27
+The check that every hook is registered one way now refuses any hook setting it has not been told about, and five it
+has: a list of arguments, a choice of shell, and three that let a safety check look as though it ran when it did not
+(running in the background, or only once).
+<!--tech-->
+Branch `hook-args-shell` (backlog #368, PR #414, from PR #412 round 1). `check-hook-commands.py`: `ACCEPTED`/`REFUSED`
+classify every field of a command hook, deny by default. Refused: `args`, `shell` (a policy — even `bash`), and `async`/
+`asyncRewake`/`once`, which let a gate look as though it ran. Accepted: the five in live use; `timeout` and `if` values are
+NOT checked, said in the docstring. ⟳ r1 (both halves): the first version refused only `args`/`shell`, and walked the
+hooks a second time with three unseen regressions — now ONE walk (`_walk`). ⟳ r2 (REDESIGN): accepted fields carry their
+types — `statusMessage: {}` passed while Claude Code did not run the hook — and cases compare exact findings. 42
+cases; 30 mutations, each killed by its case. ⟳ r3: real hook loads found no counterexample; DEFER — one older
+(PR #409) case passing ambiently is filed as backlog #377.
+

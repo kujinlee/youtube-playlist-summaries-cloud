@@ -206,5 +206,187 @@
     "expect": [
       "⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason"
     ]
+  },
+  {
+    "name": "⭐ the field policy is no longer checked (backlog #368)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    found = problems(commands, on_disk, unregistered) + field_problems(settings)",
+        "    found = problems(commands, on_disk, unregistered)"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `args` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "`shell` is ACCEPTED (backlog #368)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"type\": ((str,), \"the hook kind\"),\n",
+        "    \"type\": ((str,), \"the hook kind\"),\n    \"shell\": ((str,), \"x\"),\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `shell` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ `async` is ACCEPTED — a gate would stop blocking (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"command\": ((str,), \"the one registration shape\"),\n",
+        "    \"command\": ((str,), \"the one registration shape\"),\n    \"async\": ((bool,), \"x\"),\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `async` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "`asyncRewake` is ACCEPTED (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"statusMessage\": ((str,), \"spinner text only\"),\n",
+        "    \"statusMessage\": ((str,), \"spinner text only\"),\n    \"asyncRewake\": ((bool,), \"x\"),\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `asyncRewake` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ `once` is ACCEPTED — a gate would run once (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n",
+        "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n    \"once\": ((bool,), \"x\"),\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a command hook carrying `once` is REFUSED (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ an UNCLASSIFIED field is ACCEPTED — allow by default (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "            else:\n                why = REFUSED.get(key,",
+        "            elif key in REFUSED:\n                why = REFUSED.get(key,"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCLASSIFIED field is refused — deny by default (backlog #368 r1)"
+    ]
+  },
+  {
+    "name": "⭐ a live field (`if`) is refused — the guard would be red on today's settings",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "    \"if\": ((str,), \"in live use; its VALUE is not checked\"),\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ every field today's live settings use is ACCEPTED (an independent list, from the live file 2026-10-27)"
+    ]
+  },
+  {
+    "name": "overrides on NON-command hooks are counted too",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if h.get(\"type\") != \"command\":\n            continue\n        for key, val in h.items():",
+        "        for key, val in h.items():"
+      ]
+    ],
+    "expect": [
+      "⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)"
+    ]
+  },
+  {
+    "name": "⭐ the walk reads only the FIRST group of each event (backlog #368 r1)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        for g in groups:\n",
+        "        for g in groups[:1]:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
+    ]
+  },
+  {
+    "name": "⭐ an accepted field's TYPE is not checked (r2: statusMessage {} disables the file)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "                if type(val) not in types:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ an accepted field with the WRONG TYPE is refused — Claude Code would not load the file (r2)"
+    ]
+  },
+  {
+    "name": "⭐ the type check uses isinstance, so `timeout: true` passes as an int (r2)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "type(val) not in types",
+        "not isinstance(val, types)"
+      ]
+    ],
+    "expect": [
+      "⭐ `timeout: true` is refused — a bool is an int to isinstance, not a number of seconds (r2)"
+    ]
+  },
+  {
+    "name": "⭐ the walk REJECTS every second group — a raise must not satisfy the traversal case (r2, Codex)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "for g in groups:",
+        "for i, g in enumerate(groups):\n            if i:\n                raise Malformed(\"second group\")"
+      ]
+    ],
+    "expect": [
+      "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
+    ]
+  },
+  {
+    "name": "⭐ a NON-LIST event value is skipped, not refused (r2, Codex)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "        if not isinstance(groups, list):\n            raise Malformed(f\"`hooks.{event}` is not a list\")",
+        "        if not isinstance(groups, list):\n            continue"
+      ]
+    ],
+    "expect": [
+      "⭐ a NON-LIST event value beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
+    ]
+  },
+  {
+    "name": "⭐ a NON-STRING command is skipped, not refused (r2, Codex)",
+    "file": "scripts/check-hook-commands.py",
+    "edits": [
+      [
+        "                    raise Malformed(f\"a `hooks.{event}` command is not a string\")",
+        "                    continue"
+      ]
+    ],
+    "expect": [
+      "⭐ a NON-STRING command beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
+    ]
   }
 ]

@@ -31,11 +31,16 @@ does not exist, or a hook file nobody registers or explains.
   outside KNOWN_TYPES (the five in Claude Code 2.1.309's schema) is Malformed → CANNOT RUN instead of skipped;
   an `UNREGISTERED` reason must be a non-empty STRING. A type Claude Code ships AFTER 2.1.309 fails loudly
   here until it is named, which is the safe direction.
-⚠ NOT CHECKED (backlog #368): a command hook with an `args` field (Claude Code 2.1.309's runner code spawns
-  `command` as one executable with no shell — read, not run end to end), or with a non-default `shell`, which
-  changes which shell runs the command (its outcome here is not verified).
+⟳ backlog #368: every FIELD of a command hook is classified in ACCEPTED (with its exact types) or REFUSED, and an UNCLASSIFIED field is refused —
+  deny by default, because the defect was a field the guard had never heard of changing how a hook runs. Refused:
+  `args` (Claude Code 2.1.309 then spawns `command` as one executable, no shell — read from its code, not run end to
+  end), `shell` (a POLICY: even the default `bash` is refused, so there stays one registration shape), and `async`,
+  `asyncRewake` and `once`, which let a gate LOOK as though it ran — it stops blocking, or is removed after one run.
+  ⚠ ACCEPTED, AND THE GUARD CANNOT SEE THEIR VALUES: `timeout` and `if` are in live use (1 and 3 hooks), and either
+  could still neuter a gate (`timeout: 0.001`, `if` matching nothing); so can a group's `matcher`, which this guard
+  does not read. Refusing them would make the guard red from birth on today's settings.
 
-    python3 scripts/check-hook-commands.py --self-test  # 29 cases
+    python3 scripts/check-hook-commands.py --self-test  # 42 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -69,12 +74,13 @@ class Malformed(Exception):
     """The hooks block does not have the shape the harness reads: CANNOT RUN, never a pass."""
 
 
-def hook_commands(settings: dict) -> list[tuple[str, str]]:
-    """(event, command) for every hook of type "command". Raises Malformed on an unexpected shape."""
+def _walk(settings: dict):
+    """(event, hook) for EVERY hook, validating the structure on the way. Raises Malformed on an unexpected shape.
+    The one walk: `hook_commands` and `field_problems` both read it (backlog #368 r1: a second walk's
+    `break`/first-group/first-event regressions went unseen)."""
     hooks = settings.get("hooks", {})
     if not isinstance(hooks, dict):
         raise Malformed("`hooks` is not an object")
-    out = []
     for event, groups in hooks.items():
         if not isinstance(groups, list):
             raise Malformed(f"`hooks.{event}` is not a list")
@@ -88,12 +94,14 @@ def hook_commands(settings: dict) -> list[tuple[str, str]]:
                 if not isinstance(h.get("type"), str) or h.get("type") not in KNOWN_TYPES:
                     raise Malformed(f"a `hooks.{event}` hook has type {h.get('type')!r}, which this guard does not "
                                     f"know (known: {sorted(KNOWN_TYPES)})")
-                if h.get("type") == "command":
-                    cmd = h.get("command")
-                    if not isinstance(cmd, str):
-                        raise Malformed(f"a `hooks.{event}` command is not a string")
-                    out.append((event, cmd))
-    return out
+                if h.get("type") == "command" and not isinstance(h.get("command"), str):
+                    raise Malformed(f"a `hooks.{event}` command is not a string")
+                yield event, h
+
+
+def hook_commands(settings: dict) -> list[tuple[str, str]]:
+    """(event, command) for every hook of type "command". Raises Malformed on an unexpected shape."""
+    return [(event, h.get("command")) for event, h in _walk(settings) if h.get("type") == "command"]
 
 
 def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: dict[str, str]) -> list[str]:
@@ -121,6 +129,48 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
     return out
 
 
+# Every field a COMMAND hook may carry: accepted with the EXACT types it may have, or refused — with why. Deny by
+# default: a field missing here is refused as UNCLASSIFIED. ⟳ r2 REDESIGN (backlog #368): an accepted field carries its
+# type, because Claude Code 2.1.309 does NOT RUN a hook whose field has the wrong type — measured twice, two ways: r2
+# (interactive) refused the whole settings file ("These settings files did not load, so nothing in them is in effect,
+# including hooks", `statusMessage: {}`); r3 (print mode) skipped the bad ENTRY and kept the rest. Either way the hook is
+# not run while its shape looks canonical, so a wrong type is refused here. Types are matched EXACTLY (`type(v) in`):
+# `True` is an `int` to `isinstance`, and `timeout: true` is not a number of seconds.
+ACCEPTED: dict[str, tuple[tuple[type, ...], str]] = {
+    "type": ((str,), "the hook kind"),
+    "command": ((str,), "the one registration shape"),
+    "statusMessage": ((str,), "spinner text only"),
+    "timeout": ((int, float), "in live use; its VALUE is not checked"),
+    "if": ((str,), "in live use; its VALUE is not checked"),
+}
+REFUSED: dict[str, str] = {
+    "args": "spawns `command` as one executable with no shell",
+    "shell": "chooses the shell; even the default is refused, so there stays one shape",
+    "async": "the hook runs in the background and no longer blocks — a gate stops gating",
+    "asyncRewake": "the hook runs in the background — a gate stops gating",
+    "once": "the hook is removed after one run — a gate stops gating",
+}
+
+
+def field_problems(settings: dict) -> list[str]:
+    """The rule, pure: a command hook carrying a refused, UNCLASSIFIED or WRONGLY-TYPED field (backlog #368).
+    Raises Malformed on an unexpected shape, as `hook_commands` does — they share `_walk`."""
+    out = []
+    for event, h in _walk(settings):
+        if h.get("type") != "command":
+            continue
+        for key, val in h.items():
+            if key in ACCEPTED:
+                types, _ = ACCEPTED[key]
+                if type(val) not in types:
+                    out.append(f"{event}: {h.get('command')!r} carries `{key}` — a {type(val).__name__}, not "
+                               f"{'/'.join(x.__name__ for x in types)}: Claude Code would not run this hook")
+            else:
+                why = REFUSED.get(key, "UNCLASSIFIED — add it to ACCEPTED or REFUSED with a reason")
+                out.append(f"{event}: {h.get('command')!r} carries `{key}` — {why}")
+    return out
+
+
 def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -> tuple[int, list[str]]:
     """Return (exit_code, messages). Anything that stops the rule being applied is CANNOT RUN."""
     try:
@@ -139,7 +189,7 @@ def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -
         return 2, [f"CANNOT RUN — {path} registers ZERO hook commands. Treat this as NOT RUN."]
     hooks_dir = root / HOOKS_REL
     on_disk = {p.name for p in hooks_dir.iterdir() if p.is_file()} if hooks_dir.is_dir() else set()
-    found = problems(commands, on_disk, unregistered)
+    found = problems(commands, on_disk, unregistered) + field_problems(settings)
     return (1 if found else 0), found or [f"{len(commands)} hook command(s), every one canonical and present"]
 
 
@@ -161,6 +211,15 @@ def self_test() -> int:
         "FOO=.claude/hooks/x.sh bash $FOO", "bash .claude/hooks/x.sh||true", "bash ./.claude/hooks/x.sh",
         'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/x.sh', "bash /opt/hooks/x.sh",
     ]
+    def fp(settings):
+        """The (event, field) of every finding — compared EXACTLY, never counted. A case must not RAISE inside its
+        arguments (a crash with no `[FAIL]` line is a kill nothing can see), and a raise must not satisfy one either:
+        r2 found a count of 1 met by a single `RAISED` entry, so a walk rejecting every SECOND group passed."""
+        try:
+            return sorted(tuple(re.match(r"^(\w+): .* carries `(\w+)`", m).groups()) for m in field_problems(settings))
+        except Malformed as exc:
+            return [("RAISED", str(exc))]
+
     cases = [
         ("the one registration form passes", problems(cmds(good), disk, reg), 0),
         ("every divergent shape is refused — one finding each", on_cmd(problems(cmds(*divergent), disk, reg)),
@@ -233,6 +292,13 @@ def self_test() -> int:
             p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}, bad]}]}}))
             more.append((f"⭐ a hook entry with type {bad.get('type')!r} is CANNOT RUN, not skipped or a crash (backlog #365)",
                          check(p, root, {})[0], 2))
+        # ⚠ An INDEPENDENT list, not derived from ACCEPTED/REFUSED: derived, a field flipped to accepted would vanish from
+        # this list too and the case would stay green (`a-class-fix-needs-an-independent-copy`).
+        for key, val in (("args", []), ("shell", "bash"), ("async", True), ("asyncRewake", True), ("once", True)):
+            p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, key: val}]}]}}))
+            rc_, msgs_ = check(p, root, {})
+            more.append((f"⭐ a command hook carrying `{key}` is REFUSED (backlog #368)",
+                         (rc_, any(f"carries `{key}`" in m for m in msgs_)), (1, True)))
         # ⚠ An INDEPENDENT copy of the schema's types, not derived from KNOWN_TYPES: derived, a dropped type
         # vanished from this list too and the case stayed green (the r1 fold's own first attempt).
         others = [{"type": k} for k in ("prompt", "agent", "http", "mcp_tool")]
@@ -240,6 +306,39 @@ def self_test() -> int:
         more.append(("⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)",
                      check(p, root, {})[0], 0))
         more.append(("main() over a world with no settings file exits 2 (CANNOT RUN)", main([], root=t / "none"), 2))
+    S = lambda **f: {"type": "command", "command": good, **f}  # noqa: E731 — a command hook with extra fields
+    more += [
+        ("⭐ every field today's live settings use is ACCEPTED (an independent list, from the live file 2026-10-27)",
+         fp({"hooks": {"Stop": [{"hooks": [S(**{"if": "Bash(git *)", "statusMessage": "s", "timeout": 30})]}]}}), []),
+        ("⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)",
+         fp({"hooks": {"Stop": [{"hooks": [S(args=[]), S(shell="bash"), {"type": "prompt", "args": [], "shell": "x"}]}]}}),
+         [("Stop", "args"), ("Stop", "shell")]),
+        ("⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)",
+         fp({"hooks": {"Stop": [{"hooks": [S()]}],
+                       "PreToolUse": [{"hooks": [S()]}, {"hooks": [{"type": "prompt"}, S(once=True)]}]}}),
+         [("PreToolUse", "once")]),
+        ("⭐ an UNCLASSIFIED field is refused — deny by default (backlog #368 r1)",
+         fp({"hooks": {"Stop": [{"hooks": [S(onFailure="x")]}]}}), [("Stop", "onFailure")]),
+        ("⭐ an accepted field with the WRONG TYPE is refused — Claude Code would not load the file (r2)",
+         fp({"hooks": {"Stop": [{"hooks": [S(statusMessage={}), S(**{"if": 3}), S(timeout="30")]}]}}),
+         [("Stop", "if"), ("Stop", "statusMessage"), ("Stop", "timeout")]),
+        ("⭐ `timeout: true` is refused — a bool is an int to isinstance, not a number of seconds (r2)",
+         fp({"hooks": {"Stop": [{"hooks": [S(timeout=True), S(timeout=1.5), S(timeout=30)]}]}}), [("Stop", "timeout")]),
+    ]
+    with tempfile.TemporaryDirectory() as td2:
+        p2, root2 = Path(td2) / "settings.json", Path(td2)
+        (root2 / ".claude" / "hooks").mkdir(parents=True)
+        (root2 / ".claude" / "hooks" / "x.sh").write_text("#!/bin/sh\n")
+        for label, extra in (("a NON-LIST event value", {"PreToolUse": {}}),
+                             ("a NON-STRING command", {"PreToolUse": [{"hooks": [{"type": "command", "command": 5}]}]})):
+            p2.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [S()]}], **extra}}))
+            try:
+                rc2, msgs2 = check(p2, root2, {})
+                got2 = (rc2, msgs2[0].startswith("CANNOT RUN"))
+            except Exception as exc:  # noqa: BLE001 — a raise must FAIL this case by name, not end the suite
+                got2 = ("RAISED", type(exc).__name__)
+            more.append((f"⭐ {label} beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)",
+                         got2, (2, True)))
     for name, got, want in more:
         ok = got == want
         failures += not ok
