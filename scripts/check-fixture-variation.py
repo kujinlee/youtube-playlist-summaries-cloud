@@ -313,6 +313,22 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
+    "check-diff-coverage.py": (
+        "anchor_lines.anchors",
+        "anchor_lines.source",
+        "changed_lines.diff_text",
+        "decision_lines.source",
+        "main.argv",
+        "main.root",
+        "non_behaviour.source",
+        "run_check.base",
+        "run_check.root",
+        "run_check.run",
+        "uncovered.anchors",
+        "uncovered.changed",
+        "uncovered.sources",
+    ),
     # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.
     "check-hook-commands.py": (
         "check.path", "check.root", "check.unregistered",

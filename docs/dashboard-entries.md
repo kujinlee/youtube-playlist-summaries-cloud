@@ -17749,3 +17749,18 @@ after r1 (project dir ran main's hooks from a worktree), r2 (git discovery steer
 pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review comes first.
 ⟳ r4 (Codex, last — DEFER): `.claude/` byte-identical to master confirmed; the guard skips an entry with no or an unknown
 `type` and accepts an empty UNREGISTERED reason — filed as backlog #365 and stated in the guard's docstring.
+
+
+## 2026-10-26
+A new check runs on every pull request and points at each changed line that makes a decision — an `if`, a
+`return`, a `raise` — where none of the project's planted-fault tests would notice if that line were undone.
+It only warns. On tonight's own work it pointed straight at a line where a reviewer later found a real gap.
+<!--tech-->
+Branch `diff-coverage` (backlog #251). `scripts/check-diff-coverage.py`: for each manifested script changed against
+the PR base (`git diff -U0 base...HEAD`), WARN on each changed decision line (if/elif/while test, return, raise,
+assert, except, exit call) that no mutation anchor's text reaches; comments, docstrings, imports, literal pins and
+`self_test` bodies never warn. Reuses `check-plan-code.load_manifests`. CI: self-test + a PR-only warn step; exit 2
+only on CANNOT RUN. All changed behavioural lines gave 163/71 warnings on two branches, so it was narrowed to decision
+lines (48/29); one landed on `check-hook-commands.py:80`, the line PR #409 r4 then found the gap in (backlog #365).
+23 cases; 10 mutations, each killed by its named case.
+

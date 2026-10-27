@@ -1870,6 +1870,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 6,
+    "scripts/check-diff-coverage.py": 10,
     "scripts/check-hook-commands.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -4208,6 +4209,7 @@ def _self_test() -> int:
                                       "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-decision-scheme.py",
+                                      "scripts/check-diff-coverage.py",
                                       "scripts/check-doc-citations.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -6054,7 +6056,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2150)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2160)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

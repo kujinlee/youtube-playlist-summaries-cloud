@@ -271,9 +271,12 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         # ⟳⟳ 2026-10-15, backlog #49: 3 -> 4. `check-doc-citations.py` is PR-only for the same
         # reason as its neighbour — its subject is what this branch ADDED, so it needs a base
         # ref. Its `--self-test` is unconditional too, so it keeps a witness on every push.
-        (4, "the four pull-request-only steps: the two this script invokes itself, plus the "
-            "reference-namespace and doc-citations gates, neither of which can run without a "
-            "base ref"),
+        # ⟳⟳⟳ 2026-10-26, backlog #251: 4 -> 5. `check-diff-coverage.py` is PR-only for the same reason —
+        # its subject is the decision lines this branch CHANGED, against the PR's base. It WARNS and
+        # exits 2 only on CANNOT RUN; its `--self-test` runs unconditionally, so it has a witness on push.
+        (5, "the five pull-request-only steps: the two this script invokes itself, plus the "
+            "reference-namespace, doc-citations and diff-coverage steps, none of which can run "
+            "without a base ref"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     ("schema-gates.yml", "pull_request:"):
@@ -1176,9 +1179,10 @@ def _self_test() -> int:
     check("the `${{ }}` wrapper form is recognised",
           pr_only_steps("      - name: x\n        if: ${{ github.event_name == 'pull_request' }}\n        run: y\n"), ["x"])
     # ⚠ The REAL workflow, not a fixture: the derivation must agree with what CI actually gates.
-    check("the derivation finds exactly the FOUR steps ci.yml gates today",
+    check("the derivation finds exactly the FIVE steps ci.yml gates today",
           sorted(pr_only_steps(WORKFLOW.read_text())) if WORKFLOW.is_file() else [],
           ["check-review-recorded (PR only)", "dashboard entry ratchet",
+           "diff coverage — changed decision lines no mutation reaches (PR only, warn)",
            "doc citations resolve", "reference namespaces are qualified"])
 
     check("the real workflow has pull-request-only steps — an empty answer here is CANNOT RUN",

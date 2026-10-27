@@ -1,0 +1,132 @@
+[
+  {
+    "name": "an if/while test is no longer a decision line",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if isinstance(node, (ast.If, ast.While)):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "decision lines are the if-test, the return and the exit call — not the plain assignment"
+    ]
+  },
+  {
+    "name": "a return is no longer a decision line",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        elif isinstance(node, (ast.Return, ast.Raise, ast.Assert, ast.ExceptHandler)):",
+        "        elif isinstance(node, (ast.Raise, ast.Assert, ast.ExceptHandler)):"
+      ]
+    ],
+    "expect": [
+      "decision lines are the if-test, the return and the exit call — not the plain assignment"
+    ]
+  },
+  {
+    "name": "a self_test body counts as behaviour",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and \"self_test\" in node.name:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a self_test function's body is not behaviour"
+    ]
+  },
+  {
+    "name": "a literal module pin counts as behaviour",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                continue\n            skip.update(span(node))",
+        "                continue"
+      ]
+    ],
+    "expect": [
+      "docstring, import, literal pin, blank and comment lines are not behaviour"
+    ]
+  },
+  {
+    "name": "an anchor covers only its FIRST line",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            covered.update(range(first, first + a.count(\"\\n\") + 1))",
+        "            covered.add(first)"
+      ]
+    ],
+    "expect": [
+      "an anchor covers every line its text spans"
+    ]
+  },
+  {
+    "name": "an empty anchor covers everything",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if not a:\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an empty anchor covers nothing (not every line)"
+    ]
+  },
+  {
+    "name": "an anchored line is warned anyway",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            if n in skip or n in covered or n not in decide or n > len(lines):",
+        "            if n in skip or n not in decide or n > len(lines):"
+      ]
+    ],
+    "expect": [
+      "...and anchoring it silences the warning"
+    ]
+  },
+  {
+    "name": "a deletion hunk counts one added line",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            start, count = int(m.group(1)), int(m.group(2) or \"1\")",
+        "            start, count = int(m.group(1)), int(m.group(2) or \"1\") or 1"
+      ]
+    ],
+    "expect": [
+      "a pure deletion hunk (+N,0) adds no line"
+    ]
+  },
+  {
+    "name": "⭐ an unknown base reports a clean zero instead of CANNOT RUN",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — `git diff {base}...HEAD` failed:",
+        "        return 0, [f\"CANNOT RUN — `git diff {base}...HEAD` failed:"
+      ]
+    ],
+    "expect": [
+      "⭐ an unknown base is CANNOT RUN (exit 2), never 'nothing changed'"
+    ]
+  },
+  {
+    "name": "refused manifests report a clean pass",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [\"CANNOT RUN — the mutation manifests do not load:\"]",
+        "        return 0, [\"CANNOT RUN — the mutation manifests do not load:\"]"
+      ]
+    ],
+    "expect": [
+      "manifests the loader refuses (here: none at all) are CANNOT RUN, never a clean pass"
+    ]
+  }
+]
