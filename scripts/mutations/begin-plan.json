@@ -786,5 +786,122 @@
     "expect": [
       "F5c a file NAMED like a generated label gets ITS OWN banner — its objective, not the completed copy's (r6 Codex)"
     ]
+  },
+  {
+    "name": "backlog #301: begin-plan arms from a linked worktree, where the Stop guard never looks",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if _main_root is not None:\n        _there",
+        "    if False:\n        _there"
+      ]
+    ],
+    "expect": [
+      "⭐ arming FROM a linked worktree is REFUSED, writes no sentinel, and names the main checkout (backlog #301)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: any .git FILE reads as a linked worktree, so a submodule refuses every arm",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if gitdir.parent.name != \"worktrees\":\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": [
+      "...while a submodule's .git file is not a linked worktree, and nor is a tree with no .git"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: a worktree whose main checkout MOVED reads as not linked, so the guard fails open",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    return gitdir.parent.parent.parent              # <main>/.git/worktrees/<name> -> <main>",
+        "    return gitdir.parent.parent.parent if gitdir.exists() else None"
+      ]
+    ],
+    "expect": [
+      "⭐ a worktree whose main checkout MOVED still reads as linked — it refuses, never fails open (r1 Codex M3)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: the suggested command is joined with spaces, so an argument holding a space or a pipe breaks",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "{shlex.join(['python3', str(_there), *argv])}",
+        "{' '.join(['python3', str(_there), *argv])}"
+      ]
+    ],
+    "expect": [
+      "⭐ the suggested command round-trips through the shell with its arguments intact (r1 Codex M4)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: --plan, the second way to arm, is exempt from the linked-worktree refusal",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if _main_root is not None:\n        _there = _main_root",
+        "    if _main_root is not None and not a.plan:\n        _there = _main_root"
+      ]
+    ],
+    "expect": [
+      "⭐ EVERY state command from a linked worktree is refused and writes nothing — --plan included (r1 CLAUDE M2)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: the refusal always names the main checkout's script, even where there is none",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "*argv])}\" if _there.is_file() else",
+        "*argv])}\" if True else"
+      ]
+    ],
+    "expect": [
+      "...and its refusal says no main checkout was found, instead of naming a script that is not there (r1 CLAUDE L3)"
+    ]
+  },
+  {
+    "name": "backlog #301 r2: git inherits the caller's GIT_* variables, so GIT_DIR moves the answer",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    env = {k: v for k, v in os.environ.items() if not k.startswith(\"GIT_\")}",
+        "    env = dict(os.environ)"
+      ]
+    ],
+    "expect": [
+      "⭐ GIT_DIR / GIT_WORK_TREE in the environment change nothing (r1 Codex H2)"
+    ]
+  },
+  {
+    "name": "backlog #301 r2: git is never asked, so a symlinked or aliased worktree falls to the path-shape reading",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        if g.returncode == 0 and len(lines) == 2 and not any(l.startswith(\"-\") for l in lines):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a linked worktree whose .git is a SYMLINK, or whose gitdir goes through an ALIAS, is still refused (r2 Codex H1)"
+    ]
+  },
+  {
+    "name": "backlog #301 r2: when git cannot answer, nothing refuses — a moved main checkout fails open",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    dot = root / \".git\"\n    if not dot.is_file():\n        return None                                  # a directory git could not read",
+        "    dot = root / \".git\"\n    if True:\n        return None                                  # a directory git could not read"
+      ]
+    ],
+    "expect": [
+      "...and when git cannot answer, the .git FILE decides — a real worktree still refuses (r2 fallback)"
+    ]
   }
 ]

@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 127 cases
+    scripts/begin-plan.py --self-test  # 139 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -71,6 +71,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -985,6 +986,8 @@ def _self_test() -> int:
     # Rebound by the r1 Codex 3 cases to inject a raising recorder / branch lookup; declared
     # first because Python refuses a `global` after the name's first use.
     global _load_plan_progress
+    # (moved up for backlog #301's cases, which run first: a `global` must precede every use)
+    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -1011,6 +1014,117 @@ def _self_test() -> int:
     # be a provenance for a link that does not exist.
     _src = [render_plan("kid", THREE, "2026-10-22", parent=par, parent_source=ps)
             for par, ps in (("root", "transcript aaaa1111 t1"), (None, "transcript bbbb2222 t2"))]
+    # ⛔ backlog #301: armed from a LINKED WORKTREE, the sentinel landed in that worktree's `.claude/`, where the
+    # Stop hook (registered in the MAIN checkout) never looks — and `armed:` printed anyway. Real git, real worktree.
+    with tempfile.TemporaryDirectory() as _wtd:
+        _main_r = Path(_wtd) / "main"; _main_r.mkdir()
+        _g = lambda *a, cwd=_main_r: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
+        _g("init", "-q"); _g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base")
+        _wt_r = Path(_wtd) / "linked"
+        _g("worktree", "add", "-q", "-b", "side", str(_wt_r))
+        (_main_r / "scripts").mkdir(); (_main_r / "scripts/begin-plan.py").write_text("# the main checkout's copy\n")
+        case("⭐ a LINKED worktree resolves to its main checkout (backlog #301)",
+             linked_worktree_main(_wt_r) == _main_r.resolve())
+        case("...and the main checkout itself is not a linked worktree",
+             linked_worktree_main(_main_r) is None)
+        # r1 Codex H2: the environment must not move the answer — `GIT_DIR` overrode `git -C`.
+        _env_keep = {k: os.environ.get(k) for k in ("GIT_DIR", "GIT_WORK_TREE")}
+        os.environ["GIT_DIR"], os.environ["GIT_WORK_TREE"] = str(_main_r / ".git"), str(_main_r)
+        try:
+            _env_ans = (linked_worktree_main(_wt_r), linked_worktree_main(_main_r))
+        finally:
+            for _k, _v in _env_keep.items():
+                os.environ.pop(_k, None) if _v is None else os.environ.__setitem__(_k, _v)
+        case("⭐ GIT_DIR / GIT_WORK_TREE in the environment change nothing (r1 Codex H2)",
+             _env_ans == (_main_r.resolve(), None))
+        # r2 Codex H1: VALID layouts a path-shape reading missed — `.git` a SYMLINK to the worktree's admin
+        # directory, and a `gitdir:` through a symlinked ALIAS. Git resolves both; so must this.
+        _adm = Path((_wt_r / ".git").read_text().split("gitdir:", 1)[1].strip())
+        _sl = Path(_wtd) / "symlinked"; _g("worktree", "add", "-q", "-b", "side2", str(_sl))
+        _sl_adm = Path((_sl / ".git").read_text().split("gitdir:", 1)[1].strip())
+        (_sl / ".git").unlink(); (_sl / ".git").symlink_to(_sl_adm)
+        _al = Path(_wtd) / "aliased"; _g("worktree", "add", "-q", "-b", "side3", str(_al))
+        _al_adm = Path((_al / ".git").read_text().split("gitdir:", 1)[1].strip())
+        (Path(_wtd) / "admin-alias").symlink_to(_al_adm)
+        (_al / ".git").write_text(f"gitdir: {Path(_wtd) / 'admin-alias'}\n")
+        case("⭐ a linked worktree whose .git is a SYMLINK, or whose gitdir goes through an ALIAS, is still refused (r2 Codex H1)",
+             (linked_worktree_main(_sl), linked_worktree_main(_al)) == (_main_r.resolve(), _main_r.resolve()))
+        # r2 Codex M2: a separate-git-dir MAIN checkout whose metadata sits under a directory NAMED `worktrees`.
+        _sep = Path(_wtd) / "sepmain"; _sep.mkdir()
+        _g("init", "-q", "--separate-git-dir", str(Path(_wtd) / "worktrees" / "metadata"), cwd=_sep)
+        case("...and a separate-git-dir MAIN checkout under a directory named `worktrees` is NOT refused (r2 Codex M2)",
+             linked_worktree_main(_sep) is None)
+        # the FALLBACK, driven directly: git that cannot answer -> the .git file decides (it refuses here).
+        case("...and when git cannot answer, the .git FILE decides — a real worktree still refuses (r2 fallback)",
+             linked_worktree_main(_wt_r, run=lambda *a, **k: subprocess.CompletedProcess(a, 128, "", "fatal"))
+             == _main_r.resolve())
+        # r1 Codex M3: a moved main checkout — the worktree's gitdir target is gone. Still linked: refuse.
+        _moved = Path(_wtd) / "moved"; _moved.mkdir()
+        (_moved / ".git").write_text(f"gitdir: {Path(_wtd)}/gone/.git/worktrees/moved\n")
+        case("⭐ a worktree whose main checkout MOVED still reads as linked — it refuses, never fails open (r1 Codex M3)",
+             linked_worktree_main(_moved) == Path(_wtd) / "gone")
+        _sub = Path(_wtd) / "sub"; _sub.mkdir()
+        (_sub / ".git").write_text("gitdir: ../main/.git/modules/sub\n")
+        _keep_m = (ROOT, SENTINEL)
+        ROOT, SENTINEL = _moved, _moved / ".claude/executing-plan"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as _em:
+                _rc_m = main(["--status"])
+        finally:
+            ROOT, SENTINEL = _keep_m
+        case("...and its refusal says no main checkout was found, instead of naming a script that is not there (r1 CLAUDE L3)",
+             (_rc_m, "no main checkout found" in _em.getvalue()) == (REFUSED, True))
+        case("...while a submodule's .git file is not a linked worktree, and nor is a tree with no .git",
+             (linked_worktree_main(_sub), linked_worktree_main(Path(_wtd))) == (None, None))
+        # EVERY state path is redirected into the worktree, so an unrefused arm (the mutant) writes nothing real
+        _keep_rs = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT)
+        ROOT, PLAN_DIR, SENTINEL = _wt_r, _wt_r / ".claude/plans", _wt_r / ".claude/executing-plan"
+        STATE, LAST_PLAN = _wt_r / ".claude/executing-plan.state", _wt_r / ".claude/last-plan"
+        WORK_LINES_OUT = _wt_r / "explainers" / "work-lines.html"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as _o, contextlib.redirect_stderr(io.StringIO()) as _e:
+                try:
+                    _rc_wt = main(["linked-plan", "one|doing|why"])
+                except Exception as _x:                       # noqa: BLE001 — a crash is a NAMED red
+                    _rc_wt = f"RAISED {type(_x).__name__}"
+        finally:
+            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT = _keep_rs
+        # r1 Codex M4: the printed command must survive the shell — `--pause "waiting on CI"` lost its words.
+        _keep_rs2 = (ROOT, SENTINEL)
+        ROOT, SENTINEL = _wt_r, _wt_r / ".claude/executing-plan"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as _e2:
+                main(["--pause", "waiting on CI | and a pipe"])
+        finally:
+            ROOT, SENTINEL = _keep_rs2
+        _cmd = [l.strip() for l in _e2.getvalue().splitlines() if "begin-plan.py" in l and l.startswith("    ")]
+        case("⭐ the suggested command round-trips through the shell with its arguments intact (r1 Codex M4)",
+             bool(_cmd) and shlex.split(_cmd[-1])[-2:] == ["--pause", "waiting on CI | and a pipe"])
+        # r1 CLAUDE M2: EVERY state command is refused, not only the slug arm — `--plan` is the second way to arm.
+        (_wt_r / "p.md").write_text("- [ ] one\n")
+        _all_refused = []
+        for _argv in (["--plan", str(_wt_r.resolve() / "p.md")], ["--tick"], ["--status"], ["--banner"], ["--finish"],
+                      ["--pause", "x"], ["--resume"]):
+            _keep_a = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT)
+            _wtR = _wt_r.resolve()   # resolved, so `--plan` sees its plan INSIDE the root and would really arm
+            ROOT, PLAN_DIR, SENTINEL = _wtR, _wtR / ".claude/plans", _wtR / ".claude/executing-plan"
+            STATE, LAST_PLAN = _wtR / ".claude/executing-plan.state", _wtR / ".claude/last-plan"
+            WORK_LINES_OUT = _wtR / "explainers" / "work-lines.html"
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    try:
+                        _r = main(_argv)
+                    except Exception as _x:                   # noqa: BLE001 — a crash is a NAMED red
+                        _r = f"RAISED {type(_x).__name__}"
+            finally:
+                ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT = _keep_a
+            _all_refused.append((_argv[0], _r == REFUSED and not (_wt_r / ".claude").exists()))
+        case("⭐ EVERY state command from a linked worktree is refused and writes nothing — --plan included (r1 CLAUDE M2)",
+             [ok for _, ok in _all_refused] == [True] * 7)
+        case("⭐ arming FROM a linked worktree is REFUSED, writes no sentinel, and names the main checkout (backlog #301)",
+             (_rc_wt, (_wt_r / ".claude/executing-plan").exists(), str(_main_r.resolve()) in (_o.getvalue() + _e.getvalue()))
+             == (REFUSED, False, True))
+
     case("render_plan writes `parent-source:` directly under its parent, and never without one",
          ("<!-- parent: root -->\n<!-- parent-source: transcript aaaa1111 t1 -->" in _src[0],
           "parent-source" in _src[1]) == (True, False))
@@ -1144,7 +1258,6 @@ def _self_test() -> int:
         except Exception as exc:                   # noqa: BLE001 - the case reports it
             return f"RAISED {type(exc).__name__}"
 
-    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
     real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE)
     with tempfile.TemporaryDirectory() as td:
         ROOT = Path(td)
@@ -1993,6 +2106,54 @@ def pp_count_drift(doc: str | None, actual: int) -> str | None:
 _CHANGES_STATE = ("tick", "pause", "resume", "finish", "plan", "slug")
 
 
+def linked_worktree_main(root: Path, run=subprocess.run) -> Path | None:
+    """The MAIN checkout when `root` is a LINKED worktree, else None.
+
+    ⛔ backlog #301: every path here hangs off `ROOT`, which is THIS FILE's checkout. Run from a linked
+    worktree, the sentinel lands in that worktree's `.claude/`, while the Stop hook — registered in the main
+    checkout's settings — reads the main checkout's. Measured: `armed:` printed, the banner rendered, the
+    guard read no sentinel and allowed a stop with 4 steps unticked.
+
+    TWO SOURCES, one authoritative (r2 SPLIT, after two rounds each broke one alone):
+    1. GIT, asked so that none of r1's failures can reach it: every `GIT_*` variable removed from its
+       environment (r1: `GIT_DIR` overrode `git -C`), `--absolute-git-dir` (git 2.13+; r1: git < 2.31 echoed
+       `--path-format=absolute` back as a "path"), cwd = ROOT, and exactly two absolute path lines required.
+       Git resolves every layout it supports — a symlinked `.git`, an aliased `gitdir:`, a separate-git-dir
+       main checkout — which r2 measured a path-shape reading getting wrong in both directions.
+    2. ONLY when git cannot answer — r1: a moved main checkout makes discovery fail — the `.git` FILE is read:
+       `gitdir: <common>/worktrees/<name>` refuses (fail closed); anything else passes. A staged copy (no
+       `.git`) passes, which is what the mutation harness's copies are.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        g = run(["git", "rev-parse", "--absolute-git-dir", "--git-common-dir"], cwd=str(root), env=env,
+                capture_output=True, text=True, timeout=10)
+        lines = [l for l in (g.stdout or "").splitlines() if l.strip()]
+        if g.returncode == 0 and len(lines) == 2 and not any(l.startswith("-") for l in lines):
+            git_dir = Path(lines[0]).resolve()
+            common = Path(lines[1]) if Path(lines[1]).is_absolute() else root / lines[1]
+            common = common.resolve()
+            return None if git_dir == common else common.parent
+    except (OSError, subprocess.SubprocessError):
+        pass
+    dot = root / ".git"
+    if not dot.is_file():
+        return None                                  # a directory git could not read, or no `.git` at all
+    try:
+        first = dot.read_text(encoding="utf-8", errors="replace").splitlines()[0].strip()
+    except (OSError, IndexError):
+        return None
+    if not first.startswith("gitdir:"):
+        return None
+    gitdir = Path(first[len("gitdir:"):].strip())
+    if not gitdir.is_absolute():
+        gitdir = root / gitdir
+    gitdir = Path(os.path.normpath(gitdir))
+    if gitdir.parent.name != "worktrees":
+        return None                                  # e.g. a submodule: <super>/.git/modules/<name>
+    return gitdir.parent.parent.parent              # <main>/.git/worktrees/<name> -> <main>
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         description="Declare a multi-step job: write the plan, arm the Stop guard, print the "
@@ -2016,6 +2177,18 @@ def main(argv: list[str]) -> int:
 
     if a.self_test:
         return _self_test()
+    # ⛔ backlog #301: refuse BEFORE touching any state — every command below reads or writes the sentinel.
+    _main_root = linked_worktree_main(ROOT)
+    if _main_root is not None:
+        _there = _main_root / "scripts/begin-plan.py"
+        # r1 CLAUDE L3: a bare repository's worktrees, or a moved main checkout, have no main checkout to point at.
+        _where = (f"    {shlex.join(['python3', str(_there), *argv])}" if _there.is_file() else
+                  f"    (no main checkout found at {_main_root} — it may have moved, or this is a bare repository's "
+                  f"worktree; run begin-plan.py from the checkout whose .claude/settings.json registers the Stop hook)")
+        print(f"refusing: {ROOT} is a LINKED WORKTREE. The Stop guard reads the MAIN checkout's "
+              f".claude/executing-plan, so a plan armed here would be invisible to it — and would still print "
+              f"'armed:'. Run it from the main checkout instead:\n{_where}", file=sys.stderr)
+        return REFUSED
     if a.banner:
         return cmd_banner()
     if a.status:
