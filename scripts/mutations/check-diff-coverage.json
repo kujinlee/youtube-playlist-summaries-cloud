@@ -229,12 +229,12 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "                   errors=\"replace\")",
-        "                   )"
+        "r.stdout.decode(\"utf-8\", \"replace\"), r.stderr.decode",
+        "r.stdout.decode(\"utf-8\", \"strict\"), r.stderr.decode"
       ]
     ],
     "expect": [
-      "⭐ every TEXT git call decodes with replacement — a non-UTF-8 byte is not a traceback"
+      "⭐ a non-UTF-8 byte in git's output is decoded with replacement, not a traceback"
     ]
   },
   {
@@ -281,7 +281,7 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "            not_checked.append(f\"NOT CHECKED {p}: cannot read it at HEAD ({err[:80]})\")",
+        "            not_checked.append(f\"NOT CHECKED {p}: cannot read it at HEAD ({shown.stderr.strip()[:80]})\")",
         "            pass"
       ]
     ],
@@ -307,8 +307,8 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        shown = git_bytes(\"show\", \"--no-textconv\", f\"HEAD:{p}\")  # the committed tree, never the working tree",
-        "        shown = git_bytes(\"show\", \"--no-textconv\", f\":{p}\")  # the INDEX, not the committed tree"
+        "        shown = git(\"show\", \"--no-textconv\", f\"HEAD:{p}\")",
+        "        shown = git(\"show\", \"--no-textconv\", f\":{p}\")"
       ]
     ],
     "expect": [
@@ -316,12 +316,12 @@
     ]
   },
   {
-    "name": "⭐ the source is newline-TRANSLATED again, as `text=True` did — a lone CR becomes LF (backlog #371)",
+    "name": "⭐ git's output is newline-TRANSLATED again, as `text=True` did — a lone CR becomes LF (backlog #371)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "source = shown.stdout.decode(\"utf-8\", \"replace\")",
-        "source = shown.stdout.decode(\"utf-8\", \"replace\").replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\")"
+        "r.stdout.decode(\"utf-8\", \"replace\"), r.stderr",
+        "r.stdout.decode(\"utf-8\", \"replace\").replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\"), r.stderr"
       ]
     ],
     "expect": [
@@ -342,55 +342,55 @@
     ]
   },
   {
-    "name": "⭐ uncommitted manifests are trusted again (backlog #371)",
+    "name": "⭐ the manifests are read from the WORKING TREE again (backlog #371 r1)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "    if dirty.returncode != 0 or dirty.stdout.strip():\n",
-        "    if False:\n"
+        "            entries, problems = _plan_code(root).load_manifests(snap)",
+        "            entries, problems = _plan_code(root).load_manifests(root)"
       ]
     ],
     "expect": [
-      "⭐ an UNCOMMITTED manifest edit is CANNOT RUN — it cannot clear a committed line (backlog #371)"
+      "⭐ an UNCOMMITTED or IGNORED manifest cannot clear a committed line — manifests come from HEAD (backlog #371)"
     ]
   },
   {
-    "name": "⭐ the source call asks for TEXT again (backlog #371)",
+    "name": "⭐ a failed ls-tree is read as no manifests (backlog #371 r1)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        return run([\"git\", \"-c\", \"core.quotepath=off\", *args], cwd=root, capture_output=True)\n",
-        "        return run([\"git\", \"-c\", \"core.quotepath=off\", *args], cwd=root, capture_output=True, text=True)\n"
+        "    if r.returncode != 0:\n        return f\"`git ls-tree HEAD scripts/` failed",
+        "    if False:\n        return f\"`git ls-tree HEAD scripts/` failed"
       ]
     ],
     "expect": [
-      "⭐ the source is read as BYTES — `text=True` would translate a lone CR first (backlog #371)"
+      "⭐ HEAD's tree that cannot be LISTED is CANNOT RUN — no manifests read is not a clean pass (backlog #371)"
     ]
   },
   {
-    "name": "⭐ a failed `git status` is trusted as clean (backlog #371)",
+    "name": "⭐ GIT_DIR is inherited again — another repository is measured (backlog #371 r1 H1)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "if dirty.returncode != 0 or dirty.stdout.strip():",
-        "if dirty.stdout.strip():"
+        "capture_output=True, env=unredirected())",
+        "capture_output=True, env=dict(os.environ))"
       ]
     ],
     "expect": [
-      "⭐ a `git status` that FAILS is CANNOT RUN — an unknown manifest state is not a clean one (backlog #371)"
+      "⭐ under an exported GIT_DIR naming ANOTHER repo, `root` is still measured and the other is untouched (r1 H1)"
     ]
   },
   {
-    "name": "⭐ dirty manifests exit 0 instead of CANNOT RUN (backlog #371)",
+    "name": "⭐ a run that measured nothing claims every line is edited again (r1)",
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        return 2, [\"CANNOT RUN — the mutation manifests in the working tree",
-        "        return 0, [\"CANNOT RUN — the mutation manifests in the working tree"
+        "                   else \" — none changed, so nothing was measured\"))",
+        "                   else \" — every one is edited by a mutation\"))"
       ]
     ],
     "expect": [
-      "⭐ an UNCOMMITTED manifest edit is CANNOT RUN — it cannot clear a committed line (backlog #371)"
+      "⭐ a range that changes NO manifested script says nothing was measured — never 'every one is edited' (r1)"
     ]
   }
 ]

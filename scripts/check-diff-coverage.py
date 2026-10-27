@@ -16,18 +16,18 @@ every ADDED or CHANGED decision line that no mutation EDITS is WARNED with `file
   test, and never warn (exact names: PR #411 r3 found a substring match skipping real code).
   A line is EDITED by a mutation exactly when, applying that mutation's edit, the line does not survive
   unchanged; an insertion edits no line (PR #411 r2's redesign).
-  Sources are read from the committed HEAD, the same tree the diff describes, never the working tree; the manifests
-  must match HEAD's, or the run refuses.
+  Sources AND manifests are read from the committed HEAD, the tree the diff describes, never the working tree.
 
 ⟳ SPLIT after PR #411 round 3. The CI delivery — a PR-only warn step, annotations — and the DELETED-line
 path are NOT here: the step never ran (it followed a gate that is red on every draft round), Actions caps
 annotations at 10 per step, deletions mis-scoped renames and counted moved lines, and the volume reached
 420 warnings on one PR, which a reader stops reading (backlog #56). That half is backlog #370.
 
-⟳ backlog #371 (PR #411 round 4 found three clean zeros; each is now a real-git case): `git show` is read as BYTES
-and decoded with no newline translation, so a lone CR reaches `measurable()`; both git calls pass `--no-textconv`, so a
-`textconv` driver cannot rewrite or empty what is measured; and manifests are read from the working tree, so an
-uncommitted change under `scripts/mutations/` is CANNOT RUN — it could otherwise clear a committed line.
+⟳ backlog #371 (PR #411 round 4 found three clean zeros; each is now a real-git case): every git call is read as
+BYTES and decoded with no newline translation, so a lone CR reaches `measurable()` and cannot split the diff; the diff
+passes `--no-textconv` (a textconv driver emptied it); and the MANIFESTS are read from HEAD's object store, like the
+sources, so no working-tree state — an uncommitted edit, an ignored file, `skip-worktree`, a filter, a symlink — can
+clear a committed line (PR #415 r1 measured five that a `git status` check missed).
 
 ⚠ WARN, NOT BLOCK. A warning says only that NO MUTATION EDITS the line; whether a test would notice
 reverting it is what a mutation measures, and this does not run one. It cannot see behaviour that changed
@@ -35,22 +35,24 @@ without a decision line changing, a `match` statement's arms, a decision express
 assignment, or a DELETED line.
 
     python3 scripts/check-diff-coverage.py --base origin/master
-    python3 scripts/check-diff-coverage.py --self-test  # 52 cases
+    python3 scripts/check-diff-coverage.py --self-test  # 56 cases
 
 EXIT CODES: 0 = ran (warnings, if any, are printed; a file it could not measure says NOT CHECKED) · 2 =
-CANNOT RUN (no git, an unknown base, manifests the loader refuses, or manifests that differ from HEAD's). There
-is no 1: it only warns.
+CANNOT RUN (no git, an unknown base, HEAD's tree unreadable, or manifests the loader refuses). There is no 1: it only
+warns.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+import os
 import difflib
 import importlib.util
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -58,6 +60,17 @@ CAP = 12  # warnings shown per file; the rest are counted
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 BINARY = re.compile(r"^Binary files (.+) and (.+) differ$")
 SELF_TEST_NAMES = frozenset({"self_test", "_self_test"})
+# Variables that point git at ANOTHER repository. Stripped from every call: the subject is `root`, and a fixture run
+# under an exported GIT_DIR once committed into the live checkout (`codex-review.py` r11, 2026-09-14 — its leaked
+# identity sat in `.git/config` for six weeks). The class across fixtures is backlog #373.
+REDIRECTING = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+               "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
+
+
+def unredirected() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if k not in REDIRECTING}
+
+
 _ESC = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 
 
@@ -238,17 +251,44 @@ def measurable(src: str) -> str | None:
     return None
 
 
+def snapshot_head_manifests(git, snap: Path) -> str | None:
+    """Copy HEAD's `scripts/mutations/*.json` BLOBS into `snap`, with an empty stub for each `scripts/*.py` that exists
+    at HEAD (the loader checks a manifest's target exists), so `load_manifests(snap)` reads the manifests of the SAME
+    revision the sources come from. Returns why it could not, or None.
+
+    ⛔ Read from the OBJECT STORE, never the working tree (backlog #371, PR #415 r1): a `git status` comparison was blind
+    to an ignored manifest, `assume-unchanged`, `skip-worktree`, a clean filter and a symlink — five clean zeros, each
+    reproduced. A blob has none of those layers."""
+    r = git("ls-tree", "-r", "-z", "HEAD", "--", "scripts/")
+    if r.returncode != 0:
+        return f"`git ls-tree HEAD scripts/` failed: {r.stderr.strip()[:160]}"
+    (snap / "scripts" / "mutations").mkdir(parents=True)
+    for rec in filter(None, r.stdout.split("\0")):
+        meta, _, path = rec.partition("\t")
+        parts = meta.split()
+        if len(parts) != 3 or parts[1] != "blob":
+            continue
+        rel = path.split("/")
+        if len(rel) == 2 and path.endswith(".py"):
+            (snap / path).touch()
+        elif len(rel) == 3 and rel[1] == "mutations" and path.endswith(".json"):
+            blob = git("cat-file", "blob", parts[2])
+            if blob.returncode != 0:
+                return f"cannot read {path} at HEAD: {blob.stderr.strip()[:120]}"
+            (snap / path).write_text(blob.stdout, encoding="utf-8")
+    return None
+
+
 def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]]:
-    def git(*args):
+    def git(*args) -> subprocess.CompletedProcess:
         # Pinned against user settings: no external diff driver, the standard a/ b/ prefixes (PR #411 r3: a
         # configured `diff.external` gave a clean zero, a custom `diff.srcPrefix` a wrong path).
-        return run(["git", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True, text=True,
-                   errors="replace")
-
-    def git_bytes(*args):
-        # BYTES: `text=True` turns on universal newlines, which rewrites a lone CR before `measurable()` can see it
-        # (backlog #371). Decoded below with replacement and NO newline translation.
-        return run(["git", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True)
+        # ⛔ BYTES, decoded with replacement and NO newline translation (backlog #371): `text=True` turns on universal
+        # newlines, which rewrote a lone CR — in a source it hid from `measurable()`; in the DIFF it split a deleted line
+        # into a fake `diff --git` header and dropped the file's later hunks (PR #415 r1).
+        r = run(["git", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True, env=unredirected())
+        return subprocess.CompletedProcess(r.args if hasattr(r, "args") else args, r.returncode,
+                                           r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace"))
 
     try:
         r = git("diff", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U0", "--no-color",
@@ -259,15 +299,15 @@ def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]
         return 2, [f"CANNOT RUN — `git diff {base}...HEAD` failed: {(r.stderr or r.stdout).strip()[:200]}. "
                    "Treat as NOT CHECKED."]
     changed = parse_diff(r.stdout)
-    dirty = git("status", "--porcelain", "--untracked-files=all", "--", "scripts/mutations")
-    if dirty.returncode != 0 or dirty.stdout.strip():
-        return 2, ["CANNOT RUN — the mutation manifests in the working tree differ from HEAD's (or `git status` "
-                   f"failed: {(dirty.stderr or dirty.stdout).strip()[:120]}); sources are read from HEAD, so a "
-                   "manifest change could clear a committed line. Commit or stash it. Treat as NOT CHECKED."]
-    try:
-        entries, problems = _plan_code(root).load_manifests(root)
-    except Exception as exc:  # the loader is another script; any failure here means nothing was measured
-        return 2, [f"CANNOT RUN — loading the mutation manifests failed: {exc}. Treat as NOT CHECKED."]
+    with tempfile.TemporaryDirectory() as td:
+        snap = Path(td)
+        why = snapshot_head_manifests(git, snap)
+        if why:
+            return 2, [f"CANNOT RUN — {why}. Treat as NOT CHECKED."]
+        try:
+            entries, problems = _plan_code(root).load_manifests(snap)
+        except Exception as exc:  # the loader is another script; any failure here means nothing was measured
+            return 2, [f"CANNOT RUN — loading the mutation manifests failed: {exc}. Treat as NOT CHECKED."]
     if problems:
         return 2, ["CANNOT RUN — the mutation manifests do not load:"] + [f"  {p}" for p in problems[:5]]
     edits: dict[str, list[tuple[str, str]]] = {}
@@ -287,12 +327,11 @@ def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]
         n_files += 1
         # `--no-textconv` here is a PIN, not a fix: measured on git 2.49, `show` of a blob does not apply textconv by
         # default (the DIFF does, and emptied it — backlog #371). It keeps a changed default from reaching us.
-        shown = git_bytes("show", "--no-textconv", f"HEAD:{p}")  # the committed tree, never the working tree
+        shown = git("show", "--no-textconv", f"HEAD:{p}")  # the committed tree, never the working tree
         if shown.returncode != 0:
-            err = shown.stderr.decode("utf-8", "replace").strip()
-            not_checked.append(f"NOT CHECKED {p}: cannot read it at HEAD ({err[:80]})")
+            not_checked.append(f"NOT CHECKED {p}: cannot read it at HEAD ({shown.stderr.strip()[:80]})")
             continue
-        source = shown.stdout.decode("utf-8", "replace")  # bytes.decode never translates newlines
+        source = shown.stdout
         why = measurable(source)
         if why:
             not_checked.append(f"NOT CHECKED {p}: {why}")
@@ -310,7 +349,9 @@ def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]
     msgs.append(f"diff coverage: {len(found)} changed decision line(s) no mutation edits, across {n_files} "
                 f"manifested script(s) changed against {base}"
                 + (f"; {len(not_checked)} NOT CHECKED" if not_checked else "")
-                + ("" if found or not_checked else " — every one is edited by a mutation"))
+                + ("" if found or not_checked
+                   else " — every one is edited by a mutation" if n_files
+                   else " — none changed, so nothing was measured"))
     return 0, msgs
 
 
@@ -433,8 +474,10 @@ def self_test_lines_helper():
     case("an unparseable source is not measurable", measurable("def f(:\n"), "it does not parse as Python")
 
     class R:
-        def __init__(self, rc, out="", err=""):
-            self.returncode, self.stdout, self.stderr = rc, out, err
+        """A fake CompletedProcess. The real one carries BYTES (no `text=`), so a str given here is encoded."""
+        def __init__(self, rc, out=b"", err=b""):
+            enc = (lambda s: s.encode() if isinstance(s, str) else s)
+            self.returncode, self.stdout, self.stderr = rc, enc(out), enc(err)
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -452,10 +495,10 @@ def self_test_lines_helper():
         # The REAL loader is present, so this reaches the refusal path, not an import failure.
         case("manifests the loader refuses (here: none at all) are CANNOT RUN, never a clean pass",
              (rc, msgs[0]), (2, "CANNOT RUN — the mutation manifests do not load:"))
-        rc, msgs = run_check(root, "b", run=lambda cmd, **k: R(128, err="fatal: not a git repository")
-                             if "status" in cmd else R(0, ""))
-        case("⭐ a `git status` that FAILS is CANNOT RUN — an unknown manifest state is not a clean one (backlog #371)",
-             (rc, msgs[0][:60]), (2, "CANNOT RUN — the mutation manifests in the working tree diff"))
+        rc, msgs = run_check(root, "b", run=lambda cmd, **k: R(128, err="fatal: bad object HEAD")
+                             if "ls-tree" in cmd else R(0, ""))
+        case("⭐ HEAD's tree that cannot be LISTED is CANNOT RUN — no manifests read is not a clean pass (backlog #371)",
+             (rc, msgs[0][:40]), (2, "CANNOT RUN — `git ls-tree HEAD scripts/`"))
         (root / "scripts" / "check-plan-code.py").write_text("raise RuntimeError('broken loader')\n")
         rc, msgs = run_check(root, "b", run=lambda *a, **k: R(0, ""))
         case("a loader that RAISES is CANNOT RUN, never a clean pass",
@@ -470,14 +513,25 @@ def self_test_lines_helper():
     hdr = f"diff --git a/{target} b/{target}\n--- a/{target}\n+++ b/{target}\n"
     seen: list = []
 
-    def fake(cmd, **k):
-        seen.append((cmd, k))
-        if "diff" in cmd:
-            return R(0, hdr + f"@@ -{n} +{n} @@\n")
-        if "status" in cmd:
-            return R(0, "")
-        return R(0, real.encode())  # `git show HEAD:<path>`, read as bytes
-    rc, msgs = run_check(REPO_ROOT, "HEAD", run=fake)
+    tree = sorted([*(REPO_ROOT / "scripts").glob("*.py"), *(REPO_ROOT / "scripts" / "mutations").glob("*.json")])
+
+    def via(diff_out, show=lambda: R(0, real)):
+        """A fake `run` answering the diff and the source, and `ls-tree`/`cat-file` from THIS checkout's files — so the
+        manifests are the real ones. Not real git: the mutation harness stages a copy that is no repository, and the
+        real-git path is the `world()` cases below, which build their own."""
+        def fake(cmd, **k):
+            seen.append((cmd, k))
+            if "diff" in cmd:
+                return R(0, diff_out)
+            if "show" in cmd:
+                return show()
+            if "ls-tree" in cmd:
+                return R(0, "".join(f"100644 blob {q.relative_to(REPO_ROOT)}\t{q.relative_to(REPO_ROOT)}\0" for q in tree))
+            if "cat-file" in cmd:
+                return R(0, (REPO_ROOT / cmd[-1]).read_bytes())
+            return R(128, err=f"unexpected git call {cmd}")
+        return fake
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + f"@@ -{n} +{n} @@\n"))
     # The line is CHOSEN by the pure rules above, so this tests the WIRING over the REAL manifests.
     case("⭐ over the REAL manifests, an unedited decision line of a real guard is warned by file:line",
          (bool(open_), any(m.startswith(f"WARN {target}:{n}:") for m in msgs), rc), (True, True, 0))
@@ -487,56 +541,74 @@ def self_test_lines_helper():
          (True, True, True, True))
     case("⭐ the source is read from the committed HEAD, not the working tree (r3)",
          any(c[:4] == ["git", "-c", "core.quotepath=off", "show"] and c[-1] == f"HEAD:{target}" for c, _ in seen), True)
-    case("⭐ every TEXT git call decodes with replacement — a non-UTF-8 byte is not a traceback",
-         all(k.get("errors") == "replace" for c, k in seen if "show" not in c), True)
-    case("⭐ the source is read as BYTES — `text=True` would translate a lone CR first (backlog #371)",
-         [k.get("text") for c, k in seen if "show" in c], [None])
+    case("⭐ every git call is read as BYTES — `text=True` would translate a lone CR first (backlog #371)",
+         (len(seen) > 2, all("text" not in k and "errors" not in k for _, k in seen)), (True, True))
+    case("⭐ every git call strips GIT_DIR and its neighbours — the subject is `root` (backlog #371 r1)",
+         all(not set(REDIRECTING) & set(k.get("env") or {"GIT_DIR": 1}) for _, k in seen), True)
     case("⭐ both git reads pass --no-textconv — a textconv driver cannot rewrite what is measured (backlog #371)",
          sorted(c[3] for c, _ in seen if "--no-textconv" in c and c[3] in ("diff", "show")), ["diff", "show"])
+    res = caught(lambda: run_check(REPO_ROOT, "HEAD", run=via((hdr + "@@ -1 +1 @@\n").encode() + b"\xff\xfe\n")))
+    case("⭐ a non-UTF-8 byte in git's output is decoded with replacement, not a traceback",
+         res[0] if len(res) == 2 else res, 0)
     many = "".join(f"@@ -{k} +{k} @@\n" for k in open_)
-    rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(0, hdr + many) if "diff" in cmd
-                       else R(0, "") if "status" in cmd else R(0, real.encode()))
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + many))
     shown = sum(1 for m in msgs if m.startswith(f"WARN {target}:") and not m.startswith(f"WARN {target}: …"))
     case("at most CAP warnings are shown per file, and the rest are COUNTED",
          (shown <= CAP, any(m.startswith(f"WARN {target}: … and") for m in msgs) == (len(open_) > CAP)), (True, True))
-    rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(0, hdr + "@@ -1 +1 @@\n") if "diff" in cmd
-                         else R(0, "") if "status" in cmd else R(128, err=b"fatal: path not in HEAD"))
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + "@@ -1 +1 @@\n", lambda: R(128, err="fatal: path not in HEAD")))
     case("a source that cannot be read at HEAD is NOT CHECKED, not a silent zero (r3: untested)",
          any(m.startswith(f"NOT CHECKED {target}: cannot read it at HEAD") for m in msgs), True)
-    rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(0, hdr + "@@ -1 +1 @@\n") if "diff" in cmd
-                         else R(0, "") if "status" in cmd else R(0, b"def broken(:\n"))
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(hdr + "@@ -1 +1 @@\n", lambda: R(0, "def broken(:\n")))
     case("⭐ an UNPARSEABLE source at HEAD is NOT CHECKED, not a clean zero (r3: untested)",
          any(m.startswith(f"NOT CHECKED {target}: it does not parse") for m in msgs), True)
     bin_diff = f"diff --git a/{target} b/{target}\nBinary files a/{target} and b/{target} differ\n"
-    rc, msgs = run_check(REPO_ROOT, "HEAD", run=lambda cmd, **k: R(0, bin_diff) if "diff" in cmd
-                         else R(0, "") if "status" in cmd else R(0, real.encode()))
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(bin_diff))
     case("⭐ a manifested script with a BINARY diff is NOT CHECKED, not a clean zero",
          (rc, any(m.startswith(f"NOT CHECKED {target}: git reports a BINARY diff") for m in msgs)), (0, True))
-    # ── backlog #371: the three clean zeros, each over a REAL repository — a fake `run` answers the same whatever
-    # kwargs it gets, so only real git can show what `text=True` or a textconv driver does.
-    def world(td: Path, head_src: bytes, extra=None) -> str:
+    rc, msgs = run_check(REPO_ROOT, "HEAD", run=via(""))
+    case("⭐ a range that changes NO manifested script says nothing was measured — never 'every one is edited' (r1)",
+         (rc, msgs[-1].endswith("none changed, so nothing was measured")), (0, True))
+    # ── backlog #371: the clean zeros, each over a REAL repository — a fake `run` answers the same whatever kwargs it
+    # gets, so only real git can show what `text=True` or a textconv driver does.
+    # ⛔ ISOLATED (PR #415 r1 H1): no inherited GIT_DIR (the fixture once committed into a victim repo and still passed),
+    # and no host config (`commit.gpgsign=true` or a failing global hook crashed the suite).
+    iso = dict(unredirected(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+
+    def world(td: Path, head_src: bytes, extra=None, base_src: bytes = b"x = 1\n") -> str:
         def g(*a):
-            subprocess.run(["git", *a], cwd=td, check=True, capture_output=True)
+            subprocess.run(["git", *a], cwd=td, check=True, capture_output=True, env=iso)
         g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
         (td / "scripts" / "mutations").mkdir(parents=True)
         shutil.copy(REPO_ROOT / "scripts" / "check-plan-code.py", td / "scripts" / "check-plan-code.py")
-        (td / "scripts" / "g.py").write_bytes(b"x = 1\n")
+        (td / "scripts" / "g.py").write_bytes(base_src)
         (td / "scripts" / "mutations" / "g.json").write_text(json.dumps([{"name": "m", "file": "scripts/g.py",
             "edits": [["x = 1", "x = 2"]], "expect": ["c"]}]))
         g("add", "-A"); g("commit", "-qm", "base")
-        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=td, capture_output=True, text=True).stdout.strip()
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=td, capture_output=True, text=True, env=iso).stdout.strip()
         if extra:
             extra(g)
         (td / "scripts" / "g.py").write_bytes(head_src)
         g("add", "-A"); g("commit", "-qm", "head")
         return base
+
+    def iso_run(cmd, **k):
+        return subprocess.run(cmd, **dict(k, env=dict(k.get("env") or os.environ, GIT_CONFIG_GLOBAL=os.devnull,
+                                                         GIT_CONFIG_NOSYSTEM="1")))
     with tempfile.TemporaryDirectory() as td3:
         w = Path(td3)
         base = world(w, b"x = 1\nz = 0\rif bad:\n    pass\n")
-        rc, msgs = run_check(w, base)
+        rc, msgs = run_check(w, base, run=iso_run)
         case("⭐ a committed lone CR, read by REAL git, is NOT CHECKED — never 'every one is edited' (backlog #371)",
              (rc, any(m.startswith("NOT CHECKED scripts/g.py: it contains a lone carriage return") for m in msgs)),
              (0, True))
+    with tempfile.TemporaryDirectory() as td6:
+        w = Path(td6)
+        # A DELETED line holding a lone CR then `diff --git`: under `text=True` it split into a fake file header and
+        # the file's later hunk was dropped — "0 manifested script(s) … every one is edited" (PR #415 r1 M2).
+        base = world(w, b"x = 1\nif bad:\n    pass\n", base_src=b"x = 1\nz = '\rdiff --git a/q b/q'\n")
+        rc, msgs = run_check(w, base, run=iso_run)
+        case("⭐ a lone CR on a DELETED line cannot split the diff — the file's later hunk still WARNS (PR #415 r1)",
+             any(m.startswith("WARN scripts/g.py:2:") for m in msgs), True)
     with tempfile.TemporaryDirectory() as td4:
         w = Path(td4)
 
@@ -544,22 +616,39 @@ def self_test_lines_helper():
             (w / ".gitattributes").write_text("*.py diff=blank\n")
             g("config", "diff.blank.textconv", "true")  # `true` prints nothing: the diff would be EMPTY
         base = world(w, b"x = 1\nif bad:\n    pass\n", textconv)
-        rc, msgs = run_check(w, base)
+        rc, msgs = run_check(w, base, run=iso_run)
         case("⭐ a textconv driver that empties the diff still WARNS the new decision line (backlog #371)",
              any(m.startswith("WARN scripts/g.py:2:") for m in msgs), True)
     with tempfile.TemporaryDirectory() as td5:
         w = Path(td5)
         base = world(w, b"x = 1\nif bad:\n    pass\n")
-        (w / "scripts" / "mutations" / "g.json").write_text(json.dumps([{"name": "m", "file": "scripts/g.py",
-            "edits": [["if bad:", "if not bad:"]], "expect": ["c"]}]))  # UNCOMMITTED: would clear line 2
-        rc, msgs = run_check(w, base)
-        case("⭐ an UNCOMMITTED manifest edit is CANNOT RUN — it cannot clear a committed line (backlog #371)",
-             (rc, msgs[0][:60]), (2, "CANNOT RUN — the mutation manifests in the working tree diff"))
-        (w / "scripts" / "mutations" / "g.json").unlink()
-        subprocess.run(["git", "checkout", "-q", "--", "scripts/mutations"], cwd=w, check=True)
-        rc, msgs = run_check(w, base)
-        case("...and with the manifests back at HEAD's, the same line WARNS (the control)",
+        covering = json.dumps([{"name": "m", "file": "scripts/g.py", "edits": [["if bad:", "if not bad:"]], "expect": ["c"]}])
+        (w / "scripts" / "mutations" / "g.json").write_text(covering)  # UNCOMMITTED: would clear line 2
+        (w / ".gitignore").write_text("scripts/mutations/h.json\n")
+        (w / "scripts" / "mutations" / "h.json").write_text(covering.replace("g.py", "h.py"))  # IGNORED, never at HEAD
+        rc, msgs = run_check(w, base, run=iso_run)
+        case("⭐ an UNCOMMITTED or IGNORED manifest cannot clear a committed line — manifests come from HEAD (backlog #371)",
              (rc, any(m.startswith("WARN scripts/g.py:2:") for m in msgs)), (0, True))
+        subprocess.run(["git", "commit", "-qam", "cover"], cwd=w, check=True, capture_output=True, env=iso)
+        rc, msgs = run_check(w, base, run=iso_run)
+        case("...and once that manifest is COMMITTED, the same line is covered (the control: HEAD's manifests are read)",
+             (rc, any(m.startswith("WARN scripts/g.py:2:") for m in msgs)), (0, False))
+        with tempfile.TemporaryDirectory() as td7:
+            victim = Path(td7)
+            subprocess.run(["git", "init", "-q"], cwd=victim, check=True, capture_output=True, env=iso)
+            before = sorted(p.name for p in (victim / ".git").iterdir())
+            old = os.environ.get("GIT_DIR")
+            os.environ["GIT_DIR"] = str(victim / ".git")
+            try:
+                rc, msgs = run_check(w, base, run=iso_run)
+            finally:
+                if old is None:
+                    os.environ.pop("GIT_DIR", None)
+                else:
+                    os.environ["GIT_DIR"] = old
+            case("⭐ under an exported GIT_DIR naming ANOTHER repo, `root` is still measured and the other is untouched (r1 H1)",
+                 (rc, any(m.startswith("diff coverage: 0 changed decision line(s) no mutation edits, across 1") for m in msgs),
+                  sorted(p.name for p in (victim / ".git").iterdir()) == before), (0, True, True))
     with redirect_stderr(io.StringIO()):
         case("main() over an unknown base exits 2", main(["--base", "no-such-ref-xyz"], root=REPO_ROOT), 2)
     with tempfile.TemporaryDirectory() as td2:  # a world with no git at all: CANNOT RUN, never a clean zero

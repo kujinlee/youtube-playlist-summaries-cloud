@@ -17818,8 +17818,10 @@ The local check that points at changed decision lines no planted fault edits can
 in three cases where it had not really looked: a file with a stray carriage return, a repository with a custom diff
 filter, and an uncommitted change to the planted-fault lists.
 <!--tech-->
-Branch `diff-coverage-zeros` (backlog #371, from PR #411 round 4). `scripts/check-diff-coverage.py`: `git show` read as
-bytes (no universal-newline translation, so a lone CR is NOT CHECKED); `--no-textconv` on the diff (measured: a textconv
-driver emptied a 4-line diff) and, as a pin, on `show`; a dirty `scripts/mutations/` is CANNOT RUN. Each is a case over a
-real repository, not a fake `run`. 52 cases; 30 mutations, each killed by its named case.
+Branch `diff-coverage-zeros` (backlog #371, PR #415, from PR #411 round 4). `scripts/check-diff-coverage.py`: every git
+call read as bytes (no universal-newline translation — a lone CR is NOT CHECKED and cannot split the diff); `--no-textconv`
+on the diff (measured: a textconv driver emptied a 4-line diff); manifests read from HEAD's object store, like the sources.
+⟳ r1 (both halves): a `git status` check missed five working-tree states, each a clean zero — replaced. Also found: a
+2026-09-14 fixture had written a fake identity into the live `.git/config` (355 commits as `t`) — repaired, class filed as
+backlog #373. 56 cases; 30 mutations, each killed by its named case.
 
