@@ -92,8 +92,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "            if t and t not in out:",
-        "            if t:"
+        "            if t not in out:\n                out.append(t)\n        return out, empty",
+        "            if True:\n                out.append(t)\n        return out, empty"
       ]
     ],
     "expect": "two spellings of one tag in one cell are ONE tag, not two"
