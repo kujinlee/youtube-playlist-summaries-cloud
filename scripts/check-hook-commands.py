@@ -27,10 +27,12 @@ WHAT WOULD MAKE THIS FAIL (its falsifier): a hook command in a second shape, a r
 does not exist, or a hook file nobody registers or explains.
 
 ⚠ BOUND: only the TRACKED `.claude/settings.json` is read; `settings.local.json` is per-machine.
-⚠ NOT CHECKED (PR #409 round 4, filed as backlog #365): a hook entry with no `type` or an unknown one
-  (`{}`, `"commmand"`) is skipped, not refused; an `UNREGISTERED` entry with an EMPTY reason is accepted.
+⟳ backlog #365 (from PR #409 round 4): a hook entry with no `type`, or one this guard does not know
+  (`{}`, `"commmand"`), is now Malformed → CANNOT RUN instead of skipped; an `UNREGISTERED` entry with an
+  empty or whitespace reason is refused. A type Claude Code adds later fails LOUDLY here until it is named
+  in KNOWN_TYPES, which is the safe direction.
 
-    python3 scripts/check-hook-commands.py --self-test  # 22 cases
+    python3 scripts/check-hook-commands.py --self-test  # 25 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -47,6 +49,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SETTINGS_REL = ".claude/settings.json"
 HOOKS_REL = ".claude/hooks"
+KNOWN_TYPES = frozenset({"command", "prompt"})  # hook types this guard knows; anything else is CANNOT RUN
 CANONICAL = re.compile(r"bash \.claude/hooks/([A-Za-z0-9_][A-Za-z0-9._-]*\.sh)")
 
 # Hook files that are deliberately NOT registered, each with its reason. A file not here and not
@@ -77,6 +80,9 @@ def hook_commands(settings: dict) -> list[tuple[str, str]]:
             for h in inner:
                 if not isinstance(h, dict):
                     raise Malformed(f"a `hooks.{event}` hook is not an object")
+                if h.get("type") not in KNOWN_TYPES:
+                    raise Malformed(f"a `hooks.{event}` hook has type {h.get('type')!r}, which this guard does not "
+                                    f"know (known: {sorted(KNOWN_TYPES)})")
                 if h.get("type") == "command":
                     cmd = h.get("command")
                     if not isinstance(cmd, str):
@@ -101,6 +107,8 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
         if f.endswith(".sh") and f not in unregistered:
             out.append(f"{HOOKS_REL}/{f} is registered by no command and has no UNREGISTERED reason — a gate with no caller")
     for f in sorted(unregistered):
+        if not str(unregistered[f]).strip():
+            out.append(f"UNREGISTERED lists {f} with an EMPTY reason — an exemption must say why")
         if f in registered:
             out.append(f"UNREGISTERED lists {f}, which IS registered — stale entry")
         elif f not in on_disk:
@@ -162,6 +170,8 @@ def self_test() -> int:
         ("a non-.sh file in the hooks directory is not a hook", problems(cmds(good), disk | {"README.md"}, reg), 0),
         ("a stale UNREGISTERED entry — the file is registered — is refused",
          problems(cmds(good), disk, {**reg, "x.sh": "why"}), 1),
+        ("⭐ an UNREGISTERED entry with an EMPTY reason is refused (backlog #365)",
+         problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": "  "}), 1),
         ("a stale UNREGISTERED entry — no such file — is refused",
          problems(cmds(good), disk, {**reg, "q.sh": "why"}), 1),
     ]
@@ -196,8 +206,9 @@ def self_test() -> int:
         (root / HOOKS_REL / "extra.sh").unlink()
         alt = t / "alt-settings.json"  # the settings PATH is read as given, not rebuilt from root
         alt.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "sh -c x"}]}]}}))
-        more.append(("the settings file is the PATH given — a divergent file elsewhere is refused",
-                     check(alt, root, {})[0], 1))
+        alt_rc, alt_msgs = check(alt, root, {})
+        more.append(("the settings file is the PATH given — a divergent file elsewhere is refused FOR ITS SHAPE",
+                     (alt_rc, any("is not the one registration form" in m for m in alt_msgs)), (1, True)))
         empty = t / "empty-root"
         empty.mkdir()
         more.append(("the same good settings judged against a ROOT with no hooks are refused", check(p, empty, {})[0], 1))
@@ -205,7 +216,16 @@ def self_test() -> int:
         p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "sh -c 'bash .claude/hooks/x.sh'"}]}]}}))
         # ⚠ unregistered={} on purpose: with the default registry this world ALSO has a stale entry, and
         # the case would exit 1 with the divergent command removed (r3 CLAUDE F4).
-        more.append(("⭐ main() over a divergent registration exits 1", main([], root=root, unregistered={}), 1))
+        import io
+        from contextlib import redirect_stderr
+        with redirect_stderr(io.StringIO()) as err:
+            rc = main([], root=root, unregistered={})
+        more.append(("⭐ main() over a divergent registration exits 1 and NAMES the shape",
+                     (rc, "is not the one registration form" in err.getvalue()), (1, True)))
+        for bad in ({}, {"type": "commmand", "command": "bash .claude/hooks/x.sh"}):
+            p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}, bad]}]}}))
+            more.append((f"⭐ a hook entry with type {bad.get('type')!r} is CANNOT RUN, not skipped (backlog #365)",
+                         check(p, root, {})[0], 2))
         more.append(("main() over a world with no settings file exits 2 (CANNOT RUN)", main([], root=t / "none"), 2))
     for name, got, want in more:
         ok = got == want

@@ -17749,3 +17749,14 @@ after r1 (project dir ran main's hooks from a worktree), r2 (git discovery steer
 pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review comes first.
 ⟳ r4 (Codex, last — DEFER): `.claude/` byte-identical to master confirmed; the guard skips an entry with no or an unknown
 `type` and accepts an empty UNREGISTERED reason — filed as backlog #365 and stated in the guard's docstring.
+
+
+## 2026-10-26
+The check that every hook is registered one way now also refuses a hook entry it does not recognise and an
+exemption with no reason written down, instead of quietly letting both through.
+<!--tech-->
+Branch `hook-guard-gaps` (backlog #365, from PR #409 round 4). `check-hook-commands.py`: an entry with no `type` or one
+outside `KNOWN_TYPES` (`command`, `prompt`) is Malformed → CANNOT RUN; an empty or whitespace `UNREGISTERED` reason is
+refused; the alternate-path and `main()` divergence cases assert the shape diagnostic (they passed on a second
+violation before). Known positive: `{}`, `"commmand"` and an empty reason exited 0 before, 2/2/1 now. 25 cases; 14 mutations.
+
