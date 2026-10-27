@@ -31,11 +31,11 @@ does not exist, or a hook file nobody registers or explains.
   outside KNOWN_TYPES (the five in Claude Code 2.1.309's schema) is Malformed → CANNOT RUN instead of skipped;
   an `UNREGISTERED` reason must be a non-empty STRING. A type Claude Code ships AFTER 2.1.309 fails loudly
   here until it is named, which is the safe direction.
-⚠ NOT CHECKED (backlog #368): a command hook with an `args` field (Claude Code 2.1.309's runner code spawns
-  `command` as one executable with no shell — read, not run end to end), or with a non-default `shell`, which
-  changes which shell runs the command (its outcome here is not verified).
+⟳ backlog #368: a command hook carrying `args` (Claude Code 2.1.309's runner code spawns `command` as ONE
+  executable with no shell — read, not run end to end) or `shell` (it changes which shell runs the command) is
+  REFUSED: either way it is not run the way the one registration shape assumes.
 
-    python3 scripts/check-hook-commands.py --self-test  # 29 cases
+    python3 scripts/check-hook-commands.py --self-test  # 33 cases
 
 EXIT CODES (repo convention): 0 = every hook canonical and registered · 1 = a violation ·
 2 = CANNOT RUN (never a pass).
@@ -121,6 +121,25 @@ def problems(commands: list[tuple[str, str]], on_disk: set[str], unregistered: d
     return out
 
 
+EXECUTION_OVERRIDES = ("args", "shell")
+
+
+def execution_overrides(settings: dict) -> list[str]:
+    """The rule, pure: a command hook carrying a field that changes HOW its command runs (backlog #368).
+    Call only after `hook_commands` has accepted the structure."""
+    out = []
+    for event, groups in settings.get("hooks", {}).items():
+        for g in groups:
+            for h in g.get("hooks", []):
+                if h.get("type") != "command":
+                    continue
+                for key in EXECUTION_OVERRIDES:
+                    if key in h:
+                        out.append(f"{event}: {h.get('command')!r} carries `{key}`, which changes how the command runs — "
+                                   "the one registration shape assumes a plain shell command")
+    return out
+
+
 def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -> tuple[int, list[str]]:
     """Return (exit_code, messages). Anything that stops the rule being applied is CANNOT RUN."""
     try:
@@ -139,7 +158,7 @@ def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -
         return 2, [f"CANNOT RUN — {path} registers ZERO hook commands. Treat this as NOT RUN."]
     hooks_dir = root / HOOKS_REL
     on_disk = {p.name for p in hooks_dir.iterdir() if p.is_file()} if hooks_dir.is_dir() else set()
-    found = problems(commands, on_disk, unregistered)
+    found = problems(commands, on_disk, unregistered) + execution_overrides(settings)
     return (1 if found else 0), found or [f"{len(commands)} hook command(s), every one canonical and present"]
 
 
@@ -179,6 +198,12 @@ def self_test() -> int:
          problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": "  "}), 1),
         ("⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason",
          problems(cmds(good), disk | {"z.sh"}, {**reg, "z.sh": None}), 1),
+        ("a plain command hook carries no execution override",
+         execution_overrides({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}]}]}}), 0),
+        ("⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)",
+         execution_overrides({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, "args": []},
+                                                            {"type": "command", "command": good, "shell": "bash"},
+                                                            {"type": "prompt", "args": [], "shell": "x"}]}]}}), 2),
         ("a stale UNREGISTERED entry — no such file — is refused",
          problems(cmds(good), disk, {**reg, "q.sh": "why"}), 1),
     ]
@@ -235,6 +260,11 @@ def self_test() -> int:
                          check(p, root, {})[0], 2))
         # ⚠ An INDEPENDENT copy of the schema's types, not derived from KNOWN_TYPES: derived, a dropped type
         # vanished from this list too and the case stayed green (the r1 fold's own first attempt).
+        for key, val in (("args", []), ("shell", "powershell")):
+            p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good, key: val}]}]}}))
+            rc_, msgs_ = check(p, root, {})
+            more.append((f"⭐ a command hook carrying `{key}` is REFUSED — it would not run as a plain shell command (backlog #368)",
+                         (rc_, any(f"carries `{key}`" in m for m in msgs_)), (1, True)))
         others = [{"type": k} for k in ("prompt", "agent", "http", "mcp_tool")]
         p.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": good}] + others}]}}))
         more.append(("⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)",

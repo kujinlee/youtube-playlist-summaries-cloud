@@ -17796,3 +17796,14 @@ tracebacks; r2 a text-alignment rule that let an insertion "cover" its neighbour
 and volume hit 420/PR — CI delivery and deleted lines split out as backlog #370. 45 cases; 24 mutations.
 ⟳ r4 (Codex, DEFER): three clean zeros remain — a lone CR translated before the check, a textconv driver, working-tree
 manifests — filed as backlog #371, not folded; the loop stops.
+
+
+## 2026-10-27
+The check that every hook is registered one way now also refuses two settings that would make a hook run
+differently from how the rest assume: a list of arguments, and a choice of shell.
+<!--tech-->
+Branch `hook-args-shell` (backlog #368, from PR #412 round 1). `check-hook-commands.py`: `execution_overrides(settings)`
+refuses a `type: command` hook carrying `args` (Claude Code 2.1.309 then spawns `command` as one executable, no shell)
+or `shell`; non-command hooks are untouched. Falsifier: `"args": []` and `"shell": "powershell"` each exit 1. 33 cases;
+19 mutations (3 new), each killed by its named case. The live check still passes over today's 14 commands.
+
