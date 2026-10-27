@@ -39,9 +39,10 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
 ⚠ BOUNDS. Registered by the repo's one relative hook shape (`check-hook-commands.py`), so after a
 compaction in a session whose cwd is a subdirectory it does not launch (backlog #364).
 ⚠ KNOWN DEFECTS, FILED (PR #410 round 4, DEFERRED by the pre-committed route — backlog #369): once the ledger
-grows past MAX_LEDGER (which `--add` can do), the next `--add`/`--done` REPLACES it with only the new entry,
-erasing every recorded job; and a `gh` element missing `statusCheckRollup` reads as `NO CHECKS` rather than
-as unreadable.
+grows past MAX_LEDGER (which `--add` can do), the next `--add` REPLACES it with only the new entry, erasing
+every recorded job, and `--done` writes nothing and reports a RECORDED id as "no such id"; and a `gh` element
+whose `statusCheckRollup` is missing or empty-valued (`null`, `{}`, `""`) reads as `NO CHECKS` rather than as
+unreadable.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE

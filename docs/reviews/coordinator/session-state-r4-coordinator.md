@@ -21,9 +21,10 @@ and 5 context states classified and failing ones named; the real hook timed out 
 marker; a held-open stdin finished in 0.57 s; 100 PRs say MAY BE TRUNCATED; 36/36; 17/17 mutations real.
 
 - **XP1 (High, fold-induced, FILED as backlog #369):** the r3 size cap makes an oversized ledger read as nothing, so the
-  next successful `--add`/`--done` atomically replaces it with only the new entry — two recorded jobs erased, exit 0
-  throughout, and the block then read "none RECORDED".
-- **XP2 (Medium, FILED as backlog #369):** a `gh` element missing `statusCheckRollup` (or `{}`) reads as `NO CHECKS`,
+  next successful `--add` atomically replaces it with only the new entry — two recorded jobs erased, exit 0
+  throughout, and the block then read "none RECORDED". (⟳ r5: `--done` does NOT replace it; it writes nothing and
+  reports a recorded id as "no such id".)
+- **XP2 (Medium, FILED as backlog #369):** a `gh` element whose `statusCheckRollup` is missing or empty-valued reads as `NO CHECKS`,
   an affirmative claim; shown by fault injection, not observed from the real `gh`.
 - **XL3 (fixed, prose):** the PR body still promised a STALE flag for a fetch the split removed, and the ledger and
   every-session claims were unqualified; the script's docstring said "nothing is ever dropped".
