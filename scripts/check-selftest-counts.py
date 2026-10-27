@@ -89,6 +89,8 @@ POPULATION: frozenset[str] = frozenset({
     "check-main-drivable.py",
     # ⟳ 2026-10-26 (backlog #251): pinned in the commit that creates it.
     "check-diff-coverage.py",
+    # ⟳ 2026-10-26 (backlog #362): pinned in the commit that creates it.
+    "session-state.py",
     # ⟳ 2026-10-26 (backlog #223): pinned in the commit that creates it.
     "check-hook-commands.py",
     # ⟳ 2026-10-19: pinned in the commit that creates it, because this guard REFUSED it until

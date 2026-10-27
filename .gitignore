@@ -174,3 +174,8 @@ docs/explainers/.serve.pid
 # ⚠ This stops NEW questions being published. The 81 already in git history remain there; removing
 # those needs a history rewrite of a public repo, which was considered and NOT chosen.
 docs/explainers/questions.md
+
+# backlog #362: the in-flight ledger — one line per running background job, what it is FOR and what to do
+# when it ends. Per-checkout and per-session by nature; `scripts/session-state.py` prints it at session start.
+.claude/inflight.jsonl
+.claude/inflight.jsonl.lock
