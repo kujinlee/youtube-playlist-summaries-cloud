@@ -17702,9 +17702,11 @@ file's name and SHA256 from this run's signed index; the key is a hash of that m
 (no second update, so nothing drifts) and its cap is 13 min on that path, 20 otherwise. ⟳ r2: cache preparation was moved OUT of the install into its own `continue-on-error` step, which rebuilds
 `~/ffmpeg-debs` from scratch with exactly the manifest's files, each re-hashed; the save runs only if all were staged.
 ⟳ r1 (both halves) corrected two false claims of the first version: apt accepts a cached .deb by SIZE, not hash (a forged
-package installed, in a container), and a failing cache step could skip the install — now all three are
+package installed, in a container), and a failing cache step could skip the install — now every cache step is
 `continue-on-error` and bounded. Measured in CI: a miss saved 81 files; the next run restored 81, `Need to get 0 B`.
 Measured in an ubuntu:26.04 container: 194 files listed with SHA256, a forged same-size file rejected and re-downloaded.
-⟳ r3: cache work left the install step entirely (a stalled copy could hold it to its cap), and the budget is now a sum
-of STEP CAPS per path — 28.3 (uncached) / 27.3 (cached) / 21.3 of 30 min. Container: a forced copy failure still reached the install; staging after a
+⟳ r3: cache work left the install step entirely (a stalled copy could hold it to its cap). ⟳ r4 (Codex, NOT CONVERGED, filed
+as backlog #360): the "28.3 / 27.3 / 21.3 by STEP CAPS" figures were FALSE — they added the measured runtime of the 77 steps
+that have NO cap. The explicit caps per path are 23 (index not reused) / 16 (reused, no key) / 19 (cache hit) / 21 (miss,
+then stage and save), each plus R, the uncapped remainder; only the job's 30-min limit bounds R, exactly as on master. Container: a forced copy failure still reached the install; staging after a
 partial restore kept 194 of 194 manifest files and no extra.
