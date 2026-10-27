@@ -17705,4 +17705,7 @@ Filed backlog #360: `verify` has 78 steps on master and one step cap, so its bud
 round 4 refuted my per-path "step caps" figures, which had added the uncapped steps' measured runtime.
 Filed at the owner's request: backlog #361 (tell compaction what must survive; falsified by one `/compact`) and backlog #362
 (derive a handoff's in-flight state from git and `gh` when it is read — the hand-written one missed PR #407's conflict).
+New `/goal-tree` command: prints every work thread under the request it serves — tagged fix, blocker,
+bookkeeping or side question, named by backlog row, PR state read live. Filed backlog #363 to have the work-lines
+page draw that tree from recorded data instead.
 Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.
