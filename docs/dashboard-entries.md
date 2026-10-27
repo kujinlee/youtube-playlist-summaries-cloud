@@ -17658,6 +17658,38 @@ three anchors re-bound.
 
 
 ## 2026-10-26
+When a test's hook into the code goes stale because someone edited the line it points at, the mutation
+check now says so in under a second, before it starts, instead of a quarter of an hour into a CI run.
+Today alone this happened three times.
+<!--tech-->
+Branch `anchor-precheck` (backlog #252, anchor half). `check-plan-code.anchor_problems(muts, read)` —
+pure; the run's own rules (exactly one occurrence, edits applied in order) — runs in `mutate_delivered`'s
+pre-flight beside the count and home-escape checks. 2,121 anchors in ~0.5s at `778f0169`. Two self-test
+worlds that broke their own suite now keep the anchor bound; the total-shortfall world reaches the late
+path with the pre-check stood down, and a sibling case asserts the pre-check catches it first. 246 cases;
+4 mutations (2105 -> 2109), each turning its named case red on a copy (the wiring mutant also reddens the other two pre-check cases, which depend on that wiring); the 137-entry sweep is CI's.
+r1: Codex CONVERGED (differential probes against `run_mutations` agreed everywhere); Claude CONVERGED with
+three Lows — the `--only` claim now has its case and mutation, and backlog #252 stays 🟠, PARTLY (the `expect` half).
+r2 (Codex): that new entry REPEATED the wiring entry's anchor, which the loader refuses — re-anchored; and
+`check-fixture-variation` wanted `read` varied — a case with a reader that cannot read.
+
+
+## 2026-10-26
+The tool that tells the stop-guard a multi-step job is in progress used to accept being started from a
+side copy of the project, where the guard never looks, and say it had worked. It now refuses there and
+prints the exact command to run instead. Separately, the CI install of a video tool hangs on about a
+third of today's runs; that is recorded with its measurements, for a fix of its own.
+<!--tech-->
+Branch `begin-plan-worktree` (backlog #301). `begin-plan.linked_worktree_main(root)` reads `ROOT/.git` — a
+directory is the main checkout; a FILE `gitdir: <common>/worktrees/<n>` is linked, even if its target moved — and
+gates every state command in `main()` before any read or write; `--self-test` is exempt. ⟳ r1 (both halves): the
+first version asked `git`, which an old git, `GIT_DIR` and a moved main checkout all defeated; the printed command
+is now `shlex.join`ed; every state command (`--plan` included) is witnessed. 9 cases over a real repo and a real
+linked worktree (136 total), 6 mutations (2115 -> 2121 after merging master); the suite's state-path `global` moved
+to the top of `_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).
+
+
+## 2026-10-26
 The CI install of a video tool that some tests need now keeps a copy of what it downloaded and reuses it,
 after checking each file against the official package list, so a slow package mirror no longer stalls most runs. On the day this was written the download stalled on
 about a third of runs, and each stall needed a manual re-run before anything could merge.
