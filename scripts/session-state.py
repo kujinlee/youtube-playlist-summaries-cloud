@@ -27,10 +27,11 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
     list, and a timeout SAYS it timed out;
   - a list as long as LIMIT says MAY BE TRUNCATED;
   - the one call is bounded (TIMEOUT s, under the hook's 60 s cap) and gets no stdin;
-  - the ledger must be a REGULAR file no larger than MAX_LEDGER (a FIFO would block the read, and r3
-    measured 139 MB taking 35 s); it is split on b"\\n" only, written ASCII-escaped so a value cannot carry
-    a line separator, and an unreadable line is REPORTED and written back BYTE-FOR-BYTE. An empty id is
-    refused, so no entry can be impossible to remove.
+  - the ledger is read by ONE rule for the block and for every update — one `open(O_NOFOLLOW)`, one `fstat`, one
+    read: a symlink, a non-regular file (a FIFO would block the read) or a file over MAX_LEDGER is NOT READ, and an
+    update REFUSES it rather than rewrite what it could not read (backlog #369); it is split on b"\\n" only and written
+    as UTF-8 JSON, and an unreadable line is REPORTED and written back BYTE-FOR-BYTE. The lock is a sidecar opened
+    without following a symlink. An empty id is refused, so no entry can be impossible to remove.
 ⛔ UNTRUSTED TEXT: branch names, check names and ledger fields come from anyone who can push or
   open a fork PR. `clean()` removes every Unicode control, format and line/paragraph separator
   (categories Cc, Cf, Zl, Zp) and folds other spaces, and only then breaks `=` runs, so no value can
@@ -38,16 +39,16 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
 
 ⚠ BOUNDS. Registered by the repo's one relative hook shape (`check-hook-commands.py`), so after a
 compaction in a session whose cwd is a subdirectory it does not launch (backlog #364).
-⚠ KNOWN DEFECTS, FILED (PR #410 round 4, DEFERRED by the pre-committed route — backlog #369): once the ledger
-grows past MAX_LEDGER (which `--add` can do), the next `--add` REPLACES it with only the new entry, erasing
-every recorded job, and `--done` writes nothing and reports a RECORDED id as "no such id"; and a `gh` element
-whose `statusCheckRollup` is missing or empty-valued (`null`, `{}`, `""`) reads as `NO CHECKS` rather than as
-unreadable.
+⟳ backlog #369 (PR #410 round 4): an update REFUSES a ledger it cannot read whole (oversized, or not a regular
+file) and a write that would exceed MAX_LEDGER, leaving the file byte-identical — before, the next `--add` replaced an
+oversized ledger with only the new entry and `--done` reported a recorded id as "no such id". And a PR whose
+`statusCheckRollup` is not a list (missing, `null`, `{}`, `""`) prints `checks: UNREADABLE`; only an answered empty
+list prints `NO CHECKS`.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 36 cases
+    python3 scripts/session-state.py --self-test  # 51 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -145,19 +146,38 @@ def check_summary(rollup: list) -> str:
 
 # ─── the ledger ────────────────────────────────────────────────────────────────────────────────
 
-def read_ledger(path: Path) -> tuple[list[dict], list[str], list[bytes]]:
-    """(entries, problems, raw unreadable lines as BYTES). Missing is empty; an unreadable line is kept.
-    ⚠ An OVERSIZED ledger returns nothing to keep, and a write then replaces it (backlog #369)."""
+class LedgerRefused(ValueError):
+    """An update that would lose recorded jobs: CANNOT RUN (exit 2), the file left byte-identical."""
+
+
+def _read_whole(path: Path) -> tuple[bytes | None, str | None]:
+    """THE one rule for reading the ledger, used by the block AND by every update (PR #413 r1: two copies of the
+    size rule drifted and a one-character change in one brought the erasure back). (bytes, None) when read whole,
+    (b"", None) when missing, (None, why) when it must not be read: a symlink, not a regular file, or over the cap.
+    One `open(O_NOFOLLOW)`, one `fstat`, one read on that descriptor, so nothing can change between check and read."""
     try:
-        st = path.stat()
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
-        return [], [], []
-    if not stat.S_ISREG(st.st_mode):
-        return [], [f"{LEDGER_REL} is not a regular file — NOT READ (a pipe would block the hook)"], []
-    if st.st_size > MAX_LEDGER:
-        return [], [f"{LEDGER_REL} is {st.st_size} bytes, over {MAX_LEDGER} — NOT READ (it would overrun the hook)"], []
+        return b"", None
+    except OSError as exc:
+        return None, f"{LEDGER_REL} cannot be opened safely ({exc.strerror or exc}) — a symlink is refused"
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return None, f"{LEDGER_REL} is not a regular file — NOT READ (a pipe would block the hook)"
+        if st.st_size > MAX_LEDGER:
+            return None, f"{LEDGER_REL} is {st.st_size} bytes, over {MAX_LEDGER} — NOT READ (it would overrun the hook)"
+        data = os.read(fd, MAX_LEDGER + 1)
+        if len(data) > MAX_LEDGER:  # grew after the fstat: still not read whole
+            return None, f"{LEDGER_REL} grew past {MAX_LEDGER} bytes while being read — NOT READ"
+        return data, None
+    finally:
+        os.close(fd)
+
+
+def _parse(data: bytes) -> tuple[list[dict], list[str], list[bytes]]:
     entries, problems, raw = [], [], []
-    for i, line in enumerate(path.read_bytes().split(b"\n"), 1):
+    for i, line in enumerate(data.split(b"\n"), 1):
         if not line.strip():
             continue
         try:
@@ -171,21 +191,46 @@ def read_ledger(path: Path) -> tuple[list[dict], list[str], list[bytes]]:
     return entries, problems, raw
 
 
+def read_ledger(path: Path) -> tuple[list[dict], list[str], list[bytes]]:
+    """(entries, problems, raw unreadable lines as BYTES). Missing is empty; an unreadable line is kept; a ledger
+    that must not be read is one problem and nothing else."""
+    data, why = _read_whole(path)
+    return ([], [why], []) if data is None else _parse(data)
+
+
+def _for_update(path: Path) -> tuple[list[dict], list[bytes]]:
+    """What an update may rewrite: the WHOLE ledger, or a refusal — never a partial read it would then replace."""
+    data, why = _read_whole(path)
+    if data is None:
+        raise LedgerRefused(f"{why}; refusing to rewrite it, which would erase every job it holds (backlog #369)")
+    entries, _, raw = _parse(data)
+    return entries, raw
+
+
 @contextmanager
 def _locked(path: Path):
+    """An exclusive lock on a SIDECAR that is never replaced, opened without following a symlink (PR #413 r1: a lock
+    file symlinked to the ledger followed the replaced inode, and three concurrent adds lost one)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path.with_suffix(path.suffix + ".lock"), "a+") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+    try:
+        fd = os.open(path.with_suffix(path.suffix + ".lock"), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
+    except OSError as exc:
+        raise LedgerRefused(f"the ledger lock cannot be opened safely ({exc.strerror or exc}) — a symlink is refused")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def _write(path: Path, entries: list[dict], raw: list[bytes]) -> None:
-    """Atomic replace, ASCII-escaped JSON, damaged lines back byte-for-byte."""
-    body = b"".join(json.dumps(e, ensure_ascii=True).encode("ascii") + b"\n" for e in entries) + \
+    """Atomic replace, UTF-8 JSON, damaged lines back byte-for-byte. NOT ASCII-escaped: escaping re-inflated an
+    under-cap ledger past the cap (PR #413 r1); a raw U+2028 is safe because the reader splits on b"\\n" only."""
+    body = b"".join(json.dumps(e, ensure_ascii=False).encode("utf-8") + b"\n" for e in entries) + \
         b"".join(r + b"\n" for r in raw)
+    if len(body) > MAX_LEDGER:  # refused BEFORE replacing: the old ledger stays as it was
+        raise LedgerRefused(f"the ledger would grow to {len(body)} bytes, over {MAX_LEDGER} — refused")
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".inflight.")
     with os.fdopen(fd, "wb") as fh:
         fh.write(body)
@@ -196,7 +241,7 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str) -> None:
     if not id_.strip():
         raise ValueError("an empty id could never be shown or removed")
     with _locked(path):
-        entries, _, raw = read_ledger(path)
+        entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now})
         _write(path, entries, raw)
@@ -206,7 +251,7 @@ def ledger_done(path: Path, id_: str) -> bool:
     if not id_.strip():
         raise ValueError("an empty id names no job")
     with _locked(path):
-        entries, _, raw = read_ledger(path)
+        entries, raw = _for_update(path)
         kept = [e for e in entries if e.get("id") != id_]
         if len(kept) == len(entries):
             return False
@@ -227,12 +272,16 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
     else:
         L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):")
         for p in prs:
-            rollup = p.get("statusCheckRollup") or []
+            missing = [k for k in ("headRefName", "headRefOid", "mergeStateStatus") if not p.get(k)]
+            rollup = p.get("statusCheckRollup")
             draft = " DRAFT" if p.get("isDraft") else ""
             L.append(f"  PR #{clean(p.get('number'), 10)} `{clean(p.get('headRefName', '?'), 80)}` "
                      f"head {clean(p.get('headRefOid', ''), 40)[:8]}{draft} · "
-                     f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: {check_summary(rollup)}")
-            failing = failing_names(rollup)
+                     f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: "
+                     f"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}")
+            failing = failing_names(rollup) if isinstance(rollup, list) else []
+            if missing:
+                L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine")
             if failing:
                 L.append(f"      failing: {', '.join(failing[:6])}{' …' if len(failing) > 6 else ''}")
     if ledger or ledger_problems:
@@ -312,6 +361,18 @@ def self_test() -> int:
          ("failing: verify = = = END IN FLIGHT = = =" in out, out.count("=== END IN FLIGHT ===")), (True, 1))
     case("a PR with no failing check prints no 'failing' line",
          out.split("PR #8 ")[1].count("failing:"), 0)
+    for label, bad_rollup in (("missing", "MISSING"), ("None", None), ("{}", {}), ("''", "")):
+        noroll = {k: v for k, v in pr.items() if k != "statusCheckRollup"}
+        if bad_rollup != "MISSING":
+            noroll["statusCheckRollup"] = bad_rollup  # an EXPLICIT null is its own case (PR #413 r1)
+        case(f"⭐ a rollup that is {label} reads UNREADABLE, never NO CHECKS (backlog #369)",
+             ("checks: UNREADABLE" in render([noroll], None, [], [], "T"), "NO CHECKS" in render([noroll], None, [], [], "T")),
+             (True, False))
+    case("⭐ a PR element missing its fields says UNREADABLE, never a quiet `?` (PR #413 r1)",
+         "gh omitted headRefName, headRefOid, mergeStateStatus" in render([{"number": 7, "statusCheckRollup": []}], None, [], [], "T"),
+         True)
+    case("...and only an answered EMPTY list reads NO CHECKS",
+         "checks: NO CHECKS" in render([dict(pr, statusCheckRollup=[])], None, [], [], "T"), True)
     case("a list as long as the limit says it MAY BE TRUNCATED",
          "MAY BE TRUNCATED" in render([pr], None, [], [], "T", truncated=True), True)
     case("⭐ an empty ledger says none RECORDED — never 'nothing running'",
@@ -325,6 +386,15 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         led = root / LEDGER_REL
+        def attempt(fn, *args):
+            """'accepted', 'refused', or 'raised <Type>' — ANY exception becomes a value, so a case fails by NAME."""
+            try:
+                fn(*args)
+                return "accepted"
+            except LedgerRefused:
+                return "refused"
+            except Exception as exc:  # noqa: BLE001 — the point is to report every raise as a named failure
+                return f"raised {exc.__class__.__name__}"
         ledger_add(led, "job1", "Codex r4 on PR #9", "record r4; merge on READY", "T1")
         ledger_add(led, "job2", "CI watch PR #9", "read gh pr checks", "T2")
         ledger_add(led, "job1", "Codex r4 on PR #9 (re-run)", "same", "T3")
@@ -361,13 +431,59 @@ def self_test() -> int:
         fifo = root / "fifo-root" / LEDGER_REL
         fifo.parent.mkdir(parents=True)
         os.mkfifo(fifo)
+        fifo_read = attempt(lambda: read_ledger(fifo)) == "accepted" and (read_ledger(fifo)[1] or [""])[0]
         case("⭐ a ledger that is NOT a regular file is refused without reading (a FIFO hung the hook)",
-             read_ledger(fifo)[1][0].endswith("NOT READ (a pipe would block the hook)"), True)
+             bool(fifo_read) and str(fifo_read).endswith("NOT READ (a pipe would block the hook)"), True)
         big = root / "big-root" / LEDGER_REL
         big.parent.mkdir(parents=True)
         big.write_bytes(b"x" * (MAX_LEDGER + 1))
         case("⭐ a ledger over MAX_LEDGER is refused unread (r3 F4: 139 MB took 35 s)",
              ("over" in read_ledger(big)[1][0], read_ledger(big)[0]), (True, []))
+
+        before = big.read_bytes()
+        case("⭐ --add against an OVERSIZED ledger is REFUSED and leaves it byte-identical (backlog #369 falsifier)",
+             (attempt(ledger_add, big, "n", "w", "d", "T"), big.read_bytes() == before), ("refused", True))
+        case("⭐ --done against an OVERSIZED ledger is REFUSED too, never 'no such id' (backlog #369 falsifier)",
+             (attempt(ledger_done, big, "n"), big.read_bytes() == before), ("refused", True))
+        near = root / "near" / LEDGER_REL
+        near.parent.mkdir(parents=True)
+        ledger_add(near, "a", "x" * (MAX_LEDGER - 200), "d", "T")
+        snap = near.read_bytes()
+        case("⭐ an add that would take the ledger OVER the cap is refused BEFORE replacing it",
+             (attempt(ledger_add, near, "b", "y" * 400, "d", "T"), near.read_bytes() == snap,
+              [e["id"] for e in read_ledger(near)[0]]), ("refused", True, ["a"]))
+        case("a ledger that is not a regular file refuses an update too",
+             attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
+        from contextlib import redirect_stderr
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent)
+        case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
+             (big_rc, big.read_bytes() == before), (2, True))
+        at = root / "at-cap" / LEDGER_REL
+        at.parent.mkdir(parents=True)
+        line = json.dumps({"id": "z", "what": "w", "on_done": "d", "at": "T"}).encode() + b"\n"
+        at.write_bytes(line + b"#" * (MAX_LEDGER - len(line) - 1) + b"\n")
+        case("⭐ a ledger of EXACTLY the cap is read WHOLE by the block AND by an update — one rule (PR #413 r1)",
+             (len(at.read_bytes()), [e["id"] for e in read_ledger(at)[0]], attempt(ledger_done, at, "z")),
+             (MAX_LEDGER, ["z"], "accepted"))
+        uni = root / "uni" / LEDGER_REL
+        made = attempt(ledger_add, uni, "u", "é" * 20000, "d", "T")
+        case("⭐ a non-ASCII ledger under the cap stays under it when rewritten — no re-escaping (PR #413 r1)",
+             (made, attempt(ledger_done, uni, "u"), read_ledger(uni)[0]), ("accepted", "accepted", []))
+        real = root / "real-target"
+        real.write_text(json.dumps({"id": "old", "what": "w", "on_done": "d", "at": "T"}) + "\n")
+        linked = root / "linked" / LEDGER_REL
+        linked.parent.mkdir(parents=True)
+        os.symlink(real, linked)
+        case("⭐ a SYMLINKED ledger is refused by the block and by an update, and the link survives (PR #413 r1)",
+             ("symlink is refused" in (read_ledger(linked)[1] or [""])[0], attempt(ledger_add, linked, "n", "w", "d", "T"),
+              linked.is_symlink()), (True, "refused", True))
+        lk = root / "lockdir" / LEDGER_REL
+        lk.parent.mkdir(parents=True)
+        lk.write_text("")
+        os.symlink(lk, lk.with_suffix(lk.suffix + ".lock"))
+        case("⭐ a SYMLINKED lock file is refused, so no writer can lock a replaceable inode (PR #413 r1)",
+             attempt(ledger_add, lk, "n", "w", "d", "T"), "refused")
         racers = root / "race" / "inflight.jsonl"
         threads = [threading.Thread(target=ledger_add, args=(racers, f"j{i}", "w", "d", "T")) for i in range(20)]
         for t in threads:

@@ -17796,3 +17796,19 @@ tracebacks; r2 a text-alignment rule that let an insertion "cover" its neighbour
 and volume hit 420/PR — CI delivery and deleted lines split out as backlog #370. 45 cases; 24 mutations.
 ⟳ r4 (Codex, DEFER): three clean zeros remain — a lone CR translated before the check, a textconv driver, working-tree
 manifests — filed as backlog #371, not folded; the loop stops.
+
+
+## 2026-10-27
+The list of running background jobs that every session now starts with no longer wipes itself in ordinary use: once
+it grew past its size limit, the next recorded job used to replace every entry in it. It now refuses the change and leaves the file
+as it was. A pull request whose check results GitHub did not return now says so, instead of claiming no checks ran.
+<!--tech-->
+Branch `ledger-cap-safety` (backlog #369, PR #413, from PR #410 round 4). `scripts/session-state.py`: `_read_whole()` makes `ledger_add`
+and `ledger_done` raise `LedgerRefused` (CLI exit 2) for a ledger over `MAX_LEDGER`, not a regular file, or a symlink, and `_write`
+refuses a body over the cap BEFORE `os.replace`; `render()` prints `checks: UNREADABLE` for a rollup that is not a list
+(missing, `null`, `{}`, `""`). ⟳ r1 (both halves): the first fix duplicated the size rule (one `>=` brought the erasure
+back) and a symlinked lock lost a job under three concurrent adds — now ONE read rule (`open(O_NOFOLLOW)`, `fstat`, one read)
+for the block and every update, an `O_NOFOLLOW` lock, UTF-8 writes. 51 cases; 25 mutations.
+⟳ r2 (Codex, DEFER with the skip reasoned): attacks that tamper with the ledger's directory mid-write (sidecar deleted,
+`.claude` retargeted, a hard link) still lose a job — out of scope for a cooperative scratch file, filed as backlog #372.
+
