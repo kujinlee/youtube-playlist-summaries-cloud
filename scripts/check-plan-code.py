@@ -1064,7 +1064,8 @@ EXPECTED_MUTATIONS = {
     # width only (Codex X1, a `Bundel` header that emptied every row's tags).
     # ⟳ 2026-10-27, backlog #381 r4 — 18 -> 20: the block-header check dropped, and any non-`#`
     # header accepted as a legend (Codex X1, a `| No |` table whose row master's gate saw).
-    "scripts/gen-backlog-page.py": 20,
+    # ⟳ 2026-10-27, backlog #381 DEFER probes — 20 -> 21: an empty tag group dropped in silence.
+    "scripts/gen-backlog-page.py": 21,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -6094,7 +6095,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2331)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2332)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

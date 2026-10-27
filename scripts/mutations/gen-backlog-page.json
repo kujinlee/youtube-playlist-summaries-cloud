@@ -218,5 +218,16 @@
       ]
     ],
     "expect": "a table headed `| No |` REFUSES — the r4 probe"
+  },
+  {
+    "name": "an empty tag group `()` is dropped in silence again, so master's gate is red and this one green",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                empty = True\n                continue",
+        "                continue"
+      ]
+    ],
+    "expect": "an EMPTY group is MALFORMED, and the cell's other tags survive it"
   }
 ]

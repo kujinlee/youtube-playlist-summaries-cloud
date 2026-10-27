@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 185 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 186 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1263,11 +1263,21 @@ def cell_tags(raw: str) -> tuple[list[str], bool]:
         return [], False
     if TAG_CELL.match(s):
         out: list[str] = []
+        empty = False
         for g in TAG_GROUP.findall(s):
-            t = "" if g.strip() in TAG_SENTINELS else normalise_tag(g)
-            if t and t not in out:
+            if g.strip() and g.strip() in TAG_SENTINELS:
+                continue                    # `(—)`: a group that says "no tag", by design
+            t = normalise_tag(g)
+            if not t:
+                # ⛔ AN EMPTY GROUP IS MALFORMED, not silently nothing (backlog #381, the DEFER
+                # termination probes): `()`, `( )` or `( / )` names no tag and no sentinel. Dropping
+                # it in silence made master's gate red (it read `()` as an area no node claims) and
+                # this one green. The other groups' tags are still returned.
+                empty = True
+                continue
+            if t not in out:
                 out.append(t)
-        return out, False
+        return out, empty
     legacy = s.strip("()").strip()
     t = "" if legacy in TAG_SENTINELS else normalise_tag(legacy)
     return ([t] if t else []), True
@@ -3173,6 +3183,10 @@ def _self_test_body() -> int:
          and normalise_tag("(cloud / money)") == normalise_tag("cloud/money") == "cloud / money")
     case("two spellings of one tag in one cell are ONE tag, not two",
          lambda: cell_tags("(cloud/money) (cloud / money)") == (["cloud / money"], False))
+    case("an EMPTY group is MALFORMED, and the cell's other tags survive it",
+         lambda: (cell_tags("()"), cell_tags("( )"), cell_tags("( / )"), cell_tags("(tooling) ()"))
+         == (([], True), ([], True), ([], True), (["tooling"], True))
+         and malformed_tag_errors([{"num": 6, "bundle": "()"}]) != [])
     case("a sentinel inside parentheses is still no tag",
          lambda: cell_tags("(—)") == ([], False) and bundle_tags("()") == ["untagged"])
     # ⛔ THE MALFORMED RULE: read as ONE tag by the pre-#381 rule and FLAGGED — never dropped.

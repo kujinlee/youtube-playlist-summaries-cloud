@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 48 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 49 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -431,6 +431,9 @@ expected-because: standard for a hosted multi-tenant service.
     check("a malformed cell is REPORTED with its row, and its one guessed tag is still in use",
           (_mal[0], len(_mal[1]), "row 2" in " ".join(_mal[1]) and "'cloud'" in " ".join(_mal[1])),
           ({"cloud"}, 1, True))
+    _empty = backlog_areas(_bl("| 6 | x | f | S | () | open |"))
+    check("an EMPTY tag group `()` FAILS the gate, naming its row",
+          (len(_empty[1]), "row 6" in " ".join(_empty[1])), (1, True))
     _pipe = backlog_areas(_bl(r"| 3 | x | f | S | (a \| b) (tooling) | open |"))
     check("a `|` inside a tag group is MALFORMED here too, and named by its row",
           (len(_pipe[1]), "row 3" in " ".join(_pipe[1])), (1, True))
