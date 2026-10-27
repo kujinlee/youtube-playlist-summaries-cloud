@@ -17890,3 +17890,19 @@ worlds asserting exit code and the file that ran, the hook's stdout/stderr/exit 
 mutants each killed by its named world, 72 cases, 12 mutations. The live falsifier was RUN (backlog #364 row): branch blocks, master's control lets it through.
 ⟳ r2 (Codex, SPLIT): the shell's startup environment (`BASH_ENV` and kin) is a trusted input, stated as limit L8 —
 hardening it for every hook is backlog #379.
+
+## 2026-10-27
+The self-tests that build a throwaway git repository can no longer write into a real one. On master, when a variable
+pointing git at another repository was set (as a git hook sets it), four of them committed into that repository; now
+all of them work only in their own temporary folder, and a new check refuses any new test that builds a repository
+without the same protection.
+<!--tech-->
+Backlog #373, branch `fixture-git-isolation`. New `scripts/fixture_git.py`: `env(**extra)`, built at call time from an
+allow-list (no `GIT_*`), with `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0` (14 cases, 6
+mutations). Migrated eight fixtures — the row's five plus `begin-plan.py`, `check-merge-ready.py`, `gen-work-lines.py`,
+which the guard found. New `scripts/check-fixture-git-isolation.py` in CI (28 cases, 17 mutations): every fixture git
+launch in a repository-building file passes `env=` a call of `fixture_git.env`, or the file is EXEMPT with a reason.
+Falsifier run with `GIT_DIR` exported to a victim under `mktemp -d`: on master four self-tests changed it
+(`check-reference-namespace`, `page_chrome`, `begin-plan`, `check-merge-ready` — the last also wrote `diff.external=true`
+into its config); on the branch all eight leave it byte-identical. Five still go red under `GIT_DIR` because the
+production readers they test inherit it — a read, not a write, left as is.

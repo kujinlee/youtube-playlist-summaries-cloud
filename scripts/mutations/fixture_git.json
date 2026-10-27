@@ -1,0 +1,86 @@
+[
+  {
+    "name": "the environment is the caller's whole environment, GIT_DIR included",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "    return {**{k: os.environ[k] for k in PASSED_ENV if k in os.environ}, **ISOLATION, **extra}",
+        "    return {**os.environ, **ISOLATION, **extra}"
+      ]
+    ],
+    "expect": [
+      "no inherited GIT_* variable reaches the environment",
+      "⭐ ...and the victim GIT_DIR pointed at is byte-identical"
+    ]
+  },
+  {
+    "name": "global git config is not turned off",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "ISOLATION = {\"GIT_CONFIG_GLOBAL\": os.devnull, ",
+        "ISOLATION = {"
+      ]
+    ],
+    "expect": [
+      "⭐ a hostile HOME/.gitconfig and XDG config do not reach git"
+    ]
+  },
+  {
+    "name": "an extra that points git at the host is accepted",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "    if bad:\n        raise ValueError",
+        "    if False:\n        raise ValueError"
+      ]
+    ],
+    "expect": [
+      "an extra that would point git back at the host is refused (GIT_DIR)",
+      "an extra that would point git back at the host is refused (GIT_CONFIG_COUNT)"
+    ]
+  },
+  {
+    "name": "a GIT_CONFIG_* extra is accepted",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        " or k.startswith(\"GIT_CONFIG\"))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "an extra that would point git back at the host is refused (GIT_CONFIG_COUNT)"
+    ]
+  },
+  {
+    "name": "the caller's extras are dropped",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "os.environ}, **ISOLATION, **extra}",
+        "os.environ}, **ISOLATION}"
+      ]
+    ],
+    "expect": [
+      "an extra the caller passes is kept (an author identity)"
+    ]
+  },
+  {
+    "name": "the environment is read once at import, not per call",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "{k: os.environ[k] for k in PASSED_ENV if k in os.environ}",
+        "{k: _SNAP[k] for k in PASSED_ENV if k in _SNAP}"
+      ],
+      [
+        "ISOLATION = {",
+        "_SNAP = dict(os.environ)\nISOLATION = {"
+      ]
+    ],
+    "expect": [
+      "env() reads os.environ at CALL time, not once at import"
+    ]
+  }
+]

@@ -843,16 +843,16 @@ def _self_test() -> int:
     # first order and the "missing checkout" state are all git's, and a fixture would assert my
     # reading of them. HOME is redirected so no user config or hook reaches the temp repo.
     import os as _os, shutil as _shw, subprocess as _spw
-    _genv = {**{k: v for k, v in _os.environ.items() if not k.startswith("GIT_")},
-             "HOME": "", "GIT_CONFIG_NOSYSTEM": "1"}
+    import fixture_git  # backlog #373: one constructed environment, built per call
+    _ghome = {"HOME": ""}
 
     def _git(cwd, *args):
         return _spw.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
                          "-c", "commit.gpgsign=false", "-C", str(cwd), *args],
-                        capture_output=True, text=True, env=_genv, timeout=60)
+                        capture_output=True, text=True, env=fixture_git.env(**_ghome), timeout=60)
 
     with _tf.TemporaryDirectory() as _dw:
-        _genv["HOME"] = _dw
+        _ghome["HOME"] = _dw
         _main = pathlib.Path(_dw).resolve() / "main"
         _main.mkdir()
         _git(_main, "init", "-q")

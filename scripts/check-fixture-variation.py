@@ -359,6 +359,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "render.prs",
         "render.truncated",
     ),
+    # backlog #373 (2026-10-27): the fixture-git guard varies every parameter but `main.argv` (EXEMPT, reason
+    # below); the helper's one parameter is its extras, varied by the HOME and author-identity callers.
+    "check-fixture-git-isolation.py": (
+        "check_source.rel", "check_source.src", "main.argv", "main.exempt", "main.root",),
+    "fixture_git.py": ("env.extra",),
     # backlog #364 (2026-10-27): the launcher's world runner. The world plumbing is EXEMPT with its
     # reason (one built world per suite run); everything a case decides is varied.
     "check-run-hook.py": (
@@ -1105,6 +1110,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #373 (2026-10-27).
+    "check-fixture-git-isolation.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the six main([]) cases",
     # backlog #364 (2026-10-27): check-run-hook.py's world plumbing — one world per suite run.
     "check-run-hook.py:build.x": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
     "check-run-hook.py:build.launcher": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",

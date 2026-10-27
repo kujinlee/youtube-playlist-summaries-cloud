@@ -1604,13 +1604,14 @@ def self_test() -> int:
         # deleting the qualifier survived it. Found by mutating this file, not by reading it.
         with _tf.TemporaryDirectory() as _td:
             _r = pathlib.Path(_td)
-            _env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-            _q = dict(cwd=_r, capture_output=True, env=_env)
-            subprocess.run(["git", "init", "-q"], **_q)
+            import fixture_git  # backlog #373: no inherited GIT_DIR or host config reaches the fixture
+            _id = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                   "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+            _q = dict(cwd=_r, capture_output=True)
+            subprocess.run(["git", "init", "-q"], **_q, env=fixture_git.env(**_id))
             (_r / "f.txt").write_text("one")
-            subprocess.run(["git", "add", "-A"], **_q)
-            subprocess.run(["git", "commit", "-qm", "c"], **_q)
+            subprocess.run(["git", "add", "-A"], **_q, env=fixture_git.env(**_id))
+            subprocess.run(["git", "commit", "-qm", "c"], **_q, env=fixture_git.env(**_id))
             _clean = provenance("t", _r)
             (_r / "f.txt").write_text("two")            # the ONLY difference
             _dirty = provenance("t", _r)

@@ -1876,6 +1876,10 @@ EXPECTED_MUTATIONS = {
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
     "scripts/check-run-hook.py": 12,
+    # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces, pinned in the commit
+    # that creates them. `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
+    "scripts/check-fixture-git-isolation.py": 17,
+    "scripts/fixture_git.py": 6,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
     # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
@@ -4223,6 +4227,7 @@ def _self_test() -> int:
                                       # which must NOT be "corrected" to today's number.
                                       "scripts/check-explainer-delivery.py",
                                       "scripts/check-features.py",
+                                      "scripts/check-fixture-git-isolation.py",
                                       "scripts/check-fixture-variation.py",
                                       "scripts/check-function-revokes.py",
                                       "scripts/check-gate-falsifiability.py",
@@ -4275,6 +4280,7 @@ def _self_test() -> int:
                                       "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
+                                      "scripts/fixture_git.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
@@ -6062,7 +6068,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2246)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2269)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

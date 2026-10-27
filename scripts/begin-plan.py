@@ -1018,7 +1018,9 @@ def _self_test() -> int:
     # Stop hook (registered in the MAIN checkout) never looks — and `armed:` printed anyway. Real git, real worktree.
     with tempfile.TemporaryDirectory() as _wtd:
         _main_r = Path(_wtd) / "main"; _main_r.mkdir()
-        _g = lambda *a, cwd=_main_r: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
+        import fixture_git  # backlog #373: this fixture once committed into an exported GIT_DIR
+        _g = lambda *a, cwd=_main_r: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True,
+                                                    env=fixture_git.env())
         _g("init", "-q"); _g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base")
         _wt_r = Path(_wtd) / "linked"
         _g("worktree", "add", "-q", "-b", "side", str(_wt_r))

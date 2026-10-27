@@ -545,11 +545,11 @@ def test_git(root: Path, *argv: str) -> str | None:
     ⛔ ISOLATED FROM THE CALLER'S GIT: inherited `GIT_*` variables are dropped (a hook context
     sets `GIT_DIR`, which `-C` does not override), and signing and hooks are off, so a developer's
     global config cannot make the suite's result depend on whose machine it runs on."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    import fixture_git  # backlog #373: CONSTRUCTED (allow-list), with host config off
     cfg = ["-c", "user.name=self-test", "-c", "user.email=self-test@example.invalid",
            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
     try:
-        r = subprocess.run(["git", *cfg, "-C", str(root), *argv], env=env,
+        r = subprocess.run(["git", *cfg, "-C", str(root), *argv], env=fixture_git.env(),
                            capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         return f"git {argv[0]} could not run ({type(exc).__name__})"

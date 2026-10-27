@@ -1,0 +1,226 @@
+[
+  {
+    "name": "a positional \"init\" is no longer a repository build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if any(_const(a) == \"init\" for a in n.args):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a helper lambda called with \"init\" is checked through the git call it makes"
+    ]
+  },
+  {
+    "name": "an argv literal holding git and init is no longer a repository build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "                    if \"git\" in vals and \"init\" in vals:",
+        "                    if False:"
+      ]
+    ],
+    "expect": [
+      "`git -C <tmp> init` is a repository build too"
+    ]
+  },
+  {
+    "name": "the iterated [\"init\", \"-q\"] form is no longer a repository build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if isinstance(second, str) and second.startswith(\"-\"):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ the iterated `[\"init\", \"-q\"]` form reaches a `test`-named module-level helper"
+    ]
+  },
+  {
+    "name": "any tuple starting with \"init\" is a repository build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        " and second.startswith(\"-\"):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "a tuple that merely STARTS with \"init\" (a docs table row) is not a repository build"
+    ]
+  },
+  {
+    "name": "any module's .env() counts as the helper",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "if isinstance(f, ast.Attribute) and f.attr == \"env\" and isinstance(f.value, ast.Name) and f.value.id in mods:",
+        "if isinstance(f, ast.Attribute) and f.attr == \"env\":"
+      ]
+    ],
+    "expect": [
+      "an `env()` of some OTHER module is not the helper"
+    ]
+  },
+  {
+    "name": "any env= at all is accepted, a precomputed name included",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        elif not _calls_helper(env, mods, funcs):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "an env= that is a NAME computed up front is refused (PR #415 r3)",
+      "an env= that FILTERS os.environ is refused (PR #415 r2)"
+    ]
+  },
+  {
+    "name": "a builder with no checkable git call passes",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if not seen:\n        return 1, [",
+        "    if not seen:\n        return 0, ["
+      ]
+    ],
+    "expect": [
+      "a repository build whose git this guard cannot see is refused, not passed"
+    ]
+  },
+  {
+    "name": "no function is fixture scope by its test-word name",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "TEST_WORD = re.compile(r\"(?:^|_)test(?:_|$)\")",
+        "TEST_WORD = re.compile(r\"(?!x)x\")"
+      ]
+    ],
+    "expect": [
+      "...which passes once it takes the helper's env"
+    ]
+  },
+  {
+    "name": "every function is fixture scope, production included",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            and (n.name in SELF_TEST_NAMES or TEST_WORD.search(n.name))]",
+        "            ]"
+      ]
+    ],
+    "expect": [
+      "a PRODUCTION git call outside the test scope is not demanded an env"
+    ]
+  },
+  {
+    "name": "a git argv handed to anything is a git call",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    return (f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None) in LAUNCHERS",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "a git argv handed to a READER (not a process launcher) is not itself a git call"
+    ]
+  },
+  {
+    "name": "Popen is not a launcher",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "LAUNCHERS = frozenset({\"run\", \"Popen\", ",
+        "LAUNCHERS = frozenset({\"run\", "
+      ]
+    ],
+    "expect": [
+      "...but the same argv handed to `Popen` is"
+    ]
+  },
+  {
+    "name": "a stale EXEMPT entry (no longer a builder) is kept",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if not builds:\n                worst = max(worst, 1)",
+        "            if False:\n                worst = max(worst, 1)"
+      ]
+    ],
+    "expect": [
+      "⭐ an EXEMPT entry that no longer builds a repository, or no longer exists, is refused"
+    ]
+  },
+  {
+    "name": "an EXEMPT entry for a deleted file is kept",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    for rel in sorted(set(exempt) - present):",
+        "    for rel in []:"
+      ]
+    ],
+    "expect": [
+      "⭐ an EXEMPT entry that no longer builds a repository, or no longer exists, is refused"
+    ]
+  },
+  {
+    "name": "no scripts at all is a pass",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if not files:\n        return 2, [",
+        "    if False:\n        return 2, ["
+      ]
+    ],
+    "expect": [
+      "main() over a world with no scripts is CANNOT RUN, never a pass"
+    ]
+  },
+  {
+    "name": "subdirectories of scripts/ are not read",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "scripts.rglob(\"*.py\")",
+        "scripts.glob(\"*.py\")"
+      ]
+    ],
+    "expect": [
+      "⭐ main() over a world with one unisolated fixture, in a SUBDIRECTORY, exits 1 naming it"
+    ]
+  },
+  {
+    "name": "a file that does not parse is skipped, not CANNOT RUN",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            worst = 2\n",
+        "            worst = max(worst, 0)\n"
+      ]
+    ],
+    "expect": [
+      "a file that does not parse makes the whole run CANNOT RUN"
+    ]
+  },
+  {
+    "name": "main() exits 0 whatever the check found",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        print(f\"  {m}\", file=sys.stderr)\n    return code\n",
+        "        print(f\"  {m}\", file=sys.stderr)\n    return 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ main() over a world with one unisolated fixture, in a SUBDIRECTORY, exits 1 naming it",
+      "main() over a world with no scripts is CANNOT RUN, never a pass",
+      "a file that does not parse makes the whole run CANNOT RUN"
+    ]
+  }
+]
