@@ -17736,14 +17736,17 @@ Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progr
 
 ## 2026-10-26
 Every new session, and every time the conversation is automatically compacted, now begins with a short
-block listing what is in flight: each open pull request with its state and checks, the latest review and
-the bet it is testing, and any background job with what to do when it finishes. It is worked out from
-GitHub and git at that moment, so unlike a written handoff it cannot go stale.
+block listing what is in flight: each open pull request with its state and checks, the latest review it
+added and the bet that review is testing, and any background job someone recorded. It is worked out from
+GitHub and git at that moment rather than written down earlier, and where it cannot find something out it
+says so instead of showing nothing.
 <!--tech-->
-Branch `session-state` (backlog #362). `scripts/session-state.py`: open PRs from `gh pr list` (head, draft,
-`mergeStateStatus`, a check summary that says `NO CHECKS` for an empty rollup), per branch the newest
-`docs/reviews/coordinator/<branch>-r<N>-coordinator.md` heading and decision-log rows with `outcome: null`, and the
-gitignored ledger `.claude/inflight.jsonl`. `.claude/hooks/session-state.sh` is a SessionStart hook (no matcher:
-startup, resume, compact) that always exits 0; `gh` failing prints CANNOT RUN, a failed fetch prints STALE. Live:
-6 PRs in ~2 s. 28 cases; 11 mutations, each killed by its named case. ⚠ Same subdirectory limit as backlog #364.
-
+Branch `session-state` (backlog #362, PR #410). `scripts/session-state.py` + SessionStart hook
+`.claude/hooks/session-state.sh` (startup, resume, compact; always exits 0). Per PR: head, draft, mergeability,
+check summary (`NO CHECKS`), and what the PR ITSELF added (`git diff origin/master...origin/<b> -- docs/reviews/`):
+newest coordinator record, review-half count, decision-log rows with `outcome: null`. ⟳ r1 (both halves, nine ways
+falsely reassuring): records keyed by branch missed PR #392/#371; an unwritten ledger read "empty"; a 60 s kill printed
+nothing; unlocked writes lost jobs; a fork showed our review; untrusted text could forge the block's end. Fixed: diff-
+keyed records, "none RECORDED", a 40 s total deadline, flock + atomic replace keeping unreadable lines, fork/ref-drift
+notes, `clean()` on every value. Delivery after compaction verified (Claude Code 2.1.309). 40 cases; 15 mutations.
+Filed backlog #366 (automatic ledger writes).

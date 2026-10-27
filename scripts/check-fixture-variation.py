@@ -316,6 +316,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #362 (2026-10-26): every parameter varied by a case; none exempt.
     "session-state.py": (
         "check_summary.rollup",
+        "clean.value",
+        "clean.width",
+        "collect.clock",
+        "collect.deadline",
         "collect.now",
         "collect.root",
         "collect.run",
@@ -329,10 +333,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "main.argv",
         "main.root",
         "main.run",
-        "newest_record.branch",
         "newest_record.names",
-        "open_bets.branch",
-        "open_bets.log_text",
+        "open_bets.diff_text",
         "read_ledger.path",
         "render.fetch_ok",
         "render.ledger",
@@ -340,7 +342,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "render.now",
         "render.per_branch",
         "render.pr_error",
+        "render.not_read",
         "render.prs",
+        "render.truncated",
     ),
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
     # ⟳ r1 fold: `read_transcripts.root` left — every checkout is read now, keyed in `replay`.

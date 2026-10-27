@@ -26,16 +26,29 @@
     ]
   },
   {
+    "name": "a malformed rollup member is dropped silently",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            counts[\"unreadable\"] = counts.get(\"unreadable\", 0) + 1\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a malformed rollup member is COUNTED as unreadable, not dropped"
+    ]
+  },
+  {
     "name": "the newest record is picked by name, not round number",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        if mid.isdigit() and int(mid) > best_n:",
-        "        if mid.isdigit() and (best is None or n > best):"
+        "        if m and int(m.group(1)) > best_n:",
+        "        if m and (best is None or n.strip() > best):"
       ]
     ],
     "expect": [
-      "the newest record is the highest ROUND, numerically, for THIS branch only"
+      "the newest record is the highest ROUND, numerically, whatever the subject is called"
     ]
   },
   {
@@ -43,12 +56,25 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "r.get(\"outcome\") is not None:",
-        "False:"
+        "        if r.get(\"outcome\") is not None:\n            continue\n",
+        ""
       ]
     ],
     "expect": [
-      "only THIS branch's bets still awaiting an outcome are open"
+      "only ADDED rows still awaiting an outcome are open; a bad added row is COUNTED"
+    ]
+  },
+  {
+    "name": "⭐ clean() no longer strips newlines (block forgery returns)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    s = CONTROL.sub(\" \", str(value))",
+        "    s = str(value)"
+      ]
+    ],
+    "expect": [
+      "⭐ clean() makes a value one inert line: no newline, no control char, no `===`"
     ]
   },
   {
@@ -56,7 +82,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        L.append(f\"OPEN PRS: CANNOT RUN — {pr_error}. Treat as NOT CHECKED, never as 'nothing open'.\")",
+        "        L.append(f\"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.\")",
         "        L.append(\"OPEN PRS: none (gh answered).\")"
       ]
     ],
@@ -78,68 +104,94 @@
     ]
   },
   {
-    "name": "a branch read failure is hidden",
+    "name": "⭐ a branch that added no record prints nothing (r1 B1)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "                L.append(f\"      branch records: CANNOT READ — {info['error']}\")",
-        "                pass"
+        "                L.append(f\"      latest review: {clean(info['record']) if info['record'] else none}\")",
+        "                if info['record']:\n                    L.append(f\"      latest review: {clean(info['record'])}\")"
       ]
     ],
     "expect": [
-      "a branch whose records cannot be read says so on its line"
+      "⭐ a branch that added no record SAYS so — absence is never silent (r1 CLAUDE B1)"
     ]
   },
   {
-    "name": "an unreadable ledger line is dropped silently",
+    "name": "⭐ an empty ledger reads as 'empty' again (r1 B2)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "            problems.append(f\"ledger line {i} unreadable ({exc}) — NOT SHOWN\")",
-        "            pass"
+        "        L.append(f\"IN-FLIGHT LEDGER ({LEDGER_REL}): none RECORDED — it is written by hand (`--add`), \"\n                 \"so empty is not proof that nothing is running.\")",
+        "        L.append(f\"IN-FLIGHT LEDGER ({LEDGER_REL}): empty\")"
       ]
     ],
     "expect": [
-      "⭐ an unreadable ledger line is REPORTED, not silently dropped"
+      "⭐ an empty ledger says none RECORDED — never 'nothing running' (r1 CLAUDE B2)"
     ]
   },
   {
-    "name": "re-adding an id appends a duplicate",
+    "name": "⭐ an unreadable ledger line is dropped on the next write (r1 P2)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    entries = [e for e in entries if e.get(\"id\") != id_]\n    entries.append",
-        "    entries.append"
+        "_write(path, entries, raw)\n\n\ndef ledger_done",
+        "_write(path, entries, [])\n\n\ndef ledger_done"
       ]
     ],
     "expect": [
-      "re-adding an id REPLACES it — one line per job"
+      "⭐ ...and an update KEEPS them verbatim instead of erasing them (r1 CODEX P2)"
     ]
   },
   {
-    "name": "gh's JSON is never read",
+    "name": "⭐ the ledger lock is dropped (r1 P1 race)",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "            prs = json.loads(out)",
-        "            prs = []"
+        "        fcntl.flock(fh, fcntl.LOCK_EX)\n",
+        ""
       ]
     ],
     "expect": [
-      "collect() wires the newest record, the open bet and the ledger into one block"
+      "⭐ 20 concurrent adds keep all 20 jobs (r1: an unlocked write kept 3)"
     ]
   },
   {
-    "name": "the ledger is read from the repo, not the root given",
+    "name": "records are read from a FORK's same-named branch",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    ledger, problems = read_ledger(root / LEDGER_REL)",
-        "    ledger, problems = read_ledger(REPO_ROOT / LEDGER_REL)"
+        "        if p.get(\"isCrossRepository\"):",
+        "        if False:"
       ]
     ],
     "expect": [
-      "collect() wires the newest record, the open bet and the ledger into one block"
+      "a fork PR says its records were NOT READ instead of showing this repo's same-named branch"
+    ]
+  },
+  {
+    "name": "⭐ no total deadline (r1 P1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if left() <= 1:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a total DEADLINE stops branch reads and the block still prints, counting what was NOT READ (r1 P1)"
+    ]
+  },
+  {
+    "name": "⭐ main() no longer prints the block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    print(collect(root, run=run))\n    return 0",
+        "    collect(root, run=run)\n    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ main() PRINTS the block — the hook's whole output (r1: removing the print stayed green)"
     ]
   }
 ]
