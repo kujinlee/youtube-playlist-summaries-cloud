@@ -17703,4 +17703,6 @@ safe half (compare after stripping indentation and a trailing comment). Filed ba
 merged silently wrong, 2115 + 2115 for a real 2125); candidate is a branch-sum >= base-sum comparison in CI.
 Filed backlog #360: `verify` has 78 steps on master and one step cap, so its budget is bounded only by the job limit — PR #407's
 round 4 refuted my per-path "step caps" figures, which had added the uncapped steps' measured runtime.
+Filed at the owner's request: backlog #361 (tell compaction what must survive; falsified by one `/compact`) and #362
+(derive a handoff's in-flight state from git and `gh` when it is read — the hand-written one missed PR #407's conflict).
 Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.
