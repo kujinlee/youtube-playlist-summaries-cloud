@@ -1,0 +1,318 @@
+[
+  {
+    "name": "⭐ a multi-line if keeps only its first line (r1 survivor)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            out.update(range(node.lineno, (node.test.end_lineno or node.test.lineno) + 1))",
+        "            out.add(node.lineno)"
+      ]
+    ],
+    "expect": [
+      "⭐ a multi-line if: the header AND every test line are decision lines"
+    ]
+  },
+  {
+    "name": "⭐ a multi-line return/raise/assert keeps only its first line (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        elif isinstance(node, (ast.Return, ast.Raise, ast.Assert)):\n            out.update(_span(node))",
+        "        elif isinstance(node, (ast.Return, ast.Raise, ast.Assert)):\n            out.add(node.lineno)"
+      ]
+    ],
+    "expect": [
+      "⭐ a multi-line return, except header and raise are decision lines on EVERY line"
+    ]
+  },
+  {
+    "name": "⭐ except clauses are no longer decisions (r1 survivor)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        elif isinstance(node, ast.ExceptHandler):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a multi-line return, except header and raise are decision lines on EVERY line"
+    ]
+  },
+  {
+    "name": "conditional-expression tests are not decisions",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        elif isinstance(node, ast.IfExp):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "...including a conditional expression in a PLAIN assignment, where nothing else makes it a decision"
+    ]
+  },
+  {
+    "name": "exit calls are not decisions",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            if name == \"exit\":",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "an exit call is a decision line"
+    ]
+  },
+  {
+    "name": "⭐ an INSERT counts as editing the lines around it again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                if tag in (\"replace\", \"delete\"):  # an INSERT leaves every original line intact",
+        "                if tag != \"equal\":"
+      ],
+      [
+        "                    covered.update(first + r for r in range(i1, i2))",
+        "                    covered.update(first + r for r in range(i1, max(i2, i1 + 1)))"
+      ]
+    ],
+    "expect": [
+      "⭐ an INSERTION edit covers NO original line — the decision it sits beside is unchanged"
+    ]
+  },
+  {
+    "name": "an empty find text is not skipped",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if not find:\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an empty find text covers nothing (not every line)"
+    ]
+  },
+  {
+    "name": "⭐ a path keeps git's trailing TAB (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    p = raw.split(\"\\t\", 1)[0]",
+        "    p = raw"
+      ]
+    ],
+    "expect": [
+      "⭐ a path with a SPACE is read without git's trailing TAB"
+    ]
+  },
+  {
+    "name": "⭐ git missing is a traceback again (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    except OSError as exc:  # git itself missing",
+        "    except ValueError as exc:  # git itself missing"
+      ]
+    ],
+    "expect": [
+      "⭐ git itself missing is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "⭐ an unknown base reports a clean zero instead of CANNOT RUN",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — `git diff {base}...HEAD` failed:",
+        "        return 0, [f\"CANNOT RUN — `git diff {base}...HEAD` failed:"
+      ]
+    ],
+    "expect": [
+      "⭐ an unknown base is CANNOT RUN (exit 2), never 'nothing changed'"
+    ]
+  },
+  {
+    "name": "⭐ a raising loader reports a clean pass (r1 survivor)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [f\"CANNOT RUN — loading the mutation manifests failed: {exc}. Treat as NOT CHECKED.\"]",
+        "        return 0, [f\"CANNOT RUN — loading the mutation manifests failed: {exc}. Treat as NOT CHECKED.\"]"
+      ]
+    ],
+    "expect": [
+      "a loader that RAISES is CANNOT RUN, never a clean pass"
+    ]
+  },
+  {
+    "name": "refused manifests report a clean pass",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return 2, [\"CANNOT RUN — the mutation manifests do not load:\"]",
+        "        return 0, [\"CANNOT RUN — the mutation manifests do not load:\"]"
+      ]
+    ],
+    "expect": [
+      "manifests the loader refuses (here: none at all) are CANNOT RUN, never a clean pass"
+    ]
+  },
+  {
+    "name": "⭐ a binary diff is dropped silently again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            not_checked.append(f\"NOT CHECKED {p}: git reports a BINARY diff, so its lines are unknown\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifested script with a BINARY diff is NOT CHECKED, not a clean zero"
+    ]
+  },
+  {
+    "name": "⭐ a function merely CONTAINING self_test is exempted again (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "and node.name in SELF_TEST_NAMES:",
+        "and \"self_test\" in node.name:"
+      ]
+    ],
+    "expect": [
+      "⭐ ONLY a function named exactly `_self_test`/`self_test` is a case — a name CONTAINING it is code (r3)"
+    ]
+  },
+  {
+    "name": "⭐ the diff is two-dot, not three-dot",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                f\"{base}...HEAD\", \"--\", \"scripts/*.py\")",
+        "                f\"{base}..HEAD\", \"--\", \"scripts/*.py\")"
+      ]
+    ],
+    "expect": [
+      "⭐ the diff is THREE-dot, and pinned: no external driver, standard prefixes (r3)"
+    ]
+  },
+  {
+    "name": "⭐ the diff is not pinned against an external driver (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        r = git(\"diff\", \"--no-ext-diff\", \"--src-prefix=a/\", \"--dst-prefix=b/\", \"-U0\", \"--no-color\",",
+        "        r = git(\"diff\", \"-U0\", \"--no-color\","
+      ]
+    ],
+    "expect": [
+      "⭐ the diff is THREE-dot, and pinned: no external driver, standard prefixes (r3)"
+    ]
+  },
+  {
+    "name": "⭐ the per-file cap is never applied",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if per_file[p] <= CAP:\n",
+        "        if True:\n"
+      ]
+    ],
+    "expect": [
+      "at most CAP warnings are shown per file, and the rest are COUNTED"
+    ]
+  },
+  {
+    "name": "⭐ git output is decoded strictly again",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                   errors=\"replace\")",
+        "                   )"
+      ]
+    ],
+    "expect": [
+      "⭐ every git call decodes with replacement — a non-UTF-8 byte is not a traceback"
+    ]
+  },
+  {
+    "name": "⭐ any `+++ ` line is a header again (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if in_header and line.startswith(\"+++ \"):",
+        "        if line.startswith(\"+++ \"):"
+      ]
+    ],
+    "expect": [
+      "⭐ an ADDED line starting `++ ` is content, not a file header (r3)"
+    ]
+  },
+  {
+    "name": "⭐ a lone CR is measured anyway (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    if re.search(r\"\\r(?!\\n)\", src):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a lone carriage return is NOT measurable — Python and git would number lines differently (r3)"
+    ]
+  },
+  {
+    "name": "⭐ an unparseable HEAD source is measured anyway (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    if decision_lines(src) is None:\n        return \"it does not parse as Python\"",
+        "    if False:\n        return \"it does not parse as Python\""
+      ]
+    ],
+    "expect": [
+      "⭐ an UNPARSEABLE source at HEAD is NOT CHECKED, not a clean zero (r3: untested)"
+    ]
+  },
+  {
+    "name": "a source unreadable at HEAD is skipped silently (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            not_checked.append(f\"NOT CHECKED {p}: cannot read it at HEAD ({shown.stderr.strip()[:80]})\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "a source that cannot be read at HEAD is NOT CHECKED, not a silent zero (r3: untested)"
+    ]
+  },
+  {
+    "name": "while is not a decision (r3: untested)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if isinstance(node, (ast.If, ast.While)):",
+        "        if isinstance(node, ast.If):"
+      ]
+    ],
+    "expect": [
+      "a while test is a decision line (r3: nothing tested it)"
+    ]
+  },
+  {
+    "name": "⭐ the source is read from the WORKING TREE again (r3)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        shown = git(\"show\", f\"HEAD:{p}\")  # the committed tree the diff describes, never the working tree",
+        "        shown = git(\"show\", f\":{p}\")  # the INDEX, not the committed tree"
+      ]
+    ],
+    "expect": [
+      "⭐ the source is read from the committed HEAD, not the working tree (r3)"
+    ]
+  }
+]

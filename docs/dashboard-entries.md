@@ -17780,3 +17780,19 @@ violation before). Known positive: `{}`, `"commmand"` and an empty reason exited
 the first fold knew 2 of Claude Code 2.1.309's 5 hook types, crashed on a list `type`, took `str(None)` as a reason —
 fixed. 29 cases; 16 mutations. Filed backlog #368 (`args` makes a hook launch nothing).
 
+
+## 2026-10-26
+A new local check points at each changed line that makes a decision — an `if`, a `return`, a `raise` — where none
+of the project's planted-fault tests edits that line. It only warns. On tonight's own work it pointed at a line where
+a reviewer later found a real gap. Running it on every pull request is split out: tried in CI, it produced up to 420
+warnings on one pull request, which nobody would read.
+<!--tech-->
+Branch `diff-coverage` (backlog #251, PR #411), the STABLE half after a SPLIT. `scripts/check-diff-coverage.py`: per
+manifested script changed in `base...HEAD`, WARN on each changed decision line (every line of an if/elif/while header
+and test, return, raise, assert, except header, exit call, conditional-expression test, comprehension if) that no
+mutation EDITS — applying the edit, the lines that do not survive unchanged. Sources from `git show HEAD:<path>`; diff
+pinned (`--no-ext-diff`, a/ b/ prefixes); binary / unparseable files NOT CHECKED. ⟳ r1 over-coverage and
+tracebacks; r2 a text-alignment rule that let an insertion "cover" its neighbour (redesigned); r3 the CI step never ran
+and volume hit 420/PR — CI delivery and deleted lines split out as backlog #370. 45 cases; 24 mutations.
+⟳ r4 (Codex, DEFER): three clean zeros remain — a lone CR translated before the check, a textconv driver, working-tree
+manifests — filed as backlog #371, not folded; the loop stops.

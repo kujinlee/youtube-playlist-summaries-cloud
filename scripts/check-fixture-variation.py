@@ -313,6 +313,25 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
+    "check-diff-coverage.py": (
+        "binary_paths.diff_text",
+        "decision_lines.source",
+        "diff_path.raw",
+        "edited_lines.edits",
+        "edited_lines.source",
+        "main.argv",
+        "main.root",
+        "measurable.src",
+        "parse_diff.diff_text",
+        "run_check.base",
+        "run_check.root",
+        "run_check.run",
+        "self_test_lines.source",
+        "uncovered.changed",
+        "uncovered.edits",
+        "uncovered.sources",
+    ),
     # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
         "check_summary.rollup",
