@@ -1505,6 +1505,13 @@ def _load_fail_parser():
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     """Classifier checks. Fixtures mirror runs observed live on 2026-07-19."""
     real_400 = (
         "OpenAI Codex v0.142.5\n--------\nmodel: gpt-5.6-sol\n--------\n"

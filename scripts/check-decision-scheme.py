@@ -1575,6 +1575,13 @@ def _try(fn):
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import os as _os
     import tempfile as _tf
     cases = failures = 0
@@ -1751,12 +1758,11 @@ def _self_test() -> int:
 
     def _git_repo(d: Path, commits):
         """A real repo with one commit per (epoch, filename). Returns {filename: epoch}."""
-        env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
-               "PATH": _os.environ.get("PATH", ""), "HOME": str(d)}
+        import fixture_git  # backlog #373: one constructed environment, built per call
         def g(*a, **kw):
             return _sub.run(["git", "-c", "user.name=t", "-c", "user.email=t@e", *a],
                             cwd=d, capture_output=True, text=True, check=True,
-                            env={**env, **kw.get("extra", {})})
+                            env=fixture_git.env(HOME=str(d), **kw.get("extra", {})))
         g("init", "-q", "-b", "main")
         for epoch, fname in commits:
             (d / fname).write_text("x")

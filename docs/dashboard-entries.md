@@ -17890,3 +17890,28 @@ worlds asserting exit code and the file that ran, the hook's stdout/stderr/exit 
 mutants each killed by its named world, 72 cases, 12 mutations. The live falsifier was RUN (backlog #364 row): branch blocks, master's control lets it through.
 ⟳ r2 (Codex, SPLIT): the shell's startup environment (`BASH_ENV` and kin) is a trusted input, stated as limit L8 —
 hardening it for every hook is backlog #379.
+
+## 2026-10-27
+The self-tests that build a throwaway git repository, or that run git on the checkout, can no longer write into a
+real repository nor run commands from the caller's git settings. On master, when git was pointed at another
+repository (as a git hook does), up to five of them changed it, and settings from the caller's configuration ran
+hundreds of times inside green test runs. Now every such test runs in a cleaned environment for its whole run, and a
+new check refuses any that does not. Deliberately hostile test code can still escape it; that half is filed
+separately (backlog #380).
+<!--tech-->
+Backlog #373, branch `fixture-git-isolation` (PR #420): round 1 REDESIGN, round 2 SPLIT. `scripts/fixture_git.py`:
+`isolated()` swaps `os.environ` in place — allow-list, no `GIT_*`, host config off, `HOME` an empty directory — and
+restores it exactly. Extras come from an allow-list (42 cases, 12 mutations). 16 self-test entries are one
+argument-free `with fixture_git.isolated(): return <body>()`, and EXEMPT is empty. `scripts/check-fixture-git-isolation.py`
+in CI: builders are found by git's subcommand; the declared `GIT_SUITES` cover suites that only run git
+(`brief-compose`, `gen-backlog-page`); one-item block; 84 cases, 45 mutations. Its LIMITS name `os.putenv`, `atexit`,
+import-time captures in other modules, rebound names, decoy dispatch and a false refusal — #380, a fresh child
+interpreter per suite. The falsifier population is derived: all 80 scripts with `--self-test`, under 8 families. The only hits
+were `brief-compose`'s (6–9 per family, in the real checkout), now wrapped, and there were 0 victim changes. Over the
+29 git-running suites: master 4–5 victim changes and up to 469 caller-config runs per family; branch 0 and 0. Two
+nonzero exits are not findings: `check-plan-code` and `check-paid-caller-arrival` (no `node_modules` in the
+snapshot). Round 3 (DEFER, after thrashing convened an architecture review): 720/720 clean, all 80 suites ×
+9 families. ⟳ Corrected: `subject_status` (pre-existing 16/17), `gen-dashboard`, `check-ci-watched` and `peer-sites`
+run read-only git on the checkout with the caller's environment and are not on `GIT_SUITES` (`subject_status`
+drops to 12/17 under `GIT_DIR`). They and the builder detector's precision are backlog #382: wrap every entry and
+delete the detector. Escape shapes are backlog #380.

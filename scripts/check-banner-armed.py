@@ -1570,6 +1570,13 @@ def run_decide(payload: str) -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -1841,15 +1848,14 @@ def _self_test() -> int:
     # ── EVERY CHECKOUT'S PLANS — a REAL `git worktree add` (owner's decision, option A) ─────
     # The measured case: two `chrome-bar-fold` turns warned while that plan sat in a worktree's
     # `.claude/plans/`. ROOT is swapped to the temp repo's MAIN checkout for `known_everywhere`.
-    import os as _osw, subprocess as _spw
+    import subprocess as _spw
+    import fixture_git  # backlog #373: one constructed environment, built per call
     with _tfk.TemporaryDirectory() as _gw:
-        _genv = {**{k: v for k, v in _osw.environ.items() if not k.startswith("GIT_")},
-                 "HOME": _gw, "GIT_CONFIG_NOSYSTEM": "1"}
 
         def _git(cwd, *args):
             return _spw.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
                              "-c", "commit.gpgsign=false", "-C", str(cwd), *args],
-                            capture_output=True, text=True, env=_genv, timeout=60)
+                            capture_output=True, text=True, env=fixture_git.env(HOME=_gw), timeout=60)
 
         _gm = Path(_gw).resolve() / "repo"
         _gm.mkdir()
