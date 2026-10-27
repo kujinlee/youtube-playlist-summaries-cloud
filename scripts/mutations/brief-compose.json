@@ -327,5 +327,109 @@
       ]
     ],
     "expect": "the generated-at moment reaches the composed page's stamp"
+  },
+  {
+    "name": "the composer stops supplying the ex-body scope, so a default switcher restyles nothing",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        body = f'\\n<div class=\"{page_chrome.TEXT_SCOPE_CLASS}\">{body}</div>\\n'",
+        "        body = body"
+      ]
+    ],
+    "expect": [
+      "...and the composer wraps the fragment's content in the class the switcher's CSS styles, so a press has something to restyle"
+    ]
+  },
+  {
+    "name": "the switcher is again added only to a fragment that hand-authored ex-body",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    want_switcher = not own_switcher\n",
+        "    want_switcher = not own_switcher and page_chrome.has_text_consumer(content)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #376 FALSIFIER: a fragment with NO ex-body gets the text-style switcher, once, with all three buttons"
+    ]
+  },
+  {
+    "name": "the --em refusal is dropped, so a dark block leaning on the shim ships at 1.78:1",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        assert_em_in_every_palette(css_of(content))",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a DARK theme block without --em is REFUSED, and the refusal names that block"
+    ]
+  },
+  {
+    "name": "palette blocks inside @media are skipped, so the OS-dark block is never asked for --em",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                        and all(re.match(r\"(:root|html)\\b\", s) for s in sels)):",
+        "                        and not stack and all(re.match(r\"(:root|html)\\b\", s) for s in sels)):"
+      ]
+    ],
+    "expect": [
+      "⛔ an OS-DARK @media block without --em is REFUSED too — the state the review measured at 1.78:1"
+    ]
+  },
+  {
+    "name": "the wrap ignores a hand-placed scope, nesting a second ex-body inside it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            and not page_chrome.has_text_consumer(content)):",
+        "            and True):"
+      ]
+    ],
+    "expect": [
+      "a fragment that ALREADY opts in gets the switcher but no second scope around its own"
+    ]
+  },
+  {
+    "name": "zero palette blocks passes the --em check vacuously",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if not blocks:\n        raise SystemExit(\n            f\"brief-compose: CANNOT VERIFY",
+        "    if False:\n        raise SystemExit(\n            f\"brief-compose: CANNOT VERIFY"
+      ]
+    ],
+    "expect": [
+      "⛔ theme palettes with NO block declaring the ground is CANNOT VERIFY, not a pass"
+    ]
+  },
+  {
+    "name": "every :root rule counts as a palette, so the scheme's role block is asked for --em",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                if (PALETTE_GROUND in decls\n",
+        "                if (True\n"
+      ]
+    ],
+    "expect": [
+      "...but a :root rule that is NOT a palette (the scheme's role block declares no --bg) is not asked for --em"
+    ]
+  },
+  {
+    "name": "the wrap no longer asks the bar, so a page with no switcher is wrapped anyway",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (page_chrome.has_text_control(chrome_bar)\n",
+        "    if (True\n"
+      ]
+    ],
+    "expect": [
+      "a fragment with NO theme palettes gets no switcher, and so no scope either"
+    ]
   }
 ]

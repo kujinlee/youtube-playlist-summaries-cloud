@@ -102,9 +102,11 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
 - **Structure is carried by COLOUR ROLES, not by brightness alone** (backlog #226, the owner's choice
   from a live three-way switcher, 2026-10-05). Measured before it: heading, body prose and `<b>` all
   computed to one colour, so luminance was the only cue and the page had to be read, not skimmed.
-  ⛔ **A page MUST opt in, by putting its content inside an element with class `.ex-body`.** The
-  roles style nothing outside it, so the composer adds no text-style switcher to a fragment without
-  one, and nothing warns. That page renders the flat, one-colour structure this rule exists to stop.
+  ⛔ **The roles style only content inside an element with class `.ex-body`.** ⟳ 2026-10-27
+  (backlog #376): `brief-compose.py` now SUPPLIES it — when it adds the theme control it also adds
+  the text-style switcher and wraps the fragment's body in `.ex-body`, unless the fragment already
+  carries the class (then it is not nested) or brings its own `#schemer` (then no second one is
+  added). Hand-placing it is still how a page scopes the roles to part of itself.
   Inside `.ex-body` three roles are spent:
 
   | Role | Colours | Token it reads |
@@ -118,7 +120,8 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
   supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
   something it does not. They are named by token, not by hue, because a page sets its own hue.
-  ⛔ **A page that opts in DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light default, each
+  ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — and since
+  #376 the composer REFUSES to compose one that does not, naming the blocks — the light default, each
   explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light / `#9db8e8` dark unless
   it has a reason to differ. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
   is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on

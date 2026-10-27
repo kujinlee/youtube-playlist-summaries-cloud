@@ -17958,3 +17958,35 @@ excluded: status-pages 🟠3 🟡8 🟢3, feature-map 🟡3, explainer-pages �
 (one of them backlog #383, filed by the round-3 fold).
 42 bare `#N` references were qualified: 22 already on six retagged rows, which the namespace
 guard reads as new once the line is touched, and 20 in backlog #381's own status text.
+
+## 2026-10-27
+A composed explainer page that gets the light/dark button now also gets the text-style switcher
+(colour, headings only, plain) without the author having to remember anything. Before, the switcher
+appeared only if the author had wrapped the page's content in one particular class by hand. A page
+whose colours would make bold text unreadable in dark mode with the switcher on is now refused
+rather than published, and the refusal names what to fix. Two pages were rebuilt: one gains the
+switcher, and on the other, which already had it, bold text in dark mode had been unreadable since
+it was published. Browser verification is still to do.
+<!--tech-->
+Branch `text-style-default` (backlog #376). `brief-compose.compose` wraps the fragment's body in
+`page_chrome.TEXT_SCOPE_CLASS` when the bar it places carries `#schemer` and the fragment has no
+`.ex-body` of its own; `chrome_for` no longer requires a hand-placed consumer, and `assert_wired`
+still checks the finished page for one. A fragment that brings its own `#schemer` gets no second
+switcher and no wrapper. The `--em` trap (`architecture-review-2026-10-24-em-default.md`) is handled
+by REFUSAL, the guard that review filed: new `palette_blocks` reads every `:root`/`html` rule that
+declares `--bg`, at any `@media` depth, and `assert_em_in_every_palette` refuses, naming each block
+without `--em`, before the composer adds the switcher. Zero such blocks is CANNOT VERIFY, not a pass.
+Writing the family pair in automatically was rejected: it means guessing whether each block is dark,
+which is what the review measured failing three ways. 153 → 164 cases; mutations 27 → 35, each
+killed by the case it names (`--only scripts/brief-compose.py`: 35/35 attributed). `page_chrome.py`
+unchanged. Recompose: of the 24 tracked pages with a fragment, 22 compose byte-identically under
+master's composer and the new one (stamp aside), so #376 changes nothing on them. Recomposing them
+anyway brings in older drift, so they were restored: 6 lose their Theme button, and one
+(`2026-09-27-topic-memory-recall-taxonomy`) has a fragment older than its page and loses 321 text
+nodes. Committed: `2026-10-26-…progress-and-plan` (gains wrapper, switcher and scoped CSS, plus
+`--em` in its 4 palette blocks) and `2026-10-27-brief-topic-builtin-skills-explainer` (already had the
+switcher, leaned on the shim, now `--em` in its 4 blocks). Both fragments were refused before the edit:
+`#2d4a7c` on the light ground is 8.45:1 and `#9db8e8` on the dark is 9.04:1. 16 of the 24 still get no
+switcher because they get no Theme button: they declare no `:root[data-theme="light"]` block (their
+light palette is the bare `:root`), so `missing_palettes` reports it missing and the composer adds
+a stamp only.
