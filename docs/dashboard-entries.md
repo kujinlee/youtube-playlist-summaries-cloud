@@ -17814,6 +17814,29 @@ for the block and every update, an `O_NOFOLLOW` lock, UTF-8 writes. 51 cases; 25
 
 
 ## 2026-10-27
+Three read-only commands no longer ask for permission: watching a CI run, asking git whether a file is ignored, and
+reading a container image's manifest.
+<!--tech-->
+`.claude/settings.json` gains `permissions.allow`: `Bash(gh run watch *)` (14 uses), `Bash(git check-ignore *)` (5),
+`Bash(docker buildx imagetools inspect *)` (4) — from the built-in `/fewer-permission-prompts` skill over the 50 most
+recent transcripts (2,344 Bash calls). Everything else was mutating, could run code (`python3`, `node`, `awk`, `gh api`),
+or is already auto-allowed. ⚠ The prompts actually seen tonight came from `dangerouslyDisableSandbox` Codex runs; these
+rules do not touch them.
+
+
+## 2026-10-27
+The design for running each safety hook from the checkout actually being worked in is settled, and both of its open
+choices were made by the owner: a hook that cannot be found is reported but does not block, and worktrees keep being
+used the way they are today.
+<!--tech-->
+Docs only. Files `docs/reviews/architecture-review-2026-10-26-hook-launch.md` (backlog #364: candidate (a) — the nearest
+`.git` above the physical cwd is the checkout, no fallback beyond "no checkout"; prototype passed 14/14 worlds, 12/12
+mutants, live in the harness). Backlog #364 records the two owner decisions (NOT RUN exit 1; launcher over
+`EnterWorktree`). Files backlog #374 (a waiver HOLD should be cleared by a recorded review, not the owner) and #375
+(eleven hooks' `cd && pwd` root strips a trailing newline).
+
+
+## 2026-10-27
 The check that every hook is registered one way now refuses any hook setting it has not been told about, and five it
 has: a list of arguments, a choice of shell, and three that let a safety check look as though it ran when it did not
 (running in the background, or only once).

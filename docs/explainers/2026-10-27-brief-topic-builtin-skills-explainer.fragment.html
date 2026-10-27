@@ -1,0 +1,166 @@
+<title>Claude Code skills — where they come from and how to find one</title>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* literal values (backlog #351: var() aliases here and in the shim form a cycle) */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+    --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+    --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+    --good:#8fcaa2; --defect:#e08f8f;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee;
+  --green:#2d6a3f; --greenbg:#eef6f0; --verified:#2d6a3f; --verified-br:#bcd8c4;
+  --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560; --card:#ffffff; --structure:#e2ddd4;
+  --good:#2d6a3f; --defect:#9a2f2f;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+  --rule:#33313a; --accent:#cb9a68; --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d;
+  --green:#8fcaa2; --greenbg:#1a2620; --verified:#8fcaa2; --verified-br:#2f4a39;
+  --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80; --card:#1e1d23; --structure:#33313a;
+  --good:#8fcaa2; --defect:#e08f8f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:900px;margin:0 auto;padding:40px 18px 120px}
+h1{font-size:29px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:44px 0 12px;padding-top:16px;border-top:1px solid var(--rule);position:relative}
+h3{font-size:16.5px;margin:26px 0 8px;position:relative}
+p{margin:11px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:12px 16px;
+  font-size:14px;color:var(--fg2);margin:16px 0}
+.howto code{font-size:12.5px}
+.callout{border-radius:6px;padding:12px 16px;margin:16px 0;font-size:15px}
+.callout.ok{background:var(--greenbg);border:1px solid var(--verified-br)}
+.callout.warn{background:var(--amberbg);border:1px solid var(--amber)}
+.tablewrap{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--rule)}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg3);font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--code);padding:1px 4px;border-radius:3px}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;
+  overflow-x:auto;white-space:pre;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;padding:0}
+.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;border:1px solid var(--rule);white-space:nowrap}
+.tag.done{background:var(--greenbg);color:var(--green);border-color:var(--verified-br)}
+.tag.wait{background:var(--amberbg);color:var(--amber);border-color:var(--amber)}
+.tag.next{color:var(--fg3)}
+ol li,ul li{margin:4px 0}
+.small{font-size:13.5px;color:var(--fg3)}
+</style>
+<div class="wrap">
+<h1>Claude Code skills: you don't have to remember the names</h1>
+<p class="horizon">As of <b>2026-10-27 ~03:00 PDT</b>, master <code>2ccda14b</code>, Claude Code <b>2.1.309</b>. Read from this session's own skill listing, the installed binary and this repository.</p>
+
+<div class="reading"><b>Reading chosen:</b> skills in Claude Code: where the ones in this session come from, how one gets picked, and how you can find the right one without memorising names. Not how to <i>write</i> a skill (that's <code>/write-a-skill</code> or <code>skill-creator</code>).</div>
+
+<div class="howto">
+<b>This page:</b> <code>http://127.0.0.1:7391/latest</code> always shows the newest page.
+<b>To ask:</b> select text or hover a heading → <i>ask</i> → type → <b>Send</b>, then say <i>"read my questions"</i>.
+<b>If that URL does not load</b> (a reboot stops the server): run <code>python3 scripts/explainer-serve.py</code>. It's safe to run twice.
+A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.
+<span id="modechip"></span>
+</div>
+
+<div class="callout ok"><b>The short answer.</b> Claude already knows every skill in the session, with its description, and is told to use one when your task matches. So you never need a name. Say what you want in plain words, or ask outright: <i>"is there a skill for this?"</i>. The weak link isn't your memory. It's Claude <i>noticing</i> a match without being asked.</div>
+
+<h2>1. What a skill is</h2>
+<p>A skill is a packaged set of instructions (a <code>SKILL.md</code> file, sometimes with scripts) for one kind of task. When it's invoked, its instructions are loaded into the conversation and Claude follows them instead of its default approach. You can invoke one by typing <code>/name</code>, or Claude can invoke it itself through its <code>Skill</code> tool.</p>
+<p>The part that answers your question: <b>at the start of every session Claude receives the whole list</b>, one line per skill with its description, in a block that begins <i>"The following skills are available for use with the Skill tool"</i>. That list is in Claude's context right now. It isn't something you have to recall.</p>
+
+<h2>2. Where this session's skills come from</h2>
+<p>There are four sources. The prefix in front of a name tells you which one it belongs to.</p>
+<div class="tablewrap"><table>
+<tr><th>Source</th><th>How it's named</th><th>Examples in this session</th><th>Where it lives</th></tr>
+<tr><td><b>Bundled with Claude Code</b></td><td>no prefix</td><td><code>code-review</code>, <code>simplify</code>, <code>fewer-permission-prompts</code>, <code>loop</code>, <code>schedule</code>, <code>update-config</code>, <code>keybindings-help</code>, <code>init</code>, <code>security-review</code>, <code>run</code>, <code>claude-api</code>, <code>dataviz</code>, <code>artifact-design</code>, <code>workflow-authoring</code>, <code>plugin-authoring</code>, <code>claude-in-chrome</code></td><td>inside the Claude Code program itself</td></tr>
+<tr><td><b>This project</b></td><td>no prefix</td><td><code>brief</code>, <code>dashboard</code>, <code>explain-topic</code>, <code>explain-diff</code>, <code>explain-findings</code>, <code>handoff</code>, <code>grill-me</code>, <code>grill-with-docs</code>, <code>diagnose</code>, <code>tdd</code>, <code>prototype</code>, <code>zoom-out</code>, <code>triage</code>, <code>to-prd</code>, <code>to-issues</code>, <code>sync-docs</code>, <code>caveman</code>, <code>write-a-skill</code>, <code>improve-codebase-architecture</code>, <code>setup-matt-pocock-skills</code></td><td><code>.claude/skills/</code> (mirrored in <code>.agents/skills/</code>). Many come from <code>mattpocock/skills</code>, and some are local</td></tr>
+<tr><td><b>Plugins</b></td><td><code>plugin:skill</code></td><td><code>superpowers:*</code>, <code>codex:*</code>, <code>pr-review-toolkit:*</code>, <code>hookify:*</code>, <code>remember:*</code>, <code>commit-commands:*</code>, <code>feature-dev:*</code>, <code>claude-md-management:*</code>, <code>ralph-loop:*</code>, <code>frontend-design:*</code>, <code>skill-creator:*</code>, <code>supabase:*</code>, <code>claude-code-setup:*</code></td><td>installed with <code>/plugin install</code></td></tr>
+<tr><td><b>Your Claude account</b></td><td><code>anthropic-skills:</code></td><td><code>docs</code>, <code>docx</code>, <code>pdf</code>, <code>pptx</code>, <code>xlsx</code>, <code>deep-research</code>, <code>chrome-browser</code>, <code>computer-use</code>, <code>morning</code>, <code>import-memory</code></td><td>attached to your claude.ai account</td></tr>
+</table></div>
+<p>⚠ <b>A bundled skill and a project skill look the same</b>, since neither has a prefix. The lists above come from this session's listing and the repo's directories.</p>
+
+<h3>Tonight's example of a bundled skill</h3>
+<p><code>/fewer-permission-prompts</code> is bundled: its whole prompt is compiled into the binary at <code>~/.local/share/claude/versions/2.1.309</code>. Run over the 50 most recent transcripts (2,344 Bash calls), it found only <b>three</b> patterns that qualified. Everything else was mutating, could run code, or was already allowed. That became PR #416, merged <code>2ccda14b</code>.</p>
+
+<h3>The binary's list of bundled names — partly explained</h3>
+<p>The 2.1.309 binary contains an exported list (<code>OZn</code>) of 18 bundled-skill names: artifact-diagramming, batch, claude-code-docs, code-review, commit, dataviz, debug, explain-usage, fewer-permission-prompts, keybindings-help, loop, memory-types, plugin-authoring, pr, simplify, update-config, verify, workflow-authoring. Bundled skills can be switched off with the environment variable <code>CLAUDE_CODE_DISABLE_BUNDLED_SKILLS</code> or the setting <code>disableBundledSkills</code>.</p>
+<div class="callout warn"><b>UNVERIFIED: what that list is for.</b> It doesn't match this session. Eight of its names (batch, commit, debug, pr, verify, explain-usage, memory-types, claude-code-docs) are not in this session's listing. Several bundled skills that <i>are</i> listed (init, security-review, run, schedule, claude-api) are not in it. So it's not simply "the bundled skills you have". Treat the listing in your session as the truth.</div>
+
+<h2>3. How a skill gets picked</h2>
+<ol>
+<li><b>You type <code>/name</code></b>. That's explicit, and always works.</li>
+<li><b>Claude matches your words to a description</b> and invokes it unasked. This is the path that's meant to save you from remembering names. It is <i>passive</i>: it works only if Claude notices.</li>
+<li><b>A hook nudges at a known moment</b>. This repo already has one: <code>.claude/hooks/suggest-explainer.sh</code> suggests <code>/explain-diff</code> when <code>gh pr create</code> runs. Its own header says it is <i>"A REMINDER, NEVER A GATE — always exits 0"</i>.</li>
+</ol>
+<p><b>Why path 2 is the weak one.</b> Matching a task to a one-line description is the same shape of problem as matching a situation to a memory. This repo measured that for memory recall (backlog #191): keyword matching found the right memory in <b>3 of 20</b> situations, and semantic matching in <b>20 of 20</b>. ⚠ <i>That's an analogy. It measured memories, not skills, and nothing here has measured skill matching.</i> It still suggests that "Claude will notice" isn't a guarantee.</p>
+<p>One thing pushes path 2 harder in this session. The <code>superpowers</code> plugin injects an instruction at session start telling Claude to check for an applicable skill <i>before every response</i>. That's visible in this session's context. It makes Claude look; it doesn't make the match good.</p>
+
+<h2>4. When to use which: the ones most useful to you</h2>
+<div class="tablewrap"><table>
+<tr><th>When you'd say…</th><th>Skill</th></tr>
+<tr><td>"where are we?" / "catch me up"</td><td><code>/brief</code></td></tr>
+<tr><td>"how does X work?" / "explain X to me"</td><td><code>/explain-topic</code> (this page)</td></tr>
+<tr><td>"what does this PR actually change?" before merging</td><td><code>/explain-diff</code></td></tr>
+<tr><td>"should these findings be backlog items?"</td><td><code>/explain-findings</code></td></tr>
+<tr><td>"record what changed for someone who was away"</td><td><code>/dashboard</code></td></tr>
+<tr><td>"I'm stopping; let the next session pick up"</td><td><code>/handoff</code></td></tr>
+<tr><td>"review this diff for bugs" / "clean it up"</td><td><code>/code-review</code> / <code>/simplify</code></td></tr>
+<tr><td>"stop asking me permission for safe commands"</td><td><code>/fewer-permission-prompts</code></td></tr>
+<tr><td>"from now on, whenever X happens, do Y"</td><td><code>/update-config</code> (a hook; memory can't do this)</td></tr>
+<tr><td>"keep checking this every few minutes"</td><td><code>/loop</code></td></tr>
+<tr><td>"do this tomorrow at 9" / "every weekday"</td><td><code>/schedule</code></td></tr>
+<tr><td>"poke holes in my plan"</td><td><code>/grill-me</code> (or <code>/grill-with-docs</code> against the project's docs)</td></tr>
+<tr><td>"let's build a new thing"</td><td><code>superpowers:brainstorming</code> first</td></tr>
+</table></div>
+
+<h2>5. How to get reminded</h2>
+<div class="callout ok"><b>Three ways, in the order to try them:</b>
+<ol>
+<li><b>Ask in plain words.</b> "Is there a skill for X?" or just describe the task. Claude has every description, so this is the most reliable lookup there is.</li>
+<li><b>Type <code>/</code> and then a word.</b> The menu lists skills and commands. ⚠ <i>UNVERIFIED: whether it filters on the description or only the name.</i> Try a word from what you want to do.</li>
+<li><b>For a moment that keeps recurring, ask for a reminder hook</b>, like the <code>suggest-explainer</code> one. It works only where the moment is something a machine can see (a command being run, a file being touched).</li>
+</ol></div>
+<p><b>What a cheat sheet can and can't do.</b> <code>docs/available-skills.md</code> lists every skill by source. It was <b>generated 2026-08-29</b> by <code>scripts/regen-skills-doc.py</code>, so it's two months old and may be missing skills added since. <code>/sync-docs</code> regenerates it. It's good for browsing, but it doesn't remind you of anything.</p>
+<p><b>The idea that would remind you every time, and its cost.</b> A hook can run on <i>every prompt</i> you send (<code>UserPromptSubmit</code>). Matching your prompt by keywords would be weak, for the reason in §3. A hook of type <code>"prompt"</code>, which asks a model to judge, could match by meaning. ⚠ <i>UNVERIFIED: its cost and the delay it would add to every message. Nothing here has measured them.</i> It's worth trying only if the three ways above keep failing you.</p>
+
+<h2>6. What was measured and what was inferred</h2>
+<div class="tablewrap"><table>
+<tr><th>Claim</th><th>Status</th><th>How</th></tr>
+<tr><td>The full skill list, with descriptions, is in Claude's context every session</td><td><span class="tag done">measured</span></td><td>read from this session's own context</td></tr>
+<tr><td>The four sources and their members</td><td><span class="tag done">measured</span></td><td>this session's listing; <code>ls .claude/skills .agents/skills</code></td></tr>
+<tr><td><code>fewer-permission-prompts</code> is bundled; 3 patterns from 2,344 calls</td><td><span class="tag done">measured</span></td><td>prompt text found in the 2.1.309 binary; PR #416</td></tr>
+<tr><td><code>OZn</code>'s 18 names; the off switches</td><td><span class="tag done">measured</span></td><td><code>strings</code> on the binary</td></tr>
+<tr><td>What <code>OZn</code> is for</td><td><span class="tag wait">unverified</span></td><td>it doesn't match the session listing either way</td></tr>
+<tr><td><code>suggest-explainer.sh</code> is a never-blocking reminder on <code>gh pr create</code></td><td><span class="tag done">measured</span></td><td>its header; its registration in <code>.claude/settings.json</code></td></tr>
+<tr><td>superpowers tells Claude to check skills before every response</td><td><span class="tag done">measured</span></td><td>its SessionStart text, visible in this session</td></tr>
+<tr><td>Keyword matching 3/20 vs semantic 20/20</td><td><span class="tag done">measured</span>, for <b>memories</b></td><td>backlog #191. Applying it to skills is an <b>inference</b></td></tr>
+<tr><td>The <code>/</code> menu filters on descriptions</td><td><span class="tag wait">unverified</span></td><td>not tested in this session</td></tr>
+<tr><td>A <code>type: "prompt"</code> hook's cost and latency</td><td><span class="tag wait">unverified</span></td><td>not measured</td></tr>
+<tr><td><code>docs/available-skills.md</code> may be stale</td><td><span class="tag done">measured</span> date; staleness inferred</td><td>its header says generated 2026-08-29</td></tr>
+</table></div>
+</div>
