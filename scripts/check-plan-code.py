@@ -1168,7 +1168,8 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 41,
+    # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
+    "scripts/check-ci-watched.py": 42,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -1921,7 +1922,17 @@ EXPECTED_MUTATIONS = {
     # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces. 17 -> 36 and 6 -> 12 in the
     # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules); 36 -> 45 in round 2's
     # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
-    "scripts/check-fixture-git-isolation.py": 45,
+    # ⟳ backlog #382 (2026-10-27): 45 -> 32. Every `--self-test` is wrapped, so the BUILDER DETECTOR and GIT_SUITES are
+    # deleted and their 19 entries retire with their subject; 6 are added for the population rule (the entries
+    # `check-main-drivable.suite_entries` reads, a flag test with no entry, a file with no self-test, the named refusal);
+    # 32 -> 35 for rule 5, no process launch at import, which replaces the deleted module-level-build refusal.
+    # 35 -> 48 in the r1 fold (Codex XM1-XM4): the literal population, named entries, undecorated sync entries, and
+    # rule 5 over every file with class bodies, except types, TryStar, rebinding, __import__, getattr and asyncio.
+    # r2 fold: rule 5 EXECUTES each import under an audit hook, so its 10 static spelling entries retire with their
+    # subject and 10 are added (the events, the timeout and crash as CANNOT CHECK, the named event, exit-time launches,
+    # ctypes, effects reported, EXEMPT files imported) — 48 -> 48.
+    # r3 fold (SPLIT): 48 -> 55, the -I -S audit child and rule 5's static direct-launcher half.
+    "scripts/check-fixture-git-isolation.py": 55,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -3055,6 +3066,13 @@ def _budget_wiring(root: pathlib.Path) -> dict:
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def case(name, got, want):
@@ -6111,7 +6129,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2350)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2361)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

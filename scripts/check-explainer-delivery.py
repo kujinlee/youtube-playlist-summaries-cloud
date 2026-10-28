@@ -114,6 +114,13 @@ def _tree(tmp: Path, skills: dict[str, str], shared: str | None = SHARED_BODY) -
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases, failures = 0, 0
 
     def check(label: str, got: list[str], want_problem: bool, needle: str = "") -> None:

@@ -18015,3 +18015,32 @@ switcher, leaned on the shim, now `--em` in its 4 blocks). Both fragments were r
 switcher because they get no Theme button: they declare no `:root[data-theme="light"]` block (their
 light palette is the bare `:root`), so `missing_palettes` reports it missing and the composer adds
 a stamp only.
+
+## 2026-10-27
+Every script's self-test now runs inside the isolated git environment, and each of the 79 was checked to start
+its suite inside it. That isolation is an in-process swap with known escapes, listed in backlog #380, so it lowers
+the risk of a self-test touching the real repository; it does not rule it out. Before, only the self-tests that a
+detector judged risky were isolated, and that detector kept missing cases: four self-tests that read the
+repository were on nobody's list, and one of them gave different answers depending on how it was started.
+The check that enforces this now asks one simple question of every self-test instead of trying to guess
+which ones matter, and the guessing code is deleted.
+<!--tech-->
+Branch `wrap-every-selftest` (backlog #382). Measured on `d678369d` before any change: the 80 scripts naming
+`--self-test`, run as children of `fixture_git.isolated()`, gave 79 green; the red is `subject_status`
+(backlog #386), red unisolated too. 79 dispatch `--self-test`; 16 were wrapped and 63 more now are (64
+entries: `check-dashboard-entry` dispatches two; `gen-dashboard`'s write sandbox moved inside the block).
+Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,361 manifest mutations resolves
+once. After: 79/80 run normally, 79/80 with `GIT_DIR` exported to a victim that stays byte-identical, and
+`subject_status` 16/17 under `GIT_DIR` where master gives 12/17. Round 1 (Codex) showed that reading the population
+from dispatch leaked, so `check-fixture-git-isolation.py`'s rules are now broad: the population is every file with a
+non-docstring `--self-test` literal; a population file with no nameable entry is refused (dict, `getattr`, argparse
+action and sibling dispatch); entries must be plain undecorated synchronous `def`s whose body is the canonical
+argument-free `isolated()` block. Round 2 (Codex) beat a static launcher rule six more ways and found a real launch at import
+(`check-ci-watched.py`'s `_repo_sentinel()`, now resolved on first use); round 3 convened an architecture review
+for THRASHING, which SPLIT the subject. As shipped, rule 5 observes one import of each scripts/*.py in a child (-I -S, the isolated environment, a temp cwd and HOME) under an in-process audit hook, plus a static backstop for direct launcher calls in module-level statement bodies (not every expression position — a `match` guard or a lambda default is not covered, backlog #380). It does NOT see: native calls (ctypes/CFFI, backlog #382 r3 X3); launches taken only in another context through non-literal code; daemon threads outliving the check; dead branches. Enforcement outside the interpreter (a sandbox
+profile around the audit child) moves to backlog #380. Measured: 0 of 84 files trip the static half, and all 84
+imports are observed with no launch, in about 1.5s. 84 → 141 cases; mutations 45 → 55. EXEMPT is empty. Against
+master's guard, over a fixed probe set held in the suite: every probe master refuses is refused here except the named
+relaxations — a builder in a file with no `--self-test` (master's X9 false refusal), a flag that is not one literal,
+an unlaunched module-level git argv literal — and the NOT SEEN shapes above (master refused Codex's native-call
+program only because it also held a git argv literal).

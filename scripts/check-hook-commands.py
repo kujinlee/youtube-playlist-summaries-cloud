@@ -207,6 +207,13 @@ def check(path: Path, root: Path, unregistered: dict[str, str] = UNREGISTERED) -
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import tempfile
 
     good = 'bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/run-hook.sh x.sh'

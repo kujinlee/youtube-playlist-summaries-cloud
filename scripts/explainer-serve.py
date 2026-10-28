@@ -1374,6 +1374,13 @@ def status() -> int:
 # ── self-test ────────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import tempfile
     ok = 0
     cases: list[tuple[str, Callable[[], object]]] = []
@@ -2872,7 +2879,7 @@ def _self_test() -> int:
         #   ② the search is the RUNNER BLOCK, not the whole function: prose above legitimately
         #      discusses both spellings, so a whole-file search answers about the commentary.
         def _runner_src():
-            return inspect.getsource(_self_test).split("\n        for name, fn in cases:", 1)[1]
+            return inspect.getsource(_self_test_body).split("\n        for name, fn in cases:", 1)[1]
         _BAD = "  " + "FAIL" + ": {name}"
         # ⛔ BOTH PRINTS, AND ASSERTING ONLY THE FIRST IS THE DEFECT THIS CASE ITSELF HAD. The
         # runner reports a failure from two places — the falsy-result branch and the `except` that
