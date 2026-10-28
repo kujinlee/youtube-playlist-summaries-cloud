@@ -323,5 +323,57 @@
     "expect": [
       "⭐ a line written elsewhere with a RAW U+2028 in a value is still ONE readable job — split on \\n only"
     ]
+  },
+  {
+    "name": "fetch reads THIS checkout's ledger, so a worktree session's block says none RECORDED",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    ledger, problems, _ = read_ledger(main / LEDGER_REL)",
+        "    ledger, problems, _ = read_ledger(root / LEDGER_REL)"
+      ]
+    ],
+    "expect": [
+      "⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'"
+    ]
+  },
+  {
+    "name": "--add and --done write THIS checkout's ledger, which nobody reads from a worktree",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    led = main / LEDGER_REL   #",
+        "    led = root / LEDGER_REL   #"
+      ]
+    ],
+    "expect": [
+      "⭐ --add and --done run from a LINKED WORKTREE write the MAIN checkout's ledger, never the worktree's"
+    ]
+  },
+  {
+    "name": "a rev-parse answer that is not an absolute directory is trusted and resolved against the cwd",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not common or \"\\n\" in common or not os.path.isabs(common) or not os.path.isdir(common):",
+        "    if not common:"
+      ]
+    ],
+    "expect": [
+      "a rev-parse answer that is not an absolute directory is refused, never resolved against the cwd"
+    ]
+  },
+  {
+    "name": "a main checkout git cannot name is not said, so this checkout's ledger reads as the real one",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if main_err:\n        problems = [",
+        "    if False:\n        problems = ["
+      ]
+    ],
+    "expect": [
+      "collect() where git cannot name the main checkout SAYS the real ledger may not have been read"
+    ]
   }
 ]

@@ -273,19 +273,6 @@
     ]
   },
   {
-    "name": "the ledger is read from THIS checkout, so a worktree session reads an empty one",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "        f_state = ex.submit(ss.fetch, main, gh_run) if ss else None",
-        "        f_state = ex.submit(ss.fetch, root, gh_run) if ss else None"
-      ]
-    ],
-    "expect": [
-      "⭐ run from a LINKED WORKTREE, the snapshot reads the MAIN checkout's ledger and names both paths"
-    ]
-  },
-  {
     "name": "a main checkout git cannot find is not said, so the wrong ledger reads as the real one",
     "file": "scripts/compaction-state.py",
     "edits": [

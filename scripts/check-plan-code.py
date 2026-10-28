@@ -1914,14 +1914,18 @@ EXPECTED_MUTATIONS = {
     "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 6,
     "scripts/check-diff-coverage.py": 37,
-    "scripts/session-state.py": 25,
+    # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
+    # refusal of a non-path answer, and the fallback said aloud.
+    "scripts/session-state.py": 29,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
     # transcript's `</pasted_content id=…>` closer unmatched, a tool_result-carrying turn read as a prompt. Four
     # anchors retargeted onto rewritten lines.
     # ⟳ 21 -> 23: the ledger read from the MAIN checkout (a worktree's own is empty), and the fallback said aloud.
-    "scripts/compaction-state.py": 23,
+    # ⟳ 23 -> 22: the main-checkout rule MOVED to session-state.main_checkout (one copy), so the entry that re-pointed
+    # this file's read retires with its subject; session-state's manifest now holds it.
+    "scripts/compaction-state.py": 22,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6138,7 +6142,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2384)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2387)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -12,7 +12,8 @@ WHY THIS FILE EXISTS (measured 2026-10-26).
 WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from `gh` ALONE:
   - number, branch, head, draft, mergeability, a check summary (`NO CHECKS` when none ran), and the
     NAMES of failing checks;
-  - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored): one line per background job, added with
+  - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored) IN THE MAIN CHECKOUT — `main_checkout`, so a
+    linked worktree reads and writes the one ledger every session sees (backlog #361's PR): one line per background job, added with
     `--add ID WHAT ON_DONE` and removed with `--done ID`. It is written BY HAND, so an empty ledger reads
     "none RECORDED", never "nothing running".
   ⟳ SPLIT after PR #410 round 3. Rounds 2 and 3 each found a defect caused by the previous fold in ONE
@@ -49,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 51 cases
+    python3 scripts/session-state.py --self-test  # 56 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -299,6 +300,20 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
     return "\n".join(L)
 
 
+def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
+    """(the MAIN checkout, None), or (root, why) when git cannot name one. THE one copy of this rule —
+    `compaction-state.py` imports it. The ledger is git-ignored, so it lives in the MAIN checkout: read from (or
+    written to) a linked worktree's own `.claude/`, it is a ledger nobody reads — measured 2026-10-28, a worktree
+    snapshot said "none RECORDED" while the main ledger held 6 jobs. The rule is backlog #363's (`goal-tree.py`):
+    the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,
+    existing directory is refused, never resolved against the cwd."""
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, 10)
+    common = out.strip() if rc == 0 else ""
+    if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
+        return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
+    return Path(common).parent, None
+
+
 def fetch(root: Path, run=_run) -> tuple[list[dict] | None, str | None, list[dict], list[str], bool]:
     """(prs, pr_error, ledger, ledger_problems, truncated) — the DATA `render` prints. Split out so
     `compaction-state.py` (backlog #361) snapshots the same PR list and ledger without a second gh reader."""
@@ -314,7 +329,11 @@ def fetch(root: Path, run=_run) -> tuple[list[dict] | None, str | None, list[dic
                 raise ValueError("not a list of PR objects")
         except ValueError as exc:
             prs, pr_error = None, f"gh output unparseable ({exc})"
-    ledger, problems, _ = read_ledger(root / LEDGER_REL)
+    main, main_err = main_checkout(root, run)
+    ledger, problems, _ = read_ledger(main / LEDGER_REL)
+    if main_err:
+        problems = [*problems, f"the main checkout could not be found ({main_err}) — this checkout's ledger was read; "
+                               "in a linked worktree the real one was NOT READ"]
     return prs, pr_error, ledger, problems, prs is not None and len(prs) >= LIMIT
 
 
@@ -401,6 +420,7 @@ def _self_test_body() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         led = root / LEDGER_REL
+        NO_GIT = lambda c, w, timeout=TIMEOUT: (128, "fatal: not a git repository")  # noqa: E731 — never a real repo
         def attempt(fn, *args):
             """'accepted', 'refused', or 'raised <Type>' — ANY exception becomes a value, so a case fails by NAME."""
             try:
@@ -471,7 +491,7 @@ def _self_test_body() -> int:
              attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent)
+            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent, run=NO_GIT)
         case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
              (big_rc, big.read_bytes() == before), (2, True))
         at = root / "at-cap" / LEDGER_REL
@@ -514,7 +534,7 @@ def _self_test_body() -> int:
             return 0, json.dumps([pr])
         out = collect(root, run=fake, now="T")
         case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
-             (len(seen), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
+             (len([c for c, _ in seen if c[0] == "gh"]), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
              (1, ["gh", "pr", "list"], True, True, True))
         bare = root / "no-ledger-here"
         bare.mkdir()
@@ -535,12 +555,44 @@ def _self_test_body() -> int:
         r2.mkdir()
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            added = main(["--add", "k", "Codex r1 on PR #1", "record it"], root=r2)
+            added = main(["--add", "k", "Codex r1 on PR #1", "record it"], root=r2, run=NO_GIT)
             seen_ids = [e["id"] for e in read_ledger(r2 / LEDGER_REL)[0]]
-            removed = main(["--done", "k"], root=r2)
-            empty_done = main(["--done", ""], root=r2)
+            removed = main(["--done", "k"], root=r2, run=NO_GIT)
+            empty_done = main(["--done", ""], root=r2, run=NO_GIT)
         case("main --add then --done round-trips under the ROOT given; --done '' is refused (2), not the block",
              (added, seen_ids, removed, read_ledger(r2 / LEDGER_REL)[0], empty_done), (0, ["k"], 0, [], 2))
+
+        # ─── a LINKED WORKTREE reads and writes the MAIN checkout's ledger (backlog #361's fix, same class) ───
+        repo, wt = root / "mainrepo", root / "linked-worktree"  # not "linked": the symlink case above owns it
+        repo.mkdir()
+        g = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=repo,  # noqa: E731
+                                      capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        g("init", "-q")
+        (repo / ".git" / "info").mkdir(exist_ok=True)
+        (repo / ".git" / "info" / "exclude").write_text(".claude/\n")
+        (repo / "f").write_text("x")
+        g("add", "f")
+        g("commit", "-qm", "c")
+        g("worktree", "add", "-q", "-b", "side", str(wt))
+        ledger_add(repo / LEDGER_REL, "main-job", "Codex r2 on PR #7", "fold it", "T")
+        gh_only = lambda c, w, timeout=TIMEOUT: (0, "[]") if c[:1] == ["gh"] else _run(c, w, timeout)  # noqa: E731
+        case("⭐ main_checkout() from a linked worktree names the MAIN checkout; from a non-repo it says why",
+             (main_checkout(wt, gh_only), main_checkout(root, NO_GIT)[1].startswith("git rev-parse --git-common-dir gave")),
+             ((repo.resolve(), None), True))
+        case("a rev-parse answer that is not an absolute directory is refused, never resolved against the cwd",
+             main_checkout(wt, lambda c, w, timeout=TIMEOUT: (0, "[{\"number\": 1}]\n"))[0], wt)
+        out = collect(wt, run=gh_only, now="T")
+        case("⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'",
+             ("[main-job] Codex r2 on PR #7" in out, "none RECORDED" in out), (True, False))
+        case("collect() where git cannot name the main checkout SAYS the real ledger may not have been read",
+             "in a linked worktree the real one was NOT READ" in collect(bare, run=NO_GIT, now="T"), True)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh"], root=wt, run=gh_only)
+            in_main = [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]]
+            wt_done = main(["--done", "main-job"], root=wt, run=gh_only)
+        case("⭐ --add and --done run from a LINKED WORKTREE write the MAIN checkout's ledger, never the worktree's",
+             (wt_add, in_main, wt_done, [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]], (wt / LEDGER_REL).exists()),
+             (0, ["main-job", "wt-job"], 0, ["wt-job"], False))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0
@@ -554,7 +606,10 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
-    led = root / LEDGER_REL
+    main, main_err = main_checkout(root, run)
+    led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
+    if main_err and (args.add or args.done is not None):
+        print(f"note: {main_err}; using {led}", file=sys.stderr)
     try:
         if args.add:
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"))

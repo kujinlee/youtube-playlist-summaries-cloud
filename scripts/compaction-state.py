@@ -92,7 +92,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_REL = ".remember/precompact-snapshot.md"
-LEDGER = ".claude/inflight.jsonl"   # session-state's LEDGER_REL, named here for the location line only
 AUDIT_REL = ".remember/compaction-audit.md"
 SNAPSHOT_CAP = 8000     # under the 9,000 the brief set, leaving AUDIT_CAP + the opening line inside PRINT_CAP
 AUDIT_CAP = 1500
@@ -357,17 +356,6 @@ def worktrees(root: Path, run) -> tuple[list[dict] | None, str | None]:
     return wts, None
 
 
-def main_checkout(root: Path, run) -> tuple[Path, str | None]:
-    """(the MAIN checkout, None), or (root, why) when git cannot say. The in-flight ledger is git-ignored, so it
-    lives in the main checkout: read from a linked worktree's own `.claude/` it is EMPTY, and the snapshot said
-    "none RECORDED" while the main ledger held 6 jobs (measured 2026-10-28). Same rule as backlog #363's
-    `goal-tree.py`: the parent of `git rev-parse --path-format=absolute --git-common-dir`."""
-    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, GIT_TIMEOUT)
-    if rc != 0 or not out.strip():
-        return root, f"git rev-parse --git-common-dir exited {rc}: {clean(out, 120)}"
-    return Path(out.strip()).parent, None
-
-
 def worktree_section(wts, err, budget: int) -> str:
     L = ["## Worktrees (git worktree list)"]
     if wts is None:
@@ -451,8 +439,9 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         ss, ss_err = None, f"session-state.py cannot load ({exc.__class__.__name__}: {clean(exc, 100)})"
     gh_run = lambda cmd, cwd, timeout=GH_TIMEOUT: run(cmd, cwd, min(timeout, GH_TIMEOUT))  # noqa: E731
     with ThreadPoolExecutor(2) as ex:
-        main, main_err = main_checkout(root, run)
-        f_state = ex.submit(ss.fetch, main, gh_run) if ss else None
+        # session-state owns the main-checkout rule; `fetch` reads the ledger through it, and this names the place.
+        main, main_err = ss.main_checkout(root, run) if ss else (root, ss_err)
+        f_state = ex.submit(ss.fetch, root, gh_run) if ss else None
         f_wts = ex.submit(worktrees, root, run)
         try:
             prs, pr_error, ledger, problems, truncated = f_state.result() if f_state else (None, ss_err, [], [ss_err], False)
@@ -468,7 +457,9 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     else:
         inflight = f"OPEN PRS and IN-FLIGHT LEDGER: CANNOT RUN — {ss_err}"
     count, recent, ask_err = asks(root)
-    ledger_ok = ss is not None and not any("NOT READ" in p or "cannot be opened" in p for p in problems)
+    # A REFUSED ledger (symlink, not a file, over the cap) is one problem naming the file; a damaged line or the
+    # main-checkout fallback note is not a refusal, and must not hide the entries that WERE read.
+    ledger_ok = ss is not None and not any(p.startswith(ss.LEDGER_REL) for p in problems)
     waits = owner_ledger(ledger)
     if payload_err:
         records, t_err = None, f"the hook payload was unreadable ({payload_err})"
@@ -482,6 +473,7 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         head += f"\n⚠ hook payload: UNREADABLE — {clean(payload_err)}"
     if custom:
         head += f"\n/compact instructions: {clean(custom, 300)}"
+    LEDGER = getattr(ss, "LEDGER_REL", ".claude/inflight.jsonl")
     if main_err:
         where = (f"⚠ ledger read from THIS checkout, {root}/{LEDGER}: the main checkout could not be found ({main_err}) — "
                  "if this is a linked worktree, the real ledger is elsewhere and was NOT READ")
