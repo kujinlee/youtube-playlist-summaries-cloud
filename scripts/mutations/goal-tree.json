@@ -615,7 +615,7 @@
       ]
     ],
     "expect": [
-      "⛔ Y1: a bare mention, or the right row with the WRONG KIND, never merges (Codex's two + kind)"
+      "⛔ Y1: an ACTION declaring `action: backlog #5` never merges into row 5's DECISION"
     ]
   },
   {
@@ -624,19 +624,6 @@
     "edits": [
       [
         "        ident = identity(rest)",
-        "        ident = None"
-      ]
-    ],
-    "expect": [
-      "⭐ Y1: sources that DECLARE one decision become ONE item that keeps every source"
-    ]
-  },
-  {
-    "name": "Y1: a dashboard ask's declared identity is ignored, so it never merges",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        ident = identity(f\"{e.get('title') or ''} {e.get('plain') or ''}\")",
         "        ident = None"
       ]
     ],
@@ -720,6 +707,71 @@
     ],
     "expect": [
       "⭐ Y7: the page says it REPLAYS a snapshot, when, and how to refresh it"
+    ]
+  },
+  {
+    "name": "Z1: an identity token that disagrees with the item's own marker becomes its identity",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ident and ident[1] != kind:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ Z1: an ACTION declaring `decision: backlog #5` stays a separate ACTION, with the conflict shown"
+    ]
+  },
+  {
+    "name": "Z2: the count is read from the shortened display text",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"multi\": multiplicity(full if full is not None else text)",
+        "\"multi\": multiplicity(text)"
+      ]
+    ],
+    "expect": [
+      "⭐ Z2: a dashboard ask's identity and count are read from its BODY, the title kept for display"
+    ]
+  },
+  {
+    "name": "Z2: a dashboard ask's whole entry is not handed over for the count",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "identity(whole), whole))",
+        "identity(whole), None))"
+      ]
+    ],
+    "expect": [
+      "⭐ Z2: a dashboard ask's identity and count are read from its BODY, the title kept for display"
+    ]
+  },
+  {
+    "name": "Z2: a ledger entry's whole text is not handed over for the count",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_SS.clean(rest, 200), ident, e[\"what\"]))",
+        "_SS.clean(rest, 200), ident, None))"
+      ]
+    ],
+    "expect": [
+      "Z2: a count past the display cut is still read"
+    ]
+  },
+  {
+    "name": "Y1: a dashboard ask's declared identity is ignored, so it never merges (re-anchored on the Z2 rewrite)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                           _SS.clean(e.get(\"title\") or \"\", 160), identity(whole)",
+        "                           _SS.clean(e.get(\"title\") or \"\", 160), None"
+      ]
+    ],
+    "expect": [
+      "⭐ Y1: sources that DECLARE one decision become ONE item that keeps every source"
     ]
   }
 ]

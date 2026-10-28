@@ -457,9 +457,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     ),
     # Every generated page rebuilt on merge (owner decision D3). Every parameter varied; none exempt.
     "regen-pages.py": (
-        "commands.cmd", "main.argv", "main.pages", "main.run", "main.stdin", "may_merge.cmd",
-        "pages_for.pages", "pages_for.payload", "regen.names", "regen.pages", "regen.run",
-        "regen.timeout", "report.results", "report.wall",
+        "main.argv", "main.pages", "main.run", "main.stdin", "may_merge.cmd", "pages_for.pages",
+        "pages_for.payload", "regen.names", "regen.pages", "regen.run", "regen.timeout",
+        "report.results", "report.wall",
     ),
     # The work-lines generator. Every parameter is varied by a case; none is exempt.
     "gen-work-lines.py": (

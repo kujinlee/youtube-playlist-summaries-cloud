@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 140 cases
+    python3 scripts/goal-tree.py --self-test                 # 146 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -46,7 +46,10 @@ CANNOT RUN (round 1 X1). Decisions and ACTIONS only the owner can take are two l
 items merge only on a DECLARED identity (`decision: backlog #N` / `action: backlog #N`, row AND kind),
 each merged source keeping its own text, link and count; a count comes only from `(answers-open: N)`
 ("several" only where a source says "several answers"); and a row whose tail names a decided or closed
-`backlog #N` is flagged "may already be answered", never hidden (C2, Y4).
+`backlog #N` is flagged "may already be answered", never hidden (C2, Y4). ROUND 3: an item's kind is its OWN
+marker, and an identity token that disagrees with it is a CONFLICT shown on the page, never a merge (Z1);
+identity and count are read from the WHOLE source entry, a dashboard body included, before the display text
+is shortened (Z2).
 
 THE PAGE IS A REPLAY (round 2 Y7): the tree and the timeline are the stored snapshots, and the page says
 which snapshot and how to refresh it; NEEDS YOU is read live whenever this run took a snapshot.
@@ -368,10 +371,20 @@ def identity(text: str):
     return next(iter(found)) if len(found) == 1 else None
 
 
-def _item(kind, source, ref, href, text, ident=None):
+def _item(kind, source, ref, href, text, ident=None, full=None):
+    """One NEEDS YOU item. `kind` is the source's OWN marker; `full` is the WHOLE source entry, from which
+    the count is read BEFORE `text` is shortened for display (round 3 Z2).
+
+    ⛔ Z1: an identity token whose kind disagrees with the item's own marker does NOT become the item's
+    identity — the item stays separate and carries the conflict, which the page shows."""
+    conflict = None
+    if ident and ident[1] != kind:
+        conflict = (f"declares {ident[1]}: backlog #{ident[0]} but is marked "
+                    + ("ACTION" if kind == "action" else "a decision"))
+        ident = None
     return {"kind": kind, "source": source, "ref": ref, "href": href, "text": text,
-            "multi": multiplicity(text), "flag": None, "also": [],
-            "identity": list(ident) if ident else None}
+            "multi": multiplicity(full if full is not None else text), "flag": None, "also": [],
+            "identity": list(ident) if ident else None, "conflict": conflict}
 
 
 def needs_from_dashboard(text: str) -> tuple[list[dict], list[str]]:
@@ -382,9 +395,9 @@ def needs_from_dashboard(text: str) -> tuple[list[dict], list[str]]:
     entries = gd.parse_entries(text)
     items = []
     for e in gd.unresolved(entries):
-        ident = identity(f"{e.get('title') or ''} {e.get('plain') or ''}")
-        items.append(_item(ident[1] if ident else "decision", "dashboard", e["id"],
-                           f"/dashboard#{gd._slug(e['id'])}", _SS.clean(e.get("title") or "", 160), ident))
+        whole = f"{e.get('title') or ''} {e.get('plain') or ''}"   # Z2: the whole entry, body included
+        items.append(_item("decision", "dashboard", e["id"], f"/dashboard#{gd._slug(e['id'])}",
+                           _SS.clean(e.get("title") or "", 160), identity(whole), whole))
     bad = [e["id"] or e.get("would_be_id") or "an entry with no id" for e in entries if e["error"]]
     return items, ([f"{len(bad)} dashboard entr{'y' if len(bad) == 1 else 'ies'} the store's grammar "
                     f"could not read ({', '.join(bad)})"] if bad else [])
@@ -401,8 +414,8 @@ def needs_from_ledger(entries: list[dict]) -> list[dict]:
         ident = identity(rest)
         kind = "action" if rest.startswith(LEDGER_ACTION) else "decision"
         rest = rest[len(LEDGER_ACTION):].strip() if kind == "action" else rest
-        out.append(_item(ident[1] if ident else kind, "ledger", _SS.clean(e.get("id", ""), 60), None,
-                         _SS.clean(rest, 200), ident))
+        out.append(_item(kind, "ledger", _SS.clean(e.get("id", ""), 60), None,
+                         _SS.clean(rest, 200), ident, e["what"]))
     return out
 
 
@@ -423,7 +436,8 @@ def needs_from_backlog(text: str) -> tuple[list[dict], list[str]]:
         tail = tail[len(ACTION_SUFFIX):] if kind == "action" else tail
         tail = tail.lstrip(" —-")
         it = _item(kind, "backlog", f"backlog #{r['num']}", f"/backlog-table#i{r['num']}",
-                   _SS.clean(html.unescape(gb.plain(r["title"])), 140) + " — " + _SS.clean(tail, 160))
+                   _SS.clean(html.unescape(gb.plain(r["title"])), 140) + " — " + _SS.clean(tail, 160),
+                   full=f"{r['title']} {tail}")
         it["row"] = r["num"]
         it["identity"] = [r["num"], kind]
         # Y4: only an explicit `backlog #N` is a row — never a bare `#N`, a `pr #N` or an `issue #N`.
@@ -644,6 +658,8 @@ def _item_line(n: dict) -> str:
         bits.append(f'stands for {n["multi"]} open answers')
     if n.get("flag"):
         bits.append(f'⚠ {n["flag"]}')
+    if n.get("conflict"):
+        bits.append(f'⚠ {n["conflict"]}')
     for a in n.get("also") or []:
         bits.append(f'also recorded in {a["source"]} {a["ref"]}: {a["text"]}'
                     + (f' (stands for {a["multi"]} open answers)' if a.get("multi") else ""))
@@ -701,6 +717,8 @@ def needs_html(snap: dict) -> str:
                 extra += f' · <b>stands for {html.escape(str(n["multi"]))} open answers</b>'
             if n.get("flag"):
                 extra += f' · <span class="warn">⚠ {html.escape(n["flag"])}</span>'
+            if n.get("conflict"):
+                extra += f' · <span class="warn">⚠ {html.escape(n["conflict"])}</span>'
             for a in n.get("also") or []:
                 extra += (f' · also recorded in <span class="src">{html.escape(a["source"])}</span> '
                           + _ref_html(a["source"], a["ref"], a.get("href")) + ": " + html.escape(a["text"])
@@ -1197,8 +1215,35 @@ def _self_test_body() -> int:
     case("⛔ Y1: a bare mention, or the right row with the WRONG KIND, never merges (Codex's two + kind)",
          [(n["ref"], n["kind"]) for n in _y1],
          [("backlog #5", "decision"), ("backlog #9", "action"), ("backlog #10", "decision"),
-          ("act", "action"), ("other", "decision"), ("kind", "action")])
+          ("act", "action"), ("other", "decision"), ("kind", "decision")])
     case("...and the row keeps no stray source", _y1[0]["also"], [])
+    _kind = consolidate(_b + needs_from_ledger(
+        [{"id": "act5", "what": "WAITS-ON-OWNER: ACTION: action: backlog #5 — run it"}]))
+    case("⛔ Y1: an ACTION declaring `action: backlog #5` never merges into row 5's DECISION",
+         ([n["ref"] for n in _kind], _kind[0]["also"]),
+         (["backlog #5", "backlog #9", "backlog #10", "act5"], []))
+    # Z1: the kind is the source's OWN marker; a disagreeing token is a conflict, never a merge.
+    _z1 = consolidate(_b + needs_from_ledger(
+        [{"id": "probe", "what": "WAITS-ON-OWNER: ACTION: decision: backlog #5 — run the command"}]))
+    case("⭐ Z1: an ACTION declaring `decision: backlog #5` stays a separate ACTION, with the conflict shown",
+         ([(n["ref"], n["kind"], n.get("conflict")) for n in _z1 if n["ref"] == "probe"], _z1[0]["also"],
+          "⚠ declares decision: backlog #5 but is marked ACTION" in _item_line(_z1[-1])),
+         ([("probe", "action", "declares decision: backlog #5 but is marked ACTION")], [], True))
+    case("Z1: a dashboard ask declaring an ACTION is a decision with a conflict",
+         needs_from_dashboard(DASH_FIXTURE.replace("Pick one for backlog #5.",
+                                                   "Pick one (action: backlog #9)."))[0][0]["conflict"],
+         "declares action: backlog #9 but is marked a decision")
+    # Z2: identity AND count come from the whole entry — a dashboard body included — before shortening.
+    _z2 = needs_from_dashboard("## 2026-10-01 [needs-you]\nPick a name.\n\n"
+                               "decision: backlog #5 (answers-open: 14)\n")[0]
+    case("⭐ Z2: a dashboard ask's identity and count are read from its BODY, the title kept for display",
+         [(n["text"], n["identity"], n["multi"]) for n in _z2], [("Pick a name.", [5, "decision"], 14)])
+    case("Z2: ...and the merged provenance keeps that count",
+         [(a["ref"], a.get("multi")) for a in consolidate(_b + _z2)[0]["also"]], [("2026-10-01/1", 14)])
+    case("Z2: a count past the display cut is still read",
+         [(len(n["text"]) <= 200, n["multi"]) for n in needs_from_ledger(
+             [{"id": "long", "what": "WAITS-ON-OWNER: " + "x" * 300 + " (answers-open: 7)"}])],
+         [(True, 7)])
     _conf = consolidate([dict(_b[0], text="Pick a name (answers-open: 2)", multi=2)] + needs_from_ledger(
         [{"id": "ask-1", "what": "WAITS-ON-OWNER: decision: backlog #5 (answers-open: 3)"}]))
     case("⭐ Y2: CONFLICTING counts are both kept and flagged, never resolved",

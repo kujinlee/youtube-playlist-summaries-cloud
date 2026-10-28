@@ -91,133 +91,29 @@
     ]
   },
   {
-    "name": "X3: the merge is matched by a regex over the raw text, so quoted text fires it",
+    "name": "Z3: the substring test is removed, so no merge triggers a rebuild",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    return any(c[:3] == [\"gh\", \"pr\", \"merge\"] for c in commands(cmd))",
-        "    return bool(re.search(r\"\\bgh\\s+pr\\s+merge\\b\", cmd))"
+        "    return \"gh pr merge\" in cmd",
+        "    return False"
       ]
     ],
     "expect": [
-      "⛔ X3: a QUOTED merge is text, not a command"
+      "⭐ Z3: real merges FIRE, however the shell around them is written"
     ]
   },
   {
-    "name": "X3: `gh pr merge-base` matches because the regex boundary accepts a hyphen",
+    "name": "Z3: every Bash command triggers a rebuild",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "c[:3] == [\"gh\", \"pr\", \"merge\"]",
-        "\" \".join(c).startswith(\"gh pr merge\")"
+        "\"gh pr merge\" in cmd",
+        "True"
       ]
     ],
     "expect": [
-      "⛔ X3: `gh pr merge-base` is not `gh pr merge`"
-    ]
-  },
-  {
-    "name": "X3: separators do not split commands, so `cd x && gh pr merge` is one argv",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "        if t and set(t) <= set(SEPARATORS):\n            out.append([])",
-        "        if False:\n            out.append([])"
-      ]
-    ],
-    "expect": [
-      "X3: a compound `cd x && gh pr merge 5` IS a merge"
-    ]
-  },
-  {
-    "name": "X3: a newline is whitespace, so a merge on the second line is not seen",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "        lex.whitespace = \" \\t\\r\"\n",
-        "        pass\n"
-      ]
-    ],
-    "expect": [
-      "X3: after a pipe, a semicolon or a newline it is still a merge"
-    ]
-  },
-  {
-    "name": "X3: a leading NAME=value assignment is taken as the command name (re-anchored on the Y5 rewrite)",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "not (ASSIGNMENT.match(t) or",
-        "not (False or"
-      ]
-    ],
-    "expect": [
-      "X3: a leading NAME=value assignment is not the command name"
-    ]
-  },
-  {
-    "name": "Y5: compound-syntax words are taken as the command name, so `then gh pr merge` is missed",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "or t in LEADERS)",
-        "or False)"
-      ]
-    ],
-    "expect": [
-      "Y5: a merge inside `if … then … fi` is seen"
-    ]
-  },
-  {
-    "name": "Y5: POSIX tokenizing drops the quotes, so a quoted `;` splits the command",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "shlex.shlex(_strip_heredocs(cmd), posix=False,",
-        "shlex.shlex(_strip_heredocs(cmd), posix=True,"
-      ]
-    ],
-    "expect": [
-      "⛔ Y5: a QUOTED separator is text, so `echo \";\" gh pr merge` is one echo"
-    ]
-  },
-  {
-    "name": "Y5: here-document bodies are read as commands",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "        delims += [m.group(2) for m in HEREDOC.finditer(line)]",
-        "        delims += []"
-      ]
-    ],
-    "expect": [
-      "⛔ Y5: a here-document BODY is data, never a command"
-    ]
-  },
-  {
-    "name": "Y5: a here-document never ends, so later commands are lost",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "            if line.strip() == delims[0]:",
-        "            if False:"
-      ]
-    ],
-    "expect": [
-      "...and the command after the here-document is still read"
-    ]
-  },
-  {
-    "name": "Y5: quoted command words keep their quotes",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "    return token[1:-1] if len(token) >= 2",
-        "    return token if len(token) >= 2"
-      ]
-    ],
-    "expect": [
-      "Y5: a quoted command word is still the word (`\"gh\" pr merge`)"
+      "⚠ Z3, STATED MISS: a merge spelled without the text `gh pr merge` does not fire"
     ]
   }
 ]

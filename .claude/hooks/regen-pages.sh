@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# PostToolUse hook — rebuild EVERY generated page after a command that MAY merge a PR (a static match on
-# `gh pr merge` as a command's first words; see scripts/regen-pages.py for its stated bounds; D3, 2026-10-28),
+# PostToolUse hook — rebuild EVERY generated page after a Bash command whose TEXT contains `gh pr merge`
+# (owner decision D3, 2026-10-28). A plain substring, deliberately over-eager: a false fire costs one rebuild
+# (~18 s); a miss needs `eval`, an alias, or a merge spelled without that text. No shell is parsed.
 # and the goal tree alone after an edit of docs/goal-threads.md (backlog #363). The decisions and the
 # runner live in scripts/regen-pages.py, which has the cases; this file only hands it the payload.
 #
