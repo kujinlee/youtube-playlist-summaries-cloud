@@ -1,122 +1,5 @@
 [
   {
-    "name": "a git argv holding init or clone is not a repository build",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "        if _git_argv(n) and _subcommand(n.elts[1:]) in BUILD_VERBS:\n",
-        "        if False:\n"
-      ]
-    ],
-    "expect": [
-      "`git -C <tmp> init` builds a repository"
-    ]
-  },
-  {
-    "name": "a shell git init handed to a launcher is not a repository build",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "if _launches(n, aliases) and n.args and any(SHELL_BUILD.search(s) for s in _strings(n.args[0])):",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "a shell string to os.system builds one"
-    ]
-  },
-  {
-    "name": "a call with \"init\" to a git wrapper is not a repository build",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "                    and _subcommand(list(itertools.dropwhile(lambda a: not isinstance(a, ast.Constant), n.args))) \\\n                    in BUILD_VERBS:",
-        "                    and False:"
-      ]
-    ],
-    "expect": [
-      "a call with \"init\" to a lambda WRAPPER builds one"
-    ]
-  },
-  {
-    "name": "any Name call with a positional \"init\" is a repository build (r1 Xm5/Cm2)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "            elif isinstance(n.func, ast.Name) and n.func.id in wrappers \\",
-        "            elif isinstance(n.func, ast.Name) \\"
-      ]
-    ],
-    "expect": [
-      "...nor a plain call `count(\"init\")` to a function that is not a git wrapper"
-    ]
-  },
-  {
-    "name": "the iterated [\"init\", \"-q\"] form is not a repository build",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "        elif wrappers and isinstance(n, (ast.List, ast.Tuple)) and len(n.elts) >= 2 \\",
-        "        elif False \\"
-      ]
-    ],
-    "expect": [
-      "an iterated `[\"init\", \"-q\"]` handed to a wrapper builds one"
-    ]
-  },
-  {
-    "name": "any literal starting with \"init\" in a wrapper file is a repository build",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        " and str(_const(n.elts[1])).startswith(\"-\"):",
-        ":"
-      ]
-    ],
-    "expect": [
-      "...even in a file that HAS a git wrapper (the iterated form needs a FLAG second)"
-    ]
-  },
-  {
-    "name": "a git named by a variable is not git",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "        return \"git\" in n.id.lower()",
-        "        return False"
-      ]
-    ],
-    "expect": [
-      "a git named by a variable (`[GIT, \"init\"]`) builds one"
-    ]
-  },
-  {
-    "name": "which(\"git\") is not git",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "        return name == \"which\" and bool(n.args) and _const(n.args[0]) == \"git\"",
-        "        return False"
-      ]
-    ],
-    "expect": [
-      "`which(\"git\")` as argv[0] builds one"
-    ]
-  },
-  {
-    "name": "an aliased launcher is not a launcher",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "    return names\n\n\ndef _launches",
-        "    return set()\n\n\ndef _launches"
-      ]
-    ],
-    "expect": [
-      "a shell string handed to an ALIASED launcher builds one"
-    ]
-  },
-  {
     "name": "an entry passes if a block appears anywhere in its body (the decoy)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
@@ -193,45 +76,6 @@
     ],
     "expect": [
       "the canonical entry is accepted"
-    ]
-  },
-  {
-    "name": "an entry named `selftest` is not an entry",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "and n.name.replace(\"_\", \"\").lower() == \"selftest\"]",
-        "and n.name in (\"self_test\", \"_self_test\")]"
-      ]
-    ],
-    "expect": [
-      "...and accepted when it isolates"
-    ]
-  },
-  {
-    "name": "a builder with no self-test entry passes",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "    if not entries:\n        msgs.append(",
-        "    if False:\n        msgs.append("
-      ]
-    ],
-    "expect": [
-      "a builder with NO self-test entry is refused"
-    ]
-  },
-  {
-    "name": "a repository built at module level passes",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "        if enclosing_fn(s) is None:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "a repository built at MODULE level is refused even with an isolated entry"
     ]
   },
   {
@@ -391,16 +235,16 @@
     ]
   },
   {
-    "name": "a stale EXEMPT entry (no longer a builder) is kept",
+    "name": "a stale EXEMPT entry (no longer names --self-test) is kept",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            if not builds:\n                worst = max(worst, 1)",
-        "            if False:\n                worst = max(worst, 1)"
+        "        if rel in exempt and not member:\n            worst = max(worst, 1)",
+        "        if False:\n            worst = max(worst, 1)"
       ]
     ],
     "expect": [
-      "⭐ an EXEMPT entry that no longer builds a repository, or no longer exists, is refused"
+      "⭐ an EXEMPT entry that no longer names `--self-test`, or no longer exists, is refused"
     ]
   },
   {
@@ -413,7 +257,7 @@
       ]
     ],
     "expect": [
-      "⭐ an EXEMPT entry that no longer builds a repository, or no longer exists, is refused"
+      "⭐ an EXEMPT entry that no longer names `--self-test`, or no longer exists, is refused"
     ]
   },
   {
@@ -439,7 +283,7 @@
       ]
     ],
     "expect": [
-      "⭐ main() over a world with one unisolated builder, in a SUBDIRECTORY, exits 1 naming it"
+      "⭐ main() over a world with one unisolated self-test, in a SUBDIRECTORY, exits 1 naming it"
     ]
   },
   {
@@ -447,8 +291,8 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            worst = 2\n",
-        "            worst = max(worst, 0)\n"
+        "            worst = 2\n            msgs.append(f\"CANNOT RUN {rel}: does not parse",
+        "            worst = max(worst, 0)\n            msgs.append(f\"CANNOT RUN {rel}: does not parse"
       ]
     ],
     "expect": [
@@ -465,7 +309,7 @@
       ]
     ],
     "expect": [
-      "⭐ main() over a world with one unisolated builder, in a SUBDIRECTORY, exits 1 naming it",
+      "⭐ main() over a world with one unisolated self-test, in a SUBDIRECTORY, exits 1 naming it",
       "main() over a world with no scripts is CANNOT RUN, never a pass",
       "a file that does not parse makes the whole run CANNOT RUN"
     ]
@@ -497,94 +341,380 @@
     ]
   },
   {
-    "name": "every literal after git is taken as the subcommand (r2 X8)",
+    "name": "a file with no --self-test is held to the entry rules anyway (#382)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "        return v if isinstance(v, str) else None\n    return None\n",
-        "        if v in BUILD_VERBS:\n            return v\n    return None\n"
+        "    if exempt or not names_self_test(tree):\n        return (1 if msgs else 0), msgs\n",
+        "    if exempt:\n        return (1 if msgs else 0), msgs\n"
       ]
     ],
     "expect": [
-      "⟳ r2 X8: `init` as an ARGUMENT of another subcommand is not a build"
+      "a script with NO `--self-test` is not held to the entry rules (only rule 5 reads it)"
     ]
   },
   {
-    "name": "a global option's VALUE is not skipped",
+    "name": "the entries are only the NAMED suites, not what main dispatches (#382)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            if v in GIT_VALUE_OPTS:\n                next(it, None)\n",
+        "    return named | _main_drivable().suite_entries(tree)\n",
+        "    return named\n"
+      ]
+    ],
+    "expect": [
+      "⭐ every suite `main` dispatches is an entry: an unwrapped SECOND suite is refused (check-dashboard-entry's shape)"
+    ]
+  },
+  {
+    "name": "a dispatched entry that is not module-level is skipped (#382)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if fn is None:\n            msgs.append(",
+        "        if fn is None:\n            continue\n            msgs.append("
+      ]
+    ],
+    "expect": [
+      "a dispatched entry that is not a MODULE-LEVEL function is refused (its body cannot be read)"
+    ]
+  },
+  {
+    "name": "the population shrinks to argparse files (#382)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if member:\n            population.append(rel)\n",
+        "        if member and \"argparse\" in src:\n            population.append(rel)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ the population is every delivered script that names `--self-test` (an independent rule), is not small, and every delivered script PASSES (the control: no real script is falsely refused)"
+    ]
+  },
+  {
+    "name": "the refusal does not name the entry (#382)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "`--self-test` runs `{name}`, whose body is not one",
+        "`--self-test` runs an entry whose body is not one"
+      ]
+    ],
+    "expect": [
+      "the refusal names the file, the line, the ENTRY and the remedy"
+    ]
+  },
+  {
+    "name": "a population file with no nameable entry passes (#382 r1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if not names:\n        msgs.append(f\"REFUSED {rel}: names",
+        "    if False:\n        msgs.append(f\"REFUSED {rel}: names"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [CODEX_R1] an argparse action that runs the suite: refused"
+    ]
+  },
+  {
+    "name": "a docstring mention puts a file in the population (#382 r1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        " and id(n) not in docs\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "...nor is one that names it only in a DOCSTRING and a comment (`m4_catalog.py`'s shape)"
+    ]
+  },
+  {
+    "name": "the population is read from dispatch, not the literal (#382 r1 XM1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    return any(isinstance(n, ast.Constant) and isinstance(n.value, str) and FLAG in n.value and id(n) not in docs\n               for n in ast.walk(tree))\n",
+        "    return bool(_main_drivable().suite_entries(tree))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [CODEX_R1] dict dispatch of the flag: refused"
+    ]
+  },
+  {
+    "name": "a function NAMED as a suite is not an entry (#382 r1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "and n.name.replace(\"_\", \"\").lower() == \"selftest\"}",
+        "and n.name.replace(\"_\", \"\").lower() == \"never\"}"
+      ]
+    ],
+    "expect": [
+      "a function NAMED as a suite (`SelfTest`) is an entry even if nothing dispatches it"
+    ]
+  },
+  {
+    "name": "a decorated entry passes (#382 r1 XM2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if fn.decorator_list:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [CODEX_R1] a decorator that replaces the checked entry: refused"
+    ]
+  },
+  {
+    "name": "an async entry passes (#382 r1 XM3)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if isinstance(fn, ast.AsyncFunctionDef):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [CODEX_R1] an async entry that never runs: refused"
+    ]
+  },
+  {
+    "name": "rule 5 imports only the population (#382 r1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "import_time_launches(parsed).items()",
+        "import_time_launches([f for f in parsed if f.relative_to(root).as_posix() in population]).items()"
+      ]
+    ],
+    "expect": [
+      "a file with NO --self-test whose import launches INDIRECTLY is refused: rule 5 imports every file"
+    ]
+  },
+  {
+    "name": "subprocess.Popen is not a launch event (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "LAUNCH_EVENTS = (\"subprocess.Popen\", ",
+        "LAUNCH_EVENTS = ("
+      ]
+    ],
+    "expect": [
+      "the refusal names the file and the audit event that fired"
+    ]
+  },
+  {
+    "name": "os.system is not a launch event (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "\"os.system\", \"os.exec\"",
+        "\"os.exec\""
+      ]
+    ],
+    "expect": [
+      "⭐ probe [R1_EXTRA] `importlib.import_module(\"os\").system(...)` in a TryStar: refused"
+    ]
+  },
+  {
+    "name": "a TIMEOUT is a pass (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        except subprocess.TimeoutExpired:\n            return \"cannot\", [], ",
+        "        except subprocess.TimeoutExpired:\n            return \"ok\", [], "
+      ]
+    ],
+    "expect": [
+      "an import that does not FINISH is CANNOT CHECK, never a pass"
+    ]
+  },
+  {
+    "name": "a CRASH without an event is a pass (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if proc.returncode != 0 or not any(e[\"kind\"] == \"imported\" for e in events):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "an import that CRASHES is CANNOT CHECK, never a pass"
+    ]
+  },
+  {
+    "name": "CANNOT CHECK does not fail the run (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        elif status == \"cannot\":\n            worst = 2\n",
+        "        elif status == \"cannot\":\n            worst = max(worst, 0)\n"
+      ]
+    ],
+    "expect": [
+      "an import that CRASHES is CANNOT CHECK, never a pass"
+    ]
+  },
+  {
+    "name": "the refusal does not name the audit event (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "audit event `{fired['event']}` ",
+        "audit event "
+      ]
+    ],
+    "expect": [
+      "the refusal names the file and the audit event that fired"
+    ]
+  },
+  {
+    "name": "what an import writes is not reported (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if effects:\n        msgs.append(",
+        "    if False:\n        msgs.append("
+      ]
+    ],
+    "expect": [
+      "what an import WRITES is reported, not refused"
+    ]
+  },
+  {
+    "name": "a launch at interpreter EXIT is ignored (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "emit(\"imported\", \"\")\n'''",
+        "emit(\"imported\", \"\")\nos.close(fd)\n'''"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [R2_EXTRA] an `atexit` callback registered at import (#380 X6): refused"
+    ]
+  },
+  {
+    "name": "libc entry points through ctypes are not launches (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        " or (event == \"ctypes.dlsym\" and len(args) > 1 and args[1] in SYMBOLS)",
         ""
       ]
     ],
     "expect": [
-      "...but `init` after global options that take values IS one"
+      "⭐ probe [R2_EXTRA] libc `system` through ctypes: refused"
     ]
   },
   {
-    "name": "a wrapper's leading cwd argument is not skipped",
+    "name": "an EXEMPT file is not imported (#382 r2)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "list(itertools.dropwhile(lambda a: not isinstance(a, ast.Constant), n.args))",
-        "n.args"
+        "        parsed.append(f)\n",
+        "        parsed.append(f) if rel not in exempt else None\n"
       ]
     ],
     "expect": [
-      "a wrapper whose FIRST argument is its cwd, called `(d, \"init\")`, builds one"
+      "an EXEMPT file is still IMPORTED under the hook: rule 5 reads every file"
     ]
   },
   {
-    "name": "a shell git with global options before init is not a build",
+    "name": "the audit child starts without -I -S, so startup code runs before the hook (#382 r3 X2)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "git(?:\\s+(?:-C|-c|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+-\\S+)*",
-        "git"
+        "argv = [sys.executable, \"-I\", \"-S\", \"-c\", _CHILD,",
+        "argv = [sys.executable, \"-c\", _CHILD,"
       ]
     ],
     "expect": [
-      "an f-string to subprocess shell=True builds one"
+      "⭐ a `sitecustomize` on PYTHONPATH that vetoes the audit hook cannot suppress the check (r3 X2: -I -S)"
     ]
   },
   {
-    "name": "GIT_SUITES files are not checked (r2 X1)",
+    "name": "no static check of direct launcher calls (#382 r3 X1)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "        code, m = check_source(src, rel, suite=rel in suites)",
-        "        code, m = check_source(src, rel)"
+        "            for line, call in direct_launches(tree)]",
+        "            for line, call in []]"
       ]
     ],
     "expect": [
-      "main() refuses an unisolated GIT_SUITES file"
+      "⭐ probe [CODEX_R3] a launch only when the importing process's argv holds `--self-test` (r3 X1): refused"
     ]
   },
   {
-    "name": "a suite file with no build sign is let through (r2 X1)",
+    "name": "the static half does not descend into a module-level if (#382 r3 X1)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    if not signs and not suite:\n        return 0, msgs\n",
-        "    if not signs:\n        return 0, msgs\n"
+        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n                walk(s.body)\n",
+        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n"
       ]
     ],
     "expect": [
-      "⟳ r2 X1: a GIT_SUITES file that builds nothing is still checked: unisolated it is refused"
+      "⭐ a direct launch under a module-level `if` is refused statically, whichever branch an import takes"
     ]
   },
   {
-    "name": "a GIT_SUITES entry for a deleted file is kept",
+    "name": "the static half does not follow a `from` import (#382 r3 X1)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    for rel in sorted(set(suites) - present):",
-        "    for rel in []:"
+        "            elif isinstance(f, ast.Name) and f.id in bare:\n                found.append((n.lineno, bare[f.id]))\n",
+        "            elif False:\n                found.append((n.lineno, bare[f.id]))\n"
       ]
     ],
     "expect": [
-      "...and a GIT_SUITES entry whose file does not exist"
+      "...and so is a `from` import's launcher under a `with`, and an aliased module's in an `else`"
+    ]
+  },
+  {
+    "name": "the static half skips class bodies (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "                code.extend(s.decorator_list + s.bases)\n                walk(s.body)\n",
+        "                code.extend(s.decorator_list + s.bases)\n"
+      ]
+    ],
+    "expect": [
+      "...and so is one in a CLASS body, which runs at import"
+    ]
+  },
+  {
+    "name": "the static half reads lambda bodies as module-level code (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if isinstance(n, ast.Lambda):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a direct launcher inside a def or a lambda is not module-level code, so it is not refused statically"
+    ]
+  },
+  {
+    "name": "the static refusal does not name the launcher (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "`{call}` is called in module-level code",
+        "a launcher is called in module-level code"
+      ]
+    ],
+    "expect": [
+      "the static refusal names the file, the line and the launcher"
     ]
   }
 ]

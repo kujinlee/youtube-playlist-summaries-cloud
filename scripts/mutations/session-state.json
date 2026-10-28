@@ -95,7 +95,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        L.append(f\"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.\")",
+        "        L.append(f\"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.\" + mark)",
         "        L.append(\"OPEN PRS: none (gh answered).\")"
       ]
     ],
@@ -134,8 +134,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        return 124, f\"timed out after {timeout:.0f}s\"",
-        "        return 124, \"error\""
+        "        return 124, f\"timed out after {timeout:g}s\"\n    finally:",
+        "        return 124, \"error\"\n    finally:"
       ]
     ],
     "expect": [
@@ -199,8 +199,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "f\"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}\")",
-        "f\"{check_summary(rollup or [])}\")"
+        "f\"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}\"",
+        "f\"{check_summary(rollup or [])}\""
       ]
     ],
     "expect": [
@@ -322,6 +322,201 @@
     ],
     "expect": [
       "⭐ a line written elsewhere with a RAW U+2028 in a value is still ONE readable job — split on \\n only"
+    ]
+  },
+  {
+    "name": "fetch reads THIS checkout's ledger, so a worktree session's block says none RECORDED",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    ledger, problems, _ = read_ledger(main / LEDGER_REL)",
+        "    ledger, problems, _ = read_ledger(root / LEDGER_REL)"
+      ]
+    ],
+    "expect": [
+      "⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'"
+    ]
+  },
+  {
+    "name": "--add and --done write THIS checkout's ledger, which nobody reads from a worktree",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    led = main / LEDGER_REL   #",
+        "    led = root / LEDGER_REL   #"
+      ]
+    ],
+    "expect": [
+      "⭐ --add and --done run from a LINKED WORKTREE write the MAIN checkout's ledger, never the worktree's"
+    ]
+  },
+  {
+    "name": "a rev-parse answer that is not an absolute directory is trusted and resolved against the cwd",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not common or \"\\n\" in common or not os.path.isabs(common) or not os.path.isdir(common):",
+        "    if not common:"
+      ]
+    ],
+    "expect": [
+      "a rev-parse answer that is not an absolute directory is refused, never resolved against the cwd"
+    ]
+  },
+  {
+    "name": "a main checkout git cannot name is not said, so this checkout's ledger reads as the real one",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if main_err:\n        problems = [",
+        "    if False:\n        problems = ["
+      ]
+    ],
+    "expect": [
+      "collect() where git cannot name the main checkout SAYS the real ledger may not have been read"
+    ]
+  },
+  {
+    "name": "a ledger entry waits on the owner when it merely MENTIONS the owner (the word match)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    return isinstance(what, str) and what.startswith(OWNER_MARKER)",
+        "    return bool(re.search(r\"(?i)\\bowner\\b\", f\"{entry.get('what', '')} {entry.get('on_done', '')}\")) if isinstance(entry, dict) else False"
+      ]
+    ],
+    "expect": [
+      "⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is"
+    ]
+  },
+  {
+    "name": "a call's process group is not killed when it ends, so what it backgrounded keeps running",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    finally:\n        if own_group:\n            kill_group(p.pid)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a call that BACKGROUNDS a process and exits leaves nothing running: its group is killed when it ends"
+    ]
+  },
+  {
+    "name": "a call shares its caller's process group, so killing 'its' group reaches nothing",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "start_new_session=own_group)",
+        "start_new_session=False)"
+      ]
+    ],
+    "expect": [
+      "⭐ a call that TIMES OUT takes its grandchild with it — the `gh` that was `sleep 60` (PR #425 r2)"
+    ]
+  },
+  {
+    "name": "XR3: a killed call's pipes are drained without a bound",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            out, err = p.communicate(timeout=DRAIN)",
+        "            out, err = p.communicate()"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 XR3: a grandchild that calls setsid and keeps stdout cannot hold the call: drained DRAIN s, then closed"
+    ]
+  },
+  {
+    "name": "own_group=False is ignored, so the capture's calls leave the caller's group",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    try:\n        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE",
+        "    own_group = True\n    try:\n        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE"
+      ]
+    ],
+    "expect": [
+      "own_group=False keeps the call in the CALLER's process group, so the caller's one kill reaches it"
+    ]
+  },
+  {
+    "name": "C4-F3: a ledger problem line loses its mark",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        L.append(f\"  ⚠ {clean(prob)}\" + mark)",
+        "        L.append(f\"  ⚠ {clean(prob)}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: `mark` goes on the lines whose state was NOT READ — never on data that merely contains a failure word"
+    ]
+  },
+  {
+    "name": "C4-F3: a truncated PR list loses its mark",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                 + (mark if truncated else \"\"))",
+        "                 )"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: `mark` goes on the lines whose state was NOT READ — never on data that merely contains a failure word"
+    ]
+  },
+  {
+    "name": "C4-F3: a gh failure loses its mark",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "never as 'nothing open'.\" + mark)",
+        "never as 'nothing open'.\")"
+      ]
+    ],
+    "expect": [
+      "...and a gh failure is marked too; with no mark the block is unchanged"
+    ]
+  },
+  {
+    "name": "C4-F5: fetch ignores the caller's main-checkout answer",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    main, main_err = main if main is not None else main_checkout(root, run)",
+        "    main, main_err = main_checkout(root, run)"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F5: fetch given the caller's main-checkout answer asks git NOTHING — one answer for heading and ledger"
+    ]
+  },
+  {
+    "name": "C4-F6: a call that exited is reported as timed out",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if exited is not None:   # it answered",
+        "        if False:   # it answered"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F6: a call that EXITED while its background child held the pipe reports its answer, not a timeout"
+    ]
+  },
+  {
+    "name": "C4-F6: an exited call whose pipe stays held is reported as timed out",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if exited is not None:\n                return 124, f\"exited {exited}",
+        "            if False:\n                return 124, f\"exited {exited}"
+      ]
+    ],
+    "expect": [
+      "...and when the holder is out of reach, it says the call exited but its pipe was held — never 'timed out'"
     ]
   }
 ]

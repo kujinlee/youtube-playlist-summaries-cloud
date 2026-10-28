@@ -854,6 +854,13 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str,
                f"`gh run rerun`) will fail again with this identical message.")
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def case(name, got, want):
@@ -1336,6 +1343,13 @@ def collect(base: str) -> tuple[list[str], bool, str | None, list[str], list[str
 
 
 def _impure_self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _impure_self_test_body()
+
+
+def _impure_self_test_body() -> int:
     """The cannot-run contract for the layer that touches git.
 
     SEPARATE from `_self_test` on purpose. `_self_test` is added in Step 4, where

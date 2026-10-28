@@ -112,6 +112,13 @@ def audit(files: list[pathlib.Path], allow: dict[str, str] | None = None) -> lis
 
 # ────────────────────────────────────────────────────────────── self-test
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import tempfile
 
     passed = failed = 0

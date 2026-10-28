@@ -950,6 +950,13 @@ def run_decide(payload: str) -> int:
 
 # ── Self-test ──────────────────────────────────────────────────────────────────────────────────
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import tempfile
 
     failures: list[str] = []

@@ -81,6 +81,13 @@ def main() -> int:
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def check(label, thunk, want):

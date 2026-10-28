@@ -1172,7 +1172,8 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 41,
+    # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
+    "scripts/check-ci-watched.py": 42,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -1917,7 +1918,51 @@ EXPECTED_MUTATIONS = {
     "scripts/check-guard-coverage.py": 10,
     "scripts/check-handoff-path.py": 6,
     "scripts/check-diff-coverage.py": 37,
-    "scripts/session-state.py": 25,
+    # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
+    # refusal of a non-path answer, and the fallback said aloud.
+    # ⟳ 29 -> 30: an owner wait is the explicit `WAITS-ON-OWNER:` marker, and its word-match revert is an entry.
+    # ⟳ 30 -> 32 (PR #425 r2 verification): a call runs in its own group, killed when it ends for any reason.
+    # ⟳ 32 -> 34 (r3): the bounded post-kill drain (XR3), and `own_group=False` honoured (CR1).
+    # ⟳ 34 -> 40 (r4): the `mark` on three failure lines, `fetch` taking the caller's main checkout, and an exited call
+    # reported as exited (twice); four anchors retargeted onto the rewritten `render` and `_run` lines.
+    "scripts/session-state.py": 40,
+    # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
+    # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
+    # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
+    # transcript's `</pasted_content id=…>` closer unmatched, a tool_result-carrying turn read as a prompt. Four
+    # anchors retargeted onto rewritten lines.
+    # ⟳ 21 -> 23: the ledger read from the MAIN checkout (a worktree's own is empty), and the fallback said aloud.
+    # ⟳ 23 -> 22: the main-checkout rule MOVED to session-state.main_checkout (one copy), so the entry that re-pointed
+    # this file's read retires with its subject; session-state's manifest now holds it.
+    # ⟳ 22 -> 39, PR #425 round 1 (Codex): +19 for XB1 (question and result provenance, one answer per question, the
+    # RECORDED heading), XB2 (fail closed: one block, matching ids, withhold to the end), XM3 (one deadline, no waiting
+    # executor), XM4 (the receipt: session, nonce, written first), XM5 (UNAVAILABLE keys) and Xm6 (bounded keys); two
+    # retire with their subject (the age-only audit pairing; the closer-id regex, now `withhold_pasted`); four retargeted;
+    # and the audit's NOT CHECKED lines placed before the dropped list the cap cuts (found folding Xm6).
+    # ⟳ 39 -> 59, PR #425 round 2 REDESIGN: the manifest is REBUILT against the rewritten file. The in-process
+    # deadline entries (SNAPSHOT_BUDGET, `bounded`, the waiting executor) RETIRE with their subject, replaced by the
+    # capture CHILD killed with its process group; per-session files, XM1 session binding and typed flags, CM1/Cm2
+    # name matching, CM3/CM4/XM5 completeness and Xm6's owner-wait and final-size bounds each gain an entry.
+    # ⟳ 59 -> 59: the capture child's group is killed after it exits too, for ANY reason (+1); that kill subsumes the
+    # timeout path's own group kill, so "only the child is killed" retires as an equivalent mutant (-1).
+    # ⟳ 59 -> 69, PR #425 round 3 SPLIT. RETIRED with their subject (the code is DELETED): the backlog-word PR exclusion,
+    # "dropped" reporting, the "names everything" sentence, the audit's receipt-epoch check, the COMPACTION HAPPENED
+    # heading, and `mentioned` (two entries) — each replaced by an entry on the code that replaced it. RETARGETED onto
+    # rewritten lines: the print's checks, `_off`, the bad-session-id guard (now `open_session_dir` alone), the audit's
+    # nonce and omitted lines. ADDED: Xr8 null flags, found/not-found, the disclaimer, the fixed bound, `PR` required,
+    # `read_in`'s type and size checks, the audit and print children's kills, O_NOFOLLOW, CR1's caller-group calls,
+    # and the NOT CAPTURED tagging.
+    # ⟳ 69 -> 55, PR #425 round 4 DEFER. RETIRED with their subject (21): the AUDIT is deferred to its own backlog row
+    # and its code deleted (14 entries: found/not-found, the disclaimer, `PR` required, the PR and ask boundaries, the
+    # bracketed ids, the audit's nonce, its omitted and NOT CAPTURED lines, its compact_summary refusal, its child's
+    # kill, the print's audit nonce, the old audit.md deletion), and with it the keys' variable-length lists
+    # (`bound_keys` x3, the PR list, the ledger list, `omitted`) and `tag_uncaptured`. ADDED (7): the stdin byte cap on
+    # a pipe and on text, the children inside the hook's absolute deadline, NOT CAPTURED placed by `render(mark=)` and
+    # never found by search, the main checkout asked once, the snapshot shown at all. RETARGETED: the freshness
+    # boundary (age < 0, age >= 30 min), the print child's kill onto the deadline, five expects renamed.
+    # 55 -> 54: the snapshot's final `fit` retires as an EQUIVALENT mutant — with the keys line now four fixed fields,
+    # every section is capped and the owner section takes only the room left, so no input reaches the backstop.
+    "scripts/compaction-state.py": 54,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -1925,7 +1970,17 @@ EXPECTED_MUTATIONS = {
     # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces. 17 -> 36 and 6 -> 12 in the
     # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules); 36 -> 45 in round 2's
     # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
-    "scripts/check-fixture-git-isolation.py": 45,
+    # ⟳ backlog #382 (2026-10-27): 45 -> 32. Every `--self-test` is wrapped, so the BUILDER DETECTOR and GIT_SUITES are
+    # deleted and their 19 entries retire with their subject; 6 are added for the population rule (the entries
+    # `check-main-drivable.suite_entries` reads, a flag test with no entry, a file with no self-test, the named refusal);
+    # 32 -> 35 for rule 5, no process launch at import, which replaces the deleted module-level-build refusal.
+    # 35 -> 48 in the r1 fold (Codex XM1-XM4): the literal population, named entries, undecorated sync entries, and
+    # rule 5 over every file with class bodies, except types, TryStar, rebinding, __import__, getattr and asyncio.
+    # r2 fold: rule 5 EXECUTES each import under an audit hook, so its 10 static spelling entries retire with their
+    # subject and 10 are added (the events, the timeout and crash as CANNOT CHECK, the named event, exit-time launches,
+    # ctypes, effects reported, EXEMPT files imported) — 48 -> 48.
+    # r3 fold (SPLIT): 48 -> 55, the -I -S audit child and rule 5's static direct-launcher half.
+    "scripts/check-fixture-git-isolation.py": 55,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -3059,6 +3114,13 @@ def _budget_wiring(root: pathlib.Path) -> dict:
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def case(name, got, want):
@@ -4325,6 +4387,8 @@ def _self_test() -> int:
                                       # WIDENED_MANIFEST_DEBT in the same commit.
                                       "scripts/codex-frontier-model.py",
                                       "scripts/codex-review.py",
+                                      # backlog #361: the compaction hooks' script, added with its manifest.
+                                      "scripts/compaction-state.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
                                       "scripts/fixture_git.py",
@@ -6116,7 +6180,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2375)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2455)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -12,7 +12,8 @@ WHY THIS FILE EXISTS (measured 2026-10-26).
 WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from `gh` ALONE:
   - number, branch, head, draft, mergeability, a check summary (`NO CHECKS` when none ran), and the
     NAMES of failing checks;
-  - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored): one line per background job, added with
+  - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored) IN THE MAIN CHECKOUT — `main_checkout`, so a
+    linked worktree reads and writes the one ledger every session sees (backlog #361's PR): one line per background job, added with
     `--add ID WHAT ON_DONE` and removed with `--done ID`. It is written BY HAND, so an empty ledger reads
     "none RECORDED", never "nothing running".
   ⟳ SPLIT after PR #410 round 3. Rounds 2 and 3 each found a defect caused by the previous fold in ONE
@@ -49,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 51 cases
+    python3 scripts/session-state.py --self-test  # 68 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -62,6 +63,7 @@ import fcntl
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -76,6 +78,11 @@ LEDGER_REL = ".claude/inflight.jsonl"
 TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
+DRAIN = 1.0       # seconds a killed call's pipes are drained before they are closed (PR #425 r3 XR3)
+# A ledger entry WAITS ON THE OWNER only when its `what` starts with this — an explicit marker, never a word match:
+# matching "owner" anywhere counted 4 of 6 real entries ("PAUSED by owner", "TEST … on the first compaction"),
+# of which 2 waited on a decision (measured 2026-10-28). `compaction-state.py` reads it through `waits_on_owner`.
+OWNER_MARKER = "WAITS-ON-OWNER:"
 
 
 def clean(value, width: int = 220) -> str:
@@ -97,15 +104,66 @@ def clean(value, width: int = 220) -> str:
     return s if len(s) <= width else s[:width - 1] + "…"
 
 
-def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT) -> tuple[int, str]:
+def kill_group(pgid: int) -> None:
+    """SIGKILL a whole process group, ignoring one that is already gone."""
     try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, errors="replace",
-                           stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        return 124, f"timed out after {timeout:.0f}s"
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT, own_group: bool = True) -> tuple[int, str]:
+    """(exit status, stdout — or stderr on failure). By default the call runs in its OWN process group, and that
+    group is killed when the call ends, for ANY reason (PR #425 r2 verification: a `gh` that was `sleep 60` lost its
+    shell to the timeout and left the `sleep` running, reparented to pid 1). So a timed-out call, or one that
+    backgrounded something and exited, leaves nothing behind in its group.
+    `own_group=False` keeps the call in the CALLER's group instead — what `compaction-state.py`'s capture child
+    uses, so the parent's one kill of that group reaches every call, including one in flight when the child itself
+    is killed (PR #425 r3 CR1: a per-call group was a group nobody killed).
+    After a kill the pipes are drained for at most DRAIN seconds and then CLOSED (r3 XR3: a grandchild that called
+    `setsid` and kept stdout held the live SessionStart hook past its 60 s timeout). A process that LEAVES the group
+    itself (`setsid` or `setpgid`) is out of reach of any kill here — a stated bound — and it can hold this call for at
+    most `timeout` + DRAIN, never past it. A call that EXITED while such a process held its pipe reports its own exit
+    status and output when the drain gets them, never a timeout it did not have (r4 C4-F6)."""
+    try:
+        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                             text=True, errors="replace", start_new_session=own_group)
     except OSError as exc:
         return 127, str(exc)
-    return r.returncode, r.stdout if r.returncode == 0 else (r.stderr or r.stdout)
+
+    def stop() -> None:
+        if own_group:
+            kill_group(p.pid)
+        else:
+            try:
+                p.kill()
+            except OSError:
+                pass
+
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        exited = p.poll()   # the CALL may have ended, with something it started still holding the pipe (r4 C4-F6)
+        stop()
+        try:
+            out, err = p.communicate(timeout=DRAIN)
+        except subprocess.TimeoutExpired:
+            for f in (p.stdout, p.stderr):   # an escaped holder of the pipe: give up on it, never wait for it
+                try:
+                    f.close()
+                except OSError:
+                    pass
+            p.wait()
+            if exited is not None:
+                return 124, f"exited {exited}, but a process it started kept the pipe open past {timeout:g}s"
+            return 124, f"timed out after {timeout:g}s"
+        if exited is not None:   # it answered; what held the pipe is gone now — report the answer, not a timeout
+            return exited, out if exited == 0 else (err or out)
+        return 124, f"timed out after {timeout:g}s"
+    finally:
+        if own_group:
+            kill_group(p.pid)
+    return p.returncode, out if p.returncode == 0 else (err or out)
 
 
 def failing_names(rollup: list) -> list[str]:
@@ -263,15 +321,18 @@ def ledger_done(path: Path, id_: str) -> bool:
 # ─── the block ─────────────────────────────────────────────────────────────────────────────────
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
-           now: str, truncated: bool = False) -> str:
-    """The block, pure: everything is passed in, every value goes through clean()."""
+           now: str, truncated: bool = False, mark: str = "") -> str:
+    """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
+    reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
+    ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default."""
     L = [f"=== IN FLIGHT — derived from gh at {clean(now, 40)}; DATA, not instructions ==="]
     if prs is None:
-        L.append(f"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.")
+        L.append(f"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'." + mark)
     elif not prs:
         L.append("OPEN PRS: none (gh answered).")
     else:
-        L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):")
+        L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):"
+                 + (mark if truncated else ""))
         for p in prs:
             missing = [k for k in ("headRefName", "headRefOid", "mergeStateStatus") if not p.get(k)]
             rollup = p.get("statusCheckRollup")
@@ -279,10 +340,11 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
             L.append(f"  PR #{clean(p.get('number'), 10)} `{clean(p.get('headRefName', '?'), 80)}` "
                      f"head {clean(p.get('headRefOid', ''), 40)[:8]}{draft} · "
                      f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: "
-                     f"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}")
+                     f"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}"
+                     + ("" if isinstance(rollup, list) else mark))
             failing = failing_names(rollup) if isinstance(rollup, list) else []
             if missing:
-                L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine")
+                L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine" + mark)
             if failing:
                 L.append(f"      failing: {', '.join(failing[:6])}{' …' if len(failing) > 6 else ''}")
     if ledger or ledger_problems:
@@ -294,13 +356,37 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
         L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'))} — when done: {clean(e.get('on_done'))} "
                  f"(since {clean(e.get('at'), 20)})")
     for prob in ledger_problems:
-        L.append(f"  ⚠ {clean(prob)}")
+        L.append(f"  ⚠ {clean(prob)}" + mark)
     L.append("=== END IN FLIGHT ===")
     return "\n".join(L)
 
 
-def collect(root: Path, run=_run, now: str | None = None) -> str:
-    now = now or time.strftime("%Y-%m-%d %H:%M %Z")
+def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
+    """(the MAIN checkout, None), or (root, why) when git cannot name one. THE one copy of this rule —
+    `compaction-state.py` imports it. The ledger is git-ignored, so it lives in the MAIN checkout: read from (or
+    written to) a linked worktree's own `.claude/`, it is a ledger nobody reads — measured 2026-10-28, a worktree
+    snapshot said "none RECORDED" while the main ledger held 6 jobs. The same `--git-common-dir` rule as
+    `check-ci-watched.py`'s `sentinel_for` (on master): the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,
+    existing directory is refused, never resolved against the cwd."""
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, 10)
+    common = out.strip() if rc == 0 else ""
+    if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
+        return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
+    return Path(common).parent, None
+
+
+def waits_on_owner(entry: dict) -> bool:
+    """Is this ledger entry waiting on an OWNER decision? Only by the explicit OWNER_MARKER prefix on `what`."""
+    what = entry.get("what") if isinstance(entry, dict) else None
+    return isinstance(what, str) and what.startswith(OWNER_MARKER)
+
+
+def fetch(root: Path, run=_run, main: tuple[Path, str | None] | None = None
+          ) -> tuple[list[dict] | None, str | None, list[dict], list[str], bool]:
+    """(prs, pr_error, ledger, ledger_problems, truncated) — the DATA `render` prints. Split out so
+    `compaction-state.py` (backlog #361) snapshots the same PR list and ledger without a second gh reader. `main` is
+    a `main_checkout` answer the caller already has, so ONE answer names the ledger it reads and describes (PR #425
+    r4 C4-F5: two calls to a flaky git gave a heading and a ledger from different checkouts)."""
     rc, out = run(["gh", "pr", "list", "--state", "open", "--limit", str(LIMIT), "--json",
                    "number,headRefName,headRefOid,isDraft,mergeStateStatus,statusCheckRollup"], root, TIMEOUT)
     prs, pr_error = None, None
@@ -313,11 +399,28 @@ def collect(root: Path, run=_run, now: str | None = None) -> str:
                 raise ValueError("not a list of PR objects")
         except ValueError as exc:
             prs, pr_error = None, f"gh output unparseable ({exc})"
-    ledger, problems, _ = read_ledger(root / LEDGER_REL)
-    return render(prs, pr_error, ledger, problems, now, truncated=prs is not None and len(prs) >= LIMIT)
+    main, main_err = main if main is not None else main_checkout(root, run)
+    ledger, problems, _ = read_ledger(main / LEDGER_REL)
+    if main_err:
+        problems = [*problems, f"the main checkout could not be found ({main_err}) — this checkout's ledger was read; "
+                               "in a linked worktree the real one was NOT READ"]
+    return prs, pr_error, ledger, problems, prs is not None and len(prs) >= LIMIT
+
+
+def collect(root: Path, run=_run, now: str | None = None) -> str:
+    now = now or time.strftime("%Y-%m-%d %H:%M %Z")
+    prs, pr_error, ledger, problems, truncated = fetch(root, run)
+    return render(prs, pr_error, ledger, problems, now, truncated=truncated)
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import io
     import threading
     from contextlib import redirect_stdout
@@ -354,6 +457,15 @@ def self_test() -> int:
     out = render(None, "gh exited 4: auth", [], [], "T")
     case("⭐ gh failing prints CANNOT RUN — never an empty list", "OPEN PRS: CANNOT RUN — gh exited 4: auth" in out, True)
     case("...and does not claim 'none'", "none (gh answered)" in out, False)
+    marked = render([dict(pr, headRefName="fix-TRUNCATED-keys", statusCheckRollup=[]), dict(pr, number=9, statusCheckRollup=None)],
+                    None, [{"id": "codex-r2", "what": "Codex r2 CANNOT RUN fallback", "on_done": "fold", "at": "T"}],
+                    ["ledger line 3 unreadable"], "T", truncated=True, mark=" <M>")
+    case("⭐ r4 C4-F3: `mark` goes on the lines whose state was NOT READ — never on data that merely contains a failure word",
+         sorted(l.strip()[:24] for l in marked.splitlines() if l.endswith(" <M>")),
+         sorted(["OPEN PRS (2, MAY BE TRUN", "PR #9 `b` head abcdef12 ", "⚠ ledger line 3 unreadab"]))
+    case("...and a gh failure is marked too; with no mark the block is unchanged",
+         (render(None, "gh exited 4", [], [], "T", mark=" <M>").splitlines()[1].endswith(" <M>"),
+          "<M>" in render(None, "gh exited 4", [], [], "T")), (True, False))
     case("an answered empty list says none", "OPEN PRS: none (gh answered)." in render([], None, [], [], "T"), True)
     out = render([pr, dict(pr, number=8, statusCheckRollup=[])], None, [], [], "T")
     case("a PR line carries number, branch, head, draft, mergeability and checks",
@@ -387,6 +499,7 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         led = root / LEDGER_REL
+        NO_GIT = lambda c, w, timeout=TIMEOUT: (128, "fatal: not a git repository")  # noqa: E731 — never a real repo
         def attempt(fn, *args):
             """'accepted', 'refused', or 'raised <Type>' — ANY exception becomes a value, so a case fails by NAME."""
             try:
@@ -457,7 +570,7 @@ def self_test() -> int:
              attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent)
+            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent, run=NO_GIT)
         case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
              (big_rc, big.read_bytes() == before), (2, True))
         at = root / "at-cap" / LEDGER_REL
@@ -499,8 +612,16 @@ def self_test() -> int:
             seen.append((cmd[:3], timeout))
             return 0, json.dumps([pr])
         out = collect(root, run=fake, now="T")
+        git_calls = []
+        fetch(root, run=lambda c, w, timeout=TIMEOUT: (git_calls.append(c[0]), (0, "[]"))[1], main=(root, None))
+        case("⭐ r4 C4-F5: fetch given the caller's main-checkout answer asks git NOTHING — one answer for heading and ledger",
+             git_calls, ["gh"])
+        asked_git = []
+        got = fetch(root / "fetch-nogit", lambda c, w, timeout=TIMEOUT: (asked_git.append(c[0]), (128, "not a repo"))[1])
+        case("...and without one it asks git itself, and says the main checkout could not be found",
+             (asked_git, any("main checkout could not be found" in p for p in got[3])), (["gh", "git"], True))
         case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
-             (len(seen), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
+             (len([c for c, _ in seen if c[0] == "gh"]), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
              (1, ["gh", "pr", "list"], True, True, True))
         bare = root / "no-ledger-here"
         bare.mkdir()
@@ -511,7 +632,61 @@ def self_test() -> int:
         case("a gh list holding a non-object is CANNOT RUN, not a crash",
              "gh output unparseable" in collect(bare, run=lambda c, w, timeout=TIMEOUT: (0, "[null]"), now="T"), True)
         case("_run turns a real timeout into exit 124 with the words 'timed out'",
-             _run([sys.executable, "-c", "import time; time.sleep(5)"], root, 0.3), (124, "timed out after 0s"))
+             _run([sys.executable, "-c", "import time; time.sleep(5)"], root, 0.3), (124, "timed out after 0.3s"))
+
+        def gone(pid_file: Path) -> bool:
+            """The pid written to `pid_file` is no longer running (polled up to 1.5 s, then killed so it cannot linger)."""
+            try:
+                pid = int(pid_file.read_text())
+            except (OSError, ValueError):
+                return False
+            for _ in range(30):
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return True
+                time.sleep(0.05)
+            os.kill(pid, signal.SIGKILL)
+            return False
+        lone = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        kill_group(lone.pid)
+        kill_group(2 ** 22 + 12345)   # no such group: ignored, never raised
+        case("kill_group SIGKILLs a real group and ignores one that does not exist",
+             lone.wait(timeout=5), -signal.SIGKILL)
+        bg = root / "bg.pid"
+        rc_bg = _run(["sh", "-c", f"sleep 30 >/dev/null 2>&1 & echo $! > {bg}; echo ok"], root, 5)
+        case("⭐ a call that BACKGROUNDS a process and exits leaves nothing running: its group is killed when it ends",
+             (rc_bg, gone(bg)), ((0, "ok\n"), True))
+        hung = root / "hung.pid"
+        t0 = time.monotonic()
+        rc_hung = _run(["sh", "-c", f"sleep 30 >/dev/null 2>&1 & echo $! > {hung}; wait"], root, 0.5)
+        took = time.monotonic() - t0
+        case("⭐ a call that TIMES OUT takes its grandchild with it — the `gh` that was `sleep 60` (PR #425 r2)",
+             (rc_hung[0], took < 2.5, gone(hung)), (124, True, True))
+        esc = root / "escaped.pid"
+        t0 = time.monotonic()
+        rc_esc = _run([sys.executable, "-c",
+                       "import os, time\n"
+                       "if os.fork() == 0:\n"
+                       f"    os.setsid(); open({str(esc)!r}, 'w').write(str(os.getpid())); time.sleep(6)\n"
+                       "else:\n    time.sleep(6)\n"], root, 0.5)
+        took_esc = time.monotonic() - t0
+        try:
+            os.kill(int(esc.read_text()), signal.SIGKILL)   # it left the group on purpose: out of reach, by design
+        except (OSError, ValueError):
+            pass
+        case("⭐ r3 XR3: a grandchild that calls setsid and keeps stdout cannot hold the call: drained DRAIN s, then closed",
+             (rc_esc[0], took_esc < 0.5 + DRAIN + 1.0), (124, True))
+        t0 = time.monotonic()
+        answered = _run(["sh", "-c", "sleep 4 & echo ok; exit 0"], root, 1.0)
+        case("⭐ r4 C4-F6: a call that EXITED while its background child held the pipe reports its answer, not a timeout",
+             (answered, time.monotonic() - t0 < 1.0 + DRAIN + 0.5), ((0, "ok\n"), True))
+        held = _run(["sh", "-c", "sleep 2.5 & echo ok; exit 0"], root, 0.5, own_group=False)
+        case("...and when the holder is out of reach, it says the call exited but its pipe was held — never 'timed out'",
+             held, (124, "exited 0, but a process it started kept the pipe open past 0.5s"))
+        case("own_group=False keeps the call in the CALLER's process group, so the caller's one kill reaches it",
+             (_run(["sh", "-c", "ps -o pgid= -p $$"], root, 5, own_group=False)[1].strip() == str(os.getpgrp()),
+              _run(["sh", "-c", "ps -o pgid= -p $$"], root, 5)[1].strip() == str(os.getpgrp())), (True, False))
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = main([], root=bare, run=lambda c, w, timeout=TIMEOUT: (0, "[]"))
@@ -521,12 +696,50 @@ def self_test() -> int:
         r2.mkdir()
         from contextlib import redirect_stderr
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            added = main(["--add", "k", "Codex r1 on PR #1", "record it"], root=r2)
+            added = main(["--add", "k", "Codex r1 on PR #1", "record it"], root=r2, run=NO_GIT)
             seen_ids = [e["id"] for e in read_ledger(r2 / LEDGER_REL)[0]]
-            removed = main(["--done", "k"], root=r2)
-            empty_done = main(["--done", ""], root=r2)
+            removed = main(["--done", "k"], root=r2, run=NO_GIT)
+            empty_done = main(["--done", ""], root=r2, run=NO_GIT)
         case("main --add then --done round-trips under the ROOT given; --done '' is refused (2), not the block",
              (added, seen_ids, removed, read_ledger(r2 / LEDGER_REL)[0], empty_done), (0, ["k"], 0, [], 2))
+
+        case("⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is",
+             [waits_on_owner({"what": "PAUSED 04:03 by owner: resume later"}),
+              waits_on_owner({"what": f"{OWNER_MARKER} roles page answers", "on_done": "fold"}),
+              waits_on_owner({"what": "x", "on_done": f"{OWNER_MARKER} not in WHAT"}), waits_on_owner({"what": None}),
+              waits_on_owner("junk")],
+             [False, True, False, False, False])
+        # ─── a LINKED WORKTREE reads and writes the MAIN checkout's ledger (backlog #361's fix, same class) ───
+        repo, wt = root / "mainrepo", root / "linked-worktree"  # not "linked": the symlink case above owns it
+        repo.mkdir()
+        g = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=repo,  # noqa: E731
+                                      capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        g("init", "-q")
+        (repo / ".git" / "info").mkdir(exist_ok=True)
+        (repo / ".git" / "info" / "exclude").write_text(".claude/\n")
+        (repo / "f").write_text("x")
+        g("add", "f")
+        g("commit", "-qm", "c")
+        g("worktree", "add", "-q", "-b", "side", str(wt))
+        ledger_add(repo / LEDGER_REL, "main-job", "Codex r2 on PR #7", "fold it", "T")
+        gh_only = lambda c, w, timeout=TIMEOUT: (0, "[]") if c[:1] == ["gh"] else _run(c, w, timeout)  # noqa: E731
+        case("⭐ main_checkout() from a linked worktree names the MAIN checkout; from a non-repo it says why",
+             (main_checkout(wt, gh_only), main_checkout(root, NO_GIT)[1].startswith("git rev-parse --git-common-dir gave")),
+             ((repo.resolve(), None), True))
+        case("a rev-parse answer that is not an absolute directory is refused, never resolved against the cwd",
+             main_checkout(wt, lambda c, w, timeout=TIMEOUT: (0, "[{\"number\": 1}]\n"))[0], wt)
+        out = collect(wt, run=gh_only, now="T")
+        case("⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'",
+             ("[main-job] Codex r2 on PR #7" in out, "none RECORDED" in out), (True, False))
+        case("collect() where git cannot name the main checkout SAYS the real ledger may not have been read",
+             "in a linked worktree the real one was NOT READ" in collect(bare, run=NO_GIT, now="T"), True)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            wt_add = main(["--add", "wt-job", "CI watch PR #8", "read gh"], root=wt, run=gh_only)
+            in_main = [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]]
+            wt_done = main(["--done", "main-job"], root=wt, run=gh_only)
+        case("⭐ --add and --done run from a LINKED WORKTREE write the MAIN checkout's ledger, never the worktree's",
+             (wt_add, in_main, wt_done, [e["id"] for e in read_ledger(repo / LEDGER_REL)[0]], (wt / LEDGER_REL).exists()),
+             (0, ["main-job", "wt-job"], 0, ["wt-job"], False))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0
@@ -535,12 +748,18 @@ def self_test() -> int:
 def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
-    ap.add_argument("--add", nargs=3, metavar=("ID", "WHAT", "ON_DONE"))
+    ap.add_argument("--add", nargs=3, metavar=("ID", "WHAT", "ON_DONE"),
+                    help=f"record a background job (re-adding an ID replaces it). Start WHAT with '{OWNER_MARKER} ' when "
+                         "the job waits on an OWNER decision: only that marker puts it under the compaction snapshot's "
+                         "'Pending OWNER decisions' — mentioning the owner does not")
     ap.add_argument("--done", metavar="ID")
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
-    led = root / LEDGER_REL
+    main, main_err = main_checkout(root, run)
+    led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
+    if main_err and (args.add or args.done is not None):
+        print(f"note: {main_err}; using {led}", file=sys.stderr)
     try:
         if args.add:
             ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"))
