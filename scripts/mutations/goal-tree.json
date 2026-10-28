@@ -838,5 +838,109 @@
     "expect": [
       "W2: an item's own declared 0 is shown, in text and in HTML"
     ]
+  },
+  {
+    "name": "#389: a finished plan inside an open line is listed as owing",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if not n[\"done\"] and not n[\"empty\"]:",
+        "            if not n[\"empty\"]:"
+      ]
+    ],
+    "expect": [
+      "⭐ #389: every plan in a line that still owes something is listed, with ITS progress and the "
+    ]
+  },
+  {
+    "name": "#389: plans are listed oldest first",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return sorted(out, key=lambda r: (r[\"touched\"], r[\"plan\"]), reverse=True)",
+        "    return sorted(out, key=lambda r: (r[\"touched\"], r[\"plan\"]), reverse=False)"
+      ]
+    ],
+    "expect": [
+      "#389: newest first, by the plan file's last touch"
+    ]
+  },
+  {
+    "name": "#389: a failing plan reader is not recorded as NOT READ",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            errors[\"plans\"] = f\"{plan_dir} NOT READ (",
+        "            _ignored = f\"{plan_dir} NOT READ ("
+      ]
+    ],
+    "expect": [
+      "⛔ #389: a plan reader that fails is NOT READ, never an empty list"
+    ]
+  },
+  {
+    "name": "#389: with no main checkout, the plans are read from the worktree instead of NOT READ",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if main_why:\n        errors[\"plans\"]",
+        "    if False:\n        errors[\"plans\"]"
+      ]
+    ],
+    "expect": [
+      "⛔ #389: no main checkout: the plans are NOT READ too"
+    ]
+  },
+  {
+    "name": "#389: a missing .claude/plans/ is read anyway, so its absence becomes an error",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    elif not plan_dir.is_dir():",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "#389: a main checkout with no .claude/plans/ holds no plan — said as a note, not an error"
+    ]
+  },
+  {
+    "name": "#389: the page does not link the frozen work-lines archive",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<a href=\"{WORK_LINES_ARCHIVE}\">the work-lines archive</a> (backlog #389).</p>']",
+        "f'the work-lines archive (backlog #389).</p>']"
+      ]
+    ],
+    "expect": [
+      "⭐ #389: the page links the FROZEN work-lines archive"
+    ]
+  },
+  {
+    "name": "#389: a plan's progress is never reported in the timeline",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for k in sorted(set(pp) & set(cp)) if pp[k][\"ticked\"] != cp[k][\"ticked\"]]",
+        "for k in sorted(set(pp) & set(cp)) if False]"
+      ]
+    ],
+    "expect": [
+      "#389: the timeline reports a plan's progress, a new owing plan, and one no longer owing"
+    ]
+  },
+  {
+    "name": "#389: a plan's missing parent is dropped, so the middle of an old line reads as a new one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"parent\": parent or (f'{n[\"orphan_parent\"]} (no longer exists)'",
+        "\"parent\": parent or (None and f'{n[\"orphan_parent\"]} (no longer exists)'"
+      ]
+    ],
+    "expect": [
+      "#389: a plan whose recorded parent no longer exists says so, instead of reading as a new line"
+    ]
   }
 ]

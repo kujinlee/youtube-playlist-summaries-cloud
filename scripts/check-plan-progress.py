@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 66 cases
+    python3 scripts/check-plan-progress.py --self-test  # 62 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -82,7 +82,6 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import hashlib
-import importlib.util
 import os
 import re
 import shutil
@@ -97,7 +96,6 @@ STATE = ROOT / ".claude/executing-plan.state"
 # `record_last_plan`. A `key: value` file beside the sentinel, read with `parse_sentinel`.
 LAST_PLAN = ROOT / ".claude/last-plan"
 PLAN_DIR = ROOT / ".claude/plans"
-WORK_LINES_OUT: Path | None = None   # None -> gen-work-lines' own default (~/explainers/…)
 
 ALLOW, BLOCK = 0, 2
 
@@ -422,7 +420,8 @@ def run_optional(what: str, fn, default=None):
     caller of an optional step: the Stop hook's clear, `begin-plan --finish`'s clear and
     `begin-plan`'s arm. A second copy of "which failures are optional" is the drift this repo
     has measured most.
-    ⚠ The line goes to stderr, which on the Stop path reaches NOBODY — see `refresh_work_lines`.
+    ⚠ The line goes to stderr, which on the Stop path reaches NOBODY: `.claude/hooks/block-idle-stop.sh`
+    allows an rc-0 stop silently.
     """
     try:
         return fn()
@@ -500,43 +499,6 @@ def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path) -> st
     return rel
 
 
-def refresh_work_lines(plan_dir: Path, out: Path | None) -> str | None:
-    """Rebuild the work-lines page. NEVER RAISES. Returns the one stderr line it printed, or None.
-
-    ⭐ "ALWAYS CURRENT" (2026-10-22). The plan files are git-ignored and written through Bash, so
-    no file hook ever fires on them; every command that changes plan state calls this instead —
-    `begin-plan.py`'s begin/plan/tick/pause/resume/finish and this Stop hook's clear.
-    ⛔ IT MUST NEVER FAIL THE COMMAND IT FOLLOWS. A page is a view; a Stop hook that raised here
-    would BLOCK the session over a rendering problem, and a `--tick` that failed would leave the
-    human unsure whether the tick landed. So ANY exception — a missing generator, an unwritable
-    output, a defect in the renderer — becomes ONE stderr line and the caller's exit code stands.
-    That breadth is the contract, not a shortcut: there is no failure here worth more than the
-    command.
-    ⚠ ⟳ r1 Claude F5: this said "every one is still SAID", and on one of its two paths that is
-    false. From `begin-plan.py` the line reaches the caller's terminal. From the STOP HOOK it is
-    printed to stderr with rc 0, and `.claude/hooks/block-idle-stop.sh` allows an rc-0 stop
-    SILENTLY — so there a failed rebuild (or a failed record) is lost, and the visible symptom is
-    a page that did not update. The verdict is unchanged either way, which is the part that matters.
-    """
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "_gen_work_lines", Path(__file__).resolve().parent / "gen-work-lines.py")
-        if spec is None or spec.loader is None:
-            raise ImportError("cannot load scripts/gen-work-lines.py")
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = mod
-        spec.loader.exec_module(mod)
-        rc, msg = mod.write_page(out if out is not None else mod.DEFAULT_OUT, plan_dir)
-        err = None if rc == 0 else msg
-    except Exception as exc:                       # noqa: BLE001 - reported, never swallowed
-        err = f"{type(exc).__name__}: {exc}"
-    if err is None:
-        return None
-    line = f"⚠ work-lines page NOT rebuilt — {err}".replace("\n", " ")
-    print(line, file=sys.stderr)
-    return line
-
-
 def test_git(root: Path, *argv: str) -> str | None:
     """SELF-TEST SUPPORT, shared with `begin-plan.py`'s suite: run one `git` command in `root`.
     Returns None, or a reason it failed (which the caller reports as a RED case — a branch case
@@ -598,14 +560,12 @@ def run_decide(stop_hook_active: bool) -> int:
         # after the sentinel was gone and BEFORE the record was written — the finished plan's
         # identity vanished and an OLDER `.claude/last-plan` answered the next lookup. The record
         # is optional and protected (r1 Codex 3); the clear is MANDATORY and stays outside the
-        # boundary with its old error behaviour. The rebuild is a SEPARATE optional step (r2
-        # Codex 2): a recorder that raises must not also cost the page.
+        # boundary with its old error behaviour. (The work-lines page rebuild that followed here
+        # retired with the page, backlog #389; the goal tree is rebuilt by its own triggers.)
         run_optional("recording the last plan",
                      lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))
         SENTINEL.unlink(missing_ok=True)
         STATE.unlink(missing_ok=True)
-        run_optional("rebuilding the work-lines page",
-                     lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))
     elif unticked is not None:
         STATE.write_text(str(unticked))
 
@@ -652,7 +612,7 @@ def _self_test() -> int:
 def _self_test_body() -> int:
     # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
     # declared here because Python refuses a `global` after the name's first use.
-    global record_last_plan, current_branch, _write_record, refresh_work_lines
+    global record_last_plan, current_branch, _write_record
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -945,16 +905,16 @@ def _self_test_body() -> int:
              == (None, "cpp/cleared-here", "cpp/a-second-repo"))
         shutil.rmtree(_other, ignore_errors=True)
 
-        # ── THE WIRING: run_decide's clear records the plan and rebuilds the page ───────────
+        # ── THE WIRING: run_decide's clear records the plan ──────────────────────────────────
         # Every case above is the recorder alone. Deleting its CALL at the clear site would leave
         # them all green while Option A silently stopped working — so the real `run_decide` is
         # driven over a constructed root.
-        global ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT
-        _saved = (ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT)
+        global ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR
+        _saved = (ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR)
         try:
             ROOT, PLAN_DIR = _r, _r / ".claude/plans"
             SENTINEL, STATE = _r / ".claude/executing-plan", _r / ".claude/executing-plan.state"
-            LAST_PLAN, WORK_LINES_OUT = _r / ".claude/last-plan", _r / "out" / "wl.html"
+            LAST_PLAN = _r / ".claude/last-plan"
             # ⛔ ARMED on one branch, CLEARED on another (the repo is on `cpp/cleared-here`).
             SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
             with contextlib.redirect_stdout(io.StringIO()):
@@ -966,27 +926,15 @@ def _self_test_body() -> int:
             case("⛔ ...against the branch the plan was ARMED on, not the one checked out when "
                  "the Stop hook clears it",
                  _rec.get("branch") == "cpp/armed-there")
-            case("⭐ ...and REBUILDS the work-lines page, so it is current without being asked",
-                 WORK_LINES_OUT.is_file() and "<code>fin</code>" in WORK_LINES_OUT.read_text())
-            # ⛔ NEVER BLOCK ON A PAGE. The output's parent is a FILE, so the write must fail; the
-            # stop is still ALLOWED and exactly ONE line says the page was not rebuilt.
-            (_r / "blocker").write_text("a file where a directory must go")
-            WORK_LINES_OUT = _r / "blocker" / "wl.html"
+            # A continuation the hook itself caused (stop_hook_active) clears and records the same
+            # way — the clear branch does not read the flag. (It once rode on the retired work-lines
+            # rebuild case; backlog #389 kept the variation and dropped the page.)
             SENTINEL.write_text("plan: .claude/plans/other.md\n")
-            _err = io.StringIO()
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err):
-                try:
-                    _rc2 = run_decide(True)
-                except Exception as exc:              # noqa: BLE001 - the case reports it
-                    _rc2 = f"RAISED {type(exc).__name__}"
-            case("⛔ a page that CANNOT be rebuilt never changes the stop's verdict — ONE stderr "
-                 "line says so",
-                 (_rc2, SENTINEL.exists(),
-                  [ln for ln in _err.getvalue().splitlines() if "NOT rebuilt" in ln].__len__())
-                 == (ALLOW, False, 1))
-            case("...and the record is still written when the page is not",
-                 parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/other.md")
-
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _rc_c = _attempt(lambda: run_decide(True))
+            case("...and a hook-caused continuation clears and records a finished plan the same way",
+                 (_rc_c, SENTINEL.exists(), parse_sentinel(LAST_PLAN.read_text()).get("plan"))
+                 == (ALLOW, False, ".claude/plans/other.md"))
             # ⛔ r1 Codex 3: AN OPTIONAL STEP THAT RAISES NEVER CHANGES THE STOP. Measured before
             # the fix: a raising recorder escaped `run_decide` (exit 1 = a fail-closed BLOCK) and
             # left the sentinel. The verdict, the message, the clear and the rc must all be what
@@ -995,14 +943,6 @@ def _self_test_body() -> int:
 
             def _boom(*_a, **_k):
                 raise RuntimeError("injected by the self-test")
-            WORK_LINES_OUT = _r / "out" / "wl.html"
-            # ⟳ r2 Codex 2: the REBUILD is a separate optional step, so a spy records whether it
-            # still runs after the recorder raised.
-            _real_refresh, _rebuilt = refresh_work_lines, []
-
-            def _spy(*_a, **_k):
-                _rebuilt.append(1)
-                return None
             _branch_calls: list = []
 
             def _counting_boom(*_a, **_k):
@@ -1010,7 +950,6 @@ def _self_test_body() -> int:
                 raise RuntimeError("injected by the self-test")
             for _label, _rec_fn in (("recorder", _boom), ("no-fault control", _real_rec)):
                 record_last_plan, current_branch = _rec_fn, _counting_boom
-                refresh_work_lines = _spy
                 (STATE).write_text("4")
                 SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
                 _want = decide(SENTINEL.read_text(), (_r / ".claude/plans/fin.md").read_text(),
@@ -1019,14 +958,11 @@ def _self_test_body() -> int:
                 with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
                     _got = _attempt(lambda: run_decide(False))
                 record_last_plan, current_branch = _real_rec, _real_branch
-                refresh_work_lines = _real_refresh
                 if _label == "recorder":
                     case("⛔ a recorder that RAISES at the Stop hook's clear leaves the verdict, the "
                          "message, the clear and the rc exactly as they are without it",
                          (_got, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
                          == (_want[0], _want[1].strip(), False, False))
-                    case("⛔ ...and the work-lines page is STILL rebuilt — the rebuild is its own "
-                         "optional step, not the recorder's tail (r2 Codex 2)", _rebuilt == [1])
             # ⟳ r2 Codex 5: the branch comes from the SENTINEL, so a lookup that raises cannot even
             # be reached here — what is asserted is that it is never CALLED, over both runs above.
             case("⛔ clearing at the Stop hook never queries the current branch — ZERO calls to the "
@@ -1057,17 +993,8 @@ def _self_test_body() -> int:
                  str(_partial).startswith("RAISED "))
             SENTINEL.unlink(missing_ok=True)
         finally:
-            ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT = _saved
+            ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR = _saved
 
-        # refresh_work_lines itself, at two DISTINCT outputs: success says nothing, failure says
-        # one line that names the cause.
-        _ok_out = _r / "ok" / "page.html"
-        with contextlib.redirect_stderr(io.StringIO()):
-            _ok = refresh_work_lines(_r / ".claude/plans", _ok_out)
-            _bad = refresh_work_lines(_r / "no-plans-here", _r / "bad.html")
-        case("refresh_work_lines is SILENT on success and returns ONE named line on failure",
-             (_ok, _ok_out.is_file(), isinstance(_bad, str) and "\n" not in _bad
-              and "CANNOT RUN" in _bad) == (None, True, True))
         case("render_last_plan carries plan, branch, session, fingerprint and time as given — two distinct inputs",
              [parse_sentinel(render_last_plan(".claude/plans/a.md", "feat/a", "t1",
                                               session="cpp-sess-a", fingerprint="f00d")),

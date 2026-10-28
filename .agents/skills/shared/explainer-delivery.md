@@ -144,7 +144,7 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   is an **escape hatch, not scaffolding**: colour is the no-attribute default, so a page with
   JavaScript off still renders in colour, and `page_chrome`'s switcher stores only the opt-outs
   (a hand-authored copy in an older fragment may also store the default; that is harmless).
-  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog, features, work lines) do not
+  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog, features, goal tree) do not
   opt in, and nothing has measured them under it.
 
 **Check it by measuring, not by looking.** Once served, in the page:

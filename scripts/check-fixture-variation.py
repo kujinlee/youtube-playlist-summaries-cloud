@@ -461,18 +461,15 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "pages_for.payload", "regen.names", "regen.pages", "regen.run", "regen.timeout",
         "registered_events.settings", "report.results", "report.wall",
     ),
-    # The work-lines generator. Every parameter is varied by a case; none is exempt.
+    # The plan-file reader (the work-lines PAGE retired, backlog #389: `render.*` and `main.plan_dir`
+    # leave with the renderer and the page-writing main). `main.argv` is EXEMPT, with its reason.
     "gen-work-lines.py": (
         "build_forest.plans",
         "line_state.node",
         "main.argv",
-        "main.plan_dir",
         "parse_plan.name",
         "parse_plan.text",
         "parse_plan.touched",
-        "render.generated",
-        "render.orphans",
-        "render.roots",
     ),
     # The status grammar and its verdict. `main.argv` is exempted above (its second value
     # re-enters the suite); everything else is varied by a case.
@@ -1184,6 +1181,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
+    # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
+    "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",
     # backlog #373 (2026-10-27).
     "check-fixture-git-isolation.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the six main([]) cases",
     # backlog #364 (2026-10-27): check-run-hook.py's world plumbing — one world per suite run.

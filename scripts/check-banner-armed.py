@@ -119,7 +119,8 @@ WHAT IT CANNOT SEE, stated rather than hidden:
 
 THE THREAD CLASS (`unknown-thread`, owner's decision 2026-10-22 — option A: warn first, then block)
 ---------------------------------------------------------------------------------------------------
-The work-lines page (`scripts/gen-work-lines.py`) shows a thread exactly when
+The goal tree's plan list (read by `scripts/gen-work-lines.py`; the work-lines page that first showed
+it retired, backlog #389) knows a thread exactly when
 `.claude/plans/<slug>.md` exists in ANY checkout — armed or not, finished or not. On 2026-10-22 a side job was run
 on banners alone, so it had no plan file and never reached that page, and none of the three
 classes above could notice: they ask whether a bannered job STOPPED PARTWAY, not whether the
@@ -190,7 +191,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
     python3 scripts/check-banner-armed.py --self-test  # 239 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
-                          4 = THREAD UNKNOWN TO THE WORK-LINES PAGE, BLOCKING — only while THREAD_BLOCK is True
+                          4 = THREAD WITH NO PLAN FILE, BLOCKING — only while THREAD_BLOCK is True
 """
 from __future__ import annotations
 
@@ -718,7 +719,7 @@ def decide_thread(texts: list[str], known: set[str] | None,
     """PURE. -> (exit_code, message, reason, detail). QUIET is (0, "", "", "").
 
     `known` is the set of plan slugs across every checkout's `.claude/plans/` — the threads the
-    work-lines page shows — or None when none of them could be read. None is CANNOT RUN, but only
+    plan reader knows — or None when none of them could be read. None is CANNOT RUN, but only
     when there is a readable thread to judge: with nothing to look up, nothing was missed.
     `notes` say what was not read; a warning or a CANNOT RUN carries them.
     `block` is passed in rather than read from THREAD_BLOCK so both modes are testable.
@@ -728,7 +729,7 @@ def decide_thread(texts: list[str], known: set[str] | None,
         if rows and thread_name(rows[-1]) is not None:
             return CANNOT_RUN, (
                 "CANNOT RUN: no checkout's .claude/plans/ could be read, so this check cannot "
-                "tell whether the thread the previous turn ended on is on the work-lines page. "
+                "tell whether the thread the previous turn ended on has a plan file. "
                 "TREAT THE THREAD CHECK AS NOT RUN." + "".join(f"\n     · {n}" for n in notes or [])
             ), "", ""
         return QUIET, "", "", ""
@@ -738,14 +739,14 @@ def decide_thread(texts: list[str], known: set[str] | None,
     kind, name = hit
     how = ("a `⤳ SWITCHED` row names it as the target" if kind == "switched"
            else "the last banner's `**Thread:**` row names it")
-    head = "⛔ THREAD UNKNOWN TO THE WORK-LINES PAGE (BLOCKING)" if block else \
-        "⚠ THREAD UNKNOWN TO THE WORK-LINES PAGE"
+    head = "⛔ THREAD WITH NO PLAN FILE (BLOCKING)" if block else \
+        "⚠ THREAD WITH NO PLAN FILE"
     msg = (
         f"{head} — the previous turn ended on thread `{name}` ({how}), and no checkout "
         f"has .claude/plans/{name}.md.\n"
         "\n"
-        "   The work-lines page (scripts/gen-work-lines.py) shows a thread only when its plan\n"
-        "   file exists, so this thread's work is invisible there. Create its plan:\n"
+        "   The goal tree's plan list shows a thread only when its plan file exists, so this\n"
+        "   thread's work is invisible there. Create its plan:\n"
         "\n"
         f"     python3 scripts/begin-plan.py {name} \"title|doing|why\" ...\n"
         "\n"

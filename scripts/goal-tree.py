@@ -5,12 +5,12 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 149 cases
+    python3 scripts/goal-tree.py --self-test                 # 162 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
 how your work has been progressed, the page can be ideal dashboard."* `/goal-tree` printed the tree in
-chat and nothing kept it; the work-lines page draws only plans armed with `begin-plan.py`, and none had
+chat and nothing kept it; the work-lines page drew only plans armed with `begin-plan.py`, and none had
 been armed since 2026-10-25, so it showed nothing of the work the owner was watching.
 
 ⛔ TWO KINDS OF FACT, AND THE PAGE NEVER MIXES THEM.
@@ -50,6 +50,12 @@ each merged source keeping its own text, link and count; a count comes only from
 marker, and an identity token that disagrees with it is a CONFLICT shown on the page, never a merge (Z1);
 identity and count are read from the WHOLE source entry, a dashboard body included, before the display text
 is shortened (Z2).
+
+⭐ IT ABSORBED THE WORK-LINES PAGE (backlog #389, the owner's decision D2): a "PLANS NOT TICKED CLOSED" section
+lists every plan in a line that still owes something — its progress, its last touch, what it branched from and
+the line's objective — read through gen-work-lines' plan reader (`read_plans_noted`, `build_forest`,
+`line_state`), never a copy. The retired page's last output is frozen at `/work-lines-archive`, linked from
+the timeline. One page now answers "which threads are live".
 
 THE PAGE IS A REPLAY (round 2 Y7): the tree and the timeline are the stored snapshots, and the page says
 which snapshot and how to refresh it; NEEDS YOU is read live whenever this run took a snapshot.
@@ -91,6 +97,8 @@ LOG_REL = ".claude/goal-tree-log.jsonl"
 DASHBOARD_REL = "docs/dashboard-entries.md"
 BACKLOG_REL = "docs/backlog.md"
 NEEDS_OWNER = "NEEDS-OWNER"
+# backlog #389: the work-lines page's job lives here now, and its last output is frozen at this url.
+WORK_LINES_ARCHIVE = "/work-lines-archive"
 # The three sources of the NEEDS YOU list; "nothing waits on you" is said only when ALL were read.
 NEEDS_SOURCES = ("dashboard", "ledger", "backlog")
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "goal-tree.html"
@@ -280,6 +288,7 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
             "undeclared": undeclared, "inflight_loose": loose, "needs": list(src.get("needs") or []),
             "needs_not_read": [f"{k}: {src['errors'][k]}" for k in NEEDS_SOURCES if src["errors"].get(k)],
             "ledger_problems": list(src.get("ledger_problems") or []),
+            "plans": list(src.get("plans") or []), "plan_notes": list(src.get("plan_notes") or []),
             "cannot": [f"{k}: {v}" for k, v in sorted(src["errors"].items()) if v]}
 
 
@@ -315,6 +324,12 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     cn = {(n["source"], n["ref"]) for n in cur.get("needs") or []}
     out += [f"needs you, new: {r} ({s})" for s, r in sorted(cn - pn)]
     out += [f"needs you, cleared: {r} ({s})" for s, r in sorted(pn - cn)]
+    pp = {p["plan"]: p for p in prev.get("plans") or []}
+    cp = {p["plan"]: p for p in cur.get("plans") or []}
+    out += [f"plan not ticked closed, new: {k} ({cp[k]['ticked']}/{cp[k]['total']})" for k in sorted(set(cp) - set(pp))]
+    out += [f"plan no longer owing: {k}" for k in sorted(set(pp) - set(cp))]
+    out += [f"plan progress: {k} {pp[k]['ticked']}/{pp[k]['total']} → {cp[k]['ticked']}/{cp[k]['total']}"
+            for k in sorted(set(pp) & set(cp)) if pp[k]["ticked"] != cp[k]["ticked"]]
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
     out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
@@ -479,11 +494,40 @@ def counts_conflict(item: dict) -> bool:
     return len(stated) > 1
 
 
-# ── reading the world (the only impure part) ──────────────────────────────────────────────────
-def collect(root: pathlib.Path, run=None) -> dict:
-    """Read git, gh and the ledger. NEVER RAISES: a failure is recorded in `errors` by source.
+# ── PLANS NOT TICKED CLOSED: the work-lines page's job, absorbed (backlog #389) ──────────────
+def open_plans(plans: list[dict], wl) -> list[dict]:
+    """PURE over `wl` (gen-work-lines, THE plan reader). Every plan in a line that still owes something,
+    each with its own progress and the line's objective — the question the work-lines page answered.
 
-    `run(cmd, cwd, timeout) -> (rc, text)` is session-state's `_run` unless a test passes one.
+    The forest, the line state and the labels are gen-work-lines' own (`build_forest`, `line_state`,
+    `label`), never a copy. ⚠ "not ticked closed" is not "abandoned": a plan file is a claim about
+    progress, and the date is when the file was last touched."""
+    roots, _orphans = wl.build_forest(plans)
+    out = []
+    for root in roots:
+        if wl.line_state(root) != "open":
+            continue
+        stack = [(root, None)]
+        while stack:
+            n, parent = stack.pop()
+            if not n["done"] and not n["empty"]:
+                out.append({"plan": wl.label(n), "ticked": n["ticked"], "total": n["total"],
+                            "touched": n["touched"], "line": wl.label(root),
+                            "serving": root.get("serving"),
+                            # a parent build_forest could not find is NAMED, never dropped silently
+                            "parent": parent or (f'{n["orphan_parent"]} (no longer exists)'
+                                                 if n.get("orphan_parent") else None),
+                            "reconstructed": bool(n.get("source"))})
+            stack.extend((c, wl.label(n)) for c in n["children"])
+    return sorted(out, key=lambda r: (r["touched"], r["plan"]), reverse=True)
+
+
+# ── reading the world (the only impure part) ──────────────────────────────────────────────────
+def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
+    """Read git, gh, the ledger and the plans. NEVER RAISES: a failure is recorded in `errors` by source.
+
+    `run(cmd, cwd, timeout) -> (rc, text)` is session-state's `_run` unless a test passes one;
+    `read_plans(plan_dir) -> (plans, notes)` is gen-work-lines' `read_plans_noted` unless a test does.
     """
     run = run or _SS._run
     errors: dict[str, str] = {}
@@ -528,8 +572,9 @@ def collect(root: pathlib.Path, run=None) -> dict:
         errors["gh"] = f"gh pr list: {_SS.clean(exc, 160)}"
         src["open"] = {}
     # The ledger is git-ignored, so it lives in the MAIN checkout; session-state names it (one rule).
-    main, why = _SS.main_checkout(root, run)
+    main, main_why = _SS.main_checkout(root, run)
     src["main"] = main
+    why = main_why
     if why:
         errors["ledger"] = why
     else:
@@ -555,6 +600,21 @@ def collect(root: pathlib.Path, run=None) -> dict:
             errors[key] = "; ".join(problems) + " — NOT READ"
     needs += needs_from_ledger(src["ledger"])
     src["needs"] = consolidate(needs)
+    # backlog #389: the plans of EVERY checkout, through the one plan reader. A main checkout with no
+    # `.claude/plans/` holds no plan — a fact, said as a note; any other failure is NOT READ.
+    src["plans"], src["plan_notes"] = [], []
+    wl = _sibling("gen-work-lines")
+    plan_dir = main / ".claude" / "plans"
+    if main_why:
+        errors["plans"] = f"the main checkout could not be named, so its plans were NOT READ ({main_why})"
+    elif not plan_dir.is_dir():
+        src["plan_notes"] = [f"no .claude/plans/ in the main checkout ({main}) — no plan is armed there"]
+    else:
+        try:
+            plans, notes = (read_plans or wl.read_plans_noted)(plan_dir)
+            src["plans"], src["plan_notes"] = open_plans(plans, wl), list(notes)
+        except Exception as exc:                  # noqa: BLE001 - NOT READ, named, never "none"
+            errors["plans"] = f"{plan_dir} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
     return src
 
 
@@ -638,6 +698,21 @@ def tree_lines(snap: dict) -> list[str]:
             lines.append(("└─ " if i == len(snap["inflight_loose"]) - 1 else "├─ ")
                          + f'{u["id"]} · {u["what"]}')
         lines.append("")
+    plans = snap.get("plans") or []
+    if plans:
+        lines.append(f"PLANS NOT TICKED CLOSED — {len(plans)}, from every checkout's .claude/plans/ "
+                     f"(not ticked closed is not abandoned; the date is the file's last touch)")
+        for i, p in enumerate(plans):
+            why = (f'line {p["line"]}: "{p["serving"]}"' if p.get("serving")
+                   else f'line {p["line"]}, no objective recorded')
+            lines.append(("└─ " if i == len(plans) - 1 else "├─ ")
+                         + f'{p["plan"]} · {p["ticked"]}/{p["total"]} · {p["touched"]}'
+                         + (f' · branched from {p["parent"]}' + (" (reconstructed)" if p.get("reconstructed") else "")
+                            if p.get("parent") else "")
+                         + f' · {why}')
+        lines.append("")
+    for n in snap.get("plan_notes") or []:
+        lines.append(f"⚠ plans: {n}")
     for p in snap.get("ledger_problems") or []:
         lines.append(f"⚠ ledger: {p}")
     for c in snap["cannot"]:
@@ -784,7 +859,9 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
     # complete or not, because a decision that appeared since the newest snapshot is the one to see.
     parts.insert(6, needs_html(live if live is not None else newest))
     parts += ['<h2>Now</h2>', render_tree_html(newest), '<h2>Timeline</h2>',
-              '<p class="lede">Newest first. A snapshot is logged only when the tree changed.</p>']
+              '<p class="lede">Newest first. A snapshot is logged only when the tree changed. Before this '
+              f'page, the plan history was drawn by the work-lines page, now retired and FROZEN: '
+              f'<a href="{WORK_LINES_ARCHIVE}">the work-lines archive</a> (backlog #389).</p>']
     for i in range(len(log) - 1, -1, -1):
         snap, ch = log[i], changes(log[i - 1] if i else None, log[i])
         parts.append(f'<details class="snap"><summary><time>{html.escape(snap["at"])}</time> · '
@@ -1306,6 +1383,52 @@ def _self_test_body() -> int:
     case("a live read's needs are shown over the newest snapshot's",
          "nothing waits on you" in render_page([_nd], "t", _ns), True)
 
+    # ── PLANS NOT TICKED CLOSED: the work-lines job, absorbed (backlog #389) ─────────────────
+    _wl = _sibling("gen-work-lines")
+    _pf = [_wl.parse_plan("ship", "<!-- parent: - -->\n<!-- serving: ship the page -->\n- [x] a", "2026-10-20"),
+           _wl.parse_plan("kid", "<!-- parent: ship -->\n- [x] a\n- [ ] b", "2026-10-22"),
+           _wl.parse_plan("fin", "<!-- parent: - -->\n- [x] a", "2026-10-25"),
+           _wl.parse_plan("bare", "- [ ] a\n- [ ] b\n- [ ] c", "2026-10-21"),
+           _wl.parse_plan("nosteps", "# just a title", "2026-10-26")]
+    _op = open_plans(_pf, _wl)
+    case("⭐ #389: every plan in a line that still owes something is listed, with ITS progress and the "
+         "LINE's objective; finished and step-less plans are not",
+         [(p["plan"], p["ticked"], p["total"], p["line"], p["serving"], p["parent"]) for p in _op],
+         [("kid", 1, 2, "ship", "ship the page", "ship"), ("bare", 0, 3, "bare", None, None)])
+    case("#389: newest first, by the plan file's last touch",
+         [p["touched"] for p in _op], ["2026-10-22", "2026-10-21"])
+    case("#389: a link rebuilt from transcripts is marked reconstructed",
+         open_plans([_wl.parse_plan("p", "<!-- parent: - -->\n- [ ] a", "t"),
+                     _wl.parse_plan("q", "<!-- parent: p -->\n<!-- parent-source: transcript x -->\n- [ ] a",
+                                    "t")], _wl) and {x["plan"]: x["reconstructed"] for x in open_plans(
+             [_wl.parse_plan("p", "<!-- parent: - -->\n- [ ] a", "t"),
+              _wl.parse_plan("q", "<!-- parent: p -->\n<!-- parent-source: transcript x -->\n- [ ] a", "t")],
+             _wl)}, {"p": False, "q": True})
+    case("#389: nothing owing is an empty list", open_plans(_pf[2:3], _wl), [])
+    case("#389: a plan whose recorded parent no longer exists says so, instead of reading as a new line",
+         [p["parent"] for p in open_plans([_wl.parse_plan("lost", "<!-- parent: gone -->\n- [ ] a", "t")], _wl)],
+         ["gone (no longer exists)"])
+    import types as _types
+    _wl_up = _types.SimpleNamespace(build_forest=_wl.build_forest, line_state=_wl.line_state,
+                                    label=lambda r: r["slug"].upper())
+    case("#389: names are the plan READER's labels, never re-derived here",
+         [(p["plan"], p["line"], p["parent"]) for p in open_plans(_pf, _wl_up)],
+         [("KID", "SHIP", "SHIP"), ("BARE", "BARE", None)])
+    _ps = derive(goals, dict(src(needs=[]), plans=_op, plan_notes=["a checkout could not be read"]), "t")
+    _pt = tree_lines(_ps)
+    case("⭐ #389: the tree draws the plans section, one line per plan, objective included",
+         ([ln for ln in _pt if ln.startswith("PLANS NOT TICKED CLOSED")][:1] != [],
+          any(ln.startswith("├─ kid · 1/2 · 2026-10-22 · branched from ship · line ship: \"ship the page\"")
+              for ln in _pt),
+          "⚠ plans: a checkout could not be read" in _pt), (True, True, True))
+    _ps2 = dict(_ps, plans=[dict(_op[0], ticked=2), {**_op[1], "plan": "new-one"}])
+    case("#389: the timeline reports a plan's progress, a new owing plan, and one no longer owing",
+         sorted(c for c in changes(_ps, _ps2) if c.startswith("plan")),
+         ["plan no longer owing: bare", "plan not ticked closed, new: new-one (0/3)",
+          "plan progress: kid 1/2 → 2/2"])
+    case("⭐ #389: the page links the FROZEN work-lines archive",
+         f'<a href="{WORK_LINES_ARCHIVE}">the work-lines archive</a>' in render_page([_ps], "t"), True)
+
     # ── rendering ────────────────────────────────────────────────────────────────────────────
     txt = "\n".join(tree_lines(snap))
     case("--print leads with the NEEDS YOU block, then the tree",
@@ -1428,6 +1551,21 @@ def _self_test_body() -> int:
              [u["id"] for u in derive(goals, s, "t")["inflight_loose"]], ["build-12"])
         run_nogit, _ = fake(ok[:-1] + [(["git", "rev-parse"], (128, "not a git repository"))])
         s_nogit = collect(r, run_nogit)
+        case("⛔ #389: no main checkout: the plans are NOT READ too",
+             s_nogit["errors"].get("plans", "").startswith("the main checkout could not be named"), True)
+        case("#389: a main checkout with no .claude/plans/ holds no plan — said as a note, not an error",
+             (collect(r, run_ok)["plans"], "plans" in collect(r, run_ok)["errors"],
+              any("no .claude/plans/" in n for n in collect(r, run_ok)["plan_notes"])), ([], False, True))
+        (r / "main" / ".claude" / "plans").mkdir()
+        _s_pl = collect(r, run_ok, read_plans=lambda d: (_pf, ["note from the reader"]))
+        case("⭐ #389: collect reads the MAIN checkout's plans through the plan reader",
+             ([p["plan"] for p in _s_pl["plans"]], _s_pl["plan_notes"]), (["kid", "bare"], ["note from the reader"]))
+        def _boom_reader(d):
+            raise ValueError("unreadable")
+        case("⛔ #389: a plan reader that fails is NOT READ, never an empty list",
+             collect(r, run_ok, read_plans=_boom_reader)["errors"].get("plans", "").endswith(
+                 "NOT READ (ValueError: unreadable)"), True)
+        (r / "main" / ".claude" / "plans").rmdir()
         case("⛔ no main checkout: the ledger is NOT READ — never read from the worktree instead",
              (s_nogit["errors"].get("ledger", "").startswith("git rev-parse"), s_nogit["ledger"]),
              (True, []))

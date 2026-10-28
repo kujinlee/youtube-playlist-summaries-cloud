@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 139 cases
+    scripts/begin-plan.py --self-test  # 136 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -84,7 +84,6 @@ PLAN_DIR = ROOT / ".claude/plans"
 SENTINEL = ROOT / ".claude/executing-plan"
 STATE = ROOT / ".claude/executing-plan.state"
 LAST_PLAN = ROOT / ".claude/last-plan"   # written by check-plan-progress.record_last_plan
-WORK_LINES_OUT: Path | None = None       # None -> gen-work-lines' default; the self-test redirects
 
 OK, REFUSED = 0, 1
 
@@ -115,7 +114,7 @@ def _load_plan_progress():
     # whole job is to say WHY, and it can only do that for names it knows it borrows.
     missing = [n for n in ("count_steps", "next_pending_task", "parse_sentinel", "strip_field",
                            "decide", "WARN", "record_last_plan", "current_branch",
-                           "refresh_work_lines", "run_optional", "make_test_repo", "test_git",
+                           "run_optional", "make_test_repo", "test_git",
                            "current_session", "plan_fingerprint", "SESSION_ENV")
                if not hasattr(mod, n)]
     if missing:
@@ -994,7 +993,7 @@ def _self_test_body() -> int:
     # first because Python refuses a `global` after the name's first use.
     global _load_plan_progress
     # (moved up for backlog #301's cases, which run first: a `global` must precede every use)
-    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
+    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, PR_LINE_STATE
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -1086,10 +1085,9 @@ def _self_test_body() -> int:
         case("...while a submodule's .git file is not a linked worktree, and nor is a tree with no .git",
              (linked_worktree_main(_sub), linked_worktree_main(Path(_wtd))) == (None, None))
         # EVERY state path is redirected into the worktree, so an unrefused arm (the mutant) writes nothing real
-        _keep_rs = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT)
+        _keep_rs = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN)
         ROOT, PLAN_DIR, SENTINEL = _wt_r, _wt_r / ".claude/plans", _wt_r / ".claude/executing-plan"
         STATE, LAST_PLAN = _wt_r / ".claude/executing-plan.state", _wt_r / ".claude/last-plan"
-        WORK_LINES_OUT = _wt_r / "explainers" / "work-lines.html"
         try:
             with contextlib.redirect_stdout(io.StringIO()) as _o, contextlib.redirect_stderr(io.StringIO()) as _e:
                 try:
@@ -1097,7 +1095,7 @@ def _self_test_body() -> int:
                 except Exception as _x:                       # noqa: BLE001 — a crash is a NAMED red
                     _rc_wt = f"RAISED {type(_x).__name__}"
         finally:
-            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT = _keep_rs
+            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN = _keep_rs
         # r1 Codex M4: the printed command must survive the shell — `--pause "waiting on CI"` lost its words.
         _keep_rs2 = (ROOT, SENTINEL)
         ROOT, SENTINEL = _wt_r, _wt_r / ".claude/executing-plan"
@@ -1114,11 +1112,10 @@ def _self_test_body() -> int:
         _all_refused = []
         for _argv in (["--plan", str(_wt_r.resolve() / "p.md")], ["--tick"], ["--status"], ["--banner"], ["--finish"],
                       ["--pause", "x"], ["--resume"]):
-            _keep_a = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT)
+            _keep_a = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN)
             _wtR = _wt_r.resolve()   # resolved, so `--plan` sees its plan INSIDE the root and would really arm
             ROOT, PLAN_DIR, SENTINEL = _wtR, _wtR / ".claude/plans", _wtR / ".claude/executing-plan"
             STATE, LAST_PLAN = _wtR / ".claude/executing-plan.state", _wtR / ".claude/last-plan"
-            WORK_LINES_OUT = _wtR / "explainers" / "work-lines.html"
             try:
                 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                     try:
@@ -1126,7 +1123,7 @@ def _self_test_body() -> int:
                     except Exception as _x:                   # noqa: BLE001 — a crash is a NAMED red
                         _r = f"RAISED {type(_x).__name__}"
             finally:
-                ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT = _keep_a
+                ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN = _keep_a
             _all_refused.append((_argv[0], _r == REFUSED and not (_wt_r / ".claude").exists()))
         case("⭐ EVERY state command from a linked worktree is refused and writes nothing — --plan included (r1 CLAUDE M2)",
              [ok for _, ok in _all_refused] == [True] * 7)
@@ -1267,17 +1264,16 @@ def _self_test_body() -> int:
         except Exception as exc:                   # noqa: BLE001 - the case reports it
             return f"RAISED {type(exc).__name__}"
 
-    real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE)
+    real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, PR_LINE_STATE)
     with tempfile.TemporaryDirectory() as td:
         ROOT = Path(td)
         PLAN_DIR = ROOT / ".claude/plans"
         SENTINEL = ROOT / ".claude/executing-plan"
         STATE = ROOT / ".claude/executing-plan.state"
-        # ⛔ NEVER the real `.claude/last-plan`, `~/explainers/` or GitHub. A suite that wrote the
+        # ⛔ NEVER the real `.claude/last-plan` or GitHub. A suite that wrote the
         # first leaked a record into the checkout it ran in (measured while writing this), and
         # one that asked `gh` would pass or fail on the network.
         LAST_PLAN = ROOT / ".claude/last-plan"
-        WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
         PR_LINE_STATE = lambda _b: (None, "the self-test never asks GitHub")  # noqa: E731
 
         SENTINEL.parent.mkdir(parents=True, exist_ok=True)
@@ -1874,35 +1870,8 @@ def _self_test_body() -> int:
                  == (OK, ".claude/plans/boom-arm.md", False, 1))
             cmd_finish()
 
-            # ── "always current": every state change rebuilds the page, and NEVER fails ─────
-            PR_LINE_STATE = _line_state_in([{"state": "MERGED"}])
-            with contextlib.redirect_stdout(io.StringIO()):
-                _rc_m = main(["regen", "A|d|w", "B|d|w"])
-            _pg = WORK_LINES_OUT.read_text() if WORK_LINES_OUT.is_file() else ""
-            case("⭐ arming a plan REBUILDS the work-lines page, without being asked",
-                 (_rc_m, "<code>regen</code>" in _pg, "0/2 not ticked closed" in _pg)
-                 == (OK, True, True))
-            with contextlib.redirect_stdout(io.StringIO()):
-                main(["--tick"])
-            case("⭐ ...and so does a tick: the page shows the step that just landed",
-                 "1/2 not ticked closed" in WORK_LINES_OUT.read_text())
-            (ROOT / "blocker").write_text("a file where a directory must go")
-            WORK_LINES_OUT = ROOT / "blocker" / "work-lines.html"
-            _err_r = io.StringIO()
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err_r):
-                try:
-                    _rc_r = main(["--tick"])
-                except Exception as exc:              # noqa: BLE001 - the case reports it
-                    _rc_r = f"RAISED {type(exc).__name__}"
-            case("⛔ a page that CANNOT be rebuilt never fails the command — the tick lands, the "
-                 "exit code is the tick's, and ONE stderr line says so",
-                 (_rc_r, pp.count_steps((PLAN_DIR / "regen.md").read_text()),
-                  len([ln for ln in _err_r.getvalue().splitlines() if "NOT rebuilt" in ln]))
-                 == (OK, (2, 2), 1))
-            WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
-            cmd_finish()
         finally:
-            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE = real
+            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, PR_LINE_STATE = real
             _load_plan_progress = _real_loader
             if _sess_saved is None:
                 os.environ.pop(pp.SESSION_ENV, None)
@@ -2111,10 +2080,6 @@ def pp_count_drift(doc: str | None, actual: int) -> str | None:
     return mod.count_drift(doc, actual)
 
 
-# Every command that can change plan state. `--banner`/`--status`/`--self-test` read only.
-_CHANGES_STATE = ("tick", "pause", "resume", "finish", "plan", "slug")
-
-
 def linked_worktree_main(root: Path, run=subprocess.run) -> Path | None:
     """The MAIN checkout when `root` is a LINKED worktree, else None.
 
@@ -2217,12 +2182,7 @@ def main(argv: list[str]) -> int:
     else:
         ap.print_help()
         return REFUSED
-    # ⭐ THE PAGE IS ALWAYS CURRENT (2026-10-22): rebuilt after every command in _CHANGES_STATE,
-    # refused or not — a refusal changed nothing, and rebuilding an unchanged page is harmless.
-    # ⛔ `refresh_work_lines` NEVER RAISES and `rc` is returned untouched: a page is a view, and a
-    # rebuild failure is one stderr line, never a failed tick.
-    _pp = _load_plan_progress()
-    _pp.refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)
+    # (The work-lines page that was rebuilt here after every state change retired, backlog #389.)
     return rc
 
 

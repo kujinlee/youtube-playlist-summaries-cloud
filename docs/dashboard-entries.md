@@ -18198,3 +18198,34 @@ copy of any rule. `scripts/regen-pages.py` + `.claude/hooks/regen-pages.sh` (`--
 (backlog-table 17.9s, goals 11.7s, dashboard 7.0s, goal-tree 5.2s, features 1.6s). Registered in
 check-selftest-counts, check-fixture-variation, CI, and mutation manifests (36 + 8, all killed by
 the case each names).
+
+## 2026-10-28
+A correction to the record: the change merged as PR #425 is titled "A compaction leaves a derived
+snapshot, an audit of what its summary dropped, and prints both back", but the audit part did not
+ship. It was taken out during that PR's review and is still waiting as backlog #391. What did ship is
+the derived snapshot written before a compaction, and printing it back afterwards.
+<!--tech-->
+PR #425 (`bee4a516`, backlog #361): the squash subject names the PostCompact audit, which round 4 of
+that PR deferred to backlog #391 (still 🟡 OPEN). The merged commit cannot be retitled, so the
+correction is recorded here instead.
+
+## 2026-10-28
+The work-lines page is retired, as you decided (D2). Its job — which threads exist, why, and which
+plans still owe something — is now on the goal tree, at http://127.0.0.1:7391/goal-tree, in a list
+of every plan that is not ticked closed, with its progress, when it was last touched, and the
+objective of the line it belongs to. One page answers that question now, not two.
+
+The old page is not deleted. Its last output is frozen at http://127.0.0.1:7391/work-lines-archive,
+marked as archived, and the goal tree links to it. The old address, /work-lines, now takes you there.
+Nothing rebuilds it any more.
+<!--tech-->
+Backlog #389. `scripts/goal-tree.py` gains `open_plans()` (every plan in an open line, through
+gen-work-lines' own `build_forest`/`line_state`/`label`), plan progress in the timeline, plans NOT
+READ vs a missing directory, and a link to the archive. `scripts/gen-work-lines.py` becomes the plan
+reader only: the renderer, CSS, `write_page` and the page-writing `main` are deleted (its main now
+exits 2 naming the archive). The rebuild calls in `check-plan-progress.py` (Stop hook) and
+`begin-plan.py` are removed; `explainer-serve.py` drops it from `REGENERABLE` (so `regen-pages`
+no longer runs it), empties `STALE_EXEMPT`, and redirects `/work-lines` to the archive. The archive
+is `docs/explainers/work-lines-archive.html`, rendered from 138 plan files at `40291231`; the plan
+files themselves stay git-ignored (whether they travel into git is backlog #194). Mutation entries
+for the renderer and the rebuilds retire with them; new ones pin the absorption.

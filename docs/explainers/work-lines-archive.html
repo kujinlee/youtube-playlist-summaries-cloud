@@ -1,0 +1,844 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Work lines — ARCHIVED 2026-10-28</title><style>
+:root{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;--ink-faint:#838a9b;
+      --rule:#ddd9d0;--good:#1f7a55;--pending:#8f6410;--good-bg:#e7f2ec;--pending-bg:#f6efdd;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+@media (prefers-color-scheme:dark){:root{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;
+      --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--good:#5fc394;--pending:#d9a441;
+      --good-bg:#16261f;--pending-bg:#262013}}
+:root[data-theme="dark"]{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;--ink-soft:#b4bac9;
+      --ink-faint:#7d8496;--rule:#2e313b;--good:#5fc394;--pending:#d9a441;--good-bg:#16261f;
+      --pending-bg:#262013}
+:root[data-theme="light"]{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;
+      --ink-faint:#838a9b;--rule:#ddd9d0;--good:#1f7a55;--pending:#8f6410;--good-bg:#e7f2ec;
+      --pending-bg:#f6efdd}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.5}
+main{max-width:62rem;margin:0 auto;padding:2rem 1rem}
+h1{font-size:2rem;margin:.2rem 0 1rem}
+.meta{font-family:var(--mono);font-size:.7rem;color:var(--ink-faint);letter-spacing:.04em}
+.lede{color:var(--ink-soft);max-width:60ch}
+.warn{color:var(--pending)}
+.line{background:var(--card);border:1px solid var(--rule);border-radius:.5rem;
+      padding:.9rem 1.1rem;margin:0 0 1rem}
+.line.open{border-left:3px solid var(--pending)}
+.line.done{border-left:3px solid var(--good)}
+.serving{font-size:.95rem;color:var(--ink);margin:.1rem 0 .7rem;max-width:66ch}
+.serving.absent{color:var(--ink-faint);font-style:italic}
+ul.tree,ul.tree ul{list-style:none;margin:0;padding-left:1.1rem}
+ul.tree li{margin:.25rem 0;border-left:1px dotted var(--rule);padding-left:.7rem}
+ul.tree li.rebuilt{border-left:2px dashed var(--pending)}
+.recon,.recon-key{font-family:var(--mono);font-size:.66rem;color:var(--pending);
+       border:1px dashed var(--pending);border-radius:.3rem;padding:.02rem .32rem}
+.recon{cursor:help}
+ul.tree li.from-banner{border-left:3px double var(--ink-soft)}
+.from-banner-tag,.banner-key{font-family:var(--mono);font-size:.66rem;color:var(--ink-soft);
+       border:3px double var(--ink-soft);border-radius:.3rem;padding:0 .32rem;cursor:help}
+code{font-family:var(--mono);font-size:.85rem}
+.when{font-family:var(--mono);font-size:.7rem;color:var(--ink-faint)}
+.st{font-family:var(--mono);font-size:.68rem;padding:.08rem .38rem;border-radius:.3rem;
+    border:1px solid transparent;white-space:nowrap}
+.st-done{color:var(--good);background:var(--good-bg);border-color:var(--good)}
+.st-open{color:var(--pending);background:var(--pending-bg);border-color:var(--pending);
+         font-weight:600}
+.st-empty{color:var(--ink-faint);border-color:var(--rule)}
+
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}</style><main><p class="warn" style="font-size:1rem;border:2px solid var(--pending);border-radius:.5rem;padding:.6rem .9rem">⛔ <strong>ARCHIVED — this page is frozen and is no longer regenerated.</strong> The work-lines page retired on 2026-10-28 (backlog #389, the owner's decision D2): the <a href="/goal-tree">goal tree</a> now answers <em>which threads exist, why, and which plans still owe something</em>. This is the page's last output, rendered by <code>scripts/gen-work-lines.py</code> at commit <code>40291231</code> from 138 plan files across every checkout's <code>.claude/plans/</code>. Those plan files stay git-ignored and are NOT archived here: whether they travel into git is backlog #194, the owner's call.</p>
+<p class="meta">GENERATED FROM EVERY CHECKOUT'S .claude/plans/ · 
+2026-10-28 16:04
+</p>
+<h1>Work lines</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><span class="chrome-when">generated <time>2026-10-28 16:04</time></span></div></div>
+<p class="lede">120 line(s) · <strong>28 still owe something</strong>. A line is a chain of plans: each branch records the plan it was armed from, so the chain reads back to what started it.</p>
+<p class="lede">⚠ <strong>“not ticked closed” is not “abandoned.”</strong> A plan file is a claim about progress; work has been finished here and left unticked. The date is when the file was last touched — judge from that, not from the box.</p>
+<p class="lede">⚠ Three kinds of link: a plain dotted one was recorded live when the plan was armed; one drawn <span class="recon-key">dashed and marked “reconstructed”</span> was rebuilt afterwards from the session transcripts by replaying every plan command; and one drawn <span class="banner-key">double and marked “from banner”</span> rests only on a “switched from” line written at the time, after the replay found the earlier plan already closed — hover either rebuilt kind for the session and time it came from.</p>
+<section class="line open">
+<p class="serving">“a thread switch without an armed plan must be caught mechanically so the work-lines tree cannot silently lose a branch — warn first, then block”</p>
+<ul class="tree">
+<li><span class="st st-open">0/4 not ticked closed</span> <code>banner-thread-armed</code> <span class="when">2026-10-22</span>
+<ul>
+<li><span class="st st-done">4/4</span> <code>work-lines-backfill</code> <span class="when">2026-10-23</span>
+<ul>
+<li><span class="st st-open">1/3 not ticked closed</span> <code>memory-loss-fixes</code> <span class="when">2026-10-23</span>
+</li>
+<li><span class="st st-done">3/3</span> <code>trigger3-lost-bet</code> <span class="when">2026-10-23</span>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">5/6 not ticked closed</span> <code>decision-route-escalation</code> <span class="when">2026-10-20</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-open">2/3 not ticked closed</span> <code>memory-index-budget-r2</code> <span class="when">2026-10-19</span> <span class="recon" title="reconstructed from transcript e2d493ff 2026-10-20T04:45:07.218Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">5/6 not ticked closed</span> <code>chrome-r2-fold @ main</code> <span class="when">2026-10-18</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">5/6 not ticked closed</span> <code>chrome-r2-fold @ wt-chrome</code> <span class="when">2026-10-18</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">3/4 not ticked closed</span> <code>chrome-r4-ship</code> <span class="when">2026-10-18</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">2/6 not ticked closed</span> <code>chrome-bar-fold</code> <span class="when">2026-10-18</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">6/7 not ticked closed</span> <code>build-291-string-diff</code> <span class="when">2026-10-16</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-open">5/6 not ticked closed</span> <code>fold-q3-q4-then-r3</code> <span class="when">2026-10-16</span> <span class="recon" title="reconstructed from transcript 5a5d6b21 2026-10-17T00:37:52.664Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-open">7/8 not ticked closed</span> <code>fold-r3-codex</code> <span class="when">2026-10-16</span> <span class="recon" title="reconstructed from transcript 5a5d6b21 2026-10-17T01:42:59.004Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-open">2/4 not ticked closed</span> <code>fold-r4-claude</code> <span class="when">2026-10-16</span> <span class="recon" title="reconstructed from transcript 5a5d6b21 2026-10-17T04:37:20.556Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">6/7 not ticked closed</span> <code>fold-r5-citations</code> <span class="when">2026-10-16</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">0/6 not ticked closed</span> <code>marketplace-r3</code> <span class="when">2026-10-16</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">5/7 not ticked closed</span> <code>doc-citations-redesign</code> <span class="when">2026-10-15</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">7/8 not ticked closed</span> <code>fold-r4-citations</code> <span class="when">2026-10-15</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-open">2/5 not ticked closed</span> <code>afk-two-folds-and-r18</code> <span class="when">2026-10-14</span> <span class="recon" title="reconstructed from transcript ee774183 2026-10-14T17:45:25.358Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">4/5 not ticked closed</span> <code>backlog-249-260-r4</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">6/7 not ticked closed</span> <code>d2-main-drivable</code> <span class="when">2026-10-03</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">3/5 not ticked closed</span> <code>recall-llm-r9</code> <span class="when">2026-10-01</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>correct-arch-review-verdict</code> <span class="when">2026-09-30</span>
+<ul>
+<li class="from-banner"><span class="st st-open">4/5 not ticked closed</span> <code>rc-contract-reconciled</code> <span class="when">2026-09-30</span> <span class="from-banner-tag" title="from a banner: banner 9421c78a 2026-09-30T20:48:21.348Z">from banner</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">5/6 not ticked closed</span> <code>r3-something-uses-it</code> <span class="when">2026-09-30</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">3/4 not ticked closed</span> <code>c5-recall-matcher</code> <span class="when">2026-09-29</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">4/5 not ticked closed</span> <code>backlog-191-memory-taxonomy</code> <span class="when">2026-09-27</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-open">3/4 not ticked closed</span> <code>backfill-177-spec-plan</code> <span class="when">2026-09-25</span> <span class="recon" title="reconstructed from transcript 1e3f81fb 2026-09-26T03:46:06.911Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">5/5</span> <code>split-177-from-117</code> <span class="when">2026-09-25</span> <span class="recon" title="reconstructed from transcript 2e11564a 2026-09-26T04:19:43.385Z">reconstructed</span>
+<ul>
+<li class="rebuilt"><span class="st st-open">0/3 not ticked closed</span> <code>velocity-r3-and-pr</code> <span class="when">2026-09-25</span> <span class="recon" title="reconstructed from transcript 2e11564a 2026-09-26T04:29:15.996Z">reconstructed</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">2/5 not ticked closed</span> <code>entry-gate-timing</code> <span class="when">2026-09-06</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">1/4 not ticked closed</span> <code>guards-mutation-ratchet-and-push-gate</code> <span class="when">2026-09-05</span>
+</li>
+</ul></section>
+<section class="line open">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-open">0/1 not ticked closed</span> <code>pause-proof</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>merge-when-ready-rule</code> <span class="when">2026-10-25</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>pr397-carry-master</code> <span class="when">2026-10-25</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving">“I would like to fix comprehesibility feature related backlogs if possible. Would you work on those backlogs until I am back”</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>comprehensibility-backlog</code> <span class="when">2026-10-24</span>
+<ul>
+<li><span class="st st-done">3/3</span> <code>typography-contract</code> <span class="when">2026-10-24</span>
+<ul>
+<li><span class="st st-done">4/4</span> <code>stub-gaps-and-fg-cycle</code> <span class="when">2026-10-24</span>
+<ul>
+<li><span class="st st-done">5/5</span> <code>t4-warn-pending-327</code> <span class="when">2026-10-25</span>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving">“yes, run the audit”</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>backlog-review-loop-audit</code> <span class="when">2026-10-23</span>
+<ul>
+<li><span class="st st-done">3/3</span> <code>ci-ghcr-schema-image</code> <span class="when">2026-10-24</span>
+<ul>
+<li><span class="st st-done">5/5</span> <code>overnight-backlog-fixes</code> <span class="when">2026-10-24</span>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving">“I&#x27;d like to see this work line frequently (potentially on banner) — an always maintained page like goals, dashboard or features; maybe combine as a project status dashboard”</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>work-lines-always-on</code> <span class="when">2026-10-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving">“I lost the history line of pending tasks after a series of branching — I want to walk back to the original objectives, at session start and mid-session (asked 2026-10-22)”</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">2/2</span> <code>work-lines-page</code> <span class="when">2026-10-22</span> <span class="recon" title="reconstructed from transcript 161aad51 2026-10-22T16:38:16.311Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>declared-skip-r7</code> <span class="when">2026-10-21</span>
+<ul>
+<li class="rebuilt"><span class="st st-done">3/3</span> <code>declared-skip-r8</code> <span class="when">2026-10-21</span> <span class="recon" title="reconstructed from transcript 161aad51 2026-10-21T22:59:19.557Z">reconstructed</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>goals-page-status</code> <span class="when">2026-10-21</span>
+<ul>
+<li class="from-banner"><span class="st st-done">3/3</span> <code>declare-all-statuses</code> <span class="when">2026-10-22</span> <span class="from-banner-tag" title="from a banner: banner 161aad51 2026-10-22T09:58:30.063Z">from banner</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">7/7</span> <code>decision-log-model-r1-fold</code> <span class="when">2026-10-20</span> <span class="recon" title="reconstructed from transcript 55e544f6 2026-10-20T22:55:46.642Z">reconstructed</span>
+<ul>
+<li class="from-banner"><span class="st st-done">6/6</span> <code>decision-log-model-r2</code> <span class="when">2026-10-20</span> <span class="from-banner-tag" title="from a banner: banner 55e544f6 2026-10-20T23:18:00.541Z">from banner</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">5/5</span> <code>decision-log-model-redesign</code> <span class="when">2026-10-20</span> <span class="recon" title="reconstructed from transcript 55e544f6 2026-10-20T22:28:55.446Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>decision-route-r2-fold</code> <span class="when">2026-10-20</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>decision-route-r3-fold</code> <span class="when">2026-10-20</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">7/7</span> <code>defer-327-build-corpus-owner</code> <span class="when">2026-10-20</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>fix-322-unrunnable-gate</code> <span class="when">2026-10-20</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>qualify-bare-refs</code> <span class="when">2026-10-20</span>
+<ul>
+<li class="from-banner"><span class="st st-done">5/5</span> <code>approved-329-328-173</code> <span class="when">2026-10-20</span> <span class="from-banner-tag" title="from a banner: banner 55e544f6 2026-10-21T05:13:42.010Z">from banner</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">7/7</span> <code>chrome-bar-converge</code> <span class="when">2026-10-19</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>consolidate-retrieval-page</code> <span class="when">2026-10-19</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>memory-index-budget-fold</code> <span class="when">2026-10-19</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>phase6-chrome-instrument</code> <span class="when">2026-10-19</span>
+<ul>
+<li class="from-banner"><span class="st st-done">4/4</span> <code>phase6-fold-addendum</code> <span class="when">2026-10-19</span> <span class="from-banner-tag" title="from a banner: banner 014deb4c 2026-10-19T19:46:32.691Z">from banner</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>r7-fold</code> <span class="when">2026-10-19</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>r8-codex-fold</code> <span class="when">2026-10-19</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>r8-fold</code> <span class="when">2026-10-19</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">6/6</span> <code>candidate-1-page-cites</code> <span class="when">2026-10-17</span> <span class="recon" title="reconstructed from transcript 239d5d35 2026-10-17T15:23:46.866Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">5/5</span> <code>corpus-pass-295</code> <span class="when">2026-10-17</span> <span class="recon" title="reconstructed from transcript 239d5d35 2026-10-17T17:26:15.361Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>round-6-scoped</code> <span class="when">2026-10-17</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">4/4</span> <code>arch-review-marketplace</code> <span class="when">2026-10-16</span> <span class="recon" title="reconstructed from transcript 5a5d6b21 2026-10-17T05:15:44.782Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>finish-291-branch</code> <span class="when">2026-10-16</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">6/6</span> <code>fold-r3-claude</code> <span class="when">2026-10-16</span> <span class="recon" title="reconstructed from transcript 5a5d6b21 2026-10-17T02:32:55.874Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">7/7</span> <code>fold-r3-mediums</code> <span class="when">2026-10-16</span> <span class="recon" title="reconstructed from transcript 5a5d6b21 2026-10-17T03:59:35.550Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>fold-r4-codex</code> <span class="when">2026-10-16</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>fold-r5-codex</code> <span class="when">2026-10-16</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">5/5</span> <code>namespace-token-guard</code> <span class="when">2026-10-15</span> <span class="recon" title="reconstructed from transcript 20fc6768 2026-10-15T12:44:27.568Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>afk-r6-lows-r7-and-r18-verdict</code> <span class="when">2026-10-14</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">7/7</span> <code>afk-staleplan-and-two-folds</code> <span class="when">2026-10-14</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>three-review-rounds</code> <span class="when">2026-10-13</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>backlog-267-parser-swap</code> <span class="when">2026-10-12</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">2/2</span> <code>backlog-249-260-r10</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>backlog-249-260-r5</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>backlog-249-260-r6</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>backlog-249-260-r7</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>backlog-249-260-r8</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>backlog-249-260-r9</code> <span class="when">2026-10-08</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">8/8</span> <code>backlog-249-260</code> <span class="when">2026-10-07</span>
+</li>
+</ul></section>
+<section class="line empty">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-empty">no steps</span> <code>explainer-text-switcher</code> <span class="when">2026-10-06</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">6/6</span> <code>finish-365</code> <span class="when">2026-10-06</span> <span class="recon" title="reconstructed from transcript dad7f9f7 2026-10-06T23:06:10.290Z">reconstructed</span>
+<ul>
+<li class="from-banner"><span class="st st-done">6/6</span> <code>finish-364</code> <span class="when">2026-10-06</span> <span class="from-banner-tag" title="from a banner: banner dad7f9f7 2026-10-07T02:37:42.948Z">from banner</span>
+<ul>
+<li class="rebuilt"><span class="st st-done">4/4</span> <code>round5-364</code> <span class="when">2026-10-07</span> <span class="recon" title="reconstructed from transcript cacb274e 2026-10-07T05:05:44.681Z">reconstructed</span>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>close-201-202</code> <span class="when">2026-10-02</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>explainer-emphasis-baseline</code> <span class="when">2026-10-02</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">3/3</span> <code>post-merge-360-reconcile</code> <span class="when">2026-10-02</span> <span class="recon" title="reconstructed from transcript 677677e1 2026-10-02T12:06:39.503Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>unify-explainer-style</code> <span class="when">2026-10-02</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>arch-review-wiring-class</code> <span class="when">2026-10-01</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>d1-ratchet-main-world</code> <span class="when">2026-10-01</span>
+<ul>
+<li class="from-banner"><span class="st st-done">6/6</span> <code>ship-recall-fold</code> <span class="when">2026-10-01</span> <span class="from-banner-tag" title="from a banner: banner 677677e1 2026-10-02T04:14:33.110Z">from banner</span>
+</li>
+</ul>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>arch-review-recall-llm</code> <span class="when">2026-09-30</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>fold-recall-llm-r1</code> <span class="when">2026-09-30</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">3/3</span> <code>wrap-for-arch-review</code> <span class="when">2026-09-30</span> <span class="recon" title="reconstructed from transcript 8548619c 2026-09-30T17:31:52.656Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>llm-recall-matcher</code> <span class="when">2026-09-29</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>retire-295-refile-restart</code> <span class="when">2026-09-29</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>filing-rule-alignment-not-approval</code> <span class="when">2026-09-28</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>clear-the-board</code> <span class="when">2026-09-26</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>fold-prevention</code> <span class="when">2026-09-26</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>merge-348</code> <span class="when">2026-09-26</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">7/7</span> <code>migrate-velocity-to-workflow</code> <span class="when">2026-09-26</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>rebase-117</code> <span class="when">2026-09-26</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>velocity-goal-spec</code> <span class="when">2026-09-26</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">5/5</span> <code>backlog-117-r3</code> <span class="when">2026-09-25</span> <span class="recon" title="reconstructed from transcript 1e3f81fb 2026-09-25T21:51:40.063Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>backlog-117-substrate</code> <span class="when">2026-09-25</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">started this line; no objective was recorded (reconstructed)</p>
+<ul class="tree">
+<li class="rebuilt"><span class="st st-done">4/4</span> <code>velocity-single-owner</code> <span class="when">2026-09-25</span> <span class="recon" title="reconstructed from transcript 1e3f81fb 2026-09-26T04:04:03.470Z">reconstructed</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>explain-336-338</code> <span class="when">2026-09-23</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>merge-338-file-f13</code> <span class="when">2026-09-23</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>observer-log-owner</code> <span class="when">2026-09-23</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>refresh-and-consolidate</code> <span class="when">2026-09-23</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>arch-review-duplicate-mechanisms</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>banner-blind-spot</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>ci-observer-log</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>merge-331-and-handoff</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>merge-both-prs</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>pr331-to-merge</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>side-job-naming</code> <span class="when">2026-09-22</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>finish-324</code> <span class="when">2026-09-20</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>backlog-82</code> <span class="when">2026-09-06</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">7/7</span> <code>backlog-96-prior-turn</code> <span class="when">2026-09-06</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">7/7</span> <code>backlog-99-paused-tick</code> <span class="when">2026-09-06</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>comprehensibility-reread</code> <span class="when">2026-09-06</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>docs-95-entry-and-row96</code> <span class="when">2026-09-05</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>push-gate-force-and-noverify</code> <span class="when">2026-09-05</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>axis-fix</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>comprehensibility-slice-a</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>comprehensibility-slice-b</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">2/2</span> <code>e2e-proof</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">3/3</span> <code>fold-95-and-merge</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">4/4</span> <code>queued-jobs</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">5/5</span> <code>task-224-begin-plan</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+<section class="line done">
+<p class="serving absent">no parent recorded, and no stated objective</p>
+<ul class="tree">
+<li><span class="st st-done">6/6</span> <code>wrap-planned-residue</code> <span class="when">2026-09-04</span>
+</li>
+</ul></section>
+</main><script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>

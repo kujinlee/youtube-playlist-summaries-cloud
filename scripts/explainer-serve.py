@@ -32,7 +32,8 @@ newest one, so no filename ever has to be copied again. `/` lists them all, newe
 STANDING PAGES — a fixed url for a page that is rewritten, not re-created
 ------------------------------------------------------------------------
     http://127.0.0.1:7391/backlog-table        ← scripts/gen-backlog-page.py
-    http://127.0.0.1:7391/work-lines           ← scripts/gen-work-lines.py
+    http://127.0.0.1:7391/work-lines-archive   ← FROZEN: the retired work-lines page (backlog #389);
+                                                  `/work-lines` redirects here
     http://127.0.0.1:7391/goal-tree            ← scripts/goal-tree.py
 
 Some pages are not a snapshot of a moment but a live view of something in the repo, regenerated in
@@ -65,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 203 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 207 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -126,7 +127,6 @@ REGENERABLE = {
     "backlog-table": "gen-backlog-page.py",
     "goals": "gen-goals-page.py",
     "features": "gen-features-page.py",
-    "work-lines": "gen-work-lines.py",
     # Run with no arguments it snapshots (gh + git, logged only if the tree changed) AND renders.
     "goal-tree": "goal-tree.py",
 }
@@ -157,15 +157,6 @@ PAGE_SOURCES = {
     # Teaching `/_stale` about directories (rglob each entry, take the max mtime) is a real change
     # to this file and is deliberately out of that plan's scope.
     "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
-    # ⛔ DELIBERATELY EMPTY, AND EXEMPT BY NAME IN `STALE_EXEMPT` BELOW — not a missing entry.
-    # This page is built from `.claude/plans/`, a git-IGNORED DIRECTORY: it is not a file (the
-    # case below asserts every declared source is one, and widening that turned it red once
-    # already), and it is not in git, so no checkout would carry it. An empty list makes the
-    # handler answer `fresh` through its existing `not sources` arm, so `/_stale` never raises a
-    # banner over this page. The residual, stated rather than hidden: a plan edited BY HAND makes
-    # the page stale with no banner. Every SCRIPTED change rebuilds it at the writer instead
-    # (`check-plan-progress.refresh_work_lines`), and the Refresh button covers the hand edit.
-    "work-lines": [],
     # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
     # every-source-is-a-real-file case below would refuse), and the STATES move with gh and git, which
     # no file carries — so "fresh" here means "nothing re-declared since", not "gh agrees".
@@ -173,9 +164,18 @@ PAGE_SOURCES = {
 }
 # ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
 # keys whose source list is empty, so an empty list can never appear on another page silently.
-STALE_EXEMPT = {
-    "work-lines": "built from the git-ignored DIRECTORY .claude/plans/, rebuilt by its writers",
-}
+# ⟳ backlog #389: EMPTY now — its one member, the work-lines page, retired. The case below still
+# holds this set equal to the pages with no sources, so the next exemption must be named here.
+STALE_EXEMPT: dict[str, str] = {}
+# ⛔ A RETIRED PAGE'S URL GOES TO ITS ARCHIVE (backlog #389). A stale copy of the old file may still sit
+# in a checkout's served directory (it was never tracked); serving it would present a retired page as
+# current, which is that row's FAILS-IF. So its url redirects to the frozen, tracked archive instead.
+RETIRED_PAGES = {"/work-lines": "/work-lines-archive", "/work-lines.html": "/work-lines-archive"}
+
+
+def retired_target(url_path: str) -> str | None:
+    """PURE. The archive a retired page's url now redirects to, or None for any other url."""
+    return RETIRED_PAGES.get(url_path)
 
 
 def stale_verdict(built_ns: int, newest_source_ns: int) -> str:
@@ -1164,6 +1164,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
+        if retired_target(path):
+            self.send_response(302)
+            self.send_header("Location", retired_target(path))
+            self.end_headers()
+            return
         if path == "/_rev":
             # Change detection for the injected live-reload client. Goes through resolve_page —
             # the SAME resolver the page GET below uses — so the two agree by construction: if
@@ -1528,7 +1533,14 @@ def _self_test_body() -> int:
         # STALE_EXEMPT have no sources, and each exemption states its reason.
         case("an EMPTY source list is exactly the STALE_EXEMPT set, each with a reason",
              lambda: (sorted(k for k, v in PAGE_SOURCES.items() if not v), sorted(STALE_EXEMPT),
-                      all(STALE_EXEMPT.values())) == (["work-lines"], ["work-lines"], True))
+                      all(STALE_EXEMPT.values())) == ([], [], True))
+        case("⛔ backlog #389: the retired work-lines page is NOT regenerable, and its urls go to the archive",
+             lambda: ("work-lines" not in REGENERABLE,
+                      [retired_target(u) for u in ("/work-lines", "/work-lines.html", "/goal-tree")])
+             == (True, ["/work-lines-archive", "/work-lines-archive", None]))
+        case("...and a live page's url is not redirected", lambda: retired_target("/dashboard") is None)
+        case("...and the archive it redirects to is a real, tracked file that says it is ARCHIVED",
+             lambda: "ARCHIVED" in (REPO / "docs/explainers/work-lines-archive.html").read_text())
 
         # ⚠ THE SHIPPED FUNCTION, not a copy of its rule. See `stale_verdict`'s docstring:
         # the first draft defined the comparison again right here, which would have kept
@@ -2407,6 +2419,18 @@ def _self_test_body() -> int:
             h._send = lambda code, body, ctype: got.update(code=code, body=body, ctype=ctype)
             h.do_GET()
             return got.get("code"), got.get("body", b""), got.get("ctype", "")
+        def _drive_redirect(url_path):
+            got = {}
+            h = object.__new__(Handler)
+            h.path = url_path
+            h.send_response = lambda code: got.update(code=code)
+            h.send_header = lambda k, v: got.update({k: v})
+            h.end_headers = lambda: None
+            h._send = lambda code, body, ctype: got.update(code=code)
+            h.do_GET()
+            return got.get("code"), got.get("Location")
+        case("⭐ backlog #389: GET /work-lines REDIRECTS to the archive, end to end through do_GET",
+             lambda: _drive_redirect("/work-lines") == (302, "/work-lines-archive"))
         def _drive_post(route, raw: bytes, length=None, headers=None):
             got = {}
             h = object.__new__(Handler)

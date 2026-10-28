@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
-"""How did we get here, and what did we never walk back to? — the work lines, from the plan files.
+"""The plan-file reader: every checkout's `.claude/plans/`, each plan's parent, objective and progress.
 
-    python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 67 cases
+    python3 scripts/gen-work-lines.py --self-test  # 44 cases
+    python3 scripts/gen-work-lines.py              # RETIRED: exits 2, naming the archive
+
+⛔ THE WORK-LINES PAGE IS RETIRED (backlog #389, the owner's decision D2, 2026-10-28). The goal tree
+(`scripts/goal-tree.py`, http://127.0.0.1:7391/goal-tree) absorbed its job — which threads exist, why, and
+which plans still owe something — because two pages answering that left the reader with neither (the owner
+stopped reading this one when it looked un-updated). Its last output is frozen, tracked, at
+`docs/explainers/work-lines-archive.html`, linked from the goal tree. What stays here is the READER the page
+was built on, which three scripts import so they cannot disagree about a plan: `begin-plan.py` (lineage,
+`row_for`), `check-banner-armed.py` (`plan_dirs`) and `goal-tree.py` (`read_plans_noted`, `build_forest`,
+`line_state`). The renderer, its CSS, `write_page` and the page-writing `main` are deleted, not kept dormant.
+
+The record of why the reader is shaped as it is follows, unchanged.
 
 WHY THIS EXISTS
 ---------------
@@ -42,7 +53,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import html
 import pathlib
 import os
 import re
@@ -50,11 +60,10 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import page_chrome  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLAN_DIR = ROOT / ".claude" / "plans"
-DEFAULT_OUT = pathlib.Path.home() / "explainers" / "work-lines.html"
+ARCHIVE_REL = "docs/explainers/work-lines-archive.html"   # the frozen last page (backlog #389)
 
 STARTED = "-"   # the `parent:` value `begin-plan` writes when nothing else was armed
 PARENT = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
@@ -193,154 +202,6 @@ def line_state(node: dict) -> str:
                 open_ = True
         stack.extend(n["children"])
     return "empty" if empty else ("open" if open_ else "done")
-
-
-def esc(x: object) -> str:
-    return html.escape(str(x), quote=True)
-
-
-def render(roots: list[dict], orphans: list[str], generated: str, *,
-           notes: list[str] | None = None) -> str:
-    """The page. Newest line first, because the reader arrives wanting the recent one.
-
-    `notes` say what was NOT read (a missing checkout, git unable to list worktrees); each is shown
-    on the page, because a page that silently covers less than it claims would be believed."""
-    open_lines = [r for r in roots if line_state(r) == "open"]
-    parts = [
-        '<main>', '<p class="meta">GENERATED FROM EVERY CHECKOUT\'S .claude/plans/ · ',
-        esc(generated), '</p>',
-        '<h1>Work lines</h1>',
-        # ⭐ A REFRESH BUTTON (2026-10-22). `explainer-serve.py` lists `work-lines` in REGENERABLE,
-        # so the button rebuilds the page from `.claude/plans/` on demand. The writers rebuild it
-        # too (`write_page`'s docstring); the button is for a plan edited by hand.
-        page_chrome.chrome_bar("work-lines", generated),
-        f'<p class="lede">{len(roots)} line(s) · '
-        f'<strong>{len(open_lines)} still owe something</strong>. '
-        f'A line is a chain of plans: each branch records the plan it was armed from, so the chain '
-        f'reads back to what started it.</p>',
-        '<p class="lede">⚠ <strong>“not ticked closed” is not “abandoned.”</strong> A plan file is '
-        'a claim about progress; work has been finished here and left unticked. The date is when '
-        'the file was last touched — judge from that, not from the box.</p>',
-        # ⭐ ONE sentence, three kinds — what each link RESTS ON (owner, 2026-10-22).
-        '<p class="lede">⚠ Three kinds of link: a plain dotted one was recorded live when the '
-        'plan was armed; one drawn <span class="recon-key">dashed and marked “reconstructed”</span> '
-        'was rebuilt afterwards from the session transcripts by replaying every plan command; and '
-        'one drawn <span class="banner-key">double and marked “from banner”</span> rests only on a '
-        '“switched from” line written at the time, after the replay found the earlier plan '
-        'already closed — hover either rebuilt kind for the session and time it came from.</p>',
-    ]
-    for note in notes or []:
-        parts.append(f'<p class="warn">⚠ {esc(note)}</p>')
-    if orphans:
-        parts.append('<p class="warn">⛔ ' + esc(len(orphans)) +
-                     ' plan(s) name a parent that no longer exists: ' +
-                     esc(", ".join(orphans)) + ' — their line has lost its head.</p>')
-    # ⛔ OPEN LINES FIRST — CAUGHT BY LOOKING AT THE PAGE, not by a case. The first version sorted
-    # on `(state != "open", touched)` with `reverse=True`, which flips BOTH members: completed
-    # lines came first and the 26 that still owed something were buried below them. The whole
-    # question this page answers is "what did I never walk back to", so burying those answers it
-    # backwards. Two stable sorts, because one composite key with `reverse` is what got it wrong.
-    _by_date = sorted(roots, key=lambda n: n["touched"], reverse=True)
-    for r in sorted(_by_date, key=lambda n: 0 if line_state(n) == "open" else 1):
-        st = line_state(r)
-        parts.append(f'<section class="line {esc(st)}">')
-        if r.get("serving"):
-            parts.append(f'<p class="serving">“{esc(r["serving"])}”</p>')
-        elif r.get("orphan_parent"):
-            parts.append(f'<p class="serving absent">continues <code>'
-                         f'{esc(r["orphan_parent"])}</code>, which no longer exists</p>')
-        elif r.get("cycle"):
-            parts.append(f'<p class="serving absent">⛔ its recorded parent <code>'
-                         f'{esc(r["parent"])}</code> leads back to itself — the link was cut '
-                         f'here to show the line</p>')
-        elif r.get("started"):
-            parts.append('<p class="serving absent">started this line; no objective was '
-                         'recorded' + (' (reconstructed)' if r.get("source") else '') + '</p>')
-        else:
-            parts.append('<p class="serving absent">no parent recorded, and no stated '
-                         'objective</p>')
-        parts.append('<ul class="tree">')
-        _render_node(r, parts)
-        parts.append('</ul></section>')
-    parts.append('</main>')
-    return "\n".join(parts)
-
-
-def _render_node(n: dict, parts: list[str]) -> None:
-    if n["empty"]:
-        badge, cls = "no steps", "st-empty"
-    elif n["done"]:
-        badge, cls = f'{n["ticked"]}/{n["total"]}', "st-done"
-    else:
-        badge, cls = f'{n["ticked"]}/{n["total"]} not ticked closed', "st-open"
-    cyc = ' <span class="warn">⛔ cycle</span>' if n.get("cycle") else ""
-    src = n.get("source")
-    # ⛔ A BANNER LINK IS NOT A REPLAYED ONE: it rests on what was SAID, not on what the sentinel
-    # did, so it is drawn and labelled as its own kind (owner, 2026-10-22, option A).
-    banner = bool(src) and src.startswith("banner")
-    if banner:
-        rec = (f' <span class="from-banner-tag" title="from a banner: {esc(src)}">from banner'
-               f'</span>')
-    else:
-        rec = (f' <span class="recon" title="reconstructed from {esc(src)}">reconstructed'
-               f'</span>' if src else "")
-    li = ('<li class="from-banner">' if banner else '<li class="rebuilt">') if src else "<li>"
-    parts.append(f'{li}<span class="st {cls}">{esc(badge)}</span> '
-                 f'<code>{esc(label(n))}</code> '
-                 f'<span class="when">{esc(n["touched"])}</span>{cyc}{rec}')
-    if n["children"]:
-        parts.append('<ul>')
-        # oldest first: the order the branches were taken in
-        for c in sorted(n["children"], key=lambda k: k["touched"]):
-            _render_node(c, parts)
-        parts.append('</ul>')
-    parts.append('</li>')
-
-
-CSS = """
-:root{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;--ink-faint:#838a9b;
-      --rule:#ddd9d0;--good:#1f7a55;--pending:#8f6410;--good-bg:#e7f2ec;--pending-bg:#f6efdd;
-      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-      --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;
-      --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--good:#5fc394;--pending:#d9a441;
-      --good-bg:#16261f;--pending-bg:#262013}}
-:root[data-theme="dark"]{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;--ink-soft:#b4bac9;
-      --ink-faint:#7d8496;--rule:#2e313b;--good:#5fc394;--pending:#d9a441;--good-bg:#16261f;
-      --pending-bg:#262013}
-:root[data-theme="light"]{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;
-      --ink-faint:#838a9b;--rule:#ddd9d0;--good:#1f7a55;--pending:#8f6410;--good-bg:#e7f2ec;
-      --pending-bg:#f6efdd}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.5}
-main{max-width:62rem;margin:0 auto;padding:2rem 1rem}
-h1{font-size:2rem;margin:.2rem 0 1rem}
-.meta{font-family:var(--mono);font-size:.7rem;color:var(--ink-faint);letter-spacing:.04em}
-.lede{color:var(--ink-soft);max-width:60ch}
-.warn{color:var(--pending)}
-.line{background:var(--card);border:1px solid var(--rule);border-radius:.5rem;
-      padding:.9rem 1.1rem;margin:0 0 1rem}
-.line.open{border-left:3px solid var(--pending)}
-.line.done{border-left:3px solid var(--good)}
-.serving{font-size:.95rem;color:var(--ink);margin:.1rem 0 .7rem;max-width:66ch}
-.serving.absent{color:var(--ink-faint);font-style:italic}
-ul.tree,ul.tree ul{list-style:none;margin:0;padding-left:1.1rem}
-ul.tree li{margin:.25rem 0;border-left:1px dotted var(--rule);padding-left:.7rem}
-ul.tree li.rebuilt{border-left:2px dashed var(--pending)}
-.recon,.recon-key{font-family:var(--mono);font-size:.66rem;color:var(--pending);
-       border:1px dashed var(--pending);border-radius:.3rem;padding:.02rem .32rem}
-.recon{cursor:help}
-ul.tree li.from-banner{border-left:3px double var(--ink-soft)}
-.from-banner-tag,.banner-key{font-family:var(--mono);font-size:.66rem;color:var(--ink-soft);
-       border:3px double var(--ink-soft);border-radius:.3rem;padding:0 .32rem;cursor:help}
-code{font-family:var(--mono);font-size:.85rem}
-.when{font-family:var(--mono);font-size:.7rem;color:var(--ink-faint)}
-.st{font-family:var(--mono);font-size:.68rem;padding:.08rem .38rem;border-radius:.3rem;
-    border:1px solid transparent;white-space:nowrap}
-.st-done{color:var(--good);background:var(--good-bg);border-color:var(--good)}
-.st-open{color:var(--pending);background:var(--pending-bg);border-color:var(--pending);
-         font-weight:600}
-.st-empty{color:var(--ink-faint);border-color:var(--rule)}
-"""
 
 
 GIT_TIMEOUT = 10   # seconds for `git worktree list`; a timeout is "git could not answer"
@@ -504,50 +365,17 @@ def read_plans(plan_dir: pathlib.Path | None = None) -> list[dict]:
     return read_plans_noted(plan_dir)[0]
 
 
-def write_page(out: pathlib.Path, plan_dir: pathlib.Path | None = None) -> tuple[int, str]:
-    """Read the plans, render the page, write it to `out`. `(rc, one-line report)`; rc 2 is
-    CANNOT RUN and NOTHING is written. Raises only on an OSError from the write itself.
-
-    ⭐ ONE WRITER, TWO KINDS OF CALLER (2026-10-22, the owner's "always current"). `main()` is the
-    command and the Refresh button; `check-plan-progress.refresh_work_lines` is every plan state
-    change — `begin-plan.py` and the Stop hook. The plan files live under the git-ignored
-    `.claude/` and are written through Bash, so no PostToolUse file hook ever sees them change; the
-    WRITERS rebuild the page instead, through this one function.
-    """
-    try:
-        plans, notes = read_plans_noted(plan_dir)
-    except ValueError as exc:
-        return 2, f"CANNOT RUN — {exc}"
-    if not plans:
-        return 2, "CANNOT RUN — no plan files were found, so nothing was rendered."
-    roots, orphans = build_forest(plans)
-    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-    body = render(roots, orphans, now, notes=notes)
-    page = (f"<!doctype html><meta charset=utf-8>"
-            f"<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>Work lines — how we got here</title>"
-            f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
-            f"<script>{page_chrome.chrome_script()}</script>")
-    # ⛔ THE REFRESH BUTTON MUST BE WIRED OR ABSENT. `assert_wired` refuses a theme control with
-    # no palettes, no script or no pin — a button that styles nothing is worse than no button.
-    page_chrome.assert_wired(page, "gen-work-lines.py")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(page)
-    open_lines = sum(1 for r in roots if line_state(r) == "open")
-    return 0, (f"work lines: {len(plans)} plan(s), {len(roots)} line(s), {open_lines} still "
-               f"owing -> {out}")
-
-
-def main(argv: list[str], *, plan_dir: pathlib.Path | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Render the work lines from the plan files.")
-    ap.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT)
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="The plan-file reader (the work-lines page is retired).")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
-    rc, msg = write_page(a.out, plan_dir)
-    print(msg)
-    return rc
+    print(f"RETIRED — the work-lines page was absorbed into the goal tree (backlog #389): run "
+          f"`python3 scripts/goal-tree.py --snapshot --page`. Its last output is frozen at {ARCHIVE_REL}. "
+          f"This file is now the plan-file reader that begin-plan.py, check-banner-armed.py and "
+          f"goal-tree.py import.")
+    return 2
 
 
 def _try(fn):
@@ -556,6 +384,15 @@ def _try(fn):
         return fn()
     except Exception as exc:                       # noqa: BLE001 - reported, not swallowed
         return f"RAISED {type(exc).__name__}"
+
+
+def _try_msg(fn) -> str:
+    """The exception's MESSAGE if `fn` raised, else ''. Paired with `_try`, which names only the type."""
+    try:
+        fn()
+    except Exception as exc:                       # noqa: BLE001 - reported, not swallowed
+        return str(exc)
+    return ""
 
 
 def _self_test() -> int:
@@ -658,12 +495,8 @@ def _self_test_body() -> int:
          ([(r["slug"], r.get("cycle", False)) for r in _tails], _walk(_tails),
           sorted(c["slug"] for c in _tails[0]["children"]) if _tails else None),
          ([("y", True)], ["a", "b", "y", "z"], ["a", "z"]))
-    # Gated on the tree check: under a broken build_forest, render() HANGS rather than fails, and
-    # a hang names no case and hides every case after it.
-    case("⛔ a cycle RENDERS, and says where the link was cut",
-         _try(lambda: "leads back to itself" in render(_self, [], "t"))
-         if _walk(_self) == ["a"] and not _self[0]["children"] else "NOT A TREE — render skipped",
-         True)
+    case("⛔ a self-parent is cut and MARKED, so a reader can say where the link was cut",
+         (_walk(_self), bool(_self and _self[0].get("cycle"))), (["a"], True))
     case("an empty corpus has no roots and no orphans", build_forest([]), ([], []))
 
     # ── the line state, which is the question the reader has ─────────────────────────────────
@@ -675,62 +508,6 @@ def _self_test_body() -> int:
     _e, _unused = build_forest([{**_mk("r", None), "empty": True, "total": 0, "ticked": 0}])
     case("a line of only step-less plans is neither open nor done", line_state(_e[0]), "empty")
 
-    # ── rendering ────────────────────────────────────────────────────────────────────────────
-    _r3, _o3 = build_forest([{**_mk("root", None), "serving": "the ask"}, _mk("kid", "root")])
-    _html = render(_r3, _o3, "2026-10-22 09:00")
-    case("the stated objective is rendered in the line's own words",
-         "“the ask”" in _html, True)
-    case("a plan with no recorded parent says SO, and claims no reason why",
-         (lambda h: ("no parent recorded" in h, "predates" in h, "started this line" in h))(
-             render(build_forest([_mk("x", None)])[0], [], "t")), (True, False, False))
-    case("...while a STARTED line says it started one",
-         (lambda h: ("started this line" in h, "no parent recorded" in h))(
-             render(build_forest([{**_mk("x", None), "started": True}])[0], [], "t")),
-         (True, False))
-    # ⛔ THE PAGE MUST NOT ASSERT ABANDONMENT from an unticked box.
-    # ⛔ THE BADGE IS WHAT LABELS A PLAN, and it is what must never say "abandoned". The page's
-    # own caveat DOES use the word — to say an unticked plan is not one — so asserting the word is
-    # absent from the whole document tested the caveat instead of the label, and failed. The badge
-    # is the claim; the caveat is the disclaimer.
-    _one = [l for l in render(build_forest([_mk("x", None, done=False)])[0], [], "t").splitlines()
-            if "<li>" in l]
-    case("⛔ the BADGE says 'not ticked closed' and never 'abandoned'",
-         (len(_one) == 1 and "not ticked closed" in _one[0], "abandon" in _one[0].lower()),
-         (True, False))
-    case("...while the page's caveat DOES use the word, to say it is not that",
-         "abandoned" in _html, True)
-    case("a dangling parent is named on the page, not just counted",
-         "vanished" in render(*build_forest([_mk("kid", "vanished")]), "t"), True)
-    # ⟳ r1 Codex 6: this asserted only the PHRASE, and `{999}` in place of the count passed. Two
-    # distinct counts, so neither a constant nor the total of all lines can satisfy it.
-    case("the count of lines that still owe something is the REAL count",
-         [f"<strong>{k} still owe something</strong>" in
-          render(build_forest([_mk(f"o{i}", None, done=False) for i in range(k)]
-                              + [_mk("fin", None)])[0], [], "t") for k in (1, 3)],
-         [True, True])
-    # ⛔ THE ORDER IS THE POINT OF THE PAGE, and the first version had it backwards. An open line
-    # must appear ABOVE a completed one even when the completed one is newer — which is the input
-    # that distinguishes the two sorts.
-    _mix = build_forest([{**_mk("done-today", None), "touched": "2026-10-22"},
-                         {**_mk("open-old", None, done=False), "touched": "2026-09-01"}])[0]
-    _mixed_html = render(_mix, [], "t")
-    case("⭐ an OPEN line sorts above a COMPLETED one, even when the completed one is newer",
-         _mixed_html.index("open-old") < _mixed_html.index("done-today"), True)
-    case("...and within the same state, the newer line comes first",
-         (lambda h: h.index("new-done") < h.index("old-done"))(
-             render(build_forest([{**_mk("old-done", None), "touched": "2026-09-01"},
-                                  {**_mk("new-done", None), "touched": "2026-10-22"}])[0],
-                    [], "t")), True)
-    case("a slug is HTML-escaped, so a plan name cannot inject markup",
-         "&lt;b&gt;" in render(build_forest([_mk("<b>", None)])[0], [], "t"), True)
-    # r1 Claude m3: both of these were escaped and neither was checked — removing either escape
-    # survived. The raw tag must be ABSENT, not merely the escaped form present.
-    _x = render(*build_forest([{**_mk("k", "<s>gone</s>"), "serving": "<i>ask</i>"},
-                               {**_mk("j", None), "serving": "<i>ask</i>"}]), "t")
-    case("the serving line and an orphan's name are escaped too",
-         ("<i>" in _x, "&lt;i&gt;ask" in _x, "<s>" in _x, "&lt;s&gt;gone" in _x),
-         (False, True, False, True))
-
     # ── reconstructed links (`backfill-work-lines.py`) are drawn so they can be told apart ───
     _SRC_A, _SRC_B = "transcript 11112222 2026-10-01T12:00:00Z", "transcript 9999aaaa 2026-09-30T08:00:00Z"
     case("⭐ a `parent-source:` line is read as the link's provenance — two distinct inputs",
@@ -740,44 +517,6 @@ def _self_test_body() -> int:
          [parse_plan("k", t_, "t")["source"] for t_ in
           ("# k\n<!-- parent: p -->\n- [ ] a", "# k\n<!-- parent-source: x -->\n- [ ] a")],
          [None, None])
-    _rk = render(*build_forest([_mk("p", None),
-                                {**_mk("rebuilt-kid", "p"), "source": _SRC_A},
-                                _mk("live-kid", "p")]), "t")
-    _rl = {k: [l for l in _rk.splitlines() if f"<code>{k}</code>" in l][0]
-           for k in ("rebuilt-kid", "live-kid")}
-    case("⛔ a RECONSTRUCTED node is drawn distinctly and says where it came from; a live one is not",
-         (_rl["rebuilt-kid"].startswith('<li class="rebuilt">'),
-          f'title="reconstructed from {_SRC_A}">reconstructed<' in _rl["rebuilt-kid"],
-          "rebuilt" in _rl["live-kid"], "reconstructed" in _rl["live-kid"]),
-         (True, True, False, False))
-    case("...and the page's caveat says, once, what the dashed mark means",
-         "rebuilt afterwards from the session transcripts" in _rk, True)
-    # ⭐ OPTION A (owner, 2026-10-22): a link resting only on a banner is a THIRD kind, drawn
-    # unlike both the live and the transcript-replayed one, with its own label.
-    _SRC_BAN = "banner 77776666 2026-10-02T10:00:00Z"
-    _r3k = render(*build_forest([_mk("p", None), _mk("live-kid", "p"),
-                                 {**_mk("replay-kid", "p"), "source": _SRC_A},
-                                 {**_mk("banner-kid", "p"), "source": _SRC_BAN}]), "t")
-    _l3 = {k: [l for l in _r3k.splitlines() if f"<code>{k}</code>" in l][0]
-           for k in ("live-kid", "replay-kid", "banner-kid")}
-    case("⭐ THREE kinds of link, each drawn and labelled differently",
-         [(l_.split(">")[0] + ">", "reconstructed<" in l_, "from banner<" in l_)
-          for l_ in (_l3["live-kid"], _l3["replay-kid"], _l3["banner-kid"])],
-         [("<li>", False, False), ('<li class="rebuilt">', True, False),
-          ('<li class="from-banner">', False, True)])
-    case("...a banner link's tooltip names the banner it rests on",
-         f'title="from a banner: {_SRC_BAN}">from banner<' in _l3["banner-kid"], True)
-    case("...and the caveat says in one sentence what each of the three kinds rests on",
-         [l_ for l_ in _r3k.splitlines() if "Three kinds of link" in l_ and "recorded live" in l_
-          and "rebuilt afterwards from the session transcripts" in l_ and "from banner" in l_]
-         != [], True)
-    case("a reconstructed START of a line says it was reconstructed; a live one does not",
-         [("started this line; no objective was recorded (reconstructed)" in render(
-             build_forest([{**_mk("x", None), "started": True, "source": src}])[0], [], "t"))
-          for src in (_SRC_A, None)], [True, False])
-    case("the provenance is HTML-escaped, so a transcript id cannot inject markup",
-         (lambda h: ("<b>" in h, "&lt;b&gt;" in h))(render(*build_forest(
-             [_mk("p", None), {**_mk("k", "p"), "source": "<b>x</b>"}]), "t")), (False, True))
     # ── identity accessors (r6 Codex): the KEY, the parent's KEY, and the display label ──────
     case("⭐ identity is the KEY, the parent is a KEY, and the label is display only — at distinct "
          "records, so none of them is a constant",
@@ -787,38 +526,13 @@ def _self_test_body() -> int:
           label({"slug": "s", "where": "main"}), label({"slug": "t", "where": None})),
          (("/co", "a"), "b", None, "q", "s @ main", "t"))
 
-    # ── main() over a constructed world ──────────────────────────────────────────────────────
-    with _tf.TemporaryDirectory() as _d:
-        _pd = pathlib.Path(_d) / "plans"; _pd.mkdir()
-        (_pd / "one.md").write_text("# one\n- [x] a")
-        (_pd / "two.md").write_text("# two\n<!-- parent: one -->\n- [ ] b")
-        _out = pathlib.Path(_d) / "wl.html"
-        case("main() writes the page and reports what it found",
-             main(["--out", str(_out)], plan_dir=_pd), 0)
-        _txt = _out.read_text()
-        # ⟳ r1 Claude M4: this compared `index("one") < index("two")`, and "one" first occurs in
-        # the inlined CSS (`list-style:none`), so inverted nesting still passed. It asserts the
-        # STRUCTURE now: `two`'s <li> sits inside a <ul> opened inside `one`'s <li>.
-        case("...and the child is nested under its parent in the output",
-             (bool(re.search(r"<code>one</code>[^\n]*\n<ul>\n<li>[^\n]*<code>two</code>", _txt)),
-              bool(re.search(r"<code>two</code>[^\n]*\n<ul>", _txt))), (True, False))
-        # ⭐ THE REFRESH BUTTON NAMES THE KEY THE SERVER ALLOW-LISTS. `explainer-serve.REGENERABLE`
-        # maps `work-lines` to this script; a button carrying any other key is a 400 on press.
-        case("⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome",
-             ('data-page="work-lines"' in _txt, 'id="chrome-refresh"' in _txt,
-              page_chrome.CHROME_SCRIPT_MARK in _txt), (True, True, True))
-        # ⛔ write_page IS what the writers call, so it is driven directly too — at two DISTINCT
-        # outputs and plan directories, so neither can be a constant. A CANNOT RUN writes NOTHING:
-        # a page that silently kept its old content would read as current.
-        _pd5 = pathlib.Path(_d) / "plans5"; _pd5.mkdir()
-        (_pd5 / "solo.md").write_text("# solo\n- [ ] a")
-        _o5, _o6 = pathlib.Path(_d) / "a" / "w5.html", pathlib.Path(_d) / "w6.html"
-        _r5 = write_page(_o5, _pd5)
-        _r6 = write_page(_o6, pathlib.Path(_d) / "no-such-dir")
-        case("write_page writes ITS plans to ITS output, and a CANNOT RUN writes nothing",
-             (_r5[0], "<code>solo</code>" in (_o5.read_text() if _o5.exists() else ""),
-              "<code>two</code>" in (_o5.read_text() if _o5.exists() else ""),
-              _r6[0], _o6.exists()), (0, True, False, 2, False))
+    # ── main() is RETIRED (backlog #389): it renders nothing and says where the page went ──
+    _buf_m = io.StringIO()
+    with contextlib.redirect_stdout(_buf_m):
+        _rc_m = main([])
+    case("⛔ the retired page-writing main exits 2, names the goal tree and the archive, and writes nothing",
+         (_rc_m, "goal-tree.py --snapshot --page" in _buf_m.getvalue(), ARCHIVE_REL in _buf_m.getvalue()),
+         (2, True, True))
     with _tf.TemporaryDirectory() as _d3:
         _pd3 = pathlib.Path(_d3) / "plans"; _pd3.mkdir()
         (_pd3 / "real.md").write_text("# real\n- [x] a")
@@ -832,18 +546,11 @@ def _self_test_body() -> int:
               _try(lambda: [r["slug"] for r in read_plans(_pd4)])],
              [["real"], ["elsewhere"]])
     with _tf.TemporaryDirectory() as _d2:
-        _empty = pathlib.Path(_d2) / "plans"; _empty.mkdir()
-        case("an EMPTY plan directory is CANNOT RUN (2), never an empty page",
-             main(["--out", str(pathlib.Path(_d2) / "x.html")], plan_dir=_empty), 2)
-        # ⛔ rc=2 ALONE CANNOT SEE THIS, and a mutation proved it: replacing the raise with
-        # `return []` still returns 2, through main()'s "no plan files" branch. The raise's
-        # distinct contribution is NAMING the directory, so that is what the case asserts.
-        _buf2 = io.StringIO()
-        with contextlib.redirect_stdout(_buf2):
-            _rc2 = main(["--out", str(pathlib.Path(_d2) / "y.html")],
-                        plan_dir=pathlib.Path(_d2) / "nope")
-        case("a MISSING plan directory is CANNOT RUN (2) and the message NAMES it",
-             (_rc2, "is not a directory" in _buf2.getvalue()), (2, True))
+        # ⛔ A MISSING plan directory RAISES, naming it — never an empty list read as "no work".
+        case("a MISSING plan directory raises, and the message NAMES it",
+             _try(lambda: read_plans_noted(pathlib.Path(_d2) / "nope")) == "RAISED ValueError"
+             and "is not a directory" in _try_msg(lambda: read_plans_noted(pathlib.Path(_d2) / "nope2")),
+             True)
 
     # ── EVERY CHECKOUT'S PLANS (owner's decision 2026-10-22, option A) ───────────────────────
     # ⛔ A REAL `git worktree add`, not a fixture of its output: the porcelain format, the main-
@@ -902,11 +609,10 @@ def _self_test_body() -> int:
         case("WT4b BYTE-IDENTICAL copies are still TWO rows, one per checkout — equal content is "
              "not identity (r4 Codex; the stated limit)",
              sorted(_tw or []), sorted([(str(_main),), (str(_wt),)]))
-        _o4 = pathlib.Path(_dw) / "w4.html"
-        _r4 = write_page(_o4, _main / ".claude/plans")
+        _r4 = _try(lambda: [label(r) for r in read_plans(_main / ".claude/plans")])
         case("WT4c ...so the identical pair is counted TWICE, like the differing pair",
-             (_r4[0], (_o4.read_text() if _o4.exists() else "").count("<code>twin @ "),
-              (_o4.read_text() if _o4.exists() else "").count("<code>both @ ")), (0, 2, 2))
+             (sum(x.startswith("twin @ ") for x in _r4), sum(x.startswith("both @ ") for x in _r4)),
+             (2, 2))
         _rows = _try(lambda: read_plans(_main / ".claude/plans"))
         case("WT4d row_for resolves a duplicated slug in the asking checkout, else main",
              _try(lambda: (row_for(_rows, "both", _wt), row_for(_rows, "both", _dw),
@@ -935,31 +641,18 @@ def _self_test_body() -> int:
              ([str(c) for c, _ in _dirs9], _notes9), ([str(_main), str(_wt)], []))
         (_wt / ".claude" / "plans").chmod(0)
         try:
-            _o6 = pathlib.Path(_dw) / "w6.html"
-            _r6u = write_page(_o6, _main / ".claude/plans")
             _n6 = _try(lambda: read_plans_noted(_main / ".claude/plans")[1])
         finally:
             (_wt / ".claude" / "plans").chmod(0o755)
-        case("WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — "
-             "and the PAGE says so",
-             (_r6u[0], any(str(_wt) in n and "could not be read" in n for n in _n6),
-              "could not be read" in (_o6.read_text() if _o6.exists() else "")),
-             (0, True, True))
+        case("WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal",
+             any(str(_wt) in n and "could not be read" in n for n in _n6), True)
         _shw.rmtree(_wt)
         _dirs2, _notes2 = plan_dirs(_main)
         case("WT5 a registered checkout whose folder is GONE is skipped with NO note — it holds "
              "no plans to miss (r3 Claude F2)",
              ([str(c) for c, _ in _dirs2], _notes2), ([str(_main)], []))
-        _o7 = pathlib.Path(_dw) / "w7.html"
-        _r7 = write_page(_o7, _main / ".claude/plans")
-        case("WT6c ...and the page carries no 'not read' warning for it",
-             (_r7[0], "not read" in (_o7.read_text() if _o7.exists() else ""),
-              "could not be read" in (_o7.read_text() if _o7.exists() else "")),
-             (0, False, False))
-        case("WT6b render shows EACH note it is given, escaped",
-             (lambda h: ("⚠ first &lt;note&gt;" in h, "⚠ second note" in h, "<note>" in h))(
-                 render(*build_forest([_mk("x", None)]), "t",
-                        notes=["first <note>", "second note"])), (True, True, False))
+        case("WT6c ...and the reader carries no 'not read' note for it",
+             _try(lambda: read_plans_noted(_main / ".claude/plans")[1]), [])
         case("WT6d a directory git does not list, read after the gone checkout, carries no note "
              "either",
              _try(lambda: read_plans_noted(_sub)[1]), [])
@@ -1010,15 +703,12 @@ def _self_test_body() -> int:
                 out_.append(n_)
                 stack.extend(n_["children"])
             return out_
-        _ko = pathlib.Path(_dw) / "w11.html"
-        _kw = write_page(_ko, _km / ".claude/plans")
         case("WT11 a hand-named `kid @ main.md` beside `kid` held twice: THREE nodes kept, ONE open "
-             "line, and the page says 1 still owing",
+             "line",
              (_try(lambda: len(_nodes(_kroots))),
               _try(lambda: sorted(line_state(n) for n in _kroots)),
-              _try(lambda: [n["serving"] for n in _kroots if line_state(n) == "open"]),
-              "1 still owing" in _kw[1]),
-             (3, ["done", "done", "open"], ["unrelated unfinished work"], True))
+              _try(lambda: [n["serving"] for n in _kroots if line_state(n) == "open"])),
+             (3, ["done", "done", "open"], ["unrelated unfinished work"]))
         _lone = pathlib.Path(_dw) / "not-a-repo"
         (_lone / ".claude" / "plans").mkdir(parents=True)
         _dirs3, _notes3 = plan_dirs(_lone)
