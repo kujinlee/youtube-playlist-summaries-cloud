@@ -18044,3 +18044,41 @@ master's guard, over a fixed probe set held in the suite: every probe master ref
 relaxations — a builder in a file with no `--self-test` (master's X9 false refusal), a flag that is not one literal,
 an unlaunched module-level git argv literal — and the NOT SEEN shapes above (master refused Codex's native-call
 program only because it also held a git argv literal).
+
+## 2026-10-28 [resolved: 2026-09-09/15] [resolved: 2026-09-10/3] [resolved: 2026-09-10/4] [resolved: 2026-09-14/7] [resolved: 2026-09-15/8] [resolved: 2026-09-18/13] [resolved: 2026-09-26/5] [resolved: 2026-09-27/1] [resolved: 2026-10-01/1] [resolved: 2026-10-05/1] [resolved: 2026-10-06/10] [resolved: 2026-10-06/11] [resolved: 2026-10-19/3] [resolved: 2026-10-20/1] [resolved: 2026-10-20/2] [resolved: 2026-10-20/3] [resolved: 2026-10-20/4] [resolved: 2026-10-20/5] [resolved: 2026-10-21/1] [resolved: 2026-10-21/2] [resolved: 2026-10-21/3] [resolved: 2026-10-21/4] [resolved: 2026-10-21/5] [resolved: 2026-10-21/10] [resolved: 2026-10-22/4] [resolved: 2026-10-22/5] [resolved: 2026-10-22/6] [resolved: 2026-09-21/1] [resolved: 2026-10-19/10]
+Twenty-nine of the 36 things the dashboard said were waiting on you no longer are, and are cleared here. Each was
+checked on 2026-10-28 against git, the backlog and later entries, and the owner confirmed the closures that morning
+(the triage page `2026-10-28-topic-dashboard-asks-triage.html`). Twenty-seven were settled by later work and two were
+overtaken. The seven that remain are real decisions, each with options and a recommendation on that page.
+
+What settled each one:
+
+- `2026-09-09/15` — resolved: Sentences: PR #290 'Twelve backlog rows get the sentence nobody had written' (e597a8e7). Bash rebuild: superseded by the owner's 2026-10-28 decision D3 (every generated page rebuilds on every merge).
+- `2026-09-10/3` — resolved: 2026-09-10/4 opens 'Round three is folded'.
+- `2026-09-10/4` — resolved: The backlog-page work merged 09-10..12 (PR #288–#296 range). ⚠ The exact PR is inferred, not traced.
+- `2026-09-14/7` — resolved: gh secret list: CLAUDE_RO_DATABASE_URL set 2026-09-15T18:37; 2026-09-15/8: 'the nightly production check is live'.
+- `2026-09-15/8` — resolved: The split happened: PR #295 retired 2026-09-29 (PR #359), the source-link fix shipped, the restart work became backlog #193 (now L1).
+- `2026-09-18/13` — resolved: Backlog #141 ✅ closed 2026-10-15, verified against release v11: min_machines_running = 0 live.
+- `2026-09-26/5` — resolved: Backlog #189 ✅ closed — PR #351 (parallel sweep); PR #366 (sharding).
+- `2026-09-27/1` — resolved: Backlog #191: '2026-09-29 — THE KEYING FORK IS ANSWERED BY MEASUREMENT, and the answer is OPERATIONS' (141 of 141 re-keyed).
+- `2026-10-01/1` — resolved: Entry itself: 'you chose to follow it'; ADR-0014 merged, PR #360.
+- `2026-10-05/1` — resolved: Branch protection required contexts include mutation-sweep-complete (gh api, 2026-10-28).
+- `2026-10-06/10` — resolved: Same evidence.
+- `2026-10-06/11` — resolved: Same evidence; PR #365 merged 2026-10-07.
+- `2026-10-19/3` — resolved: PR #378 merged 2026-10-19.
+- `2026-10-20/1` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/2` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/3` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/4` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/5` — resolved: PR #381 merged 2026-10-22, after the architecture review the entry describes.
+- `2026-10-21/1` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/2` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/3` — resolved: PR #381 merged 2026-10-22 with CI green; the architecture review it convened is in its record.
+- `2026-10-21/4` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/5` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/10` — resolved: cc2795d2 (PR #382): 'the squash-redating blocker is fixed by pinning the round inventory'. The goals page's needs-you labels fold into #384's single list (D1).
+- `2026-10-22/4` — resolved: PR #384 merged 2026-10-22.
+- `2026-10-22/5` — resolved: PR #385 merged 2026-10-22 ('Who writes a review fold…').
+- `2026-10-22/6` — resolved: PR #388 merged 2026-10-23.
+- `2026-09-21/1` — moot: Not a decision: the entry reports a known gap and asks nothing. It is flagged [needs-you] without a Decide line.
+- `2026-10-19/10` — moot: Retrospective scope question about merged work; three architecture reviews were convened on later subjects (10-27, 10-28).
