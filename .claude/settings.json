@@ -116,6 +116,20 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the generated pages...",
+            "timeout": 180
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

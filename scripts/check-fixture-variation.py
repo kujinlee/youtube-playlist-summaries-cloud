@@ -450,16 +450,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "derive.now", "derive.src", "derive_thread.src", "derive_thread.t", "identity.text",
         "main.argv", "main.now", "main.root", "main.run", "multiplicity.text",
         "needs_from_backlog.text", "needs_from_dashboard.text", "needs_from_ledger.entries",
-        "needs_lines.snap", "needs_owner.row", "needs_state.snap", "parse_threads.text",
-        "read_log.path", "render_page.built", "render_page.live", "render_page.log",
-        "render_text.snap", "segments.repo", "segments.text", "tree_lines.snap", "write_page.built",
-        "write_page.live", "write_page.log", "write_page.out",
+        "needs_html.snap", "needs_lines.snap", "needs_owner.row", "needs_state.snap",
+        "parse_threads.text", "read_log.path", "render_page.built", "render_page.live",
+        "render_page.log", "render_text.snap", "segments.repo", "segments.text", "tree_lines.snap",
+        "write_page.built", "write_page.live", "write_page.log", "write_page.out",
     ),
     # Every generated page rebuilt on merge (owner decision D3). Every parameter varied; none exempt.
     "regen-pages.py": (
         "main.argv", "main.pages", "main.run", "main.stdin", "may_merge.cmd", "pages_for.pages",
         "pages_for.payload", "regen.names", "regen.pages", "regen.run", "regen.timeout",
-        "report.results", "report.wall",
+        "registered_events.settings", "report.results", "report.wall",
     ),
     # The work-lines generator. Every parameter is varied by a case; none is exempt.
     "gen-work-lines.py": (

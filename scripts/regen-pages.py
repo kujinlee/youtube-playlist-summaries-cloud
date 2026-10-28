@@ -3,7 +3,7 @@
 
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
-    python3 scripts/regen-pages.py --self-test             # 27 cases
+    python3 scripts/regen-pages.py --self-test             # 32 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -16,6 +16,10 @@ previous one's grammar wrong. A FALSE FIRE (`echo "gh pr merge"`, a comment, `gh
 pr merge`, a here-document body) costs one rebuild, about 18 s. A MISS needs `eval`, an alias, or a merge
 spelled without that text (`"gh" pr merge`, two spaces between words); the page's build time and replay
 notice make that staleness visible.
+
+BOTH EVENTS (round 4 W1): the runner is registered under `PostToolUse` AND `PostToolUseFailure` for Bash, so
+a merge followed by a failing command (`gh pr merge 433; false`, which exits non-zero) still rebuilds. Each
+registration also carries `if: Bash(gh pr merge*)`, Claude Code's best-effort per-subcommand pre-filter.
 
 WHAT IT RUNS: every page in `explainer-serve.REGENERABLE`, through each generator's existing entry point
 (`python3 scripts/<generator>.py`, no arguments — exactly what the Refresh button runs). ONE list: a page
@@ -60,9 +64,30 @@ def regenerable() -> dict[str, str]:
     return dict(mod.REGENERABLE)
 
 
+# ⛔ round 4 W1: BOTH events. A merge followed by a failing command (`gh pr merge 433; false`) exits non-zero,
+# and Claude Code delivers a failed tool call to PostToolUseFailure, not PostToolUse. That event carries the
+# same `tool_name` and `tool_input` (`tool_input.command` for Bash) plus `error`, per the Claude Code hooks
+# reference, so `pages_for` reads it unchanged. `registered_events` lets the suite check settings.json.
+EVENTS = ("PostToolUse", "PostToolUseFailure")
+HOOK_NAME = "regen-pages.sh"
+
+
+def registered_events(settings: object) -> list[str]:
+    """PURE. The events under which a `Bash`-matched hook runs this runner, from a settings.json mapping."""
+    hooks = settings.get("hooks") if isinstance(settings, dict) else None
+    out = []
+    for event, groups in (hooks.items() if isinstance(hooks, dict) else []):
+        for g in groups if isinstance(groups, list) else []:
+            if isinstance(g, dict) and g.get("matcher") == "Bash" and any(
+                    isinstance(h, dict) and HOOK_NAME in str(h.get("command", "")) for h in g.get("hooks") or []):
+                out.append(event)
+    return sorted(set(out))
+
+
 def pages_for(payload: object, pages: dict[str, str]) -> list[str]:
-    """PURE. Which pages a PostToolUse payload asks to rebuild: all of them after `gh pr merge`, the goal
-    tree alone after an edit of the threads file, nothing otherwise (including a payload that is not one)."""
+    """PURE. Which pages a PostToolUse or PostToolUseFailure payload asks to rebuild: all of them after a
+    command containing `gh pr merge`, the goal tree alone after an edit of the threads file, nothing
+    otherwise (including a payload that is not one, or one with no `tool_input.command`)."""
     if not isinstance(payload, dict):
         return []
     ti = payload.get("tool_input")
@@ -186,6 +211,32 @@ def _self_test_body() -> int:
                                  "ls # then gh pr merge 5")],
          [True] * 11)
     case("an empty command does not fire", may_merge(""), False)
+    # W1: a merge followed by a failing command reaches PostToolUseFailure, in the documented shape.
+    failed = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash",
+              "tool_input": {"command": "gh pr merge 433; false", "description": "merge"},
+              "error": "Exit code 1", "is_interrupt": False}
+    case("⭐ W1: a PostToolUseFailure payload for `gh pr merge 433; false` rebuilds every page",
+         pages_for(failed, table), ["dashboard", "goal-tree", "goals"])
+    case("⛔ W1: a failure payload with no tool_input.command rebuilds nothing",
+         [pages_for({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "error": "x"}, table),
+          pages_for({"hook_event_name": "PostToolUseFailure", "tool_input": {}}, table)], [[], []])
+    case("W1: registration is read per event, Bash matcher only",
+         registered_events({"hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": [
+             {"command": "bash x/run-hook.sh regen-pages.sh"}]}], "PostToolUseFailure": [{"matcher": "Edit",
+             "hooks": [{"command": "bash x/run-hook.sh regen-pages.sh"}]}]}}), ["PostToolUse"])
+    # ⚠ The real settings are read wherever `.claude/settings.json` exists — the repository, and CI. The
+    # mutation harness stages `.claude/hooks/` but not settings.json, and only there is this case not run
+    # (said on stdout). A MISSING settings.json in the real repository is refused by check-hook-commands
+    # (CANNOT RUN), so a deleted file cannot pass for a registered one; a deleted ENTRY reddens this case.
+    _settings = ROOT / ".claude" / "settings.json"
+    if _settings.is_file():
+        try:
+            _real = registered_events(json.loads(_settings.read_text()))
+        except (OSError, ValueError) as exc:
+            _real = f"CANNOT RUN — {exc}"
+        case("⭐ W1: the REAL settings.json registers the runner under BOTH events", _real, sorted(EVENTS))
+    else:
+        print("  NOT RUN (no .claude/settings.json in this tree): the real-settings registration case")
     case("⚠ Z3, STATED MISS: a merge spelled without the text `gh pr merge` does not fire",
          [may_merge(c) for c in ('"gh" pr merge 5', "gh  pr merge 1", 'eval "gh pr $verb 5"')],
          [False, False, False])
@@ -243,6 +294,9 @@ def _self_test_body() -> int:
          drive(["--hook"], json.dumps(bash("ls")), run=lambda s, t: 1 / 0), (0, ""))
     case("⛔ --hook on garbage stdin exits 0 and launches nothing",
          drive(["--hook"], "not json", run=lambda s, t: 1 / 0), (0, ""))
+    rc_f, said_f = drive(["--hook"], json.dumps({"hook_event_name": "PostToolUseFailure", "error": "x"}),
+                         run=lambda s, t: 1 / 0)
+    case("⛔ W1: W1: --hook on a failure payload with no command exits 0 silently", (rc_f, said_f), (0, ""))
 
     class Broken(dict):
         def __iter__(self):

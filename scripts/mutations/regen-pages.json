@@ -115,5 +115,18 @@
     "expect": [
       "⚠ Z3, STATED MISS: a merge spelled without the text `gh pr merge` does not fire"
     ]
+  },
+  {
+    "name": "W1: registration is read whatever the matcher, so an Edit hook counts as the Bash one",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "g.get(\"matcher\") == \"Bash\"",
+        "True"
+      ]
+    ],
+    "expect": [
+      "W1: registration is read per event, Bash matcher only"
+    ]
   }
 ]

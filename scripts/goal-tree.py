@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 146 cases
+    python3 scripts/goal-tree.py --self-test                 # 149 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -474,7 +474,8 @@ def consolidate(items: list[dict]) -> list[dict]:
 
 def counts_conflict(item: dict) -> bool:
     """PURE. Do the sources of one item state DIFFERENT counts? Both are shown when they do."""
-    stated = {v for v in [item.get("multi")] + [a.get("multi") for a in item.get("also") or []] if v}
+    stated = {v for v in [item.get("multi")] + [a.get("multi") for a in item.get("also") or []]
+              if v is not None}   # W2: a declared 0 is a count, and can conflict
     return len(stated) > 1
 
 
@@ -654,7 +655,7 @@ def needs_state(snap: dict) -> str:
 
 def _item_line(n: dict) -> str:
     bits = [f'[{n["source"]}] {n["ref"]} · {n["text"]}']
-    if n.get("multi"):
+    if n.get("multi") is not None:
         bits.append(f'stands for {n["multi"]} open answers')
     if n.get("flag"):
         bits.append(f'⚠ {n["flag"]}')
@@ -662,7 +663,7 @@ def _item_line(n: dict) -> str:
         bits.append(f'⚠ {n["conflict"]}')
     for a in n.get("also") or []:
         bits.append(f'also recorded in {a["source"]} {a["ref"]}: {a["text"]}'
-                    + (f' (stands for {a["multi"]} open answers)' if a.get("multi") else ""))
+                    + (f' (stands for {a["multi"]} open answers)' if a.get("multi") is not None else ""))
     if counts_conflict(n):
         bits.append("⚠ the sources state different counts")
     return " · ".join(bits)
@@ -684,7 +685,7 @@ def needs_lines(snap: dict) -> list[str]:
         group = [n for n in items if n.get("kind", "decision") == kind]
         if not group:
             continue
-        several = sum(1 for n in group if n.get("multi"))
+        several = sum(1 for n in group if n.get("multi"))   # a declared 0 stands for no answers
         out.append(f"NEEDS YOU — {len(group)} {title}"
                    + (f" ({several} of them stand for several answers)" if several else ""))
         out += [("└─ " if i == len(group) - 1 else "├─ ") + _item_line(n) for i, n in enumerate(group)]
@@ -713,7 +714,7 @@ def needs_html(snap: dict) -> str:
         parts.append(f"<h2>{html.escape(head)}</h2><ul>")
         for n in group:
             extra = ""
-            if n.get("multi"):
+            if n.get("multi") is not None:
                 extra += f' · <b>stands for {html.escape(str(n["multi"]))} open answers</b>'
             if n.get("flag"):
                 extra += f' · <span class="warn">⚠ {html.escape(n["flag"])}</span>'
@@ -723,7 +724,7 @@ def needs_html(snap: dict) -> str:
                 extra += (f' · also recorded in <span class="src">{html.escape(a["source"])}</span> '
                           + _ref_html(a["source"], a["ref"], a.get("href")) + ": " + html.escape(a["text"])
                           + (f' (stands for {html.escape(str(a["multi"]))} open answers)'
-                             if a.get("multi") else ""))
+                             if a.get("multi") is not None else ""))
             if counts_conflict(n):
                 extra += ' · <span class="warn">⚠ the sources state different counts</span>'
 
@@ -1250,6 +1251,20 @@ def _self_test_body() -> int:
          (counts_conflict(_conf[0]), _conf[0]["multi"], _conf[0]["also"][0]["multi"],
           "⚠ the sources state different counts" in _item_line(_conf[0])), (True, 2, 3, True))
     case("agreeing counts are not a conflict", counts_conflict(dict(_conf[0], multi=3)), False)
+    # W2: a declared ZERO is a count — kept, shown and compared like any other.
+    _z0 = consolidate(_b + needs_from_dashboard("## 2026-10-01 [needs-you]\nPick a name.\n\n"
+                                                "decision: backlog #5 (answers-open: 0)\n")[0])
+    # Decisions only, so these HTML reads depend on the count rule alone, not on the action list's heading.
+    _z0html = needs_html({"needs": [n for n in _z0 if n["kind"] == "decision"], "needs_not_read": []})
+    case("⭐ W2: a declared 0 survives in merged provenance and is SHOWN, in text and in HTML",
+         (_z0[0]["also"][0]["multi"], "(stands for 0 open answers)" in _item_line(_z0[0]),
+          "(stands for 0 open answers)" in _z0html), (0, True, True))
+    case("⭐ W2: 0 against 2 IS a conflict",
+         counts_conflict(dict(_z0[0], multi=2)), True)
+    case("W2: an item's own declared 0 is shown, in text and in HTML",
+         ("stands for 0 open answers" in _item_line(dict(_z0[0], multi=0, also=[])),
+          "stands for 0 open answers</b>" in needs_html(
+              {"needs": [dict(_z0[0], multi=0, also=[])], "needs_not_read": []})), (True, True))
     case("consolidating never changes the caller's items", [n["also"] for n in _b], [[], [], []])
     _ns = derive(goals, src(needs=[]), "t")
     case("⭐ an empty list read from ALL three sources says nothing waits on you",

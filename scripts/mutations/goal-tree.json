@@ -773,5 +773,70 @@
     "expect": [
       "⭐ Y1: sources that DECLARE one decision become ONE item that keeps every source"
     ]
+  },
+  {
+    "name": "W2: a declared 0 is dropped from the conflict test",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "              if v is not None}   # W2",
+        "              if v}   # W2"
+      ]
+    ],
+    "expect": [
+      "⭐ W2: 0 against 2 IS a conflict"
+    ]
+  },
+  {
+    "name": "W2: a merged source's declared 0 is not shown in text",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "open answers)' if a.get(\"multi\") is not None else \"\"))",
+        "open answers)' if a.get(\"multi\") else \"\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ W2: a declared 0 survives in merged provenance and is SHOWN, in text and in HTML"
+    ]
+  },
+  {
+    "name": "W2: a merged source's declared 0 is not shown in HTML",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                             if a.get(\"multi\") is not None else \"\"))",
+        "                             if a.get(\"multi\") else \"\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ W2: a declared 0 survives in merged provenance and is SHOWN, in text and in HTML"
+    ]
+  },
+  {
+    "name": "W2: an item's own declared 0 is not shown in text",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if n.get(\"multi\") is not None:\n        bits.append",
+        "    if n.get(\"multi\"):\n        bits.append"
+      ]
+    ],
+    "expect": [
+      "W2: an item's own declared 0 is shown, in text and in HTML"
+    ]
+  },
+  {
+    "name": "W2: an item's own declared 0 is not shown in HTML",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if n.get(\"multi\") is not None:\n                extra",
+        "            if n.get(\"multi\"):\n                extra"
+      ]
+    ],
+    "expect": [
+      "W2: an item's own declared 0 is shown, in text and in HTML"
+    ]
   }
 ]

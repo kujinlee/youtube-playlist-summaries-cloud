@@ -1010,7 +1010,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ round-3 fold (architecture review SPLIT): 55 -> 59 — the dashboard-identity entry re-anchored on
     # the whole-entry rewrite; four new: a disagreeing identity token is a conflict, not the identity (Z1),
     # and the count is read from the whole entry — display text, dashboard body, ledger text (Z2).
-    "scripts/goal-tree.py": 59,
+    # ⟳ round-4 (terminal) fold: 59 -> 64 — a declared 0 kept, compared and shown, in text and HTML (W2).
+    "scripts/goal-tree.py": 64,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2110,7 +2111,10 @@ EXPECTED_MUTATIONS = {
     # entries that pinned it (quote-aware split, separators, newlines, NAME=value, compound words, POSIX
     # mode, here-documents x2, quoted command words, the old regex) retire with their subject; two new pin
     # the substring trigger that replaced it, in both directions.
-    "scripts/regen-pages.py": 9,
+    # ⟳ round-4 (terminal) fold: 9 -> 10 — the registration reader keys on the Bash matcher (W1). The
+    # REGISTRATION ITSELF is data in .claude/settings.json, which this harness cannot mutate; its falsifier
+    # is the case reading the real file, which goes red if either event loses the runner.
+    "scripts/regen-pages.py": 10,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -6212,7 +6216,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2498)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2504)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
