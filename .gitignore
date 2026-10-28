@@ -159,6 +159,7 @@ docs/explainers/backlog-table.html
 docs/explainers/backlog-table.fragment.html
 docs/explainers/features.html
 docs/explainers/features.fragment.html
+docs/explainers/goal-tree.html
 # The server's own runtime droppings — it writes these into whatever it serves.
 docs/explainers/.serve.log
 docs/explainers/.serve.pid
@@ -178,6 +179,8 @@ docs/explainers/questions.md
 # backlog #362: the in-flight ledger — one line per running background job, what it is FOR and what to do
 # when it ends. Per-checkout and per-session by nature; `scripts/session-state.py` prints it at session start.
 .claude/inflight.jsonl
+# backlog #363: the goal-tree snapshot log — appended on every merge, so it must churn no tracked file.
+.claude/goal-tree-log.jsonl
 .claude/inflight.jsonl.lock
 
 # backlog #361: written by the PreCompact / PostCompact hooks (`scripts/compaction-state.py`) and printed at the

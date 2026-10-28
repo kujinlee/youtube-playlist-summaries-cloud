@@ -989,6 +989,29 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 24 + 14 = 38 — both
     # branches' entries kept, none retired; the render line now prints `label(n)`.
     "scripts/gen-work-lines.py": 38,
+    # ⟳ 2026-10-28, backlog #363: the logged goal tree joins at 25 — one entry per refusal in the
+    # threads grammar, per derived-state rule (merged first, CANNOT RUN, closed, the subject tail),
+    # per log rule (fingerprint, incomplete refused), per exit code, and the page's ordering and links.
+    # ⟳ same day, the 03:52 follow-up: 25 -> 36 — NEEDS YOU (the answered/last-marker/closed rule,
+    # unreadable entries and lines named, the main checkout's ledger, NOT READ is not an all-clear, the
+    # live list over the snapshot's) and the log moved to the main checkout's git-ignored .claude/.
+    # One RETIRED with its subject: the hand-rolled `--git-common-dir` read became
+    # `session-state.main_checkout`, whose refusal the new no-main-checkout entry now pins; and one
+    # for the backlog title escaped twice, found on the real page. Net +11.
+    # ⟳ same day, round-1 fold (PR #433): 36 -> 50 — two retired with their subject (unreadable records
+    # are no longer items but a NOT READ source, X1), sixteen new: X1 per source, X2 consolidation and its
+    # two refusals plus the caller's items untouched, X4 actions, C4 stated-or-several, C2 the flag
+    # (and a `PR #N` in the tail is not a row, found on the real backlog).
+    # ⟳ round-2 REDESIGN to structure: 51 -> 55 — six RETIRED with the free-text heuristics they pinned
+    # (row-mention consolidation x3, the plural/count cues x2, the bare-#N row reading), ten new: the
+    # explicit identity (two-token refusal, kind in the key, ledger and dashboard declarations), each
+    # source keeping its count, conflicting counts flagged, the `(answers-open: N)` annotation x2,
+    # `backlog #N` alone for the flag, and the page saying it replays a snapshot.
+    # ⟳ round-3 fold (architecture review SPLIT): 55 -> 59 — the dashboard-identity entry re-anchored on
+    # the whole-entry rewrite; four new: a disagreeing identity token is a conflict, not the identity (Z1),
+    # and the count is read from the whole entry — display text, dashboard body, ledger text (Z2).
+    # ⟳ round-4 (terminal) fold: 59 -> 64 — a declared 0 kept, compared and shown, in text and HTML (W2).
+    "scripts/goal-tree.py": 64,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2076,6 +2099,22 @@ EXPECTED_MUTATIONS = {
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
     "scripts/recall-llm.py": 96,
+    # ⟳ 2026-10-28, owner decision D3 (backlog #363): every generated page rebuilt on merge — the
+    # merge match, the threads path, the per-generator timeout, the advisory exit codes, a crashed
+    # generator named, and silence on an unrelated command.
+    # ⟳ same day, round-1 fold: 8 -> 12 — the regex entry retired with the regex; five for the
+    # executed-command match (X3): quoted text, merge-base, NAME=value, separators, newlines.
+    # ⟳ round-2 (Y5): 12 -> 17 — the NAME=value entry re-anchored on the rewrite; six new for the
+    # static "may merge" match: compound-syntax words, quoted separators (non-POSIX), here-document
+    # bodies and their end, quoted command words.
+    # ⟳ round-3 fold (architecture review SPLIT): 17 -> 9 — the shell tokenizer is DELETED, and the ten
+    # entries that pinned it (quote-aware split, separators, newlines, NAME=value, compound words, POSIX
+    # mode, here-documents x2, quoted command words, the old regex) retire with their subject; two new pin
+    # the substring trigger that replaced it, in both directions.
+    # ⟳ round-4 (terminal) fold: 9 -> 10 — the registration reader keys on the Bash matcher (W1). The
+    # REGISTRATION ITSELF is data in .claude/settings.json, which this harness cannot mutate; its falsifier
+    # is the case reading the real file, which goes red if either event loses the runner.
+    "scripts/regen-pages.py": 10,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -4393,6 +4432,7 @@ def _self_test_body() -> int:
                                       "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
                                       "scripts/gen-work-lines.py",
+                                      "scripts/goal-tree.py",
                                       # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
                                       # the observer-log record. A LIBRARY, not a guard, so
                                       # `check-ratchet-contract`'s population never sees it;
@@ -4405,6 +4445,7 @@ def _self_test_body() -> int:
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
                                       "scripts/recall-llm.py",
+                                      "scripts/regen-pages.py",
                                       "scripts/session-state.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
@@ -6175,7 +6216,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2430)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2504)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

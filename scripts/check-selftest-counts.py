@@ -228,6 +228,8 @@ POPULATION: frozenset[str] = frozenset({
     "gen-goals-page.py",
     "gen-work-lines.py",
     "backfill-work-lines.py",
+    "goal-tree.py",               # backlog #363, pinned on arrival
+    "regen-pages.py",             # backlog #363 / owner decision D3, pinned on arrival
     "page_chrome.py",
     "peer-sites.py",
     # ⟳ 2026-09-07 — THE FOURTEEN, added together, and the reason is worth more than the names.

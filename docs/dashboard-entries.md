@@ -18167,3 +18167,34 @@ NOT CAPTURED, placed where the category fails. Review: r1 (Codex), r2 (Codex + C
 and per-session files), r3 (an architecture review that withdrew the completeness and compaction-identity claims), r4
 (the split's own bet fired, so the PostCompact audit was deferred). 96 cases and 54 mutations; `session-state.py` 68
 cases and 40 mutations. ⚠ UNVERIFIED: a real compaction (the falsifier in backlog #361's row).
+
+## 2026-10-28
+The goal tree is now a page you can open at any time: http://127.0.0.1:7391/goal-tree. At the top
+is one list of everything waiting on a decision only you can make — unanswered dashboard asks,
+jobs paused for you, and backlog items marked as needing you — each linking to where it came from.
+It says "nothing waits on you" only when it could read all three; if one can't be read, it says so.
+
+Below that, every piece of work hangs under the request of yours it serves, with each PR and
+backlog row a link and its state read fresh: merged (with the commit), open (with its checks), in
+flight, or waiting. Further down is a timeline, newest first, of what changed between snapshots;
+open any entry to see the whole tree as it stood then.
+
+Every merge now rebuilds all the generated pages — this one, the dashboard, the backlog, goals and
+features — so none of them describes a world that has moved on. It adds about 18 seconds after a
+merge and never blocks it; a page that fails to rebuild is named. One part is still written by
+hand: which goal a piece of work belongs to and whether it is a fix, a blocker, bookkeeping or an
+aside, in `docs/goal-threads.md`. Folding the old work-lines page into this one is a separate step.
+<!--tech-->
+Backlog #363, plus the owner's decisions D1 (NEEDS YOU) and D3 (rebuild on merge) of 03:47; D2 (retire
+work-lines) is backlog #389. `scripts/goal-tree.py` (`--snapshot`, `--page`, `--print`; no flags =
+snapshot + page, what the Refresh button runs). Declared input `docs/goal-threads.md` (grammar:
+`## GOAL <slug>`, `> YYYY-MM-DD HH:MM "<quote>"`, `- <fix|blocker|bookkeeping|side> · <refs> ·
+<what>[ · waits on <what>]`, malformed → exit 1 naming every bad line). Log: the MAIN checkout's
+git-ignored `.claude/goal-tree-log.jsonl` (via `session-state.main_checkout`), appended only when the
+fingerprint changes; an incomplete read is never appended (exit 2). NEEDS YOU reuses
+`gen-dashboard.unresolved`, `session-state.waits_on_owner` and `gen-backlog-page.parse` — no second
+copy of any rule. `scripts/regen-pages.py` + `.claude/hooks/regen-pages.sh` (`--self-test`) run every
+`explainer-serve.REGENERABLE` generator concurrently with a 120s timeout each; measured 18.1s wall
+(backlog-table 17.9s, goals 11.7s, dashboard 7.0s, goal-tree 5.2s, features 1.6s). Registered in
+check-selftest-counts, check-fixture-variation, CI, and mutation manifests (36 + 8, all killed by
+the case each names).

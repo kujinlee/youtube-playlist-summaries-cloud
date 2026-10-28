@@ -56,6 +56,13 @@
             "if": "Bash(*begin-plan.py*)",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh surface-recall.sh",
             "statusMessage": "Any recorded lesson for this step?"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the generated pages...",
+            "timeout": 180
           }
         ]
       },
@@ -100,6 +107,25 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-memory-index-budget.sh",
             "statusMessage": "Checking the memory index's load budget..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the goal tree if its threads changed..."
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the generated pages...",
+            "timeout": 180
           }
         ]
       }
