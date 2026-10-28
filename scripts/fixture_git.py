@@ -29,7 +29,7 @@ and nothing else: the PRODUCTION readers a self-test drives over its fixture rep
 the guard could not see (`os.system`, a variable argv, a wrapper) inherited everything. `isolated()`
 REPLACES `os.environ` in place with `env()` (plus `PROCESS_PASSED`, the interpreter variables a
 self-test's own Python children need) for its body and restores it exactly on every exit path, so
-every child inherits isolation whatever its launch shape. A repository-building self-test entry is
+every child inherits isolation whatever its launch shape. EVERY dispatched `--self-test` entry (backlog #382) is
 `import fixture_git` + `with fixture_git.isolated(): return <body>()` — imported lazily, so a lone copy
 of a script (several suites copy one into a sandbox) still imports — and `check-fixture-git-isolation.py`
 checks that shape.

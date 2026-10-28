@@ -1921,7 +1921,10 @@ EXPECTED_MUTATIONS = {
     # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces. 17 -> 36 and 6 -> 12 in the
     # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules); 36 -> 45 in round 2's
     # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
-    "scripts/check-fixture-git-isolation.py": 45,
+    # ⟳ backlog #382 (2026-10-27): 45 -> 32. Every `--self-test` is wrapped, so the BUILDER DETECTOR and GIT_SUITES are
+    # deleted and their 19 entries retire with their subject; 6 are added for the population rule (the entries
+    # `check-main-drivable.suite_entries` reads, a flag test with no entry, a file with no self-test, the named refusal).
+    "scripts/check-fixture-git-isolation.py": 32,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -3055,6 +3058,13 @@ def _budget_wiring(root: pathlib.Path) -> dict:
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     ok = fail = 0
 
     def case(name, got, want):
@@ -6111,7 +6121,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2350)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2337)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
