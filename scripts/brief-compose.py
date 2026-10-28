@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 164 cases
+    python3 scripts/brief-compose.py --self-test  # 181 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -416,80 +416,287 @@ def light_palette_tokens(fragment_css: str) -> set[str]:
 # `:root` rules that do not are the text-scheme role blocks (`--head`/`--prose`/`--emph`), which
 # are not palettes and must not be asked for `--em`.
 PALETTE_GROUND = "--bg"
+# The floor `--em` must clear on its own block's ground: WCAG AA for body-size text, the same
+# figure `gen-dashboard.CONTRAST_MIN` holds its links to.
+CONTRAST_MIN = 4.5
 
 
-def palette_blocks(fragment_css: str) -> list[tuple[str, set[str]]]:
-    """Every PALETTE block in the fragment's CSS: (where, tokens it declares). PURE.
+# ⛔ A CLOSED GRAMMAR, NOT A SCANNER THAT GUESSES (backlog #376, round 1). The first version was a
+# regex standing in for a CSS parser, and both review halves found it leaking in BOTH directions:
+# open on `:root,body` lists, `--tokens:{--em:…}`, an `@import …;` before a palette and CSS
+# nesting; closed on split `:root` rules, `:root .card` and `:where(:root)`. Patching those one
+# shape at a time is the route backlog #381 spent four rounds on. So this reads a DECLARED set of
+# forms and REFUSES, by name, every root-level form outside it — the reader is told which form to
+# rewrite rather than being given a verdict about CSS this code cannot read.
+#
+# The forms a selector may take to be a palette, whole-selector (a prefix is not enough — that is
+# how `:root .card` was asked for `--em`):
+ROOT_FORM = re.compile(
+    r'(?::root|html)(?:\[data-theme="[^"]*"\]|:not\(\[data-theme="[^"]*"\]\))?')
+# The block at-rules a palette may sit inside. Any other block at-rule that holds a root rule
+# declaring the ground is refused (`@layer`, `@container`, …); statement at-rules are skipped.
+PALETTE_AT_RULES = ("media", "supports")
+EM_TOKEN = "--em"
+_HEX = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})")
+_VAR = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,.*)?\)", re.S)
+_IDENT_DECL = re.compile(r"\s*(-?-?[A-Za-z_][\w-]*)\s*:(.*)$", re.S)
 
-    A palette block is a rule whose every selector is `:root…` or `html…` and which declares
-    `PALETTE_GROUND`, at ANY `@media` depth — the OS-dark block is the one the 2026-10-24 review
-    measured at 1.78:1, so a reader that skipped media blocks would skip the defect.
 
-    ⚠ THE BOUND: a rule body is read to its first `}`, so CSS nesting inside a palette rule is
-    not read. No fragment in this family nests, and the refusal below fails CLOSED on an empty
-    result rather than passing it.
-    """
-    css = strip_css_comments(fragment_css)
-    out: list[tuple[str, set[str]]] = []
-    stack: list[str] = []
-    i, start, n = 0, 0, len(css)
+def _scan_to(css: str, i: int, stops: str) -> int:
+    """Index of the first `stops` char at bracket depth 0 from `i`, or of the unbalanced closer
+    that ends the enclosing block, or len(css). Strings are skipped whole. PURE."""
+    depth, n = 0, len(css)
     while i < n:
         ch = css[i]
-        if ch == "{":
-            prelude = " ".join(css[start:i].split())
-            if prelude.startswith("@"):
-                stack.append(prelude)
-                start = i + 1
-            else:
-                j = css.find("}", i)
-                j = n if j < 0 else j
-                decls = set(re.findall(r"(--[\w-]+)\s*:", css[i + 1:j]))
-                sels = [s.strip() for s in prelude.split(",")]
-                if (PALETTE_GROUND in decls
-                        and all(re.match(r"(:root|html)\b", s) for s in sels)):
-                    out.append((" ".join(stack + [prelude]), decls))
-                i, start = j, j + 1
-        elif ch == "}":
-            if stack:
-                stack.pop()
-            start = i + 1
+        if ch in "\"'":
+            j = i + 1
+            while j < n and css[j] != ch and css[j] != "\n":
+                j += 2 if css[j] == "\\" else 1
+            i = j + 1
+            continue
+        if depth == 0 and ch in stops:
+            return i
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                return i
+            depth -= 1
         i += 1
-    return out
+    return n
+
+
+def _split_top(text: str, sep: str) -> list[str]:
+    """`text` split on `sep` at bracket depth 0 — a selector list, never `:not(a,b)`'s comma."""
+    out, i = [], 0
+    while True:
+        j = _scan_to(text, i, sep)
+        out.append(text[i:j])
+        if j >= len(text) or text[j] != sep:
+            return out
+        i = j + 1
+
+
+def _declarations(body: str) -> tuple[dict[str, str], bool, bool]:
+    """(top-level declarations, has nested rules, a block value names `--em`). PURE.
+
+    Each item runs to a `;` at depth 0, so `--tokens:{foo:bar};--em:#9db8e8` yields both, and the
+    braces inside a custom property's value are consumed as one balanced value (r1 XM2). An item
+    that is not `ident: value`, or a NON-custom property whose value holds a block, is a nested
+    rule (`&:not(…){…}`, `@media …{…}`, `a:hover{…}`).
+    """
+    decls: dict[str, str] = {}
+    nested = block_em = False
+    for item in _split_top(body, ";"):
+        if not item.strip():
+            continue
+        m = _IDENT_DECL.match(item)
+        if not m:
+            nested = True
+            continue
+        name, value = m.group(1), m.group(2)
+        if "{" in value and not name.startswith("--"):
+            nested = True
+            continue
+        if "{" in value and EM_TOKEN in value:
+            block_em = True
+        decls[name] = re.sub(r"\s*!\s*important\s*$", "", value.strip(), flags=re.I)
+    return decls, nested, block_em
+
+
+def palette_blocks(fragment_css: str) -> list[tuple[str, dict[str, str]]]:
+    """Every PALETTE block in the fragment's CSS, merged: [(where, {token: value})]. PURE.
+
+    ⛔ THE DECLARED GRAMMAR — everything else root-level that declares `PALETTE_GROUND` is
+    REFUSED by name (SystemExit), so the bound fails CLOSED:
+
+      SUPPORTED
+        * a rule whose every selector is a `ROOT_FORM`: `:root`, `html`, `:root[data-theme="…"]`,
+          `:root:not([data-theme="…"])` — so `html,:root` is one palette — matched WHOLE;
+        * at the top level, or inside `@media` / `@supports`, nested to any depth;
+        * declarations read at TOP LEVEL, values as balanced component values, so a `{…}`
+          inside a custom property's value is one value, not a rule end;
+        * rules with the same selector set and @-context are MERGED, later winning — a palette
+          split over two `:root` rules is one palette (r1 Cm5);
+        * statement at-rules (`@import …;`, `@charset`, `@layer a, b;`) are skipped (r1 Cm3).
+      REFUSED, when the rule declares the ground
+        * a selector list mixing root forms with anything else, `:root,body` (r1 XM1);
+        * `:where(…)` / `:is(…)` around a root, and any other root-headed compound
+          (`html[data-theme=dark]`, unquoted) — not in the grammar, so not guessed at;
+        * CSS nesting inside a root rule (r1 Cm4);
+        * a block-valued custom property whose text contains `--em` (r1 XM2);
+        * a root rule inside any other block at-rule (`@layer`, `@container`).
+      NOT A PALETTE, and not refused
+        * a descendant or compound selector headed by a root — `:root .card{--bg}`, `html body`
+          (r1 Cm5): the selector is not the root, so the rule re-grounds a component.
+
+    A palette block is a merged root-form rule that declares `PALETTE_GROUND`; the OS-dark block
+    is the one the 2026-10-24 review measured at 1.78:1, which is why media depth is read.
+    """
+    css = strip_css_comments(fragment_css)
+    merged: dict[tuple[tuple[str, ...], tuple[str, ...]], dict[str, str]] = {}
+    order: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    refusals: list[str] = []
+
+    def where(ctx: tuple[str, ...], sels: list[str]) -> str:
+        return " ".join(ctx + (", ".join(sels),))
+
+    def walk(text: str, ctx: tuple[str, ...]) -> None:
+        i, n = 0, len(text)
+        while i < n:
+            while i < n and (text[i].isspace() or text[i] == ";"):
+                i += 1
+            if i >= n:
+                return
+            j = _scan_to(text, i, ";{")
+            prelude = " ".join(text[i:j].split())
+            if j >= n or text[j] != "{":
+                i = j + 1                                   # a statement: `@import …;`
+                continue
+            end = _scan_to(text, j + 1, "")
+            body = text[j + 1:end]
+            i = end + 1
+            if prelude.startswith("@"):
+                name = re.match(r"@([\w-]+)", prelude)
+                if name and name.group(1).lower() in PALETTE_AT_RULES:
+                    walk(body, ctx + (prelude,))
+                elif PALETTE_GROUND in body and re.search(r"(?<![\w-])(:root|html)\b", body):
+                    refusals.append(f"{where(ctx, [prelude])}: a root rule inside @"
+                                    f"{name.group(1) if name else '?'} — only @media and "
+                                    f"@supports are read")
+                continue
+            sels = [" ".join(s.split()) for s in _split_top(prelude, ",")]
+            decls, nested, block_em = _declarations(body)
+            grounded = PALETTE_GROUND in decls or PALETTE_GROUND in body
+            roots = [bool(ROOT_FORM.fullmatch(s)) for s in sels]
+            if all(roots):
+                if nested and grounded:
+                    refusals.append(f"{where(ctx, sels)}: CSS nesting inside a palette rule")
+                    continue
+                if block_em:
+                    refusals.append(f"{where(ctx, sels)}: a block-valued custom property "
+                                    f"contains {EM_TOKEN!r} text")
+                    continue
+                key = (ctx, tuple(sorted(sels)))
+                if key not in merged:
+                    merged[key] = {}
+                    order.append(key)
+                merged[key].update(decls)
+                continue
+            if not grounded:
+                continue
+            if any(roots):
+                refusals.append(f"{where(ctx, sels)}: a selector list mixing the root with "
+                                f"other selectors — give the palette its own rule")
+            elif any(re.search(r":(?:where|is)\([^)]*(?:(?<![\w-]):root|\bhtml\b)", s)
+                     for s in sels):
+                refusals.append(f"{where(ctx, sels)}: `:where()`/`:is()` around the root — "
+                                f"write the root selector bare")
+            elif any(re.match(r"(?::root|html)(?![\w-])", s) and not re.search(r"[\s>+~]", s)
+                     for s in sels):
+                refusals.append(f"{where(ctx, sels)}: a root selector form this guard does "
+                                f"not read — use :root, :root[data-theme=\"…\"] or "
+                                f":root:not([data-theme=\"…\"])")
+
+    walk(css, ())
+    if refusals:
+        raise SystemExit(
+            "brief-compose: this page carries the text-style switcher, and its palette CSS uses "
+            "forms outside the grammar the --em check reads, so the check cannot verify it "
+            "(UNVERIFIABLE — treat as NOT CHECKED):\n  " + "\n  ".join(refusals)
+            + "\n  The grammar is in `brief-compose.palette_blocks`' docstring.")
+    return [(where(ctx, list(sels)), merged[(ctx, sels)])
+            for ctx, sels in order if PALETTE_GROUND in merged[(ctx, sels)]]
+
+
+def _resolve_colour(decls: dict[str, str], token: str) -> str | None:
+    """`token`'s value followed through `var()` chains declared IN THIS BLOCK; None if a link is
+    missing or cycles. A `var()` naming a token declared elsewhere is NOT followed: which value
+    the browser finds there depends on the cascade, which is exactly what this cannot see."""
+    seen: set[str] = set()
+    value = decls.get(token)
+    while value is not None:
+        m = _VAR.fullmatch(value.strip())
+        if not m:
+            return value.strip()
+        ref = m.group(1)
+        if ref in seen:
+            return None
+        seen.add(ref)
+        value = decls.get(ref)
+    return None
+
+
+_DASHBOARD = None
+
+
+def _contrast(fg: str, bg: str) -> float:
+    """`gen-dashboard.contrast_ratio`, loaded on first use — ONE copy of the WCAG formula, not a
+    third (gen-backlog-page has the second). Lazy, because gen-dashboard runs this file."""
+    global _DASHBOARD
+    if _DASHBOARD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "gen_dashboard", pathlib.Path(__file__).with_name("gen-dashboard.py"))
+        _DASHBOARD = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_DASHBOARD)
+    return _DASHBOARD.contrast_ratio(fg, bg)
 
 
 def assert_em_in_every_palette(fragment_css: str) -> None:
-    """REFUSE to add the text-style switcher to a page that leaves `--em` to the shim. Backlog #376.
+    """REFUSE a page with the text-style switcher whose palettes do not give bold a readable `--em`.
+
+    Run on every page whose FINISHED document carries `#schemer` — composer-added or the
+    fragment's own (r1 XM3 = CM1: the own-switcher path shipped the same scoped CSS and was never
+    checked, 2.06:1). Backlog #376.
 
     ⛔ THE TRAP, decided 2026-10-24 (`docs/reviews/architecture-review-2026-10-24-em-default.md`)
     and not re-litigated here: the shim's `--em` is the LIGHT value, so a palette block that goes
-    dark without declaring `--em` renders bold at 1.78:1. The review measured three ways of
-    supplying it centrally and each broke a different page, because whether a block is dark is a
-    fact about the page's palette (*mechanism shared, palette local*). So the composer does not
-    WRITE `--em` into a block — it would have to guess that block's darkness, and its hue — it
-    refuses, and names the blocks.
+    dark without declaring `--em` renders bold at 1.78:1. Whether a block is dark is a fact about
+    the page's palette (*mechanism shared, palette local*), so the composer never WRITES `--em`
+    into a block — it refuses, and names the blocks.
 
-    ⚠ ZERO PALETTE BLOCKS IS A REFUSAL, NOT A PASS. This is only called when the composer is
-    about to add a live control, which needs both theme palettes; finding none that declares
-    `PALETTE_GROUND` means the reader could not see the subject, and a vacuous pass is exactly
-    the page the review measured.
+    ⛔ THE VALUE, NOT ONLY ITS PRESENCE (r1 Xm4 = Cm2): in each palette block, `--em` and
+    `PALETTE_GROUND` must each resolve — through `var()` chains declared in that merged block —
+    to a hex colour, and their contrast must be at least `CONTRAST_MIN`. So the light value in a
+    dark block, `var(--x)` landing on the ground, `initial`, or anything unresolvable is refused.
+    ⚠ THE BOUND: the ratio is `--em` against the block's own `--bg`. Bold on a card, or text
+    that does not read `--em`, is outside it; a browser measurement is still what verifies a page.
+
+    ⚠ ZERO PALETTE BLOCKS IS A REFUSAL, NOT A PASS: a page with a switcher whose palettes this
+    cannot find could not have its subject read.
     """
     blocks = palette_blocks(fragment_css)
     if not blocks:
         raise SystemExit(
-            f"brief-compose: CANNOT VERIFY the text-style switcher — this page has theme palettes "
-            f"but no `:root`/`html` block declaring {PALETTE_GROUND}, so `--em` cannot be checked "
-            f"per palette. Treat this as NOT CHECKED: declare {PALETTE_GROUND} in each palette "
+            f"brief-compose: CANNOT VERIFY the text-style switcher — no `:root`/`html` palette "
+            f"block declaring {PALETTE_GROUND} was found, so `--em` cannot be checked per "
+            f"palette. Treat this as NOT CHECKED: declare {PALETTE_GROUND} in each palette "
             f"block (the shim paints the page with it).")
-    missing = [where for where, decls in blocks if "--em" not in decls]
-    if missing:
+    missing, weak = [], []
+    for where, decls in blocks:
+        if EM_TOKEN not in decls:
+            missing.append(where)
+            continue
+        em, bg = _resolve_colour(decls, EM_TOKEN), _resolve_colour(decls, PALETTE_GROUND)
+        if not (em and _HEX.fullmatch(em) and bg and _HEX.fullmatch(bg)):
+            weak.append(f"{where}: UNVERIFIABLE — {EM_TOKEN} is {decls[EM_TOKEN]!r} and "
+                        f"{PALETTE_GROUND} is {decls.get(PALETTE_GROUND)!r}; each must resolve "
+                        f"within this block to a #hex colour")
+            continue
+        ratio = _contrast(em, bg)
+        if ratio < CONTRAST_MIN:
+            weak.append(f"{where}: {EM_TOKEN} {em} on {PALETTE_GROUND} {bg} is {ratio:.2f}:1, "
+                        f"below {CONTRAST_MIN}:1")
+    if missing or weak:
         raise SystemExit(
-            "brief-compose: the composer adds the text-style switcher to this page, and bold "
-            "text is coloured by `--em`, but these palette blocks do not declare it:\n  "
-            + "\n  ".join(missing)
-            + "\n  They would inherit the shim's LIGHT `--em` — measured at 1.78:1 in OS dark "
-              "(docs/reviews/architecture-review-2026-10-24-em-default.md). Declare `--em` in "
-              "EVERY palette block (explainer-delivery.md §2): the family pair is `#2d4a7c` "
-              "light / `#9db8e8` dark, unless the page has a reason to differ.")
+            "brief-compose: this page carries the text-style switcher, and bold text is "
+            "coloured by `--em`, but its palette blocks do not give it a readable value:\n  "
+            + "\n  ".join([f"{w}: does not declare {EM_TOKEN}" for w in missing] + weak)
+            + "\n  A block without it inherits the shim's LIGHT `--em` — measured at 1.78:1 in "
+              "OS dark (docs/reviews/architecture-review-2026-10-24-em-default.md). Declare "
+              "`--em` in EVERY palette block (explainer-delivery.md §2): the family pair is "
+              "`#2d4a7c` light / `#9db8e8` dark, unless the page has a reason to differ.")
 
 
 def vars_read_anywhere(css: str) -> set[str]:
@@ -897,10 +1104,8 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
     # SUPPLIES one — it wraps the body in `TEXT_SCOPE_CLASS` whenever the bar it places carries
     # the switcher and the fragment opted in to nothing. The fail-silent above is still refused:
     # `assert_wired` checks the FINISHED document for a consumer. What the default adds is the
-    # `--em` trap, so the switcher is added only to a page that declares `--em` in every palette.
+    # `--em` trap, which `compose` checks on the finished page — see `assert_em_in_every_palette`.
     want_switcher = not own_switcher
-    if want_switcher:
-        assert_em_in_every_palette(css_of(content))
     return (page_chrome.chrome_css()
             + (page_chrome.text_style_css() if want_switcher or own_switcher else ""),
             page_chrome.chrome_bar("", generated_at, refresh=False,
@@ -1040,6 +1245,12 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # `body` / `h1,h2,h3,h4` / `b,strong`. Any content-side test for the class refuses it.
     page_chrome.assert_wired(doc, "brief-compose (the composed document)",
                              scoped_css_emitted=page_chrome.text_style_css() in chrome_css)
+    # ⛔ ASKED OF THE FINISHED PAGE, NOT OF WHO ADDED THE SWITCHER — r1 XM3 = CM1. The check ran
+    # only when the COMPOSER added `#schemer`; a fragment bringing its own got the same scoped CSS
+    # and the same `var(--em)` and was never checked (2.06:1, reproduced by both halves). The
+    # palettes are the FRAGMENT's: the shim's own `html` blocks are not a page's palette.
+    if page_chrome.has_text_control(doc):
+        assert_em_in_every_palette(page_css)
     return doc
 
 
@@ -1807,13 +2018,16 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # measures the duplicate-id arm instead — which is how the first attempt at these cases
     # went red against correct code.
     _tok = "{--accent:#06c;--em:#c00;--fg:#111;--fg2:#444}"
+    # ⟳ backlog #376 r1: the `--em` check now reads the VALUE on every page with a switcher, and
+    # `#c00` on the dark fixture's `#111` is 3.21:1 — so the dark block gets the family's dark value.
+    _tok_dark = _tok.replace("--em:#c00", "--em:#9db8e8")
 
     def _schemer_frag(consumer: str) -> str:
         """A fragment with the SWITCHER and no theme control, so `chrome_for` reaches the
         branch that emits `text_style_css()` ITSELF. The stylesheet can then only come from
         the composer, which is what makes this discriminate the right variable."""
         return ("<title>x</title><style>" + _dark + _full
-                + ':root[data-theme="dark"]' + _tok
+                + ':root[data-theme="dark"]' + _tok_dark
                 + ':root[data-theme="light"]' + _tok + ":root" + _tok
                 + "body{color:var(--ink);background:var(--bg)}</style>"
                 + page_chrome.text_style_control() + "<p>prose</p>" + consumer)
@@ -1828,7 +2042,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
         `chrome_for` takes the own-chrome branch and emits NO stylesheet. The sheet can then
         only come from the CONTENT — the half the first fix missed and a mutation exposed."""
         return ("<title>x</title><style>" + _dark + _full
-                + ':root[data-theme="dark"]' + _tok
+                + ':root[data-theme="dark"]' + _tok_dark
                 + ':root[data-theme="light"]' + _tok + ":root" + _tok
                 + "body{color:var(--ink);background:var(--bg)}"
                 + page_chrome.text_style_css() + page_chrome.chrome_css() + "</style>"
@@ -1857,7 +2071,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
 
     case("...and the SAME page IS refused once the caller says it emitted the stylesheet — "
          "so the case above is green because of the caller fact, not because the arm is dead",
-         _refused_when_told(compose(_gap, "T", css, markup, script, "t")))
+         _refused_when_told(_doc_or_empty(_gap)))
 
     case("a fragment that ALREADY has working chrome gets no MARKUP and no SCRIPT added",
          (_c1[1], _c1[2]) == ("", ""))
@@ -1982,7 +2196,8 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          "--em" in _why_os and "@media (prefers-color-scheme: dark)" in _why_os)
     case("...but a :root rule that is NOT a palette (the scheme's role block declares no "
          "--bg) is not asked for --em",
-         _doc_or_empty(_sw(_all_blocks + ":root{--head:var(--accent)}")) != "")
+         _doc_or_empty(_sw(_all_blocks + "@media (min-width:1px){:root{--head:var(--accent)}}"))
+         != "")
     case("⛔ theme palettes with NO block declaring the ground is CANNOT VERIFY, not a pass",
          "CANNOT VERIFY" in _refusal_for_fn(
              lambda: assert_em_in_every_palette(':root[data-theme="dark"]{--ink:#000}')))
@@ -1990,6 +2205,74 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          _refusal_for_fn(
              lambda: assert_em_in_every_palette(':root[data-theme="dark"]{--bg:#000;--em:#9db8e8}'))
          == "")
+
+    # ── backlog #376 ROUND 1: every repro from both halves, each red on the code it was found in ──
+    # The grammar is CLOSED: a form inside it is read exactly, a root-level form outside it that
+    # declares the ground is REFUSED by name. Cases are named for the review finding they pin.
+    _L_blk = _full[len(_dark):]                         # the light theme block, with --em
+    _dark_no_em = ':root[data-theme="dark"]{--ink:#eee;--bg:#111}'
+
+    def _msg(fragment: str) -> str:
+        """The refusal text for a fragment, "" if it composes — ANY exception, so a mutation that
+        lets a non-hex colour reach the contrast formula reddens a case instead of the run."""
+        try:
+            compose(fragment, "T", css, markup, script, "t")
+            return ""
+        except BaseException as exc:                    # noqa: BLE001 - the text is the subject
+            return str(exc)
+
+    _root_ok = ":root{--bg:#fff;" + _EM_L + "}"
+    _xm1 = _msg(_sw(_root_ok + '@media (prefers-color-scheme: dark){:root:not([data-theme="light"])'
+                    ',body{--bg:#111}}' + _full))
+    case("⛔ r1 XM1: a palette in a selector list MIXED with `body` is refused by name, not skipped",
+         "mixing the root" in _xm1)
+    case("...while `html,body{margin:0}`, a mixed list declaring no ground, is not refused",
+         _msg(_sw(_all_blocks + "html,body{margin:0}")) == "")
+    _xm2a = _msg(_sw(_root_ok + _os_dark + _L_blk
+                     + ':root[data-theme="dark"]{--ink:#eee;--bg:#111;--tokens:{--em:#9db8e8}}'))
+    case("⛔ r1 XM2: `--em` TEXT inside a block-valued custom property is refused, not read as a "
+         "declaration", "block-valued custom property" in _xm2a)
+    case("...and a block value BEFORE a real `--em` does not end the rule (r1 XM2, the other way)",
+         _msg(_sw(_root_ok + _os_dark + _L_blk + ':root[data-theme="dark"]{--ink:#eee;--bg:#111;'
+                  '--tokens:{foo:bar};--em:#9db8e8}')) == "")
+    _xm3 = _msg(_sw(_root_ok + _os_dark + _L_blk + _dark_no_em,
+                    page_chrome.text_style_control()
+                    + f'<div class="{page_chrome.TEXT_SCOPE_CLASS}"><h1>T</h1><p>p</p></div>'))
+    case("⛔ r1 XM3: a fragment bringing its OWN #schemer is checked too — a dark block without "
+         "--em is refused", ':root[data-theme="dark"]: does not declare --em' in _xm3)
+    _dark_with = lambda em: _root_ok + _os_dark + _L_blk + (
+        ':root[data-theme="dark"]{--ink:#eee;--bg:#111;' + em + "}")
+    case("⛔ r1 Xm4: the LIGHT --em in a dark block is refused on its contrast",
+         "below 4.5:1" in _msg(_sw(_dark_with("--em:#2d4a7c"))))
+    case("⛔ r1 Xm4: `--em:var(--x)` resolving to the block's own ground is refused",
+         _msg(_sw(_dark_with("--em:var(--x);--x:#111"))) != "")
+    _initial = _msg(_sw(_dark_with("--em:initial")))
+    case("⛔ r1 Xm4: `--em:initial` is UNVERIFIABLE, naming the block",
+         "UNVERIFIABLE" in _initial and ':root[data-theme="dark"]' in _initial)
+    case("...while a var() chain declared in the same block is followed to its colour",
+         _msg(_sw(_dark_with("--em:var(--y);--y:#9db8e8"))) == "")
+    _cm3 = _msg(_sw('@import url("x.css");' + _root_ok + _os_dark + _L_blk + _dark_no_em))
+    case("⛔ r1 Cm3: an `@import …;` before a palette is skipped, so the palette after it is read",
+         ':root[data-theme="dark"]: does not declare --em' in _cm3)
+    _cm4 = _msg(_sw(_all_blocks + ':root{--bg:#fbfaf7;--em:#2d4a7c;@media (prefers-color-scheme: '
+                    'dark){&:not([data-theme="light"]){--bg:#000;--fg:#eee}}}'))
+    case("⛔ r1 Cm4: CSS nesting inside a palette rule is refused by name, not read past",
+         "CSS nesting inside a palette rule" in _cm4)
+    case("⛔ r1 Cm5: a palette SPLIT over two `:root` rules is one palette, not a false refusal",
+         _msg(_sw(":root{--bg:#fff}:root{" + _EM_L + "}" + _os_dark + _full)) == "")
+    case("⛔ r1 Cm5: `:root .card{--bg}` is a component, not a palette — not asked for --em",
+         _msg(_sw(_all_blocks + ":root .card{--bg:#eee}")) == ""
+         and palette_blocks(":root .card{--bg:#eee}") == [])
+    _list = palette_blocks("html,:root{--bg:#fff;--em:#2d4a7c}")
+    case("an `html,:root` list of root forms only is ONE palette, its declarations read",
+         len(_list) == 1 and _list[0][1].get("--em") == "#2d4a7c")
+    _where = _refusal_for_fn(lambda: assert_em_in_every_palette(":where(:root){--bg:#fff}"))
+    case("⛔ r1 Cm5: `:where(:root)` is refused BY NAME, not reported as no palette found",
+         ":where()" in _where and "CANNOT VERIFY" not in _where)
+    case("a palette inside `@layer` is refused by name — only @media and @supports are read",
+         "inside @layer" in _msg(_sw(_all_blocks + "@layer base{" + _dark_no_em + "}")))
+    case("an unquoted `html[data-theme=dark]` palette is refused by name, not silently skipped",
+         "root selector form" in _msg(_sw(_all_blocks + "html[data-theme=dark]{--bg:#111}")))
 
     # ── BACKLOG #88: THE SOURCE MUST TRAVEL WITH THE PAGE ────────────────────
     # ⚠ DRIVES main() FOR REAL, and passes --out into a TEMP DIR on purpose.
@@ -2061,7 +2344,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # failed while the code was right. Unique markers, in a known order, asked of a string
     # whose order I control.
     _ordered = compose("<title>x</title><style>" + _dark + _full
-                       + ':root[data-theme="dark"]' + _tok
+                       + ':root[data-theme="dark"]' + _tok_dark
                        + ':root[data-theme="light"]' + _tok + ":root" + _tok
                        + "body{color:var(--ink);background:var(--bg)}</style>"
                        + page_chrome.text_style_control()
@@ -2074,7 +2357,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # no case required the REQUESTED title to reach the document. A caller asking for
     # "Quarterly review" would have got "T" with every gate passing.
     _titled = compose("<title>x</title><style>" + _dark + _full
-                      + ':root[data-theme="dark"]' + _tok
+                      + ':root[data-theme="dark"]' + _tok_dark
                       + ':root[data-theme="light"]' + _tok + ":root" + _tok
                       + "body{color:var(--ink);background:var(--bg)}</style>"
                       + page_chrome.text_style_control()
@@ -2088,7 +2371,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # ⚠ I then swept every parameter of the fourteen functions this branch touched and this
     # was the ONLY survivor, which is the check I should have run when I fixed `title`.
     _stamped = compose("<title>x</title><style>" + _dark + _full
-                       + ':root[data-theme="dark"]' + _tok
+                       + ':root[data-theme="dark"]' + _tok_dark
                        + ':root[data-theme="light"]' + _tok + ":root" + _tok
                        + "body{color:var(--ink);background:var(--bg)}</style>"
                        + page_chrome.text_style_control()
@@ -2100,7 +2383,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("...and a different moment gives a different document, so the stamp is not a "
          "constant a reader cannot trust",
          _stamped != compose("<title>x</title><style>" + _dark + _full
-                             + ':root[data-theme="dark"]' + _tok
+                             + ':root[data-theme="dark"]' + _tok_dark
                              + ':root[data-theme="light"]' + _tok + ":root" + _tok
                              + "body{color:var(--ink);background:var(--bg)}</style>"
                              + page_chrome.text_style_control()
@@ -2111,7 +2394,7 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
          "<title>Quarterly review</title>" in _titled)
     case("...and a different request gives a different document",
          _titled != compose("<title>x</title><style>" + _dark + _full
-                            + ':root[data-theme="dark"]' + _tok
+                            + ':root[data-theme="dark"]' + _tok_dark
                             + ':root[data-theme="light"]' + _tok + ":root" + _tok
                             + "body{color:var(--ink);background:var(--bg)}</style>"
                             + page_chrome.text_style_control()

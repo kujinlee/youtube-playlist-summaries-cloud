@@ -359,7 +359,7 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        assert_em_in_every_palette(css_of(content))",
+        "        assert_em_in_every_palette(page_css)",
         "        pass"
       ]
     ],
@@ -372,8 +372,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                        and all(re.match(r\"(:root|html)\\b\", s) for s in sels)):",
-        "                        and not stack and all(re.match(r\"(:root|html)\\b\", s) for s in sels)):"
+        "                    walk(body, ctx + (prelude,))",
+        "                    pass"
       ]
     ],
     "expect": [
@@ -411,8 +411,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                if (PALETTE_GROUND in decls\n",
-        "                if (True\n"
+        "            for ctx, sels in order if PALETTE_GROUND in merged[(ctx, sels)]]",
+        "            for ctx, sels in order]"
       ]
     ],
     "expect": [
@@ -430,6 +430,188 @@
     ],
     "expect": [
       "a fragment with NO theme palettes gets no switcher, and so no scope either"
+    ]
+  },
+  {
+    "name": "r1 XM1: a selector list mixing the root with body is no longer refused",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if any(roots):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 XM1: a palette in a selector list MIXED with `body` is refused by name, not skipped"
+    ]
+  },
+  {
+    "name": "r1 XM2: a block-valued custom property naming --em is read past",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                if block_em:\n",
+        "                if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 XM2: `--em` TEXT inside a block-valued custom property is refused, not read as a declaration"
+    ]
+  },
+  {
+    "name": "r1 XM2: a rule body ends at the first }, inside a custom property's value",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            end = _scan_to(text, j + 1, \"\")\n",
+        "            end = text.find(\"}\", j + 1) % (n + 1)\n"
+      ]
+    ],
+    "expect": [
+      "...and a block value BEFORE a real `--em` does not end the rule (r1 XM2, the other way)"
+    ]
+  },
+  {
+    "name": "r1 XM3: the --em check asks the composer's bar, so a fragment's own switcher is unchecked",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if page_chrome.has_text_control(doc):\n        assert_em_in_every_palette(page_css)\n",
+        "    if page_chrome.has_text_control(chrome_bar):\n        assert_em_in_every_palette(page_css)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 XM3: a fragment bringing its OWN #schemer is checked too — a dark block without --em is refused"
+    ]
+  },
+  {
+    "name": "r1 Xm4: --em is checked for presence only, not contrast",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if ratio < CONTRAST_MIN:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Xm4: the LIGHT --em in a dark block is refused on its contrast"
+    ]
+  },
+  {
+    "name": "r1 Xm4: a value need not be a hex colour to reach the contrast check",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if not (em and _HEX.fullmatch(em) and bg and _HEX.fullmatch(bg)):\n",
+        "        if not (em and bg):\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Xm4: `--em:initial` is UNVERIFIABLE, naming the block"
+    ]
+  },
+  {
+    "name": "r1 Xm4: a var() chain is not followed within the block",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        value = decls.get(ref)\n    return None\n",
+        "        value = None\n    return None\n"
+      ]
+    ],
+    "expect": [
+      "...while a var() chain declared in the same block is followed to its colour"
+    ]
+  },
+  {
+    "name": "r1 Cm3: a statement at-rule swallows the stylesheet after it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if j >= n or text[j] != \"{\":\n                i = j + 1",
+        "            if j >= n:\n                i = j + 1"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm3: an `@import …;` before a palette is skipped, so the palette after it is read"
+    ]
+  },
+  {
+    "name": "r1 Cm4: CSS nesting inside a palette rule is merged as if it were flat",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                if nested and grounded:\n",
+        "                if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm4: CSS nesting inside a palette rule is refused by name, not read past"
+    ]
+  },
+  {
+    "name": "r1 Cm5: split :root rules are judged one by one again",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                merged[key].update(decls)\n",
+        "                merged[key].update(decls) if not merged[key] else None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm5: a palette SPLIT over two `:root` rules is one palette, not a false refusal"
+    ]
+  },
+  {
+    "name": "r1 Cm5: a root PREFIX makes a selector a palette, so :root .card is asked for --em",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            roots = [bool(ROOT_FORM.fullmatch(s)) for s in sels]\n",
+        "            roots = [bool(ROOT_FORM.match(s)) for s in sels]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm5: `:root .card{--bg}` is a component, not a palette — not asked for --em"
+    ]
+  },
+  {
+    "name": "r1 Cm5: :where(:root) is not refused by name",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            elif any(re.search(r\":(?:where|is)\\([^)]*(?:(?<![\\w-]):root|\\bhtml\\b)\", s)\n",
+        "            elif False and any(re.search(r\":(?:where|is)\\([^)]*(?:(?<![\\w-]):root|\\bhtml\\b)\", s)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm5: `:where(:root)` is refused BY NAME, not reported as no palette found"
+    ]
+  },
+  {
+    "name": "a root rule inside @layer is skipped instead of refused",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                elif PALETTE_GROUND in body and re.search(",
+        "                elif False and re.search("
+      ]
+    ],
+    "expect": [
+      "a palette inside `@layer` is refused by name — only @media and @supports are read"
+    ]
+  },
+  {
+    "name": "an unrecognised root selector form is skipped instead of refused",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            elif any(re.match(r\"(?::root|html)(?![\\w-])\", s)",
+        "            elif False and any(re.match(r\"(?::root|html)(?![\\w-])\", s)"
+      ]
+    ],
+    "expect": [
+      "an unquoted `html[data-theme=dark]` palette is refused by name, not silently skipped"
     ]
   }
 ]

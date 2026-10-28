@@ -1091,7 +1091,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27: 27 -> 35, backlog #376 — the text-style switcher by default: one entry per
     # clause of the wrap (supplied, not nested, only with a switcher), of the decision to add it,
     # and of the `--em` refusal (called, reads @media, ground-keyed, fails closed on zero blocks).
-    "scripts/brief-compose.py": 35,
+    # ⟳ 2026-10-27, r1 fold: 35 -> 49 — the palette reader became a CLOSED GRAMMAR with a value
+    # check; one entry per rule of it (three earlier entries retargeted onto the new code).
+    "scripts/brief-compose.py": 49,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -6098,7 +6100,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2340)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2354)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

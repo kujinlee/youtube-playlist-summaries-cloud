@@ -17966,19 +17966,28 @@ appeared only if the author had wrapped the page's content in one particular cla
 whose colours would make bold text unreadable in dark mode with the switcher on is now refused
 rather than published, and the refusal names what to fix. Two pages were rebuilt: one gains the
 switcher, and on the other, which already had it, bold text in dark mode had been unreadable since
-it was published. Browser verification is still to do.
+it was published. The coordinator checked both pages in a browser on 2026-10-27: all three buttons
+are on top and can be pressed, and in dark mode with nothing pressed bold text measures 9.04:1 and
+headings 7.23:1.
 <!--tech-->
 Branch `text-style-default` (backlog #376). `brief-compose.compose` wraps the fragment's body in
 `page_chrome.TEXT_SCOPE_CLASS` when the bar it places carries `#schemer` and the fragment has no
 `.ex-body` of its own; `chrome_for` no longer requires a hand-placed consumer, and `assert_wired`
 still checks the finished page for one. A fragment that brings its own `#schemer` gets no second
 switcher and no wrapper. The `--em` trap (`architecture-review-2026-10-24-em-default.md`) is handled
-by REFUSAL, the guard that review filed: new `palette_blocks` reads every `:root`/`html` rule that
-declares `--bg`, at any `@media` depth, and `assert_em_in_every_palette` refuses, naming each block
-without `--em`, before the composer adds the switcher. Zero such blocks is CANNOT VERIFY, not a pass.
+by REFUSAL, the guard that review filed. `assert_em_in_every_palette` runs on every page whose
+finished document carries `#schemer`, whether the composer added it or the fragment did. It checks
+two things. First, a declared grammar (`palette_blocks`): root-form rules (`:root`, `html`,
+`[data-theme="…"]`, `:not([data-theme="…"])`) at the top level or under `@media`/`@supports`, with
+split rules merged. Any other root-level form that declares `--bg` is refused by name: mixed lists,
+nesting, `:where()`, block values naming `--em`, or a root rule inside another at-rule. Second, the
+value: in each palette block, `--em` and `--bg` must resolve inside that block to hex colours at
+least 4.5:1 apart (`gen-dashboard.contrast_ratio`); anything else is refused as UNVERIFIABLE. It
+does not check bold on cards or any other surface. Zero palette blocks is CANNOT VERIFY, not a pass.
 Writing the family pair in automatically was rejected: it means guessing whether each block is dark,
-which is what the review measured failing three ways. 153 → 164 cases; mutations 27 → 35, each
-killed by the case it names (`--only scripts/brief-compose.py`: 35/35 attributed). `page_chrome.py`
+which is what the review measured failing three ways. 153 → 181 cases; mutations 27 → 49, each
+killed by the case it names (`--only scripts/brief-compose.py`: 49/49 attributed); every round-1
+repro has a case, red on the round-1 code. `page_chrome.py`
 unchanged. Recompose: of the 24 tracked pages with a fragment, 22 compose byte-identically under
 master's composer and the new one (stamp aside), so #376 changes nothing on them. Recomposing them
 anyway brings in older drift, so they were restored: 6 lose their Theme button, and one

@@ -120,10 +120,14 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
   supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
   something it does not. They are named by token, not by hue, because a page sets its own hue.
-  ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — and since
-  backlog #376 the composer REFUSES to compose one that does not, naming the blocks — the light default, each
-  explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light / `#9db8e8` dark unless
-  it has a reason to differ. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
+  ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light
+  default, each explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light /
+  `#9db8e8` dark unless it has a reason to differ. Since backlog #376 the composer REFUSES, naming the
+  block, any page whose finished document carries `#schemer` (its own or the composer's) where a
+  palette block lacks `--em`, or where `--em` and `--bg` do not resolve within the block to hex
+  colours at least 4.5:1 apart. It reads palettes only in a declared grammar: bare `:root`/`html`
+  rules, `[data-theme="…"]` and `:not([data-theme="…"])`, under `@media`/`@supports` or none. Any
+  other root-level form that declares `--bg` is refused, not guessed at (`brief-compose.palette_blocks`). **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
   is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
   it measured **1.78:1** there (backlog #226). It cannot be fixed in the shim, because only the page
   knows whether its palette goes dark (`page_chrome`'s rule: *mechanism shared, palette local*);
