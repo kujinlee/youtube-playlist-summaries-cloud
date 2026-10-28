@@ -1,8 +1,7 @@
 # Memory Index
 
-> One line per memory. ⛔ **CORRECTED 2026-09-28: NOTHING DECIDES RELEVANCE.** This line used to say *"the hook decides relevance"* and that was never true — measured: no file in the `remember` plugin references `MEMORY.md` at all, and all **133** rows arrive every session, unfiltered. **So every row below is always in context and none of them is ever matched to the moment** — which is why recall fails here, and why the hook's title has to do the matching by itself. Write each hook as the SITUATION you would be in, not the subject it is about (backlog #191).
+> One line per memory. **Every row loads on every turn; nothing filters them** (measured 2026-09-28), so write each hook as the SITUATION you would be in, not the subject it is about (backlog #191). History about this index lives in [[slice-history]].
 
-- [⭐ RESUME: anchors + stable ids](anchor-name-and-stable-id-handoff.md) — M4 MERGED (#155); `0027` LIVE ON PROD. The stable-id roadmap **EXISTS** — I once re-derived it wrongly
 - [⭐ Launch roadmap](launch-roadmap-state.md) — **START HERE.** M1+M2+M3 closed. Prod ops + `claude_ro` recipe
 - [⭐⭐ #191 — semantic recall REPLICATED](backlog-191-semantic-recall-replicated.md) — lexical **3/20** vs semantic **20/20**, 0 false fires in 60. Triggers GOOD, matcher was the problem. 2 branches, neither merged
 - [TWO deliverables](project-has-two-deliverables.md) — ⭐ the product AND a reusable harness (`docs/portable-practices.md`)
@@ -45,6 +44,7 @@
 - [A mock tests the contract you IMAGINED](a-mocked-boundary-tests-the-contract-you-imagined.md) — ⭐ 2,808 green tests, 500s on first live press
 - [A privilege ≠ a CAPABILITY](a-privilege-is-not-a-capability.md) — ⭐ `has_table_privilege` said granted
 - [True of the name, silent on the layer](true-about-the-name-silent-about-the-layer.md) — ⭐ right about the object NAMED, silent on what overrides it
+- [⛔ Run the PR-only gates BEFORE push](run-pr-only-gates-before-push.md) — namespace + fixture-variation went red on 3 PRs; an ffmpeg flake HID one for an hour
 - [Worktree push needs a refspec](push-from-a-worktree-needs-an-explicit-refspec.md) — ⭐ reads SESSION cwd; the block kills the WHOLE Bash call
 - [A gate's CHANNEL can be weaker](a-gates-channel-can-be-weaker-than-the-gate.md) — ⭐ a refusal on hook stdout reached NOBODY
 - [⭐ Cost isn't the objective](cost-is-not-the-objective-improvement-is.md) — improving → KEEP GOING; else RESTRUCTURE, never "diminishing returns"
@@ -94,23 +94,25 @@
 - [`position` is not vestigial](position-column-is-not-vestigial.md) — check consumers per usage SITE, not per symbol
 - [Blocked on a decision, not work](a-gate-can-be-blocked-on-a-decision-not-work.md) — M1.4's last two items weren't engineering
 - [Detached dig retention](detached-dig-retention-decision.md) — retiring a rule dissolved a review High with zero code change
-- [Serve-path bounding MERGED](serve-path-bounding-merged.md) — a single CONVERGED verdict was WRONG 4 of 5 times
 - [CANDIDATE stopping rule](stopping-rule-defect-class-shift.md) — ⏳ untested and partly falsified
 
 ## Working with me
 
+- [⛔ "Nothing needs you" must read the DASHBOARD first](nothing-needs-you-must-read-the-dashboard.md) — 10-27: I said none all day; `/dashboard` held 37 unresolved asks (29 unreadable). Regenerate and quote its count
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
 - [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
+- [⛔ Parallel threads need a GOAL TREE](parallel-threads-need-a-thread-map.md) — root = user request; each thread tagged fix/blocker/bookkeeping/side, named by backlog row (never reused T1/T2); one-line banner carries the tag
 - [⏳ Show a WAITING SIGNAL, not prose](show-a-waiting-signal-not-prose.md) — asked for 2026-09-23: lead with `⏳ **Waiting** — <what>`; "still running" buried in a paragraph does not register
 - [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — ⛔ banner BEFORE each step, format SETTLED 10-16: `## ▶ [mm-dd hh:mm] STEP n of N` — prepended, no tz/seconds/`·`. Sub-steps too: `▸ [mm-dd hh:mm] 5.3 — …`. ⭐⭐ This LINE omitted the stamp for 3 days and I copied the line, not the file
 - [⭐ A title is SCANNED, not read](a-title-is-scanned-not-read.md) — asked 2026-10-02: lead with the concrete SCOPE, then the finding. An essayistic title says what was LEARNED and hides what was TOUCHED. The body still argues
 - [⭐ How to shape a message to me](how-to-shape-a-message-to-me.md) — LEAD with the conclusion, state READINESS separately from ownership, and ⛔ CLOSE with the repo's **CHECK/RESULT table** (`process-checklists.md`), never prose
 - [⭐⭐ Never close with a promise](never-close-with-a-promise.md) — ⛔ **5th instance 2026-09-25.** The Stop guard EXISTS and was INERT — I never armed it. ARM `begin-plan.py` for review/fold loops too, not just implementation
-- [⭐⭐ Blocking on a gate that does not EXIST](a-blocking-question-while-afk-costs-the-whole-night.md) — AskUserQuestion BLOCKS (6.5h idle, 2-line change). ⭐⭐ Worse 10-19: I cited "the owner's call" — **0 hits in 5 process docs** — and folded 5 rounds / 20h. GREP the rule and QUOTE it, or there isn't one
+- [⭐⭐ Blocking on a gate that does not EXIST](a-blocking-question-while-afk-costs-the-whole-night.md) — ⛔ 10-26 STANDING: no answer → take my (recommended) option unless CRITICAL (deploy, data loss, spend, a real loosening HOLD). AskUserQuestion BLOCKS (6.5h idle, 2-line change). ⭐⭐ Worse 10-19: I cited "the owner's call" — **0 hits in 5 process docs** — and folded 5 rounds / 20h. GREP the rule and QUOTE it, or there isn't one
 - [⭐ Putting a choice to the user](putting-a-choice-to-the-user.md) — TAG A/B/C + a question exit; never two options that are the SAME action; decide it yourself when obvious
 - [⭐ Name and define every reference](name-and-define-every-reference.md) — never a bare `#39` or `M4`; gloss jargon on first use. Do NOT try to script it
-- [⛔ PUSH is mine, MERGING is theirs](push-is-mine-merging-is-theirs.md) — ruled 2026-09-30; never ask again. A PR is a SEPARATE judgement — not for unconverged work
+- [⛔ PUSH is mine; MERGE WHEN READY](push-is-mine-merging-is-theirs.md) — house rule 2026-10-25: `check-merge-ready` READY ⇒ merge; HOLD (rc 3) ⇒ notify, don't merge. No PR for unconverged work — EXCEPT a DRAFT at slice start, which is how the full sweep reaches CI
+- [⛔ A low-risk HOLD is paid for with a REVIEW, not a wait](a-waiver-hold-is-paid-for-with-a-review.md) — 10-27: waiver/false HOLD → decide if trivial, else one refuting review and merge on it; only CRITICAL stops
 - [⭐ Defaults I decide myself](defaults-i-decide-myself.md) — small spend incl. a bounded prod write (measure the ledger); lighter verification. ⛔ NOT the CI wait — `--auto` is UNSAFE here, it once put a red on master
 - [⭐ Restart Docker, do not record CANNOT RUN](restart-docker-dont-record-cannot-run.md) — user instruction 2026-09-22. A visible Docker Desktop window is NOT a responsive daemon; `open -a Docker` is a no-op and the backend needs SIGKILL
 - [Process conventions](process-conventions.md) — branch + PR for EVERY change; spec = human gate; ticks in-convo, file at milestones; resume reads the RUNNING SYSTEM
@@ -123,26 +125,19 @@
 - [Flag transitional choices](feedback-flag-transitional-choices.md) — label findings transitional vs structural
 - [⭐ ALWAYS subagent-driven execution](always-choose-subagent-driven-execution.md) — standing answer; the skill keeps asking — answer it myself
 - [⭐ A stacked PR dies with its base](a-stacked-pr-dies-with-its-base-branch.md) — `--delete-branch` on the parent CLOSES the child, and a closed PR's base CANNOT be changed
-- [gh two-remotes footgun](gh-two-remotes-footgun.md) — ✅ RESOLVED; keep `--body-file`
 
 ## Environments & product context
 
-- [⭐ Scoped mutation run in 4s](scoped-mutation-run-in-four-seconds.md) — 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file. Prune a COPY of HARNESS_TREE's SIX paths. ⭐ The harness is structurally browserless (`typescript` only → ERR_MODULE_NOT_FOUND)
+- [check-main-drivable is slow PER main() CALL SITE](main-drivable-cost-is-per-call-site.md) — main([...]) inside a long _self_test: 50s → 209s, past the 120s shard timeout. One call in a small helper → 52s
+- [⭐ Scoped mutation run in 4s](scoped-mutation-run-in-four-seconds.md) — ⛔ DECIDED: PARTIAL locally (only manifests whose file MOVED — co-scoping an unchanged 183 cost 4h), FULL in CI shards. 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file. Prune a COPY of HARNESS_TREE's SIX paths. ⭐ The harness is structurally browserless (`typescript` only → ERR_MODULE_NOT_FOUND)
 - [Local cloud validation](local-cloud-validation-run.md) — local Supabase (:3001); worker needs env-load + Node 22+
 - [Local manual-test env](local-manual-test-env.md) — `~/code/agentic-ai-docs/yps-sync-test/`; sync is ADDITIVE
 - [Staging Supabase](staging-supabase-project.md) — ⚠ throwaway `neeufoxdbgbpkjukzzuc`; DELETE when B3/B4 done
 - [Access tiers vision](access-tiers-vision.md) — free tier built; the billing layer is the gap
 - [backlog.md stays Markdown](backlog-md-stays-markdown.md) — decided 2026-09-10; don't re-derive the JSON question
 - [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation
+- [⭐ Terminal selection dies under fullscreen TUI](terminal-selection-dead-under-fullscreen-tui.md) — `?1000h` mouse reporting eats the drag; Option-drag is CONSTANT FALSE on macOS until `macOptionClickForcesSelection`. The crosshair is column-select, not capture
 
 ## Slice history
 
-> ⛔ **NEW SLICE ROWS GO IN THAT FILE, NOT IN THIS INDEX.** This index is injected WHOLE on
-> every turn and the harness truncates it in silence once it passes 24,985 CHARACTERS — measured
-> 2026-10-19, it stood at 26,930 and **8 rows** had stopped arriving, with every other memory
-> signal green. ⟳ Both the unit and the count are corrections: this said "bytes" and "~30 rows",
-> and the real figures were established by reading the cut point out of a consuming agent's own
-> injected context. `scripts/check-memory-index-budget.py` now fails on that, so this is enforced
-> rather than remembered; a convention only catches what someone happens to read.
-
-- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19. ⛔ Reached by TRIGGER now, not always-loaded — verified by firing: ask for a PR number or SHA and it returns. The index was 26,930 of a 24,985-CHARACTER budget; the 28 rows are **4,912** chars without line endings, 4,940 with one newline each (the whole section 5,990). ⚠ Two earlier versions were wrong: "6,232 of 27,805 bytes" (wrong unit, and it charged the rows with the whole SECTION's cost), then "4,985" (r2 CODEX #6 — that joined 29 `- ` lines, counting the "Older slices" bullet as a 29th row)
+- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — reached by TRIGGER: ask for a PR number or SHA. ⛔ NEW SLICE ROWS GO THERE, never here: past 24,985 characters this index is truncated in silence (`check-memory-index-budget.py` enforces)
