@@ -37,17 +37,17 @@
 # advisory is ever observed reaching nobody, that observation refutes this choice.
 #
 #     echo '{"tool_input":{"file_path":"docs/memory/MEMORY.md"}}' | .claude/hooks/check-memory-index-budget.sh
-#     .claude/hooks/check-memory-index-budget.sh --self-test   # 24 cases
+#     .claude/hooks/check-memory-index-budget.sh --self-test   # 25 cases
 # ⟳ PR #430 r3 (Codex), THRASHING on path handling: rounds 1–3 each found one more place where BASH
 # mangled a pathname — a lexical match before resolution, `$(dirname …)` and `$(…)` stripping a
 # trailing newline from a checkout name and then from a FILENAME, an `elif` that kept the lexical
 # root. Each fix moved the edge. The class fix is structural: NO PATHNAME PASSES THROUGH BASH. Bash
 # only launches Python with the payload on stdin untouched; parsing, resolution, index identification,
 # the walk to the checkout and the checker call all happen in one Python program below.
-# ⚠ STATED BOUND: an index path that resolves to a file which is NOT some checkout's
-# docs/memory/MEMORY.md has no checker; the hook says NOT MEASURED and names the resolved target,
-# rather than measuring a different file. The checker runs under a 20 s timeout (advisory: on expiry
-# it reports NOT MEASURED, never a pass).
+# ⟳ PR #430 r4–r5: the index is identified by FILE IDENTITY — `samefile` against the index of each
+# checkout CONTAINING the edited path (from its lexical and its resolved form) — never by spelling.
+# ⚠ STATED BOUND: a hard link is seen only when it shares identity with the index of a checkout that CONTAINS it; a hard link to one checkout's index placed in ANOTHER checkout, or outside every checkout, is not found, so a write through it is unobserved. An index-NAMED file that is no containing checkout's index is
+# NOT MEASURED. The checker runs under a 20 s timeout (on expiry: NOT MEASURED, never a pass).
 set -uo pipefail
 PROG=$(cat <<'PY'
 import json, os, subprocess, sys, tempfile
@@ -95,8 +95,7 @@ def decide(file_path, pwd):
     ⟳ PR #430 r4 (Codex), SPLIT: the index is identified by FILE IDENTITY, never by spelling. Names
     always miss an alias — a case alias on a case-insensitive filesystem, a hard link — so the edited
     file is compared with `samefile` against the index of each checkout CONTAINING it (walking up from
-    its lexical and its resolved path). ⚠ STATED BOUND: a hard link to an index from OUTSIDE every
-    checkout is not found by any walk, so such a write is unobserved.
+    its lexical and its resolved path). ⚠ STATED BOUND: a hard link is seen only when it shares identity with the index of a checkout that CONTAINS it; a hard link to one checkout's index placed in ANOTHER checkout, or outside every checkout, is not found, so a write through it is unobserved.
     """
     if not isinstance(file_path, str) or not file_path:
         return None
@@ -144,9 +143,12 @@ def main(stdin_text, pwd):
         emit(f"⚠ memory index budget: NOT MEASURED — the checker in {root!r} could not start ({e}). Treat this as NOT RUN.")
         return 0
     out = (r.stdout or "") + (r.stderr or "")
+    # ⟳ PR #430 r5: decide from the FULL output, THEN truncate what is shown — truncating first erased
+    # a WARNING beyond the cut and the hook said nothing.
+    warn = r.returncode != 0 or any(l.startswith("WARNING") for l in out.splitlines())
     if len(out) > OUT_CAP:  # PR #430 r4: a checker printing 10 MB forwarded 10 MB of context
         out = out[:OUT_CAP] + f"\n… TRUNCATED at {OUT_CAP} characters"
-    if r.returncode != 0 or any(l.startswith("WARNING") for l in out.splitlines()):
+    if warn:
         emit(f"⚠ memory index budget (advisory, rc={r.returncode}, root {root}):\n{out}")
     return 0
 
@@ -206,6 +208,9 @@ def self_test():
         else:
             t("a CASE alias of the index is measured (r4 1) — case-sensitive filesystem, so it is a different file", decide(case_alias, tmp), None)
         t("an ordinary file in a checkout is silent", decide(os.path.join(B, "other.md"), tmp), None)
+        os.link(idx(B), os.path.join(A, "hardlink-to-B"))
+        t("STATED BOUND: a hard link to B's index placed in ANOTHER checkout is not found (r5 1)",
+          decide(os.path.join(A, "hardlink-to-B"), tmp), None)
         os.symlink(os.path.join(tmp, "loop"), os.path.join(tmp, "loop"))
         t("a symlink loop is silent and does not raise", decide(os.path.join(tmp, "loop"), tmp), None)
         t("malformed JSON returns 0", main("{not json", tmp), 0)
