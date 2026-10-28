@@ -18028,11 +18028,12 @@ Branch `wrap-every-selftest` (backlog #382). Measured on `d678369d` before any c
 `--self-test`, run as children of `fixture_git.isolated()`, gave 79 green; the red is `subject_status`
 (backlog #386), red unisolated too. 79 dispatch `--self-test`; 16 were wrapped and 63 more now are (64
 entries: `check-dashboard-entry` dispatches two; `gen-dashboard`'s write sandbox moved inside the block).
-Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,337 manifest mutations resolves
+Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,340 manifest mutations resolves
 once. After: 79/80 run normally, 79/80 with `GIT_DIR` exported to a victim that stays byte-identical, and
 `subject_status` 16/17 under `GIT_DIR` where master gives 12/17. `check-fixture-git-isolation.py` reads its
 population through `check-main-drivable.suite_entries`, requires each entry to be the canonical
 argument-free `with fixture_git.isolated():` block (refused by name), refuses a flag test that dispatches
-to no entry, and keeps rules 3 and 4. The builder detector and `GIT_SUITES` are deleted (744 → 605 lines;
-84 → 61 cases; mutations 45 → 32, 19 retired with their subject and 6 added). EXEMPT is empty. Lost: the
-refusal of a module-level repository BUILD, now one more instance of backlog #380's import-time git limit.
+to no entry, keeps rules 3 and 4, and adds rule 5: no process launch at import (0 of the 79 scripts trip it).
+The builder detector and `GIT_SUITES` are deleted (84 → 66 cases; mutations 45 → 35, 19 retired with their
+subject and 9 added). EXEMPT is empty. Nothing is loosened against master: rule 5 replaces, and is broader
+than, the refusal of a module-level repository BUILD that needed the detector.

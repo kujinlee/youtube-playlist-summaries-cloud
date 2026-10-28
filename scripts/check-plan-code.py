@@ -1923,8 +1923,9 @@ EXPECTED_MUTATIONS = {
     # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
     # ⟳ backlog #382 (2026-10-27): 45 -> 32. Every `--self-test` is wrapped, so the BUILDER DETECTOR and GIT_SUITES are
     # deleted and their 19 entries retire with their subject; 6 are added for the population rule (the entries
-    # `check-main-drivable.suite_entries` reads, a flag test with no entry, a file with no self-test, the named refusal).
-    "scripts/check-fixture-git-isolation.py": 32,
+    # `check-main-drivable.suite_entries` reads, a flag test with no entry, a file with no self-test, the named refusal);
+    # 32 -> 35 for rule 5, no process launch at import, which replaces the deleted module-level-build refusal.
+    "scripts/check-fixture-git-isolation.py": 35,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -6121,7 +6122,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2337)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2340)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

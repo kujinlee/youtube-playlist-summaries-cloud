@@ -417,5 +417,44 @@
     "expect": [
       "the refusal names the file, the line, the ENTRY and the remedy"
     ]
+  },
+  {
+    "name": "no process launch at import is examined (#382 rule 5)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    for line, call in import_time_launches(tree):\n",
+        "    for line, call in []:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a module-level `subprocess.run([\"git\", \"init\", ...])` is refused (master's module-level-build rule)"
+    ]
+  },
+  {
+    "name": "a launch inside a module-level if is not import-time (#382 rule 5)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n                walk(s.body)\n",
+        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n"
+      ]
+    ],
+    "expect": [
+      "a module-level `os.system(\"git config ...\")` inside an `if` is refused, though it builds nothing"
+    ]
+  },
+  {
+    "name": "a launcher imported by name is not followed (#382 rule 5)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            elif isinstance(f, ast.Name) and f.id in bare:\n",
+        "            elif False:\n"
+      ]
+    ],
+    "expect": [
+      "...and so is an aliased launch inside a module-level `try`, and `from os import system`"
+    ]
   }
 ]

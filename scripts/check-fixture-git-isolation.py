@@ -47,6 +47,12 @@ WHAT IT CHECKS, per `scripts/**/*.py`, parsed with `ast`:
      argument or a decorator, or stored from a module-level call to a function that reads `os.environ`.
      (`os.environb` needs no rule: measured, CPython backs it with the SAME dict as `os.environ`, so the
      swap reaches it — the executed case below holds that.)
+  5. no PROCESS LAUNCH runs at import: a call to `subprocess.run`/`Popen`/`call`/`check_call`/`check_output`/
+     `getoutput`/`getstatusoutput`, `os.system`/`popen`/`exec*`/`spawn*`/`posix_spawn*` or `pty.spawn` (under
+     any import alias) at module level or inside a module-level `if`/`try`/`with`/`for`/`while`, or in a
+     decorator or default argument. Not inside a def or class body. ⟳ #382: this replaces #373's refusal of
+     a module-level repository BUILD, which needed the deleted builder detector; it is broader (any launch,
+     not only `git init`/`clone`) and reads no git argv. Measured 2026-10-27: 0 of the 79 scripts trip it.
 
 The self-test EXECUTES every bypass shape both #373 reviews ran, twice: unisolated (refused here, and shown to
 write a victim repository named by an exported `GIT_DIR`) and inside the block (accepted here, and shown to
@@ -81,9 +87,11 @@ backlog #380). Each was executed by Codex against an accepted program and wrote 
   with no `--self-test` is not read.)
 ⟳ #373 round 3 (`docs/reviews/codex/fixture-git-isolation-r3-codex.md`, `docs/reviews/claude/fixture-git-
 isolation-r3-claude.md`), also backlog #380, each executed against an accepted program that wrote the victim:
-  * IMPORT-TIME git (r3 Codex X1): a module-level `subprocess.run(["git", "config", ...])` beside an isolated
-    entry. ⟳ #382: this now includes a module-level BUILD, which #373's rule 4 refused through the deleted
-    builder detector — the one shape that detector caught and nothing here does;
+  * IMPORT-TIME git (r3 Codex X1) — ⟳ #382 NARROWED: rule 5 now refuses the executed reproduction (a
+    module-level `subprocess.run(["git", "config", ...])`) and every other direct launch at import. What
+    remains is a launch reached INDIRECTLY at import: a module-level call of a function that launches, a
+    sibling module that launches when imported, a launcher bound to another name (`r = subprocess.run`), or a
+    launch written directly in a CLASS body, which runs at import but which rule 5 does not read;
   * SUITE WORK AFTER THE BLOCK EXITS (r3 Claude M1): a generator body, a lazy `map`, or an uncalled function
     returned from the block, each consumed by the caller after `isolated()` has restored the environment;
   * RULE 3's REACH (r3 Claude M1): a callee of the suite that is also reached from outside it through
@@ -93,7 +101,7 @@ isolation-r3-claude.md`), also backlog #380, each executed against an accepted p
 No script in `scripts/` does any of these; the derived falsifier is that evidence, not this guard.
 
     python3 scripts/check-fixture-git-isolation.py
-    python3 scripts/check-fixture-git-isolation.py --self-test  # 61 cases
+    python3 scripts/check-fixture-git-isolation.py --self-test  # 66 cases
 
 EXIT CODES (repo convention): 0 = every dispatched self-test is isolated · 1 = a file refused ·
 2 = CANNOT RUN (no scripts found, a file that does not parse — never a pass).
@@ -110,6 +118,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER_MODULE = "fixture_git"
+# What launches a process, by module. A call to one of these at IMPORT runs before any isolated() block.
+LAUNCHERS = {
+    "subprocess": frozenset({"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}),
+    "os": frozenset({"system", "popen", "execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp",
+                     "execvpe", "spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv", "spawnve", "spawnvp",
+                     "spawnvpe", "posix_spawn", "posix_spawnp"}),
+    "pty": frozenset({"spawn"}),
+}
 
 # `--self-test` scripts that may run unisolated, each with its reason. Empty on purpose: none was measured.
 EXEMPT: dict[str, str] = {}
@@ -235,6 +251,71 @@ def _module_level_nodes(tree: ast.Module) -> list[ast.AST]:
 
 
 
+def _launcher_names(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
+    """({alias: module} for `import subprocess as sp`, {bare names} for `from os import system as s`)."""
+    mods, bare = {}, set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            mods |= {a.asname or a.name: a.name for a in n.names if a.name in LAUNCHERS}
+        elif isinstance(n, ast.ImportFrom) and n.module in LAUNCHERS:
+            bare |= {a.asname or a.name for a in n.names if a.name in LAUNCHERS[n.module]}
+    return mods, bare
+
+
+def _import_time_code(tree: ast.Module) -> list[ast.AST]:
+    """What runs at IMPORT for rule 5: module statements, inside module-level if/try/with/for/while, never a def
+    or class body (a def's decorators and defaults run at import, so they are included). Not
+    `_module_level_nodes`, which rule 4 uses: that one reads class bodies, where a class-attribute copy of
+    `os.environ` lives, and takes a module-level `with` whole, a def inside it included."""
+    code: list[ast.AST] = []
+
+    def walk(block):
+        for s in block:
+            if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                code.extend(s.decorator_list)
+                code.extend(d for d in s.args.defaults + s.args.kw_defaults if d is not None)
+            elif isinstance(s, ast.ClassDef):
+                code.extend(s.decorator_list + s.bases + [k.value for k in s.keywords])
+            elif isinstance(s, (ast.If, ast.While)):
+                code.append(s.test)
+                walk(s.body)
+                walk(s.orelse)
+            elif isinstance(s, (ast.For, ast.AsyncFor)):
+                code.append(s.iter)
+                walk(s.body)
+                walk(s.orelse)
+            elif isinstance(s, (ast.With, ast.AsyncWith)):
+                code.extend(i.context_expr for i in s.items)
+                walk(s.body)
+            elif isinstance(s, ast.Try) or type(s).__name__ == "TryStar":
+                walk(s.body)
+                for h in s.handlers:
+                    walk(h.body)
+                walk(s.orelse)
+                walk(s.finalbody)
+            else:
+                code.append(s)
+    walk(tree.body)
+    return code
+
+
+def import_time_launches(tree: ast.Module) -> list[tuple[int, str]]:
+    """Every process launch that runs at IMPORT: (line, the call as written)."""
+    mods, bare = _launcher_names(tree)
+    found = []
+    for top in _import_time_code(tree):
+        for n in ast.walk(top):
+            if not isinstance(n, ast.Call):
+                continue
+            f = n.func
+            if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in mods \
+                    and f.attr in LAUNCHERS[mods[f.value.id]]:
+                found.append((n.lineno, f"{f.value.id}.{f.attr}"))
+            elif isinstance(f, ast.Name) and f.id in bare:
+                found.append((n.lineno, f.id))
+    return found
+
+
 def check_source(src: str, rel: str) -> tuple[int, list[str]]:
     """(0 isolated or no self-test | 1 refused | 2 does not parse, messages)."""
     try:
@@ -288,6 +369,9 @@ def check_source(src: str, rel: str) -> tuple[int, list[str]]:
             msgs.append(f"REFUSED {rel}:{n.lineno}: a copy of os.environ is taken at import (module level, a "
                         f"default argument or a decorator) — it holds the caller's environment inside "
                         f"fixture_git.isolated(), so any git it reaches is not isolated")
+    for line, call in import_time_launches(tree):
+        msgs.append(f"REFUSED {rel}:{line}: `{call}` launches a process at IMPORT (module level, or a module-level "
+                    f"if/try/with) — it runs before any fixture_git.isolated() block, with the caller's environment")
     return (1 if msgs else 0), msgs
 
 
@@ -523,6 +607,22 @@ def _self_test_body() -> int:
          shaped(CANON, head="import os, subprocess, sys\nC = os.environ | {'A': '1'}\n"), 1)
     case("a capture inside `if __name__` at module level is refused",
          shaped(CANON + "if __name__ == '__main__':\n    C = dict(os.environ)\n", head="import os, subprocess, sys\n"), 1)
+    # ── rule 5: no process launch at import ─────────────────────────────────────────────────────
+    case("⭐ a module-level `subprocess.run([\"git\", \"init\", ...])` is refused (master's module-level-build rule)",
+         shaped(CANON, head='import subprocess, sys\nsubprocess.run(["git", "init", "-q", "d"])\n'), 1)
+    case("a module-level `os.system(\"git config ...\")` inside an `if` is refused, though it builds nothing",
+         shaped(CANON, head='import os, subprocess, sys\nif True:\n    os.system("git config a.b c")\n'), 1)
+    case("...and so is an aliased launch inside a module-level `try`, and `from os import system`",
+         (shaped(CANON, head='import subprocess as sp, sys\ntry:\n    sp.check_output(["git", "status"])\nexcept OSError:\n    pass\n'),
+          shaped(CANON, head='import subprocess, sys\nfrom os import system as s\nwith open("x") as f:\n    s("git status")\n')),
+         (1, 1))
+    case("a launch inside a FUNCTION is accepted (it runs when called, inside the block)",
+         shaped(CANON, head='import os, subprocess, sys\ndef helper():\n    os.system("git config a.b c")\n'
+                            '    subprocess.run(["git", "init", "-q", "d"])\n'), 0)
+    _lmsg = check_source('import subprocess, sys\nsubprocess.run(["git", "init"])\n' + BODY + CANON
+                         + DISPATCH.format(name="_self_test"), "scripts/m.py")[1]
+    case("the refusal names the launch and its line",
+         [m.startswith("REFUSED scripts/m.py:2: `subprocess.run` launches a process at IMPORT") for m in _lmsg], [True])
     case("a file that does not parse is CANNOT RUN", rc("def (:\n"), 2)
     msg = check_source("import subprocess, sys\n" + BODY + "def _self_test():\n    return _self_test_body()\n"
                        + DISPATCH.format(name="_self_test"), "scripts/sub/y.py")[1]
