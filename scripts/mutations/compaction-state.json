@@ -1,0 +1,236 @@
+[
+  {
+    "name": "a meta entry (hook feedback, a skill body) is read as the owner's prompt",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if origin.get(\"kind\") == \"human\" and not d.get(\"isMeta\") and not d.get(\"isCompactSummary\"):",
+        "if origin.get(\"kind\") == \"human\" and not d.get(\"isCompactSummary\"):"
+      ]
+    ],
+    "expect": [
+      "⭐ extraction keeps ONLY the owner's typed prompts — no notification, teammate, hook, summary or subagent"
+    ]
+  },
+  {
+    "name": "an answer whose tool use fell outside the read window is lost",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if x.get(\"tool_use_id\") in asks or ANSWER_PREFIX.match(text):",
+        "if x.get(\"tool_use_id\") in asks:"
+      ]
+    ],
+    "expect": [
+      "⭐ every AskUserQuestion answer is kept, paired or by its wording, boilerplate stripped"
+    ]
+  },
+  {
+    "name": "an ERRORED ask (a blocked card) is read as an answer",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if not (isinstance(x, dict) and x.get(\"type\") == \"tool_result\") or x.get(\"is_error\"):",
+        "if not (isinstance(x, dict) and x.get(\"type\") == \"tool_result\"):"
+      ]
+    ],
+    "expect": [
+      "an ordinary tool result and an ERRORED ask are not answers"
+    ]
+  },
+  {
+    "name": "a transcript with no human prompt reads as 'the owner said nothing'",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if users and not prompts and not answers:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ user entries with NO human prompt say NOT EXTRACTED — never 'the owner said nothing'"
+    ]
+  },
+  {
+    "name": "the owner section ignores its budget",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            if used + len(line) + 1 > cap:\n                break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the owner section holds its budget, keeps the NEWEST of each, and says how many were cut"
+    ]
+  },
+  {
+    "name": "a failing `git worktree list` reads as zero worktrees",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "return None, f\"git worktree list exited {rc}",
+        "return [], f\"git worktree list exited {rc}"
+      ]
+    ],
+    "expect": [
+      "⭐ `git worktree list` failing is CANNOT RUN, not an empty list"
+    ]
+  },
+  {
+    "name": "a failing `git status` reads clean",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "f\"status UNKNOWN (exit {rc})\" if rc != 0 else ",
+        ""
+      ]
+    ],
+    "expect": [
+      "a failing `git status` reads UNKNOWN, never clean"
+    ]
+  },
+  {
+    "name": "the snapshot is no longer held to SNAPSHOT_CAP",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "text = fit(\"\\n\\n\".join(parts), SNAPSHOT_CAP - len(keyline) - 2, \"the transcript itself\")",
+        "text = \"\\n\\n\".join(parts)"
+      ]
+    ],
+    "expect": [
+      "⭐ the size cap holds with 100 PRs, 60 owner waits and 200 huge prompts, and the keys line survives"
+    ]
+  },
+  {
+    "name": "the audit never reports a dropped PR or ledger id",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                if not mentioned(summary, kind, k):",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ the audit names a dropped PR, a dropped ledger id and a dropped decision"
+    ]
+  },
+  {
+    "name": "`#4100` is read as naming PR #410",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){int(key)}(?!\\d)\"",
+        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){int(key)}\""
+      ]
+    ],
+    "expect": [
+      "PR matching is by NUMBER: #4100 does not name #410, `PR 410` does"
+    ]
+  },
+  {
+    "name": "a missing compact_summary is audited as if it were a summary",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "elif not isinstance(summary, str) or not summary.strip():",
+        "elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a missing compact_summary makes the audit CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a snapshot from an EARLIER compaction is printed as current",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "elif now - sk[\"epoch\"] > STALE_AFTER:",
+        "elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a snapshot older than STALE_AFTER is STALE and its body is not shown"
+    ]
+  },
+  {
+    "name": "an audit of a different snapshot is printed as current",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "elif sk is not None and ak.get(\"snapshot_stamp\") != sk.get(\"stamp\"):",
+        "elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ an audit of a DIFFERENT snapshot is STALE"
+    ]
+  },
+  {
+    "name": "the print is no longer held to PRINT_CAP",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "return fit(\"\\n\".join(L), PRINT_CAP - len(end) - 1, SNAPSHOT_REL) + \"\\n\" + end",
+        "return \"\\n\".join(L) + \"\\n\" + end"
+      ]
+    ],
+    "expect": [
+      "⭐ the print stays under PRINT_CAP with a snapshot grown on disk past every cap"
+    ]
+  },
+  {
+    "name": "a hook mode exits non-zero",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        print(f\"compaction-state: CANNOT RUN — {exc.__class__.__name__}: {clean(exc, 200)}\")\n    return 0\n",
+        "        print(f\"compaction-state: CANNOT RUN — {exc.__class__.__name__}: {clean(exc, 200)}\")\n    return 1\n"
+      ]
+    ],
+    "expect": [
+      "⭐ main exits 0 in all three modes on garbage stdin, and writes both files"
+    ]
+  },
+  {
+    "name": "a gh failure is recorded as NO open PRs, so the audit checks nothing and says all clear",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "\"prs\": [p.get(\"number\") for p in prs] if prs is not None else None,",
+        "\"prs\": [p.get(\"number\") for p in prs] if prs is not None else [],"
+      ]
+    ],
+    "expect": [
+      "...and a failed gh leaves the audit's PR key None (NOT CHECKED), not []"
+    ]
+  },
+  {
+    "name": "no ledger entry is recognised as waiting on the owner",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "OWNER_WAIT = re.compile(r\"(?i)\\b(owner|awaiting|walk-?through|review page)\\b|\\.html\\b\")",
+        "OWNER_WAIT = re.compile(r\"(?!x)x\")"
+      ]
+    ],
+    "expect": [
+      "⭐ pending decisions: the OWNER-naming ledger entry and the dashboard's unresolved asks"
+    ]
+  },
+  {
+    "name": "an unreadable hook payload is not said in the snapshot header",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if payload_err:\n        head += f\"\\n⚠ hook payload: UNREADABLE",
+        "    if False:\n        head += f\"\\n⚠ hook payload: UNREADABLE"
+      ]
+    ],
+    "expect": [
+      "⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript"
+    ]
+  }
+]

@@ -299,8 +299,9 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
     return "\n".join(L)
 
 
-def collect(root: Path, run=_run, now: str | None = None) -> str:
-    now = now or time.strftime("%Y-%m-%d %H:%M %Z")
+def fetch(root: Path, run=_run) -> tuple[list[dict] | None, str | None, list[dict], list[str], bool]:
+    """(prs, pr_error, ledger, ledger_problems, truncated) — the DATA `render` prints. Split out so
+    `compaction-state.py` (backlog #361) snapshots the same PR list and ledger without a second gh reader."""
     rc, out = run(["gh", "pr", "list", "--state", "open", "--limit", str(LIMIT), "--json",
                    "number,headRefName,headRefOid,isDraft,mergeStateStatus,statusCheckRollup"], root, TIMEOUT)
     prs, pr_error = None, None
@@ -314,7 +315,13 @@ def collect(root: Path, run=_run, now: str | None = None) -> str:
         except ValueError as exc:
             prs, pr_error = None, f"gh output unparseable ({exc})"
     ledger, problems, _ = read_ledger(root / LEDGER_REL)
-    return render(prs, pr_error, ledger, problems, now, truncated=prs is not None and len(prs) >= LIMIT)
+    return prs, pr_error, ledger, problems, prs is not None and len(prs) >= LIMIT
+
+
+def collect(root: Path, run=_run, now: str | None = None) -> str:
+    now = now or time.strftime("%Y-%m-%d %H:%M %Z")
+    prs, pr_error, ledger, problems, truncated = fetch(root, run)
+    return render(prs, pr_error, ledger, problems, now, truncated=truncated)
 
 
 def self_test() -> int:

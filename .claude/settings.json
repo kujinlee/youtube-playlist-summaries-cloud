@@ -119,6 +119,52 @@
             "timeout": 60
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh compaction-print.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
+            "timeout": 15,
+            "statusMessage": "Snapshotting in-flight state before compaction..."
+          }
+        ]
+      },
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
+            "timeout": 15,
+            "statusMessage": "Snapshotting in-flight state before compaction..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh postcompact-audit.sh",
+            "timeout": 15,
+            "statusMessage": "Auditing what the compaction summary dropped..."
+          }
+        ]
       }
     ]
   },

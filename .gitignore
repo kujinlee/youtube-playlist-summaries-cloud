@@ -179,3 +179,9 @@ docs/explainers/questions.md
 # when it ends. Per-checkout and per-session by nature; `scripts/session-state.py` prints it at session start.
 .claude/inflight.jsonl
 .claude/inflight.jsonl.lock
+
+# backlog #361: written by the PreCompact / PostCompact hooks (`scripts/compaction-state.py`) and printed at the
+# SessionStart after a compaction. `.remember/` is ignored only by a global gitignore on one machine, so these
+# are named here too.
+.remember/precompact-snapshot.md
+.remember/compaction-audit.md

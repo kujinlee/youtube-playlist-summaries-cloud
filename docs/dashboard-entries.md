@@ -18044,3 +18044,25 @@ master's guard, over a fixed probe set held in the suite: every probe master ref
 relaxations — a builder in a file with no `--self-test` (master's X9 false refusal), a flag that is not one literal,
 an unlaunched module-level git argv literal — and the NOT SEEN shapes above (master refused Codex's native-call
 program only because it also held a git argv literal).
+
+## 2026-10-28
+Compaction can no longer quietly drop what was in flight. Just before a compaction, a hook now saves the open
+pull requests, the background jobs, the worktrees, the decisions waiting on you and your own recent messages and
+answers to a file. Just after, a second hook compares the summary with that file and lists everything the summary
+left out. When the session continues, both are shown first, with a line saying a compaction happened and that the
+summary is lossy. None of this has run on a real compaction yet: it was tested piece by piece and with a rehearsal
+using this session's real transcript, and the real test is your next `/compact`.
+<!--tech-->
+Branch `compaction-guards` (backlog #361, its PreCompact fallback). New `scripts/compaction-state.py`, three modes:
+`--snapshot` (PreCompact, matchers `manual` and `auto`) writes `.remember/precompact-snapshot.md` atomically, under
+8,000 characters, from `session-state.fetch`/`render` (a new split of `collect`, behaviour unchanged, 51/51 and its
+25 mutations killed), `git worktree list` plus one `git status` each, the ledger entries naming the owner or a page,
+`gen-dashboard.unresolved`, and the transcript: typed prompts are `origin.kind == "human"` without `isMeta`/
+`isCompactSummary`/`isSidechain`, and answers are non-error `tool_result`s of an `AskUserQuestion` tool use (either
+wording, so unpaired ones count too). `--audit` (PostCompact) lists every PR number, ledger id and pending decision
+the `compact_summary` does not name. `--print` (SessionStart, matcher `compact`) shows both under 9,800 characters,
+CANNOT RUN when a file is missing, STALE when the snapshot is over 30 minutes old or the audit is of another
+snapshot. Every hook exits 0 and never prints a decision, so compaction is never blocked; stdin is read with a 2 s
+deadline. 43 cases, 18 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
+the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
+real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.
