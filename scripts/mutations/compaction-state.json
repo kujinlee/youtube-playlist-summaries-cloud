@@ -1,0 +1,704 @@
+[
+  {
+    "name": "a meta entry (hook feedback, a skill body) is read as the owner's prompt",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if results or not _off(d, \"isMeta\", \"isCompactSummary\") or not _text_of(content).strip():",
+        "        if results or not _off(d, \"isCompactSummary\") or not _text_of(content).strip():"
+      ]
+    ],
+    "expect": [
+      "⭐ extraction keeps ONLY the owner's typed prompts — no notification, teammate, hook, summary or subagent"
+    ]
+  },
+  {
+    "name": "an ERRORED ask (a blocked card) is read as an answer",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            if not _off(x, \"is_error\") or not eligible:",
+        "            if not eligible:"
+      ]
+    ],
+    "expect": [
+      "an ordinary tool result and an ERRORED ask are not answers"
+    ]
+  },
+  {
+    "name": "a transcript whose prompts lost `origin` reads as 'the owner said nothing'",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if text_turns and not prompts:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 CM6: prompts that LOST `origin` while answers survive still say NOT EXTRACTED, not 'none'"
+    ]
+  },
+  {
+    "name": "the owner section ignores its budget",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            if used + len(line) + 1 > cap:\n                break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the owner section holds its budget, keeps the NEWEST of each, and says how many were cut"
+    ]
+  },
+  {
+    "name": "a human-origin turn carrying a tool_result block is read as a prompt",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if results or not _off(d, \"isMeta\", \"isCompactSummary\")",
+        "        if not _off(d, \"isMeta\", \"isCompactSummary\")"
+      ]
+    ],
+    "expect": [
+      "a human-origin turn that carries a tool_result block is not a prompt"
+    ]
+  },
+  {
+    "name": "⛔ the prefix-only fallback is restored: tool output that LOOKS like an answer is trusted (the review's MEDIUM)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            if isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks:",
+        "            if (isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks) or ANSWER_PREFIX.match(text):"
+      ]
+    ],
+    "expect": [
+      "⭐ a Read result, an UNPAIRED result and an id-less pair that START with an answer wording are NOT answers"
+    ]
+  },
+  {
+    "name": "XB1: a SIDECHAIN or meta assistant turn's question can be answered",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        eligible = _off(d, \"isSidechain\", \"isMeta\", \"isCompactSummary\") and origin.get(\"kind\") != \"task-notification\"",
+        "        eligible = origin.get(\"kind\") != \"task-notification\""
+      ]
+    ],
+    "expect": [
+      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+    ]
+  },
+  {
+    "name": "XB1: a question is not consumed, so a replayed id is a second answer",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                asks.discard(x[\"tool_use_id\"])   # one question, AT MOST one answer, ever",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+    ]
+  },
+  {
+    "name": "XB1: the owner's words are headed AUTHORITATIVE again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "\"## The owner's recent words — RECORDED in the transcript, not proven: verify one there when a decision depends on it\"",
+        "\"## The owner's recent words — AUTHORITATIVE over the summary's paraphrase\""
+      ]
+    ],
+    "expect": [
+      "⭐ the owner's words are headed RECORDED, never AUTHORITATIVE — a hook cannot prove authorship (r1 XB1)"
+    ]
+  },
+  {
+    "name": "XM1: turns are not bound to the payload's session",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if not isinstance(d, dict) or not isinstance(session_id, str) or d.get(\"sessionId\") != session_id:",
+        "        if not isinstance(d, dict):"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "XM1: a consumed id is reopened by a repeated question record",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                            and x[\"id\"] not in consumed)",
+        "                            )"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "XM1: a summary or notification QUESTION is eligible",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        " and origin.get(\"kind\") != \"task-notification\"\n        if d.get(\"type\") == \"assistant\"",
+        "\n        if d.get(\"type\") == \"assistant\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "pasted content is shown as the owner's own words",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    text = withhold_pasted(text)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ pasted content is EXCLUDED and labelled; an accepted suggestion is LABELLED as one"
+    ]
+  },
+  {
+    "name": "XB2: two separate pastes are each withheld and the text between them shown (the one-block rule dropped)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if text.count(PASTE_OPEN) == 1 and text.count(PASTE_CLOSE) == 1:",
+        "    if True:"
+      ]
+    ],
+    "expect": [
+      "a closer whose id does not match, and two separate pastes, fail CLOSED too"
+    ]
+  },
+  {
+    "name": "XB2: a closer whose id does not match the opener still closes the paste",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if m and m.group(1) == m.group(3):",
+        "        if m:"
+      ]
+    ],
+    "expect": [
+      "a closer whose id does not match, and two separate pastes, fail CLOSED too"
+    ]
+  },
+  {
+    "name": "XB2: an ambiguous paste is shown instead of withheld to the end",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return text[:i] + f\"[pasted content and EVERYTHING after it, {len(text) - i} chars",
+        "    return text\n    return text[:i] + f\"[pasted content and EVERYTHING after it, {len(text) - i} chars"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCLOSED opener withholds everything after it — Codex's r1 XB2 reproduction"
+    ]
+  },
+  {
+    "name": "a failing `git worktree list` reads as zero worktrees",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "return None, f\"git worktree list exited {rc}",
+        "return [], f\"git worktree list exited {rc}"
+      ]
+    ],
+    "expect": [
+      "⭐ `git worktree list` failing is CANNOT RUN, not an empty list"
+    ]
+  },
+  {
+    "name": "a failing `git status` reads clean",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "f\"status UNKNOWN (exit {rc}) — {NC}\" if rc != 0 else ",
+        ""
+      ]
+    ],
+    "expect": [
+      "a failing `git status` reads UNKNOWN, never clean"
+    ]
+  },
+  {
+    "name": "the explicit marker is ignored: every ledger entry is listed as waiting on the owner",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []",
+        "    waits = list(ledger)"
+      ]
+    ],
+    "expect": [
+      "⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks"
+    ]
+  },
+  {
+    "name": "an unreadable hook payload is not said in the snapshot header",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if payload_err:\n        head += f\"\\n⚠ hook payload: {NC}",
+        "    if False:\n        head += f\"\\n⚠ hook payload: {NC}"
+      ]
+    ],
+    "expect": [
+      "⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript"
+    ]
+  },
+  {
+    "name": "a main checkout git cannot find is not said, so the wrong ledger reads as the real one",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if main_err:\n        where =",
+        "    if False:\n        where ="
+      ]
+    ],
+    "expect": [
+      "⭐ when git cannot name the main checkout, the snapshot SAYS the ledger may be the wrong one"
+    ]
+  },
+  {
+    "name": "XM5 + CM4: ledger completeness ignores the main-checkout lookup and every problem",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    ledger_complete = ss is not None and main_err is None and not problems",
+        "    ledger_complete = ss is not None and not any(p.startswith(ss.LEDGER_REL) for p in problems)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM5 + CM4: a REFUSED ledger, a CORRUPT line and a failed main-checkout lookup each say the owner waits are NOT CAPTURED — and the entries that WERE read are still shown"
+    ]
+  },
+  {
+    "name": "(A) the capture child is waited on with no deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        return p.wait(timeout=timeout), \"\"",
+        "        return p.wait(), \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ a capture child that sleeps past the deadline is KILLED: the parent returns within deadline + 1 s"
+    ]
+  },
+  {
+    "name": "(A) a killed capture leaves no snapshot for this compaction",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            text = cannot_run_snapshot(why or \"the capture wrote no snapshot\", receipt, now)",
+        "            return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ the WHOLE PreCompact hook ends within its capture deadline + 1 s and writes THIS session's CANNOT RUN"
+    ]
+  },
+  {
+    "name": "(A) a FIFO dashboard store is opened and read",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not stat.S_ISREG(st.st_mode):\n        os.close(fd)\n        return None, 0, f\"{clean(path.name, 80)} is not a regular file — NOT READ\"",
+        "    if False:\n        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a FIFO dashboard store is refused WITHOUT blocking (r2 Codex XM3 hung here past 16 s)"
+    ]
+  },
+  {
+    "name": "(B) the receipt is not written, so nothing supersedes an old capture",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    write_in(dfd, \"receipt.json\", json.dumps(receipt) + \"\\n\")",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ the receipt is written FIRST and the old snapshot DELETED: a capture that then dies leaves only CANNOT RUN"
+    ]
+  },
+  {
+    "name": "(B) a session_id that is a path is accepted",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id):\n        return None\n    return root / SESSIONS_REL",
+        "    if not isinstance(session_id, str) or not session_id:\n        return None\n    return root / SESSIONS_REL"
+      ]
+    ],
+    "expect": [
+      "session_dir accepts only SESSION_ID and never builds a path from anything else"
+    ]
+  },
+  {
+    "name": "(B) all sessions share one directory again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    for part in (*SESSIONS_REL.split(\"/\"), session_id):",
+        "    for part in SESSIONS_REL.split(\"/\"):"
+      ]
+    ],
+    "expect": [
+      "⭐ Codex's r2 A/B interleaving: each session's print shows ITS OWN capture, never the other's"
+    ]
+  },
+  {
+    "name": "the print is no longer held to PRINT_CAP",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return fit(\"\\n\".join(L), PRINT_CAP - len(end) - 1, \"the session's snapshot file\") + \"\\n\" + end",
+        "    return \"\\n\".join(L) + \"\\n\" + end"
+      ]
+    ],
+    "expect": [
+      "⭐ the print stays under PRINT_CAP with a snapshot grown on disk past every cap"
+    ]
+  },
+  {
+    "name": "a hook mode exits non-zero",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    finally:\n        if dfd is not None:\n            os.close(dfd)\n    return 0\n",
+        "    finally:\n        if dfd is not None:\n            os.close(dfd)\n    return 1\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the snapshot"
+    ]
+  },
+  {
+    "name": "a mode that raises leaves the earlier file in place",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                write_in(dfd, \"snapshot.md\", f\"# {NC} — CANNOT RUN — {why}\\n\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the snapshot"
+    ]
+  },
+  {
+    "name": "the capture child's group is killed only on timeout, so a straggler outlives a child that exited 0",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        try:\n            os.killpg(p.pid, signal.SIGKILL)\n        except (ProcessLookupError, PermissionError):\n            pass",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a child that EXITS 0 leaving a straggler in its group: the group is killed after the exit too"
+    ]
+  },
+  {
+    "name": "XM1: a provenance flag is read by truthiness, so [] and 0 pass",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "def _off(d: dict, *flags: str) -> bool:\n",
+        "def _off(d: dict, *flags: str) -> bool:\n    return all(not d.get(f) for f in flags)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "Xr8: an explicit null flag reads as absence",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return all(f not in d or d[f] is False for f in flags)",
+        "    return all(d.get(f) is None or d.get(f) is False for f in flags)"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Xr8: an explicit `null` flag is not absence — a null-flag question, result or prompt is refused"
+    ]
+  },
+  {
+    "name": "(B) a bad session_id is accepted by the one guard, so mkdir builds a path from it",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if session_dir(root, session_id) is None:\n        return None, f\"UNVERIFIED",
+        "    if False:\n        return None, f\"UNVERIFIED"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 (B): a bad session_id (a path, or over 80 chars) writes NOTHING anywhere"
+    ]
+  },
+  {
+    "name": "(B) the print accepts an unusable session_id",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id):\n        reason = \"UNVERIFIED",
+        "    if not isinstance(session_id, str):\n        reason = \"UNVERIFIED"
+      ]
+    ],
+    "expect": [
+      "a SessionStart input with no usable session_id is UNVERIFIED, and nothing is shown"
+    ]
+  },
+  {
+    "name": "print: another session's receipt is accepted",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif r.get(\"session\") != session_id:\n        reason =",
+        "    elif False:\n        reason ="
+      ]
+    ],
+    "expect": [
+      "⭐ ANOTHER session's receipt: nothing is shown, naming the field `session` and both values"
+    ]
+  },
+  {
+    "name": "print: a receipt older than STALE_AFTER still shows the snapshot",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif age >= STALE_AFTER:",
+        "    elif age > STALE_AFTER:"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 X4-5: the receipt's age must be at least 0 and UNDER STALE_AFTER — the boundary itself is refused"
+    ]
+  },
+  {
+    "name": "print: a receipt dated in the future still shows the snapshot",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if age < 0:",
+        "    if age < -60:"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 X4-5: the receipt's age must be at least 0 and UNDER STALE_AFTER — the boundary itself is refused"
+    ]
+  },
+  {
+    "name": "print: a snapshot whose nonce is not the receipt's is shown",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif sk.get(\"nonce\") != r[\"nonce\"]:",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a snapshot whose nonce is not the receipt's is not shown, naming the field"
+    ]
+  },
+  {
+    "name": "print: the heading claims the compaction again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    L = [f\"NEWEST CAPTURE for this session, taken at {clean(when, 40)} ({rel})\", SESSION_NOT_COMPACTION,",
+        "    L = [f\"COMPACTION HAPPENED at {clean(when, 40)} — items the summary dropped are listed.\", SESSION_NOT_COMPACTION,"
+      ]
+    ],
+    "expect": [
+      "⭐ the print's heading is NEWEST CAPTURE … (N s before this session start), then the fixed bound, verbatim"
+    ]
+  },
+  {
+    "name": "print: the session-is-not-compaction bound is not printed",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "SESSION_NOT_COMPACTION,\n         \"=== COMPACTION STATE",
+        "\n         \"=== COMPACTION STATE"
+      ]
+    ],
+    "expect": [
+      "⭐ the print's heading is NEWEST CAPTURE … (N s before this session start), then the fixed bound, verbatim"
+    ]
+  },
+  {
+    "name": "XR1: the one reader opens a non-regular file",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(st.st_mode):\n            return None, f\"{name} is not a regular file — NOT READ\"",
+        "        if False:\n            pass"
+      ]
+    ],
+    "expect": [
+      "...and each says the artifact is not a regular file, as NOT CAPTURED — never a wait, never a crash"
+    ]
+  },
+  {
+    "name": "XR1: the one reader has no size cap",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if st.st_size > cap:\n            return None, f\"{name} is {st.st_size} bytes, over {cap} — NOT READ\"",
+        "        if False:\n            pass"
+      ]
+    ],
+    "expect": [
+      "an artifact over ARTIFACT_CAP is not read"
+    ]
+  },
+  {
+    "name": "XR1: the print child is not killed at its deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            text, why = run_child(\"--print-child\", payload, root, left(aux_timeout),",
+        "            text, why = run_child(\"--print-child\", payload, root, aux_timeout,"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up"
+    ]
+  },
+  {
+    "name": "XR4: a symlinked component of the session path is followed",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)",
+        "            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 XR4: a symlinked session dir, `compaction` or `.remember` — PreCompact writes NOTHING outside"
+    ]
+  },
+  {
+    "name": "CR1: the capture's calls run in their OWN groups again, out of the parent's kill",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "ss._run(c, w, timeout, own_group=False)",
+        "ss._run(c, w, timeout, own_group=True)"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE"
+    ]
+  },
+  {
+    "name": "X4-1: the stdin byte cap is not applied to a pipe",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                if got > cap:\n                    return None, f\"the payload is over {cap} bytes — NOT READ\"",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 X4-1: a 512 MiB payload to each hook returns rc 0 well under its timeout, and NOTHING is captured from it"
+    ]
+  },
+  {
+    "name": "X4-1: the byte cap is not applied to a payload given as text",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif len(stdin_text) > cap:\n        return None, f\"the payload is over {cap} bytes — NOT READ\"",
+        "    elif False:\n        pass"
+      ]
+    ],
+    "expect": [
+      "read_payload refuses a payload over its cap BEFORE parsing it, from a pipe or a string"
+    ]
+  },
+  {
+    "name": "X4-1: the children get their own timeouts, not what is left of the hook's deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        return max(0.1, min(cap, deadline - time.monotonic() - PUBLISH_MARGIN))",
+        "        return cap"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up"
+    ]
+  },
+  {
+    "name": "C4-F3: the in-flight block is not marked where its categories fail",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "mark=f\" — {NC}\")",
+        "mark=\"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Cr7: in the snapshot and the print, EVERY line saying something was not captured carries NOT CAPTURED"
+    ]
+  },
+  {
+    "name": "C4-F3: NOT CAPTURED is found by searching the text again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f\" — {NC}\")",
+        "        inflight = \"\\n\".join(l + (f\" — {NC}\" if any(w in l for w in (\"CANNOT RUN\", \"TRUNCATED\", \"UNREADABLE\", \"⚠\")) else \"\") for l in ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated).split(\"\\n\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged"
+    ]
+  },
+  {
+    "name": "C4-F5: fetch asks git for the main checkout a second time",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        f_state = ex.submit(ss.fetch, root, gh_run, (main, main_err)) if ss else None",
+        "        f_state = ex.submit(ss.fetch, root, gh_run) if ss else None"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F5: ONE capture asks git for the main checkout ONCE, and that answer heads and reads the ledger"
+    ]
+  },
+  {
+    "name": "DEFER: the print shows nothing at all when the snapshot matches",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        L.append(_strip_keys(snap_text).strip())",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 DEFER: the print mentions NO audit, and shows the snapshot without its keys line"
+    ]
+  }
+]

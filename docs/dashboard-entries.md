@@ -18146,3 +18146,24 @@ Your answers are written into the backlog rows they settle.
 - **The deploy-commit check (backlog #53):** keep waiting for its trigger.
 
 Everything marked "to build" is decided but not built yet. Those rows stay open.
+
+## 2026-10-28
+Before every compaction, a hook now saves what was in flight — the open pull requests, the background jobs, the
+worktrees, the decisions waiting on you, and your own recent messages and answers — and the first thing the next
+window sees is that saved capture, headed "NEWEST CAPTURE for this session". It says plainly that it cannot tell one
+compaction from another inside a session, and it does not judge the summary: a check of what the summary left out was
+built, failed four rounds of review, and is set aside as its own item (backlog #391). Your recorded words are labelled
+as recorded, not proven. None of this has run on a real compaction yet; the first one after this merges is the test.
+<!--tech-->
+Branch `compaction-guards`, PR #425 (backlog #361, its PreCompact fallback). `scripts/compaction-state.py`, two hook
+modes, per session in `.remember/compaction/<session_id>/{receipt.json,snapshot.md}`: `--snapshot` (PreCompact,
+`manual` and `auto`) writes the receipt first, then captures in a child killed at its deadline; `--print` (SessionStart,
+`compact`) shows the snapshot when its nonce is the receipt's and the receipt is 0 s to under 30 min old. Bounds,
+stated: each hook returns within one 13.5 s deadline from its start (stdin capped at 1 MiB); capture calls are killed
+by process group; a process that leaves its group (`setsid`, `setpgid`) is not. Owner answers count only as a non-error
+`tool_result` paired once with a same-session `AskUserQuestion`; pasted blocks are withheld, failing closed; owner
+waits need `WAITS-ON-OWNER:`; the ledger is read from the main checkout. Lines about something not captured carry
+NOT CAPTURED, placed where the category fails. Review: r1 (Codex), r2 (Codex + Claude, a redesign of process bounding
+and per-session files), r3 (an architecture review that withdrew the completeness and compaction-identity claims), r4
+(the split's own bet fired, so the PostCompact audit was deferred). 96 cases and 54 mutations; `session-state.py` 68
+cases and 40 mutations. ⚠ UNVERIFIED: a real compaction (the falsifier in backlog #361's row).
