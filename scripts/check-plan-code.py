@@ -992,7 +992,13 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-28, backlog #363: the logged goal tree joins at 25 — one entry per refusal in the
     # threads grammar, per derived-state rule (merged first, CANNOT RUN, closed, the subject tail),
     # per log rule (fingerprint, incomplete refused), per exit code, and the page's ordering and links.
-    "scripts/goal-tree.py": 25,
+    # ⟳ same day, the 03:52 follow-up: 25 -> 36 — NEEDS YOU (the answered/last-marker/closed rule,
+    # unreadable entries and lines named, the main checkout's ledger, NOT READ is not an all-clear, the
+    # live list over the snapshot's) and the log moved to the main checkout's git-ignored .claude/.
+    # One RETIRED with its subject: the hand-rolled `--git-common-dir` read became
+    # `session-state.main_checkout`, whose refusal the new no-main-checkout entry now pins; and one
+    # for the backlog title escaped twice, found on the real page. Net +11.
+    "scripts/goal-tree.py": 36,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2080,6 +2086,10 @@ EXPECTED_MUTATIONS = {
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
     "scripts/recall-llm.py": 96,
+    # ⟳ 2026-10-28, owner decision D3 (backlog #363): every generated page rebuilt on merge — the
+    # merge match, the threads path, the per-generator timeout, the advisory exit codes, a crashed
+    # generator named, and silence on an unrelated command.
+    "scripts/regen-pages.py": 8,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -4410,6 +4420,7 @@ def _self_test_body() -> int:
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
                                       "scripts/recall-llm.py",
+                                      "scripts/regen-pages.py",
                                       "scripts/session-state.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
@@ -6180,7 +6191,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2455)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2474)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

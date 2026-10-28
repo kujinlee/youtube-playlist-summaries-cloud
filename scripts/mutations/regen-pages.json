@@ -1,0 +1,106 @@
+[
+  {
+    "name": "`gh pr merge` matches inside `gh pr merged`",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "MERGE_RE = re.compile(r\"\\bgh\\s+pr\\s+merge\\b\")",
+        "MERGE_RE = re.compile(r\"gh\\s+pr\\s+merge\")"
+      ]
+    ],
+    "expect": [
+      "⛔ `gh pr merged` is not `gh pr merge`"
+    ]
+  },
+  {
+    "name": "any file whose name ends in goal-threads.md rebuilds the goal tree",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "fp.endswith(\"/\" + THREADS_REL)",
+        "fp.endswith(THREADS_REL)"
+      ]
+    ],
+    "expect": [
+      "⛔ another file named goal-threads.md elsewhere does not"
+    ]
+  },
+  {
+    "name": "every generator gets the default timeout instead of the one asked for",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            rc, tail = run(pages[name], timeout)",
+        "            rc, tail = run(pages[name], TIMEOUT)"
+      ]
+    ],
+    "expect": [
+      "each generator gets its OWN timeout"
+    ]
+  },
+  {
+    "name": "a failed generator makes the HOOK exit non-zero",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if a.all and any(r[\"rc\"] != 0 for r in results):",
+        "        if any(r[\"rc\"] != 0 for r in results):"
+      ]
+    ],
+    "expect": [
+      "⛔ --hook exits 0 even when every generator failed, and the report reaches stdout"
+    ]
+  },
+  {
+    "name": "a hook that cannot run at all exits non-zero",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        return 1 if a.all else 0\n    return 0",
+        "        return 1\n    return 0"
+      ]
+    ],
+    "expect": [
+      "⛔ --hook that cannot run at all still exits 0, and SAYS the pages may be stale"
+    ]
+  },
+  {
+    "name": "a generator that crashed (negative exit) is not named as stale",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    bad = [r for r in results if r[\"rc\"] != 0]",
+        "    bad = [r for r in results if r[\"rc\"] > 0]"
+      ]
+    ],
+    "expect": [
+      "⛔ every failure is NAMED with its exit code, and says the page is stale"
+    ]
+  },
+  {
+    "name": "--all exits 0 when a page did not rebuild",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if a.all and any(r[\"rc\"] != 0 for r in results):\n            return 1",
+        "        if a.all and any(r[\"rc\"] != 0 for r in results):\n            return 0"
+      ]
+    ],
+    "expect": [
+      "--all exits 1 when a page did not rebuild (it is a command, not a hook)"
+    ]
+  },
+  {
+    "name": "an unrelated command still prints a rebuild report",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        if not names:\n            return 0",
+        "        if False:\n            return 0"
+      ]
+    ],
+    "expect": [
+      "--hook on an unrelated command is silent and launches nothing"
+    ]
+  }
+]

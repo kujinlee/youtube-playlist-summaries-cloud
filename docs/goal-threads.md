@@ -3,8 +3,8 @@
 The ONE hand-written input of the goal-tree page (backlog #363). It declares, for each goal the owner
 set, which threads of work serve it and HOW. It declares nothing about state: whether a thread is
 merged, open, red or in flight is DERIVED by `python3 scripts/goal-tree.py --snapshot` from
-`git log origin/master`, `gh pr list` and `.claude/inflight.jsonl`, and logged to
-`docs/goal-tree-log.jsonl`. The page is http://127.0.0.1:7391/goal-tree.
+`git log origin/master`, `gh pr list` and `.claude/inflight.jsonl`, and logged to the main checkout's git-ignored
+`.claude/goal-tree-log.jsonl`. The page is http://127.0.0.1:7391/goal-tree.
 
 Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it fails the snapshot loudly:
 

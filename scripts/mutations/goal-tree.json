@@ -212,19 +212,6 @@
     ]
   },
   {
-    "name": "the ledger is read from the checkout the script runs in, so a worktree run sees none",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "    main = pathlib.Path(out.strip()).parent if rc == 0 and out.strip() else root",
-        "    main = root"
-      ]
-    ],
-    "expect": [
-      "collect reads open PRs, all PR states, the repo and the MAIN checkout's ledger"
-    ]
-  },
-  {
     "name": "main exits 0 after a snapshot that could not run",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -326,6 +313,162 @@
     ],
     "expect": [
       "text in the tree is escaped"
+    ]
+  },
+  {
+    "name": "an ask whose marker is followed by 'answered' still reads as waiting",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            and not re.match(r\"\\W*answered\\b\", s[i + len(NEEDS_OWNER):], re.I))",
+        "            )"
+      ]
+    ],
+    "expect": [
+      "⛔ a marker followed by 'answered' does not"
+    ]
+  },
+  {
+    "name": "the FIRST NEEDS-OWNER marker decides, so an old answered one hides a new ask",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    i = s.rfind(NEEDS_OWNER)\n    return",
+        "    i = s.find(NEEDS_OWNER)\n    return"
+      ]
+    ],
+    "expect": [
+      "⛔ only the LAST marker counts — an old answered one does not clear a new ask"
+    ]
+  },
+  {
+    "name": "a closed row with a leftover marker still waits on the owner",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (not row.get(\"closed\") and i >= 0",
+        "    return (i >= 0"
+      ]
+    ],
+    "expect": [
+      "⛔ a closed row does not wait, marker or not"
+    ]
+  },
+  {
+    "name": "a dashboard entry the grammar could not read is dropped from NEEDS YOU",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "             \"unreadable\": True} for e in entries if e[\"error\"]]",
+        "             \"unreadable\": True} for e in entries if False]"
+      ]
+    ],
+    "expect": [
+      "the dashboard source is gen-dashboard's unresolved(), plus every entry it could not read"
+    ]
+  },
+  {
+    "name": "backlog lines the row parser refused are dropped from NEEDS YOU",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if unread:\n        out.append({\"source\": \"backlog\"",
+        "    if False:\n        out.append({\"source\": \"backlog\""
+      ]
+    ],
+    "expect": [
+      "⭐ NEEDS YOU gathers all three sources, each linked to where it came from"
+    ]
+  },
+  {
+    "name": "no main checkout: the worktree's own (empty) ledger is read instead",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if why:\n        errors[\"ledger\"] = why",
+        "    if False:\n        errors[\"ledger\"] = why"
+      ]
+    ],
+    "expect": [
+      "⛔ no main checkout: the ledger is NOT READ — never read from the worktree instead"
+    ]
+  },
+  {
+    "name": "an empty NEEDS YOU list is an all-clear even when a source was NOT READ",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return \"not-read\" if snap.get(\"needs_not_read\") or \"needs\" not in snap else \"none\"",
+        "    return \"none\""
+      ]
+    ],
+    "expect": [
+      "⛔ an unreadable source is NOT READ, and an empty list is then NOT an all-clear"
+    ]
+  },
+  {
+    "name": "an owner-wait in the ledger is listed again as in flight under no goal",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for e in src[\"ledger\"] if not (_ledger_numbers(e) & nums) and not _SS.waits_on_owner(e)]",
+        "for e in src[\"ledger\"] if not (_ledger_numbers(e) & nums)]"
+      ]
+    ],
+    "expect": [
+      "an owner-wait in the ledger is a need, not 'in flight under no goal'"
+    ]
+  },
+  {
+    "name": "the page shows the newest snapshot's needs even when this run read them live",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    parts.insert(5, needs_html(live if live is not None else newest))",
+        "    parts.insert(5, needs_html(newest))"
+      ]
+    ],
+    "expect": [
+      "a live read's needs are shown over the newest snapshot's"
+    ]
+  },
+  {
+    "name": "the log is written into the checkout the script runs in, a worktree's own",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    log_path = main_root / LOG_REL",
+        "    log_path = root / LOG_REL"
+      ]
+    ],
+    "expect": [
+      "⛔ the log is written to the MAIN checkout's git-ignored .claude/, never the root's"
+    ]
+  },
+  {
+    "name": "a new decision waiting on the owner is not reported in the timeline",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    out += [f\"needs you, new: {r} ({s})\" for s, r in sorted(cn - pn)]",
+        "    out += [f\"needs you, new: {r} ({s})\" for s, r in sorted(pn - pn)]"
+      ]
+    ],
+    "expect": [
+      "needs are reported in the timeline as new and as cleared"
+    ]
+  },
+  {
+    "name": "a backlog title keeps gen-backlog-page's HTML escaping, so the page escapes it twice",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_SS.clean(html.unescape(gb.plain(r[\"title\"])), 140)",
+        "_SS.clean(gb.plain(r[\"title\"]), 140)"
+      ]
+    ],
+    "expect": [
+      "⛔ a title is plain TEXT, not HTML — the page escapes it once, so it is never escaped twice"
     ]
   }
 ]

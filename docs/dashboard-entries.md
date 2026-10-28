@@ -18169,27 +18169,32 @@ and per-session files), r3 (an architecture review that withdrew the completenes
 cases and 40 mutations. ⚠ UNVERIFIED: a real compaction (the falsifier in backlog #361's row).
 
 ## 2026-10-28
-The goal tree is now a page you can open at any time: http://127.0.0.1:7391/goal-tree. The top
-shows every piece of work hung under the request of yours it serves, with each PR and backlog row
-a link and its state read fresh: merged (with the commit), open (with its checks), in flight, or
-waiting. Below it is a timeline, newest first, of what changed between snapshots. Open any entry to
-see the whole tree as it stood then.
+The goal tree is now a page you can open at any time: http://127.0.0.1:7391/goal-tree. At the top
+is one list of everything waiting on a decision only you can make — unanswered dashboard asks,
+jobs paused for you, and backlog items marked as needing you — each linking to where it came from.
+It says "nothing waits on you" only when it could read all three; if one can't be read, it says so.
 
-A snapshot is taken when you ask for `/goal-tree`, after every merge, when the list of threads is
-edited, and when you press Refresh. It is kept only if something changed, so the timeline lists
-changes, not readings. One part is still written by hand: which goal a piece of work belongs to,
-and whether it is a fix, a blocker, bookkeeping or an aside. That lives in `docs/goal-threads.md`.
-Everything about state is read from git and GitHub, and when they can't be reached the page says
-so instead of guessing.
+Below that, every piece of work hangs under the request of yours it serves, with each PR and
+backlog row a link and its state read fresh: merged (with the commit), open (with its checks), in
+flight, or waiting. Further down is a timeline, newest first, of what changed between snapshots;
+open any entry to see the whole tree as it stood then.
+
+Every merge now rebuilds all the generated pages — this one, the dashboard, the backlog, goals and
+features — so none of them describes a world that has moved on. It adds about 18 seconds after a
+merge and never blocks it; a page that fails to rebuild is named. One part is still written by
+hand: which goal a piece of work belongs to and whether it is a fix, a blocker, bookkeeping or an
+aside, in `docs/goal-threads.md`. Folding the old work-lines page into this one is a separate step.
 <!--tech-->
-Backlog #363. `scripts/goal-tree.py` (`--snapshot`, `--page`, `--print`; no flags = snapshot +
-page, which is what the Refresh button runs). Declared input `docs/goal-threads.md` (grammar:
+Backlog #363, plus the owner's decisions D1 (NEEDS YOU) and D3 (rebuild on merge) of 03:47; D2 (retire
+work-lines) is backlog #389. `scripts/goal-tree.py` (`--snapshot`, `--page`, `--print`; no flags =
+snapshot + page, what the Refresh button runs). Declared input `docs/goal-threads.md` (grammar:
 `## GOAL <slug>`, `> YYYY-MM-DD HH:MM "<quote>"`, `- <fix|blocker|bookkeeping|side> · <refs> ·
-<what>[ · waits on <what>]`, malformed → exit 1 naming every bad line). Log
-`docs/goal-tree-log.jsonl`, appended only when the fingerprint (everything but time and master head)
-changes; an incomplete read is never appended (exit 2). Triggers: `.claude/commands/goal-tree.md`,
-the PostToolUse hook `.claude/hooks/goal-tree-snapshot.sh` (Bash `gh pr merge*`, and Edit/Write of
-the threads file; always exit 0), and `explainer-serve.py` `REGENERABLE`. Registered in
-check-selftest-counts, check-fixture-variation, CI, and `scripts/mutations/goal-tree.json` (25
-entries, 25 killed by the case each names). The begin-plan relation markers this row first proposed
-were not built: no plan had been armed since 2026-10-25.
+<what>[ · waits on <what>]`, malformed → exit 1 naming every bad line). Log: the MAIN checkout's
+git-ignored `.claude/goal-tree-log.jsonl` (via `session-state.main_checkout`), appended only when the
+fingerprint changes; an incomplete read is never appended (exit 2). NEEDS YOU reuses
+`gen-dashboard.unresolved`, `session-state.waits_on_owner` and `gen-backlog-page.parse` — no second
+copy of any rule. `scripts/regen-pages.py` + `.claude/hooks/regen-pages.sh` (`--self-test`) run every
+`explainer-serve.REGENERABLE` generator concurrently with a 120s timeout each; measured 18.1s wall
+(backlog-table 17.9s, goals 11.7s, dashboard 7.0s, goal-tree 5.2s, features 1.6s). Registered in
+check-selftest-counts, check-fixture-variation, CI, and mutation manifests (36 + 8, all killed by
+the case each names).

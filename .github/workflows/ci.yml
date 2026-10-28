@@ -813,6 +813,9 @@ jobs:
       # machine; CI runs the fixture cases, which inject every source and run no git and no gh.
       - name: goal-tree self-test
         run: python3 scripts/goal-tree.py --self-test
+      # Rebuilding every generated page on merge (owner decision D3): fake generators only.
+      - name: regen-pages self-test
+        run: python3 scripts/regen-pages.py --self-test
 
       # The mutation manifest runs against the DELIVERED scripts. It replaced a step that
       # required byte-identity between these files and a 3,170-line planning document —

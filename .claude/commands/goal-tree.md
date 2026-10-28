@@ -13,8 +13,9 @@ python3 scripts/goal-tree.py --snapshot --page --print
 ```
 
 It reads the RELATIONS from `docs/goal-threads.md` and DERIVES every leaf's state from `git log origin/master`,
-`gh pr list` and `.claude/inflight.jsonl`; it logs the snapshot to `docs/goal-tree-log.jsonl` only when the tree
-changed, and rebuilds http://127.0.0.1:7391/goal-tree (current tree on top, timeline of changes below).
+`gh pr list` and `.claude/inflight.jsonl`; it logs the snapshot to the main checkout's git-ignored `.claude/goal-tree-log.jsonl` only when the tree
+changed, and rebuilds http://127.0.0.1:7391/goal-tree (NEEDS YOU on top, then the current tree, then the timeline).
+It prints the NEEDS YOU block first: decisions only the owner can make, open now — lead the reply with it.
 
 1. **The tree is the script's output, not mine.** Copy its tree into a fenced block unchanged. ⛔ If it exits 2
    (CANNOT RUN), say so above the tree — its leaves then read CANNOT RUN and nothing was logged. If it exits 1,

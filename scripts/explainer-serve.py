@@ -166,9 +166,10 @@ PAGE_SOURCES = {
     # the page stale with no banner. Every SCRIPTED change rebuilds it at the writer instead
     # (`check-plan-progress.refresh_work_lines`), and the Refresh button covers the hand edit.
     "work-lines": [],
-    # The declared threads and the snapshot log; the STATES also move with gh and git, which no file
-    # carries, so a fresh banner here means "nothing declared or logged since", not "gh agrees".
-    "goal-tree": ["docs/goal-threads.md", "docs/goal-tree-log.jsonl"],
+    # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
+    # every-source-is-a-real-file case below would refuse), and the STATES move with gh and git, which
+    # no file carries — so "fresh" here means "nothing re-declared since", not "gh agrees".
+    "goal-tree": ["docs/goal-threads.md"],
 }
 # ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
 # keys whose source list is empty, so an empty list can never appear on another page silently.

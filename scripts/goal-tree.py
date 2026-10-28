@@ -4,7 +4,7 @@
     python3 scripts/goal-tree.py --snapshot --page --print   # what /goal-tree runs
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log, no gh, no git
-    python3 scripts/goal-tree.py --self-test                 # 85 cases
+    python3 scripts/goal-tree.py --self-test                 # 110 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -27,6 +27,18 @@ last complete snapshot and says above it that the live read failed, and why.
 
 ⭐ THE LOG STAYS MEANINGFUL: a snapshot whose tree equals the newest logged one (ignoring its time and
 the master head it was read at) is not appended. The timeline therefore lists changes, not readings.
+The log is `.claude/goal-tree-log.jsonl` in the MAIN checkout (`session-state.main_checkout`): git-ignored,
+so a log appended on every merge churns no tracked file, and one log however many worktrees append.
+
+⭐ NEEDS YOU, at the top of the page (owner decision D1, 2026-10-28): ONE list of decisions only the owner
+can make, open now, from three sources, each read by its owner's code and never a copy of it:
+  * the dashboard's unresolved asks — `gen-dashboard.unresolved()` — plus every entry the store's grammar
+    could not read, NAMED as unreadable (it may be an ask);
+  * in-flight entries marked `WAITS-ON-OWNER:` — `session-state.waits_on_owner()`, main checkout's ledger;
+  * open backlog rows still marked NEEDS-OWNER (`needs_owner`), parsed by `gen-backlog-page.parse`, with
+    any line that parser refused to read reported as unreadable.
+"Nothing waits on you" is said only when ALL THREE were read; a source that cannot be read is NOT READ,
+and a snapshot with a NOT READ source is not logged, like any other CANNOT RUN.
 
 TRIGGERS: `/goal-tree` (`.claude/commands/goal-tree.md`) runs it before printing; a PostToolUse hook
 (`.claude/hooks/goal-tree-snapshot.sh`) runs it after `gh pr merge` and after an edit of the threads file;
@@ -58,7 +70,14 @@ import page_chrome  # noqa: E402
 
 ROOT = SCRIPTS.parent
 THREADS_REL = "docs/goal-threads.md"
-LOG_REL = "docs/goal-tree-log.jsonl"
+# ⛔ GIT-IGNORED, IN THE MAIN CHECKOUT (the coordinator's decision, 2026-10-28): a log appended on every
+# merge must not churn a tracked file, and a worktree run must append to the ONE log the page reads.
+LOG_REL = ".claude/goal-tree-log.jsonl"
+DASHBOARD_REL = "docs/dashboard-entries.md"
+BACKLOG_REL = "docs/backlog.md"
+NEEDS_OWNER = "NEEDS-OWNER"
+# The three sources of the NEEDS YOU list; "nothing waits on you" is said only when ALL were read.
+NEEDS_SOURCES = ("dashboard", "ledger", "backlog")
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "goal-tree.html"
 RELATIONS = ("fix", "blocker", "bookkeeping", "side")
 OPEN_LIMIT = 100
@@ -241,9 +260,10 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
                   for n, p in sorted(src["open"].items()) if n not in named_prs]
     nums = {n for g in out_goals for t in g["threads"] for _, n in t["refs"]}
     loose = [{"id": _SS.clean(e.get("id", ""), 60), "what": _SS.clean(e.get("what", ""), 160)}
-             for e in src["ledger"] if not (_ledger_numbers(e) & nums)]
+             for e in src["ledger"] if not (_ledger_numbers(e) & nums) and not _SS.waits_on_owner(e)]
     return {"at": now, "head": src.get("head"), "repo": src.get("repo"), "goals": out_goals,
-            "undeclared": undeclared, "inflight_loose": loose,
+            "undeclared": undeclared, "inflight_loose": loose, "needs": list(src.get("needs") or []),
+            "needs_not_read": [f"{k}: {src['errors'][k]}" for k in NEEDS_SOURCES if src["errors"].get(k)],
             "ledger_problems": list(src.get("ledger_problems") or []),
             "cannot": [f"{k}: {v}" for k, v in sorted(src["errors"].items()) if v]}
 
@@ -276,10 +296,68 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     pu, cu = {u["pr"] for u in prev["undeclared"]}, {u["pr"] for u in cur["undeclared"]}
     out += [f"undeclared PR #{n} appeared" for n in sorted(cu - pu)]
     out += [f"undeclared PR #{n} is gone" for n in sorted(pu - cu)]
+    pn = {(n["source"], n["ref"]) for n in prev.get("needs") or []}
+    cn = {(n["source"], n["ref"]) for n in cur.get("needs") or []}
+    out += [f"needs you, new: {r} ({s})" for s, r in sorted(cn - pn)]
+    out += [f"needs you, cleared: {r} ({s})" for s, r in sorted(pn - cn)]
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
     out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
     return out or ["no change a reader would see (the stored tree differs only in wording)"]
+
+
+# ── NEEDS YOU: a decision only the owner can make, open now (owner decision D1, 2026-10-28) ────
+def needs_owner(row: dict) -> bool:
+    """PURE. Does this backlog row still wait on the OWNER? Open, carries `NEEDS-OWNER`, and the text
+    after its LAST marker does not begin `answered`. ⚠ BOUND: a row whose decision was recorded in some
+    other wording, with the marker left in place, still reads as waiting — the marker is the claim."""
+    s = row.get("status") or ""
+    i = s.rfind(NEEDS_OWNER)
+    return (not row.get("closed") and i >= 0
+            and not re.match(r"\W*answered\b", s[i + len(NEEDS_OWNER):], re.I))
+
+
+def needs_from_dashboard(text: str) -> list[dict]:
+    """The dashboard's unresolved asks, by `gen-dashboard.unresolved()` — and every entry the store's
+    own grammar could not read, NAMED as unreadable rather than dropped (it may be an ask)."""
+    gd = _sibling("gen-dashboard")
+    entries = gd.parse_entries(text)
+    out = [{"source": "dashboard", "ref": e["id"], "text": _SS.clean(e.get("title") or "", 160),
+            "href": f"/dashboard#{gd._slug(e['id'])}", "unreadable": False}
+           for e in gd.unresolved(entries)]
+    out += [{"source": "dashboard", "ref": e["id"] or e.get("would_be_id") or "an entry with no id",
+             "text": "could not be read: " + _SS.clean(e["error"], 160),
+             "href": f"/dashboard#{gd._slug(e['id'])}" if e["id"] else "/dashboard",
+             "unreadable": True} for e in entries if e["error"]]
+    return out
+
+
+def needs_from_ledger(entries: list[dict]) -> list[dict]:
+    """In-flight entries marked `WAITS-ON-OWNER:` — session-state's own predicate, not a copy."""
+    return [{"source": "ledger", "ref": _SS.clean(e.get("id", ""), 60),
+             "text": _SS.clean(e["what"][len(_SS.OWNER_MARKER):], 200), "href": None,
+             "unreadable": False} for e in entries if _SS.waits_on_owner(e)]
+
+
+def needs_from_backlog(text: str) -> list[dict]:
+    """Open rows still marked NEEDS-OWNER, parsed by gen-backlog-page's ONE row parser; any line that
+    parser refused to read is reported as unreadable, never silently skipped."""
+    gb = _sibling("gen-backlog-page")
+    unread: list[str] = []
+    rows = gb.parse(text.split("\n"), unread)
+    out = []
+    for r in rows:
+        if needs_owner(r):
+            tail = r["status"][r["status"].rfind(NEEDS_OWNER) + len(NEEDS_OWNER):].lstrip(" —-")
+            out.append({"source": "backlog", "ref": f"backlog #{r['num']}",
+                        "text": _SS.clean(html.unescape(gb.plain(r["title"])), 140) + " — "
+                                + _SS.clean(tail, 160),
+                        "href": f"/backlog-table#i{r['num']}", "unreadable": False})
+    if unread:
+        out.append({"source": "backlog", "ref": f"{len(unread)} line(s) of {BACKLOG_REL}",
+                    "text": "could not be read by the row parser, so a row waiting on you may be among them",
+                    "href": "/backlog-table", "unreadable": True})
+    return out
 
 
 # ── reading the world (the only impure part) ──────────────────────────────────────────────────
@@ -291,7 +369,8 @@ def collect(root: pathlib.Path, run=None) -> dict:
     run = run or _SS._run
     errors: dict[str, str] = {}
     src = {"merged_by_pr": None, "merged_rows": [], "open": {}, "all": {}, "all_merge_sha": {},
-           "ledger": [], "ledger_problems": [], "head": None, "repo": None, "errors": errors}
+           "ledger": [], "ledger_problems": [], "needs": [], "head": None, "repo": None,
+           "main": root, "errors": errors}
     rc, out = run(["git", "fetch", "--quiet", "origin", "master"], root, 60)
     if rc != 0:
         errors["merged"] = f"git fetch origin master exited {rc}: {_SS.clean(out, 160)}"
@@ -329,11 +408,27 @@ def collect(root: pathlib.Path, run=None) -> dict:
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
         errors["gh"] = f"gh pr list: {_SS.clean(exc, 160)}"
         src["open"] = {}
-    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, 10)
-    # The ledger is git-ignored, so it lives in the MAIN checkout; a worktree run reads it there.
-    main = pathlib.Path(out.strip()).parent if rc == 0 and out.strip() else root
-    entries, problems, _raw = _SS.read_ledger(main / ".claude" / "inflight.jsonl")
-    src["ledger"], src["ledger_problems"] = entries, problems
+    # The ledger is git-ignored, so it lives in the MAIN checkout; session-state names it (one rule).
+    main, why = _SS.main_checkout(root, run)
+    src["main"] = main
+    if why:
+        errors["ledger"] = why
+    else:
+        data, why = _SS._read_whole(main / _SS.LEDGER_REL)
+        if data is None:
+            errors["ledger"] = why
+        else:
+            src["ledger"], src["ledger_problems"], _raw = _SS._parse(data)
+    needs: list[dict] = []
+    for key, rel, fn in (("dashboard", DASHBOARD_REL, needs_from_dashboard),
+                         ("backlog", BACKLOG_REL, needs_from_backlog)):
+        try:
+            needs += fn((root / rel).read_text(encoding="utf-8"))
+        except Exception as exc:                  # noqa: BLE001 - NOT READ, named, never "none"
+            errors[key] = f"{rel} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
+    if "ledger" not in errors:
+        needs += needs_from_ledger(src["ledger"])
+    src["needs"] = needs
     return src
 
 
@@ -424,8 +519,53 @@ def tree_lines(snap: dict) -> list[str]:
     return lines[:-1] if lines and lines[-1] == "" else lines
 
 
+def needs_state(snap: dict) -> str:
+    """PURE. "items", "none" (all three sources read, nothing found) or "not-read" (empty, and at
+    least one source was NOT READ — which is never reported as nothing)."""
+    if snap.get("needs"):
+        return "items"
+    return "not-read" if snap.get("needs_not_read") or "needs" not in snap else "none"
+
+
+def needs_lines(snap: dict) -> list[str]:
+    """PURE. The NEEDS YOU block as text, for --print; the page draws the same items as links."""
+    st, items = needs_state(snap), snap.get("needs") or []
+    head = {"items": f"NEEDS YOU — {len(items)} decision(s) only you can make, open now",
+            "none": "NEEDS YOU — nothing waits on you (dashboard asks, the in-flight ledger and the "
+                    "backlog were all read)",
+            "not-read": "NEEDS YOU — NOT KNOWN: a source was NOT READ, so an empty list here is not "
+                        "an all-clear"}[st]
+    out = [head]
+    for i, n in enumerate(items):
+        out.append(("└─ " if i == len(items) - 1 else "├─ ")
+                   + ("⚠ UNREADABLE " if n["unreadable"] else "")
+                   + f'[{n["source"]}] {n["ref"]} · {n["text"]}')
+    out += [f"⚠ NOT READ — {w}" for w in snap.get("needs_not_read") or []]
+    return out
+
+
+def needs_html(snap: dict) -> str:
+    st, items = needs_state(snap), snap.get("needs") or []
+    lines = needs_lines(snap)
+    parts = [f'<section class="needs {st}"><h2>{html.escape(lines[0])}</h2>']
+    if items:
+        parts.append("<ul>")
+        for n in items:
+            ref = (f'<a href="{html.escape(n["href"], quote=True)}">{html.escape(n["ref"])}</a>'
+                   if n.get("href") else f'<code>{html.escape(n["ref"])}</code> '
+                   f'<span class="src">(.claude/inflight.jsonl)</span>')
+            parts.append(f'<li{" class=unreadable" if n["unreadable"] else ""}>'
+                         f'<span class="src">{html.escape(n["source"])}</span> {ref} · '
+                         f'{"⚠ UNREADABLE — " if n["unreadable"] else ""}{html.escape(n["text"])}</li>')
+        parts.append("</ul>")
+    parts += [f'<p class="warn">⚠ NOT READ — {html.escape(w)}</p>'
+              for w in snap.get("needs_not_read") or []]
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def render_text(snap: dict) -> str:
-    return "\n".join(tree_lines(snap))
+    return "\n".join(needs_lines(snap) + [""] + tree_lines(snap))
 
 
 def _html_line(line: str, repo: str | None) -> str:
@@ -458,6 +598,9 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
         parts.append('<p class="warn">⚠ The live read at ' + html.escape(live["at"]) + ' could NOT '
                      'run, so it was not logged: ' + html.escape("; ".join(live["cannot"])) +
                      '. The tree below is the newest COMPLETE snapshot.</p>')
+    # ⭐ NEEDS YOU FIRST, above the tree (owner decision D1): read from THIS run when there was one,
+    # complete or not, because a decision that appeared since the newest snapshot is the one to see.
+    parts.insert(5, needs_html(live if live is not None else newest))
     parts += ['<h2>Now</h2>', render_tree_html(newest), '<h2>Timeline</h2>',
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed.</p>']
     for i in range(len(log) - 1, -1, -1):
@@ -496,6 +639,13 @@ details.snap{border-bottom:1px solid var(--rule);padding:.35rem 0}
 details.snap summary{cursor:pointer;font-size:.9rem}
 details.snap time{font-family:var(--mono);font-size:.78rem;color:var(--ink-faint)}
 details.snap ul{font-size:.85rem;margin:.4rem 0}
+section.needs{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--pending);
+              border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
+section.needs.none{border-left-color:var(--rule)}
+section.needs h2{margin:.5rem 0}
+section.needs ul{margin:.3rem 0;padding-left:1.1rem;font-size:.9rem}
+section.needs li{margin:.2rem 0}
+section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
 """
 
 
@@ -526,7 +676,11 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
     if not (a.snapshot or a.page or a.print_):
         a.snapshot = a.page = True
     now = now or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-    log_path = root / LOG_REL
+    main_root, why = _SS.main_checkout(root, run or _SS._run)
+    if why:
+        print(f"CANNOT RUN — the log lives in the MAIN checkout's {LOG_REL}, and {why}.")
+        return 2
+    log_path = main_root / LOG_REL
     rc, live = 0, None
     try:
         if a.snapshot:
@@ -559,6 +713,17 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             return 2
         print(render_text(shown))
     return rc
+
+
+# Fixtures for the NEEDS YOU sources, in each source's real grammar.
+DASH_FIXTURE = ("## 2026-10-01 [needs-you]\nPick one.\n\n## 2026-10-02 [needs-you]\nAnother.\n\n"
+                "## 2026-10-03 [resolved: 2026-10-02/1]\nDone.\n\n## 2026-10-04 [bogus-flag]\nx\n")
+BACKLOG_FIXTURE = ("# B\n\n## Items\n\n| # | Item | Touches | Size | Bundle | Status |\n"
+                   "|---|---|---|---|---|---|\n"
+                   "| 5 | **Pick a name** — body | x | S | (t) | NEEDS-OWNER — waits on you |\n"
+                   "| 6 | **Done one** | x | S | (t) | NEEDS-OWNER — answered 10-27 |\n"
+                   "| 7 | ✅ **Closed** | x | S | (t) | ✅ fixed NEEDS-OWNER — old |\n"
+                   "| 8 | **Plain** | x | S | (t) | OPEN |\n| x9 | broken row | x |\n")
 
 
 # ── self-test ─────────────────────────────────────────────────────────────────────────────────
@@ -768,8 +933,57 @@ def _self_test_body() -> int:
     case("the ledger entry going away is reported",
          "no longer in flight: loose-7" in changes(snap, dict(snap, inflight_loose=[])), True)
 
+    # ── NEEDS YOU ────────────────────────────────────────────────────────────────────────────
+    case("an open row marked NEEDS-OWNER waits on the owner",
+         needs_owner({"status": "audited: NEEDS-OWNER — pick one", "closed": False}), True)
+    case("⛔ a marker followed by 'answered' does not", needs_owner(
+        {"status": "NEEDS-OWNER — answered 2026-10-27", "closed": False}), False)
+    case("⛔ only the LAST marker counts — an old answered one does not clear a new ask", needs_owner(
+        {"status": "NEEDS-OWNER — answered · later: NEEDS-OWNER — a new question", "closed": False}), True)
+    case("⛔ a closed row does not wait, marker or not",
+         needs_owner({"status": "✅ NEEDS-OWNER — x", "closed": True}), False)
+    case("a row without the marker does not wait", needs_owner({"status": "OPEN", "closed": False}),
+         False)
+    case("the dashboard source is gen-dashboard's unresolved(), plus every entry it could not read",
+         [(n["ref"], n["unreadable"]) for n in needs_from_dashboard(DASH_FIXTURE)],
+         [("2026-10-01/1", False), ("2026-10-04/1", True)])
+    case("a backlog need carries the row's title and the clause after the marker",
+         needs_from_backlog(BACKLOG_FIXTURE)[0]["text"], "Pick a name — waits on you")
+    case("the ledger source is session-state's WAITS-ON-OWNER predicate, marker stripped",
+         [(n["ref"], n["text"]) for n in needs_from_ledger(
+             [{"id": "a", "what": "WAITS-ON-OWNER: choose"}, {"id": "b", "what": "owner said hi"}])],
+         [("a", "choose")])
+    case("⛔ a title is plain TEXT, not HTML — the page escapes it once, so it is never escaped twice",
+         needs_from_backlog(BACKLOG_FIXTURE.replace("**Pick a name**", "**Pick O'Brien's name**"))[0]
+         ["text"].startswith("Pick O'Brien's name"), True)
+    case("...and the clause is the row's own, not a constant",
+         needs_from_backlog(BACKLOG_FIXTURE.replace("waits on you", "pick X or Y"))[0]["text"],
+         "Pick a name — pick X or Y")
+    case("an empty dashboard store has no asks", needs_from_dashboard(""), [])
+    case("an empty ledger has no owner-waits", needs_from_ledger([]), [])
+    _ns = derive(goals, src(needs=[]), "t")
+    case("⭐ an empty list read from ALL three sources says nothing waits on you",
+         (needs_state(_ns), needs_lines(_ns)[0].startswith("NEEDS YOU — nothing waits on you")),
+         ("none", True))
+    _nd = derive(goals, src(needs=[{"source": "backlog", "ref": "backlog #5", "text": "t",
+                                     "href": "/backlog-table#i5", "unreadable": False}]), "t")
+    case("needs are reported in the timeline as new and as cleared",
+         (changes(_ns, _nd)[0], changes(_nd, _ns)[0]),
+         ("needs you, new: backlog #5 (backlog)", "needs you, cleared: backlog #5 (backlog)"))
+    case("a list with items says how many", needs_lines(_nd)[:2],
+         ["NEEDS YOU — 1 decision(s) only you can make, open now", "└─ [backlog] backlog #5 · t"])
+    _pg = render_page([_ns, _nd], "t")
+    case("⭐ the NEEDS YOU list is at the top, above the tree, and its items link to their source",
+         (_pg.index('<section class="needs') < _pg.index("<h2>Now</h2>"),
+          '<a href="/backlog-table#i5">backlog #5</a>' in _pg), (True, True))
+    case("a live read's needs are shown over the newest snapshot's",
+         "nothing waits on you" in render_page([_nd], "t", _ns), True)
+
     # ── rendering ────────────────────────────────────────────────────────────────────────────
-    txt = render_text(snap)
+    txt = "\n".join(tree_lines(snap))
+    case("--print leads with the NEEDS YOU block, then the tree",
+         [ln.split(" — ")[0] for ln in render_text(snap).splitlines()[:3]],
+         ["NEEDS YOU", "", 'GOAL alpha-one (2026-10-26 09:51) "do the first thing"'])
     case("the tree's root is the goal's own words, quoted, with its time",
          txt.splitlines()[0], 'GOAL alpha-one (2026-10-26 09:51) "do the first thing"')
     case("each relation is a branch, and the last one closes with └─",
@@ -777,6 +991,8 @@ def _self_test_body() -> int:
     case("a leaf carries its glyph, refs, what and derived detail",
          "│  ├─ ✅ backlog #10, PR #20 · the first fix — merged aaaa111" in txt, True)
     case("the undeclared section is drawn", "UNDECLARED — open PRs no goal names" in txt, True)
+    case("a tree drawn from a later snapshot shows ITS states",
+         any("✅ PR #21 · an aside — merged dddd444" in ln for ln in tree_lines(flipped)), True)
     case("a CANNOT RUN source is printed in the tree",
          "⚠ CANNOT RUN — gh: gh pr list" in render_text(derive(goals, gh_down, "t")), True)
     case("PR refs link to GitHub, backlog refs to the backlog page",
@@ -830,7 +1046,12 @@ def _self_test_body() -> int:
         r = pathlib.Path(d)
         # The ledger lives in the MAIN checkout, which is NOT `root` here — as in a worktree run.
         (r / "main" / ".claude").mkdir(parents=True)
-        (r / "main" / ".claude" / "inflight.jsonl").write_text('{"id": "build-12", "what": "w"}\n')
+        (r / "main" / ".git").mkdir()
+        (r / "main" / ".claude" / "inflight.jsonl").write_text(
+            '{"id": "build-12", "what": "w"}\n{"id": "ask-1", "what": "WAITS-ON-OWNER: pick A or B"}\n')
+        (r / "docs").mkdir()
+        (r / DASHBOARD_REL).write_text(DASH_FIXTURE)
+        (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
         ok = [(["git", "fetch"], (0, "")),
               (["git", "log"], (0, "abc1234\tone (backlog #10) (#20)\nabc0000\tno pr here\n")),
               (["gh", "pr", "list", "--state", "open"], (0, '[{"number": 21, "title": "t"}]')),
@@ -843,11 +1064,33 @@ def _self_test_body() -> int:
              (s["merged_by_pr"], s["head"]), ({20: "abc1234"}, "abc1234"))
         case("collect reads open PRs, all PR states, the repo and the MAIN checkout's ledger",
              (sorted(s["open"]), s["all"], s["repo"], [e["id"] for e in s["ledger"]], s["errors"]),
-             ([21], {22: "CLOSED"}, "o/r", ["build-12"], {}))
+             ([21], {22: "CLOSED"}, "o/r", ["build-12", "ask-1"], {}))
+        case("⭐ NEEDS YOU gathers all three sources, each linked to where it came from",
+             [(n["source"], n["ref"], n["href"]) for n in s["needs"]],
+             [("dashboard", "2026-10-01/1", "/dashboard#2026-10-01-1"),
+              ("dashboard", "2026-10-04/1", "/dashboard#2026-10-04-1"),
+              ("backlog", "backlog #5", "/backlog-table#i5"),
+              ("backlog", "1 line(s) of docs/backlog.md", "/backlog-table"),
+              ("ledger", "ask-1", None)])
+        case("an owner-wait in the ledger is a need, not 'in flight under no goal'",
+             [u["id"] for u in derive(goals, s, "t")["inflight_loose"]], ["build-12"])
+        run_nogit, _ = fake(ok[:-1] + [(["git", "rev-parse"], (128, "not a git repository"))])
+        s_nogit = collect(r, run_nogit)
+        case("⛔ no main checkout: the ledger is NOT READ — never read from the worktree instead",
+             (s_nogit["errors"].get("ledger", "").startswith("git rev-parse"), s_nogit["ledger"]),
+             (True, []))
         run_nofetch, calls = fake([(["git", "fetch"], (128, "fatal: unable to access"))] + ok[2:])
         s = collect(r / "main", run_nofetch)
         case("⛔ a failed fetch is a CANNOT RUN source, and the stale origin/master is NOT read",
              ("merged" in s["errors"], ["git", "log", "origin/master"] in calls), (True, False))
+        (r / DASHBOARD_REL).rename(r / "docs" / "moved.md")
+        s_nodash = collect(r, run_ok)
+        snap_nodash = derive(goals, dict(s_nodash, needs=[]), "t")
+        case("⛔ an unreadable source is NOT READ, and an empty list is then NOT an all-clear",
+             (s_nodash["errors"].get("dashboard", "").startswith(f"{DASHBOARD_REL} NOT READ"),
+              needs_state(snap_nodash), "nothing waits on you" in render_text(snap_nodash)),
+             (True, "not-read", False))
+        (r / "docs" / "moved.md").rename(r / DASHBOARD_REL)
         run_502, _ = fake(ok[:2] + [(["gh", "pr", "list", "--state", "open"], (1, "HTTP 502"))] + ok[3:])
         case("⛔ a failed gh is a CANNOT RUN source, never an empty PR list read as 'none open'",
              collect(r, run_502)["errors"].get("gh", "").startswith("gh pr list: exited 1"), True)
@@ -855,7 +1098,6 @@ def _self_test_body() -> int:
         case("⛔ unparseable gh output is CANNOT RUN too", "gh" in collect(r, run_junk)["errors"], True)
 
         # ── main, end to end over the fixture world ─────────────────────────────────────────
-        (r / "docs").mkdir()
         (r / THREADS_REL).write_text(good)
         out = r / "page.html"
         run, _ = fake(ok)
@@ -875,18 +1117,25 @@ def _self_test_body() -> int:
         with contextlib.redirect_stdout(buf):
             rc_down = main(["--snapshot", "--page", "--out", str(out)], root=r, run=run, now="2026-10-28 09:10")
         case("⛔ main exits 2 when a source cannot run, logs nothing, and the page says why",
-             (rc_down, len(read_log(r / LOG_REL)), "could NOT run" in out.read_text()), (2, 1, True))
+             (rc_down, len(read_log(r / "main" / LOG_REL)), "could NOT run" in out.read_text()), (2, 1, True))
+        case("⛔ the log is written to the MAIN checkout's git-ignored .claude/, never the root's",
+             ((r / "main" / LOG_REL).is_file(), (r / LOG_REL).exists()), (True, False))
         (r / THREADS_REL).write_text(good + "stray\n")
         with contextlib.redirect_stdout(io.StringIO()):
             rc_bad = main(["--snapshot"], root=r, run=fake(ok)[0])
         case("⛔ a malformed threads file exits 1, loudly", rc_bad, 1)
-        (r / LOG_REL).unlink()
+        (r / "main" / LOG_REL).unlink()
         with contextlib.redirect_stdout(io.StringIO()):
-            rc_empty = main(["--page", "--out", str(out)], root=r)
+            rc_empty = main(["--page", "--out", str(out)], root=r, run=run_ok)
         case("⛔ --page over an empty log is CANNOT RUN, and renders nothing", rc_empty, 2)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc_none = main(["--snapshot"], root=r / "main", run=run_ok)
+        buf_nomain = io.StringIO()
+        with contextlib.redirect_stdout(buf_nomain):
+            rc_nomain = main(["--page"], root=r, run=run_nogit)
+        case("⛔ no main checkout to hold the log is CANNOT RUN", (rc_nomain, "MAIN checkout" in
+             buf_nomain.getvalue()), (2, True))
         case("⛔ a checkout with no threads file is CANNOT RUN, saying which file",
              (rc_none, f"{THREADS_REL} does not exist" in buf.getvalue()), (2, True))
 
