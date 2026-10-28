@@ -532,7 +532,9 @@ jobs:
       # the owner's decision (dashboard ask 2026-10-19/9). It is advisory and always exits 0, so THIS
       # STEP stays the one that fails. ⚠ It sees only writes made THROUGH THE TOOL — the backlog #309
       # instance arrived by another route, so a working-tree overflow from an editor or another
-      # agent is still unobserved until the next tool write to the index.
+      # agent is unobserved until a later tool write. ⚠ It identifies the index by FILE IDENTITY
+      # within the checkout containing the edited path (so symlink, case and in-checkout hard-link
+      # aliases are seen); a hard link to the index from OUTSIDE every checkout is not (PR #430 r4).
       - name: Memory index injection budget
         run: python3 scripts/check-memory-index-budget.py
 

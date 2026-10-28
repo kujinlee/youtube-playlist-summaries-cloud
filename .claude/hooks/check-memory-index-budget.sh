@@ -37,7 +37,7 @@
 # advisory is ever observed reaching nobody, that observation refutes this choice.
 #
 #     echo '{"tool_input":{"file_path":"docs/memory/MEMORY.md"}}' | .claude/hooks/check-memory-index-budget.sh
-#     .claude/hooks/check-memory-index-budget.sh --self-test   # 20 cases
+#     .claude/hooks/check-memory-index-budget.sh --self-test   # 24 cases
 # ⟳ PR #430 r3 (Codex), THRASHING on path handling: rounds 1–3 each found one more place where BASH
 # mangled a pathname — a lexical match before resolution, `$(dirname …)` and `$(…)` stripping a
 # trailing newline from a checkout name and then from a FILENAME, an `elif` that kept the lexical
@@ -55,6 +55,7 @@ import json, os, subprocess, sys, tempfile
 GUARD = os.path.join("scripts", "check-memory-index-budget.py")
 SUFFIX = ("docs", "memory", "MEMORY.md")
 TIMEOUT = 20
+OUT_CAP = 4000
 
 
 def is_index(p):
@@ -78,8 +79,25 @@ def root_for(p):
         d = up
 
 
+def candidates(*paths):
+    """Each checkout that CONTAINS one of these paths (walking up from it), in order, without repeats."""
+    seen = []
+    for p in paths:
+        r = root_for(p) if p else None
+        if r and r not in seen:
+            seen.append(r)
+    return seen
+
+
 def decide(file_path, pwd):
-    """-> None (not an index edit: silent), ("measure", root), or ("unmeasured", reason)."""
+    """-> None (not an index edit: silent), ("measure", root), or ("unmeasured", reason).
+
+    ⟳ PR #430 r4 (Codex), SPLIT: the index is identified by FILE IDENTITY, never by spelling. Names
+    always miss an alias — a case alias on a case-insensitive filesystem, a hard link — so the edited
+    file is compared with `samefile` against the index of each checkout CONTAINING it (walking up from
+    its lexical and its resolved path). ⚠ STATED BOUND: a hard link to an index from OUTSIDE every
+    checkout is not found by any walk, so such a write is unobserved.
+    """
     if not isinstance(file_path, str) or not file_path:
         return None
     lexical = absolute(file_path, pwd)
@@ -87,17 +105,18 @@ def decide(file_path, pwd):
         real = os.path.realpath(lexical)
     except (OSError, ValueError):
         real = None
-    if not (is_index(lexical) or (real and is_index(real))):
-        return None
-    # The RESOLVED file is the subject whenever resolution succeeded; the lexical path only when it did not.
-    target = real if real else lexical
-    if not is_index(target):
-        return ("unmeasured", f"{file_path!r} resolves to {target!r}, which is not a checkout's docs/memory/MEMORY.md, "
-                              "so no checker measures it")
-    root = root_for(target)
-    if root is None:
-        return ("unmeasured", f"{target!r} was edited but no {GUARD} was found above it")
-    return ("measure", root)
+    for root in candidates(lexical, real):
+        index = os.path.join(root, *SUFFIX)
+        try:
+            if os.path.samefile(lexical, index):
+                return ("measure", root)
+        except (OSError, ValueError):
+            continue
+    if is_index(lexical) or (real and is_index(real)):
+        target = real if real else lexical
+        return ("unmeasured", f"{file_path!r} is named like an index but is not the index of any checkout containing "
+                              f"it (it resolves to {target!r}), so no checker measures it")
+    return None
 
 
 def emit(text):
@@ -117,7 +136,7 @@ def main(stdin_text, pwd):
         return 0
     root = d[1]
     try:
-        r = subprocess.run([sys.executable, GUARD], cwd=root, capture_output=True, text=True, timeout=TIMEOUT)
+        r = subprocess.run([sys.executable, GUARD], cwd=root, capture_output=True, text=True, errors="replace", timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         emit(f"⚠ memory index budget: NOT MEASURED — the checker in {root!r} ran past {TIMEOUT} s. Treat this as NOT RUN.")
         return 0
@@ -125,6 +144,8 @@ def main(stdin_text, pwd):
         emit(f"⚠ memory index budget: NOT MEASURED — the checker in {root!r} could not start ({e}). Treat this as NOT RUN.")
         return 0
     out = (r.stdout or "") + (r.stderr or "")
+    if len(out) > OUT_CAP:  # PR #430 r4: a checker printing 10 MB forwarded 10 MB of context
+        out = out[:OUT_CAP] + f"\n… TRUNCATED at {OUT_CAP} characters"
     if r.returncode != 0 or any(l.startswith("WARNING") for l in out.splitlines()):
         emit(f"⚠ memory index budget (advisory, rc={r.returncode}, root {root}):\n{out}")
     return 0
@@ -164,14 +185,27 @@ def self_test():
         t("an alias FILENAME ending in a NEWLINE resolves to ITS target, not its sibling's (r3 1)",
           decide(os.path.join(tmp, "tail\n"), tmp), ("measure", B))
         os.remove(idx(A)); open(os.path.join(B, "other.md"), "w").close(); os.symlink(os.path.join(B, "other.md"), idx(A))
-        d = decide(idx(A), tmp)
-        t("an index that resolves to a NON-index file is NOT MEASURED, never measured as the lexical checkout (r3 2)",
-          d[0] if d else None, "unmeasured")
+        # ⟳ r4: under FILE IDENTITY, A's index path IS A's index even when it links to B/other.md — it is
+        # the file a session in A loads — so A measures it. r3's NOT MEASURED came from the name rule.
+        t("an index that links to another file is measured as ITS OWN checkout's index (r3 2, superseded in r4)",
+          decide(idx(A), tmp), ("measure", A))
+        os.makedirs(os.path.join(tmp, "lone", "docs", "memory")); open(os.path.join(tmp, "lone", "x.md"), "w").close()
+        os.symlink(os.path.join(tmp, "lone", "x.md"), os.path.join(tmp, "lone", "docs", "memory", "MEMORY.md"))
+        d = decide(os.path.join(tmp, "lone", "docs", "memory", "MEMORY.md"), tmp)
+        t("an index-named file in NO checkout is NOT MEASURED", d[0] if d else None, "unmeasured")
         os.makedirs(os.path.join(tmp, "out", "docs", "memory")); open(os.path.join(tmp, "out", "docs", "memory", "MEMORY.md"), "w").close()
         d = decide(os.path.join(tmp, "out", "docs", "memory", "MEMORY.md"), tmp)
         t("an index with no checker above it is NOT MEASURED", d[0] if d else None, "unmeasured")
         t("an adjacent file through the alias stays silent",
           decide(os.path.join(tmp, "h", "projects", "slug", "memory", "OTHER.md"), tmp), None)
+        os.link(idx(B), os.path.join(B, "hardlink"))
+        t("a HARD LINK to an index inside its checkout is measured (r4 2)", decide(os.path.join(B, "hardlink"), tmp), ("measure", B))
+        case_alias = os.path.join(B, "docs", "memory", "memory.md")
+        if os.path.exists(case_alias):  # only on a case-insensitive filesystem
+            t("a CASE alias of the index is measured (r4 1)", decide(case_alias, tmp), ("measure", B))
+        else:
+            t("a CASE alias of the index is measured (r4 1) — case-sensitive filesystem, so it is a different file", decide(case_alias, tmp), None)
+        t("an ordinary file in a checkout is silent", decide(os.path.join(B, "other.md"), tmp), None)
         os.symlink(os.path.join(tmp, "loop"), os.path.join(tmp, "loop"))
         t("a symlink loop is silent and does not raise", decide(os.path.join(tmp, "loop"), tmp), None)
         t("malformed JSON returns 0", main("{not json", tmp), 0)
