@@ -18028,12 +18028,15 @@ Branch `wrap-every-selftest` (backlog #382). Measured on `d678369d` before any c
 `--self-test`, run as children of `fixture_git.isolated()`, gave 79 green; the red is `subject_status`
 (backlog #386), red unisolated too. 79 dispatch `--self-test`; 16 were wrapped and 63 more now are (64
 entries: `check-dashboard-entry` dispatches two; `gen-dashboard`'s write sandbox moved inside the block).
-Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,340 manifest mutations resolves
+Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,353 manifest mutations resolves
 once. After: 79/80 run normally, 79/80 with `GIT_DIR` exported to a victim that stays byte-identical, and
-`subject_status` 16/17 under `GIT_DIR` where master gives 12/17. `check-fixture-git-isolation.py` reads its
-population through `check-main-drivable.suite_entries`, requires each entry to be the canonical
-argument-free `with fixture_git.isolated():` block (refused by name), refuses a flag test that dispatches
-to no entry, keeps rules 3 and 4, and adds rule 5: no process launch at import (0 of the 79 scripts trip it).
-The builder detector and `GIT_SUITES` are deleted (84 → 66 cases; mutations 45 → 35, 19 retired with their
-subject and 9 added). EXEMPT is empty. Nothing is loosened against master: rule 5 replaces, and is broader
-than, the refusal of a module-level repository BUILD that needed the detector.
+`subject_status` 16/17 under `GIT_DIR` where master gives 12/17. Round 1 (Codex) showed that reading the population
+from dispatch leaked, so `check-fixture-git-isolation.py`'s rules are now broad: the population is every file with a
+non-docstring `--self-test` literal; a population file with no nameable entry is refused (dict, `getattr`, argparse
+action and sibling dispatch); entries must be plain undecorated synchronous `def`s whose body is the canonical
+argument-free `isolated()` block; and no process launch runs at import in ANY file (class bodies, `except` types,
+rebinding, `__import__` included; 0 of 84 trip it). The builder detector and `GIT_SUITES` are deleted (84 → 107 cases;
+mutations 45 → 48). EXEMPT is empty. Against master's guard, measured over a fixed probe set held in the suite: every
+probe master refuses is refused here. Four named relaxations remain, each pinned accepted: a builder in a file with no
+`--self-test` (master's X9 false refusal), an indirect launch at import (backlog #380), a flag that is not one literal,
+and an unlaunched module-level git argv literal.
