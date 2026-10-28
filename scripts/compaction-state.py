@@ -87,7 +87,7 @@ compaction identity to check against.
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --audit    < payload.json   # what the PostCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 100 cases
+    python3 scripts/compaction-state.py --self-test  # 101 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; --capture exits 0 when it wrote
 its file.
@@ -677,6 +677,13 @@ def run_capture(cmd: list[str], timeout: float) -> tuple[int | None, str]:
             p.kill()
         p.wait()
         return None, f"capture timed out after {timeout:g} s and was killed"
+    finally:
+        # ...and killed AFTER it exits too, for ANY reason (PR #425 r2 verification: a straggler a call left behind
+        # outlived a child that exited 0, reparented to pid 1 in the child's group).
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 # ─── the audit and the print ────────────────────────────────────────────────────────────────────
@@ -1352,6 +1359,26 @@ def _self_test_body() -> int:
             pass
         case("...and a GRANDCHILD holding on (a stuck gh or git) dies with it: the group is killed, nothing is waited on",
              (rc_grand, took_grand < 2.0, gone), (None, True, True))
+        left = root / "straggler.pid"
+        rc_ok, _ = run_capture([sys.executable, "-c",
+                                "import subprocess; g = subprocess.Popen(['sleep', '30']); "
+                                f"open({str(left)!r}, 'w').write(str(g.pid))"], 5.0)
+        stray_gone = False
+        try:
+            spid = int(left.read_text())
+            for _ in range(30):
+                try:
+                    os.kill(spid, 0)
+                except ProcessLookupError:
+                    stray_gone = True
+                    break
+                time.sleep(0.05)
+            if not stray_gone:
+                os.kill(spid, signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+        case("⭐ a child that EXITS 0 leaving a straggler in its group: the group is killed after the exit too",
+             (rc_ok, stray_gone), (0, True))
         fifo_root = root / "fifo-store"
         (fifo_root / "docs").mkdir(parents=True)
         os.mkfifo(fifo_root / "docs" / "dashboard-entries.md")

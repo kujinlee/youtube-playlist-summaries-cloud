@@ -388,5 +388,31 @@
     "expect": [
       "⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is"
     ]
+  },
+  {
+    "name": "a call's process group is not killed when it ends, so what it backgrounded keeps running",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    finally:\n        kill_group(p.pid)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a call that BACKGROUNDS a process and exits leaves nothing running: its group is killed when it ends"
+    ]
+  },
+  {
+    "name": "a call shares its caller's process group, so killing 'its' group reaches nothing",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "text=True, errors=\"replace\", start_new_session=True)",
+        "text=True, errors=\"replace\")"
+      ]
+    ],
+    "expect": [
+      "⭐ a call that TIMES OUT takes its grandchild with it — the `gh` that was `sleep 60` (PR #425 r2)"
+    ]
   }
 ]

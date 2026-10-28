@@ -50,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 57 cases
+    python3 scripts/session-state.py --self-test  # 60 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -63,6 +63,7 @@ import fcntl
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -102,15 +103,34 @@ def clean(value, width: int = 220) -> str:
     return s if len(s) <= width else s[:width - 1] + "…"
 
 
-def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT) -> tuple[int, str]:
+def kill_group(pgid: int) -> None:
+    """SIGKILL a whole process group, ignoring one that is already gone."""
     try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, errors="replace",
-                           stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        return 124, f"timed out after {timeout:.0f}s"
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT) -> tuple[int, str]:
+    """(exit status, stdout — or stderr on failure). The call runs in its OWN process group, and that group is killed
+    when the call ends, for ANY reason (PR #425 r2 verification: a `gh` that was `sleep 60` lost its shell to the
+    timeout and left the `sleep` running, reparented to pid 1). So a timed-out call, or one that backgrounded
+    something and exited, leaves nothing behind. A process that left the group itself (a daemon calling setsid) is
+    out of reach, by design."""
+    try:
+        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                             text=True, errors="replace", start_new_session=True)
     except OSError as exc:
         return 127, str(exc)
-    return r.returncode, r.stdout if r.returncode == 0 else (r.stderr or r.stdout)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_group(p.pid)
+        p.communicate()
+        return 124, f"timed out after {timeout:.0f}s"
+    finally:
+        kill_group(p.pid)
+    return p.returncode, out if p.returncode == 0 else (err or out)
 
 
 def failing_names(rollup: list) -> list[str]:
@@ -556,6 +576,36 @@ def _self_test_body() -> int:
              "gh output unparseable" in collect(bare, run=lambda c, w, timeout=TIMEOUT: (0, "[null]"), now="T"), True)
         case("_run turns a real timeout into exit 124 with the words 'timed out'",
              _run([sys.executable, "-c", "import time; time.sleep(5)"], root, 0.3), (124, "timed out after 0s"))
+
+        def gone(pid_file: Path) -> bool:
+            """The pid written to `pid_file` is no longer running (polled up to 1.5 s, then killed so it cannot linger)."""
+            try:
+                pid = int(pid_file.read_text())
+            except (OSError, ValueError):
+                return False
+            for _ in range(30):
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return True
+                time.sleep(0.05)
+            os.kill(pid, signal.SIGKILL)
+            return False
+        lone = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        kill_group(lone.pid)
+        kill_group(2 ** 22 + 12345)   # no such group: ignored, never raised
+        case("kill_group SIGKILLs a real group and ignores one that does not exist",
+             lone.wait(timeout=5), -signal.SIGKILL)
+        bg = root / "bg.pid"
+        rc_bg = _run(["sh", "-c", f"sleep 30 >/dev/null 2>&1 & echo $! > {bg}; echo ok"], root, 5)
+        case("⭐ a call that BACKGROUNDS a process and exits leaves nothing running: its group is killed when it ends",
+             (rc_bg, gone(bg)), ((0, "ok\n"), True))
+        hung = root / "hung.pid"
+        t0 = time.monotonic()
+        rc_hung = _run(["sh", "-c", f"sleep 30 >/dev/null 2>&1 & echo $! > {hung}; wait"], root, 0.5)
+        took = time.monotonic() - t0
+        case("⭐ a call that TIMES OUT takes its grandchild with it — the `gh` that was `sleep 60` (PR #425 r2)",
+             (rc_hung[0], took < 2.5, gone(hung)), (124, True, True))
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = main([], root=bare, run=lambda c, w, timeout=TIMEOUT: (0, "[]"))

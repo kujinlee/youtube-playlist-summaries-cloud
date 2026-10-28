@@ -1917,7 +1917,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
     # refusal of a non-path answer, and the fallback said aloud.
     # ⟳ 29 -> 30: an owner wait is the explicit `WAITS-ON-OWNER:` marker, and its word-match revert is an entry.
-    "scripts/session-state.py": 30,
+    # ⟳ 30 -> 32 (PR #425 r2 verification): a call runs in its own group, killed when it ends for any reason.
+    "scripts/session-state.py": 32,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -1935,6 +1936,8 @@ EXPECTED_MUTATIONS = {
     # deadline entries (SNAPSHOT_BUDGET, `bounded`, the waiting executor) RETIRE with their subject, replaced by the
     # capture CHILD killed with its process group; per-session files, XM1 session binding and typed flags, CM1/Cm2
     # name matching, CM3/CM4/XM5 completeness and Xm6's owner-wait and final-size bounds each gain an entry.
+    # ⟳ 59 -> 59: the capture child's group is killed after it exits too, for ANY reason (+1); that kill subsumes the
+    # timeout path's own group kill, so "only the child is killed" retires as an equivalent mutant (-1).
     "scripts/compaction-state.py": 59,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
@@ -6152,7 +6155,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2425)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2427)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

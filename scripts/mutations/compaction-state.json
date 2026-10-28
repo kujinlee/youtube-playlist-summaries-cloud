@@ -403,19 +403,6 @@
     ]
   },
   {
-    "name": "(A) only the child is killed, not its process group",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "            os.killpg(p.pid, signal.SIGKILL)",
-        "            p.kill()"
-      ]
-    ],
-    "expect": [
-      "...and a GRANDCHILD holding on (a stuck gh or git) dies with it: the group is killed, nothing is waited on"
-    ]
-  },
-  {
     "name": "(A) a killed capture leaves no snapshot for this compaction",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -764,6 +751,19 @@
     ],
     "expect": [
       "⭐ main exits 0 in all three modes on garbage stdin, writes NOTHING, and says UNVERIFIED"
+    ]
+  },
+  {
+    "name": "the capture child's group is killed only on timeout, so a straggler outlives a child that exited 0",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        try:\n            os.killpg(p.pid, signal.SIGKILL)\n        except (ProcessLookupError, PermissionError):\n            pass",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a child that EXITS 0 leaving a straggler in its group: the group is killed after the exit too"
     ]
   }
 ]
