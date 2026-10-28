@@ -394,7 +394,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    finally:\n        kill_group(p.pid)\n",
+        "    finally:\n        if own_group:\n            kill_group(p.pid)\n",
         ""
       ]
     ],
@@ -407,12 +407,38 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "text=True, errors=\"replace\", start_new_session=True)",
-        "text=True, errors=\"replace\")"
+        "start_new_session=own_group)",
+        "start_new_session=False)"
       ]
     ],
     "expect": [
       "⭐ a call that TIMES OUT takes its grandchild with it — the `gh` that was `sleep 60` (PR #425 r2)"
+    ]
+  },
+  {
+    "name": "XR3: a killed call's pipes are drained without a bound",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            p.communicate(timeout=DRAIN)",
+        "            p.communicate()"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 XR3: a grandchild that calls setsid and keeps stdout cannot hold the call: drained DRAIN s, then closed"
+    ]
+  },
+  {
+    "name": "own_group=False is ignored, so the capture's calls leave the caller's group",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    try:\n        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE",
+        "    own_group = True\n    try:\n        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE"
+      ]
+    ],
+    "expect": [
+      "own_group=False keeps the call in the CALLER's process group, so the caller's one kill reaches it"
     ]
   }
 ]

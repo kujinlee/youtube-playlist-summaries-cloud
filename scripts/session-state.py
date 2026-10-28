@@ -50,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 60 cases
+    python3 scripts/session-state.py --self-test  # 62 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -78,6 +78,7 @@ LEDGER_REL = ".claude/inflight.jsonl"
 TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
+DRAIN = 1.0       # seconds a killed call's pipes are drained before they are closed (PR #425 r3 XR3)
 # A ledger entry WAITS ON THE OWNER only when its `what` starts with this — an explicit marker, never a word match:
 # matching "owner" anywhere counted 4 of 6 real entries ("PAUSED by owner", "TEST … on the first compaction"),
 # of which 2 waited on a decision (measured 2026-10-28). `compaction-state.py` reads it through `waits_on_owner`.
@@ -111,25 +112,49 @@ def kill_group(pgid: int) -> None:
         pass
 
 
-def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT) -> tuple[int, str]:
-    """(exit status, stdout — or stderr on failure). The call runs in its OWN process group, and that group is killed
-    when the call ends, for ANY reason (PR #425 r2 verification: a `gh` that was `sleep 60` lost its shell to the
-    timeout and left the `sleep` running, reparented to pid 1). So a timed-out call, or one that backgrounded
-    something and exited, leaves nothing behind. A process that left the group itself (a daemon calling setsid) is
-    out of reach, by design."""
+def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT, own_group: bool = True) -> tuple[int, str]:
+    """(exit status, stdout — or stderr on failure). By default the call runs in its OWN process group, and that
+    group is killed when the call ends, for ANY reason (PR #425 r2 verification: a `gh` that was `sleep 60` lost its
+    shell to the timeout and left the `sleep` running, reparented to pid 1). So a timed-out call, or one that
+    backgrounded something and exited, leaves nothing behind in its group.
+    `own_group=False` keeps the call in the CALLER's group instead — what `compaction-state.py`'s capture child
+    uses, so the parent's one kill of that group reaches every call, including one in flight when the child itself
+    is killed (PR #425 r3 CR1: a per-call group was a group nobody killed).
+    After a kill the pipes are drained for at most DRAIN seconds and then CLOSED (r3 XR3: a grandchild that called
+    `setsid` and kept stdout held the live SessionStart hook past its 60 s timeout). A process that left the group
+    itself (`setsid`) is out of reach of any kill here, by design; it can no longer hold this call open."""
     try:
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                             text=True, errors="replace", start_new_session=True)
+                             text=True, errors="replace", start_new_session=own_group)
     except OSError as exc:
         return 127, str(exc)
+
+    def stop() -> None:
+        if own_group:
+            kill_group(p.pid)
+        else:
+            try:
+                p.kill()
+            except OSError:
+                pass
+
     try:
         out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        kill_group(p.pid)
-        p.communicate()
+        stop()
+        try:
+            p.communicate(timeout=DRAIN)
+        except subprocess.TimeoutExpired:
+            for f in (p.stdout, p.stderr):   # an escaped holder of the pipe: give up on it, never wait for it
+                try:
+                    f.close()
+                except OSError:
+                    pass
+            p.wait()
         return 124, f"timed out after {timeout:.0f}s"
     finally:
-        kill_group(p.pid)
+        if own_group:
+            kill_group(p.pid)
     return p.returncode, out if p.returncode == 0 else (err or out)
 
 
@@ -606,6 +631,23 @@ def _self_test_body() -> int:
         took = time.monotonic() - t0
         case("⭐ a call that TIMES OUT takes its grandchild with it — the `gh` that was `sleep 60` (PR #425 r2)",
              (rc_hung[0], took < 2.5, gone(hung)), (124, True, True))
+        esc = root / "escaped.pid"
+        t0 = time.monotonic()
+        rc_esc = _run([sys.executable, "-c",
+                       "import os, time\n"
+                       "if os.fork() == 0:\n"
+                       f"    os.setsid(); open({str(esc)!r}, 'w').write(str(os.getpid())); time.sleep(6)\n"
+                       "else:\n    time.sleep(6)\n"], root, 0.5)
+        took_esc = time.monotonic() - t0
+        try:
+            os.kill(int(esc.read_text()), signal.SIGKILL)   # it left the group on purpose: out of reach, by design
+        except (OSError, ValueError):
+            pass
+        case("⭐ r3 XR3: a grandchild that calls setsid and keeps stdout cannot hold the call: drained DRAIN s, then closed",
+             (rc_esc[0], took_esc < 0.5 + DRAIN + 1.0), (124, True))
+        case("own_group=False keeps the call in the CALLER's process group, so the caller's one kill reaches it",
+             (_run(["sh", "-c", "ps -o pgid= -p $$"], root, 5, own_group=False)[1].strip() == str(os.getpgrp()),
+              _run(["sh", "-c", "ps -o pgid= -p $$"], root, 5)[1].strip() == str(os.getpgrp())), (True, False))
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = main([], root=bare, run=lambda c, w, timeout=TIMEOUT: (0, "[]"))

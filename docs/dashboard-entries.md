@@ -18072,6 +18072,8 @@ the one ledger every session reads. A job is listed as waiting on you only when 
 RECORDED rather than authoritative, since a hook cannot prove who wrote them, and an old or another session's
 snapshot is never shown as this compaction's. A second review rebuilt two parts: the slow capture now runs in a
 separate process that is stopped at 11 seconds, and each session keeps its own files, so one session's compaction
-can no longer be shown as another's. 100 cases, 59 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
+can no longer be shown as another's. A third review withdrew two claims the hooks cannot actually check: the audit now only says which
+items the summary names explicitly, and the printed block shows the newest capture of this session, saying plainly that
+it cannot tell one compaction from another inside a session. 100 cases, 59 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
 the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
 real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.

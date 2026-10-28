@@ -1918,7 +1918,8 @@ EXPECTED_MUTATIONS = {
     # refusal of a non-path answer, and the fallback said aloud.
     # ⟳ 29 -> 30: an owner wait is the explicit `WAITS-ON-OWNER:` marker, and its word-match revert is an entry.
     # ⟳ 30 -> 32 (PR #425 r2 verification): a call runs in its own group, killed when it ends for any reason.
-    "scripts/session-state.py": 32,
+    # ⟳ 32 -> 34 (r3): the bounded post-kill drain (XR3), and `own_group=False` honoured (CR1).
+    "scripts/session-state.py": 34,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -1938,7 +1939,14 @@ EXPECTED_MUTATIONS = {
     # name matching, CM3/CM4/XM5 completeness and Xm6's owner-wait and final-size bounds each gain an entry.
     # ⟳ 59 -> 59: the capture child's group is killed after it exits too, for ANY reason (+1); that kill subsumes the
     # timeout path's own group kill, so "only the child is killed" retires as an equivalent mutant (-1).
-    "scripts/compaction-state.py": 59,
+    # ⟳ 59 -> 69, PR #425 round 3 SPLIT. RETIRED with their subject (the code is DELETED): the backlog-word PR exclusion,
+    # "dropped" reporting, the "names everything" sentence, the audit's receipt-epoch check, the COMPACTION HAPPENED
+    # heading, and `mentioned` (two entries) — each replaced by an entry on the code that replaced it. RETARGETED onto
+    # rewritten lines: the print's checks, `_off`, the bad-session-id guard (now `open_session_dir` alone), the audit's
+    # nonce and omitted lines. ADDED: Xr8 null flags, found/not-found, the disclaimer, the fixed bound, `PR` required,
+    # `read_in`'s type and size checks, the audit and print children's kills, O_NOFOLLOW, CR1's caller-group calls,
+    # and the NOT CAPTURED tagging.
+    "scripts/compaction-state.py": 69,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6155,7 +6163,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2427)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2439)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
