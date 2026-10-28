@@ -375,5 +375,18 @@
     "expect": [
       "collect() where git cannot name the main checkout SAYS the real ledger may not have been read"
     ]
+  },
+  {
+    "name": "a ledger entry waits on the owner when it merely MENTIONS the owner (the word match)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    return isinstance(what, str) and what.startswith(OWNER_MARKER)",
+        "    return bool(re.search(r\"(?i)\\bowner\\b\", f\"{entry.get('what', '')} {entry.get('on_done', '')}\")) if isinstance(entry, dict) else False"
+      ]
+    ],
+    "expect": [
+      "⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is"
+    ]
   }
 ]

@@ -50,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 56 cases
+    python3 scripts/session-state.py --self-test  # 57 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -77,6 +77,10 @@ LEDGER_REL = ".claude/inflight.jsonl"
 TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
+# A ledger entry WAITS ON THE OWNER only when its `what` starts with this — an explicit marker, never a word match:
+# matching "owner" anywhere counted 4 of 6 real entries ("PAUSED by owner", "TEST … on the first compaction"),
+# of which 2 waited on a decision (measured 2026-10-28). `compaction-state.py` reads it through `waits_on_owner`.
+OWNER_MARKER = "WAITS-ON-OWNER:"
 
 
 def clean(value, width: int = 220) -> str:
@@ -312,6 +316,12 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
     if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
         return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
     return Path(common).parent, None
+
+
+def waits_on_owner(entry: dict) -> bool:
+    """Is this ledger entry waiting on an OWNER decision? Only by the explicit OWNER_MARKER prefix on `what`."""
+    what = entry.get("what") if isinstance(entry, dict) else None
+    return isinstance(what, str) and what.startswith(OWNER_MARKER)
 
 
 def fetch(root: Path, run=_run) -> tuple[list[dict] | None, str | None, list[dict], list[str], bool]:
@@ -562,6 +572,12 @@ def _self_test_body() -> int:
         case("main --add then --done round-trips under the ROOT given; --done '' is refused (2), not the block",
              (added, seen_ids, removed, read_ledger(r2 / LEDGER_REL)[0], empty_done), (0, ["k"], 0, [], 2))
 
+        case("⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is",
+             [waits_on_owner({"what": "PAUSED 04:03 by owner: resume later"}),
+              waits_on_owner({"what": f"{OWNER_MARKER} roles page answers", "on_done": "fold"}),
+              waits_on_owner({"what": "x", "on_done": f"{OWNER_MARKER} not in WHAT"}), waits_on_owner({"what": None}),
+              waits_on_owner("junk")],
+             [False, True, False, False, False])
         # ─── a LINKED WORKTREE reads and writes the MAIN checkout's ledger (backlog #361's fix, same class) ───
         repo, wt = root / "mainrepo", root / "linked-worktree"  # not "linked": the symlink case above owns it
         repo.mkdir()
@@ -601,7 +617,10 @@ def _self_test_body() -> int:
 def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
-    ap.add_argument("--add", nargs=3, metavar=("ID", "WHAT", "ON_DONE"))
+    ap.add_argument("--add", nargs=3, metavar=("ID", "WHAT", "ON_DONE"),
+                    help=f"record a background job (re-adding an ID replaces it). Start WHAT with '{OWNER_MARKER} ' when "
+                         "the job waits on an OWNER decision: only that marker puts it under the compaction snapshot's "
+                         "'Pending OWNER decisions' — mentioning the owner does not")
     ap.add_argument("--done", metavar="ID")
     args = ap.parse_args(argv)
     if args.self_test:

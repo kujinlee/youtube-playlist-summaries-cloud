@@ -106,7 +106,6 @@ ITEM_WIDTH = 400
 MAX_TRANSCRIPT = 256 * 1024 * 1024   # read at most the TAIL this long
 KEYS_OPEN = "<!-- compaction-keys: "
 KEYS_CLOSE = " -->"
-OWNER_WAIT = re.compile(r"(?i)\b(owner|awaiting|walk-?through|review page)\b|\.html\b")
 ANSWER_PREFIX = re.compile(r"^(?:Your questions have been answered|The user answered):\s*")
 ANSWER_TAIL = re.compile(r"\s*(?:You can now continue with these answers in mind|Read the answers carefully)\b.*$",
                          re.S)
@@ -388,11 +387,6 @@ def pending_asks(root: Path) -> tuple[int | None, list[dict], str | None]:
     return len(need), [{"id": e["id"], "title": e.get("title") or ""} for e in need[-RECENT_ASKS:]], None
 
 
-def owner_ledger(ledger: list[dict]) -> list[dict]:
-    """Ledger entries whose text names the owner or a page awaiting them."""
-    return [e for e in ledger if OWNER_WAIT.search(f"{e.get('what', '')} {e.get('on_done', '')}")]
-
-
 def decision_section(count, asks, err, waits: list[dict], ledger_ok: bool) -> str:
     L = ["## Pending OWNER decisions"]
     if not ledger_ok:
@@ -401,7 +395,7 @@ def decision_section(count, asks, err, waits: list[dict], ledger_ok: bool) -> st
         L += [f"  ledger [{clean(e.get('id'), 60)}] {clean(e.get('what'), 160)} — when done: {clean(e.get('on_done'), 120)}"
               for e in waits]
     else:
-        L.append("  ledger: no entry names the owner or a page (it is hand-written, so this is not proof)")
+        L.append("  ledger: no entry is marked as waiting on the owner (it is hand-written, so this is not proof)")
     if count is None:
         L.append(f"  dashboard asks: CANNOT RUN — {clean(err)}. Treat as NOT CHECKED.")
     else:
@@ -460,7 +454,9 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     # A REFUSED ledger (symlink, not a file, over the cap) is one problem naming the file; a damaged line or the
     # main-checkout fallback note is not a refusal, and must not hide the entries that WERE read.
     ledger_ok = ss is not None and not any(p.startswith(ss.LEDGER_REL) for p in problems)
-    waits = owner_ledger(ledger)
+    # ONLY the explicit marker (`session-state.waits_on_owner`): a word match counted 4 of 6 real entries, 2 of them waits.
+    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []
+    shown = [dict(e, what=e["what"][len(ss.OWNER_MARKER):].strip()) for e in waits]   # the marker is not news
     if payload_err:
         records, t_err = None, f"the hook payload was unreadable ({payload_err})"
     else:
@@ -484,7 +480,7 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     parts = [head,
              "## In flight BEFORE compaction (session-state.py)\n" + clean(where, 400) + "\n"
              + fit(inflight, 2600, "`python3 scripts/session-state.py`"),
-             fit(decision_section(count, recent, ask_err, waits, ledger_ok), 1200, "`python3 scripts/session-state.py` and the dashboard"),
+             fit(decision_section(count, recent, ask_err, shown, ledger_ok), 1200, "`python3 scripts/session-state.py` and the dashboard"),
              worktree_section(wts, wt_err, 1500)]
     keys = {"stamp": f"{now:.3f}-{os.getpid()}", "epoch": now, "written": stamp_now,
             "session": payload.get("session_id"), "trigger": payload.get("trigger"),
@@ -802,8 +798,8 @@ def _self_test_body() -> int:
         root = Path(td)
         (root / ".claude").mkdir()
         (root / ".claude" / "inflight.jsonl").write_text(
-            json.dumps({"id": "codex-r2", "what": "Codex r2 on PR #410", "on_done": "fold", "at": "T"}) + "\n"
-            + json.dumps({"id": "walk-361", "what": "spec page awaiting the owner", "on_done": "fold answers", "at": "T"}) + "\n")
+            json.dumps({"id": "codex-r2", "what": "Codex r2 on PR #410, the owner reads it after", "on_done": "fold", "at": "T"}) + "\n"
+            + json.dumps({"id": "walk-361", "what": "WAITS-ON-OWNER: spec page answers", "on_done": "fold answers", "at": "T"}) + "\n")
         wts, err = worktrees(root, fake_run(status={"/r/wt-a": (0, " M a.py\n?? b\n")}))
         case("worktrees are read from porcelain: branch, tip, clean/DIRTY, and a prunable one is MISSING",
              [(w["branch"], w["head"][:4], w["state"]) for w in wts],
@@ -827,7 +823,7 @@ def _self_test_body() -> int:
              all(h in snap for h in ("## In flight BEFORE compaction", "PR #410 `session-state`", "## Pending OWNER decisions",
                                       "## Worktrees", "## The owner's recent words", "pause and finish the guards")), True)
         case("the header names the trigger and the session", "trigger auto · session sess-1" in snap.splitlines()[0], True)
-        case("⭐ pending decisions: the OWNER-naming ledger entry and the dashboard's unresolved asks",
+        case("⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks",
              ("ledger [walk-361]" in snap, "ledger [codex-r2]" in snap.split("## Pending OWNER")[1].split("## Worktrees")[0],
               "36 unresolved ask(s)" in snap, "2026-10-28/3 — Merge the hooks PR?" in snap), (True, False, True, True))
         case("the keys line records PR numbers, ledger ids and decisions for the audit",
@@ -839,7 +835,7 @@ def _self_test_body() -> int:
         busy = root / "busy"
         (busy / ".claude").mkdir(parents=True)
         (busy / ".claude" / "inflight.jsonl").write_text("".join(
-            json.dumps({"id": f"owner-wait-{i:02d}", "what": f"review page {i} awaiting the owner", "on_done": "fold", "at": "T"})
+            json.dumps({"id": f"owner-wait-{i:02d}", "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold", "at": "T"})
             + "\n" for i in range(60)))
         snap_big = snapshot(payload, None, busy, fake_run(json.dumps(many_prs)), 1000.0, lambda p: (big, None), asks_ok)
         case("⭐ the size cap holds with 100 PRs, 60 owner waits and 200 huge prompts, and the keys line survives",
@@ -991,7 +987,7 @@ def _self_test_body() -> int:
         (repo / ".claude").mkdir()
         (repo / ".claude" / "inflight.jsonl").write_text(
             json.dumps({"id": "main-job", "what": "Codex r1 on PR #9", "on_done": "fold", "at": "T"}) + "\n"
-            + json.dumps({"id": "main-walk", "what": "walkthrough page awaiting the owner", "on_done": "fold", "at": "T"}) + "\n")
+            + json.dumps({"id": "main-walk", "what": "WAITS-ON-OWNER: walkthrough page", "on_done": "fold", "at": "T"}) + "\n")
         real_run = _runner()
         gh_fake = lambda cmd, cwd, timeout=GH_TIMEOUT: (0, "[]") if cmd[:1] == ["gh"] else real_run(cmd, cwd, timeout)  # noqa: E731
         from_wt = snapshot({}, None, root / "realwt", gh_fake, 1000.0, transcript_ok, asks_ok)

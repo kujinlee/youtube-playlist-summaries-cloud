@@ -18067,6 +18067,7 @@ deadline. Only an answer paired by `tool_use_id` with an `AskUserQuestion` is tr
 the first version also took any tool output that began with an answer's wording); pasted blocks are withheld and
 accepted suggestions labelled. The ledger is read from the main checkout, so a session in a worktree no
 longer reports an empty one — nor does the session-start block, and `--add`/`--done` from a worktree now write
-the one ledger every session reads. 61 cases, 22 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
+the one ledger every session reads. A job is listed as waiting on you only when it is marked so
+(`WAITS-ON-OWNER:`), not whenever its description mentions you. 61 cases, 22 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
 the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
 real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.

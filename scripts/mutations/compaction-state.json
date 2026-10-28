@@ -195,16 +195,16 @@
     ]
   },
   {
-    "name": "no ledger entry is recognised as waiting on the owner",
+    "name": "the explicit marker is ignored: every ledger entry is listed as waiting on the owner",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "OWNER_WAIT = re.compile(r\"(?i)\\b(owner|awaiting|walk-?through|review page)\\b|\\.html\\b\")",
-        "OWNER_WAIT = re.compile(r\"(?!x)x\")"
+        "    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []",
+        "    waits = list(ledger)"
       ]
     ],
     "expect": [
-      "⭐ pending decisions: the OWNER-naming ledger entry and the dashboard's unresolved asks"
+      "⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks"
     ]
   },
   {
