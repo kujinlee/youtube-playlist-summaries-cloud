@@ -121,7 +121,7 @@ isolation-r3-claude.md`), also backlog #380, each executed against an accepted p
 No script in `scripts/` does any of these; the derived falsifier is that evidence, not this guard.
 
     python3 scripts/check-fixture-git-isolation.py
-    python3 scripts/check-fixture-git-isolation.py --self-test  # 106 cases
+    python3 scripts/check-fixture-git-isolation.py --self-test  # 109 cases
 
 EXIT CODES (repo convention): 0 = every self-test is isolated and nothing launches at import · 1 = a file refused ·
 2 = CANNOT RUN (no scripts found, a file that does not parse — never a pass).
@@ -742,6 +742,12 @@ def _self_test_body() -> int:
     case("the refusal names the launch and its line",
          [m.startswith("REFUSED scripts/m.py:2: `subprocess.run` launches a process at IMPORT") for m in _lmsg], [True])
     case("a file that does not parse is CANNOT RUN", rc("def (:\n"), 2)
+    _unwrapped = "import subprocess, sys\n" + BODY + "def _self_test():\n    return _self_test_body()\n" + DISPATCH.format(name="_self_test")
+    case("an EXEMPT file is not held to the entry rules, but rule 5 still reads it",
+         (check_source(_unwrapped, "scripts/e.py", exempt=True)[0],
+          check_source("import os\nos.system('git status')\n" + _unwrapped, "scripts/e.py", exempt=True)[0]), (0, 1))
+    case("check_source reads the TREE it is handed (run_check parses once), not a second parse of the text",
+         check_source("x = 1\n", "scripts/t.py", tree=ast.parse('import os\nos.system("git status")\n'))[0], 1)
     msg = check_source("import subprocess, sys\n" + BODY + "def _self_test():\n    return _self_test_body()\n"
                        + DISPATCH.format(name="_self_test"), "scripts/sub/y.py")[1]
     case("the refusal names the file, the line, the ENTRY and the remedy",

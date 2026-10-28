@@ -18035,7 +18035,7 @@ from dispatch leaked, so `check-fixture-git-isolation.py`'s rules are now broad:
 non-docstring `--self-test` literal; a population file with no nameable entry is refused (dict, `getattr`, argparse
 action and sibling dispatch); entries must be plain undecorated synchronous `def`s whose body is the canonical
 argument-free `isolated()` block; and no process launch runs at import in ANY file (class bodies, `except` types,
-rebinding, `__import__` included; 0 of 84 trip it). The builder detector and `GIT_SUITES` are deleted (84 → 107 cases;
+rebinding, `__import__` included; 0 of 84 trip it). The builder detector and `GIT_SUITES` are deleted (84 → 109 cases;
 mutations 45 → 48). EXEMPT is empty. Against master's guard, measured over a fixed probe set held in the suite: every
 probe master refuses is refused here. Four named relaxations remain, each pinned accepted: a builder in a file with no
 `--self-test` (master's X9 false refusal), an indirect launch at import (backlog #380), a flag that is not one literal,
