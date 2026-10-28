@@ -728,7 +728,8 @@ def cannot_run_snapshot(why: str, receipt: dict, now: float) -> str:
 def run_capture(cmd: list[str], timeout: float) -> tuple[int | None, str]:
     """(exit status, '') or (None, why). The child runs in its OWN process group, with no pipes to the parent; that WHOLE
     group is killed at `timeout`, and again after the child exits for any reason. Every call the capture makes stays
-    in that group (`own_group=False`), so nothing it started survives — except a process that called `setsid`."""
+    in that group (`own_group=False`). ⚠ STATED BOUND (PR #425 r4–r5): a descendant that LEAVES the group — by `setsid`
+    or `setpgid` — is not killed and can outlive the hook; what is bounded is the HOOK's return, not every descendant."""
     try:
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
