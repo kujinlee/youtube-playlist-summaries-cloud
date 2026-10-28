@@ -1093,6 +1093,12 @@ EXPECTED_MUTATIONS = {
     # and of the `--em` refusal (called, reads @media, ground-keyed, fails closed on zero blocks).
     # ⟳ 2026-10-27, r1 fold: 35 -> 49 — the palette reader became a CLOSED GRAMMAR with a value
     # check; one entry per rule of it (three earlier entries retargeted onto the new code).
+    # ⟳ 2026-10-27, r2 REDESIGN. The grammar became a strict FORMAT lint: 6 entries
+    # RETIRED WITH THEIR SUBJECT — merging, the root-prefix match, the `:where`/`@layer`/compound
+    # branches (one canonical-block rule now), and "@media is skipped", which can no longer fail
+    # open because a token declared outside a canonical block is refused as stray. 5 added
+    # (whitespace normalisation, !important, the page ground, both tokens per block, the
+    # per-state shim pair), then 1 for `themed`; 8 retargeted onto the new code. Net 49 -> 49.
     "scripts/brief-compose.py": 49,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six

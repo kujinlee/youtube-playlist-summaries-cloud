@@ -359,25 +359,12 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        assert_em_in_every_palette(page_css)",
-        "        pass"
+        "        assert_em_in_every_palette(page_css,\n                                   themed=page_chrome.has_control(markup_of(doc)))\n",
+        "        pass\n"
       ]
     ],
     "expect": [
       "⛔ a DARK theme block without --em is REFUSED, and the refusal names that block"
-    ]
-  },
-  {
-    "name": "palette blocks inside @media are skipped, so the OS-dark block is never asked for --em",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "                    walk(body, ctx + (prelude,))",
-        "                    pass"
-      ]
-    ],
-    "expect": [
-      "⛔ an OS-DARK @media block without --em is REFUSED too — the state the review measured at 1.78:1"
     ]
   },
   {
@@ -411,8 +398,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            for ctx, sels in order if PALETTE_GROUND in merged[(ctx, sels)]]",
-        "            for ctx, sels in order]"
+        "        if not _TOKEN_DECL.search(body):\n            continue\n",
+        "        if False:\n            continue\n"
       ]
     ],
     "expect": [
@@ -437,8 +424,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            if any(roots):\n",
-        "            if False:\n"
+        "        if key not in CANONICAL_BLOCKS:\n",
+        "        if key not in CANONICAL_BLOCKS and False:\n"
       ]
     ],
     "expect": [
@@ -450,8 +437,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                if block_em:\n",
-        "                if False:\n"
+        "    if stray > 0:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
@@ -476,8 +463,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    if page_chrome.has_text_control(doc):\n        assert_em_in_every_palette(page_css)\n",
-        "    if page_chrome.has_text_control(chrome_bar):\n        assert_em_in_every_palette(page_css)\n"
+        "    if page_chrome.has_text_control(doc):\n        assert_em_in_every_palette(page_css,\n",
+        "    if page_chrome.has_text_control(chrome_bar):\n        assert_em_in_every_palette(page_css,\n"
       ]
     ],
     "expect": [
@@ -489,8 +476,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        if ratio < CONTRAST_MIN:\n",
-        "        if False:\n"
+        "        if ratio < CONTRAST_MIN:\n            weak.append(f\"{where}:",
+        "        if False:\n            weak.append(f\"{where}:"
       ]
     ],
     "expect": [
@@ -541,8 +528,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                if nested and grounded:\n",
-        "                if False:\n"
+        "        if nested:\n            refusals.append(",
+        "        if False:\n            refusals.append("
       ]
     ],
     "expect": [
@@ -550,68 +537,81 @@
     ]
   },
   {
-    "name": "r1 Cm5: split :root rules are judged one by one again",
+    "name": "r2 X2: the selector is compared AS WRITTEN, so whitespace in an attribute hides a dark block",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                merged[key].update(decls)\n",
-        "                merged[key].update(decls) if not merged[key] else None\n"
+        "                out.append((ctx, \"\".join(prelude.split()), \" \".join(shown + (prelude,)), body))",
+        "                out.append((ctx, prelude, \" \".join(shown + (prelude,)), body))"
       ]
     ],
     "expect": [
-      "⛔ r1 Cm5: a palette SPLIT over two `:root` rules is one palette, not a false refusal"
+      "⛔ r2 X2: whitespace inside the attribute selector does not hide a dark block — it IS the canonical block, and its 1.00:1 is refused"
     ]
   },
   {
-    "name": "r1 Cm5: a root PREFIX makes a selector a palette, so :root .card is asked for --em",
+    "name": "r2 X1: !important on a palette token is accepted",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            roots = [bool(ROOT_FORM.fullmatch(s)) for s in sels]\n",
-        "            roots = [bool(ROOT_FORM.match(s)) for s in sels]\n"
+        "            if _IMPORTANT.search(value):\n",
+        "            if False:\n"
       ]
     ],
     "expect": [
-      "⛔ r1 Cm5: `:root .card{--bg}` is a component, not a palette — not asked for --em"
+      "⛔ r2 X1: `!important` on a palette token is refused by name (it would win at 1.00:1)"
     ]
   },
   {
-    "name": "r1 Cm5: :where(:root) is not refused by name",
+    "name": "r2 X4: a body background other than var(--bg) is accepted",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            elif any(re.search(r\":(?:where|is)\\([^)]*(?:(?<![\\w-]):root|\\bhtml\\b)\", s)\n",
-        "            elif False and any(re.search(r\":(?:where|is)\\([^)]*(?:(?<![\\w-]):root|\\bhtml\\b)\", s)\n"
+        "                if name in (\"background\", \"background-color\") and value != GROUND_VALUE:\n",
+        "                if False:\n"
       ]
     ],
     "expect": [
-      "⛔ r1 Cm5: `:where(:root)` is refused BY NAME, not reported as no palette found"
+      "⛔ r2 X4: a body background other than var(--bg) is refused by name"
     ]
   },
   {
-    "name": "a root rule inside @layer is skipped instead of refused",
+    "name": "r2: a palette block may declare one token without the other",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                elif PALETTE_GROUND in body and re.search(",
-        "                elif False and re.search("
+        "        for tok in PALETTE_TOKENS:\n            if tok not in got:\n",
+        "        for tok in PALETTE_TOKENS:\n            if False:\n"
       ]
     ],
     "expect": [
-      "a palette inside `@layer` is refused by name — only @media and @supports are read"
+      "⟳ r2: a palette SPLIT over two `:root` rules is refused by name — each block declares both tokens"
     ]
   },
   {
-    "name": "an unrecognised root selector form is skipped instead of refused",
+    "name": "r2: the per-state check is dropped, so the shim's pressed --em is never counted",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            elif any(re.match(r\"(?::root|html)(?![\\w-])\", s)",
-        "            elif False and any(re.match(r\"(?::root|html)(?![\\w-])\", s)"
+        "                if ratio < CONTRAST_MIN:\n                    state =",
+        "                if False:\n                    state ="
       ]
     ],
     "expect": [
-      "an unquoted `html[data-theme=dark]` palette is refused by name, not silently skipped"
+      "⛔ in a pressed theme the SHIM's --em is what the format resolves to, and is checked against the block's --bg"
+    ]
+  },
+  {
+    "name": "r2: pressed states are checked on a page that has no theme control to press",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            for th in (None, \"light\", \"dark\") if themed else (None,):",
+        "            for th in (None, \"light\", \"dark\"):"
+      ]
+    ],
+    "expect": [
+      "an UNTHEMED page is not checked in pressed states it cannot reach"
     ]
   }
 ]

@@ -17963,8 +17963,9 @@ guard reads as new once the line is touched, and 20 in backlog #381's own status
 A composed explainer page that gets the light/dark button now also gets the text-style switcher
 (colour, headings only, plain) without the author having to remember anything. Before, the switcher
 appeared only if the author had wrapped the page's content in one particular class by hand. A page
-whose colours would make bold text unreadable in dark mode with the switcher on is now refused
-rather than published, and the refusal names what to fix. Two pages were rebuilt: one gains the
+whose colour palette is not written in the standard layout, or whose bold colour is too faint
+against its own background in that layout, is now refused rather than published, and the refusal
+names what to fix. Whether the finished page reads well is still checked in a browser. Two pages were rebuilt: one gains the
 switcher, and on the other, which already had it, bold text in dark mode had been unreadable since
 it was published. The coordinator checked both pages in a browser on 2026-10-27: all three buttons
 are on top and can be pressed, and in dark mode with nothing pressed bold text measures 9.04:1 and
@@ -17976,18 +17977,24 @@ Branch `text-style-default` (backlog #376). `brief-compose.compose` wraps the fr
 still checks the finished page for one. A fragment that brings its own `#schemer` gets no second
 switcher and no wrapper. The `--em` trap (`architecture-review-2026-10-24-em-default.md`) is handled
 by REFUSAL, the guard that review filed. `assert_em_in_every_palette` runs on every page whose
-finished document carries `#schemer`, whether the composer added it or the fragment did. It checks
-two things. First, a declared grammar (`palette_blocks`): root-form rules (`:root`, `html`,
-`[data-theme="…"]`, `:not([data-theme="…"])`) at the top level or under `@media`/`@supports`, with
-split rules merged. Any other root-level form that declares `--bg` is refused by name: mixed lists,
-nesting, `:where()`, block values naming `--em`, or a root rule inside another at-rule. Second, the
-value: in each palette block, `--em` and `--bg` must resolve inside that block to hex colours at
-least 4.5:1 apart (`gen-dashboard.contrast_ratio`); anything else is refused as UNVERIFIABLE. It
-does not check bold on cards or any other surface. Zero palette blocks is CANNOT VERIFY, not a pass.
+finished document carries `#schemer`, whether the composer added it or the fragment did. After
+review round 2 it is a strict lint of the house palette FORMAT, not an emulation of the cascade.
+Round 2 broke the round-1 scanner four ways (`!important`, whitespace in an attribute selector,
+an `@supports` override, a `body` background), all of them cascade. The rules:
+- `--bg`/`--em` only in the 5 canonical blocks measured across the 25 fragments (`:root`, both
+  `[data-theme]` blocks, and inside the dark media query, `:root:not([data-theme="light"])` and
+  `:root`); whitespace is not significant;
+- both tokens in every block, with no `!important`;
+- a `body`/`html`/`:root` background only `var(--bg)`.
+Everything else is refused by name. Inside the format, `--em` must resolve to a hex colour 4.5:1
+or above against `--bg`, in each block and in each theme state, the shim's pressed pair included
+(`gen-dashboard.contrast_ratio`). It does not verify rendered contrast; that is the browser check,
+explainer-delivery §5b. Zero palette blocks is CANNOT VERIFY, not a pass.
 Writing the family pair in automatically was rejected: it means guessing whether each block is dark,
-which is what the review measured failing three ways. 153 → 181 cases; mutations 27 → 49, each
-killed by the case it names (`--only scripts/brief-compose.py`: 49/49 attributed); every round-1
-repro has a case, red on the round-1 code. `page_chrome.py`
+which is what the review measured failing three ways. 153 → 193 cases; mutations 27 → 49, each
+killed by the case it names (`--only scripts/brief-compose.py`: 49/49 attributed). Round 2's
+redesign retired 6 mutations along with the code they targeted. Every round-1 and round-2 repro has
+a case that was red on the code it was found in. `page_chrome.py`
 unchanged. Recompose: of the 24 tracked pages with a fragment, 22 compose byte-identically under
 master's composer and the new one (stamp aside), so #376 changes nothing on them. Recomposing them
 anyway brings in older drift, so they were restored: 6 lose their Theme button, and one
