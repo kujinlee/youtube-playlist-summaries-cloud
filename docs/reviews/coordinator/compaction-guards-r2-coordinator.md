@@ -26,7 +26,7 @@ findings:
   - {id: Cm8, severity: Low, aim: deliverable, fix_induced: true, component: print, disposition: fixed}
   - {id: Cm9, severity: Low, aim: deliverable, fix_induced: false, component: prose, disposition: fixed}
   - {id: Cm10, severity: Low, aim: deliverable, fix_induced: false, component: prose, disposition: fixed}
-  - {id: Cm11, severity: Low, aim: process, fix_induced: false, component: prose, disposition: fixed}
+  - {id: Cm11, severity: Low, aim: deliverable, fix_induced: false, component: prose, disposition: fixed}
   - {id: Cm12, severity: Low, aim: deliverable, fix_induced: true, component: prose, disposition: fixed}
   - {id: Cm13, severity: Low, aim: deliverable, fix_induced: false, component: prose, disposition: fixed}
 ```
