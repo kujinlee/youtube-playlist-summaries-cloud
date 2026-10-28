@@ -219,3 +219,27 @@ which is the whole thing the previous session's lost attempt was trying to buy.
 See also [[an-instrument-that-edits-the-repo-corrupts-its-peers]],
 [[a-retrospective-number-needs-provenance]] (the handoff's stale claim),
 [[a-check-result-is-not-the-claim]] (the red that hid the next gate).
+
+## ⟳ 2026-10-27 — an idle "waiting" subagent is STALLED, not working (twice in one morning)
+`fixture-isolation-impl` ended its turn twice on "⏳ Waiting for <its own background job>"; the job finished
+and nothing woke it — 2½h lost the first time (I relayed its "waiting" as current), ~10 min the second.
+**Why:** a subagent that ends its turn resumes only on a new message; its own monitor firing into an idle
+session did not resume it. The user asked "you don't use heartbeat mechanism?" — I had none.
+**How to apply:** on any subagent idle notification that says "waiting", check its processes/worktree AT
+ONCE, never relay it. For long subagent work, arm a tracked watchdog background job that exits on a new
+commit OR 10 min with no file/process change (this is what wakes ME), and tell the subagent to run long
+jobs in the foreground or poll in-turn, never end on a waiting line. Related: [[a-declaration-is-not-the-act]].
+⟳ Same day, the watchdog's own blind spot: it fires on the FIRST new commit, and the subagent then AMENDED it
+(747b88d8 → 133d08b1, 1 manifest + 3 files changed). I verified the first, and briefed a Codex round with the
+superseded SHA as its scope — caught only when the report named a different SHA. **Brief a review by the
+branch HEAD at launch (`git rev-parse HEAD`), never by a SHA a watchdog reported earlier, and re-read HEAD
+after the subagent's report, not just after the watchdog.**
+⟳ 10-28 00:38, the same shape again: I scanned a worktree for a gate's red while its subagent was STILL fixing that
+red — three of my scans disagreed with the checker because the tree moved between them (`b3b988ab` landed mid-search).
+**Before diagnosing a red in a subagent's worktree, ask it to stop or confirm it is idle; or run the diagnosis on a
+pinned `git worktree add --detach <sha>`.**
+⟳ 10-28 02:10 — a Claude REVIEW half that is told to run heavy probe sweeps (all 80 suites, ~700 falsifier runs) files
+NOTHING: twice on PR #424 (r1 ran 2h32m; r3 ignored a 20-min draft deadline and a 60-min box). The brief said "write
+early" and was not obeyed because each long Bash call blocks the agent. **Give the Claude half a NARROW, non-overlapping
+mandate (e.g. prose + one named attack class) and leave the exhaustive sweep to Codex; or run the sweep myself in the
+background and hand the reviewer its output.** Record the gap honestly (`REVIEW GAP: claude`) rather than wait.

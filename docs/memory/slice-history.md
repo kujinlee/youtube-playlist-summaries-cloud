@@ -57,3 +57,27 @@ metadata:
   [Frontend sub-project](frontend-subproject-design-state.md) · [Stage 2 autonomy](stage-2-batch-autonomy-plan.md) ·
   [1G](stage-1g-design-state.md) · [1F-c](stage-1f-c-design-state.md) · [1F-b](stage-1f-b-design-state.md) ·
   [1F-a](stage-1f-a-design-state.md) · [1D](stage-1d-merged-followups.md)
+
+## Moved out of the index 2026-10-28 (owner's decision L2: trim it mechanically) — VERBATIM
+
+### The index's header note
+
+> One line per memory. ⛔ **CORRECTED 2026-09-28: NOTHING DECIDES RELEVANCE.** This line used to say *"the hook decides relevance"* and that was never true — measured: no file in the `remember` plugin references `MEMORY.md` at all, and all **133** rows arrive every session, unfiltered. **So every row below is always in context and none of them is ever matched to the moment** — which is why recall fails here, and why the hook's title has to do the matching by itself. Write each hook as the SITUATION you would be in, not the subject it is about (backlog #191).
+
+### The index's former Slice-history section
+
+> ⛔ **NEW SLICE ROWS GO IN THAT FILE, NOT IN THIS INDEX.** This index is injected WHOLE on
+> every turn and the harness truncates it in silence once it passes 24,985 CHARACTERS — measured
+> 2026-10-19, it stood at 26,930 and **8 rows** had stopped arriving, with every other memory
+> signal green. ⟳ Both the unit and the count are corrections: this said "bytes" and "~30 rows",
+> and the real figures were established by reading the cut point out of a consuming agent's own
+> injected context. `scripts/check-memory-index-budget.py` now fails on that, so this is enforced
+> rather than remembered; a convention only catches what someone happens to read.
+
+- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19. ⛔ Reached by TRIGGER now, not always-loaded — verified by firing: ask for a PR number or SHA and it returns. The index was 26,930 of a 24,985-CHARACTER budget; the 28 rows are **4,912** chars without line endings, 4,940 with one newline each (the whole section 5,990). ⚠ Two earlier versions were wrong: "6,232 of 27,805 bytes" (wrong unit, and it charged the rows with the whole SECTION's cost), then "4,985" (r2 CODEX #6 — that joined 29 `- ` lines, counting the "Older slices" bullet as a 29th row)
+
+### Rows about finished slices
+
+- [⭐ RESUME: anchors + stable ids](anchor-name-and-stable-id-handoff.md) — M4 MERGED (#155); `0027` LIVE ON PROD. The stable-id roadmap **EXISTS** — I once re-derived it wrongly
+- [Serve-path bounding MERGED](serve-path-bounding-merged.md) — a single CONVERGED verdict was WRONG 4 of 5 times
+- [gh two-remotes footgun](gh-two-remotes-footgun.md) — ✅ RESOLVED; keep `--body-file`

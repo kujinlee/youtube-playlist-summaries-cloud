@@ -72,3 +72,16 @@ four rounds OBLIGES ASKING"*); what I invented was the obligation to **wait**.
 Related: [[putting-a-choice-to-the-user]], [[print-selection-cards-in-chat]],
 [[defaults-i-decide-myself]], [[never-close-with-a-promise]], [[the-user-does-not-follow-in-real-time]],
 [[an-escalation-has-no-closer]], [[push-is-mine-merging-is-theirs]].
+
+⟳ **2026-10-25 07:51 — AGAIN, 3h14m.** In AFK mode I put three selection cards (the house-rule
+exceptions — genuinely the owner's to choose) and sent **no PushNotification**; the next tool call was
+11:05 when they answered. The cards were right; the silence was not. ⛔ **A card while AFK = a
+PushNotification in the SAME turn**, one line naming the decision.
+
+⛔ **STANDING RULE, 2026-10-26 (owner):** *"when I am away or not responding, just take your recommending option unless
+the decision is critical one. I don't want to progress is stopped for my trivial decision as I mostly just select your
+recommended option."* Measured that day: a card on PR #407 (merge-or-fix after a pre-committed last round) sat
+unanswered 14:45 -> 16:57 and was answered with the recommended option. **How to apply:** present the card, but if no
+answer comes, PROCEED with the `(recommended)` option and say so — reserve WAITING for CRITICAL decisions only:
+deploy/production writes, deleting or overwriting data, spend, a HOLD on a gate-loosening that is not a false hold,
+or anything that moves the goal. A house-rule HOLD the owner must approve (check-merge-ready rc 3) is still theirs.
