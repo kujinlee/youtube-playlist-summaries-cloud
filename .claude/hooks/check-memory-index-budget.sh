@@ -37,19 +37,26 @@
 # advisory is ever observed reaching nobody, that observation refutes this choice.
 #
 #     echo '{"tool_input":{"file_path":"docs/memory/MEMORY.md"}}' | .claude/hooks/check-memory-index-budget.sh
-#     .claude/hooks/check-memory-index-budget.sh --self-test   # 12 cases
+#     .claude/hooks/check-memory-index-budget.sh --self-test   # 16 cases
 set -uo pipefail
 
 # PURE: -> the repo root for an index path, or empty. Walks UP from the file, because the file is
 # the subject. Accepts a root only if the guard it needs actually lives there.
 root_for_index() {
-  local p="$1" dir
-  [ -n "$p" ] || return 0
-  case "$p" in /*) dir=$(dirname "$p") ;; *) dir=$(dirname "$PWD/$p") ;; esac
-  while [ "$dir" != "/" ] && [ -n "$dir" ]; do
-    if [ -f "$dir/scripts/check-memory-index-budget.py" ]; then printf '%s' "$dir"; return 0; fi
-    dir=$(dirname "$dir")
-  done
+  # ⟳ PR #430 r2 (Codex): the walk is done in PYTHON and the answer comes back with a trailing "/"
+  # sentinel. `$(dirname …)` and command substitution both strip trailing NEWLINES, so a checkout
+  # named "nl<newline>" resolved to its sibling "nl" and measured the wrong index, silently.
+  local r
+  [ -n "$1" ] || return 0
+  r=$(python3 -c 'import os,sys
+a=sys.argv[1]; d=os.path.dirname(a if os.path.isabs(a) else os.path.join(os.environ.get("PWD") or os.getcwd(), a))
+while True:
+    if os.path.isfile(os.path.join(d,"scripts","check-memory-index-budget.py")):
+        sys.stdout.write(d+"/"); break
+    p=os.path.dirname(d)
+    if p==d: break
+    d=p' "$1" 2>/dev/null) || return 0
+  [ -n "$r" ] && printf '%s' "${r%/}"
   return 0
 }
 
@@ -87,6 +94,18 @@ if [ "${1:-}" = "--self-test" ]; then
   alias_real=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$tmp/harness/projects/slug/memory/MEMORY.md")
   if is_index_path "$tmp/harness/projects/slug/memory/MEMORY.md"; then t "the harness alias is NOT an index path lexically" yes no; else t "the harness alias is NOT an index path lexically" no no; fi
   if is_index_path "$alias_real"; then t "the harness alias RESOLVES to an index path (PR #430 r1 P1)" yes yes; else t "the harness alias RESOLVES to an index path (PR #430 r1 P1)" no yes; fi
+  mkdir -p "$tmp/nl/scripts" "$tmp/nl/docs/memory" "$tmp/nl
+/scripts" "$tmp/nl
+/docs/memory"
+  : > "$tmp/nl/scripts/check-memory-index-budget.py"; : > "$tmp/nl
+/scripts/check-memory-index-budget.py"
+  got=$(root_for_index "$tmp/nl
+/docs/memory/MEMORY.md"; printf x); got=${got%x}
+  t "root_for_index keeps a checkout name ending in a NEWLINE (PR #430 r2)" "$got" "$tmp/nl
+"
+  mkdir -p "$tmp/alias/docs"; ln -s "$tmp/repo/docs/memory" "$tmp/alias/docs/memory"
+  ar=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$tmp/alias/docs/memory/MEMORY.md")
+  t "a LEXICALLY matching alias resolves to the checkout that holds the file (PR #430 r2)" "$(root_for_index "$ar")" "$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$tmp/repo")"
   t "root_for_index on an empty path is empty, not the filesystem root" \
     "$(root_for_index "")" ""
   ( cd "$tmp/repo" && [ "$(root_for_index "docs/memory/MEMORY.md")" = "$tmp/repo" ] ) \
@@ -116,9 +135,12 @@ except Exception:
 # on the very writes it exists for. This resolves the EDITED FILE — the subject — never this
 # script's own location, which is the regression recorded above.
 real=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]) if sys.argv[1] else "")' "$path" 2>/dev/null || echo "")
-if is_index_path "$path"; then :; elif [ -n "$real" ] && is_index_path "$real"; then path="$real"; else exit 0; fi
+# ⟳ PR #430 r2 (Codex): the RESOLVED path is used whenever resolution succeeded — also when the
+# lexical path already looks like an index. An alias `x/docs/memory -> B/docs/memory` matches
+# lexically, and keeping it selected x (no checker: NOT MEASURED) or another checkout's checker.
+if [ -n "$real" ] && is_index_path "$real"; then path="$real"; elif is_index_path "$path"; then :; else exit 0; fi
 
-root=$(root_for_index "$path")
+root=$(root_for_index "$path"; printf x); root=${root%x}
 if [ -z "$root" ]; then
   # ⛔ NOT silent. The index was edited and the budget was NOT measured, which is a CANNOT RUN —
   # and this hook exists because a silent miss is indistinguishable from a healthy index.
