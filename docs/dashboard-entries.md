@@ -18045,6 +18045,108 @@ relaxations — a builder in a file with no `--self-test` (master's X9 false ref
 an unlaunched module-level git argv literal — and the NOT SEEN shapes above (master refused Codex's native-call
 program only because it also held a git argv literal).
 
+## 2026-10-28 [resolved: 2026-09-09/15] [resolved: 2026-09-10/3] [resolved: 2026-09-10/4] [resolved: 2026-09-14/7] [resolved: 2026-09-15/8] [resolved: 2026-09-18/13] [resolved: 2026-09-26/5] [resolved: 2026-09-27/1] [resolved: 2026-10-01/1] [resolved: 2026-10-05/1] [resolved: 2026-10-06/10] [resolved: 2026-10-06/11] [resolved: 2026-10-19/3] [resolved: 2026-10-20/1] [resolved: 2026-10-20/2] [resolved: 2026-10-20/3] [resolved: 2026-10-20/4] [resolved: 2026-10-20/5] [resolved: 2026-10-21/1] [resolved: 2026-10-21/2] [resolved: 2026-10-21/3] [resolved: 2026-10-21/4] [resolved: 2026-10-21/5] [resolved: 2026-10-21/10] [resolved: 2026-10-22/4] [resolved: 2026-10-22/5] [resolved: 2026-10-22/6] [resolved: 2026-09-21/1] [resolved: 2026-10-19/10]
+Twenty-nine of the 36 things the dashboard said were waiting on you no longer are, and are cleared here. Each was
+checked on 2026-10-28 against git, the backlog and later entries, and the owner confirmed the closures that morning
+(the triage page `2026-10-28-topic-dashboard-asks-triage.html`). Twenty-seven were settled by later work and two were
+overtaken. The seven that remain are real decisions, each with options and a recommendation on that page.
+
+What settled each one:
+
+- `2026-09-09/15` — resolved: Sentences: PR #290 'Twelve backlog rows get the sentence nobody had written' (e597a8e7). Bash rebuild: superseded by the owner's 2026-10-28 decision D3 (every generated page rebuilds on every merge).
+- `2026-09-10/3` — resolved: 2026-09-10/4 opens 'Round three is folded'.
+- `2026-09-10/4` — resolved: The backlog-page work merged 09-10..12 (PR #288–#296 range). ⚠ The exact PR is inferred, not traced.
+- `2026-09-14/7` — resolved: gh secret list: CLAUDE_RO_DATABASE_URL set 2026-09-15T18:37; 2026-09-15/8: 'the nightly production check is live'.
+- `2026-09-15/8` — resolved: The split happened: PR #295 retired 2026-09-29 (PR #359), the source-link fix shipped, the restart work became backlog #193 (now L1).
+- `2026-09-18/13` — resolved: Backlog #141 ✅ closed 2026-10-15, verified against release v11: min_machines_running = 0 live.
+- `2026-09-26/5` — resolved: Backlog #189 ✅ closed — PR #351 (parallel sweep); PR #366 (sharding).
+- `2026-09-27/1` — resolved: Backlog #191: '2026-09-29 — THE KEYING FORK IS ANSWERED BY MEASUREMENT, and the answer is OPERATIONS' (141 of 141 re-keyed).
+- `2026-10-01/1` — resolved: Entry itself: 'you chose to follow it'; ADR-0014 merged, PR #360.
+- `2026-10-05/1` — resolved: Branch protection required contexts include mutation-sweep-complete (gh api, 2026-10-28).
+- `2026-10-06/10` — resolved: Same evidence.
+- `2026-10-06/11` — resolved: Same evidence; PR #365 merged 2026-10-07.
+- `2026-10-19/3` — resolved: PR #378 merged 2026-10-19.
+- `2026-10-20/1` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/2` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/3` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/4` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-20/5` — resolved: PR #381 merged 2026-10-22, after the architecture review the entry describes.
+- `2026-10-21/1` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/2` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/3` — resolved: PR #381 merged 2026-10-22 with CI green; the architecture review it convened is in its record.
+- `2026-10-21/4` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/5` — resolved: PR #381 merged 2026-10-22.
+- `2026-10-21/10` — resolved: cc2795d2 (PR #382): 'the squash-redating blocker is fixed by pinning the round inventory'. The goals page's needs-you labels fold into #384's single list (D1).
+- `2026-10-22/4` — resolved: PR #384 merged 2026-10-22.
+- `2026-10-22/5` — resolved: PR #385 merged 2026-10-22 ('Who writes a review fold…').
+- `2026-10-22/6` — resolved: PR #388 merged 2026-10-23.
+- `2026-09-21/1` — moot: Not a decision: the entry reports a known gap and asks nothing. It is flagged [needs-you] without a Decide line.
+- `2026-10-19/10` — moot: Retrospective scope question about merged work; three architecture reviews were convened on later subjects (10-27, 10-28).
+
+## 2026-10-28 [needs-you] [resolved: 2026-10-19/5] [resolved: 2026-10-19/9] [resolved: 2026-10-23/2] [resolved: 2026-10-24/1] [resolved: 2026-10-24/2] [resolved: 2026-10-25/1]
+Six of the seven decisions still waiting on you could not be shown: their entries were flagged as needing you but never
+wrote the question down in the form the dashboard reads, so each showed only "Could not read one ask". They are asked
+again here, in that form, with the options and recommendation from the triage page
+(`2026-10-28-topic-dashboard-asks-triage.html`, where each one's evidence is). The seventh, whether to keep the
+explainer-server restart feature (2026-09-29/2), was already readable and is unchanged.
+
+**Decide:** The memory compaction you asked to do together (from 2026-10-19/5) — the memory index is at 97% of the size the harness loads. Do it now, do it together, or drop it?
+- I compact it now, mechanically, by moving history rows to `slice-history.md` — the remedy the budget guard names [recommended]
+- we do it together in the next session
+- drop it
+
+**Decide:** Register the advisory memory-budget check as a hook that runs when the index is edited (from 2026-10-19/9)? It warns and never blocks; today nothing but CI runs it.
+- yes, register it [recommended]
+- no, CI stays the only caller
+
+**Decide:** Backlog #327 — keep, simplify or retire the review-decision scheme, the decision log and its triggers (from 2026-10-23/2 and 2026-10-25/1)?
+- simplify: keep the ladder (accrete → redesign → split → defer) and the bet written before each round, and drop the triggers that only warn [recommended]
+- keep it as it is
+- retire it
+
+**Decide:** Five rows from the review-process audit (from 2026-10-23/2): backlog #337 (a third outcome value), #290 (where the suite is registered as a deliverable), #66 (92 old briefs in `.superpowers/sdd/` — keep or delete), #104 (fold into #100 or keep separate), and the paused decision-log redesign plan (resume or retire). How should they be settled?
+- fold #290 into backlog #384, since the suite's design decides where it is registered, and answer the other four on the triage page [recommended]
+- answer all five on the triage page, one line each
+
+**Decide:** Six product rows from the backlog scrub (from 2026-10-24/1): backlog #8 (retire or narrow the deep-dive vision), #26 (which attempt-limit option), #27 (how long old source versions are kept), #28 (deferred until real traffic), #53 (is one deploy-commit mismatch reason enough to build the check), #144 (how to check the feature tree is complete). How should they be settled?
+- #28 stays deferred, as its row already says, and the other five are answered on the triage page — #26 before milestone M5 reaches that step [recommended]
+- answer all six on the triage page
+
+**Decide:** Backlog #339 — when later review rounds "alternate", which reading governs (from 2026-10-24/2)? The gate accepts both, and this week used both: PR #424's later rounds had one reviewer each, PR #425's had a pair.
+- one reviewer per round, with a written REVIEW GAP line for the other [recommended]
+- a pair of reviews per round, alternating which goes first
+
+## 2026-10-28 [resolved: 2026-09-29/2] [resolved: 2026-10-28/2]
+You answered all seven waiting decisions this morning, so nothing on the dashboard is waiting on you now.
+Your answers are written into the backlog rows they settle.
+
+- **The documentation server's restart feature (backlog #193):** not now. The item stays open, with no date.
+- **The memory index at 97% of its size limit:** I trim it now, by moving the history rows into
+  `slice-history.md`. That is a separate small change, not part of this one.
+- **The memory size check:** register it as a hook. It warns and never blocks. Also a separate change.
+- **The review decision scheme (backlog #327):** simplify it. Keep the four-step ladder and the bet written
+  before each round, and drop the triggers that only warn. The paused redesign plan from 20 October is
+  retired, because this replaces it. The plan file is kept as a record.
+- **Who reviews in later rounds (backlog #339):** one reviewer per round, with a written note saying the
+  other one was skipped.
+- **Registering the page suite as a deliverable (backlog #290)** and **checking the feature map is complete
+  (backlog #144):** both are folded into the suite's overall design (backlog #384) and closed.
+- **Deferred rounds in the review figures (backlog #337):** leave them out of the count, and say so in the
+  message. This stops mattering if the simplification drops that check.
+- **The 92 old briefs in `.superpowers/sdd/` (backlog #66):** keep the ones that exist nowhere else by moving
+  them to `docs/reviews/`, and delete the rest.
+- **The plan-gate file with no "superseded" exit (backlog #104):** folded into backlog #100 as evidence, and
+  closed.
+- **How many paid attempts a summary gets (backlog #26):** one, set for each kind of job when it is queued.
+  This must be built before milestone M5's step T5.
+- **How long old source versions are kept (backlog #27):** release one 90 days after everything built from it
+  is replaced. This is built together with the clean-up job.
+- **The deep-dive vision (backlog #8):** retired.
+- **The reserve timeout (backlog #28):** stays deferred until there is real traffic to measure.
+- **The deploy-commit check (backlog #53):** keep waiting for its trigger.
+
+Everything marked "to build" is decided but not built yet. Those rows stay open.
+
 ## 2026-10-28
 Before every compaction, a hook now saves what was in flight — the open pull requests, the background jobs, the
 worktrees, the decisions waiting on you, and your own recent messages and answers — and the first thing the next

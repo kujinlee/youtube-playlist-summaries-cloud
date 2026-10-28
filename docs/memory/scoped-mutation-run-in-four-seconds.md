@@ -64,3 +64,12 @@ conflate them — see [[measure-the-population-the-code-actually-sees]].
 evidence that counted was the **pair**: pre-fix tree → `1 mutation, 0 killed, 1 SURVIVOR`; post-fix
 → `16 killed, 16 attributed`. Same harness, same tree, opposite verdicts.
 See [[the-control-refuted-the-premise]], [[a-case-can-pass-for-an-ambient-reason]].
+
+⛔ **2026-10-25 — THE STANDING DECISION: PARTIAL SWEEP LOCALLY, FULL SWEEP IN CI ON SHARDS** (the user
+restated it after this cost). I kept the form and broke the scope — **one co-scoped manifest cost FOUR HOURS.** I swept
+`check-merge-ready` (30–41 entries) TOGETHER with `check-main-drivable` (183, a 438-case suite per
+mutation) twice: **~2h10m and 81m+**, while the user waited. Alone, merge-ready's 41 took **9.6s**.
+main-drivable had changed by ONE line (a `MAIN_DEBT` removal) and its 183/183 did not need re-running
+after a fold that never touched it. **How to apply:** before a sweep, `git diff --stat` the scripts +
+manifests; sweep a heavy manifest once, and only again if ITS file or manifest moved. Time a sweep
+that runs past ~5 min and ask which manifest is the cost.
