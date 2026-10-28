@@ -122,19 +122,15 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   something it does not. They are named by token, not by hue, because a page sets its own hue.
   ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light
   default, each explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light /
-  `#9db8e8` dark unless it has a reason to differ. Since backlog #376 the composer LINTS THE PALETTE
-  FORMAT on any page whose finished document carries `#schemer` (its own or the composer's), and
-  refuses by name what is off-format:
-  - `--bg` and `--em` are declared only in the canonical blocks: `:root`, `:root[data-theme="light"]`,
-    `:root[data-theme="dark"]`, or inside `@media (prefers-color-scheme: dark)` as
-    `:root:not([data-theme="light"])` or `:root`. Whitespace is not significant.
-  - Each block declares both tokens, with no `!important`.
-  - A `body`/`html`/`:root` background is only `var(--bg)`.
-  Inside that format it also checks `--em` against `--bg` at 4.5:1 or above, both in each block and
-  in each theme state, including the shim's pressed pair (`brief-compose.palette_blocks`,
-  `assert_em_in_every_palette`). ⚠ It does not verify RENDERED contrast: a card, a wrapper with its
-  own background, or bold that does not read `--em` is outside it. Rendered contrast is verified
-  only in a browser, in §5b, for every page. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
+  `#9db8e8` dark unless it has a reason to differ. Since backlog #376, on any page whose finished
+  document carries `#schemer` (its own or the composer's), **the composer refuses a page whose
+  canonical palette block omits `--em`, or gives `--bg`/`--em` as anything but a literal colour, or
+  whose `--em` is under 4.5:1 against that block's `--bg`; rendered readability is verified in a
+  browser (§5b; backlog #387 will automate it).** The canonical blocks are `:root`,
+  `:root[data-theme="light"]`, `:root[data-theme="dark"]`, and inside
+  `@media (prefers-color-scheme: dark)`, `:root:not([data-theme="light"])` or `:root` (whitespace
+  is not significant). A `--bg`/`--em` declared anywhere else is refused by name
+  (`brief-compose.palette_blocks`). **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
   is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
   it measured **1.78:1** there (backlog #226). It cannot be fixed in the shim, because only the page
   knows whether its palette goes dark (`page_chrome`'s rule: *mechanism shared, palette local*);

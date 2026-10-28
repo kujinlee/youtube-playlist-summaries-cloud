@@ -359,7 +359,7 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        assert_em_in_every_palette(page_css,\n                                   themed=page_chrome.has_control(markup_of(doc)))\n",
+        "        assert_em_in_every_palette(page_css)\n",
         "        pass\n"
       ]
     ],
@@ -424,8 +424,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "        if key not in CANONICAL_BLOCKS:\n",
-        "        if key not in CANONICAL_BLOCKS and False:\n"
+        "        if (ctx, sel) not in CANONICAL_BLOCKS:\n",
+        "        if (ctx, sel) not in CANONICAL_BLOCKS and False:\n"
       ]
     ],
     "expect": [
@@ -463,8 +463,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    if page_chrome.has_text_control(doc):\n        assert_em_in_every_palette(page_css,\n",
-        "    if page_chrome.has_text_control(chrome_bar):\n        assert_em_in_every_palette(page_css,\n"
+        "    if page_chrome.has_text_control(doc):\n        assert_em_in_every_palette(page_css)\n",
+        "    if page_chrome.has_text_control(chrome_bar):\n        assert_em_in_every_palette(page_css)\n"
       ]
     ],
     "expect": [
@@ -482,32 +482,6 @@
     ],
     "expect": [
       "⛔ r1 Xm4: the LIGHT --em in a dark block is refused on its contrast"
-    ]
-  },
-  {
-    "name": "r1 Xm4: a value need not be a hex colour to reach the contrast check",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "        if not (em and _HEX.fullmatch(em) and bg and _HEX.fullmatch(bg)):\n",
-        "        if not (em and bg):\n"
-      ]
-    ],
-    "expect": [
-      "⛔ r1 Xm4: `--em:initial` is UNVERIFIABLE, naming the block"
-    ]
-  },
-  {
-    "name": "r1 Xm4: a var() chain is not followed within the block",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "        value = decls.get(ref)\n    return None\n",
-        "        value = None\n    return None\n"
-      ]
-    ],
-    "expect": [
-      "...while a var() chain declared in the same block is followed to its colour"
     ]
   },
   {
@@ -550,32 +524,6 @@
     ]
   },
   {
-    "name": "r2 X1: !important on a palette token is accepted",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "            if _IMPORTANT.search(value):\n",
-        "            if False:\n"
-      ]
-    ],
-    "expect": [
-      "⛔ r2 X1: `!important` on a palette token is refused by name (it would win at 1.00:1)"
-    ]
-  },
-  {
-    "name": "r2 X4: a body background other than var(--bg) is accepted",
-    "file": "scripts/brief-compose.py",
-    "edits": [
-      [
-        "                if name in (\"background\", \"background-color\") and value != GROUND_VALUE:\n",
-        "                if False:\n"
-      ]
-    ],
-    "expect": [
-      "⛔ r2 X4: a body background other than var(--bg) is refused by name"
-    ]
-  },
-  {
     "name": "r2: a palette block may declare one token without the other",
     "file": "scripts/brief-compose.py",
     "edits": [
@@ -589,29 +537,29 @@
     ]
   },
   {
-    "name": "r2: the per-state check is dropped, so the shim's pressed --em is never counted",
+    "name": "r3: a palette value need only START with a colour, so `#16151a!important` passes as literal",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "                if ratio < CONTRAST_MIN:\n                    state =",
-        "                if False:\n                    state ="
+        "            if not _HEX.fullmatch(value):\n",
+        "            if not _HEX.match(value):\n"
       ]
     ],
     "expect": [
-      "⛔ in a pressed theme the SHIM's --em is what the format resolves to, and is checked against the block's --bg"
+      "⛔ r2 X1: `!important` on a palette token is refused by name (it would win at 1.00:1)"
     ]
   },
   {
-    "name": "r2: pressed states are checked on a page that has no theme control to press",
+    "name": "r3: a var() alias counts as a literal palette colour again",
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "            for th in (None, \"light\", \"dark\") if themed else (None,):",
-        "            for th in (None, \"light\", \"dark\"):"
+        "_HEX = re.compile(r\"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\")\n",
+        "_HEX = re.compile(r\"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})|var\\(.*\\)\")\n"
       ]
     ],
     "expect": [
-      "an UNTHEMED page is not checked in pressed states it cannot reach"
+      "⛔ r3 X1: a var() alias for --em, redefined by a LATER rule, is refused — not literal"
     ]
   }
 ]
