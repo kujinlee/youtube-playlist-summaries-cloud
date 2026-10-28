@@ -185,3 +185,4 @@ docs/explainers/questions.md
 # are named here too.
 .remember/precompact-snapshot.md
 .remember/compaction-audit.md
+.remember/compaction-receipt.json
