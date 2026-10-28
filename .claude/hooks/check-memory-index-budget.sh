@@ -83,6 +83,10 @@ if [ "${1:-}" = "--self-test" ]; then
     "$(root_for_index "$tmp/repo/docs/memory/MEMORY.md")" "$tmp/repo"
   t "root_for_index finds nothing when no guard lives above the file" \
     "$(root_for_index "$tmp/outside/docs/memory/MEMORY.md")" ""
+  mkdir -p "$tmp/harness/projects/slug"; ln -s "$tmp/repo/docs/memory" "$tmp/harness/projects/slug/memory"
+  alias_real=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$tmp/harness/projects/slug/memory/MEMORY.md")
+  if is_index_path "$tmp/harness/projects/slug/memory/MEMORY.md"; then t "the harness alias is NOT an index path lexically" yes no; else t "the harness alias is NOT an index path lexically" no no; fi
+  if is_index_path "$alias_real"; then t "the harness alias RESOLVES to an index path (PR #430 r1 P1)" yes yes; else t "the harness alias RESOLVES to an index path (PR #430 r1 P1)" no yes; fi
   t "root_for_index on an empty path is empty, not the filesystem root" \
     "$(root_for_index "")" ""
   ( cd "$tmp/repo" && [ "$(root_for_index "docs/memory/MEMORY.md")" = "$tmp/repo" ] ) \
@@ -106,7 +110,13 @@ try:
 except Exception:
     print("")' 2>/dev/null || echo "")
 
-is_index_path "$path" || exit 0
+# ⛔ RESOLVE THE EDITED FILE'S SYMLINKS FIRST (PR #430 r1, Codex P1). The harness writes the index
+# through its own alias, ~/.claude/projects/<slug>/memory/MEMORY.md, a symlink into this repo's
+# docs/memory/. Matched lexically, that path is not "docs/memory/MEMORY.md", so the hook was SILENT
+# on the very writes it exists for. This resolves the EDITED FILE — the subject — never this
+# script's own location, which is the regression recorded above.
+real=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]) if sys.argv[1] else "")' "$path" 2>/dev/null || echo "")
+if is_index_path "$path"; then :; elif [ -n "$real" ] && is_index_path "$real"; then path="$real"; else exit 0; fi
 
 root=$(root_for_index "$path")
 if [ -z "$root" ]; then
