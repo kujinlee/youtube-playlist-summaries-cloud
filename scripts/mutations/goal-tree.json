@@ -1,0 +1,331 @@
+[
+  {
+    "name": "a relation outside the closed set is accepted",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if rel not in RELATIONS:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a relation outside the closed set is refused"
+    ]
+  },
+  {
+    "name": "refs are searched, not fully matched, so trailing prose rides along as a ref field",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if not REFS_RE.fullmatch(refs_text):",
+        "            if not REFS_RE.search(refs_text):"
+      ]
+    ],
+    "expect": [
+      "⛔ refs followed by anything but ` · ` are refused — the whole field must be refs"
+    ]
+  },
+  {
+    "name": "only a `## GOAL` heading is examined, so a mistyped one is read as stray prose",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if line.startswith(\"## \"):",
+        "        if line.startswith(\"## GOAL\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ a mistyped GOAL heading is refused, not read as prose that hides its threads"
+    ]
+  },
+  {
+    "name": "a goal with no quoted request is accepted, so a tree has no root",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not g[\"requests\"]:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a goal that quotes no request is refused"
+    ]
+  },
+  {
+    "name": "a thread declared twice in one goal is accepted",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if any(t[\"key\"] == key for t in cur[\"threads\"]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a duplicated thread in one goal is refused"
+    ]
+  },
+  {
+    "name": "a gh failure overrides what master's own log already shows merged",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if merged is not None and n in merged:",
+        "    if merged is not None and n in merged and not src[\"errors\"]:"
+      ]
+    ],
+    "expect": [
+      "...while a PR master's own log shows merged is still MERGED (git answered)"
+    ]
+  },
+  {
+    "name": "gh down: a PR leaf is guessed from empty lists instead of saying CANNOT RUN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if src[\"errors\"].get(\"merged\") or src[\"errors\"].get(\"gh\"):\n        why =",
+        "    if False:\n        why ="
+      ]
+    ],
+    "expect": [
+      "⛔ gh down: an unmerged PR leaf says CANNOT RUN, never a guessed state"
+    ]
+  },
+  {
+    "name": "a closed PR is not recognised as closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if st == \"CLOSED\":",
+        "    if st == \"CLOSEDX\":"
+      ]
+    ],
+    "expect": [
+      "a closed PR is CLOSED, never open"
+    ]
+  },
+  {
+    "name": "the backlog match drops its parentheses, so (backlog #100) answers for backlog #10",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "re.search(rf\"\\(backlog #{n}\\)\", subj)",
+        "re.search(rf\"backlog #{n}\", subj)"
+      ]
+    ],
+    "expect": [
+      "⛔ the subject tail must be the backlog row itself — #100 is not #10"
+    ]
+  },
+  {
+    "name": "a declared wait overrides every derived state, merged included",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"waits\") and state in (\"next\", \"inflight\"):",
+        "    if t.get(\"waits\"):"
+      ],
+      [
+        "        state = \"blocked\" if state == \"next\" else state",
+        "        state = \"blocked\""
+      ]
+    ],
+    "expect": [
+      "⛔ a declared wait never overrides a derived MERGED"
+    ]
+  },
+  {
+    "name": "a ledger entry downgrades an OPEN PR to in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if flying and state in (\"next\", \"notfound\"):",
+        "    if flying:"
+      ]
+    ],
+    "expect": [
+      "...and an OPEN PR stays open — in flight is a note, not a downgrade"
+    ]
+  },
+  {
+    "name": "every open PR is listed as undeclared, including the ones a goal names",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for n, p in sorted(src[\"open\"].items()) if n not in named_prs]",
+        "for n, p in sorted(src[\"open\"].items())]"
+      ]
+    ],
+    "expect": [
+      "an open PR no goal names is listed as UNDECLARED, never folded in"
+    ]
+  },
+  {
+    "name": "the master head is part of the fingerprint, so every merge anywhere logs a snapshot",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if k not in (\"at\", \"head\")}",
+        "if k not in (\"at\",)}"
+      ]
+    ],
+    "expect": [
+      "⭐ a snapshot equal but for its time and head is NOT logged — the log lists changes"
+    ]
+  },
+  {
+    "name": "the log accepts an incomplete snapshot",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if snap[\"cannot\"]:\n        raise ValueError(\"refusing",
+        "    if False:\n        raise ValueError(\"refusing"
+      ]
+    ],
+    "expect": [
+      "⛔ an incomplete snapshot is refused by the log itself, not only by its caller"
+    ]
+  },
+  {
+    "name": "a failed fetch is ignored and the stale origin/master is read as current",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        errors[\"merged\"] = f\"git fetch",
+        "    if False:\n        errors[\"merged\"] = f\"git fetch"
+      ]
+    ],
+    "expect": [
+      "⛔ a failed fetch is a CANNOT RUN source, and the stale origin/master is NOT read"
+    ]
+  },
+  {
+    "name": "a failed gh pr list is not named as a failure of gh",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if rc != 0:\n            raise ValueError(f\"exited {rc}: {_SS.clean(out, 160)}\")\n        src[\"open\"] =",
+        "        if False:\n            raise ValueError(f\"exited {rc}: {_SS.clean(out, 160)}\")\n        src[\"open\"] ="
+      ]
+    ],
+    "expect": [
+      "⛔ a failed gh is a CANNOT RUN source, never an empty PR list read as 'none open'"
+    ]
+  },
+  {
+    "name": "the ledger is read from the checkout the script runs in, so a worktree run sees none",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    main = pathlib.Path(out.strip()).parent if rc == 0 and out.strip() else root",
+        "    main = root"
+      ]
+    ],
+    "expect": [
+      "collect reads open PRs, all PR states, the repo and the MAIN checkout's ledger"
+    ]
+  },
+  {
+    "name": "main exits 0 after a snapshot that could not run",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                rc = 2\n",
+        "                rc = 0\n"
+      ]
+    ],
+    "expect": [
+      "⛔ main exits 2 when a source cannot run, logs nothing, and the page says why"
+    ]
+  },
+  {
+    "name": "a malformed threads file exits 0",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        print(f\"MALFORMED — {exc}\")\n        return 1",
+        "        print(f\"MALFORMED — {exc}\")\n        return 0"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed threads file exits 1, loudly"
+    ]
+  },
+  {
+    "name": "--page over an empty log exits 0",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "no complete snapshot, so no page was rendered.\")\n            return 2",
+        "no complete snapshot, so no page was rendered.\")\n            return 0"
+      ]
+    ],
+    "expect": [
+      "⛔ --page over an empty log is CANNOT RUN, and renders nothing"
+    ]
+  },
+  {
+    "name": "a failed live read is not announced on the page",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if live is not None and live[\"cannot\"]:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a failed live read is announced above the tree, with its reason"
+    ]
+  },
+  {
+    "name": "the timeline runs oldest first",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for i in range(len(log) - 1, -1, -1):",
+        "    for i in range(len(log)):"
+      ]
+    ],
+    "expect": [
+      "the timeline is newest first"
+    ]
+  },
+  {
+    "name": "the current tree is the OLDEST snapshot",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    newest = log[-1]",
+        "    newest = log[0]"
+      ]
+    ],
+    "expect": [
+      "the page states its build time and the newest snapshot's time"
+    ]
+  },
+  {
+    "name": "with no repo read, a PR link is guessed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(f\"https://github.com/{repo}/pull/{n}\" if repo else None)",
+        "f\"https://github.com/{repo}/pull/{n}\""
+      ]
+    ],
+    "expect": [
+      "with no repo read, a PR ref is plain text, never a guessed URL"
+    ]
+  },
+  {
+    "name": "tree text is written into the page unescaped",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                   else html.escape(t) for t, h in segments(line, repo))",
+        "                   else t for t, h in segments(line, repo))"
+      ]
+    ],
+    "expect": [
+      "text in the tree is escaped"
+    ]
+  }
+]

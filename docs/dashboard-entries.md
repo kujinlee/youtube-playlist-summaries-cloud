@@ -18015,3 +18015,29 @@ switcher, leaned on the shim, now `--em` in its 4 blocks). Both fragments were r
 switcher because they get no Theme button: they declare no `:root[data-theme="light"]` block (their
 light palette is the bare `:root`), so `missing_palettes` reports it missing and the composer adds
 a stamp only.
+
+## 2026-10-28
+The goal tree is now a page you can open at any time: http://127.0.0.1:7391/goal-tree. The top
+shows every piece of work hung under the request of yours it serves, with each PR and backlog row
+a link and its state read fresh: merged (with the commit), open (with its checks), in flight, or
+waiting. Below it is a timeline, newest first, of what changed between snapshots. Open any entry to
+see the whole tree as it stood then.
+
+A snapshot is taken when you ask for `/goal-tree`, after every merge, when the list of threads is
+edited, and when you press Refresh. It is kept only if something changed, so the timeline lists
+changes, not readings. One part is still written by hand: which goal a piece of work belongs to,
+and whether it is a fix, a blocker, bookkeeping or an aside. That lives in `docs/goal-threads.md`.
+Everything about state is read from git and GitHub, and when they can't be reached the page says
+so instead of guessing.
+<!--tech-->
+Backlog #363. `scripts/goal-tree.py` (`--snapshot`, `--page`, `--print`; no flags = snapshot +
+page, which is what the Refresh button runs). Declared input `docs/goal-threads.md` (grammar:
+`## GOAL <slug>`, `> YYYY-MM-DD HH:MM "<quote>"`, `- <fix|blocker|bookkeeping|side> · <refs> ·
+<what>[ · waits on <what>]`, malformed → exit 1 naming every bad line). Log
+`docs/goal-tree-log.jsonl`, appended only when the fingerprint (everything but time and master head)
+changes; an incomplete read is never appended (exit 2). Triggers: `.claude/commands/goal-tree.md`,
+the PostToolUse hook `.claude/hooks/goal-tree-snapshot.sh` (Bash `gh pr merge*`, and Edit/Write of
+the threads file; always exit 0), and `explainer-serve.py` `REGENERABLE`. Registered in
+check-selftest-counts, check-fixture-variation, CI, and `scripts/mutations/goal-tree.json` (25
+entries, 25 killed by the case each names). The begin-plan relation markers this row first proposed
+were not built: no plan had been armed since 2026-10-25.

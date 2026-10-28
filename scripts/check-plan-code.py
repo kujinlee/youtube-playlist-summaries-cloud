@@ -989,6 +989,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 24 + 14 = 38 — both
     # branches' entries kept, none retired; the render line now prints `label(n)`.
     "scripts/gen-work-lines.py": 38,
+    # ⟳ 2026-10-28, backlog #363: the logged goal tree joins at 25 — one entry per refusal in the
+    # threads grammar, per derived-state rule (merged first, CANNOT RUN, closed, the subject tail),
+    # per log rule (fingerprint, incomplete refused), per exit code, and the page's ordering and links.
+    "scripts/goal-tree.py": 25,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -4329,6 +4333,7 @@ def _self_test() -> int:
                                       "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
                                       "scripts/gen-work-lines.py",
+                                      "scripts/goal-tree.py",
                                       # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
                                       # the observer-log record. A LIBRARY, not a guard, so
                                       # `check-ratchet-contract`'s population never sees it;
@@ -6111,7 +6116,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2350)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2375)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -56,6 +56,12 @@
             "if": "Bash(*begin-plan.py*)",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh surface-recall.sh",
             "statusMessage": "Any recorded lesson for this step?"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh goal-tree-snapshot.sh",
+            "statusMessage": "Logging the goal tree..."
           }
         ]
       },
@@ -95,6 +101,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-dashboard.sh",
             "statusMessage": "Refreshing the dashboard..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh goal-tree-snapshot.sh",
+            "statusMessage": "Logging the goal tree..."
           }
         ]
       }

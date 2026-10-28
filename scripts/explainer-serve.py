@@ -33,6 +33,7 @@ STANDING PAGES — a fixed url for a page that is rewritten, not re-created
 ------------------------------------------------------------------------
     http://127.0.0.1:7391/backlog-table        ← scripts/gen-backlog-page.py
     http://127.0.0.1:7391/work-lines           ← scripts/gen-work-lines.py
+    http://127.0.0.1:7391/goal-tree            ← scripts/goal-tree.py
 
 Some pages are not a snapshot of a moment but a live view of something in the repo, regenerated in
 place. They are recognised by their filename carrying NO date, and they get two things:
@@ -126,6 +127,8 @@ REGENERABLE = {
     "goals": "gen-goals-page.py",
     "features": "gen-features-page.py",
     "work-lines": "gen-work-lines.py",
+    # Run with no arguments it snapshots (gh + git, logged only if the tree changed) AND renders.
+    "goal-tree": "goal-tree.py",
 }
 # ⟳ 2026-09-02. Which repo file each derived page is BUILT FROM, for `/_stale`.
 #
@@ -163,6 +166,9 @@ PAGE_SOURCES = {
     # the page stale with no banner. Every SCRIPTED change rebuilds it at the writer instead
     # (`check-plan-progress.refresh_work_lines`), and the Refresh button covers the hand edit.
     "work-lines": [],
+    # The declared threads and the snapshot log; the STATES also move with gh and git, which no file
+    # carries, so a fresh banner here means "nothing declared or logged since", not "gh agrees".
+    "goal-tree": ["docs/goal-threads.md", "docs/goal-tree-log.jsonl"],
 }
 # ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
 # keys whose source list is empty, so an empty list can never appear on another page silently.
