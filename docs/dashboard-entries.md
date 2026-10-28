@@ -17960,6 +17960,20 @@ excluded: status-pages 🟠3 🟡8 🟢3, feature-map 🟡3, explainer-pages �
 guard reads as new once the line is touched, and 20 in backlog #381's own status text.
 
 ## 2026-10-27
+Three backlog items are filed. The owner observed that the comprehensibility suite's pages (dashboard, goals,
+backlog, features, work lines, brief and the explainers) were each built for a moment's need, with no overall
+design saying what each page is for, who reads it, and which ones overlap — so the design itself is now an item,
+and it needs a walkthrough with the owner rather than a build. A second item asks for one shared tag vocabulary
+across those pages' line items, after the design. A third records that one self-test has been failing on master
+with nothing running it.
+<!--tech-->
+Backlog #384 (🟠, the suite's overarching design: a spec per page — its question, reader, sources and what it
+must not duplicate — then a consolidation decision; Phase 1, the human gate). Backlog #385 (🟡, a common tag
+vocabulary as FACETS — goal = anchors, area = a small registered list, status split from severity per backlog #90
+— measured by the tag-vocabulary survey; depends on #384). Backlog #386 (🟡, `subject_status.py --self-test` is
+16/17 on master with no CI caller; the cause is not yet diagnosed).
+
+## 2026-10-27
 A composed explainer page that gets the light/dark button now also gets the text-style switcher
 (colour, headings only, plain) without the author having to remember anything. Before, the switcher
 appeared only if the author had wrapped the page's content in one particular class by hand. A page
