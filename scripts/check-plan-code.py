@@ -1931,7 +1931,8 @@ EXPECTED_MUTATIONS = {
     # r2 fold: rule 5 EXECUTES each import under an audit hook, so its 10 static spelling entries retire with their
     # subject and 10 are added (the events, the timeout and crash as CANNOT CHECK, the named event, exit-time launches,
     # ctypes, effects reported, EXEMPT files imported) — 48 -> 48.
-    "scripts/check-fixture-git-isolation.py": 48,
+    # r3 fold (SPLIT): 48 -> 55, the -I -S audit child and rule 5's static direct-launcher half.
+    "scripts/check-fixture-git-isolation.py": 55,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -6128,7 +6129,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2354)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2361)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

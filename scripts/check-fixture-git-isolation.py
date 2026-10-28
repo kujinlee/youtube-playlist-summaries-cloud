@@ -50,31 +50,43 @@ WHAT IT CHECKS, per `scripts/**/*.py`, parsed with `ast`:
      argument or a decorator, or stored from a module-level call to a function that reads `os.environ`.
      (`os.environb` needs no rule: measured, CPython backs it with the SAME dict as `os.environ`, so the
      swap reaches it — the executed case below holds that.)
-  5. in EVERY file, population or not, IMPORTING it launches no process — and this one is MEASURED, not read.
-     Each `scripts/**/*.py` is imported in a fresh CHILD interpreter, by path under a unique module name, with
-     `fixture_git.env()`'s environment, a temporary cwd and HOME, and a `sys.addaudithook` installed BEFORE the
-     import that RAISES on every process-launch audit event (`subprocess.Popen`, `os.system`, `os.exec*`,
-     `os.posix_spawn`, `os.spawn*`, `pty.spawn`, `os.fork`, `os.forkpty`, `_posixsubprocess.fork_exec`, and
-     `ctypes.dlsym` of libc's `system`/`exec*`/`fork`/`posix_spawn`). `_posixsubprocess.fork_exec` is an audit
-     event only from 3.13, so on 3.12 the child also wraps that function, which is what `multiprocessing`'s
-     spawn calls. The child lets the interpreter EXIT normally, so an `atexit` callback registered at import
-     runs under the hook too. A file whose import fires an event is refused, naming the event and its first
-     arguments; an import that TIMES OUT (`IMPORT_TIMEOUT`) or CRASHES without an event is CANNOT CHECK (exit
-     2), never a pass. What an import WRITES (`open` for writing, `os.mkdir`, `os.remove`, ...) or connects to
-     is REPORTED, not refused. ⟳ #382 r2: rounds 1 and 2 matched launcher SPELLINGS in the source and lost
-     each time — to class bodies, `except` types, rebinding, an annotated assignment, a walrus, tuple
-     unpacking, an aliased `import_module`, `for`/`with` targets — and a static rule could never see the REAL
-     one Codex found, `check-ci-watched.py` calling `_repo_sentinel()` (a `git rev-parse`) at import, now
-     resolved on first use. An event does not care how the call was spelled. Measured 2026-10-28: all 84
-     files import with no launch and no observed write, in about 1.6s (8 children at a time).
+  5. in EVERY file, population or not, an OBSERVATION, bounded and stated exactly: rule 5 observes one import of
+     each scripts/*.py in a child (-I -S, the isolated environment, a temp cwd and HOME) under an in-process audit
+     hook, plus a static check for direct launcher calls at module level.
+     * THE OBSERVER. The child starts with `-I -S`, so no PYTHONPATH, user site, site-packages, `.pth` or
+       `sitecustomize` runs before it installs a `sys.addaudithook` (#382 r3 X2: an inherited `sitecustomize`
+       vetoed the hook) and VERIFIES it fires; only then does it enable `site` and the target's import paths,
+       under the hook. The hook raises on every process-launch audit event (`subprocess.Popen`, `os.system`,
+       `os.exec*`, `os.posix_spawn`, `os.spawn*`, `pty.spawn`, `os.fork`, `os.forkpty`, `_posixsubprocess.
+       fork_exec` — wrapped by hand on 3.12, where it is not an event — and `ctypes.dlsym` of libc's `system`/
+       `exec*`/`fork`/`posix_spawn` by name). The target is imported by path under a unique module name and the
+       interpreter then exits normally, so an `atexit` launch registered at import is observed. A refusal names
+       the event; a timeout (`IMPORT_TIMEOUT`), a crash, or a hook that did not install is CANNOT CHECK, never a
+       pass; what the import writes is reported, not refused. ⟳ r2: matching launcher SPELLINGS lost to every
+       new binding form, and could never see `check-ci-watched.py` calling `_repo_sentinel()` (`git rev-parse`)
+       at import — now resolved on first use.
+     * THE STATIC HALF (#382 r3 X1). A DIRECT launcher call — `subprocess.*`, `os.system`/`popen`/`exec*`/
+       `spawn*`/`posix_spawn*`, `pty.spawn`, by the module's import name or a plain `from` import, no
+       rebinding analysis — anywhere in module-level code, INCLUDING inside module-level if/elif/else, try,
+       with, for, while and match bodies and class bodies (not a def or a lambda). The observer samples ONE
+       context; this refuses `if "--self-test" in sys.argv: subprocess.run(...)` in every context.
+     WHAT IT DOES NOT SEE, each named (the enforcement that would, outside the interpreter, is backlog #380):
+       - a NATIVE call that starts a process — libc `system` through ctypes or CFFI, looked up any way but by
+         name through `ctypes` (#382 r3 X3); pinned as a NOT SEEN case;
+       - a launch taken only in ANOTHER context through non-literal code (a helper called only when `CI` is set,
+         HOME differs, or argv holds a flag), which the one sampled import does not take; pinned NOT SEEN;
+       - a DAEMON THREAD started at import that launches after the observed child has exited;
+       - a DEAD BRANCH that launches only indirectly (relaxation R5) — it cannot write anything.
+     Measured 2026-10-28: 0 of the 84 files trip the static half, and all 84 imports are observed with no launch
+     and no write, in about 1.5s with 8 children (3.14 and 3.12 alike).
 
 The self-test EXECUTES every bypass shape both #373 reviews ran, twice: unisolated (refused here, and shown to
 write a victim repository named by an exported `GIT_DIR`) and inside the block (accepted here, and shown to
 leave that victim byte-identical). A shape this accepts that still writes the victim is a red case.
 
 ⭐ AGAINST #373's GUARD, MEASURED (not asserted). The self-test holds a fixed PROBE SET: #373's own rule shapes,
-every Codex #382 r1 and r2 probe, and the extras each round added, each refused here — rule 5's by EXECUTING the
-import — and each Codex probe that writes executed to show it is a real escape. Run through master's guard
+every Codex #382 r1 and r2 probe and r3's X1 and X2, and the extras each round added, each refused here — rule 5's
+by its observer or its static half — and each Codex probe that writes executed to show it is a real escape. Run through master's guard
 (`d678369d`), `2e4a7d9f`, `b3b988ab` and this one, measured 2026-10-28: every probe master refuses is refused
 here. The relaxations that REMAIN are named, and each is a case pinned ACCEPTED (`RELAXED`), so tightening one
 is a visible red:
@@ -83,7 +95,8 @@ is a visible red:
   R3 a self-test whose flag is not ONE string literal (`"--self" + "-test"`) — it is not in the population;
   R4 a git argv LITERAL at module level that nothing launches at import (`CMD = ["git", "init"]`) — #373
      read the literal itself as a build;
-  R5 a launch in code that never runs at import (a dead branch, `if False:`) — it cannot write anything;
+  R5 an INDIRECT launch in code that never runs at import (a dead branch) — it cannot write anything (a DIRECT
+     launcher in a dead branch is refused by rule 5's static half);
   R6 a `--self-test` mention only in a COMMENT or DOCSTRING — prose, not a self-test. Measured: of the 84
      files, exactly one changes under raw source membership, `m4_catalog.py`, which has no self-test, so
      source membership would cost it an exemption for nothing.
@@ -121,11 +134,11 @@ backlog #380). Each was executed by Codex against an accepted program and wrote 
   with no `--self-test` is held to rule 5 only.)
 ⟳ #373 round 3 (`docs/reviews/codex/fixture-git-isolation-r3-codex.md`, `docs/reviews/claude/fixture-git-
 isolation-r3-claude.md`), also backlog #380, each executed against an accepted program that wrote the victim:
-  * IMPORT-TIME git (r3 Codex X1) — ⟳ #382 r2 CLOSED for what an import EXECUTES: rule 5 runs the import
-    under an audit hook, so a direct, indirect or rebound launch, and an `atexit` callback, are all refused.
-    What remains is what the hook cannot see: a launch from a C extension that raises no audit event, a
-    thread started at import that launches after the child has exited, and code that runs only as
-    `__main__` (that is the `main()`-before-the-entry shape below);
+  * IMPORT-TIME git (r3 Codex X1) — ⟳ #382 NARROWED to an observation: rule 5 observes one import of each
+    scripts/*.py in a child (-I -S, the isolated environment, a temp cwd and HOME) under an in-process audit
+    hook, plus a static check for direct launcher calls at module level. What it does not see is listed under
+    rule 5 (native calls, other-context launches through non-literal code, daemon threads, dead branches), plus
+    code that runs only as `__main__` (the `main()`-before-the-entry shape below);
   * SUITE WORK AFTER THE BLOCK EXITS (r3 Claude M1): a generator body, a lazy `map`, or an uncalled function
     returned from the block, each consumed by the caller after `isolated()` has restored the environment;
   * RULE 3's REACH (r3 Claude M1): a callee of the suite that is also reached from outside it through
@@ -135,9 +148,9 @@ isolation-r3-claude.md`), also backlog #380, each executed against an accepted p
 No script in `scripts/` does any of these; the derived falsifier is that evidence, not this guard.
 
     python3 scripts/check-fixture-git-isolation.py
-    python3 scripts/check-fixture-git-isolation.py --self-test  # 130 cases
+    python3 scripts/check-fixture-git-isolation.py --self-test  # 141 cases
 
-EXIT CODES (repo convention): 0 = every self-test is isolated and nothing launches at import · 1 = a file refused ·
+EXIT CODES (repo convention): 0 = every self-test is isolated and no launch at import was observed · 1 = a file refused ·
 2 = CANNOT RUN (no scripts found, a file that does not parse — never a pass).
 """
 
@@ -326,8 +339,18 @@ def fork_exec(*a, **k):
     return _fork_exec(*a, **k)
 _posixsubprocess.fork_exec = fork_exec
 sys.dont_write_bytecode = True
-sys.path[:0] = [os.path.dirname(target), extra]
 sys.addaudithook(hook)
+seen = []
+sys.addaudithook(lambda event, args: seen.append(event) if event == "fgi.verify" else None)
+sys.audit("fgi.verify")
+if not seen:                                         # a hook that did not install: nothing below is observed
+    emit("unhooked", "")
+    raise SystemExit(97)
+# The child starts with -I -S, so no PYTHONPATH, user site, site-packages, `.pth` or `sitecustomize` ran before
+# the hook (#382 r3 X2). The import paths the target needs are enabled only now, UNDER the hook.
+import site
+site.main()
+sys.path[:0] = [os.path.dirname(target), extra]
 name = "_fgi_" + str(abs(hash(target)))
 spec = importlib.util.spec_from_file_location(name, target)
 module = importlib.util.module_from_spec(spec)
@@ -358,7 +381,7 @@ def import_once(path: Path) -> tuple[str, list[dict], str]:
         report.write_text("")
         env = {**{k: os.environ[k] for k in fixture_git.PROCESS_PASSED if k in os.environ},
                **fixture_git.env(HOME=str(work / "home")), "PYTHONDONTWRITEBYTECODE": "1"}
-        argv = [sys.executable, "-c", _CHILD, str(path), str(report), str(Path(__file__).resolve().parent),
+        argv = [sys.executable, "-I", "-S", "-c", _CHILD, str(path), str(report), str(Path(__file__).resolve().parent),
                 json.dumps(LAUNCH_EVENTS), json.dumps(LAUNCH_SYMBOLS), json.dumps(EFFECT_EVENTS)]
         try:
             proc = subprocess.run(argv, cwd=work, env=env, capture_output=True, text=True, timeout=IMPORT_TIMEOUT)
@@ -367,6 +390,8 @@ def import_once(path: Path) -> tuple[str, list[dict], str]:
         events = [json.loads(line) for line in report.read_text().splitlines() if line.strip()]
         if any(e["kind"] == "launch" for e in events):
             return "launch", events, ""
+        if any(e["kind"] == "unhooked" for e in events):
+            return "cannot", events, "the audit hook did not install, so the import was not observed"
         if proc.returncode != 0 or not any(e["kind"] == "imported" for e in events):
             tail = (proc.stderr.strip().splitlines() or ["(no output)"])[-1]
             return "cannot", events, f"the import exited {proc.returncode} without finishing: {tail}"
@@ -382,16 +407,95 @@ def import_time_launches(paths: list[Path]) -> dict[Path, tuple[str, list[dict],
         return dict(zip(paths, pool.map(import_once, paths)))
 
 
+# The STATIC backstop for rule 5: a DIRECT launcher call written at module level (#382 r3). Dumb on purpose: the
+# module's import name (`import subprocess`, `import subprocess as sp`) or a plain `from` import, no rebinding.
+DIRECT_LAUNCHERS = {
+    "subprocess": frozenset({"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}),
+    "os": frozenset({"system", "popen", "execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp",
+                     "execvpe", "spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv", "spawnve", "spawnvp",
+                     "spawnvpe", "posix_spawn", "posix_spawnp"}),
+    "pty": frozenset({"spawn"}),
+}
+
+
+def _module_level_code(tree: ast.Module) -> list[ast.AST]:
+    """Module-level code, descending into if/elif/else, try (handlers, else, finally), with, for, while and match
+    bodies and into class bodies — never into a def or a lambda, whose body does not run at import."""
+    code: list[ast.AST] = []
+
+    def walk(block):
+        for s in block:
+            if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                code.extend(s.decorator_list + [d for d in s.args.defaults + s.args.kw_defaults if d is not None])
+            elif isinstance(s, ast.ClassDef):
+                code.extend(s.decorator_list + s.bases)
+                walk(s.body)
+            elif isinstance(s, (ast.If, ast.While)):
+                code.append(s.test)
+                walk(s.body)
+                walk(s.orelse)
+            elif isinstance(s, (ast.For, ast.AsyncFor)):
+                code.extend([s.target, s.iter])
+                walk(s.body)
+                walk(s.orelse)
+            elif isinstance(s, (ast.With, ast.AsyncWith)):
+                code.extend(s.items)
+                walk(s.body)
+            elif isinstance(s, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+                walk(s.body)
+                for h in s.handlers:
+                    code.extend([h.type] if h.type is not None else [])
+                    walk(h.body)
+                walk(s.orelse)
+                walk(s.finalbody)
+            elif isinstance(s, ast.Match):
+                code.append(s.subject)
+                for c in s.cases:
+                    walk(c.body)
+            else:
+                code.append(s)
+    walk(tree.body)
+    return code
+
+
+def direct_launches(tree: ast.Module) -> list[tuple[int, str]]:
+    """(line, call) for every DIRECT launcher call in module-level code. A lambda body is skipped: it runs when
+    called, not at import."""
+    mods = {a.asname or a.name: a.name for n in ast.walk(tree) if isinstance(n, ast.Import)
+            for a in n.names if a.name in DIRECT_LAUNCHERS}
+    bare = {a.asname or a.name: f"{n.module}.{a.name}" for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom) and n.module in DIRECT_LAUNCHERS
+            for a in n.names if a.name in DIRECT_LAUNCHERS[n.module]}
+    found = []
+    stack = list(_module_level_code(tree))
+    while stack:
+        n = stack.pop()
+        if isinstance(n, ast.Lambda):
+            continue
+        if isinstance(n, ast.Call):
+            f = n.func
+            if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in mods \
+                    and f.attr in DIRECT_LAUNCHERS[mods[f.value.id]]:
+                found.append((n.lineno, f"{mods[f.value.id]}.{f.attr}"))
+            elif isinstance(f, ast.Name) and f.id in bare:
+                found.append((n.lineno, bare[f.id]))
+        stack.extend(ast.iter_child_nodes(n))
+    return sorted(found)
+
+
 def check_source(src: str, rel: str, exempt: bool = False, tree: ast.Module | None = None) -> tuple[int, list[str]]:
-    """Rules 1-4, STATIC: (0 isolated, or not in the population, or EXEMPT | 1 refused | 2 does not parse, messages).
-    Rule 5 is not here: it EXECUTES, and `run_check` runs it over every file."""
+    """The STATIC rules: rule 5's direct-launcher backstop over EVERY file, then rules 1-4 over the population
+    unless the file is EXEMPT: (0 | 1 refused | 2 does not parse, messages). Rule 5's import observer is not here:
+    it EXECUTES, and `run_check` runs it over every file."""
     try:
         tree = tree or ast.parse(src, filename=rel)
     except SyntaxError as exc:
         return 2, [f"CANNOT RUN {rel}: does not parse ({exc.msg}, line {exc.lineno})"]
-    msgs: list[str] = []
+    msgs = [f"REFUSED {rel}:{line}: `{call}` is called in module-level code — a DIRECT process launch at import "
+            f"(rule 5's static half: it is refused in every branch, whichever one the import observer takes)"
+            for line, call in direct_launches(tree)]
     if exempt or not names_self_test(tree):
-        return 0, msgs
+        return (1 if msgs else 0), msgs
     names = self_test_entries(tree)
     env_names = _environ_refs(tree)
     module_fns = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
@@ -497,8 +601,8 @@ def run_check(root: Path, exempt: dict[str, str]) -> tuple[int, list[str], list[
         msgs.append("observed at import (reported, not refused): " + "; ".join(effects))
     if worst == 0:
         msgs.append(f"{len(population) - len(exempt)} --self-test script(s) run inside {HELPER_MODULE}.isolated(), "
-                    f"{len(exempt)} exempt; {len(parsed)} file(s) imported under the audit hook with no process "
-                    f"launch, in {elapsed:.1f}s")
+                    f"{len(exempt)} exempt; {len(parsed)} file(s) each imported once under the audit hook with no "
+                    f"launch observed and no direct launcher call at module level, in {elapsed:.1f}s")
     return worst, msgs, population
 
 
@@ -728,6 +832,19 @@ def _self_test_body() -> int:
     case("a capture inside `if __name__` at module level is refused",
          shaped(CANON + "if __name__ == '__main__':\n    C = dict(os.environ)\n", head="import os, subprocess, sys\n"), 1)
     case("a file that does not parse is CANNOT RUN", rc("def (:\n"), 2)
+    # ── rule 5's STATIC half: a DIRECT launcher call in module-level code, in any branch (#382 r3 X1) ──────
+    case("⭐ a direct launch under a module-level `if` is refused statically, whichever branch an import takes",
+         rc("import subprocess, sys\nif 'build' in sys.argv:\n    subprocess.run(['git', 'init'])\n"), 1)
+    case("...and so is a `from` import's launcher under a `with`, and an aliased module's in an `else`",
+         (rc("from os import system as s\nwith open('x'):\n    s('git status')\n"),
+          rc("import subprocess as sp\nif 0:\n    pass\nelse:\n    sp.check_output(['git', 'status'])\n")), (1, 1))
+    case("...and so is one in a CLASS body, which runs at import",
+         rc("import subprocess\nclass C:\n    v = subprocess.run(['git', 'status'])\n"), 1)
+    case("a direct launcher inside a def or a lambda is not module-level code, so it is not refused statically",
+         rc("import subprocess\nf = lambda: subprocess.run(['git'])\ndef g():\n    subprocess.run(['git'])\n"), 0)
+    _smsg = check_source("import os\nos.system('git status')\n", "scripts/m.py")[1]
+    case("the static refusal names the file, the line and the launcher",
+         [m.startswith("REFUSED scripts/m.py:2: `os.system` is called in module-level code") for m in _smsg], [True])
     _unwrapped = "import subprocess, sys\n" + BODY + "def _self_test():\n    return _self_test_body()\n" + DISPATCH.format(name="_self_test")
     case("an EXEMPT file is not held to the entry rules (static half; rule 5 still runs, below)",
          (check_source(_unwrapped, "scripts/e.py")[0], check_source(_unwrapped, "scripts/e.py", exempt=True)[0]), (1, 0))
@@ -827,6 +944,10 @@ def _self_test_body() -> int:
         "a sentinel resolved at import by running git (`check-ci-watched.py:128`'s real shape)": ("CODEX_R2",
             {"x.py": W + "def _repo_sentinel():\n    return subprocess.run(['git', 'rev-parse', '--git-common-dir'],"
                      " capture_output=True)\nSENTINEL = _repo_sentinel()\n" + ENTRY}, ""),
+        "a launch only when the importing process's argv holds `--self-test` (r3 X1)": ("CODEX_R3", {"x.py": W
+            + "def self_test():\n    import fixture_git\n    with fixture_git.isolated():\n        return 0\n"
+            + "if '--self-test' in sys.argv:\n    d = tempfile.mkdtemp()\n    subprocess.run(['git', 'init', '-q', d])\n"
+            + f"    subprocess.run({CFG}, cwd=d)\n"}, "writes"),
         "an `atexit` callback registered at import (#380 X6)": ("R2_EXTRA", {"x.py": W + "import atexit\n"
             f"atexit.register(lambda: subprocess.run({CFG}, cwd=tempfile.gettempdir()))\n" + ENTRY}, "writes"),
         "libc `system` through ctypes": ("R2_EXTRA", {"x.py": W + "import ctypes\n"
@@ -848,8 +969,17 @@ def _self_test_body() -> int:
             W + 'def suite():\n    subprocess.run(["git", "init", "-q", "d"])\nif "--self" + "-test" in sys.argv:\n    suite()\n',
         "R4 a git argv LITERAL at module level that nothing launches at import (#373 read the literal as a build)":
             W + 'CMD = ["git", "init", "-q"]\n' + ENTRY,
-        "R5 a launch in code that never runs at import (a dead branch): it cannot write anything":
-            W + 'if False:\n    subprocess.run(["git", "init", "-q", "d"])\n' + ENTRY,
+        "R5 an INDIRECT launch in code that never runs at import (a dead branch): it cannot write anything":
+            W + 'def g():\n    subprocess.run(["git", "init", "-q", "d"])\nif False:\n    g()\n' + ENTRY,
+        # NOT SEEN — the bounded claim, pinned: rule 5 OBSERVES one import in one context in-process, plus a static
+        # check for DIRECT launcher calls. These launch at import and pass; enforcing outside the interpreter is #380.
+        "NOT SEEN a native call: libc `system` through ctypes `dlsym` (#382 r3 X3, backlog #380)":
+            "import ctypes\nlib = ctypes.CDLL(None)\nlookup = lib.dlsym\nlookup.argtypes = [ctypes.c_void_p, ctypes.c_char_p]\n"
+            "lookup.restype = ctypes.c_void_p\nimport sys\n"
+            "addr = lookup(ctypes.c_void_p(-2 if sys.platform == 'darwin' else 0), b'system')  # RTLD_DEFAULT\n"
+            "if addr:\n    ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p)(addr)(b'true')\n",
+        "NOT SEEN a launch taken only in ANOTHER context, through non-literal code":
+            "import os\ndef _l():\n    os.system('true')\nif os.environ.get('FGI_SOME_OTHER_CONTEXT'):\n    _l()\n",
         "R6 a `--self-test` mention only in a COMMENT is prose, not a self-test (`m4_catalog.py`)":
             "import subprocess  # run x.py --self-test to check this\n",
         "R6 ...nor only in a DOCSTRING":
@@ -879,6 +1009,8 @@ def _self_test_body() -> int:
              "REFUSED scripts/x.py: importing it launches a process — audit event `subprocess.Popen`"),
         "an import that CRASHES is CANNOT CHECK, never a pass":
             ({"x.py": "raise SystemExit(3)\n"}, 2, "CANNOT CHECK scripts/x.py: the import exited 3"),
+        "a file with NO --self-test whose import launches INDIRECTLY is refused: rule 5 imports every file":
+            ({"x.py": "import os\ndef _l():\n    os.system('git status')\n_l()\n"}, 1, "importing it launches a process"),
         "what an import WRITES is reported, not refused":
             ({"x.py": "open('written-at-import.txt', 'w').write('x')\n"}, 0,
              "observed at import (reported, not refused): scripts/x.py: open for writing 'written-at-import.txt'"),
@@ -890,8 +1022,25 @@ def _self_test_body() -> int:
         code, msgs = xcheck(files)
         case(name, (code, not says or any(says in m for m in msgs)), (want, True))
     case("an EXEMPT file is still IMPORTED under the hook: rule 5 reads every file",
-         (xcheck({"e.py": "import os\nos.system('git status')\n" + _unwrapped}, {"scripts/e.py": "r"})[0],
+         (xcheck({"e.py": "import os\ndef _l():\n    os.system('git status')\n_l()\n" + _unwrapped}, {"scripts/e.py": "r"})[0],
           xcheck({"e.py": _unwrapped}, {"scripts/e.py": "r"})[0]), (1, 0))
+    # #382 r3 X2, EXECUTED: a `sitecustomize` on an inherited PYTHONPATH that vetoes `sys.addaudithook`. The child
+    # starts with -I -S, so it never runs; without them the hook would be silently refused and the import unobserved.
+    # Alone, not warmed: it rebinds os.environ["PYTHONPATH"] for one run.
+    _site = tmp()
+    (_site / "sitecustomize.py").write_text("import sys\ndef veto(event, args):\n    if event == 'sys.addaudithook':\n"
+                                           "        raise RuntimeError('no additional hooks')\nsys.addaudithook(veto)\n")
+    _pp = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = str(_site)
+    try:
+        _vcode, _vmsgs, _ = run_check(world({"scripts/x.py": "import os\ndef _l():\n    os.system('git status')\n_l()\n"}), {})
+    finally:
+        if _pp is None:
+            os.environ.pop("PYTHONPATH")
+        else:
+            os.environ["PYTHONPATH"] = _pp
+    case("⭐ a `sitecustomize` on PYTHONPATH that vetoes the audit hook cannot suppress the check (r3 X2: -I -S)",
+         (_vcode, any("importing it launches a process" in m for m in _vmsgs)), (1, True))
     # The timeout, alone and last: it rebinds the module's bound for one run.
     _g = globals()
     _bound = _g["IMPORT_TIMEOUT"]
@@ -916,7 +1065,7 @@ def _self_test_body() -> int:
     w_ok = world({"scripts/good.py": good, "scripts/sub/plain.py": "x = 1\n"})
     code, text = drive(lambda: main([], root=w_ok, exempt={}))
     case("main() over an isolated world exits 0 and says how many it read",
-         (code, "1 --self-test script(s) run inside" in text, "2 file(s) imported under the audit hook" in text), (0, True, True))
+         (code, "1 --self-test script(s) run inside" in text, "2 file(s) each imported once under the audit hook" in text), (0, True, True))
     _, _ex_msgs, _ex_pop = run_check(w_ok, {"scripts/good.py": "reads the real environment"})
     case("...its population is the one file that dispatches `--self-test`, not the plain one, EXEMPT or not",
          (_ex_pop, _ex_msgs[-1].startswith("0 --self-test script(s) run inside"), "1 exempt" in _ex_msgs[-1]),

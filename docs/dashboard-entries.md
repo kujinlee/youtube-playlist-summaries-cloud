@@ -18017,8 +18017,9 @@ light palette is the bare `:root`), so `missing_palettes` reports it missing and
 a stamp only.
 
 ## 2026-10-27
-Every script's self-test now runs in a clean, isolated environment, so none of them can reach into the
-real repository or pick up your personal git settings while it runs. Before, only the self-tests that a
+Every script's self-test now runs inside the isolated git environment, and each of the 79 was checked to start
+its suite inside it. That isolation is an in-process swap with known escapes, listed in backlog #380, so it lowers
+the risk of a self-test touching the real repository; it does not rule it out. Before, only the self-tests that a
 detector judged risky were isolated, and that detector kept missing cases: four self-tests that read the
 repository were on nobody's list, and one of them gave different answers depending on how it was started.
 The check that enforces this now asks one simple question of every self-test instead of trying to guess
@@ -18028,17 +18029,18 @@ Branch `wrap-every-selftest` (backlog #382). Measured on `d678369d` before any c
 `--self-test`, run as children of `fixture_git.isolated()`, gave 79 green; the red is `subject_status`
 (backlog #386), red unisolated too. 79 dispatch `--self-test`; 16 were wrapped and 63 more now are (64
 entries: `check-dashboard-entry` dispatches two; `gen-dashboard`'s write sandbox moved inside the block).
-Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,354 manifest mutations resolves
+Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,361 manifest mutations resolves
 once. After: 79/80 run normally, 79/80 with `GIT_DIR` exported to a victim that stays byte-identical, and
 `subject_status` 16/17 under `GIT_DIR` where master gives 12/17. Round 1 (Codex) showed that reading the population
 from dispatch leaked, so `check-fixture-git-isolation.py`'s rules are now broad: the population is every file with a
 non-docstring `--self-test` literal; a population file with no nameable entry is refused (dict, `getattr`, argparse
 action and sibling dispatch); entries must be plain undecorated synchronous `def`s whose body is the canonical
-argument-free `isolated()` block. Round 2 (Codex) beat the static launcher rule six more ways and found a
-real launch at import (`check-ci-watched.py`'s `_repo_sentinel()`, now resolved on first use), so rule 5 now
-IMPORTS every file in a child interpreter under an audit hook that refuses any process-launch event, `atexit`
-included. A timeout or a crash is CANNOT CHECK; what an import writes is reported. All 84 files import clean in
-about 1.6s. 84 → 130 cases; mutations 45 → 48. EXEMPT is empty. Against master's guard, measured over a fixed probe
-set held in the suite: every probe master refuses is refused here. Five named relaxations remain, each pinned
-accepted: a builder in a file with no `--self-test` (master's X9 false refusal), a flag that is not one literal, an
-unlaunched module-level git argv literal, a launch in a dead branch, and a prose-only mention of the flag.
+argument-free `isolated()` block. Round 2 (Codex) beat a static launcher rule six more ways and found a real launch at import
+(`check-ci-watched.py`'s `_repo_sentinel()`, now resolved on first use); round 3 convened an architecture review
+for THRASHING, which SPLIT the subject. As shipped, rule 5 observes one import of each scripts/*.py in a child (-I -S, the isolated environment, a temp cwd and HOME) under an in-process audit hook, plus a static check for direct launcher calls at module level. It does NOT see: native calls (ctypes/CFFI, backlog #382 r3 X3); launches taken only in another context through non-literal code; daemon threads outliving the check; dead branches. Enforcement outside the interpreter (a sandbox
+profile around the audit child) moves to backlog #380. Measured: 0 of 84 files trip the static half, and all 84
+imports are observed with no launch, in about 1.5s. 84 → 141 cases; mutations 45 → 55. EXEMPT is empty. Against
+master's guard, over a fixed probe set held in the suite: every probe master refuses is refused here except the named
+relaxations — a builder in a file with no `--self-test` (master's X9 false refusal), a flag that is not one literal,
+an unlaunched module-level git argv literal — and the NOT SEEN shapes above (master refused Codex's native-call
+program only because it also held a git argv literal).

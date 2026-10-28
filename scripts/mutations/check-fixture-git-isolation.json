@@ -345,8 +345,8 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    if exempt or not names_self_test(tree):\n        return 0, msgs\n",
-        "    if exempt:\n        return 0, msgs\n"
+        "    if exempt or not names_self_test(tree):\n        return (1 if msgs else 0), msgs\n",
+        "    if exempt:\n        return (1 if msgs else 0), msgs\n"
       ]
     ],
     "expect": [
@@ -493,7 +493,7 @@
       ]
     ],
     "expect": [
-      "⭐ probe [CODEX_R1] a module-level builder in a file with NO --self-test: refused"
+      "a file with NO --self-test whose import launches INDIRECTLY is refused: rule 5 imports every file"
     ]
   },
   {
@@ -624,6 +624,97 @@
     ],
     "expect": [
       "an EXEMPT file is still IMPORTED under the hook: rule 5 reads every file"
+    ]
+  },
+  {
+    "name": "the audit child starts without -I -S, so startup code runs before the hook (#382 r3 X2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "argv = [sys.executable, \"-I\", \"-S\", \"-c\", _CHILD,",
+        "argv = [sys.executable, \"-c\", _CHILD,"
+      ]
+    ],
+    "expect": [
+      "⭐ a `sitecustomize` on PYTHONPATH that vetoes the audit hook cannot suppress the check (r3 X2: -I -S)"
+    ]
+  },
+  {
+    "name": "no static check of direct launcher calls (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            for line, call in direct_launches(tree)]",
+        "            for line, call in []]"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [CODEX_R3] a launch only when the importing process's argv holds `--self-test` (r3 X1): refused"
+    ]
+  },
+  {
+    "name": "the static half does not descend into a module-level if (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n                walk(s.body)\n",
+        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a direct launch under a module-level `if` is refused statically, whichever branch an import takes"
+    ]
+  },
+  {
+    "name": "the static half does not follow a `from` import (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            elif isinstance(f, ast.Name) and f.id in bare:\n                found.append((n.lineno, bare[f.id]))\n",
+        "            elif False:\n                found.append((n.lineno, bare[f.id]))\n"
+      ]
+    ],
+    "expect": [
+      "...and so is a `from` import's launcher under a `with`, and an aliased module's in an `else`"
+    ]
+  },
+  {
+    "name": "the static half skips class bodies (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "                code.extend(s.decorator_list + s.bases)\n                walk(s.body)\n",
+        "                code.extend(s.decorator_list + s.bases)\n"
+      ]
+    ],
+    "expect": [
+      "...and so is one in a CLASS body, which runs at import"
+    ]
+  },
+  {
+    "name": "the static half reads lambda bodies as module-level code (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if isinstance(n, ast.Lambda):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a direct launcher inside a def or a lambda is not module-level code, so it is not refused statically"
+    ]
+  },
+  {
+    "name": "the static refusal does not name the launcher (#382 r3 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "`{call}` is called in module-level code",
+        "a launcher is called in module-level code"
+      ]
+    ],
+    "expect": [
+      "the static refusal names the file, the line and the launcher"
     ]
   }
 ]
