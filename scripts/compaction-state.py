@@ -69,7 +69,7 @@ counted, not audited.
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --audit    < payload.json   # what the PostCompact hook runs
     python3 scripts/compaction-state.py --print                     # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 58 cases
+    python3 scripts/compaction-state.py --self-test  # 61 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test.
 """
@@ -92,6 +92,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_REL = ".remember/precompact-snapshot.md"
+LEDGER = ".claude/inflight.jsonl"   # session-state's LEDGER_REL, named here for the location line only
 AUDIT_REL = ".remember/compaction-audit.md"
 SNAPSHOT_CAP = 8000     # under the 9,000 the brief set, leaving AUDIT_CAP + the opening line inside PRINT_CAP
 AUDIT_CAP = 1500
@@ -356,6 +357,17 @@ def worktrees(root: Path, run) -> tuple[list[dict] | None, str | None]:
     return wts, None
 
 
+def main_checkout(root: Path, run) -> tuple[Path, str | None]:
+    """(the MAIN checkout, None), or (root, why) when git cannot say. The in-flight ledger is git-ignored, so it
+    lives in the main checkout: read from a linked worktree's own `.claude/` it is EMPTY, and the snapshot said
+    "none RECORDED" while the main ledger held 6 jobs (measured 2026-10-28). Same rule as backlog #363's
+    `goal-tree.py`: the parent of `git rev-parse --path-format=absolute --git-common-dir`."""
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, GIT_TIMEOUT)
+    if rc != 0 or not out.strip():
+        return root, f"git rev-parse --git-common-dir exited {rc}: {clean(out, 120)}"
+    return Path(out.strip()).parent, None
+
+
 def worktree_section(wts, err, budget: int) -> str:
     L = ["## Worktrees (git worktree list)"]
     if wts is None:
@@ -439,7 +451,8 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         ss, ss_err = None, f"session-state.py cannot load ({exc.__class__.__name__}: {clean(exc, 100)})"
     gh_run = lambda cmd, cwd, timeout=GH_TIMEOUT: run(cmd, cwd, min(timeout, GH_TIMEOUT))  # noqa: E731
     with ThreadPoolExecutor(2) as ex:
-        f_state = ex.submit(ss.fetch, root, gh_run) if ss else None
+        main, main_err = main_checkout(root, run)
+        f_state = ex.submit(ss.fetch, main, gh_run) if ss else None
         f_wts = ex.submit(worktrees, root, run)
         try:
             prs, pr_error, ledger, problems, truncated = f_state.result() if f_state else (None, ss_err, [], [ss_err], False)
@@ -469,8 +482,16 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         head += f"\n⚠ hook payload: UNREADABLE — {clean(payload_err)}"
     if custom:
         head += f"\n/compact instructions: {clean(custom, 300)}"
+    if main_err:
+        where = (f"⚠ ledger read from THIS checkout, {root}/{LEDGER}: the main checkout could not be found ({main_err}) — "
+                 "if this is a linked worktree, the real ledger is elsewhere and was NOT READ")
+    elif main.resolve() != root.resolve():
+        where = f"ledger read from the MAIN checkout, {main}/{LEDGER} — this hook ran in the worktree {root}"
+    else:
+        where = f"ledger: {main}/{LEDGER}"
     parts = [head,
-             "## In flight BEFORE compaction (session-state.py)\n" + fit(inflight, 2600, "`python3 scripts/session-state.py`"),
+             "## In flight BEFORE compaction (session-state.py)\n" + clean(where, 400) + "\n"
+             + fit(inflight, 2600, "`python3 scripts/session-state.py`"),
              fit(decision_section(count, recent, ask_err, waits, ledger_ok), 1200, "`python3 scripts/session-state.py` and the dashboard"),
              worktree_section(wts, wt_err, 1500)]
     keys = {"stamp": f"{now:.3f}-{os.getpid()}", "epoch": now, "written": stamp_now,
@@ -973,7 +994,26 @@ def _self_test_body() -> int:
         g("commit", "-qm", "c")
         g("worktree", "add", "-q", "-b", "side", str(root / "realwt"))
         (root / "realwt" / "f").write_text("changed")
-        real = worktrees(repo, _runner())
+        (repo / ".git" / "info").mkdir(exist_ok=True)
+        (repo / ".git" / "info" / "exclude").write_text(".claude/\n")   # git-ignored, as in the real repo
+        (repo / ".claude").mkdir()
+        (repo / ".claude" / "inflight.jsonl").write_text(
+            json.dumps({"id": "main-job", "what": "Codex r1 on PR #9", "on_done": "fold", "at": "T"}) + "\n"
+            + json.dumps({"id": "main-walk", "what": "walkthrough page awaiting the owner", "on_done": "fold", "at": "T"}) + "\n")
+        real_run = _runner()
+        gh_fake = lambda cmd, cwd, timeout=GH_TIMEOUT: (0, "[]") if cmd[:1] == ["gh"] else real_run(cmd, cwd, timeout)  # noqa: E731
+        from_wt = snapshot({}, None, root / "realwt", gh_fake, 1000.0, transcript_ok, asks_ok)
+        case("⭐ run from a LINKED WORKTREE, the snapshot reads the MAIN checkout's ledger and names both paths",
+             ("[main-job] Codex r1 on PR #9" in from_wt, "ledger [main-walk]" in from_wt,
+              f"MAIN checkout, {repo.resolve()}/.claude/inflight.jsonl — this hook ran in the worktree {root / 'realwt'}"
+              in from_wt, _keys(from_wt)["ledger"]), (True, True, True, ["main-job", "main-walk"]))
+        case("run from the main checkout itself, the ledger line names one path",
+             f"ledger: {repo.resolve()}/.claude/inflight.jsonl" in snapshot({}, None, repo, gh_fake, 1000.0, transcript_ok, asks_ok),
+             True)
+        no_git = snapshot({}, None, root, fake_run(), 1000.0, transcript_ok, asks_ok)
+        case("⭐ when git cannot name the main checkout, the snapshot SAYS the ledger may be the wrong one",
+             "the real ledger is elsewhere and was NOT READ" in no_git, True)
+        real = worktrees(repo, real_run)
         case("⭐ worktrees() over a REAL repository: the main checkout clean, a linked worktree DIRTY",
              ([(w["branch"], w["state"]) for w in real[0]], real[1]), ([("main", "clean"), ("side", "DIRTY (1 paths)")], None))
         with redirect_stdout(io.StringIO()):

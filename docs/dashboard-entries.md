@@ -18065,6 +18065,7 @@ CANNOT RUN when a file is missing, STALE when the snapshot is over 30 minutes ol
 snapshot. Every hook exits 0 and never prints a decision, so compaction is never blocked; stdin is read with a 2 s
 deadline. Only an answer paired by `tool_use_id` with an `AskUserQuestion` is trusted (an automated review found
 the first version also took any tool output that began with an answer's wording); pasted blocks are withheld and
-accepted suggestions labelled. 58 cases, 21 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
+accepted suggestions labelled. The ledger is read from the main checkout, so a session in a worktree no
+longer reports an empty one. 61 cases, 23 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
 the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
 real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.

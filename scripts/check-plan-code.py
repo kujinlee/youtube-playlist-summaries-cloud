@@ -1920,7 +1920,8 @@ EXPECTED_MUTATIONS = {
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
     # transcript's `</pasted_content id=…>` closer unmatched, a tool_result-carrying turn read as a prompt. Four
     # anchors retargeted onto rewritten lines.
-    "scripts/compaction-state.py": 21,
+    # ⟳ 21 -> 23: the ledger read from the MAIN checkout (a worktree's own is empty), and the fallback said aloud.
+    "scripts/compaction-state.py": 23,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6137,7 +6138,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2382)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2384)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
