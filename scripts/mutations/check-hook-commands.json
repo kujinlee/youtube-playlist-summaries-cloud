@@ -1,444 +1,445 @@
 [
-  {
-    "name": "a command that merely CONTAINS the one form passes (||true and friends)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        m = CANONICAL.fullmatch(cmd)",
-        "        m = CANONICAL.search(cmd)"
-      ]
-    ],
-    "expect": [
-      "every divergent shape is refused — one finding each"
-    ]
-  },
-  {
-    "name": "the one form tolerates trailing arguments",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "[A-Za-z0-9._-]*\\.sh)')",
-        "[A-Za-z0-9._-]*\\.sh)(?: .*)?')"
-      ]
-    ],
-    "expect": [
-      "a trailing argument is a second shape too"
-    ]
-  },
-  {
-    "name": "a registered hook that does not exist passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if name not in on_disk:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "the one form naming a hook that does not exist is refused"
-    ]
-  },
-  {
-    "name": "an unregistered, unexplained hook file passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "and f not in unregistered:",
-        "and False:"
-      ]
-    ],
-    "expect": [
-      "a hook file nobody registers and nobody explains is refused"
-    ]
-  },
-  {
-    "name": "every file in the hooks directory counts as a hook",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if f.endswith(\".sh\") and",
-        "        if True and"
-      ]
-    ],
-    "expect": [
-      "a non-.sh file in the hooks directory is not a hook"
-    ]
-  },
-  {
-    "name": "a stale UNREGISTERED entry for a registered file passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if f in registered:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "a stale UNREGISTERED entry — the file is registered — is refused"
-    ]
-  },
-  {
-    "name": "a stale UNREGISTERED entry for a missing file passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        elif f not in on_disk:",
-        "        elif False:"
-      ]
-    ],
-    "expect": [
-      "a stale UNREGISTERED entry — no such file — is refused"
-    ]
-  },
-  {
-    "name": "ZERO hook commands reports a pass instead of CANNOT RUN",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        return 2, [f\"CANNOT RUN — {path} registers ZERO hook commands.",
-        "        return 0, [f\"CANNOT RUN — {path} registers ZERO hook commands."
-      ]
-    ],
-    "expect": [
-      "ZERO command hooks is CANNOT RUN — a zero over nothing is not a pass"
-    ]
-  },
-  {
-    "name": "a malformed hooks block reports a pass instead of CANNOT RUN",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        return 2, [f\"CANNOT RUN — {path}: {exc}. Treat this as NOT RUN.\"]",
-        "        return 0, [f\"CANNOT RUN — {path}: {exc}. Treat this as NOT RUN.\"]"
-      ]
-    ],
-    "expect": [
-      "a malformed hooks block is CANNOT RUN, not a crash"
-    ]
-  },
-  {
-    "name": "a settings file that is not an object reports a pass",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        return 2, [f\"CANNOT RUN — {path} is not a JSON object.",
-        "        return 0, [f\"CANNOT RUN — {path} is not a JSON object."
-      ]
-    ],
-    "expect": [
-      "a settings file that is a JSON array is CANNOT RUN, not a crash"
-    ]
-  },
-  {
-    "name": "hook files are listed from the REPO, not the root given",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    hooks_dir = root / HOOKS_REL",
-        "    hooks_dir = REPO_ROOT / HOOKS_REL"
-      ]
-    ],
-    "expect": [
-      "a registered hook that exists under ROOT passes"
-    ]
-  },
-  {
-    "name": "main() ignores the root it is given",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    code, messages = check(root / SETTINGS_REL, root, unregistered)",
-        "    code, messages = check(REPO_ROOT / SETTINGS_REL, REPO_ROOT, unregistered)"
-      ]
-    ],
-    "expect": [
-      "main() over a compliant world exits 0"
-    ]
-  },
-  {
-    "name": "an unknown hook type is skipped again (backlog #365)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "                if not isinstance(h.get(\"type\"), str) or h.get(\"type\") not in KNOWN_TYPES:",
-        "                if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ a hook entry with type None is CANNOT RUN, not skipped or a crash (backlog #365)"
-    ]
-  },
-  {
-    "name": "an empty UNREGISTERED reason is accepted again (backlog #365)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if not isinstance(unregistered[f], str) or not unregistered[f].strip():",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ an UNREGISTERED entry with an EMPTY reason is refused (backlog #365)"
-    ]
-  },
-  {
-    "name": "a known type is forgotten (`prompt` dropped)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "KNOWN_TYPES = frozenset({\"command\", \"prompt\", \"agent\", \"http\", \"mcp_tool\"})",
-        "KNOWN_TYPES = frozenset({\"command\", \"agent\", \"http\", \"mcp_tool\"})"
-      ]
-    ],
-    "expect": [
-      "⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)"
-    ]
-  },
-  {
-    "name": "a non-string reason is accepted through str()",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "unregistered[f], str) or not unregistered[f].strip():",
-        "unregistered[f], object) or not str(unregistered[f]).strip():"
-      ]
-    ],
-    "expect": [
-      "⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason"
-    ]
-  },
-  {
-    "name": "the launcher file is reported as a hook nobody registers (its exemption is gone)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    for f in sorted(on_disk - registered - {LAUNCHER}):",
-        "    for f in sorted(on_disk - registered):"
-      ]
-    ],
-    "expect": [
-      "the launcher on disk is NOT 'a hook nobody registers' — it is exempt by LAUNCHER"
-    ]
-  },
-  {
-    "name": "a command naming the launcher AS the hook passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if name == LAUNCHER:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "the one form naming the LAUNCHER as the hook is refused (it would launch nothing)"
-    ]
-  },
-  {
-    "name": "a missing launcher passes",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    if commands and LAUNCHER not in on_disk:",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "the launcher file missing is refused — every command runs through it"
-    ]
-  },
-  {
-    "name": "the launcher is accepted without its `:-.` default",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "r'bash \"\\$\\{CLAUDE_PROJECT_DIR:-\\.\\}\"/",
-        "r'bash \"\\$\\{?CLAUDE_PROJECT_DIR(?::-\\.)?\\}?\"/"
-      ]
-    ],
-    "expect": [
-      "every divergent shape is refused — one finding each"
-    ]
-  },
-  {
-    "name": "⭐ the field policy is no longer checked (backlog #368)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    found = problems(commands, on_disk, unregistered) + field_problems(settings)",
-        "    found = problems(commands, on_disk, unregistered)"
-      ]
-    ],
-    "expect": [
-      "⭐ a command hook carrying `args` is REFUSED (backlog #368)"
-    ]
-  },
-  {
-    "name": "`shell` is ACCEPTED (backlog #368)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    \"type\": ((str,), \"the hook kind\"),\n",
-        "    \"type\": ((str,), \"the hook kind\"),\n    \"shell\": ((str,), \"x\"),\n"
-      ]
-    ],
-    "expect": [
-      "⭐ a command hook carrying `shell` is REFUSED (backlog #368)"
-    ]
-  },
-  {
-    "name": "⭐ `async` is ACCEPTED — a gate would stop blocking (backlog #368 r1)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    \"command\": ((str,), \"the one registration shape\"),\n",
-        "    \"command\": ((str,), \"the one registration shape\"),\n    \"async\": ((bool,), \"x\"),\n"
-      ]
-    ],
-    "expect": [
-      "⭐ a command hook carrying `async` is REFUSED (backlog #368)"
-    ]
-  },
-  {
-    "name": "`asyncRewake` is ACCEPTED (backlog #368 r1)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    \"statusMessage\": ((str,), \"spinner text only\"),\n",
-        "    \"statusMessage\": ((str,), \"spinner text only\"),\n    \"asyncRewake\": ((bool,), \"x\"),\n"
-      ]
-    ],
-    "expect": [
-      "⭐ a command hook carrying `asyncRewake` is REFUSED (backlog #368)"
-    ]
-  },
-  {
-    "name": "⭐ `once` is ACCEPTED — a gate would run once (backlog #368 r1)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n",
-        "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n    \"once\": ((bool,), \"x\"),\n"
-      ]
-    ],
-    "expect": [
-      "⭐ a command hook carrying `once` is REFUSED (backlog #368)"
-    ]
-  },
-  {
-    "name": "⭐ an UNCLASSIFIED field is ACCEPTED — allow by default (backlog #368 r1)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "            else:\n                why = REFUSED.get(key,",
-        "            elif key in REFUSED:\n                why = REFUSED.get(key,"
-      ]
-    ],
-    "expect": [
-      "⭐ an UNCLASSIFIED field is refused — deny by default (backlog #368 r1)"
-    ]
-  },
-  {
-    "name": "⭐ a live field (`if`) is refused — the guard would be red on today's settings",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "    \"if\": ((str,), \"in live use; its VALUE is not checked\"),\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ every field today's live settings use is ACCEPTED (an independent list, from the live file 2026-10-27)"
-    ]
-  },
-  {
-    "name": "overrides on NON-command hooks are counted too",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if h.get(\"type\") != \"command\":\n            continue\n        for key, val in h.items():",
-        "        for key, val in h.items():"
-      ]
-    ],
-    "expect": [
-      "⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)"
-    ]
-  },
-  {
-    "name": "⭐ the walk reads only the FIRST group of each event (backlog #368 r1)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        for g in groups:\n",
-        "        for g in groups[:1]:\n"
-      ]
-    ],
-    "expect": [
-      "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
-    ]
-  },
-  {
-    "name": "⭐ an accepted field's TYPE is not checked (r2: statusMessage {} disables the file)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "                if type(val) not in types:",
-        "                if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ an accepted field with the WRONG TYPE is refused — Claude Code would not load the file (r2)"
-    ]
-  },
-  {
-    "name": "⭐ the type check uses isinstance, so `timeout: true` passes as an int (r2)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "type(val) not in types",
-        "not isinstance(val, types)"
-      ]
-    ],
-    "expect": [
-      "⭐ `timeout: true` is refused — a bool is an int to isinstance, not a number of seconds (r2)"
-    ]
-  },
-  {
-    "name": "⭐ the walk REJECTS every second group — a raise must not satisfy the traversal case (r2, Codex)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "for g in groups:",
-        "for i, g in enumerate(groups):\n            if i:\n                raise Malformed(\"second group\")"
-      ]
-    ],
-    "expect": [
-      "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
-    ]
-  },
-  {
-    "name": "⭐ a NON-LIST event value is skipped, not refused (r2, Codex)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "        if not isinstance(groups, list):\n            raise Malformed(f\"`hooks.{event}` is not a list\")",
-        "        if not isinstance(groups, list):\n            continue"
-      ]
-    ],
-    "expect": [
-      "⭐ a NON-LIST event value beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
-    ]
-  },
-  {
-    "name": "⭐ a NON-STRING command is skipped, not refused (r2, Codex)",
-    "file": "scripts/check-hook-commands.py",
-    "edits": [
-      [
-        "                    raise Malformed(f\"a `hooks.{event}` command is not a string\")",
-        "                    continue"
-      ]
-    ],
-    "expect": [
-      "⭐ a NON-STRING command beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
-    ]
-  }
+ {
+  "name": "a command that merely CONTAINS the one form passes (||true and friends)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        m = CANONICAL.fullmatch(cmd)",
+    "        m = CANONICAL.search(cmd)"
+   ]
+  ],
+  "expect": [
+   "every divergent shape is refused — one finding each"
+  ]
+ },
+ {
+  "name": "the one form tolerates trailing arguments",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "[A-Za-z0-9._-]*\\.sh)')",
+    "[A-Za-z0-9._-]*\\.sh)(?: .*)?')"
+   ]
+  ],
+  "expect": [
+   "a trailing argument is a second shape too"
+  ]
+ },
+ {
+  "name": "a registered hook that does not exist passes",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if name not in on_disk:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "the one form naming a hook that does not exist is refused"
+  ]
+ },
+ {
+  "name": "an unregistered, unexplained hook file passes",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "and f not in unregistered:",
+    "and False:"
+   ]
+  ],
+  "expect": [
+   "a hook file nobody registers and nobody explains is refused"
+  ]
+ },
+ {
+  "name": "every file in the hooks directory counts as a hook",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if f.endswith(\".sh\") and",
+    "        if True and"
+   ]
+  ],
+  "expect": [
+   "a non-.sh file in the hooks directory is not a hook"
+  ]
+ },
+ {
+  "name": "a stale UNREGISTERED entry for a registered file passes",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if f in registered:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "a stale UNREGISTERED entry — the file is registered — is refused"
+  ]
+ },
+ {
+  "name": "a stale UNREGISTERED entry for a missing file passes",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        elif f not in on_disk:",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "a stale UNREGISTERED entry — no such file — is refused"
+  ]
+ },
+ {
+  "name": "ZERO hook commands reports a pass instead of CANNOT RUN",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        return 2, [f\"CANNOT RUN — {path} registers ZERO hook commands.",
+    "        return 0, [f\"CANNOT RUN — {path} registers ZERO hook commands."
+   ]
+  ],
+  "expect": [
+   "ZERO command hooks is CANNOT RUN — a zero over nothing is not a pass"
+  ]
+ },
+ {
+  "name": "a malformed hooks block reports a pass instead of CANNOT RUN",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        return 2, [f\"CANNOT RUN — {path}: {exc}. Treat this as NOT RUN.\"]",
+    "        return 0, [f\"CANNOT RUN — {path}: {exc}. Treat this as NOT RUN.\"]"
+   ]
+  ],
+  "expect": [
+   "a malformed hooks block is CANNOT RUN, not a crash"
+  ]
+ },
+ {
+  "name": "a settings file that is not an object reports a pass",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        return 2, [f\"CANNOT RUN — {path} is not a JSON object.",
+    "        return 0, [f\"CANNOT RUN — {path} is not a JSON object."
+   ]
+  ],
+  "expect": [
+   "a settings file that is a JSON array is CANNOT RUN, not a crash"
+  ]
+ },
+ {
+  "name": "hook files are listed from the REPO, not the root given",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    hooks_dir = root / HOOKS_REL",
+    "    hooks_dir = REPO_ROOT / HOOKS_REL"
+   ]
+  ],
+  "expect": [
+   "a registered hook that exists under ROOT passes"
+  ]
+ },
+ {
+  "name": "main() ignores the root it is given",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    code, messages = check(root / SETTINGS_REL, root, unregistered)",
+    "    code, messages = check(REPO_ROOT / SETTINGS_REL, REPO_ROOT, unregistered)"
+   ]
+  ],
+  "expect": [
+   "⭐ main() over a divergent registration exits 1 and NAMES the shape"
+  ],
+  "why_retargeted": "2026-10-28 (PR #430 r1, Codex P2): emptying UNREGISTERED made REPO_ROOT itself compliant, so 'main() over a compliant world exits 0' passes under this mutation for an AMBIENT reason; the divergent-registration case discriminates the two roots"
+ },
+ {
+  "name": "an unknown hook type is skipped again (backlog #365)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "                if not isinstance(h.get(\"type\"), str) or h.get(\"type\") not in KNOWN_TYPES:",
+    "                if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ a hook entry with type None is CANNOT RUN, not skipped or a crash (backlog #365)"
+  ]
+ },
+ {
+  "name": "an empty UNREGISTERED reason is accepted again (backlog #365)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if not isinstance(unregistered[f], str) or not unregistered[f].strip():",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ an UNREGISTERED entry with an EMPTY reason is refused (backlog #365)"
+  ]
+ },
+ {
+  "name": "a known type is forgotten (`prompt` dropped)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "KNOWN_TYPES = frozenset({\"command\", \"prompt\", \"agent\", \"http\", \"mcp_tool\"})",
+    "KNOWN_TYPES = frozenset({\"command\", \"agent\", \"http\", \"mcp_tool\"})"
+   ]
+  ],
+  "expect": [
+   "⭐ every KNOWN non-command type passes beside a canonical command (r1: dropping one stayed green)"
+  ]
+ },
+ {
+  "name": "a non-string reason is accepted through str()",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "unregistered[f], str) or not unregistered[f].strip():",
+    "unregistered[f], object) or not str(unregistered[f]).strip():"
+   ]
+  ],
+  "expect": [
+   "⭐ ...and so is a NON-STRING reason — str(None) is 'None', not a reason"
+  ]
+ },
+ {
+  "name": "the launcher file is reported as a hook nobody registers (its exemption is gone)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    for f in sorted(on_disk - registered - {LAUNCHER}):",
+    "    for f in sorted(on_disk - registered):"
+   ]
+  ],
+  "expect": [
+   "the launcher on disk is NOT 'a hook nobody registers' — it is exempt by LAUNCHER"
+  ]
+ },
+ {
+  "name": "a command naming the launcher AS the hook passes",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if name == LAUNCHER:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "the one form naming the LAUNCHER as the hook is refused (it would launch nothing)"
+  ]
+ },
+ {
+  "name": "a missing launcher passes",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    if commands and LAUNCHER not in on_disk:",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "the launcher file missing is refused — every command runs through it"
+  ]
+ },
+ {
+  "name": "the launcher is accepted without its `:-.` default",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "r'bash \"\\$\\{CLAUDE_PROJECT_DIR:-\\.\\}\"/",
+    "r'bash \"\\$\\{?CLAUDE_PROJECT_DIR(?::-\\.)?\\}?\"/"
+   ]
+  ],
+  "expect": [
+   "every divergent shape is refused — one finding each"
+  ]
+ },
+ {
+  "name": "⭐ the field policy is no longer checked (backlog #368)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    found = problems(commands, on_disk, unregistered) + field_problems(settings)",
+    "    found = problems(commands, on_disk, unregistered)"
+   ]
+  ],
+  "expect": [
+   "⭐ a command hook carrying `args` is REFUSED (backlog #368)"
+  ]
+ },
+ {
+  "name": "`shell` is ACCEPTED (backlog #368)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    \"type\": ((str,), \"the hook kind\"),\n",
+    "    \"type\": ((str,), \"the hook kind\"),\n    \"shell\": ((str,), \"x\"),\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a command hook carrying `shell` is REFUSED (backlog #368)"
+  ]
+ },
+ {
+  "name": "⭐ `async` is ACCEPTED — a gate would stop blocking (backlog #368 r1)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    \"command\": ((str,), \"the one registration shape\"),\n",
+    "    \"command\": ((str,), \"the one registration shape\"),\n    \"async\": ((bool,), \"x\"),\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a command hook carrying `async` is REFUSED (backlog #368)"
+  ]
+ },
+ {
+  "name": "`asyncRewake` is ACCEPTED (backlog #368 r1)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    \"statusMessage\": ((str,), \"spinner text only\"),\n",
+    "    \"statusMessage\": ((str,), \"spinner text only\"),\n    \"asyncRewake\": ((bool,), \"x\"),\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a command hook carrying `asyncRewake` is REFUSED (backlog #368)"
+  ]
+ },
+ {
+  "name": "⭐ `once` is ACCEPTED — a gate would run once (backlog #368 r1)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n",
+    "    \"timeout\": ((int, float), \"in live use; its VALUE is not checked\"),\n    \"once\": ((bool,), \"x\"),\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a command hook carrying `once` is REFUSED (backlog #368)"
+  ]
+ },
+ {
+  "name": "⭐ an UNCLASSIFIED field is ACCEPTED — allow by default (backlog #368 r1)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "            else:\n                why = REFUSED.get(key,",
+    "            elif key in REFUSED:\n                why = REFUSED.get(key,"
+   ]
+  ],
+  "expect": [
+   "⭐ an UNCLASSIFIED field is refused — deny by default (backlog #368 r1)"
+  ]
+ },
+ {
+  "name": "⭐ a live field (`if`) is refused — the guard would be red on today's settings",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "    \"if\": ((str,), \"in live use; its VALUE is not checked\"),\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ every field today's live settings use is ACCEPTED (an independent list, from the live file 2026-10-27)"
+  ]
+ },
+ {
+  "name": "overrides on NON-command hooks are counted too",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if h.get(\"type\") != \"command\":\n            continue\n        for key, val in h.items():",
+    "        for key, val in h.items():"
+   ]
+  ],
+  "expect": [
+   "⭐ `args` and `shell` on two hooks are two findings; the same keys on a NON-command hook are not (backlog #368)"
+  ]
+ },
+ {
+  "name": "⭐ the walk reads only the FIRST group of each event (backlog #368 r1)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        for g in groups:\n",
+    "        for g in groups[:1]:\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
+  ]
+ },
+ {
+  "name": "⭐ an accepted field's TYPE is not checked (r2: statusMessage {} disables the file)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "                if type(val) not in types:",
+    "                if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ an accepted field with the WRONG TYPE is refused — Claude Code would not load the file (r2)"
+  ]
+ },
+ {
+  "name": "⭐ the type check uses isinstance, so `timeout: true` passes as an int (r2)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "type(val) not in types",
+    "not isinstance(val, types)"
+   ]
+  ],
+  "expect": [
+   "⭐ `timeout: true` is refused — a bool is an int to isinstance, not a number of seconds (r2)"
+  ]
+ },
+ {
+  "name": "⭐ the walk REJECTS every second group — a raise must not satisfy the traversal case (r2, Codex)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "for g in groups:",
+    "for i, g in enumerate(groups):\n            if i:\n                raise Malformed(\"second group\")"
+   ]
+  ],
+  "expect": [
+   "⭐ a refused field is found in a SECOND event, a SECOND group, AFTER a non-command hook (r1: one walk)"
+  ]
+ },
+ {
+  "name": "⭐ a NON-LIST event value is skipped, not refused (r2, Codex)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "        if not isinstance(groups, list):\n            raise Malformed(f\"`hooks.{event}` is not a list\")",
+    "        if not isinstance(groups, list):\n            continue"
+   ]
+  ],
+  "expect": [
+   "⭐ a NON-LIST event value beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
+  ]
+ },
+ {
+  "name": "⭐ a NON-STRING command is skipped, not refused (r2, Codex)",
+  "file": "scripts/check-hook-commands.py",
+  "edits": [
+   [
+    "                    raise Malformed(f\"a `hooks.{event}` command is not a string\")",
+    "                    continue"
+   ]
+  ],
+  "expect": [
+   "⭐ a NON-STRING command beside a VALID command is CANNOT RUN — the valid one cannot supply the refusal (r2)"
+  ]
+ }
 ]

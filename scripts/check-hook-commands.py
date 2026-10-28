@@ -71,10 +71,9 @@ LAUNCHER = "run-hook.sh"
 
 # Hook files that are deliberately NOT registered, each with its reason. A file not here and not
 # registered is refused: an unregistered hook is a gate with no caller.
-UNREGISTERED: dict[str, str] = {
-    "check-memory-index-budget.sh": "advisory; deliberately not registered, see the NOT REGISTERED "
-                                    "note above the memory-index step in .github/workflows/ci.yml",
-}
+# ⟳ 2026-10-28: empty. `check-memory-index-budget.sh` was listed here, waiting on the owner's decision;
+# the owner chose to register it (dashboard ask 2026-10-19/9, answered on a selection card 2026-10-28).
+UNREGISTERED: dict[str, str] = {}
 
 
 class Malformed(Exception):

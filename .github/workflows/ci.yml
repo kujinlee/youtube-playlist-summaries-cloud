@@ -531,14 +531,15 @@ jobs:
       # WORKING TREE (`INDEX` is the path the harness symlink resolves to, same inode), so the
       # overflow that actually degrades a session is invisible here by construction.
       # ⚠ This is backlog #309's class, and the guard is NOT structurally blind to it — it reads the
-      # right file. It is simply only CALLED from here. ⛔ A leading caller EXISTS AS A SCRIPT AND IS
-      # NOT REGISTERED: `.claude/hooks/check-memory-index-budget.sh` (advisory, PostToolUse on writes
-      # to the index). Registering it edits `.claude/settings.json`, i.e. session config, and the
-      # finding that prompted it came from a review agent rather than from the owner — so it waits on
-      # their decision rather than being wired in on a peer's suggestion. UNTIL IT IS REGISTERED THIS
-      # STEP IS THE ONLY CALLER and catches committed growth only; a working-tree overflow that
-      # degrades a live session is still unobserved. ⚠ And even registered it would only see writes
-      # made THROUGH THE TOOL — the #309 instance arrived by another route.
+      # right file. It is simply only CALLED from here in CI. ⟳ 2026-10-28: the LEADING caller is now
+      # REGISTERED — `.claude/hooks/check-memory-index-budget.sh` runs PostToolUse on Edit|Write, by
+      # the owner's decision (dashboard ask 2026-10-19/9). It is advisory and always exits 0, so THIS
+      # STEP stays the one that fails. ⚠ It sees only writes made THROUGH THE TOOL — the backlog #309
+      # instance arrived by another route, so a working-tree overflow from an editor or another
+      # agent is unobserved until a later tool write. ⚠ It identifies the index by FILE IDENTITY
+      # within the checkout containing the edited path (so symlink, case and in-checkout hard-link
+      # aliases are seen); a hard link to one checkout's index placed in ANOTHER checkout, or outside
+      # every checkout, is not found (PR #430 r4–r5).
       - name: Memory index injection budget
         run: python3 scripts/check-memory-index-budget.py
 
