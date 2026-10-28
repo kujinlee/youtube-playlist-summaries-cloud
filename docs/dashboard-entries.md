@@ -18082,3 +18082,36 @@ What settled each one:
 - `2026-10-22/6` — resolved: PR #388 merged 2026-10-23.
 - `2026-09-21/1` — moot: Not a decision: the entry reports a known gap and asks nothing. It is flagged [needs-you] without a Decide line.
 - `2026-10-19/10` — moot: Retrospective scope question about merged work; three architecture reviews were convened on later subjects (10-27, 10-28).
+
+## 2026-10-28 [needs-you] [resolved: 2026-10-19/5] [resolved: 2026-10-19/9] [resolved: 2026-10-23/2] [resolved: 2026-10-24/1] [resolved: 2026-10-24/2] [resolved: 2026-10-25/1]
+Six of the seven decisions still waiting on you could not be shown: their entries were flagged as needing you but never
+wrote the question down in the form the dashboard reads, so each showed only "Could not read one ask". They are asked
+again here, in that form, with the options and recommendation from the triage page
+(`2026-10-28-topic-dashboard-asks-triage.html`, where each one's evidence is). The seventh, whether to keep the
+explainer-server restart feature (2026-09-29/2), was already readable and is unchanged.
+
+**Decide:** The memory compaction you asked to do together (from 2026-10-19/5) — the memory index is at 97% of the size the harness loads. Do it now, do it together, or drop it?
+- I compact it now, mechanically, by moving history rows to `slice-history.md` — the remedy the budget guard names [recommended]
+- we do it together in the next session
+- drop it
+
+**Decide:** Register the advisory memory-budget check as a hook that runs when the index is edited (from 2026-10-19/9)? It warns and never blocks; today nothing but CI runs it.
+- yes, register it [recommended]
+- no, CI stays the only caller
+
+**Decide:** Backlog #327 — keep, simplify or retire the review-decision scheme, the decision log and its triggers (from 2026-10-23/2 and 2026-10-25/1)?
+- simplify: keep the ladder (accrete → redesign → split → defer) and the bet written before each round, and drop the triggers that only warn [recommended]
+- keep it as it is
+- retire it
+
+**Decide:** Five rows from the review-process audit (from 2026-10-23/2): backlog #337 (a third outcome value), #290 (where the suite is registered as a deliverable), #66 (92 old briefs in `.superpowers/sdd/` — keep or delete), #104 (fold into #100 or keep separate), and the paused decision-log redesign plan (resume or retire). How should they be settled?
+- fold #290 into backlog #384, since the suite's design decides where it is registered, and answer the other four on the triage page [recommended]
+- answer all five on the triage page, one line each
+
+**Decide:** Six product rows from the backlog scrub (from 2026-10-24/1): backlog #8 (retire or narrow the deep-dive vision), #26 (which attempt-limit option), #27 (how long old source versions are kept), #28 (deferred until real traffic), #53 (is one deploy-commit mismatch reason enough to build the check), #144 (how to check the feature tree is complete). How should they be settled?
+- #28 stays deferred, as its row already says, and the other five are answered on the triage page — #26 before milestone M5 reaches that step [recommended]
+- answer all six on the triage page
+
+**Decide:** Backlog #339 — when later review rounds "alternate", which reading governs (from 2026-10-24/2)? The gate accepts both, and this week used both: PR #424's later rounds had one reviewer each, PR #425's had a pair.
+- one reviewer per round, with a written REVIEW GAP line for the other [recommended]
+- a pair of reviews per round, alternating which goes first
