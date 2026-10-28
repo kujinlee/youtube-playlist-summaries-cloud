@@ -102,9 +102,11 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
 - **Structure is carried by COLOUR ROLES, not by brightness alone** (backlog #226, the owner's choice
   from a live three-way switcher, 2026-10-05). Measured before it: heading, body prose and `<b>` all
   computed to one colour, so luminance was the only cue and the page had to be read, not skimmed.
-  ⛔ **A page MUST opt in, by putting its content inside an element with class `.ex-body`.** The
-  roles style nothing outside it, so the composer adds no text-style switcher to a fragment without
-  one, and nothing warns. That page renders the flat, one-colour structure this rule exists to stop.
+  ⛔ **The roles style only content inside an element with class `.ex-body`.** ⟳ 2026-10-27
+  (backlog #376): `brief-compose.py` now SUPPLIES it — when it adds the theme control it also adds
+  the text-style switcher and wraps the fragment's body in `.ex-body`, unless the fragment already
+  carries the class (then it is not nested) or brings its own `#schemer` (then no second one is
+  added). Hand-placing it is still how a page scopes the roles to part of itself.
   Inside `.ex-body` three roles are spent:
 
   | Role | Colours | Token it reads |
@@ -118,9 +120,17 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
   supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
   something it does not. They are named by token, not by hue, because a page sets its own hue.
-  ⛔ **A page that opts in DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light default, each
-  explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light / `#9db8e8` dark unless
-  it has a reason to differ. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
+  ⛔ **A page that gets the switcher DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light
+  default, each explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light /
+  `#9db8e8` dark unless it has a reason to differ. Since backlog #376, on any page whose finished
+  document carries `#schemer` (its own or the composer's), **the composer refuses a page whose
+  canonical palette block omits `--em`, or gives `--bg`/`--em` as anything but a literal colour, or
+  whose `--em` is under 4.5:1 against that block's `--bg`; rendered readability is verified in a
+  browser (§5b; backlog #387 will automate it).** The canonical blocks are `:root`,
+  `:root[data-theme="light"]`, `:root[data-theme="dark"]`, and inside
+  `@media (prefers-color-scheme: dark)`, `:root:not([data-theme="light"])` or `:root` (whitespace
+  is not significant). A `--bg`/`--em` declared anywhere else is refused by name
+  (`brief-compose.palette_blocks`). **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
   is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
   it measured **1.78:1** there (backlog #226). It cannot be fixed in the shim, because only the page
   knows whether its palette goes dark (`page_chrome`'s rule: *mechanism shared, palette local*);

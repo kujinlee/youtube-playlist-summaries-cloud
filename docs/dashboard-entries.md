@@ -17972,3 +17972,46 @@ must not duplicate — then a consolidation decision; Phase 1, the human gate). 
 vocabulary as FACETS — goal = anchors, area = a small registered list, status split from severity per backlog #90
 — measured by the tag-vocabulary survey; depends on #384). Backlog #386 (🟡, `subject_status.py --self-test` is
 16/17 on master with no CI caller; the cause is not yet diagnosed).
+
+## 2026-10-27
+A composed explainer page that gets the light/dark button now also gets the text-style switcher
+(colour, headings only, plain) without the author having to remember anything. Before, the switcher
+appeared only if the author had wrapped the page's content in one particular class by hand. A page
+whose colour palette leaves out the bold colour, writes it as anything but a plain colour value,
+or makes it too faint against its own background, is now refused rather than published, and the
+refusal names what to fix. Whether the finished page reads well is checked in a browser. Two pages were rebuilt: one gains the
+switcher, and on the other, which already had it, bold text in dark mode had been unreadable since
+it was published. The coordinator checked both pages in a browser on 2026-10-27: all three buttons
+are on top and can be pressed, and in dark mode with nothing pressed bold text measures 9.04:1 and
+headings 7.23:1.
+<!--tech-->
+Branch `text-style-default` (backlog #376). `brief-compose.compose` wraps the fragment's body in
+`page_chrome.TEXT_SCOPE_CLASS` when the bar it places carries `#schemer` and the fragment has no
+`.ex-body` of its own; `chrome_for` no longer requires a hand-placed consumer, and `assert_wired`
+still checks the finished page for one. A fragment that brings its own `#schemer` gets no second
+switcher and no wrapper. The `--em` trap (`architecture-review-2026-10-24-em-default.md`) is handled
+by REFUSAL, the guard that review filed. `assert_em_in_every_palette` runs on every page whose
+finished document carries `#schemer`, whether the composer added it or the fragment did. Rounds 1–3
+each tried to predict the rendered page from its text and thrashed. An architecture review
+(`architecture-review-2026-10-27-em-guard.md`) split the job, and the guard is now the decidable
+half: the composer refuses a page whose canonical palette block omits `--em`, or gives `--bg`/`--em`
+as anything but a literal colour, or whose `--em` is under 4.5:1 against that block's `--bg`;
+rendered readability is verified in a browser (§5b; backlog #387 will automate it). A `--bg`/`--em`
+outside the 5 canonical blocks (measured across the 26 fragments) is refused by name. Zero palette
+blocks is CANNOT VERIFY, not a pass.
+Writing the family pair in automatically was rejected: it means guessing whether each block is dark,
+which is what the review measured failing three ways. 153 → 194 cases; mutations 27 → 45, each
+killed by the case it names (`--only scripts/brief-compose.py`: 45/45 attributed). Rounds 2 and
+3 retired 12 mutations along with the code they targeted. Every round-1 and round-2 repro has
+a case that was red on the code it was found in. `page_chrome.py`
+unchanged. Recompose: of the 24 tracked pages with a fragment, 22 compose byte-identically under
+master's composer and the new one (stamp aside), so #376 changes nothing on them. Recomposing them
+anyway brings in older drift, so they were restored: 6 lose their Theme button, and one
+(`2026-09-27-topic-memory-recall-taxonomy`) has a fragment older than its page and loses 321 text
+nodes. Committed: `2026-10-26-…progress-and-plan` (gains wrapper, switcher and scoped CSS, plus
+`--em` in its 4 palette blocks) and `2026-10-27-brief-topic-builtin-skills-explainer` (already had the
+switcher, leaned on the shim, now `--em` in its 4 blocks). Both fragments were refused before the edit:
+`#2d4a7c` on the light ground is 8.45:1 and `#9db8e8` on the dark is 9.04:1. 16 of the 24 still get no
+switcher because they get no Theme button: they declare no `:root[data-theme="light"]` block (their
+light palette is the bare `:root`), so `missing_palettes` reports it missing and the composer adds
+a stamp only.
