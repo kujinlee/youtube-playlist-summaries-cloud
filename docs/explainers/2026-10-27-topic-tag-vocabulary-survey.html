@@ -241,7 +241,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
 <div class="wrap ex-body">
 
 <h1>Shared glue, and whether the line items can share one tag vocabulary</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-27 11:55 · 9ac7c80d · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-27 18:04 · f0dfef07 · uncommitted changes</time></span></div></div>
 <p class="horizon">as of <code>9ac7c80d</code> (master) · 2026-10-27 11:56 PDT · read from the <b>working tree</b> of the main checkout (several explainer pages carry uncommitted edits) · every number below comes from a command run against these files, using the repo's own parsers where they exist</p>
 
 <div class="reading">
@@ -268,6 +268,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <li><a href="#synonyms">Synonym clusters: one concept, many tags</a></li>
 <li><a href="#options">Three ways to a common vocabulary</a></li>
 <li><a href="#rec">Recommendation, and what would make it fail</a></li>
+<li><a href="#design">Ideas for an overarching design (collecting — added 2026-10-27 18:05)</a></li>
 <li><a href="#measured">What was measured, and what was inferred</a></li>
 </ol>
 </div>
@@ -382,6 +383,84 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </ol>
 
 <div class="k green"><b>It fails if</b> after the retag, any one concept still appears under two values of the same facet (e.g. <code>cloud/money</code> and <code>cloud / money</code> both in use), <b>or</b> the features page's comprehensibility nodes still miss an open suite row that a keyword search finds, <b>or</b> the area guard has to be widened within a month of shipping. That last one would mean the closed list was guessed rather than derived.</div>
+
+<h2 id="design">Ideas for an overarching design (collecting — added 2026-10-27 18:05)</h2>
+
+<p class="lede"><b>This section collects ideas; it decides nothing.</b> It is the seed of backlog #384's specification. Ask
+on any heading or highlighted sentence below and the answer lands here, under the idea it belongs to. The measured
+page-by-page inventory is being built separately (<code>2026-10-27-topic-suite-page-inventory</code>) and will replace
+every <i>to measure</i> marker in this section with a number.</p>
+
+<h3 id="design-goal">The goal, in the owner's words</h3>
+<blockquote>"Goal is to have tool for human (me) to understand what you (AI agent) [are doing]. I want to check
+progresses (goal-tree), pending works (backlogs?), work history (goal-tree?), topics (explainer-topic), goals (goals),
+features (features) etc. These various pages are interconnected but we haven't defined how they should be related
+and linked together. The tag vocabulary and tagging should serve the goal." — 2026-10-27 18:02</blockquote>
+<p>Restated as a design test: <b>for every question the owner asks about the agent's work, there is exactly one page
+that answers it, and from any item on that page there is a link to the next thing the owner would want to see.</b>
+Two pages that answer the same question are a consolidation candidate; a question with no page is a gap; an item with
+no onward link is a dead end.</p>
+
+<h3 id="design-questions">The owner's questions, and which page answers each today</h3>
+<div class="scroll"><table>
+<tr><th>The owner's question</th><th>Today's answer</th><th>Gap, as far as is known now</th></tr>
+<tr><td><b>Progress</b> — where is each piece of work right now?</td><td><code>/goal-tree</code> — typed in chat by the agent, from <code>gh</code> and <code>git</code> at the moment it's asked</td><td>it is not a page: nothing persists it and nothing a reader can open later. Backlog #363 already says the goal tree is typed while the work-lines page could derive it</td></tr>
+<tr><td><b>Pending work</b> — what is left to do?</td><td>the backlog page (<code>gen-backlog-page.py</code>), 337 rows (214 open) on master <code>f0dfef07</code>, filterable by tag since #381</td><td>stories, defects and tasks share one table (backlog #90); "pending" is not separated from "parked" or "needs the owner"</td></tr>
+<tr><td><b>Work history</b> — what happened, and when?</td><td>the dashboard (<code>dashboard-entries.md</code>, one entry per change) and the work-lines page (<code>gen-work-lines.py</code>)</td><td><i>to measure</i>: how the two overlap. The goal tree also shows merged work, so up to three places tell history</td></tr>
+<tr><td><b>Topics</b> — explain this to me</td><td>explainer pages (<code>explain-topic</code>, <code>explain-diff</code>, <code>explain-findings</code>, <code>/brief</code>) at <code>/latest</code> and <code>/</code></td><td>an explainer is not linked FROM the backlog row, PR or goal it explains, so it is found only by date</td></tr>
+<tr><td><b>Goals</b> — what are we trying to achieve?</td><td>the goals page (<code>gen-goals-page.py</code>), from <code>docs/anchors.md</code> and the roadmap</td><td><i>to measure</i>: whether a goal links to its open backlog rows and its PRs</td></tr>
+<tr><td><b>Features</b> — what does the system do?</td><td>the features page (<code>gen-features-page.py</code>), from <code>docs/features.md</code></td><td>it already links each node to its backlog rows (<code>/backlog-table#iN</code>), ADRs, specs and reviews — the one page that is a hub today</td></tr>
+<tr><td><b>Needs me</b> — what is waiting on my decision?</td><td>the dashboard's <code>[needs-you]</code> entries; the agent's chat summary</td><td><i>to measure</i>: whether any page lists every open decision in one place</td></tr>
+</table></div>
+
+<h3 id="design-model">A candidate relationship model (a hypothesis to accept or reject)</h3>
+<p>The pages show different <b>entities</b>, and the links between pages are the relationships between those
+entities. Naming the entities first makes the linking rule mechanical:</p>
+<div class="scroll"><table>
+<tr><th>Entity</th><th>Its identifier today</th><th>Its home page</th><th>It should link to</th></tr>
+<tr><td><b>Goal</b> (deliverable D1/D2, programme)</td><td>an anchor slug (<code>docs/anchors.md</code>)</td><td>goals</td><td>its features, its open backlog rows, its in-flight threads</td></tr>
+<tr><td><b>Feature</b></td><td>a node slug (<code>docs/features.md</code>)</td><td>features</td><td>its goal (anchor), its backlog rows (by tag), its ADRs, specs, reviews</td></tr>
+<tr><td><b>Backlog row</b> (pending work)</td><td><code>backlog #N</code></td><td>backlog</td><td>its feature (by tag), its goal (by anchor), the PR that closes it, the explainer about it</td></tr>
+<tr><td><b>Thread / PR</b> (work in progress and history)</td><td><code>PR #N</code>, branch name</td><td>goal tree / work lines</td><td>the backlog row it serves (tail <code>(backlog #N)</code>), its review rounds, its merge SHA</td></tr>
+<tr><td><b>Change</b> (what landed)</td><td>a dashboard entry (date, PR)</td><td>dashboard</td><td>its PR, its backlog row</td></tr>
+<tr><td><b>Topic</b> (an explanation)</td><td>an explainer slug</td><td>explainers</td><td>the row, PR, goal or feature it explains</td></tr>
+</table></div>
+<p><b>Where tags come in.</b> A tag is a join key between two entities. Under this model the vocabulary needs only
+as many facets as there are links: <b>goal</b> (anchor slugs, already registered), <b>area/feature</b> (the
+<code>(…)</code> tags, #381), <b>kind</b> (story / defect / task, #90), <b>status</b> (open / parked / needs-you /
+done, split out of severity). Every other identifier — <code>backlog #N</code>, <code>PR #N</code>, a SHA — is already
+unique and needs no vocabulary, only a rule that every page renders it as a link.</p>
+
+<h3 id="design-ideas">Spec ideas collected so far</h3>
+<ol>
+<li><b>One question, one page.</b> Every page states the single question it answers in its header; a second page
+answering the same question is merged or demoted to a view of the first.</li>
+<li><b>Every identifier is a link.</b> <code>backlog #N</code>, <code>PR #N</code>, an anchor slug and a feature slug
+render as links to their home page wherever they appear, on every page, by one shared function (the way the chrome is
+shared today).</li>
+<li><b>A persistent progress page.</b> The goal tree becomes a generated page (backlog #363) rather than chat output,
+so progress can be opened later and linked to.</li>
+<li><b>History in one place.</b> Decide whether the dashboard or the work-lines page owns "what happened"; the other
+links to it.</li>
+<li><b>Explainers are attached, not dated.</b> An explainer declares what it is about (a row, PR, goal or feature),
+and that item's page links back to it.</li>
+<li><b>A "needs me" view.</b> One list of every open decision waiting on the owner, derived from the same sources the
+agent uses, so a decision cannot sit only in a chat message.</li>
+<li><b>Facets, not a flat list</b> — this page's recommendation above, now with a purpose: each facet exists because a
+link needs it.</li>
+</ol>
+
+<h3 id="design-open">Open questions the spec must settle</h3>
+<ol>
+<li>Is the goal tree a page of its own, or a view on the work-lines page?</li>
+<li>Do the dashboard and the work-lines page merge, or does each keep a distinct question?</li>
+<li>Does the backlog split into stories / defects / tasks (separate pages), or stay one table with a kind facet?</li>
+<li>Should explainers be attached to an item at creation (the skill asks), or discovered later (a search)?</li>
+<li>Is there one entry page — a home that answers "what is the agent doing right now" and links out to everything
+else?</li>
+</ol>
+<div class="k green"><b>It fails if</b> after the design is built, a reader following one thread (goal → feature →
+backlog row → PR → explainer) hits a dead end, or two pages answer the same question differently.</div>
 
 <h2 id="measured">What was measured, and what was inferred</h2>
 
