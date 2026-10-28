@@ -183,6 +183,4 @@ docs/explainers/questions.md
 # backlog #361: written by the PreCompact / PostCompact hooks (`scripts/compaction-state.py`) and printed at the
 # SessionStart after a compaction. `.remember/` is ignored only by a global gitignore on one machine, so these
 # are named here too.
-.remember/precompact-snapshot.md
-.remember/compaction-audit.md
-.remember/compaction-receipt.json
+.remember/compaction/

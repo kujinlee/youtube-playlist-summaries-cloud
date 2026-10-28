@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostCompact: compare `compact_summary` (stdin) with the PreCompact snapshot and write
-# `.remember/compaction-audit.md` — every open PR, ledger id and pending decision the summary DROPPED
+# PostCompact: compare `compact_summary` (stdin) with THIS session's PreCompact snapshot and write
+# `.remember/compaction/<session_id>/audit.md` — every open PR, ledger id and pending decision the summary DROPPED
 # (backlog #361). PostCompact has no decision control; this is a side effect only.
 #
 # ⛔ ALWAYS EXIT 0. stdin is read by the python child with a deadline.

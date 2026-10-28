@@ -1931,7 +1931,11 @@ EXPECTED_MUTATIONS = {
     # executor), XM4 (the receipt: session, nonce, written first), XM5 (UNAVAILABLE keys) and Xm6 (bounded keys); two
     # retire with their subject (the age-only audit pairing; the closer-id regex, now `withhold_pasted`); four retargeted;
     # and the audit's NOT CHECKED lines placed before the dropped list the cap cuts (found folding Xm6).
-    "scripts/compaction-state.py": 39,
+    # ⟳ 39 -> 59, PR #425 round 2 REDESIGN: the manifest is REBUILT against the rewritten file. The in-process
+    # deadline entries (SNAPSHOT_BUDGET, `bounded`, the waiting executor) RETIRE with their subject, replaced by the
+    # capture CHILD killed with its process group; per-session files, XM1 session binding and typed flags, CM1/Cm2
+    # name matching, CM3/CM4/XM5 completeness and Xm6's owner-wait and final-size bounds each gain an entry.
+    "scripts/compaction-state.py": 59,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6148,7 +6152,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2405)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2425)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

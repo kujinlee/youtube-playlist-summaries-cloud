@@ -4,8 +4,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "if origin.get(\"kind\") == \"human\" and not d.get(\"isMeta\") and not d.get(\"isCompactSummary\") and not results:",
-        "if origin.get(\"kind\") == \"human\" and not d.get(\"isCompactSummary\") and not results:"
+        "        if results or not _off(d, \"isMeta\", \"isCompactSummary\") or not _text_of(content).strip():",
+        "        if results or not _off(d, \"isCompactSummary\") or not _text_of(content).strip():"
       ]
     ],
     "expect": [
@@ -17,8 +17,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "            if x.get(\"is_error\") or not answer_turn:",
-        "            if not answer_turn:"
+        "            if not _off(x, \"is_error\") or not eligible:",
+        "            if not eligible:"
       ]
     ],
     "expect": [
@@ -26,16 +26,16 @@
     ]
   },
   {
-    "name": "a transcript with no human prompt reads as 'the owner said nothing'",
+    "name": "a transcript whose prompts lost `origin` reads as 'the owner said nothing'",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "if users and not prompts and not answers:",
-        "if False:"
+        "    if text_turns and not prompts:",
+        "    if False:"
       ]
     ],
     "expect": [
-      "⭐ user entries with NO human prompt say NOT EXTRACTED — never 'the owner said nothing'"
+      "⭐ r2 CM6: prompts that LOST `origin` while answers survive still say NOT EXTRACTED, not 'none'"
     ]
   },
   {
@@ -49,6 +49,175 @@
     ],
     "expect": [
       "⭐ the owner section holds its budget, keeps the NEWEST of each, and says how many were cut"
+    ]
+  },
+  {
+    "name": "a human-origin turn carrying a tool_result block is read as a prompt",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if results or not _off(d, \"isMeta\", \"isCompactSummary\")",
+        "        if not _off(d, \"isMeta\", \"isCompactSummary\")"
+      ]
+    ],
+    "expect": [
+      "a human-origin turn that carries a tool_result block is not a prompt"
+    ]
+  },
+  {
+    "name": "⛔ the prefix-only fallback is restored: tool output that LOOKS like an answer is trusted (the review's MEDIUM)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            if isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks:",
+        "            if (isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks) or ANSWER_PREFIX.match(text):"
+      ]
+    ],
+    "expect": [
+      "⭐ a Read result, an UNPAIRED result and an id-less pair that START with an answer wording are NOT answers"
+    ]
+  },
+  {
+    "name": "XB1: a SIDECHAIN or meta assistant turn's question can be answered",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        eligible = _off(d, \"isSidechain\", \"isMeta\", \"isCompactSummary\") and origin.get(\"kind\") != \"task-notification\"",
+        "        eligible = origin.get(\"kind\") != \"task-notification\""
+      ]
+    ],
+    "expect": [
+      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+    ]
+  },
+  {
+    "name": "XB1: a question is not consumed, so a replayed id is a second answer",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                asks.discard(x[\"tool_use_id\"])   # one question, AT MOST one answer, ever",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+    ]
+  },
+  {
+    "name": "XB1: the owner's words are headed AUTHORITATIVE again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "\"## The owner's recent words — RECORDED in the transcript, not proven: verify one there when a decision depends on it\"",
+        "\"## The owner's recent words — AUTHORITATIVE over the summary's paraphrase\""
+      ]
+    ],
+    "expect": [
+      "⭐ the owner's words are headed RECORDED, never AUTHORITATIVE — a hook cannot prove authorship (r1 XB1)"
+    ]
+  },
+  {
+    "name": "XM1: turns are not bound to the payload's session",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if not isinstance(d, dict) or not isinstance(session_id, str) or d.get(\"sessionId\") != session_id:",
+        "        if not isinstance(d, dict):"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "XM1: a consumed id is reopened by a repeated question record",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                            and x[\"id\"] not in consumed)",
+        "                            )"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "XM1: a provenance flag is read by truthiness, so [] and 0 pass",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return all(d.get(f) is None or d.get(f) is False for f in flags)",
+        "    return all(not d.get(f) for f in flags)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "XM1: a summary or notification QUESTION is eligible",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        " and origin.get(\"kind\") != \"task-notification\"\n        if d.get(\"type\") == \"assistant\"",
+        "\n        if d.get(\"type\") == \"assistant\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM1: another session's turn, a summary or notification QUESTION, a wrongly-typed false flag, and a repeated question record — none authorises an answer; only the one real pairing does"
+    ]
+  },
+  {
+    "name": "pasted content is shown as the owner's own words",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    text = withhold_pasted(text)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ pasted content is EXCLUDED and labelled; an accepted suggestion is LABELLED as one"
+    ]
+  },
+  {
+    "name": "XB2: two separate pastes are each withheld and the text between them shown (the one-block rule dropped)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if text.count(PASTE_OPEN) == 1 and text.count(PASTE_CLOSE) == 1:",
+        "    if True:"
+      ]
+    ],
+    "expect": [
+      "a closer whose id does not match, and two separate pastes, fail CLOSED too"
+    ]
+  },
+  {
+    "name": "XB2: a closer whose id does not match the opener still closes the paste",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if m and m.group(1) == m.group(3):",
+        "        if m:"
+      ]
+    ],
+    "expect": [
+      "a closer whose id does not match, and two separate pastes, fail CLOSED too"
+    ]
+  },
+  {
+    "name": "XB2: an ambiguous paste is shown instead of withheld to the end",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return text[:i] + f\"[pasted content and EVERYTHING after it, {len(text) - i} chars",
+        "    return text\n    return text[:i] + f\"[pasted content and EVERYTHING after it, {len(text) - i} chars"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCLOSED opener withholds everything after it — Codex's r1 XB2 reproduction"
     ]
   },
   {
@@ -82,90 +251,12 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "text = fit(\"\\n\\n\".join(parts), SNAPSHOT_CAP - len(keyline) - 2, \"the transcript itself\")",
-        "text = \"\\n\\n\".join(parts)"
+        "    text = fit(\"\\n\\n\".join(parts), SNAPSHOT_CAP - len(keyline) - 2, \"the transcript itself\")",
+        "    text = \"\\n\\n\".join(parts)"
       ]
     ],
     "expect": [
       "⭐ the size cap holds with 100 PRs, 60 owner waits and 200 huge prompts, and the keys line survives"
-    ]
-  },
-  {
-    "name": "the audit never reports a dropped PR or ledger id",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "                if not mentioned(summary, kind, k):",
-        "                if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ the audit names a dropped PR, a dropped ledger id and a dropped decision"
-    ]
-  },
-  {
-    "name": "`#4100` is read as naming PR #410",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){key}(?!\\d)\"",
-        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){key}\""
-      ]
-    ],
-    "expect": [
-      "PR matching is by NUMBER: #4100 does not name #410, `PR 410` does"
-    ]
-  },
-  {
-    "name": "a missing compact_summary is audited as if it were a summary",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "elif not isinstance(summary, str) or not summary.strip():",
-        "elif False:"
-      ]
-    ],
-    "expect": [
-      "⭐ a missing compact_summary makes the audit CANNOT RUN"
-    ]
-  },
-  {
-    "name": "a snapshot from an EARLIER compaction is printed as current",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    elif now - r[\"epoch\"] > STALE_AFTER:",
-        "    elif False:"
-      ]
-    ],
-    "expect": [
-      "⭐ a receipt older than STALE_AFTER is STALE and no body is shown"
-    ]
-  },
-  {
-    "name": "the print is no longer held to PRINT_CAP",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "return fit(\"\\n\".join(L), PRINT_CAP - len(end) - 1, SNAPSHOT_REL) + \"\\n\" + end",
-        "return \"\\n\".join(L) + \"\\n\" + end"
-      ]
-    ],
-    "expect": [
-      "⭐ the print stays under PRINT_CAP with a snapshot grown on disk past every cap"
-    ]
-  },
-  {
-    "name": "a hook mode exits non-zero",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "                pass\n    return 0\n",
-        "                pass\n    return 1\n"
-      ]
-    ],
-    "expect": [
-      "⭐ main exits 0 in all three modes on garbage stdin, and writes the receipt and both files"
     ]
   },
   {
@@ -186,7 +277,7 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    waits = [e for e in ledger if ss.waits_on_owner(e)] if ledger_ok else []",
+        "    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []",
         "    waits = list(ledger)"
       ]
     ],
@@ -208,45 +299,6 @@
     ]
   },
   {
-    "name": "⛔ the prefix-only fallback is restored: tool output that LOOKS like an answer is trusted (the review's MEDIUM)",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "            if isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks:",
-        "            if (isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks) or ANSWER_PREFIX.match(text):"
-      ]
-    ],
-    "expect": [
-      "⭐ a Read result, an UNPAIRED result and an id-less pair that START with an answer wording are NOT answers"
-    ]
-  },
-  {
-    "name": "pasted content is shown as the owner's own words",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    text = withhold_pasted(text)\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ pasted content is EXCLUDED and labelled; an accepted suggestion is LABELLED as one"
-    ]
-  },
-  {
-    "name": "a human-origin turn carrying a tool_result block is read as a prompt",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        " and not d.get(\"isCompactSummary\") and not results:",
-        " and not d.get(\"isCompactSummary\"):"
-      ]
-    ],
-    "expect": [
-      "a human-origin turn that carries a tool_result block is not a prompt"
-    ]
-  },
-  {
     "name": "a main checkout git cannot find is not said, so the wrong ledger reads as the real one",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -260,120 +312,198 @@
     ]
   },
   {
-    "name": "XB1: a SIDECHAIN or meta assistant turn's question can be answered",
+    "name": "XM5 + CM4: ledger completeness ignores the main-checkout lookup and every problem",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "            if d.get(\"isSidechain\") or d.get(\"isMeta\"):\n                continue   # r1 XB1",
-        "            if False:\n                continue   # r1 XB1"
+        "    ledger_complete = ss is not None and main_err is None and not problems",
+        "    ledger_complete = ss is not None and not any(p.startswith(ss.LEDGER_REL) for p in problems)"
       ]
     ],
     "expect": [
-      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+      "⭐ r2 XM5 + CM4: a CORRUPT ledger line, and a failed main-checkout lookup, make both ledger categories UNAVAILABLE — never 'names everything'"
     ]
   },
   {
-    "name": "XB1: a result on a meta, summary or task-notification turn is an answer",
+    "name": "XM5: an incomplete ledger is recorded as an EMPTY one, which audits as all named",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "answer_turn = not d.get(\"isMeta\") and not d.get(\"isCompactSummary\") and origin.get(\"kind\") != \"task-notification\"",
-        "answer_turn = True"
+        "            \"ledger\": ids(ledger) if ledger_complete else None,",
+        "            \"ledger\": ids(ledger) if ledger_complete else [],"
       ]
     ],
     "expect": [
-      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+      "⭐ a REFUSED ledger is UNAVAILABLE in the keys, and the audit says NOT CHECKED — never 'names everything' (r1 XM5)"
     ]
   },
   {
-    "name": "XB1: a question is not consumed, so a replayed id is a second answer",
+    "name": "CM3: asks beyond the newest few are not counted as omitted",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "                asks.discard(x[\"tool_use_id\"])   #",
-        "                pass   #"
+        "        keys[\"omitted\"][\"decisions\"] = count - len(recent)",
+        "        pass"
       ]
     ],
     "expect": [
-      "⭐ provenance on BOTH sides: a meta, summary or notification result, a sidechain question, a replayed id — none is an answer; the one real pairing is (r1 XB1)"
+      "⭐ r2 CM3: 36 asks with only the newest audited — the other 35 are NOT CHECKED, never 'names everything'"
     ]
   },
   {
-    "name": "XB1: the owner's words are headed AUTHORITATIVE again",
+    "name": "Xm6: the keys line is not bounded",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "\"## The owner's recent words — RECORDED in the transcript, not proven: verify one there when a decision depends on it\"",
-        "\"## The owner's recent words — AUTHORITATIVE over the summary's paraphrase\""
+        "    for name in BOUNDED:\n        while",
+        "    for name in ():\n        while"
       ]
     ],
     "expect": [
-      "⭐ the owner's words are headed RECORDED, never AUTHORITATIVE — a hook cannot prove authorship (r1 XB1)"
+      "⭐ 100 LONG ledger ids: the snapshot stays under its cap, and the ids it cut are COUNTED, not lost (r1 Xm6)"
     ]
   },
   {
-    "name": "XB2: two separate pastes are each withheld and the text between them shown (the one-block rule dropped)",
+    "name": "Xm6: owner waits are left out of the bounded keys",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "            and text.count(\"<pasted_content\") == 1 and text.count(\"</pasted_content\") == 1):",
-        "            ):"
+        "BOUNDED = (\"decisions\", \"ledger_decisions\", \"ledger\", \"prs\")",
+        "BOUNDED = (\"decisions\", \"ledger\", \"prs\")"
       ]
     ],
     "expect": [
-      "a closer whose id does not match, and two separate pastes, fail CLOSED too"
+      "⭐ r2 Xm6: 100 long OWNER-WAIT ids keep the snapshot under its cap; owner waits are cut and COUNTED too"
     ]
   },
   {
-    "name": "XB2: a closer whose id does not match the opener still closes the paste",
+    "name": "Xm6: the final serialized cap is not enforced",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    if (m and m.start() == i and m.group(1) == m.group(3)",
-        "    if (m and m.start() == i"
+        "    if len(json.dumps(out, ensure_ascii=True)) > cap:\n        out = {k:",
+        "    if False:\n        out = {k:"
       ]
     ],
     "expect": [
-      "a closer whose id does not match, and two separate pastes, fail CLOSED too"
+      "⭐ the FINAL serialized size is enforced: keys that cannot fit become UNAVAILABLE, never oversized"
     ]
   },
   {
-    "name": "XB2: an ambiguous paste is shown instead of withheld to the end",
+    "name": "(A) the capture child is waited on with no deadline",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    return text[:i] + f\"[pasted content and EVERYTHING after it, {len(text) - i} chars",
-        "    return text\n    return text[:i] + f\"[pasted content and EVERYTHING after it, {len(text) - i} chars"
+        "        return p.wait(timeout=timeout), \"\"",
+        "        return p.wait(), \"\""
       ]
     ],
     "expect": [
-      "⭐ an UNCLOSED opener withholds everything after it — Codex's r1 XB2 reproduction"
+      "⭐ a capture child that sleeps past the deadline is KILLED: the parent returns within deadline + 1 s"
     ]
   },
   {
-    "name": "XM3: the worktree executor waits for every status call, deadline or not",
+    "name": "(A) only the child is killed, not its process group",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    _wait(futures, timeout=max(0.0, deadline - time.monotonic()))\n    ex.shutdown(wait=False, cancel_futures=True)",
-        "    _wait(futures)\n    ex.shutdown(wait=True)"
+        "            os.killpg(p.pid, signal.SIGKILL)",
+        "            p.kill()"
       ]
     ],
     "expect": [
-      "⭐ 48 slow `git status` calls: ONE deadline bounds the total, and the rest read NOT CHECKED (r1 XM3)"
+      "...and a GRANDCHILD holding on (a stuck gh or git) dies with it: the group is killed, nothing is waited on"
     ]
   },
   {
-    "name": "XM3: a call keeps its own timeout instead of what is left of the deadline",
+    "name": "(A) a killed capture leaves no snapshot for this compaction",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        return run(cmd, cwd, min(timeout, left))",
-        "        return run(cmd, cwd, timeout)"
+        "                    write_atomic(sdir / \"snapshot.md\", cannot_run_snapshot(why, receipt, now))",
+        "                    pass"
       ]
     ],
     "expect": [
-      "⭐ bounded() cuts each call's timeout to what is LEFT of the deadline, and refuses a call after it"
+      "⭐ the WHOLE PreCompact hook ends within its capture deadline + 1 s and writes THIS session's CANNOT RUN"
+    ]
+  },
+  {
+    "name": "(A) a FIFO dashboard store is opened and read",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not stat.S_ISREG(st.st_mode):\n        os.close(fd)\n        return None, 0, f\"{clean(path.name, 80)} is not a regular file — NOT READ\"",
+        "    if False:\n        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a FIFO dashboard store is refused WITHOUT blocking (r2 Codex XM3 hung here past 16 s)"
+    ]
+  },
+  {
+    "name": "(B) the receipt is not written, so nothing supersedes an old capture",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    write_atomic(sdir / \"receipt.json\", json.dumps(receipt) + \"\\n\")",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ the receipt is written FIRST and the old files are DELETED: a capture that then dies leaves no old audit"
+    ]
+  },
+  {
+    "name": "(B) the session's old audit survives a new PreCompact",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    for name in (\"snapshot.md\", \"audit.md\"):",
+        "    for name in (\"snapshot.md\",):"
+      ]
+    ],
+    "expect": [
+      "⭐ the receipt is written FIRST and the old files are DELETED: a capture that then dies leaves no old audit"
+    ]
+  },
+  {
+    "name": "(B) a session_id that is a path is accepted",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id):\n        return None\n    return root / SESSIONS_REL",
+        "    if not isinstance(session_id, str) or not session_id:\n        return None\n    return root / SESSIONS_REL"
+      ]
+    ],
+    "expect": [
+      "session_dir accepts only SESSION_ID and never builds a path from anything else"
+    ]
+  },
+  {
+    "name": "(B) the print accepts an unusable session_id",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id):\n        gate = \"UNVERIFIED",
+        "    if not isinstance(session_id, str):\n        gate = \"UNVERIFIED"
+      ]
+    ],
+    "expect": [
+      "a SessionStart input with no usable session_id is UNVERIFIED, and nothing is shown"
+    ]
+  },
+  {
+    "name": "(B) all sessions share one directory again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return root / SESSIONS_REL / session_id\n",
+        "    return root / SESSIONS_REL\n"
+      ]
+    ],
+    "expect": [
+      "⭐ Codex's r2 A/B interleaving: A's audit carries A's nonce, B's print never shows A's audit, A's print does"
     ]
   },
   {
@@ -390,12 +520,38 @@
     ]
   },
   {
+    "name": "a receipt from an EARLIER compaction is printed as current",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif now - r[\"epoch\"] > STALE_AFTER:",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a receipt older than STALE_AFTER is STALE and no body is shown"
+    ]
+  },
+  {
+    "name": "XM4: a receipt dated in the future is accepted",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif r[\"epoch\"] > now + FUTURE_SKEW:",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 XM4: a receipt dated in the FUTURE is STALE and no body is shown"
+    ]
+  },
+  {
     "name": "XM4: a snapshot with an old nonce is shown as this compaction's",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        elif sk.get(\"nonce\") != nonce:",
-        "        elif False:"
+        "    elif sk.get(\"nonce\") != nonce:",
+        "    elif False:"
       ]
     ],
     "expect": [
@@ -407,12 +563,116 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        elif ak.get(\"nonce\") != nonce:",
-        "        elif False:"
+        "    elif ak.get(\"nonce\") != nonce or ak.get(\"receipt_epoch\") != r[\"epoch\"]:",
+        "    elif ak.get(\"receipt_epoch\") != r[\"epoch\"]:"
       ]
     ],
     "expect": [
       "⭐ an OLD nonce: a snapshot and audit from an earlier compaction are STALE, each naming the mismatch"
+    ]
+  },
+  {
+    "name": "XM4: an audit of another receipt's epoch is shown",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        " or ak.get(\"receipt_epoch\") != r[\"epoch\"]:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "an audit whose receipt EPOCH is not this receipt's is STALE, though its nonce matches"
+    ]
+  },
+  {
+    "name": "Cm7: a failed check still dates and describes a compaction",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        return (\"COMPACTION: no verified capture to show",
+        "        return (f\"COMPACTION HAPPENED at {r and r.get('epoch')} — the state below is derived from disk; items the summary dropped are listed. COMPACTION: no verified capture to show"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Cm7: when a check fails, the first line neither dates nor describes a compaction it does not show"
+    ]
+  },
+  {
+    "name": "the print is no longer held to PRINT_CAP",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return fit(\"\\n\".join(L), PRINT_CAP - len(end) - 1, \"the session's snapshot file\") + \"\\n\" + end",
+        "    return \"\\n\".join(L) + \"\\n\" + end"
+      ]
+    ],
+    "expect": [
+      "⭐ the print stays under PRINT_CAP with a snapshot grown on disk past every cap"
+    ]
+  },
+  {
+    "name": "the audit never reports a dropped PR or ledger id",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                if not mentioned(summary, kind, k):",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ the audit names a dropped PR, a dropped ledger id and a dropped decision"
+    ]
+  },
+  {
+    "name": "`#4100` is read as naming PR #410",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "rf\"(?<![\\w#])#\\s?{key}(?!\\d)\"",
+        "rf\"(?<![\\w#])#\\s?{key}\""
+      ]
+    ],
+    "expect": [
+      "PR matching is by NUMBER: #4100 does not name #410, `PR 410` does"
+    ]
+  },
+  {
+    "name": "CM1: `backlog #N` names the open PR #N",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        return any(not PR_BLOCKED_BY.search(summary[:m.start()])",
+        "        return any(True"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 CM1: `backlog #410`, `row #410`, `issue #410` and `step #410` do not name PR #410; `#410` and `PR 410` do"
+    ]
+  },
+  {
+    "name": "Cm2: a bare word names a ledger id",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        return re.search(rf\"\\[{k}\\]|`{k}`\", summary) is not None",
+        "        return re.search(rf\"(?<![\\w-]){k}(?![\\w-])\", summary) is not None"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Cm2: a ledger id counts only inside [] or backticks — a bare word, or job10, does not name job1"
+    ]
+  },
+  {
+    "name": "a missing compact_summary is audited as if it were a summary",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif not isinstance(summary, str) or not summary.strip():",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a missing compact_summary makes the audit CANNOT RUN"
     ]
   },
   {
@@ -429,32 +689,6 @@
     ]
   },
   {
-    "name": "XM4: the receipt is never written, so nothing supersedes an old snapshot",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    write_atomic(root / RECEIPT_REL, json.dumps(receipt) + \"\\n\")",
-        "    pass"
-      ]
-    ],
-    "expect": [
-      "⭐ the receipt is written FIRST: a later PreCompact supersedes the old snapshot's nonce even before its own"
-    ]
-  },
-  {
-    "name": "XM5: a refused ledger is recorded as an EMPTY one, which audits as all named",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "                       if ledger_ok else None,\n                       \"ledger_decisions\"",
-        "                       if ledger_ok else [],\n                       \"ledger_decisions\""
-      ]
-    ],
-    "expect": [
-      "⭐ a REFUSED ledger is UNAVAILABLE in the keys, and the audit says NOT CHECKED — never 'names everything' (r1 XM5)"
-    ]
-  },
-  {
     "name": "XM5: the audit says 'names everything' while a category is unavailable",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -465,19 +699,6 @@
     ],
     "expect": [
       "⭐ a REFUSED ledger is UNAVAILABLE in the keys, and the audit says NOT CHECKED — never 'names everything' (r1 XM5)"
-    ]
-  },
-  {
-    "name": "Xm6: the keys line is not bounded",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    for name in (\"decisions\", \"ledger\", \"prs\"):   # the least load-bearing first",
-        "    for name in ():"
-      ]
-    ],
-    "expect": [
-      "⭐ 100 LONG ledger ids: the snapshot stays under its cap, and the ids it cut are COUNTED, not lost (r1 Xm6)"
     ]
   },
   {
@@ -504,6 +725,45 @@
     ],
     "expect": [
       "...and the audit reports the cut ids NOT CHECKED, never a complete check"
+    ]
+  },
+  {
+    "name": "a hook mode exits non-zero",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            except Exception:  # noqa: BLE001\n                pass\n    return 0\n",
+        "            except Exception:  # noqa: BLE001\n                pass\n    return 1\n"
+      ]
+    ],
+    "expect": [
+      "main --audit with NO snapshot writes CANNOT RUN into the audit file"
+    ]
+  },
+  {
+    "name": "a mode that raises leaves the earlier file in place",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                write_atomic(sdir / (\"snapshot.md\" if args.snapshot else \"audit.md\"), f\"# CANNOT RUN — {why}\\n\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the file"
+    ]
+  },
+  {
+    "name": "(B) a bad session_id still writes the receipt somewhere",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        if sdir is None:\n            print(f\"compaction-state: UNVERIFIED",
+        "        if sdir is None:\n            sdir = root / SESSIONS_REL / \"_\"\n        if False:\n            print(f\"compaction-state: UNVERIFIED"
+      ]
+    ],
+    "expect": [
+      "⭐ main exits 0 in all three modes on garbage stdin, writes NOTHING, and says UNVERIFIED"
     ]
   }
 ]

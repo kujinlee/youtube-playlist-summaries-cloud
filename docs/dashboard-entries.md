@@ -18070,6 +18070,8 @@ longer reports an empty one — nor does the session-start block, and `--add`/`-
 the one ledger every session reads. A job is listed as waiting on you only when it is marked so
 (`WAITS-ON-OWNER:`), not whenever its description mentions you. After review, your recorded words are labelled
 RECORDED rather than authoritative, since a hook cannot prove who wrote them, and an old or another session's
-snapshot is never shown as this compaction's. 61 cases, 22 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
+snapshot is never shown as this compaction's. A second review rebuilt two parts: the slow capture now runs in a
+separate process that is stopped at 11 seconds, and each session keeps its own files, so one session's compaction
+can no longer be shown as another's. 100 cases, 59 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
 the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
 real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.

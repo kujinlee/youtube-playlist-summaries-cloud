@@ -308,8 +308,8 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
     """(the MAIN checkout, None), or (root, why) when git cannot name one. THE one copy of this rule —
     `compaction-state.py` imports it. The ledger is git-ignored, so it lives in the MAIN checkout: read from (or
     written to) a linked worktree's own `.claude/`, it is a ledger nobody reads — measured 2026-10-28, a worktree
-    snapshot said "none RECORDED" while the main ledger held 6 jobs. The rule is backlog #363's (`goal-tree.py`):
-    the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,
+    snapshot said "none RECORDED" while the main ledger held 6 jobs. The same `--git-common-dir` rule as
+    `check-ci-watched.py`'s `sentinel_for` (on master): the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,
     existing directory is refused, never resolved against the cwd."""
     rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, 10)
     common = out.strip() if rc == 0 else ""
