@@ -138,7 +138,11 @@ isolation-r3-claude.md`), also backlog #380, each executed against an accepted p
     scripts/*.py in a child (-I -S, the isolated environment, a temp cwd and HOME) under an in-process audit
     hook, plus a static check for direct launcher calls at module level. What it does not see is listed under
     rule 5 (native calls, other-context launches through non-literal code, daemon threads, dead branches), plus
-    code that runs only as `__main__` (the `main()`-before-the-entry shape below);
+    code that runs only as `__main__` (the `main()`-before-the-entry shape below). ⟳ #382 r4: the STATIC half
+    is a BACKSTOP over module-level STATEMENT BODIES (if/elif/else, try/except/finally, with, for, while), not
+    over every expression position — a direct launcher in a `match` case GUARD or in a LAMBDA's default
+    argument, taken only in another context, passes both halves (Codex r4, executed); further positions
+    (comprehension conditions, f-string fields, evaluated annotations) are not claimed either;
   * SUITE WORK AFTER THE BLOCK EXITS (r3 Claude M1): a generator body, a lazy `map`, or an uncalled function
     returned from the block, each consumed by the caller after `isolated()` has restored the environment;
   * RULE 3's REACH (r3 Claude M1): a callee of the suite that is also reached from outside it through
