@@ -117,19 +117,6 @@
     ]
   },
   {
-    "name": "X3: a leading NAME=value assignment is taken as the command name",
-    "file": "scripts/regen-pages.py",
-    "edits": [
-      [
-        "        elif out[-1] or not ASSIGNMENT.match(t):",
-        "        else:"
-      ]
-    ],
-    "expect": [
-      "X3: a leading NAME=value assignment is not the command name"
-    ]
-  },
-  {
     "name": "X3: separators do not split commands, so `cd x && gh pr merge` is one argv",
     "file": "scripts/regen-pages.py",
     "edits": [
@@ -153,6 +140,84 @@
     ],
     "expect": [
       "X3: after a pipe, a semicolon or a newline it is still a merge"
+    ]
+  },
+  {
+    "name": "X3: a leading NAME=value assignment is taken as the command name (re-anchored on the Y5 rewrite)",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "not (ASSIGNMENT.match(t) or",
+        "not (False or"
+      ]
+    ],
+    "expect": [
+      "X3: a leading NAME=value assignment is not the command name"
+    ]
+  },
+  {
+    "name": "Y5: compound-syntax words are taken as the command name, so `then gh pr merge` is missed",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "or t in LEADERS)",
+        "or False)"
+      ]
+    ],
+    "expect": [
+      "Y5: a merge inside `if … then … fi` is seen"
+    ]
+  },
+  {
+    "name": "Y5: POSIX tokenizing drops the quotes, so a quoted `;` splits the command",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "shlex.shlex(_strip_heredocs(cmd), posix=False,",
+        "shlex.shlex(_strip_heredocs(cmd), posix=True,"
+      ]
+    ],
+    "expect": [
+      "⛔ Y5: a QUOTED separator is text, so `echo \";\" gh pr merge` is one echo"
+    ]
+  },
+  {
+    "name": "Y5: here-document bodies are read as commands",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        delims += [m.group(2) for m in HEREDOC.finditer(line)]",
+        "        delims += []"
+      ]
+    ],
+    "expect": [
+      "⛔ Y5: a here-document BODY is data, never a command"
+    ]
+  },
+  {
+    "name": "Y5: a here-document never ends, so later commands are lost",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            if line.strip() == delims[0]:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "...and the command after the here-document is still read"
+    ]
+  },
+  {
+    "name": "Y5: quoted command words keep their quotes",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    return token[1:-1] if len(token) >= 2",
+        "    return token if len(token) >= 2"
+      ]
+    ],
+    "expect": [
+      "Y5: a quoted command word is still the word (`\"gh\" pr merge`)"
     ]
   }
 ]

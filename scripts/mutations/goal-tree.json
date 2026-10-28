@@ -398,8 +398,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    parts.insert(5, needs_html(live if live is not None else newest))",
-        "    parts.insert(5, needs_html(newest))"
+        "    parts.insert(6, needs_html(live if live is not None else newest))",
+        "    parts.insert(6, needs_html(newest))"
       ]
     ],
     "expect": [
@@ -498,45 +498,6 @@
     ]
   },
   {
-    "name": "X2: nothing is consolidated, so one decision is listed once per source",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        if target is not None and it[\"source\"] not in {a[\"source\"] for a in target[\"also\"]}:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ X2: one decision recorded in three sources is ONE item that keeps every source"
-    ]
-  },
-  {
-    "name": "X2: two asks from ONE source citing a row are merged into one item",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        " and it[\"source\"] not in {a[\"source\"] for a in target[\"also\"]}:",
-        ":"
-      ]
-    ],
-    "expect": [
-      "⛔ X2: two DIFFERENT asks from one source citing the same row stay two items"
-    ]
-  },
-  {
-    "name": "X2: an ask naming several rows is merged into one of them",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "if it.get(\"row\") is None and len(named) == 1 else None",
-        "if it.get(\"row\") is None and named else None"
-      ]
-    ],
-    "expect": [
-      "⛔ X2: an ask naming two rows is not assigned to either"
-    ]
-  },
-  {
     "name": "X2: consolidating writes into the caller's items",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -589,32 +550,6 @@
     ]
   },
   {
-    "name": "C4: an unstated plural is not reported as several",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "    return \"several\" if MULTI_CUE.search(text) else None",
-        "    return None"
-      ]
-    ],
-    "expect": [
-      "⭐ C4: a stated count is used, an unstated plural says 'several', a single ask says nothing"
-    ]
-  },
-  {
-    "name": "C4: a stated count is replaced by 'several'",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        return int(m.group(1))",
-        "        return \"several\""
-      ]
-    ],
-    "expect": [
-      "⭐ C4: a stated count is used, an unstated plural says 'several', a single ask says nothing"
-    ]
-  },
-  {
     "name": "C2: a row waiting on a decided row is not flagged",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -654,16 +589,137 @@
     ]
   },
   {
-    "name": "C2: a `PR #N` in a row's tail is read as a row",
+    "name": "Y1: an entry declaring two identities is merged into one of them",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "re.finditer(r\"(\\bPR )?#(\\d+)\", tail) if not m.group(1)}",
-        "re.finditer(r\"(\\bPR )?#(\\d+)\", tail)}"
+        "    return next(iter(found)) if len(found) == 1 else None",
+        "    return next(iter(found)) if found else None"
       ]
     ],
     "expect": [
-      "⛔ C2: a `PR #N` in the tail is not a row, so it never flags"
+      "Y1: an identity is read only from `decision: backlog #N` / `action: backlog #N`"
+    ]
+  },
+  {
+    "name": "Y1: identity is keyed on the row alone, so a different KIND merges",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    rows = {tuple(it[\"identity\"]): it for it in items if it.get(\"row\") is not None}",
+        "    rows = {it[\"identity\"][0]: it for it in items if it.get(\"row\") is not None}"
+      ],
+      [
+        "        target = (rows.get(tuple(it[\"identity\"]))",
+        "        target = (rows.get(it[\"identity\"][0])"
+      ]
+    ],
+    "expect": [
+      "⛔ Y1: a bare mention, or the right row with the WRONG KIND, never merges (Codex's two + kind)"
+    ]
+  },
+  {
+    "name": "Y1: a ledger entry's declared identity is ignored, so it never merges",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        ident = identity(rest)",
+        "        ident = None"
+      ]
+    ],
+    "expect": [
+      "⭐ Y1: sources that DECLARE one decision become ONE item that keeps every source"
+    ]
+  },
+  {
+    "name": "Y1: a dashboard ask's declared identity is ignored, so it never merges",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        ident = identity(f\"{e.get('title') or ''} {e.get('plain') or ''}\")",
+        "        ident = None"
+      ]
+    ],
+    "expect": [
+      "⭐ Y1: sources that DECLARE one decision become ONE item that keeps every source"
+    ]
+  },
+  {
+    "name": "Y2: a merged source's count is dropped",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for k in (\"source\", \"ref\", \"href\", \"text\", \"multi\")})",
+        "for k in (\"source\", \"ref\", \"href\", \"text\")})"
+      ]
+    ],
+    "expect": [
+      "⭐ Y2: a merged source keeps its own text and count"
+    ]
+  },
+  {
+    "name": "Y2: conflicting counts are never reported",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return len(stated) > 1",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "⭐ Y2: CONFLICTING counts are both kept and flagged, never resolved"
+    ]
+  },
+  {
+    "name": "Y3: 'several answers' is not reported as several",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return \"several\" if SEVERAL.search(text) else None",
+        "    return None"
+      ]
+    ],
+    "expect": [
+      "⭐ Y3: a count comes ONLY from `(answers-open: N)`; 'several answers' says several; else nothing"
+    ]
+  },
+  {
+    "name": "Y3: an annotated count is replaced by 'several'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return int(m.group(1))",
+        "        return \"several\""
+      ]
+    ],
+    "expect": [
+      "⭐ Y3: a count comes ONLY from `(answers-open: N)`; 'several answers' says several; else nothing"
+    ]
+  },
+  {
+    "name": "Y4: any #N in the tail is read as a backlog row",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "BACKLOG_REF.findall(tail)",
+        "re.findall(r\"#(\\d+)\", tail)"
+      ]
+    ],
+    "expect": [
+      "⛔ Y4: only an explicit `backlog #N` flags — never pr #N, PR  #N, issue #N or color #N"
+    ]
+  },
+  {
+    "name": "Y7: the page does not say it replays a snapshot",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "             f'<p class=\"replay\"><b>This page replays the snapshot taken at '",
+        "             f'<p class=\"replay\"><b>Snapshot '"
+      ]
+    ],
+    "expect": [
+      "⭐ Y7: the page says it REPLAYS a snapshot, when, and how to refresh it"
     ]
   }
 ]

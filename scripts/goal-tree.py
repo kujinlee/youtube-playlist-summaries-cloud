@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 133 cases
+    python3 scripts/goal-tree.py --self-test                 # 140 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -41,11 +41,15 @@ can make, open now, from three sources, each read by its owner's code and never 
 "Nothing waits on you" is said only when ALL THREE were read; a source that cannot be read — or that holds
 even one record it cannot read (a truncated ledger line, an unparseable dashboard entry, a refused backlog
 line) — is NOT READ, its readable items are still shown, and the snapshot is not logged, like any other
-CANNOT RUN (round 1 X1). One decision recorded in several sources is ONE item keeping every source
-(`consolidate`, X2); decisions and ACTIONS only the owner can take are two lists (X4: `NEEDS-OWNER-ACTION`,
-`WAITS-ON-OWNER: ACTION:`); an item standing for several answers says so, with a count only when its
-source states one (C4); and a row whose tail names another row already decided is flagged, never hidden
-(C2).
+CANNOT RUN (round 1 X1). Decisions and ACTIONS only the owner can take are two lists (X4:
+`NEEDS-OWNER-ACTION`, `WAITS-ON-OWNER: ACTION:`). ⛔ ROUND 2 REDESIGN: no meaning is read out of prose —
+items merge only on a DECLARED identity (`decision: backlog #N` / `action: backlog #N`, row AND kind),
+each merged source keeping its own text, link and count; a count comes only from `(answers-open: N)`
+("several" only where a source says "several answers"); and a row whose tail names a decided or closed
+`backlog #N` is flagged "may already be answered", never hidden (C2, Y4).
+
+THE PAGE IS A REPLAY (round 2 Y7): the tree and the timeline are the stored snapshots, and the page says
+which snapshot and how to refresh it; NEEDS YOU is read live whenever this run took a snapshot.
 
 TRIGGERS: `/goal-tree` (`.claude/commands/goal-tree.md`) runs it before printing; the PostToolUse hook
 `.claude/hooks/regen-pages.sh` (`scripts/regen-pages.py`) runs it — with every other generated page —
@@ -315,16 +319,24 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
 
 
 # ── NEEDS YOU: a decision only the owner can make, open now (owner decision D1, 2026-10-28) ────
-# An item is {kind, source, ref, href, text, multi, flag, also}. `kind` is "decision" or "action" (round 1
-# X4: running a falsifier is something only the owner can DO, not a question they must answer). `also`
-# holds the other sources that record the SAME decision (X2). The `_scan` text a merge is keyed on is
-# dropped before an item is stored.
+# An item is {kind, source, ref, href, text, multi, flag, also, identity}. `kind` is "decision" or
+# "action" (round 1 X4: running a falsifier is something only the owner can DO, not a question to answer).
+#
+# ⛔ ROUND 2 REDESIGN — STRUCTURE, NOT FREE TEXT. Rounds 1 and 2 each found the previous fold reading
+# meaning out of prose: a row number in a sentence taken as decision identity (merging a different question,
+# or an action into a decision), "14 answers open" found inside "backlog #14 answers open", `pr #11` taken for
+# a backlog row. Every one of those is now an EXPLICIT TOKEN, and prose is only ever displayed:
+#   * IDENTITY — `decision: backlog #N` or `action: backlog #N` in a dashboard ask or a ledger entry. Without
+#     it an item never merges, whatever row its text mentions (Y1). A backlog row's own identity is (N, its kind).
+#   * COUNT    — `(answers-open: N)`. Without it, "several" only where the source says "several answers"; else
+#     nothing (Y3). Never a number found in a sentence.
+#   * DEPENDS  — the answered flag reads only `backlog #N` (the word, any case, one or more spaces) (Y4).
 ACTION_SUFFIX = "-ACTION"          # `NEEDS-OWNER-ACTION —` in a backlog status
 LEDGER_ACTION = "ACTION:"          # `WAITS-ON-OWNER: ACTION: …` in a ledger entry
-ROW_REF = re.compile(r"\bbacklog #(\d+)\b")
-# C4: an item that stands for several answers says how many, ONLY when its source states it.
-MULTI_COUNT = re.compile(r"\b(\d+) (?:answers?|decisions?|questions?) open\b", re.I)
-MULTI_CUE = re.compile(r"\bseveral (?:answers?|decisions?|questions?)\b|\beach answer\b", re.I)
+IDENTITY = re.compile(r"\b(decision|action): backlog #(\d+)\b")
+COUNT = re.compile(r"\(answers-open: (\d+)\)")
+SEVERAL = re.compile(r"\bseveral answers\b", re.I)
+BACKLOG_REF = re.compile(r"\bbacklog +#(\d+)\b", re.I)
 
 
 def needs_owner(row: dict) -> bool:
@@ -339,17 +351,27 @@ def needs_owner(row: dict) -> bool:
 
 
 def multiplicity(text: str):
-    """PURE. How many answers one item stands for: the count its source STATES, "several" when the
-    source says there are several without a number, else None. Never a guessed number."""
-    m = MULTI_COUNT.search(text)
+    """PURE. How many answers one item stands for — ONLY from the `(answers-open: N)` annotation; "several"
+    only where the source literally says "several answers"; otherwise None. A number in a sentence is never
+    read as a count (round 2 Y3: "backlog #14 answers open" is not fourteen answers)."""
+    m = COUNT.search(text)
     if m:
         return int(m.group(1))
-    return "several" if MULTI_CUE.search(text) else None
+    return "several" if SEVERAL.search(text) else None
 
 
-def _item(kind, source, ref, href, text, scan=""):
+def identity(text: str):
+    """PURE. The EXPLICIT decision identity a dashboard ask or ledger entry declares — (row, kind) from
+    `decision: backlog #N` / `action: backlog #N` — or None. Exactly one such token, else None: an entry
+    that declares two identities is ambiguous and merges into neither."""
+    found = {(int(n), k) for k, n in IDENTITY.findall(text)}
+    return next(iter(found)) if len(found) == 1 else None
+
+
+def _item(kind, source, ref, href, text, ident=None):
     return {"kind": kind, "source": source, "ref": ref, "href": href, "text": text,
-            "multi": multiplicity(text), "flag": None, "also": [], "_scan": scan}
+            "multi": multiplicity(text), "flag": None, "also": [],
+            "identity": list(ident) if ident else None}
 
 
 def needs_from_dashboard(text: str) -> tuple[list[dict], list[str]]:
@@ -358,9 +380,11 @@ def needs_from_dashboard(text: str) -> tuple[list[dict], list[str]]:
     source is NOT READ — readable asks are still returned."""
     gd = _sibling("gen-dashboard")
     entries = gd.parse_entries(text)
-    items = [_item("decision", "dashboard", e["id"], f"/dashboard#{gd._slug(e['id'])}",
-                   _SS.clean(e.get("title") or "", 160), f"{e.get('title') or ''} {e.get('plain') or ''}")
-             for e in gd.unresolved(entries)]
+    items = []
+    for e in gd.unresolved(entries):
+        ident = identity(f"{e.get('title') or ''} {e.get('plain') or ''}")
+        items.append(_item(ident[1] if ident else "decision", "dashboard", e["id"],
+                           f"/dashboard#{gd._slug(e['id'])}", _SS.clean(e.get("title") or "", 160), ident))
     bad = [e["id"] or e.get("would_be_id") or "an entry with no id" for e in entries if e["error"]]
     return items, ([f"{len(bad)} dashboard entr{'y' if len(bad) == 1 else 'ies'} the store's grammar "
                     f"could not read ({', '.join(bad)})"] if bad else [])
@@ -374,10 +398,11 @@ def needs_from_ledger(entries: list[dict]) -> list[dict]:
         if not _SS.waits_on_owner(e):
             continue
         rest = e["what"][len(_SS.OWNER_MARKER):].strip()
+        ident = identity(rest)
         kind = "action" if rest.startswith(LEDGER_ACTION) else "decision"
         rest = rest[len(LEDGER_ACTION):].strip() if kind == "action" else rest
-        out.append(_item(kind, "ledger", _SS.clean(e.get("id", ""), 60), None,
-                         _SS.clean(rest, 200), e["what"]))
+        out.append(_item(ident[1] if ident else kind, "ledger", _SS.clean(e.get("id", ""), 60), None,
+                         _SS.clean(rest, 200), ident))
     return out
 
 
@@ -400,9 +425,9 @@ def needs_from_backlog(text: str) -> tuple[list[dict], list[str]]:
         it = _item(kind, "backlog", f"backlog #{r['num']}", f"/backlog-table#i{r['num']}",
                    _SS.clean(html.unescape(gb.plain(r["title"])), 140) + " — " + _SS.clean(tail, 160))
         it["row"] = r["num"]
-        # A `#N` in the tail is a ROW unless it is a `PR #N` — the PR namespace is not the row's.
-        named = {int(m.group(2)) for m in re.finditer(r"(\bPR )?#(\d+)", tail) if not m.group(1)}
-        for n in sorted(named - {r["num"]}):
+        it["identity"] = [r["num"], kind]
+        # Y4: only an explicit `backlog #N` is a row — never a bare `#N`, a `pr #N` or an `issue #N`.
+        for n in sorted({int(x) for x in BACKLOG_REF.findall(tail)} - {r["num"]}):
             o = by_num.get(n)
             if o is not None and (o["closed"] or (not needs_owner(o) and re.search(
                     r"\bDECIDED\b|\banswered\b", o["status"], re.I))):
@@ -414,25 +439,29 @@ def needs_from_backlog(text: str) -> tuple[list[dict], list[str]]:
 
 
 def consolidate(items: list[dict]) -> list[dict]:
-    """PURE. One decision recorded in several sources becomes ONE item keeping every source (X2).
+    """PURE. Items that DECLARE the same decision become ONE item keeping every source (round 2 Y1/Y2).
 
-    The key is the backlog row a dashboard ask or ledger entry names EXPLICITLY (`backlog #N`, exactly
-    one row), and only when that row is itself listed. ⛔ Two items from the SAME source never merge into
-    one row's item — they are two questions that happen to cite one row — and an item naming several rows
-    is left alone rather than assigned to one of them."""
+    The key is an explicit identity — a backlog row AND a kind — and nothing else: a dashboard ask or ledger
+    entry merges into a listed row's item only when it carries `decision: backlog #N` / `action: backlog #N`
+    matching that row's number and kind. A bare mention of `backlog #N` never merges. Every merged source
+    keeps its own text, link and count in `also`; conflicting counts are kept, not resolved."""
     items = [dict(it, also=list(it.get("also") or [])) for it in items]   # never the caller's dicts
-    rows = {it["row"]: it for it in items if it.get("row") is not None}
+    rows = {tuple(it["identity"]): it for it in items if it.get("row") is not None}
     out = []
     for it in items:
-        named = {int(n) for n in ROW_REF.findall(it.get("_scan") or "")}
-        target = rows.get(next(iter(named))) if it.get("row") is None and len(named) == 1 else None
-        if target is not None and it["source"] not in {a["source"] for a in target["also"]}:
-            target["also"].append({"source": it["source"], "ref": it["ref"], "href": it["href"]})
+        target = (rows.get(tuple(it["identity"]))
+                  if it.get("row") is None and it.get("identity") else None)
+        if target is not None:
+            target["also"].append({k: it[k] for k in ("source", "ref", "href", "text", "multi")})
             continue
         out.append(it)
-    for it in out:
-        it.pop("_scan", None)
     return out
+
+
+def counts_conflict(item: dict) -> bool:
+    """PURE. Do the sources of one item state DIFFERENT counts? Both are shown when they do."""
+    stated = {v for v in [item.get("multi")] + [a.get("multi") for a in item.get("also") or []] if v}
+    return len(stated) > 1
 
 
 # ── reading the world (the only impure part) ──────────────────────────────────────────────────
@@ -615,8 +644,11 @@ def _item_line(n: dict) -> str:
         bits.append(f'stands for {n["multi"]} open answers')
     if n.get("flag"):
         bits.append(f'⚠ {n["flag"]}')
-    if n.get("also"):
-        bits.append("also recorded in: " + ", ".join(f'{a["source"]} {a["ref"]}' for a in n["also"]))
+    for a in n.get("also") or []:
+        bits.append(f'also recorded in {a["source"]} {a["ref"]}: {a["text"]}'
+                    + (f' (stands for {a["multi"]} open answers)' if a.get("multi") else ""))
+    if counts_conflict(n):
+        bits.append("⚠ the sources state different counts")
     return " · ".join(bits)
 
 
@@ -669,10 +701,14 @@ def needs_html(snap: dict) -> str:
                 extra += f' · <b>stands for {html.escape(str(n["multi"]))} open answers</b>'
             if n.get("flag"):
                 extra += f' · <span class="warn">⚠ {html.escape(n["flag"])}</span>'
-            if n.get("also"):
-                extra += " · also recorded in: " + ", ".join(
-                    f'<span class="src">{html.escape(a["source"])}</span> '
-                    + _ref_html(a["source"], a["ref"], a.get("href")) for a in n["also"])
+            for a in n.get("also") or []:
+                extra += (f' · also recorded in <span class="src">{html.escape(a["source"])}</span> '
+                          + _ref_html(a["source"], a["ref"], a.get("href")) + ": " + html.escape(a["text"])
+                          + (f' (stands for {html.escape(str(a["multi"]))} open answers)'
+                             if a.get("multi") else ""))
+            if counts_conflict(n):
+                extra += ' · <span class="warn">⚠ the sources state different counts</span>'
+
             parts.append(f'<li><span class="src">{html.escape(n["source"])}</span> '
                          f'{_ref_html(n["source"], n["ref"], n.get("href"))} · '
                          f'{html.escape(n["text"])}{extra}</li>')
@@ -709,6 +745,14 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
              f'<p class="lede">Built <time>{html.escape(built)}</time> · newest snapshot '
              f'<time class="newest">{html.escape(newest["at"])}</time> (master '
              f'{html.escape(str(newest.get("head") or "unread"))}) · {len(log)} snapshot(s) logged.</p>',
+             # ⭐ Y7: SAY it is a replay. The tree and timeline below are the stored snapshot, not a fresh
+             # read, so a change to a source since then is invisible until the next snapshot.
+             f'<p class="replay"><b>This page replays the snapshot taken at '
+             f'<time class="replayed">{html.escape(newest["at"])}</time>.</b> NEEDS YOU is '
+             + (f'read live at <time>{html.escape(live["at"])}</time>' if live is not None
+                else 'from that snapshot too')
+             + '. To refresh: <code>python3 scripts/goal-tree.py --snapshot --page</code>, or the '
+             'Refresh button.</p>',
              '<p class="lede">Each thread hangs under the owner request it serves. The relation '
              '(fix, blocker, bookkeeping, side) is declared by hand; the state is read from git and gh '
              'when the snapshot is taken. ✅ merged · ⏳ open or in flight · ⬜ next · ❌ waits '
@@ -719,7 +763,7 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
                      '. The tree below is the newest COMPLETE snapshot.</p>')
     # ⭐ NEEDS YOU FIRST, above the tree (owner decision D1): read from THIS run when there was one,
     # complete or not, because a decision that appeared since the newest snapshot is the one to see.
-    parts.insert(5, needs_html(live if live is not None else newest))
+    parts.insert(6, needs_html(live if live is not None else newest))
     parts += ['<h2>Now</h2>', render_tree_html(newest), '<h2>Timeline</h2>',
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed.</p>']
     for i in range(len(log) - 1, -1, -1):
@@ -758,6 +802,8 @@ details.snap{border-bottom:1px solid var(--rule);padding:.35rem 0}
 details.snap summary{cursor:pointer;font-size:.9rem}
 details.snap time{font-family:var(--mono);font-size:.78rem;color:var(--ink-faint)}
 details.snap ul{font-size:.85rem;margin:.4rem 0}
+.replay{background:var(--card);border:1px solid var(--rule);border-radius:.4rem;padding:.4rem .8rem;
+        font-size:.9rem}
 section.needs{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--pending);
               border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
 section.needs.none{border-left-color:var(--rule)}
@@ -1096,6 +1142,11 @@ def _self_test_body() -> int:
     case("⛔ C2: a `PR #N` in the tail is not a row, so it never flags",
          needs_from_backlog(BACKLOG_FIXTURE.replace("waits on backlog #11's call",
                                                     "half shipped in PR #11"))[0][2]["flag"], None)
+    case("⛔ Y4: only an explicit `backlog #N` flags — never pr #N, PR  #N, issue #N or color #N",
+         [needs_from_backlog(BACKLOG_FIXTURE.replace("waits on backlog #11's call", t))[0][2]["flag"]
+          for t in ("half shipped in pr #11", "half shipped in PR  #11", "issue #11 describes precedent",
+                    "color #11", "waits on Backlog  #11")],
+         [None, None, None, None, "may already be answered by backlog #11"])
     case("⛔ C2: a closed other row flags too",
          needs_from_backlog(BACKLOG_FIXTURE.replace("| 11 | **Parent**", "| 11 | ✅ **Parent**").replace(
              "DECIDED 2026-10-28 by the owner: A", "✅ done"))[0][2]["flag"],
@@ -1113,62 +1164,85 @@ def _self_test_body() -> int:
          "Pick a name — pick X or Y")
     case("an empty dashboard store has no asks", needs_from_dashboard(""), ([], []))
     case("an empty ledger has no owner-waits", needs_from_ledger([]), [])
-    # C4: a count only when the source STATES it.
-    case("⭐ C4: a stated count is used, an unstated plural says 'several', a single ask says nothing",
-         [multiplicity(t) for t in ("roles page (14 answers open)", "several answers open",
+    # Y3: a count only from the explicit annotation.
+    case("⭐ Y3: a count comes ONLY from `(answers-open: N)`; 'several answers' says several; else nothing",
+         [multiplicity(t) for t in ("roles page (answers-open: 14)", "several answers open",
                                     "write each answer into its box", "pick A or B")],
-         [14, "several", "several", None])
-    # X2: one decision in three sources becomes ONE item (Codex's triple).
+         [14, "several", None, None])
+    case("⛔ Y3: a number in a SENTENCE is never a count (Codex's three)",
+         [multiplicity(t) for t in ("backlog #14 answers open question", "PR #14 questions open tomorrow",
+                                    "Not 14 answers open any more; pick A or B")], [None, None, None])
+    # Y1: identity is an explicit token, never a row number in prose.
+    case("Y1: an identity is read only from `decision: backlog #N` / `action: backlog #N`",
+         [identity(t) for t in ("decision: backlog #5 — pick", "action: backlog #9 — run it",
+                                "about backlog #5", "decision: backlog #5 and decision: backlog #9")],
+         [(5, "decision"), (9, "action"), None, None])
+    case("...and an `Action: backlog #N` (capitalised) is not the token", identity("Action: backlog #5"), None)
     _tri = consolidate(_d + _b + needs_from_ledger(
-        [{"id": "ask-1", "what": "WAITS-ON-OWNER: Choose A or B for backlog #5"}]))
-    case("⭐ X2: one decision recorded in three sources is ONE item that keeps every source",
+        [{"id": "ask-1", "what": "WAITS-ON-OWNER: decision: backlog #5 — Choose A or B (answers-open: 3)"}])
+        + needs_from_dashboard(DASH_FIXTURE.replace("Pick one for backlog #5.",
+                                                    "Pick one (decision: backlog #5)."))[0])
+    case("⭐ Y1: sources that DECLARE one decision become ONE item that keeps every source",
          [(n["ref"], [(a["source"], a["ref"]) for a in n["also"]]) for n in _tri],
-         [("backlog #5", [("dashboard", "2026-10-01/1"), ("ledger", "ask-1")]),
+         [("2026-10-01/1", []), ("backlog #5", [("ledger", "ask-1"), ("dashboard", "2026-10-01/1")]),
           ("backlog #9", []), ("backlog #10", [])])
-    _two = consolidate(_d + _b + needs_from_dashboard(
-        DASH_FIXTURE.replace("2026-10-01", "2026-10-05").replace("Pick one", "A second question"))[0])
-    case("⛔ X2: two DIFFERENT asks from one source citing the same row stay two items",
-         [n["ref"] for n in _two], ["backlog #5", "backlog #9", "backlog #10", "2026-10-05/1"])
-    case("⛔ X2: an ask naming two rows is not assigned to either",
-         [n["ref"] for n in consolidate(needs_from_ledger(
-             [{"id": "z", "what": "WAITS-ON-OWNER: backlog #5 or backlog #9?"}]) + _b)],
-         ["z", "backlog #5", "backlog #9", "backlog #10"])
-    case("⛔ X2: an ask naming a row that is not listed stays its own item",
-         [n["ref"] for n in consolidate(needs_from_ledger(
-             [{"id": "y", "what": "WAITS-ON-OWNER: about backlog #8"}]) + _b)],
-         ["y", "backlog #5", "backlog #9", "backlog #10"])
-    case("the merge key is never stored", any("_scan" in n for n in _tri), False)
+    case("⭐ Y2: a merged source keeps its own text and count",
+         [(a["text"], a.get("multi")) for a in _tri[1]["also"]],
+         [("decision: backlog #5 — Choose A or B (answers-open: 3)", 3),
+          ("Pick one (decision: backlog #5).", None)])
+    _y1 = consolidate(_b + needs_from_ledger([
+        {"id": "act", "what": "WAITS-ON-OWNER: ACTION: run the command for backlog #5"},
+        {"id": "other", "what": "WAITS-ON-OWNER: decide an entirely different question about backlog #5"},
+        {"id": "kind", "what": "WAITS-ON-OWNER: action: backlog #5 — run it"}]))
+    case("⛔ Y1: a bare mention, or the right row with the WRONG KIND, never merges (Codex's two + kind)",
+         [(n["ref"], n["kind"]) for n in _y1],
+         [("backlog #5", "decision"), ("backlog #9", "action"), ("backlog #10", "decision"),
+          ("act", "action"), ("other", "decision"), ("kind", "action")])
+    case("...and the row keeps no stray source", _y1[0]["also"], [])
+    _conf = consolidate([dict(_b[0], text="Pick a name (answers-open: 2)", multi=2)] + needs_from_ledger(
+        [{"id": "ask-1", "what": "WAITS-ON-OWNER: decision: backlog #5 (answers-open: 3)"}]))
+    case("⭐ Y2: CONFLICTING counts are both kept and flagged, never resolved",
+         (counts_conflict(_conf[0]), _conf[0]["multi"], _conf[0]["also"][0]["multi"],
+          "⚠ the sources state different counts" in _item_line(_conf[0])), (True, 2, 3, True))
+    case("agreeing counts are not a conflict", counts_conflict(dict(_conf[0], multi=3)), False)
     case("consolidating never changes the caller's items", [n["also"] for n in _b], [[], [], []])
     _ns = derive(goals, src(needs=[]), "t")
     case("⭐ an empty list read from ALL three sources says nothing waits on you",
          (needs_state(_ns), needs_lines(_ns)[0].startswith("NEEDS YOU — nothing waits on you")),
          ("none", True))
-    _one = dict(_item("decision", "backlog", "backlog #5", "/backlog-table#i5", "t"), row=5)
-    _one.pop("_scan")
+    _one = dict(_item("decision", "backlog", "backlog #5", "/backlog-table#i5", "t", (5, "decision")),
+                row=5)
     _nd = derive(goals, src(needs=[_one]), "t")
     case("needs are reported in the timeline as new and as cleared",
          (changes(_ns, _nd)[0], changes(_nd, _ns)[0]),
          ("needs you, new: backlog #5 (backlog)", "needs you, cleared: backlog #5 (backlog)"))
     case("a list with items says how many", needs_lines(_nd)[:2],
          ["NEEDS YOU — 1 decision(s) only you can make, open now", "└─ [backlog] backlog #5 · t"])
-    _mixed = derive(goals, src(needs=consolidate(_d + _b + [_item(
-        "decision", "ledger", "roles", None, "write each answer into its box")])), "t")
+    _mixed = derive(goals, src(needs=consolidate(_tri + [_item(
+        "decision", "ledger", "roles", None, "the roles page; several answers open")])), "t")
     _ml = needs_lines(_mixed)
     case("⭐ X4: decisions and actions are two lists, each with its own count",
          [ln for ln in _ml if ln.startswith("NEEDS YOU")],
-         ["NEEDS YOU — 3 decision(s) only you can make, open now (1 of them stand for several answers)",
+         ["NEEDS YOU — 4 decision(s) only you can make, open now (1 of them stand for several answers)",
           "NEEDS YOU — 1 action(s) only you can take"])
-    case("C4: the item standing for several answers says so, without a number",
-         any(ln.endswith("roles · write each answer into its box · stands for several open answers")
+    case("Y3: the item standing for several answers says so, without a number",
+         any(ln.endswith("roles · the roles page; several answers open · stands for several open answers")
              for ln in _ml), True)
-    case("an item's other sources are printed with it",
-         any("backlog #5" in ln and "also recorded in: dashboard 2026-10-01/1" in ln for ln in _ml), True)
+    case("an item's other sources are printed with it, text and count included",
+         any("backlog #5" in ln and "also recorded in ledger ask-1: decision: backlog #5 — Choose A or B "
+             "(answers-open: 3) (stands for 3 open answers)" in ln for ln in _ml), True)
     _pg = render_page([_ns, _mixed], "t")
     case("⭐ the NEEDS YOU list is at the top, above the tree, and every source links",
          (_pg.index('<section class="needs') < _pg.index("<h2>Now</h2>"),
           '<a href="/backlog-table#i5">backlog #5</a>' in _pg,
           '<a href="/dashboard#2026-10-01-1">2026-10-01/1</a>' in _pg,
           "action(s) only you can take</h2>" in _pg), (True, True, True, True))
+    case("⭐ Y7: the page says it REPLAYS a snapshot, when, and how to refresh it",
+         ('This page replays the snapshot taken at <time class="replayed">t</time>' in _pg,
+          "python3 scripts/goal-tree.py --snapshot --page" in _pg,
+          _pg.index('class="replay"') < _pg.index('<section class="needs')), (True, True, True))
+    case("Y7: a live NEEDS YOU read is named as live",
+         "NEEDS YOU is read live at <time>t2</time>" in render_page([_nd], "t", dict(_ns, at="t2")), True)
     case("a live read's needs are shown over the newest snapshot's",
          "nothing waits on you" in render_page([_nd], "t", _ns), True)
 
@@ -1241,7 +1315,7 @@ def _self_test_body() -> int:
         (r / "main" / ".claude").mkdir(parents=True)
         (r / "main" / ".git").mkdir()
         (r / "main" / ".claude" / "inflight.jsonl").write_text(
-            '{"id": "build-12", "what": "w"}\n{"id": "ask-1", "what": "WAITS-ON-OWNER: pick A or B for backlog #5"}\n')
+            '{"id": "build-12", "what": "w"}\n{"id": "ask-1", "what": "WAITS-ON-OWNER: decision: backlog #5 — pick A or B"}\n')
         (r / "docs").mkdir()
         (r / DASHBOARD_REL).write_text(DASH_FIXTURE)
         (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
@@ -1258,9 +1332,10 @@ def _self_test_body() -> int:
         case("collect reads open PRs, all PR states, the repo and the MAIN checkout's ledger",
              (sorted(s["open"]), s["all"], s["repo"], [e["id"] for e in s["ledger"]], s["errors"]),
              ([21], {22: "CLOSED"}, "o/r", ["build-12", "ask-1"], {}))
-        case("⭐ NEEDS YOU gathers all three sources and consolidates the one decision they share",
+        case("⭐ NEEDS YOU gathers all three sources and merges only the one that DECLARES its decision",
              [(n["ref"], n["href"], [a["ref"] for a in n["also"]]) for n in s["needs"]],
-             [("backlog #5", "/backlog-table#i5", ["2026-10-01/1", "ask-1"]),
+             [("2026-10-01/1", "/dashboard#2026-10-01-1", []),
+              ("backlog #5", "/backlog-table#i5", ["ask-1"]),
               ("backlog #9", "/backlog-table#i9", []), ("backlog #10", "/backlog-table#i10", [])])
         (r / "main" / ".claude" / "inflight.jsonl").write_text(
             '{"id": "build-12", "what": "w"}\n{"id":"pick","what":"WAITS-ON-OWNER: Choose A or B"\n')
@@ -1286,7 +1361,7 @@ def _self_test_body() -> int:
         case("⛔ X1: an unreadable dashboard entry makes the dashboard NOT READ",
              collect(r, run_ok)["errors"].get("dashboard", "").endswith("NOT READ"), True)
         (r / "main" / ".claude" / "inflight.jsonl").write_text(
-            '{"id": "build-12", "what": "w"}\n{"id": "ask-1", "what": "WAITS-ON-OWNER: pick A or B for backlog #5"}\n')
+            '{"id": "build-12", "what": "w"}\n{"id": "ask-1", "what": "WAITS-ON-OWNER: decision: backlog #5 — pick A or B"}\n')
         (r / DASHBOARD_REL).write_text(DASH_FIXTURE)
         (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
         case("an owner-wait in the ledger is a need, not 'in flight under no goal'",

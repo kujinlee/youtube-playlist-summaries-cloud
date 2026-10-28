@@ -1002,7 +1002,12 @@ EXPECTED_MUTATIONS = {
     # are no longer items but a NOT READ source, X1), sixteen new: X1 per source, X2 consolidation and its
     # two refusals plus the caller's items untouched, X4 actions, C4 stated-or-several, C2 the flag
     # (and a `PR #N` in the tail is not a row, found on the real backlog).
-    "scripts/goal-tree.py": 51,
+    # ⟳ round-2 REDESIGN to structure: 51 -> 55 — six RETIRED with the free-text heuristics they pinned
+    # (row-mention consolidation x3, the plural/count cues x2, the bare-#N row reading), ten new: the
+    # explicit identity (two-token refusal, kind in the key, ledger and dashboard declarations), each
+    # source keeping its count, conflicting counts flagged, the `(answers-open: N)` annotation x2,
+    # `backlog #N` alone for the flag, and the page saying it replays a snapshot.
+    "scripts/goal-tree.py": 55,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2095,7 +2100,10 @@ EXPECTED_MUTATIONS = {
     # generator named, and silence on an unrelated command.
     # ⟳ same day, round-1 fold: 8 -> 12 — the regex entry retired with the regex; five for the
     # executed-command match (X3): quoted text, merge-base, NAME=value, separators, newlines.
-    "scripts/regen-pages.py": 12,
+    # ⟳ round-2 (Y5): 12 -> 17 — the NAME=value entry re-anchored on the rewrite; six new for the
+    # static "may merge" match: compound-syntax words, quoted separators (non-POSIX), here-document
+    # bodies and their end, quoted command words.
+    "scripts/regen-pages.py": 17,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -6197,7 +6205,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2493)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2502)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

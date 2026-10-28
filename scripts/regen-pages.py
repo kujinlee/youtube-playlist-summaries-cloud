@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Rebuild every generated page after a merge, so no page describes a world that has moved on.
+"""Rebuild every generated page after a command that MAY merge a PR, so no page describes a world that has moved on.
 
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
-    python3 scripts/regen-pages.py --self-test             # 34 cases
+    python3 scripts/regen-pages.py --self-test             # 40 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
 and before this only the goal tree was rebuilt on one. The others went stale until someone edited their
 source file or pressed Refresh.
+
+THE TRIGGER IS A STATIC MATCH (round 2 Y5): a Bash command in which `gh pr merge` appears as a command's
+first words after a quote-aware split (`commands`, `may_merge`). It never claims the merge RAN: `false && gh
+pr merge 1` over-fires (one needless rebuild), and a merge inside syntax it does not model may be missed —
+the page's build time shows the staleness either way.
 
 WHAT IT RUNS: every page in `explainer-serve.REGENERABLE`, through each generator's existing entry point
 (`python3 scripts/<generator>.py`, no arguments — exactly what the Refresh button runs). ONE list: a page
@@ -42,17 +47,44 @@ TIMEOUT = 120          # seconds, per generator; the slowest measured 2026-10-28
 THREADS_REL = "docs/goal-threads.md"
 SEPARATORS = ";&|()\n"
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# Words that may precede a command inside compound syntax: `if true; then gh pr merge 1; fi`.
+LEADERS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "{", "time"})
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def _strip_heredocs(cmd: str) -> str:
+    """The command text with every here-document BODY removed: a body is data, never a command."""
+    out, delims = [], []
+    for line in cmd.split("\n"):
+        if delims:
+            if line.strip() == delims[0]:
+                delims.pop(0)
+            continue
+        out.append(line)
+        delims += [m.group(2) for m in HEREDOC.finditer(line)]
+    return "\n".join(out)
+
+
+def _word(token: str) -> str:
+    """A token with ONE layer of matching outer quotes removed (`"gh"` is the word gh)."""
+    return token[1:-1] if len(token) >= 2 and token[0] == token[-1] and token[0] in "'\"" else token
 
 
 def commands(cmd: str) -> list[list[str]]:
-    """PURE. The simple commands a Bash string EXECUTES, each as argv: tokenized with `shlex` (quotes
-    and `#` comments honoured) and split on `;` `&&` `||` `|` `&`, parentheses and newlines (round 1
-    X3: a regex fired on `echo "gh pr merge 433"`, a comment, and `gh pr merge-base`). Leading
-    `NAME=value` assignments are dropped. ⚠ BOUNDS: unbalanced quotes yield NO commands (a missed rebuild,
-    never a spurious one); shlex reads `a#b` as a comment where bash reads one word, which can only
-    hide a merge, not invent one; `bash -c '…'`, `eval` and `$(…)` are not looked inside."""
+    """PURE. A STATIC reading of the simple commands in a Bash string, each as its argv words.
+
+    Here-document bodies are dropped; the rest is tokenized by `shlex` in non-POSIX mode, which keeps a
+    quoted token whole — so a quoted `";"` or `"gh pr merge 1"` stays text (round 2 Y5) — and honours `#`
+    comments; it is split on UNQUOTED `;` `&&` `||` `|` `&`, parentheses and newlines. Leading `NAME=value`
+    assignments and compound-syntax words (`if`, `then`, `do`, `!`, …) are dropped.
+
+    ⚠ IT DOES NOT KNOW WHAT RUNS, and says so: `false && gh pr merge 1` reads as a merge though bash never
+    runs it (an OVER-FIRE: one needless rebuild). It MAY MISS a merge inside syntax it does not model —
+    a `case` arm, a function body, `bash -c '…'`, `eval`, `$(…)` — and unbalanced quotes yield no commands
+    (a missed rebuild; the page's build time shows how stale it is). shlex reads `a#b` as a comment where
+    bash reads one word, which can only hide a merge."""
     try:
-        lex = shlex.shlex(cmd, posix=True, punctuation_chars=SEPARATORS)
+        lex = shlex.shlex(_strip_heredocs(cmd), posix=False, punctuation_chars=SEPARATORS)
         lex.whitespace = " \t\r"
         lex.whitespace_split = True
         tokens = list(lex)
@@ -62,13 +94,15 @@ def commands(cmd: str) -> list[list[str]]:
     for t in tokens:
         if t and set(t) <= set(SEPARATORS):
             out.append([])
-        elif out[-1] or not ASSIGNMENT.match(t):
-            out[-1].append(t)
+        elif out[-1] or not (ASSIGNMENT.match(t) or t in LEADERS):
+            out[-1].append(_word(t))
     return [c for c in out if c]
 
 
-def is_merge(cmd: str) -> bool:
-    """PURE. Does this Bash string EXECUTE `gh pr merge …`? argv must be exactly `gh`, `pr`, `merge`."""
+def may_merge(cmd: str) -> bool:
+    """PURE. Is this Bash string a command that MAY merge a PR — does some command in `commands()` begin
+    with exactly the words `gh`, `pr`, `merge`? A static match, not an observation of execution: see
+    `commands()` for what it over- and under-reads. A false fire costs one rebuild."""
     return any(c[:3] == ["gh", "pr", "merge"] for c in commands(cmd))
 
 
@@ -88,7 +122,7 @@ def pages_for(payload: object, pages: dict[str, str]) -> list[str]:
     ti = payload.get("tool_input")
     ti = ti if isinstance(ti, dict) else {}
     cmd, fp = ti.get("command"), ti.get("file_path")
-    if isinstance(cmd, str) and is_merge(cmd):
+    if isinstance(cmd, str) and may_merge(cmd):
         return sorted(pages)
     if isinstance(fp, str) and (fp == THREADS_REL or fp.endswith("/" + THREADS_REL)):
         return [p for p in ("goal-tree",) if p in pages]
@@ -199,14 +233,24 @@ def _self_test_body() -> int:
     case("⛔ X3: `gh pr merge-base` is not `gh pr merge`", pages_for(bash("gh pr merge-base 433"), table), [])
     case("⛔ X3: a merge mentioned AFTER a comment marker is not executed",
          pages_for(bash("ls # then gh pr merge 5"), table), [])
-    case("X3: a compound `cd x && gh pr merge 5` IS a merge", is_merge("cd x && gh pr merge 5"), True)
+    case("X3: a compound `cd x && gh pr merge 5` IS a merge", may_merge("cd x && gh pr merge 5"), True)
     case("X3: after a pipe, a semicolon or a newline it is still a merge",
-         [is_merge(c) for c in ("a | gh pr merge 2", "ls; gh pr merge 3", "ls\ngh pr merge 7")],
+         [may_merge(c) for c in ("a | gh pr merge 2", "ls; gh pr merge 3", "ls\ngh pr merge 7")],
          [True, True, True])
     case("X3: separators INSIDE a quoted argument do not split the command",
          commands('gh pr merge 5 --body "a; b && c"'), [["gh", "pr", "merge", "5", "--body", "a; b && c"]])
     case("X3: a leading NAME=value assignment is not the command name",
          commands("GH_HOST=x gh pr merge 3"), [["gh", "pr", "merge", "3"]])
+    case("⛔ Y5: a QUOTED separator is text, so `echo \";\" gh pr merge` is one echo",
+         may_merge('echo ";" gh pr merge 433'), False)
+    case("⛔ Y5: a here-document BODY is data, never a command",
+         may_merge("cat <<'EOF'\ngh pr merge 433\nEOF"), False)
+    case("...and the command after the here-document is still read",
+         may_merge("cat <<EOF\nhi\nEOF\ngh pr merge 9"), True)
+    case("Y5: a merge inside `if … then … fi` is seen", may_merge("if true; then gh pr merge 433; fi"), True)
+    case("Y5: a quoted command word is still the word (`\"gh\" pr merge`)", may_merge('"gh" pr merge 5'), True)
+    case("⚠ Y5, STATED OVER-FIRE: `false && gh pr merge` reads as a merge — the match is static",
+         [may_merge(c) for c in ("false && gh pr merge 433", "true || gh pr merge 433")], [True, True])
     case("⛔ X3: unbalanced quotes yield no command — a missed rebuild, never a spurious one",
          commands('gh pr merge 5 --body "oops'), [])
     case("an edit of the threads file rebuilds the goal tree alone",
