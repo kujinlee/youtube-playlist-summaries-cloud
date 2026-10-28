@@ -291,8 +291,8 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            worst = 2\n",
-        "            worst = max(worst, 0)\n"
+        "            worst = 2\n            msgs.append(f\"CANNOT RUN {rel}: does not parse",
+        "            worst = max(worst, 0)\n            msgs.append(f\"CANNOT RUN {rel}: does not parse"
       ]
     ],
     "expect": [
@@ -345,8 +345,8 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    if exempt or not names_self_test(tree):\n        return (1 if msgs else 0), msgs\n",
-        "    if exempt:\n        return (1 if msgs else 0), msgs\n"
+        "    if exempt or not names_self_test(tree):\n        return 0, msgs\n",
+        "    if exempt:\n        return 0, msgs\n"
       ]
     ],
     "expect": [
@@ -403,45 +403,6 @@
     ],
     "expect": [
       "the refusal names the file, the line, the ENTRY and the remedy"
-    ]
-  },
-  {
-    "name": "no process launch at import is examined (#382 rule 5)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "for line, call in import_time_launches(tree)]",
-        "for line, call in []]"
-      ]
-    ],
-    "expect": [
-      "⭐ a module-level `subprocess.run([\"git\", \"init\", ...])` is refused (master's module-level-build rule)"
-    ]
-  },
-  {
-    "name": "a launch inside a module-level if is not import-time (#382 rule 5)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n                walk(s.body)\n",
-        "            elif isinstance(s, (ast.If, ast.While)):\n                code.append(s.test)\n"
-      ]
-    ],
-    "expect": [
-      "a module-level `os.system(\"git config ...\")` inside an `if` is refused, though it builds nothing"
-    ]
-  },
-  {
-    "name": "a launcher imported by name is not followed (#382 rule 5)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "        return e.id if e.id in bare else None\n",
-        "        return None\n"
-      ]
-    ],
-    "expect": [
-      "...and so is an aliased launch inside a module-level `try`, and `from os import system`"
     ]
   },
   {
@@ -523,64 +484,12 @@
     ]
   },
   {
-    "name": "a class body is not import time (#382 r1)",
+    "name": "rule 5 imports only the population (#382 r1)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "                code.extend(s.decorator_list + s.bases + [k.value for k in s.keywords])\n                walk(s.body)\n",
-        "                code.extend(s.decorator_list + s.bases + [k.value for k in s.keywords])\n"
-      ]
-    ],
-    "expect": [
-      "⭐ probe [CODEX_R1] a launch in a CLASS body: refused"
-    ]
-  },
-  {
-    "name": "an except clause's type is not import time (#382 r1 XM4)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "                    code.extend([h.type] if h.type is not None else [])\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ probe [CODEX_R1] a launch in an except clause's TYPE: refused"
-    ]
-  },
-  {
-    "name": "a rebound launcher is not followed (#382 r1)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "            elif _launcher_ref(value, mods, bare):\n                bare.add(name)\n",
-        "            elif False:\n                bare.add(name)\n"
-      ]
-    ],
-    "expect": [
-      "⭐ probe [CODEX_R1] a rebound launcher, `r = subprocess.run`: refused"
-    ]
-  },
-  {
-    "name": "__import__ is not followed (#382 r1)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "f.id in (\"__import__\", \"import_module\")",
-        "f.id in ()"
-      ]
-    ],
-    "expect": [
-      "⭐ probe [CODEX_R1] `__import__(\"subprocess\").run(...)`: refused"
-    ]
-  },
-  {
-    "name": "rule 5 reads only the population (#382 r1)",
-    "file": "scripts/check-fixture-git-isolation.py",
-    "edits": [
-      [
-        "with the caller's environment\" for line, call in import_time_launches(tree)]",
-        "with the caller's environment\" for line, call in (import_time_launches(tree) if names_self_test(tree) else [])]"
+        "import_time_launches(parsed).items()",
+        "import_time_launches([f for f in parsed if f.relative_to(root).as_posix() in population]).items()"
       ]
     ],
     "expect": [
@@ -588,42 +497,133 @@
     ]
   },
   {
-    "name": "a statement of no listed kind is not import time (#382 r1)",
+    "name": "subprocess.Popen is not a launch event (#382 r2)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "            else:\n                code.append(s)\n    walk(tree.body)\n",
-        "            else:\n                pass\n    walk(tree.body)\n"
+        "LAUNCH_EVENTS = (\"subprocess.Popen\", ",
+        "LAUNCH_EVENTS = ("
       ]
     ],
     "expect": [
-      "⭐ probe [MASTER] a module-level `git init`: refused"
+      "the refusal names the file and the audit event that fired"
     ]
   },
   {
-    "name": "getattr(module, launcher) is not followed (#382 r1)",
+    "name": "os.system is not a launch event (#382 r2)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id == \"getattr\" and len(e.args) >= 2:\n",
-        "    if False:\n"
+        "\"os.system\", \"os.exec\"",
+        "\"os.exec\""
       ]
     ],
     "expect": [
-      "...and so is `getattr(os, \"system\")(...)` at module level"
+      "⭐ probe [R1_EXTRA] `importlib.import_module(\"os\").system(...)` in a TryStar: refused"
     ]
   },
   {
-    "name": "asyncio's subprocess launchers are not launchers (#382 r1)",
+    "name": "a TIMEOUT is a pass (#382 r2)",
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    \"asyncio\": frozenset({\"create_subprocess_exec\", \"create_subprocess_shell\"}),\n",
+        "        except subprocess.TimeoutExpired:\n            return \"cannot\", [], ",
+        "        except subprocess.TimeoutExpired:\n            return \"ok\", [], "
+      ]
+    ],
+    "expect": [
+      "an import that does not FINISH is CANNOT CHECK, never a pass"
+    ]
+  },
+  {
+    "name": "a CRASH without an event is a pass (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        if proc.returncode != 0 or not any(e[\"kind\"] == \"imported\" for e in events):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "an import that CRASHES is CANNOT CHECK, never a pass"
+    ]
+  },
+  {
+    "name": "CANNOT CHECK does not fail the run (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        elif status == \"cannot\":\n            worst = 2\n",
+        "        elif status == \"cannot\":\n            worst = max(worst, 0)\n"
+      ]
+    ],
+    "expect": [
+      "an import that CRASHES is CANNOT CHECK, never a pass"
+    ]
+  },
+  {
+    "name": "the refusal does not name the audit event (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "audit event `{fired['event']}` ",
+        "audit event "
+      ]
+    ],
+    "expect": [
+      "the refusal names the file and the audit event that fired"
+    ]
+  },
+  {
+    "name": "what an import writes is not reported (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if effects:\n        msgs.append(",
+        "    if False:\n        msgs.append("
+      ]
+    ],
+    "expect": [
+      "what an import WRITES is reported, not refused"
+    ]
+  },
+  {
+    "name": "a launch at interpreter EXIT is ignored (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "emit(\"imported\", \"\")\n'''",
+        "emit(\"imported\", \"\")\nos.close(fd)\n'''"
+      ]
+    ],
+    "expect": [
+      "⭐ probe [R2_EXTRA] an `atexit` callback registered at import (#380 X6): refused"
+    ]
+  },
+  {
+    "name": "libc entry points through ctypes are not launches (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        " or (event == \"ctypes.dlsym\" and len(args) > 1 and args[1] in SYMBOLS)",
         ""
       ]
     ],
     "expect": [
-      "⭐ probe [R1_EXTRA] `asyncio.create_subprocess_exec(\"git\", \"init\")` at import: refused"
+      "⭐ probe [R2_EXTRA] libc `system` through ctypes: refused"
+    ]
+  },
+  {
+    "name": "an EXEMPT file is not imported (#382 r2)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        parsed.append(f)\n",
+        "        parsed.append(f) if rel not in exempt else None\n"
+      ]
+    ],
+    "expect": [
+      "an EXEMPT file is still IMPORTED under the hook: rule 5 reads every file"
     ]
   }
 ]

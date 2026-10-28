@@ -18028,15 +18028,17 @@ Branch `wrap-every-selftest` (backlog #382). Measured on `d678369d` before any c
 `--self-test`, run as children of `fixture_git.isolated()`, gave 79 green; the red is `subject_status`
 (backlog #386), red unisolated too. 79 dispatch `--self-test`; 16 were wrapped and 63 more now are (64
 entries: `check-dashboard-entry` dispatches two; `gen-dashboard`'s write sandbox moved inside the block).
-Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,353 manifest mutations resolves
+Bodies renamed `_self_test_body`, never reindented; every anchor of the 2,354 manifest mutations resolves
 once. After: 79/80 run normally, 79/80 with `GIT_DIR` exported to a victim that stays byte-identical, and
 `subject_status` 16/17 under `GIT_DIR` where master gives 12/17. Round 1 (Codex) showed that reading the population
 from dispatch leaked, so `check-fixture-git-isolation.py`'s rules are now broad: the population is every file with a
 non-docstring `--self-test` literal; a population file with no nameable entry is refused (dict, `getattr`, argparse
 action and sibling dispatch); entries must be plain undecorated synchronous `def`s whose body is the canonical
-argument-free `isolated()` block; and no process launch runs at import in ANY file (class bodies, `except` types,
-rebinding, `__import__` included; 0 of 84 trip it). The builder detector and `GIT_SUITES` are deleted (84 → 109 cases;
-mutations 45 → 48). EXEMPT is empty. Against master's guard, measured over a fixed probe set held in the suite: every
-probe master refuses is refused here. Four named relaxations remain, each pinned accepted: a builder in a file with no
-`--self-test` (master's X9 false refusal), an indirect launch at import (backlog #380), a flag that is not one literal,
-and an unlaunched module-level git argv literal.
+argument-free `isolated()` block. Round 2 (Codex) beat the static launcher rule six more ways and found a
+real launch at import (`check-ci-watched.py`'s `_repo_sentinel()`, now resolved on first use), so rule 5 now
+IMPORTS every file in a child interpreter under an audit hook that refuses any process-launch event, `atexit`
+included. A timeout or a crash is CANNOT CHECK; what an import writes is reported. All 84 files import clean in
+about 1.6s. 84 → 130 cases; mutations 45 → 48. EXEMPT is empty. Against master's guard, measured over a fixed probe
+set held in the suite: every probe master refuses is refused here. Five named relaxations remain, each pinned
+accepted: a builder in a file with no `--self-test` (master's X9 false refusal), a flag that is not one literal, an
+unlaunched module-level git argv literal, a launch in a dead branch, and a prose-only mention of the flag.

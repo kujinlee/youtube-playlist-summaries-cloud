@@ -1168,7 +1168,8 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 41,
+    # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
+    "scripts/check-ci-watched.py": 42,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -1927,6 +1928,9 @@ EXPECTED_MUTATIONS = {
     # 32 -> 35 for rule 5, no process launch at import, which replaces the deleted module-level-build refusal.
     # 35 -> 48 in the r1 fold (Codex XM1-XM4): the literal population, named entries, undecorated sync entries, and
     # rule 5 over every file with class bodies, except types, TryStar, rebinding, __import__, getattr and asyncio.
+    # r2 fold: rule 5 EXECUTES each import under an audit hook, so its 10 static spelling entries retire with their
+    # subject and 10 are added (the events, the timeout and crash as CANNOT CHECK, the named event, exit-time launches,
+    # ctypes, effects reported, EXEMPT files imported) — 48 -> 48.
     "scripts/check-fixture-git-isolation.py": 48,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
@@ -6124,7 +6128,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2353)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2354)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

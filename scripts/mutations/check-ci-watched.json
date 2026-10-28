@@ -467,8 +467,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    (SENTINEL / head).write_text(render_sentinel(head, now))",
-        "    (SENTINEL / \"ci-watching\").write_text(render_sentinel(head, now))"
+        "    (sentinel / head).write_text(render_sentinel(head, now))",
+        "    (sentinel / \"ci-watching\").write_text(render_sentinel(head, now))"
       ]
     ],
     "expect": "⭐ `main --watching` writes a record NAMED AFTER HEAD, not one shared file"
@@ -524,5 +524,16 @@
     "expect": [
       "a sentinel directory removed after the `is_dir()` gate lists NO arms rather than raising (r1 Codex)"
     ]
+  },
+  {
+    "name": "the sentinel is resolved at IMPORT again, running git (backlog #382)",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "SENTINEL: \"Path | None\" = None\n",
+        "SENTINEL: \"Path | None\" = _repo_sentinel()\n"
+      ]
+    ],
+    "expect": "SENTINEL is not resolved at import (it is still None when the suite starts)"
   }
 ]

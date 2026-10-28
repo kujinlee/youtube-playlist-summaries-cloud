@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 86 cases
+    python3 scripts/check-ci-watched.py --self-test  # 88 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -125,7 +125,20 @@ def _repo_sentinel() -> Path:
     return sentinel_for(common, ROOT)
 
 
-SENTINEL = _repo_sentinel()
+# ⟳ backlog #382: computed on FIRST USE, never at import. Importing this module used to run
+# `git rev-parse` (`_repo_sentinel`), and `check-fixture-git-isolation.py` now imports every script
+# under an audit hook that refuses a process launch at import. A case may still rebind it.
+SENTINEL: "Path | None" = None
+
+
+def _sentinel() -> Path:
+    """The sentinel directory, resolved once, on first use."""
+    global SENTINEL
+    if SENTINEL is None:
+        SENTINEL = _repo_sentinel()
+    return SENTINEL
+
+
 # ⛔ THE EVIDENCE BASE, and the reason it is a FILE and not stderr. This guard warns on a
 # Stop hook, where the wrapper shows stderr once and keeps nothing. MEASURED 2026-09-22: a
 # PR was opened with CI unwatched, the failure this guard exists to catch, and the question
@@ -525,9 +538,10 @@ def run_decide(payload: str = "") -> int:
             rows = None
 
     watching = None
-    if SENTINEL.is_dir():
+    sentinel = _sentinel()
+    if sentinel.is_dir():
         # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
-        watching = relevant_arm([q.name for q in arms_newest_first(SENTINEL)], head)
+        watching = relevant_arm([q.name for q in arms_newest_first(sentinel)], head)
 
     code, message = decide(head, watching, rows)
     if code == WARN:
@@ -574,9 +588,10 @@ def run_watching() -> int:
         print("CANNOT RUN: could not read HEAD.", file=sys.stderr)
         return CANNOT_RUN
     now = observer_log.now()
-    SENTINEL.mkdir(parents=True, exist_ok=True)
+    sentinel = _sentinel()
+    sentinel.mkdir(parents=True, exist_ok=True)
     # ⛔ PER-SHA, so arming here cannot un-arm another worktree — round 1 Claude HIGH.
-    (SENTINEL / head).write_text(render_sentinel(head, now))
+    (sentinel / head).write_text(render_sentinel(head, now))
     print(f"recorded: a watcher is armed for {head[:8]}. A new push un-arms it by design.")
     return QUIET
 
@@ -611,6 +626,18 @@ def _self_test_body() -> int:
         cases.append((name, ok))
         print(f"  PASS  {name}" if ok else f"  [FAIL] {name}: got {ok!r} want {True!r}")
 
+    # ⟳ backlog #382: importing this module must launch nothing, so the sentinel is resolved on FIRST USE.
+    case("SENTINEL is not resolved at import (it is still None when the suite starts)", SENTINEL is None)
+    _calls: list[int] = []
+    _g = globals()
+    _real_resolver = _g["_repo_sentinel"]
+    _g["_repo_sentinel"] = lambda: (_calls.append(1), pathlib.Path("/nowhere/ci-watching.d"))[1]
+    try:
+        _first, _second = _sentinel(), _sentinel()
+    finally:
+        _g["_repo_sentinel"], _g["SENTINEL"] = _real_resolver, None
+    case("...it is resolved once, on first use, and the second use reads the cached value",
+         (_first == _second == pathlib.Path("/nowhere/ci-watching.d"), _calls) == (True, [1]))
     SHA = "a62de1380000000000000000000000000000000f"
     OLD = "266984620000000000000000000000000000000f"
     PEND = [{"name": "verify", "state": "PENDING"}]
@@ -1211,7 +1238,8 @@ def main(argv: "list[str] | None" = None, stream=None) -> int:
         # `ci-watching` to a DIRECTORY `ci-watching.d`. An old file is already ignored by the
         # read path, so it is inert rather than dangerous; removing it on `--clear` stops it
         # sitting in `.git` forever looking like state. It needs no HEAD, so it runs first (r1).
-        legacy = SENTINEL.parent / "ci-watching"
+        sentinel = _sentinel()
+        legacy = sentinel.parent / "ci-watching"
         gone = False
         if legacy.is_file():
             legacy.unlink()
@@ -1223,10 +1251,10 @@ def main(argv: "list[str] | None" = None, stream=None) -> int:
                   + (" — only the legacy pre-directory file was tidied" if gone else "")
                   + ". TREAT THIS AS NOT CLEARED.")
             return CANNOT_RUN
-        if (SENTINEL / head).is_file():
-            (SENTINEL / head).unlink()
+        if (sentinel / head).is_file():
+            (sentinel / head).unlink()
             gone = True
-        print(f"cleared {SENTINEL.name}/{head[:8]}" if gone else f"nothing to clear for {head[:8]}")
+        print(f"cleared {sentinel.name}/{head[:8]}" if gone else f"nothing to clear for {head[:8]}")
         return QUIET
     if a.decide:
         return run_decide(payload_from(stream))

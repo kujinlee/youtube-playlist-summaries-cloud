@@ -50,32 +50,44 @@ WHAT IT CHECKS, per `scripts/**/*.py`, parsed with `ast`:
      argument or a decorator, or stored from a module-level call to a function that reads `os.environ`.
      (`os.environb` needs no rule: measured, CPython backs it with the SAME dict as `os.environ`, so the
      swap reaches it — the executed case below holds that.)
-  5. in EVERY file, population or not, no PROCESS LAUNCH runs at import: a call to `subprocess.run`/`Popen`/
-     `call`/`check_call`/`check_output`/`getoutput`/`getstatusoutput`, `os.system`/`popen`/`exec*`/`spawn*`/
-     `posix_spawn*`, `pty.spawn` or `asyncio.create_subprocess_*` — under an import alias, a `from` import, a
-     rebinding (`r = subprocess.run`, `sp = __import__("subprocess")`), `__import__`/`import_module(...)`
-     followed by the launcher, or `getattr(module, "<launcher>")`. IMPORT TIME is every statement outside a
-     def body — module level, CLASS bodies, `if`/`while`/`for`/`with`/`try`/TryStar/`match` — plus a def's
-     decorators, defaults and annotations, a class's decorators, bases and keywords, and an `except` clause's
-     TYPE expression (r1 XM4). ⟳ #382: this replaces #373's refusal of a module-level repository BUILD,
-     which needed the deleted detector; it reads no git argv. Measured 2026-10-27: 0 of the 84 files trip it.
+  5. in EVERY file, population or not, IMPORTING it launches no process — and this one is MEASURED, not read.
+     Each `scripts/**/*.py` is imported in a fresh CHILD interpreter, by path under a unique module name, with
+     `fixture_git.env()`'s environment, a temporary cwd and HOME, and a `sys.addaudithook` installed BEFORE the
+     import that RAISES on every process-launch audit event (`subprocess.Popen`, `os.system`, `os.exec*`,
+     `os.posix_spawn`, `os.spawn*`, `pty.spawn`, `os.fork`, `os.forkpty`, `_posixsubprocess.fork_exec`, and
+     `ctypes.dlsym` of libc's `system`/`exec*`/`fork`/`posix_spawn`). `_posixsubprocess.fork_exec` is an audit
+     event only from 3.13, so on 3.12 the child also wraps that function, which is what `multiprocessing`'s
+     spawn calls. The child lets the interpreter EXIT normally, so an `atexit` callback registered at import
+     runs under the hook too. A file whose import fires an event is refused, naming the event and its first
+     arguments; an import that TIMES OUT (`IMPORT_TIMEOUT`) or CRASHES without an event is CANNOT CHECK (exit
+     2), never a pass. What an import WRITES (`open` for writing, `os.mkdir`, `os.remove`, ...) or connects to
+     is REPORTED, not refused. ⟳ #382 r2: rounds 1 and 2 matched launcher SPELLINGS in the source and lost
+     each time — to class bodies, `except` types, rebinding, an annotated assignment, a walrus, tuple
+     unpacking, an aliased `import_module`, `for`/`with` targets — and a static rule could never see the REAL
+     one Codex found, `check-ci-watched.py` calling `_repo_sentinel()` (a `git rev-parse`) at import, now
+     resolved on first use. An event does not care how the call was spelled. Measured 2026-10-28: all 84
+     files import with no launch and no observed write, in about 1.6s (8 children at a time).
 
 The self-test EXECUTES every bypass shape both #373 reviews ran, twice: unisolated (refused here, and shown to
 write a victim repository named by an exported `GIT_DIR`) and inside the block (accepted here, and shown to
 leave that victim byte-identical). A shape this accepts that still writes the victim is a red case.
 
-⭐ AGAINST #373's GUARD, MEASURED (not asserted). The self-test holds a fixed PROBE SET: #373's own rule shapes
-and every Codex #382 r1 probe, each refused here and each executed to show it is a real escape. Run through
-master's guard (`d678369d`), `2e4a7d9f` and this one, measured 2026-10-27: every probe master refuses is refused
-here; every Codex r1 probe was accepted by `2e4a7d9f`. The relaxations that REMAIN against master are named, and
-each is a case pinned ACCEPTED (`RELAXED`), so tightening one is a visible red:
+⭐ AGAINST #373's GUARD, MEASURED (not asserted). The self-test holds a fixed PROBE SET: #373's own rule shapes,
+every Codex #382 r1 and r2 probe, and the extras each round added, each refused here — rule 5's by EXECUTING the
+import — and each Codex probe that writes executed to show it is a real escape. Run through master's guard
+(`d678369d`), `2e4a7d9f`, `b3b988ab` and this one, measured 2026-10-28: every probe master refuses is refused
+here. The relaxations that REMAIN are named, and each is a case pinned ACCEPTED (`RELAXED`), so tightening one
+is a visible red:
   R1 a file with NO `--self-test` that builds a repository in a function, or copies `os.environ` at import —
      #373 required such a builder to have an isolated self-test (its r2 X9 false refusal of a helper module);
-  R2 an INDIRECT launch at import — a module-level call of a same-file git wrapper (`g("init")`), which #373's
-     detector read as a build; backlog #380's indirect-launch limit below;
   R3 a self-test whose flag is not ONE string literal (`"--self" + "-test"`) — it is not in the population;
   R4 a git argv LITERAL at module level that nothing launches at import (`CMD = ["git", "init"]`) — #373
-     read the literal itself as a build.
+     read the literal itself as a build;
+  R5 a launch in code that never runs at import (a dead branch, `if False:`) — it cannot write anything;
+  R6 a `--self-test` mention only in a COMMENT or DOCSTRING — prose, not a self-test. Measured: of the 84
+     files, exactly one changes under raw source membership, `m4_catalog.py`, which has no self-test, so
+     source membership would cost it an exemption for nothing.
+(R2, an indirect launch at import, is no longer a relaxation: the execution rule refuses it.)
 
 EXEMPT names `--self-test` scripts that may run unisolated, each with its reason — for a suite whose whole
 purpose is to read the caller's real environment. It is EMPTY (the measurement above found none), and an
@@ -86,7 +98,8 @@ WHAT WOULD MAKE THIS FAIL (its falsifier): an accepted shape whose execution wri
 shape that does not; a probe in the fixed set accepted; a delivered script that names `--self-test` and is not
 in the population; or the delivered scripts are refused.
 
-⚠ BOUNDS. Static: the block covers what runs INSIDE it, at runtime, whatever its launch shape. Threads
+⚠ BOUNDS. Rules 1-4 are static; rule 5 executes. The block covers what runs INSIDE it, at runtime, whatever its
+launch shape. Threads
 running beside the block, and a copy of `os.environ` made inside a function that runs at import but is not
 a module-level call here, are not seen. A module-level value computed from the caller's environment at
 import (`OUT_DEFAULT = Path.home() / ...`) keeps the CALLER's value inside the block — a case that compares
@@ -101,17 +114,18 @@ backlog #380). Each was executed by Codex against an accepted program and wrote 
   * X5 — an isolated decoy `self_test` while `--self-test` dispatches to a different, unisolated function;
     ⟳ #382 narrows it: a population file with no nameable entry is now refused (rule 1), so what remains is
     a file whose canonical entry exists while the flag dispatches, by some route, to something else;
-  * X6 — an `atexit` callback that launches git after the block has restored the caller's environment;
+  * X6 — an `atexit` callback that launches git after the block has restored the caller's environment (⟳ #382
+    r2: one registered at IMPORT is refused by rule 5; one registered by the suite is not);
   * X7 — `os.putenv`, which writes the C environment that restoring `os.environ` never sees.
   (X9, a false refusal of an imported builder module with no self-test, is GONE with the detector: a file
   with no `--self-test` is held to rule 5 only.)
 ⟳ #373 round 3 (`docs/reviews/codex/fixture-git-isolation-r3-codex.md`, `docs/reviews/claude/fixture-git-
 isolation-r3-claude.md`), also backlog #380, each executed against an accepted program that wrote the victim:
-  * IMPORT-TIME git (r3 Codex X1) — ⟳ #382 NARROWED: rule 5 now refuses the executed reproduction (a
-    module-level `subprocess.run(["git", "config", ...])`) and every other direct launch at import, in every
-    file. What remains is a launch reached INDIRECTLY at import (relaxation R2): a module-level call of a
-    function that launches, a sibling module that launches when imported, or a launcher reached through a
-    container or attribute chain (`L = [subprocess.run]; L[0](...)`);
+  * IMPORT-TIME git (r3 Codex X1) — ⟳ #382 r2 CLOSED for what an import EXECUTES: rule 5 runs the import
+    under an audit hook, so a direct, indirect or rebound launch, and an `atexit` callback, are all refused.
+    What remains is what the hook cannot see: a launch from a C extension that raises no audit event, a
+    thread started at import that launches after the child has exited, and code that runs only as
+    `__main__` (that is the `main()`-before-the-entry shape below);
   * SUITE WORK AFTER THE BLOCK EXITS (r3 Claude M1): a generator body, a lazy `map`, or an uncalled function
     returned from the block, each consumed by the caller after `isolated()` has restored the environment;
   * RULE 3's REACH (r3 Claude M1): a callee of the suite that is also reached from outside it through
@@ -121,7 +135,7 @@ isolation-r3-claude.md`), also backlog #380, each executed against an accepted p
 No script in `scripts/` does any of these; the derived falsifier is that evidence, not this guard.
 
     python3 scripts/check-fixture-git-isolation.py
-    python3 scripts/check-fixture-git-isolation.py --self-test  # 109 cases
+    python3 scripts/check-fixture-git-isolation.py --self-test  # 130 cases
 
 EXIT CODES (repo convention): 0 = every self-test is isolated and nothing launches at import · 1 = a file refused ·
 2 = CANNOT RUN (no scripts found, a file that does not parse — never a pass).
@@ -138,18 +152,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER_MODULE = "fixture_git"
-# What launches a process, by module. A call to one of these at IMPORT runs before any isolated() block.
-LAUNCHERS = {
-    "subprocess": frozenset({"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}),
-    "os": frozenset({"system", "popen", "execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp",
-                     "execvpe", "spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv", "spawnve", "spawnvp",
-                     "spawnvpe", "posix_spawn", "posix_spawnp"}),
-    "pty": frozenset({"spawn"}),
-    "asyncio": frozenset({"create_subprocess_exec", "create_subprocess_shell"}),
-}
-
 FLAG = "--self-test"
-TRY_NODES = (ast.Try, ast.TryStar) if hasattr(ast, "TryStar") else (ast.Try,)
 # `--self-test` scripts that may run unisolated, each with its reason. Empty on purpose: none was measured.
 EXEMPT: dict[str, str] = {}
 
@@ -286,128 +289,109 @@ def _module_level_nodes(tree: ast.Module) -> list[ast.AST]:
 
 
 
-def _module_of(e: ast.AST, mods: dict[str, str]) -> str | None:
-    """The launcher module `e` evaluates to: a name bound to it, or `__import__("os")`/`import_module("os")`."""
-    if isinstance(e, ast.Name):
-        return mods.get(e.id)
-    if isinstance(e, ast.Call) and e.args and _const(e.args[0]) in LAUNCHERS:
-        f = e.func
-        if (isinstance(f, ast.Name) and f.id in ("__import__", "import_module")) or \
-                (isinstance(f, ast.Attribute) and f.attr == "import_module"):
-            return _const(e.args[0])
-    return None
+# ── rule 5, BY EXECUTION: import every file in a child under an audit hook ────────────────────────
+# The audit events that start a process (CPython's audit-events table). `_posixsubprocess.fork_exec` is an
+# event from 3.13; on 3.12 the child also wraps the function itself, so `multiprocessing`'s spawn is seen.
+LAUNCH_EVENTS = ("subprocess.Popen", "os.system", "os.exec", "os.posix_spawn", "os.spawn", "pty.spawn",
+                 "os.fork", "os.forkpty", "os.startfile", "_posixsubprocess.fork_exec")
+# libc entry points reached through ctypes (`ctypes.dlsym`) that start a process.
+LAUNCH_SYMBOLS = ("system", "popen", "fork", "vfork", "posix_spawn", "posix_spawnp", "execv", "execve", "execvp",
+                  "execvpe", "execl", "execle", "execlp")
+# Observed, never refused: what an import WRITES or connects to, reported so it can be looked at.
+EFFECT_EVENTS = ("os.mkdir", "os.remove", "os.rename", "os.rmdir", "os.symlink", "os.link", "os.truncate",
+                 "shutil.rmtree", "shutil.copyfile", "shutil.move", "socket.connect")
+IMPORT_TIMEOUT = 30          # seconds per file; a timeout is CANNOT CHECK, never a pass
+IMPORT_WORKERS = 8
+_CHILD = r'''
+import importlib.util, json, os, sys
+target, report, extra = sys.argv[1], sys.argv[2], sys.argv[3]
+LAUNCH, SYMBOLS, EFFECTS = json.loads(sys.argv[4]), set(json.loads(sys.argv[5])), set(json.loads(sys.argv[6]))
+fd = os.open(report, os.O_WRONLY | os.O_APPEND)      # opened BEFORE the hook, so writing it is not an event
+def emit(kind, event, args=()):
+    os.write(fd, (json.dumps({"kind": kind, "event": event, "args": [repr(a)[:160] for a in args]}) + "\n").encode())
+WRITE = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
+def hook(event, args):
+    if event.startswith(tuple(LAUNCH)) or (event == "ctypes.dlsym" and len(args) > 1 and args[1] in SYMBOLS):
+        emit("launch", event, args)
+        raise RuntimeError("check-fixture-git-isolation: a process launch at import is refused (" + event + ")")
+    if event in EFFECTS:
+        emit("effect", event, args)
+    elif event == "open" and len(args) > 2 and ((isinstance(args[1], str) and set(args[1]) & set("wax+"))
+                                                 or (isinstance(args[2], int) and args[2] & WRITE)):
+        emit("effect", "open for writing", args[:1])
+import _posixsubprocess
+_fork_exec = _posixsubprocess.fork_exec
+def fork_exec(*a, **k):
+    hook("_posixsubprocess.fork_exec", a[:2])
+    return _fork_exec(*a, **k)
+_posixsubprocess.fork_exec = fork_exec
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.dirname(target), extra]
+sys.addaudithook(hook)
+name = "_fgi_" + str(abs(hash(target)))
+spec = importlib.util.spec_from_file_location(name, target)
+module = importlib.util.module_from_spec(spec)
+sys.modules[name] = module
+spec.loader.exec_module(module)
+emit("imported", "")
+'''
 
 
-def _launcher_ref(e: ast.AST, mods: dict[str, str], bare: set[str]) -> str | None:
-    """`e` as a launcher, spelled for the refusal: `subprocess.run`, a bare `system`, `getattr(os, "system")`."""
-    if isinstance(e, ast.Attribute):
-        m = _module_of(e.value, mods)
-        return f"{m}.{e.attr}" if m and e.attr in LAUNCHERS[m] else None
-    if isinstance(e, ast.Name):
-        return e.id if e.id in bare else None
-    if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id == "getattr" and len(e.args) >= 2:
-        m = _module_of(e.args[0], mods)
-        return f"{m}.{_const(e.args[1])}" if m and _const(e.args[1]) in LAUNCHERS[m] else None
-    return None
+def import_once(path: Path) -> tuple[str, list[dict], str]:
+    """Import `path` in a fresh child under the hook, isolated like a self-test: (status, events, detail).
+
+    status: "ok" (imported, launched nothing, and launched nothing at exit) · "launch" (a launch event fired,
+    named in `events`) · "cannot" (timed out, or crashed without a launch event: CANNOT CHECK, never a pass)."""
+    import json
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:                     # the guard may be loaded by path, from anywhere
+        sys.path.insert(0, here)
+    import fixture_git
+    work = Path(tempfile.mkdtemp(prefix="fgi-import-"))
+    try:
+        (work / "home").mkdir()
+        report = work / "report.jsonl"
+        report.write_text("")
+        env = {**{k: os.environ[k] for k in fixture_git.PROCESS_PASSED if k in os.environ},
+               **fixture_git.env(HOME=str(work / "home")), "PYTHONDONTWRITEBYTECODE": "1"}
+        argv = [sys.executable, "-c", _CHILD, str(path), str(report), str(Path(__file__).resolve().parent),
+                json.dumps(LAUNCH_EVENTS), json.dumps(LAUNCH_SYMBOLS), json.dumps(EFFECT_EVENTS)]
+        try:
+            proc = subprocess.run(argv, cwd=work, env=env, capture_output=True, text=True, timeout=IMPORT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return "cannot", [], f"the import did not finish in {IMPORT_TIMEOUT}s"
+        events = [json.loads(line) for line in report.read_text().splitlines() if line.strip()]
+        if any(e["kind"] == "launch" for e in events):
+            return "launch", events, ""
+        if proc.returncode != 0 or not any(e["kind"] == "imported" for e in events):
+            tail = (proc.stderr.strip().splitlines() or ["(no output)"])[-1]
+            return "cannot", events, f"the import exited {proc.returncode} without finishing: {tail}"
+        return "ok", events, ""
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
-def _launcher_names(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
-    """({name: module} for `import subprocess as sp` and `sp = __import__("subprocess")`, {bare names} for
-    `from os import system as s` and `r = subprocess.run`). Rebindings are followed to a fixed point."""
-    mods, bare = {}, set()
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Import):
-            mods |= {a.asname or a.name: a.name for a in n.names if a.name in LAUNCHERS}
-        elif isinstance(n, ast.ImportFrom) and n.module in LAUNCHERS:
-            bare |= {a.asname or a.name for a in n.names if a.name in LAUNCHERS[n.module]}
-    binds = [(t.id, n.value) for n in ast.walk(tree) if isinstance(n, ast.Assign)
-             for t in n.targets if isinstance(t, ast.Name)]
-    while True:
-        before = (len(mods), len(bare))
-        for name, value in binds:
-            m = _module_of(value, mods)
-            if m:
-                mods[name] = m
-            elif _launcher_ref(value, mods, bare):
-                bare.add(name)
-        if (len(mods), len(bare)) == before:
-            return mods, bare
-
-
-def _import_time_code(tree: ast.Module) -> list[ast.AST]:
-    """What runs at IMPORT for rule 5: every statement outside a def body — at module level, in a CLASS body, in
-    if/while/for/with/try/match — plus a def's decorators, defaults and annotations and a class's decorators,
-    bases and keywords, and an `except` clause's TYPE expression (TryStar too). Not `_module_level_nodes`, which
-    rule 4 uses and which is #373's narrower reading."""
-    code: list[ast.AST] = []
-
-    def walk(block):
-        for s in block:
-            if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                a = s.args
-                code.extend(s.decorator_list)
-                code.extend(d for d in a.defaults + a.kw_defaults if d is not None)
-                code.extend(x.annotation for x in a.posonlyargs + a.args + a.kwonlyargs + [a.vararg, a.kwarg]
-                            if x is not None and x.annotation is not None)
-                code.extend([s.returns] if s.returns is not None else [])
-            elif isinstance(s, ast.ClassDef):
-                code.extend(s.decorator_list + s.bases + [k.value for k in s.keywords])
-                walk(s.body)
-            elif isinstance(s, (ast.If, ast.While)):
-                code.append(s.test)
-                walk(s.body)
-                walk(s.orelse)
-            elif isinstance(s, (ast.For, ast.AsyncFor)):
-                code.append(s.iter)
-                walk(s.body)
-                walk(s.orelse)
-            elif isinstance(s, (ast.With, ast.AsyncWith)):
-                code.extend(i.context_expr for i in s.items)
-                walk(s.body)
-            elif isinstance(s, TRY_NODES):
-                walk(s.body)
-                for h in s.handlers:
-                    code.extend([h.type] if h.type is not None else [])
-                    walk(h.body)
-                walk(s.orelse)
-                walk(s.finalbody)
-            elif isinstance(s, ast.Match):
-                code.append(s.subject)
-                for c in s.cases:
-                    code.extend([c.guard] if c.guard is not None else [])
-                    walk(c.body)
-            else:
-                code.append(s)
-    walk(tree.body)
-    return code
-
-
-def import_time_launches(tree: ast.Module) -> list[tuple[int, str]]:
-    """Every process launch that runs at IMPORT: (line, the call as written)."""
-    mods, bare = _launcher_names(tree)
-    found = []
-    for top in _import_time_code(tree):
-        for n in ast.walk(top):
-            if isinstance(n, ast.Call):
-                ref = _launcher_ref(n.func, mods, bare)
-                if ref:
-                    found.append((n.lineno, ref))
-    return found
+def import_time_launches(paths: list[Path]) -> dict[Path, tuple[str, list[dict], str]]:
+    """`import_once` over every path, concurrently (each child has its own directory and HOME)."""
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(IMPORT_WORKERS) as pool:
+        return dict(zip(paths, pool.map(import_once, paths)))
 
 
 def check_source(src: str, rel: str, exempt: bool = False, tree: ast.Module | None = None) -> tuple[int, list[str]]:
-    """(0 isolated, or not a self-test script and launching nothing at import | 1 refused | 2 does not parse, messages).
-
-    Rule 5 reads EVERY file; rules 1-4 read the population, unless the file is EXEMPT."""
+    """Rules 1-4, STATIC: (0 isolated, or not in the population, or EXEMPT | 1 refused | 2 does not parse, messages).
+    Rule 5 is not here: it EXECUTES, and `run_check` runs it over every file."""
     try:
         tree = tree or ast.parse(src, filename=rel)
     except SyntaxError as exc:
         return 2, [f"CANNOT RUN {rel}: does not parse ({exc.msg}, line {exc.lineno})"]
-    msgs = [f"REFUSED {rel}:{line}: `{call}` launches a process at IMPORT (module level, a class body, a "
-            f"module-level if/try/with, a decorator, default or except type) — it runs before any "
-            f"fixture_git.isolated() block, with the caller's environment" for line, call in import_time_launches(tree)]
+    msgs: list[str] = []
     if exempt or not names_self_test(tree):
-        return (1 if msgs else 0), msgs
+        return 0, msgs
     names = self_test_entries(tree)
     env_names = _environ_refs(tree)
     module_fns = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
@@ -468,7 +452,7 @@ def run_check(root: Path, exempt: dict[str, str]) -> tuple[int, list[str], list[
     files = sorted(scripts.rglob("*.py")) if scripts.is_dir() else []
     if not files:
         return 2, [f"CANNOT RUN: no scripts/**/*.py under {root} — nothing was measured"], []
-    worst, msgs, population = 0, [], []
+    worst, msgs, population, parsed = 0, [], [], []
     present = set()
     for f in files:
         rel = f.relative_to(root).as_posix()
@@ -481,6 +465,7 @@ def run_check(root: Path, exempt: dict[str, str]) -> tuple[int, list[str], list[
             worst = 2
             msgs.append(f"CANNOT RUN {rel}: does not parse ({exc.msg}, line {exc.lineno})")
             continue
+        parsed.append(f)
         if member:
             population.append(rel)
         if rel in exempt and not member:
@@ -492,9 +477,28 @@ def run_check(root: Path, exempt: dict[str, str]) -> tuple[int, list[str], list[
     for rel in sorted(set(exempt) - present):
         worst = max(worst, 1)
         msgs.append(f"REFUSED {rel}: EXEMPT, but the file does not exist — remove the entry")
+    import time
+    started = time.monotonic()
+    effects = []
+    for f, (status, events, detail) in import_time_launches(parsed).items():
+        rel = f.relative_to(root).as_posix()
+        if status == "launch":
+            worst = max(worst, 1)
+            fired = next(e for e in events if e["kind"] == "launch")
+            msgs.append(f"REFUSED {rel}: importing it launches a process — audit event `{fired['event']}` "
+                        f"({', '.join(fired['args'][:2])}). Code that runs at import runs before any "
+                        f"fixture_git.isolated() block, with the caller's environment; make it run on first use")
+        elif status == "cannot":
+            worst = 2
+            msgs.append(f"CANNOT CHECK {rel}: {detail} — whether importing it launches a process was NOT measured")
+        effects += [f"{rel}: {e['event']} {', '.join(e['args'][:1])}" for e in events if e["kind"] == "effect"]
+    elapsed = time.monotonic() - started
+    if effects:
+        msgs.append("observed at import (reported, not refused): " + "; ".join(effects))
     if worst == 0:
         msgs.append(f"{len(population) - len(exempt)} --self-test script(s) run inside {HELPER_MODULE}.isolated(), "
-                    f"{len(exempt)} exempt, {len(files)} file(s) read, none launching a process at import")
+                    f"{len(exempt)} exempt; {len(parsed)} file(s) imported under the audit hook with no process "
+                    f"launch, in {elapsed:.1f}s")
     return worst, msgs, population
 
 
@@ -723,31 +727,12 @@ def _self_test_body() -> int:
          shaped(CANON, head="import os, subprocess, sys\nC = os.environ | {'A': '1'}\n"), 1)
     case("a capture inside `if __name__` at module level is refused",
          shaped(CANON + "if __name__ == '__main__':\n    C = dict(os.environ)\n", head="import os, subprocess, sys\n"), 1)
-    # ── rule 5: no process launch at import ─────────────────────────────────────────────────────
-    case("⭐ a module-level `subprocess.run([\"git\", \"init\", ...])` is refused (master's module-level-build rule)",
-         shaped(CANON, head='import subprocess, sys\nsubprocess.run(["git", "init", "-q", "d"])\n'), 1)
-    case("a module-level `os.system(\"git config ...\")` inside an `if` is refused, though it builds nothing",
-         shaped(CANON, head='import os, subprocess, sys\nif True:\n    os.system("git config a.b c")\n'), 1)
-    case("...and so is an aliased launch inside a module-level `try`, and `from os import system`",
-         (shaped(CANON, head='import subprocess as sp, sys\ntry:\n    sp.check_output(["git", "status"])\nexcept OSError:\n    pass\n'),
-          shaped(CANON, head='import subprocess, sys\nfrom os import system as s\nwith open("x") as f:\n    s("git status")\n')),
-         (1, 1))
-    case("...and so is `getattr(os, \"system\")(...)` at module level",
-         shaped(CANON, head='import os, subprocess, sys\ngetattr(os, "system")("git status")\n'), 1)
-    case("a launch inside a FUNCTION is accepted (it runs when called, inside the block)",
-         shaped(CANON, head='import os, subprocess, sys\ndef helper():\n    os.system("git config a.b c")\n'
-                            '    subprocess.run(["git", "init", "-q", "d"])\n'), 0)
-    _lmsg = check_source('import subprocess, sys\nsubprocess.run(["git", "init"])\n' + BODY + CANON
-                         + DISPATCH.format(name="_self_test"), "scripts/m.py")[1]
-    case("the refusal names the launch and its line",
-         [m.startswith("REFUSED scripts/m.py:2: `subprocess.run` launches a process at IMPORT") for m in _lmsg], [True])
     case("a file that does not parse is CANNOT RUN", rc("def (:\n"), 2)
     _unwrapped = "import subprocess, sys\n" + BODY + "def _self_test():\n    return _self_test_body()\n" + DISPATCH.format(name="_self_test")
-    case("an EXEMPT file is not held to the entry rules, but rule 5 still reads it",
-         (check_source(_unwrapped, "scripts/e.py", exempt=True)[0],
-          check_source("import os\nos.system('git status')\n" + _unwrapped, "scripts/e.py", exempt=True)[0]), (0, 1))
+    case("an EXEMPT file is not held to the entry rules (static half; rule 5 still runs, below)",
+         (check_source(_unwrapped, "scripts/e.py")[0], check_source(_unwrapped, "scripts/e.py", exempt=True)[0]), (1, 0))
     case("check_source reads the TREE it is handed (run_check parses once), not a second parse of the text",
-         check_source("x = 1\n", "scripts/t.py", tree=ast.parse('import os\nos.system("git status")\n'))[0], 1)
+         check_source("x = 1\n", "scripts/t.py", tree=ast.parse(_unwrapped))[0], 1)
     msg = check_source("import subprocess, sys\n" + BODY + "def _self_test():\n    return _self_test_body()\n"
                        + DISPATCH.format(name="_self_test"), "scripts/sub/y.py")[1]
     case("the refusal names the file, the line, the ENTRY and the remedy",
@@ -822,39 +807,116 @@ def _self_test_body() -> int:
             'subprocess.run(["git", "init", "-q", d])\n' + f"subprocess.run({CFG}, cwd=d)\n"}, "writes"),
         "`asyncio.create_subprocess_exec(\"git\", \"init\")` at import": ("R1_EXTRA", {"x.py": W + "import asyncio\n"
             "asyncio.run(asyncio.create_subprocess_exec('git', 'init', '-q', tempfile.mkdtemp()))\n" + ENTRY}, ""),
+        # ── round 2 (Codex, `wrap-every-selftest-r2-codex.md`): spellings the r1 STATIC rule 5 missed, and the
+        # indirect launches it could never see. Rule 5 now EXECUTES the import, so none depends on its spelling.
+        "a launcher bound by an annotated assignment": ("CODEX_R2", {"x.py": W + "run: object = subprocess.run\n"
+            + AT_IMPORT.replace("subprocess.run", "run") + "\n" + ENTRY}, "writes"),
+        "a launcher bound by a walrus": ("CODEX_R2", {"x.py": W + "(run := subprocess.run)\n"
+            + AT_IMPORT.replace("subprocess.run", "run") + "\n" + ENTRY}, "writes"),
+        "a launcher bound by tuple unpacking": ("CODEX_R2", {"x.py": W + "run, = (subprocess.run,)\n"
+            + AT_IMPORT.replace("subprocess.run", "run") + "\n" + ENTRY}, "writes"),
+        "an ALIASED import_module": ("CODEX_R2", {"x.py": W + "from importlib import import_module as im\n"
+            + AT_IMPORT.replace("subprocess.run", "im('subprocess').run") + "\n" + ENTRY}, "writes"),
+        "a launch in a `for` TARGET": ("CODEX_R2", {"x.py": W + "x = {}\n"
+            f"for x[{AT_IMPORT}[1].returncode] in [0]:\n    pass\n" + ENTRY}, "writes"),
+        "a launch in a `with ... as` TARGET": ("CODEX_R2", {"x.py": W + "from contextlib import nullcontext\nx = {}\n"
+            f"with nullcontext(0) as x[{AT_IMPORT}[1].returncode]:\n    pass\n" + ENTRY}, "writes"),
+        "an INDIRECT launch: a module-level call of a same-file git wrapper (#380; was relaxation R2)": ("CODEX_R2",
+            {"x.py": W + "def g(*a, cwd=None):\n    subprocess.run(['git', *a], cwd=cwd)\n"
+                     "g('config', 'fixture.leak', 'yes', cwd=tempfile.gettempdir())\n" + ENTRY}, "writes"),
+        "a sentinel resolved at import by running git (`check-ci-watched.py:128`'s real shape)": ("CODEX_R2",
+            {"x.py": W + "def _repo_sentinel():\n    return subprocess.run(['git', 'rev-parse', '--git-common-dir'],"
+                     " capture_output=True)\nSENTINEL = _repo_sentinel()\n" + ENTRY}, ""),
+        "an `atexit` callback registered at import (#380 X6)": ("R2_EXTRA", {"x.py": W + "import atexit\n"
+            f"atexit.register(lambda: subprocess.run({CFG}, cwd=tempfile.gettempdir()))\n" + ENTRY}, "writes"),
+        "libc `system` through ctypes": ("R2_EXTRA", {"x.py": W + "import ctypes\n"
+            "ctypes.CDLL(None).system(b'git config fixture.leak yes')\n" + ENTRY}, ""),
+        "a `multiprocessing` spawn at import": ("R2_EXTRA", {"x.py": W + "import multiprocessing\n"
+            "_p = multiprocessing.get_context('spawn').Process(target=print)\n_p.start()\n_p.join()\n" + ENTRY}, ""),
         "`importlib.import_module(\"os\").system(...)` in a TryStar": ("R1_EXTRA", {"x.py": W + "import importlib\n"
-            "try:\n    pass\nexcept* (importlib.import_module('os').system('git config fixture.leak yes'), OSError)[1]:\n"
+            "try:\n    raise ValueError()\nexcept* (importlib.import_module('os').system('git config fixture.leak yes'), OSError)[1]:\n"
             "    pass\n" + ENTRY}, ""),
     }
 
-    warm([files for _, files, shows in PROBES.values() if shows])
-    for name, (origin, files, shows) in PROBES.items():
-        refused = run_check(world({f"scripts/{k}": v for k, v in files.items()}), {})[0]
-        case(f"⭐ probe [{origin}] {name}: refused", refused, 1)
-        if shows:
-            case(f"...and executed, {name} {'writes the victim' if shows == 'writes' else 'exits 0 WITHOUT running its suite'}",
-                 run_world(files), (True, 0) if shows == "writes" else (False, 0))
-    # The RELAXATIONS against #373's guard that remain, each NAMED and pinned accepted, so tightening one is a
-    # visible red rather than a silent change. Each is a shape #373 refused only through its builder detector.
+    # The RELAXATIONS that remain, each NAMED and pinned accepted, so tightening one is a visible red rather
+    # than a silent change. R1, R4 and R5 are shapes #373 refused only through its builder detector, and none of
+    # them launches anything at import; R3 and R6 are the population contract's two exceptions.
     RELAXED = {
         "R1 a builder helper with NO --self-test, copying os.environ at import (#373 refused it: r2 X9's false refusal)":
             'import os, subprocess\nENV = dict(os.environ)\ndef build(d):\n    subprocess.run(["git", "init", "-q", d], env=ENV)\n',
-        "R2 an INDIRECT launch at import: a module-level call of a same-file git wrapper (backlog #380)":
-            W + 'def g(*a):\n    subprocess.run(["git", *a])\ng("init", "-q", "d")\n' + ENTRY,
         "R3 a self-test whose flag is not ONE literal (`'--self' + '-test'`) and whose suite builds":
             W + 'def suite():\n    subprocess.run(["git", "init", "-q", "d"])\nif "--self" + "-test" in sys.argv:\n    suite()\n',
         "R4 a git argv LITERAL at module level that nothing launches at import (#373 read the literal as a build)":
             W + 'CMD = ["git", "init", "-q"]\n' + ENTRY,
+        "R5 a launch in code that never runs at import (a dead branch): it cannot write anything":
+            W + 'if False:\n    subprocess.run(["git", "init", "-q", "d"])\n' + ENTRY,
+        "R6 a `--self-test` mention only in a COMMENT is prose, not a self-test (`m4_catalog.py`)":
+            "import subprocess  # run x.py --self-test to check this\n",
+        "R6 ...nor only in a DOCSTRING":
+            '"""Run x.py --self-test to check this."""\nimport subprocess\n',
     }
+    checked: dict[tuple, tuple[int, list[str]]] = {}
+
+    def xcheck(files: dict[str, str], exempt: dict[str, str] | None = None) -> tuple[int, list[str]]:
+        """`run_check` — rule 5 EXECUTES — over a world holding `files` under `scripts/`: (code, messages)."""
+        key = (tuple(sorted(files.items())), tuple(sorted((exempt or {}).items())))
+        if key not in checked:
+            code, msgs, _ = run_check(world({f"scripts/{k}": v for k, v in files.items()}), exempt or {})
+            checked[key] = (code, msgs)
+        return checked[key]
+
+    def xwarm(worlds: list[dict[str, str]]) -> None:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(8) as pool:
+            list(pool.map(xcheck, worlds))
+
+    RULE5 = {
+        # name: ({file: source}, expected code, a substring every message must hold together, or "")
+        "a launch inside a FUNCTION is accepted (it runs when called, inside the block)":
+            ({"x.py": W + "def helper():\n    subprocess.run(['git', 'status'])\n" + ENTRY}, 0, ""),
+        "the refusal names the file and the audit event that fired":
+            ({"x.py": W + AT_IMPORT + "\n" + ENTRY}, 1,
+             "REFUSED scripts/x.py: importing it launches a process — audit event `subprocess.Popen`"),
+        "an import that CRASHES is CANNOT CHECK, never a pass":
+            ({"x.py": "raise SystemExit(3)\n"}, 2, "CANNOT CHECK scripts/x.py: the import exited 3"),
+        "what an import WRITES is reported, not refused":
+            ({"x.py": "open('written-at-import.txt', 'w').write('x')\n"}, 0,
+             "observed at import (reported, not refused): scripts/x.py: open for writing 'written-at-import.txt'"),
+    }
+    xwarm([files for _, files, _ in PROBES.values()] + [files for files, _, _ in RULE5.values()]
+          + [{"x.py": src} for src in RELAXED.values()])
+    warm([files for _, files, shows in PROBES.values() if shows])
+    for name, (files, want, says) in RULE5.items():
+        code, msgs = xcheck(files)
+        case(name, (code, not says or any(says in m for m in msgs)), (want, True))
+    case("an EXEMPT file is still IMPORTED under the hook: rule 5 reads every file",
+         (xcheck({"e.py": "import os\nos.system('git status')\n" + _unwrapped}, {"scripts/e.py": "r"})[0],
+          xcheck({"e.py": _unwrapped}, {"scripts/e.py": "r"})[0]), (1, 0))
+    # The timeout, alone and last: it rebinds the module's bound for one run.
+    _g = globals()
+    _bound = _g["IMPORT_TIMEOUT"]
+    _g["IMPORT_TIMEOUT"] = 1
+    try:
+        _tcode, _tmsgs, _ = run_check(world({"scripts/x.py": "import time\ntime.sleep(20)\n"}), {})
+    finally:
+        _g["IMPORT_TIMEOUT"] = _bound
+    case("an import that does not FINISH is CANNOT CHECK, never a pass",
+         (_tcode, any("CANNOT CHECK scripts/x.py: the import did not finish in 1s" in m for m in _tmsgs)), (2, True))
+    for name, (origin, files, shows) in PROBES.items():
+        refused = xcheck(files)[0]
+        case(f"⭐ probe [{origin}] {name}: refused", refused, 1)
+        if shows:
+            case(f"...and executed, {name} {'writes the victim' if shows == 'writes' else 'exits 0 WITHOUT running its suite'}",
+                 run_world(files), (True, 0) if shows == "writes" else (False, 0))
     for name, src in RELAXED.items():
-        case(f"relaxation {name}: accepted", rc(src), 0)
+        case(f"relaxation {name}: accepted", xcheck({"x.py": src})[0], 0)
 
     good = program("", "")
     bad = program("", "", wrapped=False)
     w_ok = world({"scripts/good.py": good, "scripts/sub/plain.py": "x = 1\n"})
     code, text = drive(lambda: main([], root=w_ok, exempt={}))
     case("main() over an isolated world exits 0 and says how many it read",
-         (code, "1 --self-test script(s) run inside" in text, "2 file(s) read" in text), (0, True, True))
+         (code, "1 --self-test script(s) run inside" in text, "2 file(s) imported under the audit hook" in text), (0, True, True))
     _, _ex_msgs, _ex_pop = run_check(w_ok, {"scripts/good.py": "reads the real environment"})
     case("...its population is the one file that dispatches `--self-test`, not the plain one, EXEMPT or not",
          (_ex_pop, _ex_msgs[-1].startswith("0 --self-test script(s) run inside"), "1 exempt" in _ex_msgs[-1]),
@@ -902,6 +964,8 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, exempt: dict[str
         return self_test()
     code, msgs, _ = run_check(root, exempt)
     if code == 0:
+        for m in msgs[:-1]:                      # what an import was seen to write: reported, not refused
+            print(f"  {m}")
         print(f"ok — {msgs[-1]}")
         return 0
     label = "CANNOT RUN" if code == 2 else "SELF-TEST NOT ISOLATED (backlog #373, #382)"
