@@ -18115,3 +18115,34 @@ explainer-server restart feature (2026-09-29/2), was already readable and is unc
 **Decide:** Backlog #339 — when later review rounds "alternate", which reading governs (from 2026-10-24/2)? The gate accepts both, and this week used both: PR #424's later rounds had one reviewer each, PR #425's had a pair.
 - one reviewer per round, with a written REVIEW GAP line for the other [recommended]
 - a pair of reviews per round, alternating which goes first
+
+## 2026-10-28 [resolved: 2026-09-29/2] [resolved: 2026-10-28/2]
+You answered all seven waiting decisions this morning, so nothing on the dashboard is waiting on you now.
+Your answers are written into the backlog rows they settle.
+
+- **The documentation server's restart feature (backlog #193):** not now. The item stays open, with no date.
+- **The memory index at 97% of its size limit:** I trim it now, by moving the history rows into
+  `slice-history.md`. That is a separate small change, not part of this one.
+- **The memory size check:** register it as a hook. It warns and never blocks. Also a separate change.
+- **The review decision scheme (backlog #327):** simplify it. Keep the four-step ladder and the bet written
+  before each round, and drop the triggers that only warn. The paused redesign plan from 20 October is
+  retired, because this replaces it. The plan file is kept as a record.
+- **Who reviews in later rounds (backlog #339):** one reviewer per round, with a written note saying the
+  other one was skipped.
+- **Registering the page suite as a deliverable (backlog #290)** and **checking the feature map is complete
+  (backlog #144):** both are folded into the suite's overall design (backlog #384) and closed.
+- **Deferred rounds in the review figures (backlog #337):** leave them out of the count, and say so in the
+  message. This stops mattering if the simplification drops that check.
+- **The 92 old briefs in `.superpowers/sdd/` (backlog #66):** keep the ones that exist nowhere else by moving
+  them to `docs/reviews/`, and delete the rest.
+- **The plan-gate file with no "superseded" exit (backlog #104):** folded into backlog #100 as evidence, and
+  closed.
+- **How many paid attempts a summary gets (backlog #26):** one, set for each kind of job when it is queued.
+  This must be built before milestone M5's step T5.
+- **How long old source versions are kept (backlog #27):** release one 90 days after everything built from it
+  is replaced. This is built together with the clean-up job.
+- **The deep-dive vision (backlog #8):** retired.
+- **The reserve timeout (backlog #28):** stays deferred until there is real traffic to measure.
+- **The deploy-commit check (backlog #53):** keep waiting for its trigger.
+
+Everything marked "to build" is decided but not built yet. Those rows stay open.
