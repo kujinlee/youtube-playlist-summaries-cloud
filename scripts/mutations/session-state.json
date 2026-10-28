@@ -95,7 +95,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        L.append(f\"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.\")",
+        "        L.append(f\"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.\" + mark)",
         "        L.append(\"OPEN PRS: none (gh answered).\")"
       ]
     ],
@@ -134,8 +134,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "        return 124, f\"timed out after {timeout:.0f}s\"",
-        "        return 124, \"error\""
+        "        return 124, f\"timed out after {timeout:g}s\"\n    finally:",
+        "        return 124, \"error\"\n    finally:"
       ]
     ],
     "expect": [
@@ -199,8 +199,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "f\"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}\")",
-        "f\"{check_summary(rollup or [])}\")"
+        "f\"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}\"",
+        "f\"{check_summary(rollup or [])}\""
       ]
     ],
     "expect": [
@@ -420,8 +420,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "            p.communicate(timeout=DRAIN)",
-        "            p.communicate()"
+        "            out, err = p.communicate(timeout=DRAIN)",
+        "            out, err = p.communicate()"
       ]
     ],
     "expect": [
@@ -439,6 +439,84 @@
     ],
     "expect": [
       "own_group=False keeps the call in the CALLER's process group, so the caller's one kill reaches it"
+    ]
+  },
+  {
+    "name": "C4-F3: a ledger problem line loses its mark",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        L.append(f\"  ⚠ {clean(prob)}\" + mark)",
+        "        L.append(f\"  ⚠ {clean(prob)}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: `mark` goes on the lines whose state was NOT READ — never on data that merely contains a failure word"
+    ]
+  },
+  {
+    "name": "C4-F3: a truncated PR list loses its mark",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                 + (mark if truncated else \"\"))",
+        "                 )"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: `mark` goes on the lines whose state was NOT READ — never on data that merely contains a failure word"
+    ]
+  },
+  {
+    "name": "C4-F3: a gh failure loses its mark",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "never as 'nothing open'.\" + mark)",
+        "never as 'nothing open'.\")"
+      ]
+    ],
+    "expect": [
+      "...and a gh failure is marked too; with no mark the block is unchanged"
+    ]
+  },
+  {
+    "name": "C4-F5: fetch ignores the caller's main-checkout answer",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    main, main_err = main if main is not None else main_checkout(root, run)",
+        "    main, main_err = main_checkout(root, run)"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F5: fetch given the caller's main-checkout answer asks git NOTHING — one answer for heading and ledger"
+    ]
+  },
+  {
+    "name": "C4-F6: a call that exited is reported as timed out",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if exited is not None:   # it answered",
+        "        if False:   # it answered"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F6: a call that EXITED while its background child held the pipe reports its answer, not a timeout"
+    ]
+  },
+  {
+    "name": "C4-F6: an exited call whose pipe stays held is reported as timed out",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if exited is not None:\n                return 124, f\"exited {exited}",
+        "            if False:\n                return 124, f\"exited {exited}"
+      ]
+    ],
+    "expect": [
+      "...and when the holder is out of reach, it says the call exited but its pipe was held — never 'timed out'"
     ]
   }
 ]

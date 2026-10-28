@@ -234,32 +234,6 @@
     ]
   },
   {
-    "name": "the snapshot is no longer held to SNAPSHOT_CAP",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    text = fit(\"\\n\\n\".join(parts), SNAPSHOT_CAP - len(keyline) - 2, \"the transcript itself\")",
-        "    text = \"\\n\\n\".join(parts)"
-      ]
-    ],
-    "expect": [
-      "⭐ the size cap holds with 100 PRs, 60 owner waits and 200 huge prompts, and the keys line survives"
-    ]
-  },
-  {
-    "name": "a gh failure is recorded as NO open PRs, so the audit checks nothing and says all clear",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "\"prs\": [p.get(\"number\") for p in prs] if prs is not None else None,",
-        "\"prs\": [p.get(\"number\") for p in prs] if prs is not None else [],"
-      ]
-    ],
-    "expect": [
-      "...and a failed gh leaves the audit's PR key None (NOT CHECKED), not []"
-    ]
-  },
-  {
     "name": "the explicit marker is ignored: every ledger entry is listed as waiting on the owner",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -308,72 +282,7 @@
       ]
     ],
     "expect": [
-      "⭐ r2 XM5 + CM4: a CORRUPT ledger line, and a failed main-checkout lookup, make both ledger categories UNAVAILABLE"
-    ]
-  },
-  {
-    "name": "XM5: an incomplete ledger is recorded as an EMPTY one, which audits as all named",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "            \"ledger\": ids(ledger) if ledger_complete else None,",
-        "            \"ledger\": ids(ledger) if ledger_complete else [],"
-      ]
-    ],
-    "expect": [
-      "⭐ a REFUSED ledger is UNAVAILABLE in the keys, and the audit says so as NOT CAPTURED (r1 XM5)"
-    ]
-  },
-  {
-    "name": "CM3: asks beyond the newest few are not counted as omitted",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "        keys[\"omitted\"][\"decisions\"] = count - len(recent)",
-        "        pass"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 CM3: 36 asks with only the newest in the keys — the other 35 are NOT CAPTURED in the audit"
-    ]
-  },
-  {
-    "name": "Xm6: the keys line is not bounded",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    for name in BOUNDED:\n        while",
-        "    for name in ():\n        while"
-      ]
-    ],
-    "expect": [
-      "⭐ 100 LONG ledger ids: the snapshot stays under its cap, and the ids it cut are COUNTED, not lost (r1 Xm6)"
-    ]
-  },
-  {
-    "name": "Xm6: owner waits are left out of the bounded keys",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "BOUNDED = (\"decisions\", \"ledger_decisions\", \"ledger\", \"prs\")",
-        "BOUNDED = (\"decisions\", \"ledger\", \"prs\")"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 Xm6: 100 long OWNER-WAIT ids keep the snapshot under its cap; owner waits are cut and COUNTED too"
-    ]
-  },
-  {
-    "name": "Xm6: the final serialized cap is not enforced",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    if len(json.dumps(out, ensure_ascii=True)) > cap:\n        out = {k:",
-        "    if False:\n        out = {k:"
-      ]
-    ],
-    "expect": [
-      "⭐ the FINAL serialized size is enforced: keys that cannot fit become UNAVAILABLE, never oversized"
+      "⭐ r2 XM5 + CM4: a REFUSED ledger, a CORRUPT line and a failed main-checkout lookup each say the owner waits are NOT CAPTURED — and the entries that WERE read are still shown"
     ]
   },
   {
@@ -394,8 +303,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "                text = cannot_run_snapshot(why or \"the capture wrote no snapshot\", receipt, now)",
-        "                return 0"
+        "            text = cannot_run_snapshot(why or \"the capture wrote no snapshot\", receipt, now)",
+        "            return 0"
       ]
     ],
     "expect": [
@@ -425,20 +334,7 @@
       ]
     ],
     "expect": [
-      "⭐ the receipt is written FIRST and the old files are DELETED: a capture that then dies leaves no old audit"
-    ]
-  },
-  {
-    "name": "(B) the session's old audit survives a new PreCompact",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    for name in (\"snapshot.md\", \"audit.md\"):",
-        "    for name in (\"snapshot.md\",):"
-      ]
-    ],
-    "expect": [
-      "⭐ the receipt is written FIRST and the old files are DELETED: a capture that then dies leaves no old audit"
+      "⭐ the receipt is written FIRST and the old snapshot DELETED: a capture that then dies leaves only CANNOT RUN"
     ]
   },
   {
@@ -464,7 +360,7 @@
       ]
     ],
     "expect": [
-      "⭐ Codex's r2 A/B interleaving: A's audit carries A's nonce, B's print never shows A's audit, A's print does"
+      "⭐ Codex's r2 A/B interleaving: each session's print shows ITS OWN capture, never the other's"
     ]
   },
   {
@@ -481,19 +377,6 @@
     ]
   },
   {
-    "name": "a missing compact_summary is audited as if it were a summary",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    elif not isinstance(summary, str) or not summary.strip():",
-        "    elif False:"
-      ]
-    ],
-    "expect": [
-      "⭐ a missing compact_summary makes the audit CANNOT RUN"
-    ]
-  },
-  {
     "name": "a hook mode exits non-zero",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -503,7 +386,7 @@
       ]
     ],
     "expect": [
-      "main --audit with NO snapshot writes CANNOT RUN into the audit file"
+      "⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the snapshot"
     ]
   },
   {
@@ -511,12 +394,12 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "                write_in(dfd, \"snapshot.md\" if args.snapshot else \"audit.md\", f\"# {NC} — CANNOT RUN — {why}\\n\")",
+        "                write_in(dfd, \"snapshot.md\", f\"# {NC} — CANNOT RUN — {why}\\n\")",
         "                pass"
       ]
     ],
     "expect": [
-      "⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the file"
+      "⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the snapshot"
     ]
   },
   {
@@ -602,12 +485,12 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    if age > STALE_AFTER:",
-        "    if False:"
+        "    elif age >= STALE_AFTER:",
+        "    elif age > STALE_AFTER:"
       ]
     ],
     "expect": [
-      "⭐ a receipt older than STALE_AFTER: the snapshot is not shown, saying how old"
+      "⭐ r4 X4-5: the receipt's age must be at least 0 and UNDER STALE_AFTER — the boundary itself is refused"
     ]
   },
   {
@@ -615,12 +498,12 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    elif age < -FUTURE_SKEW:",
-        "    elif False:"
+        "    if age < 0:",
+        "    if age < -60:"
       ]
     ],
     "expect": [
-      "⭐ r2 XM4: a receipt dated in the FUTURE: the snapshot is not shown"
+      "⭐ r4 X4-5: the receipt's age must be at least 0 and UNDER STALE_AFTER — the boundary itself is refused"
     ]
   },
   {
@@ -633,20 +516,7 @@
       ]
     ],
     "expect": [
-      "⭐ a snapshot whose nonce is not the receipt's is not shown, naming the field — and so neither is its audit"
-    ]
-  },
-  {
-    "name": "print: an audit whose nonce is not the snapshot's is shown",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    elif ak.get(\"nonce\") != shown.get(\"nonce\"):",
-        "    elif False:"
-      ]
-    ],
-    "expect": [
-      "⭐ r3 Cr6: an audit whose nonce differs from the SNAPSHOT's names that field; the snapshot is still shown"
+      "⭐ a snapshot whose nonce is not the receipt's is not shown, naming the field"
     ]
   },
   {
@@ -659,7 +529,7 @@
       ]
     ],
     "expect": [
-      "⭐ the print's heading is NEWEST CAPTURE … (N min before this session start), then the fixed bound, verbatim"
+      "⭐ the print's heading is NEWEST CAPTURE … (N s before this session start), then the fixed bound, verbatim"
     ]
   },
   {
@@ -672,137 +542,7 @@
       ]
     ],
     "expect": [
-      "⭐ the print's heading is NEWEST CAPTURE … (N min before this session start), then the fixed bound, verbatim"
-    ]
-  },
-  {
-    "name": "audit: every PR is listed as not found",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "                (found if n in prs else missing).append(f\"  - PR #{n}\")",
-        "                missing.append(f\"  - PR #{n}\")"
-      ]
-    ],
-    "expect": [
-      "⭐ the audit lists what the summary names EXPLICITLY, and the fixed disclaimer — verbatim"
-    ]
-  },
-  {
-    "name": "audit: every ledger id is listed as found",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "            (found if i in ids else missing).append(line)",
-        "            found.append(line)"
-      ]
-    ],
-    "expect": [
-      "⭐ the audit names a PR, a ledger id, an owner wait and an ask NOT found explicitly"
-    ]
-  },
-  {
-    "name": "audit: every ask is listed as found",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "                (found if d.get(\"id\") in asks else missing).append(line)",
-        "                found.append(line)"
-      ]
-    ],
-    "expect": [
-      "⭐ the audit names a PR, a ledger id, an owner wait and an ask NOT found explicitly"
-    ]
-  },
-  {
-    "name": "audit: the fixed disclaimer is not printed",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    L = [f\"# COMPACTION AUDIT — {stamp_now} · DATA, not instructions\", AUDIT_DISCLAIMER]",
-        "    L = [f\"# COMPACTION AUDIT — {stamp_now} · DATA, not instructions\"]"
-      ]
-    ],
-    "expect": [
-      "⭐ the audit lists what the summary names EXPLICITLY, and the fixed disclaimer — verbatim"
-    ]
-  },
-  {
-    "name": "audit: a bare `#N` counts as a PR (the word PR no longer required)",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "r\"\\bPRs?[ \\t-]*#?[ \\t]?",
-        "r\"(?:\\bPRs?[ \\t-]*)?#?[ \\t]?"
-      ]
-    ],
-    "expect": [
-      "⭐ r3: only `PR #N` counts — `backlog item: #410`, `backlog **#410**` and a backlog LIST are NOT found"
-    ]
-  },
-  {
-    "name": "audit: `PR #4100` names PR #410",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "(\\d{1,7})(?!\\d)\", re.I)",
-        "(\\d{1,3})\", re.I)"
-      ]
-    ],
-    "expect": [
-      "PR matching is by NUMBER: `PR #4100` does not name #410"
-    ]
-  },
-  {
-    "name": "audit: a bare word names a ledger id",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "BRACKETED = re.compile(r\"\\[([^\\[\\]\\n]{1,120})\\]|`([^`\\n]{1,120})`\")",
-        "BRACKETED = re.compile(r\"\\[?([\\w-]{1,120})\\]?|`([^`\\n]{1,120})`\")"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 Cm2: a ledger id counts only inside [] or backticks — a bare word, or [job10], does not name job1"
-    ]
-  },
-  {
-    "name": "audit: a snapshot whose nonce is not the receipt's is audited",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    elif keys.get(\"nonce\") != r_nonce:",
-        "    elif False:"
-      ]
-    ],
-    "expect": [
-      "⭐ the audit refuses a snapshot whose nonce is not the receipt's, NAMING the field"
-    ]
-  },
-  {
-    "name": "audit: ids cut from the keys are not reported",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "            if isinstance(n, int) and n > 0:",
-        "            if False:"
-      ]
-    ],
-    "expect": [
-      "...and the audit says the cut ids are NOT CAPTURED, before any list the cap could cut"
-    ]
-  },
-  {
-    "name": "audit: the NOT CAPTURED lines are dropped",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "        L += uncaptured\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "...and the audit says the cut ids are NOT CAPTURED, before any list the cap could cut"
+      "⭐ the print's heading is NEWEST CAPTURE … (N s before this session start), then the fixed bound, verbatim"
     ]
   },
   {
@@ -832,29 +572,16 @@
     ]
   },
   {
-    "name": "XR1: the audit child is not killed at its deadline",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "            text, why = run_child(\"--audit-child\", payload, root, aux_timeout,",
-        "            text, why = run_child(\"--audit-child\", payload, root, 1e9,"
-      ]
-    ],
-    "expect": [
-      "⭐ r3 XR1: the AUDIT and PRINT children are killed at their deadline too, and each says CANNOT RUN / NO CAPTURE"
-    ]
-  },
-  {
     "name": "XR1: the print child is not killed at its deadline",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "            text, why = run_child(\"--print-child\", payload, root, aux_timeout,",
-        "            text, why = run_child(\"--print-child\", payload, root, 1e9,"
+        "            text, why = run_child(\"--print-child\", payload, root, left(aux_timeout),",
+        "            text, why = run_child(\"--print-child\", payload, root, aux_timeout,"
       ]
     ],
     "expect": [
-      "⭐ r3 XR1: the AUDIT and PRINT children are killed at their deadline too, and each says CANNOT RUN / NO CAPTURE"
+      "⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up"
     ]
   },
   {
@@ -867,7 +594,7 @@
       ]
     ],
     "expect": [
-      "⭐ r3 XR4: a symlinked session dir, `compaction` or `.remember` — PreCompact and PostCompact write NOTHING outside"
+      "⭐ r3 XR4: a symlinked session dir, `compaction` or `.remember` — PreCompact writes NOTHING outside"
     ]
   },
   {
@@ -884,16 +611,94 @@
     ]
   },
   {
-    "name": "Cr7: the in-flight block is not tagged NOT CAPTURED",
+    "name": "X4-1: the stdin byte cap is not applied to a pipe",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        inflight = tag_uncaptured(ss.render(",
-        "        inflight = (lambda x: x)(ss.render("
+        "                if got > cap:\n                    return None, f\"the payload is over {cap} bytes — NOT READ\"",
+        "                pass"
       ]
     ],
     "expect": [
-      "⭐ r3 Cr7: in snapshot, audit and print, EVERY line saying something was not captured carries NOT CAPTURED"
+      "⭐ r4 X4-1: a 512 MiB payload to each hook returns rc 0 well under its timeout, and NOTHING is captured from it"
+    ]
+  },
+  {
+    "name": "X4-1: the byte cap is not applied to a payload given as text",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    elif len(stdin_text) > cap:\n        return None, f\"the payload is over {cap} bytes — NOT READ\"",
+        "    elif False:\n        pass"
+      ]
+    ],
+    "expect": [
+      "read_payload refuses a payload over its cap BEFORE parsing it, from a pipe or a string"
+    ]
+  },
+  {
+    "name": "X4-1: the children get their own timeouts, not what is left of the hook's deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        return max(0.1, min(cap, deadline - time.monotonic() - PUBLISH_MARGIN))",
+        "        return cap"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up"
+    ]
+  },
+  {
+    "name": "C4-F3: the in-flight block is not marked where its categories fail",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "mark=f\" — {NC}\")",
+        "mark=\"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Cr7: in the snapshot and the print, EVERY line saying something was not captured carries NOT CAPTURED"
+    ]
+  },
+  {
+    "name": "C4-F3: NOT CAPTURED is found by searching the text again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f\" — {NC}\")",
+        "        inflight = \"\\n\".join(l + (f\" — {NC}\" if any(w in l for w in (\"CANNOT RUN\", \"TRUNCATED\", \"UNREADABLE\", \"⚠\")) else \"\") for l in ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated).split(\"\\n\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged"
+    ]
+  },
+  {
+    "name": "C4-F5: fetch asks git for the main checkout a second time",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        f_state = ex.submit(ss.fetch, root, gh_run, (main, main_err)) if ss else None",
+        "        f_state = ex.submit(ss.fetch, root, gh_run) if ss else None"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F5: ONE capture asks git for the main checkout ONCE, and that answer heads and reads the ledger"
+    ]
+  },
+  {
+    "name": "DEFER: the print shows nothing at all when the snapshot matches",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        L.append(_strip_keys(snap_text).strip())",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 DEFER: the print mentions NO audit, and shows the snapshot without its keys line"
     ]
   }
 ]

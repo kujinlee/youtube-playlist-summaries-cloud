@@ -18046,34 +18046,22 @@ an unlaunched module-level git argv literal — and the NOT SEEN shapes above (m
 program only because it also held a git argv literal).
 
 ## 2026-10-28
-Compaction can no longer quietly drop what was in flight. Just before a compaction, a hook now saves the open
-pull requests, the background jobs, the worktrees, the decisions waiting on you and your own recent messages and
-answers to a file. Just after, a second hook compares the summary with that file and lists everything the summary
-left out. When the session continues, both are shown first, with a line saying a compaction happened and that the
-summary is lossy. None of this has run on a real compaction yet: it was tested piece by piece and with a rehearsal
-using this session's real transcript, and the real test is your next `/compact`.
+Before every compaction, a hook now saves what was in flight — the open pull requests, the background jobs, the
+worktrees, the decisions waiting on you, and your own recent messages and answers — and the first thing the next
+window sees is that saved capture, headed "NEWEST CAPTURE for this session". It says plainly that it cannot tell one
+compaction from another inside a session, and it does not judge the summary: a check of what the summary left out was
+built, failed four rounds of review, and is set aside as its own item (backlog #391). Your recorded words are labelled
+as recorded, not proven. None of this has run on a real compaction yet; the first one after this merges is the test.
 <!--tech-->
-Branch `compaction-guards` (backlog #361, its PreCompact fallback). New `scripts/compaction-state.py`, three modes:
-`--snapshot` (PreCompact, matchers `manual` and `auto`) writes `.remember/precompact-snapshot.md` atomically, under
-8,000 characters, from `session-state.fetch`/`render` (a new split of `collect`, behaviour unchanged, 51/51 and its
-25 mutations killed), `git worktree list` plus one `git status` each, the ledger entries naming the owner or a page,
-`gen-dashboard.unresolved`, and the transcript: typed prompts are `origin.kind == "human"` without `isMeta`/
-`isCompactSummary`/`isSidechain` and with no `tool_result` block, and answers are non-error `tool_result`s of an
-`AskUserQuestion` tool use seen earlier in the window. `--audit` (PostCompact) lists every PR number, ledger id and pending decision
-the `compact_summary` does not name. `--print` (SessionStart, matcher `compact`) shows both under 9,800 characters,
-CANNOT RUN when a file is missing, STALE when the snapshot is over 30 minutes old or the audit is of another
-snapshot. Every hook exits 0 and never prints a decision, so compaction is never blocked; stdin is read with a 2 s
-deadline. Only an answer paired by `tool_use_id` with an `AskUserQuestion` is trusted (an automated review found
-the first version also took any tool output that began with an answer's wording); pasted blocks are withheld and
-accepted suggestions labelled. The ledger is read from the main checkout, so a session in a worktree no
-longer reports an empty one — nor does the session-start block, and `--add`/`--done` from a worktree now write
-the one ledger every session reads. A job is listed as waiting on you only when it is marked so
-(`WAITS-ON-OWNER:`), not whenever its description mentions you. After review, your recorded words are labelled
-RECORDED rather than authoritative, since a hook cannot prove who wrote them, and an old or another session's
-snapshot is never shown as this compaction's. A second review rebuilt two parts: the slow capture now runs in a
-separate process that is stopped at 11 seconds, and each session keeps its own files, so one session's compaction
-can no longer be shown as another's. A third review withdrew two claims the hooks cannot actually check: the audit now only says which
-items the summary names explicitly, and the printed block shows the newest capture of this session, saying plainly that
-it cannot tell one compaction from another inside a session. 100 cases, 59 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
-the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
-real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.
+Branch `compaction-guards`, PR #425 (backlog #361, its PreCompact fallback). `scripts/compaction-state.py`, two hook
+modes, per session in `.remember/compaction/<session_id>/{receipt.json,snapshot.md}`: `--snapshot` (PreCompact,
+`manual` and `auto`) writes the receipt first, then captures in a child killed at its deadline; `--print` (SessionStart,
+`compact`) shows the snapshot when its nonce is the receipt's and the receipt is 0 s to under 30 min old. Bounds,
+stated: each hook returns within one 13.5 s deadline from its start (stdin capped at 1 MiB); capture calls are killed
+by process group; a process that leaves its group (`setsid`, `setpgid`) is not. Owner answers count only as a non-error
+`tool_result` paired once with a same-session `AskUserQuestion`; pasted blocks are withheld, failing closed; owner
+waits need `WAITS-ON-OWNER:`; the ledger is read from the main checkout. Lines about something not captured carry
+NOT CAPTURED, placed where the category fails. Review: r1 (Codex), r2 (Codex + Claude, a redesign of process bounding
+and per-session files), r3 (an architecture review that withdrew the completeness and compaction-identity claims), r4
+(the split's own bet fired, so the PostCompact audit was deferred). 96 cases and 54 mutations; `session-state.py` 68
+cases and 40 mutations. ⚠ UNVERIFIED: a real compaction (the falsifier in backlog #361's row).

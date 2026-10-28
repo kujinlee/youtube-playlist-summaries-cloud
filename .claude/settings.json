@@ -139,7 +139,7 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
             "timeout": 15,
-            "statusMessage": "Snapshotting in-flight state before compaction..."
+            "statusMessage": "Saving a snapshot of in-flight state before compaction..."
           }
         ]
       },
@@ -150,19 +150,7 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
             "timeout": 15,
-            "statusMessage": "Snapshotting in-flight state before compaction..."
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh postcompact-audit.sh",
-            "timeout": 15,
-            "statusMessage": "Auditing what the compaction summary dropped..."
+            "statusMessage": "Saving a snapshot of in-flight state before compaction..."
           }
         ]
       }

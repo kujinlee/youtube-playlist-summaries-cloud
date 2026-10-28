@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make what a compaction LOSES recoverable: snapshot before it, audit its summary after it (backlog #361).
+"""Make what a compaction LOSES recoverable: a derived snapshot before it, printed after it (backlog #361).
 
 WHY THIS FILE EXISTS (raised by the owner 2026-10-26, built 2026-10-28).
   Automatic compaction keeps whatever its summary happens to keep. Compaction ran several times in one
@@ -9,47 +9,47 @@ WHY THIS FILE EXISTS (raised by the owner 2026-10-26, built 2026-10-28).
   them) rests on an unverified premise, that the summariser follows CLAUDE.md. This is its named
   fallback: hooks that WRITE derived state around the compaction, so nothing depends on the summary.
 
-WHAT IT DOES NOT CLAIM (PR #425 r3 SPLIT, `docs/reviews/architecture-review-2026-10-28-compaction-guards.md`). Two
-claims were withdrawn because no rule over the inputs can decide them: that the summary KEPT or DROPPED an item (a `#N`
-in prose is the writer's intent), and that a capture belongs to a particular COMPACTION (the harness gives a session
-id, never a compaction id). The audit reports only what the summary names EXPLICITLY; the print shows the NEWEST
-CAPTURE of this session, with that bound stated.
+WHAT IT DOES NOT DO, OR CLAIM (PR #425 r3 SPLIT and r4 DEFER, `docs/reviews/architecture-review-2026-10-28-compaction-
+guards.md`). It does not judge the summary: the PostCompact AUDIT is DEFERRED to its own backlog row, because whether a
+`#N` in free prose names a PR is the writer's intent and `compact_summary` is the largest untrusted input. And it does
+not identify a COMPACTION: the harness gives a session id, never a compaction id, so the print shows the NEWEST CAPTURE
+of this session and says so.
 
-EVERYTHING IS PER SESSION (r2 REDESIGN B). Receipt, snapshot and audit live in `.remember/compaction/<session_id>/`;
+EVERYTHING IS PER SESSION (r2 REDESIGN B). The receipt and the snapshot live in `.remember/compaction/<session_id>/`;
 each hook touches only its own payload's session's directory. A `session_id` that does not match SESSION_ID
 (`^[A-Za-z0-9_-]{1,80}$`) gets NOTHING written. Every component of that path is opened relative to the previous one
 with O_NOFOLLOW, so a symlink anywhere in it is refused (r3 XR4), and files are written through the directory's fd.
 
-EVERY MODE RUNS BEHIND A KILLED CHILD (r2 REDESIGN A, extended in r3 XR1). The hook process itself only reads stdin
-(STDIN_WAIT), writes or reads nothing it cannot bound, and runs the work as `--capture`, `--audit-child` or
-`--print-child` in a child with its own process group and no pipes, killed at CAPTURE_TIMEOUT (PreCompact) or
-AUX_TIMEOUT. Every artifact is read by ONE reader, `read_in`: O_NONBLOCK and O_NOFOLLOW, and only a REGULAR file of at
-most ARTIFACT_CAP bytes. So each hook ends within STDIN_WAIT + its child's timeout + a fraction of a second.
-⛔ NOTHING THE CAPTURE STARTS OUTLIVES THE HOOK (r3 CR1): every call inside the capture child stays in the child's
-process group (`session-state._run(..., own_group=False)`), and the parent SIGKILLs that whole group after the child
-ends, for ANY reason — so a call still in flight at the 11 s kill dies with it. The one exception, stated: a process
-that calls `setsid` itself leaves the group and is out of reach.
+THE BOUNDS, STATED (r4 X4-1, X4-2):
+  - THE HOOK RETURNS WITHIN ITS BOUND. Each hook has ONE absolute deadline, HOOK_DEADLINE seconds from the process's
+    start; stdin is read for at most STDIN_WAIT and MAX_STDIN BYTES (a larger payload is refused before any join,
+    decode or parse), and the work runs as `--capture` or `--print-child` in a child with its own process group and
+    no pipes, killed at whatever is left of the deadline, so the parent's own write still fits under the registered
+    15 s. Every artifact is read by ONE reader, `read_in`: O_NONBLOCK and O_NOFOLLOW, a REGULAR file of at most
+    ARTIFACT_CAP bytes.
+  - CAPTURE CALLS ARE KILLED BY PROCESS GROUP. Every call inside the capture child stays in the child's group
+    (`session-state._run(..., own_group=False)`), and the parent SIGKILLs that group at the deadline and again after
+    the child ends, for any reason — a call in flight at the kill dies with it (r3 CR1).
+  - A DESCENDANT THAT LEAVES ITS GROUP (`setsid` or `setpgid`) IS NOT KILLED. That is the bound, not a defect: no kill
+    by group reaches it, and the hook still returns on time because nothing waits on it.
 
-THE THREE HOOK MODES:
+THE TWO HOOK MODES:
   --snapshot   PreCompact (manual and auto). Writes THIS session's receipt (a fresh nonce and the time) FIRST and
-               deletes the session's previous snapshot and audit, then captures in the child: the open PRs and the
-               in-flight ledger (`session-state.fetch`/`render`, the ledger read from the MAIN checkout); `git worktree
-               list` with each worktree's branch, tip and clean/dirty state; pending OWNER decisions (ledger entries
-               marked `WAITS-ON-OWNER:`, `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the newest
-               AskUserQuestion ANSWERS that fit, from `transcript_path`. Under SNAPSHOT_CAP. If the child does not finish,
-               the snapshot is `CANNOT RUN — capture timed out after N s and was killed`, every category UNAVAILABLE.
-  --audit      PostCompact. Against its session's snapshot (its nonce must be the receipt's), ONE linear pass over
-               `compact_summary` collects the EXPLICIT names only — `PR #N` (the word PR required), a ledger id written
-               `[id]` or `` `id` ``, a dashboard ask by its own id — and lists the snapshot's items as found / not found
-               explicitly, under the fixed line AUDIT_DISCLAIMER. It never says an item was kept or dropped.
-  --print      SessionStart, `compact` source (a matcher). Headed "NEWEST CAPTURE for this session, taken at T (N min
+               deletes the session's previous snapshot, then captures in the child: the open PRs and the in-flight
+               ledger (`session-state.fetch`/`render`, the ledger read from the MAIN checkout, asked for ONCE); `git
+               worktree list` with each worktree's branch, tip and clean/dirty state; pending OWNER decisions (ledger
+               entries marked `WAITS-ON-OWNER:`, `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the
+               newest AskUserQuestion ANSWERS that fit, from `transcript_path`. Under SNAPSHOT_CAP. If the child does
+               not finish, the snapshot is `CANNOT RUN — capture timed out after N s and was killed`.
+  --print      SessionStart, `compact` source (a matcher). Headed "NEWEST CAPTURE for this session, taken at T (N s
                before this session start)" and SESSION_NOT_COMPACTION. The snapshot is shown when its nonce equals the
-               receipt's and the receipt is under STALE_AFTER old and not in the future; the audit only when its nonce
-               equals the shown snapshot's. Otherwise it names the missing piece and the field that differed.
+               receipt's and the receipt's age is at least 0 and under STALE_AFTER seconds (r4 X4-5); otherwise it
+               names the missing piece and the field that differed, and shows nothing it cannot match.
 
-ONE WORD FOR "NOT CAPTURED" (r3 Cr7). Every line about something not captured — CANNOT RUN, UNAVAILABLE, NOT EXTRACTED,
-NOT READ, TRUNCATED, a status UNKNOWN, an item cut for size, a piece not shown — carries NC, `NOT CAPTURED`, the word
-CLAUDE.md names; session-state's in-flight block is tagged by `tag_uncaptured`.
+ONE WORD FOR "NOT CAPTURED" (r3 Cr7, r4 C4-F3). A line that reports something not captured carries NC, `NOT CAPTURED`,
+the word CLAUDE.md names. It is placed WHERE THE CATEGORY FAILS — in this file at each failure, and in session-state's
+block by `render(..., mark=)` on the lines it emits for a state it could not read — never by searching the text, so a
+branch or a ledger entry that merely contains a failure word is not marked.
 
 HOW THE OWNER'S TEXT IS TOLD APART (measured 2026-10-28 on this session's 83 MB transcript): a typed prompt is
   `type: user` with `origin.kind == "human"`; task notifications carry `origin.kind: task-notification`, teammate
@@ -73,20 +73,18 @@ HOW THE OWNER'S TEXT IS TOLD APART (measured 2026-10-28 on this session's 83 MB 
 ⛔ UNTRUSTED TEXT: prompts, answers, branch names and ledger fields go through `session-state.clean`, so each becomes
   ONE inert line and none can forge a heading or an END marker.
 
-WHAT WOULD MAKE THIS FAIL (its falsifier — UNVERIFIED until the owner runs it): on the first real compaction after
-this merges, the block after it does not show the snapshot, or the snapshot misses an open PR, a worktree, the ledger,
-a pending decision or the owner's recent answers (the four criteria are in backlog #361's row).
+WHAT WOULD MAKE THIS FAIL (its falsifier — UNVERIFIED until a real compaction runs it): on the first real compaction
+after this merges, the block after it does not show the snapshot, or the snapshot misses an open PR, a worktree, the
+ledger, a pending decision or the owner's recent answers (the criteria are in backlog #361's row).
 
-⚠ BOUNDS. The order of this SessionStart hook and `session-state.sh` is the harness's. Each hook's output is capped by
-the harness separately (10,000 characters); this block stays under PRINT_CAP on its own. A delayed PostCompact, or a
-PreCompact racing SessionStart, inside ONE session can show a capture beside a different compaction — that is
-SESSION_NOT_COMPACTION, printed, not fixed. If a compaction's PreCompact did not run at all, the previous receipt of
-the same session still matches, bounded only by STALE_AFTER.
+⚠ OTHER BOUNDS. The order of this SessionStart hook and `session-state.sh` is the harness's. Each hook's output is capped
+by the harness separately (10,000 characters); this block stays under PRINT_CAP on its own. A delayed or overlapping
+compaction in one session, or an earlier one whose successor's PreCompact did not run, can show a capture beside a
+different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER is the only bound on the last.
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
-    python3 scripts/compaction-state.py --audit    < payload.json   # what the PostCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 113 cases
+    python3 scripts/compaction-state.py --self-test  # 96 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -113,22 +111,22 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SESSIONS_REL = ".remember/compaction"          # r2 REDESIGN (B): <SESSIONS_REL>/<session_id>/{receipt.json,snapshot.md,audit.md}
+STARTED = time.monotonic()   # r4 X4-1: HOOK_DEADLINE is measured from here, the process's start
+SESSIONS_REL = ".remember/compaction"          # r2 REDESIGN (B): <SESSIONS_REL>/<session_id>/{receipt.json,snapshot.md}
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
-SNAPSHOT_CAP = 8000     # under the 9,000 the brief set, leaving AUDIT_CAP + the opening line inside PRINT_CAP
-AUDIT_CAP = 1500
+SNAPSHOT_CAP = 8000     # under PRINT_CAP with the print's heading lines
 PRINT_CAP = 9800        # the harness replaces SessionStart output over 10,000 characters with a file path
-STALE_AFTER = 30 * 60   # a compaction takes minutes; a receipt older than this is from an earlier one
-FUTURE_SKEW = 60        # a receipt dated more than this AHEAD of now is not this compaction's (r2 XM4)
+STALE_AFTER = 30 * 60   # seconds: a receipt this old or older is not shown (r4 X4-5: age < 0 is refused too)
 STDIN_WAIT = 2.0
-CAPTURE_TIMEOUT = 11.0  # r2 REDESIGN (A): the child is KILLED here, so the hook ends under its 15 s timeout
-AUX_TIMEOUT = 10.0      # r3 XR1: the audit and print children, killed here, under their 15 s timeouts
+MAX_STDIN = 1024 * 1024 # r4 X4-1: bytes of payload read at most — a hook payload is small JSON; more is refused unparsed
+HOOK_DEADLINE = 13.5    # r4 X4-1: seconds from PROCESS START for the whole hook — stdin, parse, child, publish — under 15
+CAPTURE_TIMEOUT = 11.0  # r2 REDESIGN (A): the child is KILLED here (or at HOOK_DEADLINE's remainder, if sooner)
+AUX_TIMEOUT = 10.0      # r3 XR1: the print child, killed here (or at HOOK_DEADLINE's remainder, if sooner)
+PUBLISH_MARGIN = 0.5    # seconds kept back from the deadline for the parent's own write
 ARTIFACT_CAP = 1024 * 1024   # an artifact over this is not read (r3 XR1)
 NC = "NOT CAPTURED"     # r3 Cr7: the ONE word every line about something not captured carries (CLAUDE.md names it)
 GH_TIMEOUT = 8          # per call, inside the child
 GIT_TIMEOUT = 3
-KEYS_CAP = 2500         # r1 Xm6: the keys line is bounded too; what does not fit is COUNTED as omitted
-MAX_ID = 120            # an id longer than this is counted as omitted, never clipped (a clipped id cannot match)
 N_PROMPTS = 12
 RECENT_ASKS = 5
 ITEM_WIDTH = 400
@@ -196,23 +194,31 @@ def fit(text: str, budget: int, where: str) -> str:
     return cut + note
 
 
-def read_payload(stdin_text: str | None, fd: int | None = None, wait: float = STDIN_WAIT) -> tuple[dict | None, str | None]:
-    """(payload, None) or (None, why). Reads `fd` until EOF or `wait` seconds — never blocks past it."""
+def read_payload(stdin_text: str | None, fd: int | None = None, wait: float = STDIN_WAIT,
+                 cap: int = MAX_STDIN) -> tuple[dict | None, str | None]:
+    """(payload, None) or (None, why). Reads `fd` until EOF, `wait` seconds or `cap` BYTES, whichever comes first —
+    and a payload over `cap` is refused BEFORE any join, decode or parse (r4 X4-1: a 512 MiB payload was joined,
+    decoded and parsed outside every deadline, and held PostCompact 16.4 s)."""
     if stdin_text is None:
-        chunks, deadline = [], time.monotonic() + wait
+        chunks, got, deadline = [], 0, time.monotonic() + wait
         fd = sys.stdin.fileno() if fd is None else fd
         try:
             while True:
                 left = deadline - time.monotonic()
                 if left <= 0 or not select.select([fd], [], [], left)[0]:
                     break
-                b = os.read(fd, 65536)
+                b = os.read(fd, min(65536, cap + 1 - got))
                 if not b:
                     break
                 chunks.append(b)
+                got += len(b)
+                if got > cap:
+                    return None, f"the payload is over {cap} bytes — NOT READ"
         except (OSError, ValueError) as exc:
             return None, f"stdin unreadable ({exc})"
         stdin_text = b"".join(chunks).decode("utf-8", "replace")
+    elif len(stdin_text) > cap:
+        return None, f"the payload is over {cap} bytes — NOT READ"
     if not stdin_text.strip():
         return None, "no payload on stdin"
     try:
@@ -585,7 +591,7 @@ def _read(path: Path) -> tuple[str | None, str | None]:
 
 
 def _keys(text: str) -> dict | None:
-    """The machine-readable last line of a snapshot or an audit, or None."""
+    """The machine-readable last line of a snapshot, or None."""
     for line in reversed(text.splitlines()):
         if line.startswith(KEYS_OPEN) and line.endswith(KEYS_CLOSE):
             try:
@@ -600,37 +606,15 @@ def _strip_keys(text: str) -> str:
     return "\n".join(l for l in text.splitlines() if not l.startswith(KEYS_OPEN))
 
 
-BOUNDED = ("decisions", "ledger_decisions", "ledger", "prs")   # every variable-length key, least load-bearing first
-
-
-def bound_keys(keys: dict, cap: int = KEYS_CAP) -> dict:
-    """`keys` with every variable-length LIST cut until the JSON fits `cap`, each cut COUNTED in `omitted` (r1 Xm6; r2
-    Xm6: owner waits were not cut, 15,700 characters). An id is dropped whole, never clipped. A list that is None
-    (UNAVAILABLE) stays None. If even that does not fit, every list becomes UNAVAILABLE — the final serialized
-    size is ENFORCED, not hoped for."""
-    out = dict(keys)
-    omitted = dict(out.get("omitted") or {})
-    out["omitted"] = omitted
-    for name in BOUNDED:
-        while isinstance(out.get(name), list) and out[name] and len(json.dumps(out, ensure_ascii=True)) > cap:
-            out[name] = out[name][:-1]
-            omitted[name] = omitted.get(name, 0) + 1
-    if len(json.dumps(out, ensure_ascii=True)) > cap:
-        out = {k: out.get(k) for k in ("nonce", "epoch", "written", "session")}
-        out.update({name: None for name in BOUNDED}, omitted={"keys": "over the cap — every category UNAVAILABLE"})
-    return out
-
-
 def new_receipt(dfd: int, session_id: str, now: float) -> dict:
-    """THIS session's receipt, written FIRST; the session's previous snapshot and audit are deleted with it, so
-    nothing an earlier capture left can be shown beside this receipt."""
+    """THIS session's receipt, written FIRST; the session's previous snapshot is deleted with it, so nothing an
+    earlier capture left can be shown beside this receipt."""
     receipt = {"session": session_id, "nonce": f"{os.getpid()}-{os.urandom(6).hex()}", "epoch": now}
     write_in(dfd, "receipt.json", json.dumps(receipt) + "\n")
-    for name in ("snapshot.md", "audit.md"):
-        try:
-            os.unlink(name, dir_fd=dfd)
-        except FileNotFoundError:
-            pass
+    try:
+        os.unlink("snapshot.md", dir_fd=dfd)
+    except FileNotFoundError:
+        pass
     return receipt
 
 
@@ -652,16 +636,6 @@ def read_receipt(sdir: Path) -> tuple[dict | None, str | None]:
 
 # ─── the capture (runs in the CHILD) ────────────────────────────────────────────────────────────
 
-UNCAPTURED_WORDS = ("CANNOT RUN", "UNREADABLE", "TRUNCATED", "NOT READ", "⚠")   # session-state's own vocabulary
-
-
-def tag_uncaptured(block: str) -> str:
-    """session-state's in-flight block with NC added to each line in its own fixed vocabulary for a state it could
-    not read — so the one word CLAUDE.md names is on every such line here too (r3 Cr7)."""
-    return "\n".join(l if NC in l or not any(w in l for w in UNCAPTURED_WORDS) else f"{l} — {NC}"
-                     for l in block.split("\n"))
-
-
 def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now: float,
              transcript=read_transcript, asks=pending_asks, nonce: str | None = None) -> str:
     """The snapshot file's text, pure but for `run`, `transcript` and `asks`, all injected. Run by the CHILD; the
@@ -675,9 +649,10 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         ss, ss_err = None, f"session-state.py cannot load ({exc.__class__.__name__}: {clean(exc, 100)})"
     gh_run = lambda cmd, cwd, timeout=GH_TIMEOUT: run(cmd, cwd, min(timeout, GH_TIMEOUT))  # noqa: E731
     with ThreadPoolExecutor(2) as ex:
-        # session-state owns the main-checkout rule; `fetch` reads the ledger through it, and this names the place.
+        # session-state owns the main-checkout rule. It is asked ONCE, and that one answer both names the place and
+        # is what `fetch` reads (r4 C4-F5: two calls to a flaky git described one checkout and read another).
         main, main_err = ss.main_checkout(root, run) if ss else (root, ss_err)
-        f_state = ex.submit(ss.fetch, root, gh_run) if ss else None
+        f_state = ex.submit(ss.fetch, root, gh_run, (main, main_err)) if ss else None
         f_wts = ex.submit(worktrees, root, run)
         try:
             prs, pr_error, ledger, problems, truncated = (f_state.result() if f_state
@@ -691,13 +666,14 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
             wts, wt_err = None, f"{exc.__class__.__name__}: {clean(exc, 120)}"
     stamp_now = time.strftime("%m-%d %H:%M %Z", time.localtime(now))
     if ss:
-        inflight = tag_uncaptured(ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated))
+        # NC is placed by `render` itself on each line whose state was NOT READ — never by searching the text (r4 C4-F3).
+        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f" — {NC}")
     else:
         inflight = f"OPEN PRS and IN-FLIGHT LEDGER: {NC} — CANNOT RUN, {ss_err}"
     count, recent, ask_err = asks(root)
     # r2 XM5 + CM4: COMPLETENESS is tracked apart from what parsed. Any problem — a refusal, one corrupt line, a
-    # failed main-checkout lookup and its fallback — makes the ledger categories UNAVAILABLE in the keys, while the
-    # entries that WERE read are still shown.
+    # failed main-checkout lookup and its fallback — marks the owner waits NOT CAPTURED, while the entries that WERE
+    # read are still shown.
     ledger_complete = ss is not None and main_err is None and not problems
     waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []
     shown = [dict(e, what=e["what"][len(ss.OWNER_MARKER):].strip()) for e in waits]   # the marker is not news
@@ -728,22 +704,9 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
                  "`python3 scripts/session-state.py` and the dashboard"),
              worktree_section(wts, wt_err, 1500)]
 
-    def ids(entries, prefix=""):
-        return [f"{prefix}{e['id']}" for e in entries if isinstance(e.get("id"), str) and len(e["id"]) <= MAX_ID]
+    # The keys line carries only what the print matches on; the audit that read the rest is deferred (r4 DEFER).
     keys = {"stamp": f"{now:.3f}-{os.getpid()}", "nonce": nonce, "epoch": now, "written": stamp_now,
-            "session": clean(session_id, 100) if session_id else None,
-            "trigger": clean(payload.get("trigger"), 20) if payload.get("trigger") else None,
-            # r1 XM5: a category the snapshot could not capture is None — UNAVAILABLE — never [], which audits as named.
-            "prs": [p.get("number") for p in prs] if prs is not None else None,
-            "ledger": ids(ledger) if ledger_complete else None,
-            "ledger_decisions": [{"id": i, "title": ""} for i in ids(waits, "ledger:")] if ledger_complete else None,
-            "decisions": [{"id": a["id"], "title": clean(a["title"], 80)} for a in recent] if count is not None else None,
-            "omitted": {}}
-    if ledger_complete and len(ids(ledger)) < len(ledger):
-        keys["omitted"]["ledger"] = len(ledger) - len(ids(ledger))
-    if count is not None and count > len(recent):
-        keys["omitted"]["decisions"] = count - len(recent)   # r2 CM3: asks beyond the newest few are NOT CHECKED
-    keys = bound_keys(keys)
+            "session": clean(session_id, 100) if session_id else None}
     keyline = KEYS_OPEN + json.dumps(keys, ensure_ascii=True) + KEYS_CLOSE
     body = "\n\n".join(parts)
     room = SNAPSHOT_CAP - len(body) - len(keyline) - 4
@@ -754,10 +717,9 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
 
 
 def cannot_run_snapshot(why: str, receipt: dict, now: float) -> str:
-    """What the parent writes when the capture did not finish: this compaction's nonce, every category UNAVAILABLE."""
+    """What the parent writes when the capture did not finish: this receipt's nonce, and nothing captured."""
     stamp_now = time.strftime("%m-%d %H:%M %Z", time.localtime(now))
-    keys = {"nonce": receipt["nonce"], "epoch": now, "written": stamp_now, "session": receipt["session"],
-            **{name: None for name in BOUNDED}, "omitted": {}}
+    keys = {"nonce": receipt["nonce"], "epoch": now, "written": stamp_now, "session": receipt["session"]}
     return (f"# PRE-COMPACTION SNAPSHOT — {NC} — CANNOT RUN, {clean(why, 300)} · session {clean(receipt['session'], 80)}\n"
             "Nothing below the receipt was captured: verify every PR, ledger entry and decision from git, gh and the "
             "ledger.\n" + KEYS_OPEN + json.dumps(keys) + KEYS_CLOSE + "\n")
@@ -790,87 +752,19 @@ def run_capture(cmd: list[str], timeout: float) -> tuple[int | None, str]:
             pass
 
 
-# ─── the audit and the print ────────────────────────────────────────────────────────────────────
+# ─── the print ──────────────────────────────────────────────────────────────────────────────────
 
-# r3 SPLIT (architecture-review-2026-10-28-compaction-guards.md): whether a `#410` in free prose refers to PR #410 is
-# the WRITER's intent, and no rule over the text decides it — each exclusion rule moved the outside (CM1, then
-# `backlog item: #410`, `backlog **#410**`, `backlog #364, #376 and #383`), and one was quadratic (XR2). So the audit
-# makes NO completeness claim: one LINEAR pass collects only EXPLICIT forms, and reports found / not found.
-PR_EXPLICIT = re.compile(r"\bPRs?[ \t-]*#?[ \t]?(\d{1,7})(?!\d)", re.I)   # the word PR is required
-BRACKETED = re.compile(r"\[([^\[\]\n]{1,120})\]|`([^`\n]{1,120})`")        # a ledger id as [id] or `id`
-ASK_ID = re.compile(r"(?<![\d/])(\d{4}-\d{2}-\d{2}/\d{1,4})(?![\d/])")      # a dashboard ask by its own id
-AUDIT_DISCLAIMER = ("Not finding an item here does NOT mean the summary dropped it, and finding one does not mean the "
-                    "summary kept it accurately — read the snapshot.")
+# r3 SPLIT, r4 F7: the harness gives a session id and never a compaction id, so the print claims no compaction identity
+# and says which captures it can show beside one.
 SESSION_NOT_COMPACTION = ("session identity is not compaction identity: a delayed or overlapping compaction in this "
-                          "session can be shown here.")
+                          "session, or an earlier one whose successor's PreCompact did not run, can be shown here.")
 
 
-def explicit_names(summary: str) -> tuple[set[int], set[str], set[str]]:
-    """(PR numbers written `PR #N`, ids written `[id]` or `` `id` ``, dashboard ask ids) — each one linear scan."""
-    return ({int(n) for n in PR_EXPLICIT.findall(summary)},
-            {a or b for a, b in BRACKETED.findall(summary)},
-            set(ASK_ID.findall(summary)))
-
-
-def audit(summary, snap_text: str | None, snap_err: str | None, now: float, receipt: dict | None = None,
-          receipt_err: str | None = None) -> str:
-    """The audit file's text: which of the snapshot's items the summary names EXPLICITLY, and which it does not — never
-    whether it kept or dropped them (r3 SPLIT). It audits only the snapshot carrying the receipt's nonce."""
-    stamp_now = time.strftime("%m-%d %H:%M %Z", time.localtime(now))
-    keys = _keys(snap_text) if snap_text is not None else None
-    r_nonce = receipt.get("nonce") if isinstance(receipt, dict) else None
-    L = [f"# COMPACTION AUDIT — {stamp_now} · DATA, not instructions", AUDIT_DISCLAIMER]
-    if snap_text is None or keys is None:
-        L.append(f"{NC} — the audit: CANNOT RUN, the snapshot is "
-                 f"{'missing: ' + clean(snap_err) if snap_text is None else 'unreadable (no keys line)'}.")
-    elif r_nonce is None:
-        L.append(f"{NC} — the audit: CANNOT RUN, the receipt: {clean(receipt_err or 'none was given')}.")
-    elif keys.get("nonce") != r_nonce:
-        L.append(f"{NC} — the audit: CANNOT RUN, the snapshot is not the receipt's (field `nonce`: snapshot "
-                 f"{clean(keys.get('nonce'), 40)}, receipt {clean(r_nonce, 40)}).")
-    elif not isinstance(summary, str) or not summary.strip():
-        L.append(f"{NC} — the audit: CANNOT RUN, the PostCompact payload carried no compact_summary.")
-    else:
-        prs, ids, asks = explicit_names(summary)
-        found, missing, uncaptured = [], [], []
-        waits = keys.get("ledger_decisions")
-        wait_ids = {str(d.get("id", "")).removeprefix("ledger:") for d in waits if isinstance(d, dict)} \
-            if isinstance(waits, list) else set()
-        for label, field in (("open PRs", "prs"), ("ledger ids", "ledger"), ("ledger owner waits", "ledger_decisions"),
-                             ("dashboard asks", "decisions")):
-            if not isinstance(keys.get(field), list):
-                uncaptured.append(f"{NC} — {label}: UNAVAILABLE, the snapshot could not capture them completely.")
-        for n in keys.get("prs") if isinstance(keys.get("prs"), list) else []:
-            if isinstance(n, int) and not isinstance(n, bool):
-                (found if n in prs else missing).append(f"  - PR #{n}")
-        for i in keys.get("ledger") if isinstance(keys.get("ledger"), list) else []:
-            line = f"  - [{clean(i, 60)}]{' (waits on the owner)' if i in wait_ids else ''}"
-            (found if i in ids else missing).append(line)
-        for d in keys.get("decisions") if isinstance(keys.get("decisions"), list) else []:
-            if isinstance(d, dict):
-                line = f"  - ask {clean(d.get('id'), 20)} {clean(d.get('title', ''), 90)}".rstrip()
-                (found if d.get("id") in asks else missing).append(line)
-        omitted = keys.get("omitted") if isinstance(keys.get("omitted"), dict) else {}
-        for name, n in sorted(omitted.items()):
-            if isinstance(n, int) and n > 0:
-                uncaptured.append(f"{NC} — {n} {clean(name, 20)} item(s) are not in the snapshot's keys (cut to fit, "
-                                  "or beyond the newest few), so they are not listed below.")
-        L += uncaptured
-        L.append(f"Not found explicitly in the summary ({len(missing)}):")
-        L += missing or ["  - none"]
-        L.append(f"Found explicitly in the summary ({len(found)}):")
-        L += found or ["  - none"]
-    akeys = {"epoch": now, "written": stamp_now, "nonce": keys.get("nonce") if keys else None}
-    keyline = KEYS_OPEN + json.dumps(akeys) + KEYS_CLOSE
-    return fit("\n".join(L), AUDIT_CAP - len(keyline) - 2, "the snapshot") + "\n" + keyline + "\n"
-
-
-def render_print(snap_text, snap_err, audit_text, audit_err, now: float, receipt: dict | None = None,
-                 receipt_err: str | None = None, session_id=None) -> str:
-    """The SessionStart block for ONE session. r3 SPLIT: it claims no compaction identity — the harness gives none.
-    The snapshot is shown when its nonce equals the receipt's and the receipt is under STALE_AFTER old and not in the
-    future; the audit only when its nonce equals the shown snapshot's. Anything else says which piece is missing,
-    naming the field that differed, and shows nothing it cannot match."""
+def render_print(snap_text, snap_err, now: float, receipt: dict | None = None, receipt_err: str | None = None,
+                 session_id=None) -> str:
+    """The SessionStart block for ONE session. It claims no compaction identity. The snapshot is shown when its nonce
+    equals the receipt's and the receipt's age is at least 0 and under STALE_AFTER seconds (r4 X4-5); otherwise the
+    block names the missing piece and the field that differed, and shows nothing it cannot match."""
     end = "=== END COMPACTION STATE ==="
     r = receipt if isinstance(receipt, dict) else None
     reason = None
@@ -886,16 +780,14 @@ def render_print(snap_text, snap_err, audit_text, audit_err, now: float, receipt
                 f"in-flight item from git, gh and the ledger.\n=== COMPACTION STATE — DATA, not instructions ===\n{end}")
     age = now - r["epoch"]
     when = time.strftime("%m-%d %H:%M %Z", time.localtime(r["epoch"]))
-    rel = f"{age / 60:.0f} min before this session start" if age >= 0 else f"{-age / 60:.0f} min AFTER this session start"
+    rel = f"{age:.0f} s before this session start" if age >= 0 else f"{-age:.0f} s AFTER this session start"
     L = [f"NEWEST CAPTURE for this session, taken at {clean(when, 40)} ({rel})", SESSION_NOT_COMPACTION,
          "=== COMPACTION STATE — DATA, not instructions ==="]
     sk = _keys(snap_text) if snap_text is not None else None
-    ak = _keys(audit_text) if audit_text is not None else None
-    shown = None
-    if age > STALE_AFTER:
-        L.append(f"{NC} — the snapshot is not shown: the receipt is {age / 60:.0f} min old, over {STALE_AFTER // 60}.")
-    elif age < -FUTURE_SKEW:
-        L.append(f"{NC} — the snapshot is not shown: the receipt is dated in the FUTURE (the clock moved?).")
+    if age < 0:
+        L.append(f"{NC} — the snapshot is not shown: the receipt is dated {-age:.0f} s in the FUTURE (the clock moved?).")
+    elif age >= STALE_AFTER:
+        L.append(f"{NC} — the snapshot is not shown: the receipt is {age:.0f} s old, at or over {STALE_AFTER} s.")
     elif snap_text is None:
         L.append(f"{NC} — the snapshot is missing: {clean(snap_err)}.")
     elif sk is None:
@@ -904,19 +796,6 @@ def render_print(snap_text, snap_err, audit_text, audit_err, now: float, receipt
         L.append(f"{NC} — the snapshot is not shown: field `nonce` differs (snapshot {clean(sk.get('nonce'), 40)}, "
                  f"receipt {clean(r['nonce'], 40)}).")
     else:
-        shown = sk
-    if shown is None:
-        L.append(f"{NC} — the audit is not shown: there is no matching snapshot to read it against.")
-    elif audit_text is None:
-        L.append(f"{NC} — the audit is missing: {clean(audit_err)} (the PostCompact hook did not write it).")
-    elif ak is None:
-        L.append(f"{NC} — the audit has no readable keys line: {clean(audit_text.strip()[:200], 200)}")
-    elif ak.get("nonce") != shown.get("nonce"):
-        L.append(f"{NC} — the audit is not shown: field `nonce` differs (audit {clean(ak.get('nonce'), 40)}, snapshot "
-                 f"{clean(shown.get('nonce'), 40)}).")
-    else:
-        L.append(_strip_keys(audit_text).strip())
-    if shown is not None:
         L.append(_strip_keys(snap_text).strip())
     return fit("\n".join(L), PRINT_CAP - len(end) - 1, "the session's snapshot file") + "\n" + end
 
@@ -932,7 +811,7 @@ def run_child(mode: str, payload: dict | None, root: Path, timeout: float, now: 
         cmd = child or [sys.executable, str(Path(__file__).resolve()), mode, "--payload-file", str(pfile),
                         "--out", str(out), "--now", repr(now), "--root", str(root)] + (["--nonce", nonce] if nonce else [])
         rc, why = run_capture(cmd, timeout)
-        label = {"--capture": "capture", "--audit-child": "audit", "--print-child": "print"}.get(mode, mode)
+        label = {"--capture": "capture", "--print-child": "print"}.get(mode, mode)
         if rc != 0:
             return None, f"{label} {why}" if why else f"{label} exited {rc}"
         text, err = _read(out)
@@ -942,7 +821,7 @@ def run_child(mode: str, payload: dict | None, root: Path, timeout: float, now: 
 
 
 def _child(args, root: Path) -> int:
-    """The three CHILD modes: everything that reads an artifact or the world lives here, and the parent kills it."""
+    """The two CHILD modes: everything that reads an artifact or the world lives here, and the parent kills it."""
     payload, err = read_payload(Path(args.payload_file).read_text(encoding="utf-8"))
     now = args.now or time.time()
     sid = (payload or {}).get("session_id")
@@ -956,25 +835,22 @@ def _child(args, root: Path) -> int:
     else:
         dfd, why = open_session_dir(root, sid, create=False)
         got = {}
-        for name in ("receipt.json", "snapshot.md", "audit.md"):
+        for name in ("receipt.json", "snapshot.md"):
             got[name] = read_in(dfd, name) if dfd is not None else (None, why)
         if dfd is not None:
             os.close(dfd)
         receipt, r_err = parse_receipt(*got["receipt.json"])
-        if args.audit_child:
-            text = audit((payload or {}).get("compact_summary"), *got["snapshot.md"], now, receipt, r_err)
-        else:
-            text = render_print(*got["snapshot.md"], *got["audit.md"], now, receipt, r_err, sid)
+        text = render_print(*got["snapshot.md"], now, receipt, r_err, sid)
     Path(args.out).write_text(text, encoding="utf-8")
     return 0
 
 
 def main(argv: list[str] | None = None, root: Path = REPO_ROOT, stdin_text: str | None = None,
          now: float | None = None, capture_timeout: float = CAPTURE_TIMEOUT, child: list[str] | None = None,
-         aux_timeout: float = AUX_TIMEOUT) -> int:
+         aux_timeout: float = AUX_TIMEOUT, started: float | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group(required=True)
-    for flag in ("--snapshot", "--audit", "--print", "--self-test", "--capture", "--audit-child", "--print-child"):
+    for flag in ("--snapshot", "--print", "--self-test", "--capture", "--print-child"):
         g.add_argument(flag, action="store_true")
     for opt in ("--payload-file", "--out", "--nonce", "--root"):
         ap.add_argument(opt)
@@ -982,43 +858,44 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, stdin_text: str 
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
-    if args.capture or args.audit_child or args.print_child:
+    if args.capture or args.print_child:
         return _child(args, Path(args.root) if args.root else root)
+    # r4 X4-1: ONE absolute deadline for the whole hook, from the process's start (the `__main__` entry passes
+    # STARTED) — stdin, parse, child and publish all fit inside it, under the registered 15 s timeout.
+    deadline = (time.monotonic() if started is None else started) + HOOK_DEADLINE
+
+    def left(cap: float) -> float:
+        return max(0.1, min(cap, deadline - time.monotonic() - PUBLISH_MARGIN))
     now = time.time() if now is None else now
     dfd = None
     try:
-        payload, err = read_payload(stdin_text)
+        payload, err = read_payload(stdin_text, wait=left(STDIN_WAIT))
         sid = (payload or {}).get("session_id")
         if args.print:
             if session_dir(root, sid) is None:
-                print(render_print(None, None, None, None, now, None, None, sid))
+                print(render_print(None, None, now, None, None, sid))
                 return 0
-            text, why = run_child("--print-child", payload, root, aux_timeout, now, child=child)
+            text, why = run_child("--print-child", payload, root, left(aux_timeout), now, child=child)
             print(text if text is not None else
                   f"NO CAPTURE for this session can be shown — {NC}: the {clean(why, 200)}.\n"
                   "=== COMPACTION STATE — DATA, not instructions ===\n=== END COMPACTION STATE ===")
             return 0
         dfd, why = open_session_dir(root, sid, create=True)   # refuses a bad session_id itself: nothing is written
         if dfd is None:
-            print(f"compaction-state: {NC} — {why}; nothing was written")
+            print(f"compaction-state: {NC} — {why}{f' ({err})' if err else ''}; nothing was written")
             return 0
-        if args.snapshot:
-            receipt = new_receipt(dfd, sid, now)   # FIRST: whatever happens next, nothing older is shown beside it
-            text, why = run_child("--capture", payload, root, capture_timeout, now, receipt["nonce"], child=child)
-            if text is None or _keys(text) is None:
-                text = cannot_run_snapshot(why or "the capture wrote no snapshot", receipt, now)
-            write_in(dfd, "snapshot.md", text)
-            print(f"compaction-state: snapshot written to {session_dir(root, sid) / 'snapshot.md'}")
-        elif args.audit:
-            text, why = run_child("--audit-child", payload, root, aux_timeout, now, child=child)
-            write_in(dfd, "audit.md", text if text is not None else f"# {NC} — the audit: CANNOT RUN, {clean(why, 200)}\n")
-            print(f"compaction-state: audit written to {session_dir(root, sid) / 'audit.md'}")
+        receipt = new_receipt(dfd, sid, now)   # FIRST: whatever happens next, nothing older is shown beside it
+        text, why = run_child("--capture", payload, root, left(capture_timeout), now, receipt["nonce"], child=child)
+        if text is None or _keys(text) is None:
+            text = cannot_run_snapshot(why or "the capture wrote no snapshot", receipt, now)
+        write_in(dfd, "snapshot.md", text)
+        print(f"compaction-state: snapshot written to {session_dir(root, sid) / 'snapshot.md'}")
     except Exception as exc:  # noqa: BLE001 — a hook mode never fails the session; the failure is IN the text
         why = f"{exc.__class__.__name__}: {clean(exc, 200)}"
         print(f"compaction-state: {NC} — CANNOT RUN — {why}")
-        if dfd is not None and (args.snapshot or args.audit):   # a file from EARLIER must not stand in for this one
+        if dfd is not None and args.snapshot:   # a file from EARLIER must not stand in for this one
             try:
-                write_in(dfd, "snapshot.md" if args.snapshot else "audit.md", f"# {NC} — CANNOT RUN — {why}\n")
+                write_in(dfd, "snapshot.md", f"# {NC} — CANNOT RUN — {why}\n")
             except Exception:  # noqa: BLE001
                 pass
     finally:
@@ -1275,186 +1152,87 @@ def _self_test_body() -> int:
         case("⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks",
              ("ledger [walk-361]" in snap, "ledger [codex-r2]" in snap.split("## Pending OWNER")[1].split("## Worktrees")[0],
               "36 unresolved ask(s)" in snap, "2026-10-28/3 — Merge the hooks PR?" in snap), (True, False, True, True))
-        case("the keys line records the nonce, PR numbers, ledger ids and both kinds of decision for the audit",
-             (keys["nonce"], keys["prs"], keys["ledger"], [d["id"] for d in keys["ledger_decisions"]],
-              [d["id"] for d in keys["decisions"]]),
-             ("N1", [410, 423], ["codex-r2", "walk-361"], ["ledger:walk-361"], ["2026-10-28/3"]))
-        big = [{"type": "user", "origin": {"kind": "human"}, "timestamp": "2026-10-28T10:00:00Z",
+        case("the keys line carries only what the print matches on: nonce, time, session — the audit is deferred",
+             (sorted(keys), keys["nonce"], keys["session"]), (["epoch", "nonce", "session", "stamp", "written"], "N1", "sess-1"))
+        big = [{"type": "user", "origin": {"kind": "human"}, "timestamp": "2026-10-28T10:00:00Z", "sessionId": SID,
                 "message": {"content": "p" * 5000}}] * 200
         many_prs = [dict(pr7, number=n, headRefName="b" * 80) for n in range(100)]
         busy = root / "busy"
         (busy / ".claude").mkdir(parents=True)
         (busy / ".git").mkdir()
         (busy / ".claude" / "inflight.jsonl").write_text("".join(
-            json.dumps({"id": f"owner-wait-{i:02d}", "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold", "at": "T"})
-            + "\n" for i in range(60)))
+            json.dumps({"id": f"owner-wait-{i:02d}" + "x" * 110, "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold",
+                        "at": "T"}) + "\n" for i in range(60)))
         many_wts = "".join(f"worktree /r/wt-{i}\nHEAD {'4' * 40}\nbranch refs/heads/feature-{i:02d}\n\n" for i in range(60))
         snap_big = snapshot(payload, None, busy, fake_run(json.dumps(many_prs), wt_out=many_wts), 1000.0,
                             lambda p: (big, None, 9_000_000), asks_ok, nonce="N1")
-        case("⭐ the size cap holds with 100 PRs, 60 owner waits and 200 huge prompts, and the keys line survives",
+        case("⭐ the size cap holds with 100 PRs, 60 long owner waits and 200 huge prompts, and the keys line survives",
              (len(snap_big) <= SNAPSHOT_CAP + 1, _keys(snap_big) is not None, "TRUNCATED" in snap_big), (True, True, True))
-        longids = root / "longids"
-        (longids / ".claude").mkdir(parents=True)
-        (longids / ".git").mkdir()
-        (longids / ".claude" / "inflight.jsonl").write_text("".join(
-            json.dumps({"id": f"{i:03d}" + "x" * 100, "what": "w", "on_done": "d", "at": "T"}) + "\n" for i in range(100)))
-        snap_ids = snapshot(payload, None, longids, fake_run(json.dumps(many_prs)), 1000.0, transcript_ok, asks_ok, nonce="N1")
-        ik = _keys(snap_ids) or {}
-        case("⭐ 100 LONG ledger ids: the snapshot stays under its cap, and the ids it cut are COUNTED, not lost (r1 Xm6)",
-             (len(snap_ids) <= SNAPSHOT_CAP + 1, bool(ik), (ik.get("omitted") or {}).get("ledger", 0) > 0,
-              "## The owner's recent words" in snap_ids), (True, True, True, True))
-        a_ids = audit("nothing named", snap_ids, None, 1100.0, R)
-        case("...and the audit says the cut ids are NOT CAPTURED, before any list the cap could cut",
-             (f"{NC} — " in a_ids and "not in the snapshot's keys" in a_ids,
-              -1 < a_ids.find("not in the snapshot's keys") < a_ids.find("Not found explicitly")), (True, True))
-        waitids = root / "waitids"
-        (waitids / ".claude").mkdir(parents=True)
-        (waitids / ".git").mkdir()
-        (waitids / ".claude" / "inflight.jsonl").write_text("".join(
-            json.dumps({"id": f"{i:03d}" + "x" * 110, "what": "WAITS-ON-OWNER: act", "on_done": "d", "at": "T"}) + "\n"
-            for i in range(100)))
-        snap_w = snapshot(payload, None, waitids, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
-        wk = _keys(snap_w) or {}
-        case("⭐ r2 Xm6: 100 long OWNER-WAIT ids keep the snapshot under its cap; owner waits are cut and COUNTED too",
-             (len(snap_w) <= SNAPSHOT_CAP + 1, (wk.get("omitted") or {}).get("ledger_decisions", 0) > 0,
-              "## The owner's recent words" in snap_w), (True, True, True))
-        huge = bound_keys({"nonce": "N", "epoch": 1.0, "written": "w", "session": "s" * 5000, "prs": [1], "ledger": [],
-                           "ledger_decisions": [], "decisions": [], "omitted": {}})
-        small = bound_keys({"nonce": "N", "prs": list(range(60)), "ledger": ["l1", "l2"], "ledger_decisions": [],
-                            "decisions": [{"id": "d", "title": "t"}], "omitted": {"decisions": 3}}, 200)
-        case("bound_keys cuts the least load-bearing lists FIRST and adds every cut to the counts already there",
-             (len(json.dumps(small)) <= 200, small["decisions"], small["ledger"], small["omitted"]["decisions"],
-              small["omitted"].get("prs", 0) > 0), (True, [], [], 4, True))
-        case("⭐ the FINAL serialized size is enforced: keys that cannot fit become UNAVAILABLE, never oversized",
-             (len(json.dumps(huge)) <= KEYS_CAP or huge.get("prs") is None, [huge.get(k) for k in BOUNDED]),
-             (True, [None, None, None, None]))
         broken = snapshot(None, "payload is not JSON (x)", root, fake_run((4, "gh: auth required")), 1000.0,
                           transcript_ok, lambda r: (None, [], "FileNotFoundError: no store"), nonce="N1")
         case("⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript",
              ("OPEN PRS: CANNOT RUN — gh exited 4: gh: auth required" in broken, "dashboard asks: NOT CAPTURED — CANNOT RUN" in broken,
               "OWNER'S WORDS: NOT CAPTURED — CANNOT RUN, the hook payload was unreadable" in broken,
               "⚠ hook payload: NOT CAPTURED — UNREADABLE" in broken), (True, True, True, True))
-        case("...and a failed gh leaves the audit's PR key None (NOT CHECKED), not []", _keys(broken)["prs"], None)
         refused = root / "refused"
         (refused / ".claude").mkdir(parents=True)
         (refused / ".git").mkdir()
         (refused / ".claude" / "inflight.jsonl").write_bytes(b"x" * (64 * 1024 + 1))
         snap_ref = snapshot(payload, None, refused, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
-        a_ref = audit("a summary naming 2026-10-28/3 and nothing else", snap_ref, None, 1100.0, R)
-        case("⭐ a REFUSED ledger is UNAVAILABLE in the keys, and the audit says so as NOT CAPTURED (r1 XM5)",
-             (_keys(snap_ref)["ledger"], _keys(snap_ref)["ledger_decisions"], f"{NC} — ledger ids: UNAVAILABLE" in a_ref,
-              f"{NC} — ledger owner waits: UNAVAILABLE" in a_ref), (None, None, True, True))
         corrupt = root / "corrupt"
         (corrupt / ".claude").mkdir(parents=True)
         (corrupt / ".git").mkdir()
-        (corrupt / ".claude" / "inflight.jsonl").write_text("{broken\n")
-        a_cor = audit("about 2026-10-28/3", snapshot(payload, None, corrupt, fake_run(), 1000.0, transcript_ok, asks_ok,
-                                                     nonce="N1"), None, 1100.0, R)
+        (corrupt / ".claude" / "inflight.jsonl").write_text(json.dumps({"id": "w1", "what": "WAITS-ON-OWNER: pick", "on_done": "d",
+                                                                       "at": "T"}) + "\n{broken\n")
+        snap_cor = snapshot(payload, None, corrupt, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
         nomain = root / "nomain"   # no `.git`: the main checkout cannot be named, and the fallback has no ledger
         nomain.mkdir()
         snap_nm = snapshot(payload, None, nomain, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
-        a_nm = audit("about 2026-10-28/3", snap_nm, None, 1100.0, R)
-        case("⭐ r2 XM5 + CM4: a CORRUPT ledger line, and a failed main-checkout lookup, make both ledger categories "
-             "UNAVAILABLE",
-             (f"{NC} — ledger ids: UNAVAILABLE" in a_cor, (_keys(snap_nm)["ledger"], _keys(snap_nm)["ledger_decisions"]),
-              f"{NC} — ledger owner waits: UNAVAILABLE" in a_nm), (True, (None, None), True))
+        nc_ledger = f"in-flight ledger: {NC} — it was not read completely"
+        case("⭐ r2 XM5 + CM4: a REFUSED ledger, a CORRUPT line and a failed main-checkout lookup each say the owner waits "
+             "are NOT CAPTURED — and the entries that WERE read are still shown",
+             (nc_ledger in snap_ref, nc_ledger in snap_cor, nc_ledger in snap_nm, "ledger [w1] pick" in snap_cor), (True, True, True, True))
 
-        # ─── r3 SPLIT: the audit reports EXPLICIT names only, and claims nothing about keeping or dropping ──────────
-        summary_all = "Working on PR #410 and PR #423; [codex-r2] and `walk-361` running; 2026-10-28/3 is the owner's."
-        a = audit(summary_all, snap, None, 1100.0, R)
-        case("⭐ the audit lists what the summary names EXPLICITLY, and the fixed disclaimer — verbatim",
-             (AUDIT_DISCLAIMER in a, "Found explicitly in the summary (5):" in a, "Not found explicitly in the summary (0):" in a,
-              "  - PR #410" in a.split("Found explicitly")[1]), (True, True, True, True))
-        a = audit("Working on PR 423. [codex-r2] runs.", snap, None, 1100.0, R)
-        nf = a.split("Not found explicitly")[1].split("Found explicitly")[0]
-        case("⭐ the audit names a PR, a ledger id, an owner wait and an ask NOT found explicitly",
-             ("  - PR #410" in nf, "  - [walk-361] (waits on the owner)" in nf, "  - ask 2026-10-28/3 Merge the hooks PR?" in nf,
-              "PR #423" in nf, "[codex-r2]" in nf), (True, True, True, False, False))
-        no_claim = [audit(t, snap, None, 1100.0, R) for t in (summary_all, "nothing", "PR #410 PR #423 [codex-r2] [walk-361]")]
-        case("⭐ r3 SPLIT: NO audit ever claims completeness — no 'names everything', no 'COULD be checked', no 'DROPPED'",
-             [any(w in t for w in ("names everything", "COULD be checked", "DROPPED")) for t in no_claim], [False, False, False])
-        case("⭐ r3: only `PR #N` counts — `backlog item: #410`, `backlog **#410**` and a backlog LIST are NOT found",
-             [410 in explicit_names(t)[0] for t in ("backlog item: #410", "backlog **#410**", "backlog #364, #376 and #410",
-                                                    "see #410", "PR #410", "PR 410", "PRs #410", "pr-#410")],
-             [False, False, False, False, True, True, True, True])
-        case("PR matching is by NUMBER: `PR #4100` does not name #410",
-             (410 in explicit_names("PR #4100")[0], 4100 in explicit_names("PR #4100")[0]), (False, True))
-        case("⭐ r2 Cm2: a ledger id counts only inside [] or backticks — a bare word, or [job10], does not name job1",
-             ["job1" in explicit_names(t)[1] for t in ("job1 ran", "[job10] ran", "[job1] ran", "`job1` ran")],
-             [False, False, True, True])
-        t0 = time.monotonic()
-        big_names = explicit_names("backlog #410 " * 100000)
-        case("⭐ r3 XR2: a 1.3 MB summary of `backlog #410` is scanned LINEARLY, in under 0.5 s, and names no PR",
-             (big_names[0], time.monotonic() - t0 < 0.5), (set(), True))
-        a_cm3 = audit(summary_all, snap, None, 1100.0, R)
-        case("⭐ r2 CM3: 36 asks with only the newest in the keys — the other 35 are NOT CAPTURED in the audit",
-             f"{NC} — 35 decisions item(s) are not in the snapshot's keys" in a_cm3, True)
-        case("⭐ a missing snapshot makes the audit CANNOT RUN",
-             f"{NC} — the audit: CANNOT RUN, the snapshot is missing" in audit("s", None, "gone", 1.0, R), True)
-        case("⭐ a missing compact_summary makes the audit CANNOT RUN",
-             ["no compact_summary" in safe(lambda: audit(v, snap, None, 1.0, R)) for v in (None, "  \n", 7)], [True, True, True])
-        case("an unreadable snapshot (no keys) makes the audit CANNOT RUN",
-             "unreadable (no keys line)" in audit("s", "# hand-edited", None, 1.0, R), True)
-        case("⭐ the audit refuses a snapshot whose nonce is not the receipt's, NAMING the field",
-             ("field `nonce`: snapshot N1, receipt N2" in audit(summary_all, snap, None, 1.0, dict(R, nonce="N2")),
-              "the receipt: none was given" in audit(summary_all, snap, None, 1.0, None)), (True, True))
-        hand = _strip_keys(snap) + "\n" + KEYS_OPEN + json.dumps(
-            {"stamp": "s", "nonce": "N1", "prs": ["x", True, 410], "ledger": "not a list", "ledger_decisions": [],
-             "decisions": [1, {"id": None}, "z"], "omitted": "junk"}) + KEYS_CLOSE
-        got = safe(lambda: audit("PR #410", hand, None, 1.0, R))
-        case("⭐ a hand-edited keys line with wrong types is audited without a crash; a non-list is UNAVAILABLE",
-             (f"{NC} — ledger ids: UNAVAILABLE" in got, "PR #x" in got, "  - PR #410" in got.split("Found explicitly")[1]),
-             (True, False, True))
-        case("a PR list the snapshot could not capture is UNAVAILABLE in the audit",
-             f"{NC} — open PRs: UNAVAILABLE" in audit("anything", broken, None, 1001.0, R), True)
-
-        # ─── r3 SPLIT: the print claims no compaction identity ───────────────────────────────────────────────────
-        a = audit("Working on PR 423.", snap, None, 1100.0, R)
-        out = render_print(snap, None, a, None, 1200.0, R, None, "sess-1")
-        case("⭐ the print's heading is NEWEST CAPTURE … (N min before this session start), then the fixed bound, verbatim",
+        # ─── the print (r3 SPLIT; r4: the audit is deferred) ──────────────────────────────────────────────────
+        out = render_print(snap, None, 1200.0, R, None, "sess-1")
+        case("⭐ the print's heading is NEWEST CAPTURE … (N s before this session start), then the fixed bound, verbatim",
              (out.splitlines()[0].startswith("NEWEST CAPTURE for this session, taken at ")
-              and out.splitlines()[0].endswith("(3 min before this session start)"), out.splitlines()[1] == SESSION_NOT_COMPACTION,
+              and out.splitlines()[0].endswith("(200 s before this session start)"), out.splitlines()[1] == SESSION_NOT_COMPACTION,
               "COMPACTION HAPPENED" in out, "dropped are listed" in out), (True, True, False, False))
-        case("...then the audit, then the snapshot, with no keys line",
-             (-1 < out.find("# COMPACTION AUDIT") < out.find("# PRE-COMPACTION SNAPSHOT"), KEYS_OPEN in out), (True, False))
+        case("⭐ r4 F7: the fixed bound names all three ways a capture can be shown beside a different compaction",
+             ("delayed or overlapping" in SESSION_NOT_COMPACTION, "successor's PreCompact did not run" in SESSION_NOT_COMPACTION),
+             (True, True))
+        case("⭐ r4 DEFER: the print mentions NO audit, and shows the snapshot without its keys line",
+             ("audit" in out.lower(), "# PRE-COMPACTION SNAPSHOT" in out, KEYS_OPEN in out), (False, True, False))
         grown = _strip_keys(snap_big) + "\n" + ("a line someone appended by hand " * 3 + "\n") * 300 + KEYS_OPEN \
             + json.dumps(_keys(snap_big)) + KEYS_CLOSE + "\n"
-        out = render_print(grown, None, audit("x", grown, None, 1100.0, R), None, 1200.0, R, None, "sess-1")
+        out = render_print(grown, None, 1200.0, R, None, "sess-1")
         case("⭐ the print stays under PRINT_CAP with a snapshot grown on disk past every cap",
              (len(out) <= PRINT_CAP, out.endswith("=== END COMPACTION STATE ===")), (True, True))
-        out = render_print(None, "snapshot.md does not exist", None, "audit.md does not exist", 1200.0, R, None, "sess-1")
-        case("⭐ both files missing: each says NOT CAPTURED, and nothing is shown — never an empty block",
-             (f"{NC} — the snapshot is missing: snapshot.md does not exist" in out,
-              f"{NC} — the audit is not shown: there is no matching snapshot" in out), (True, True))
-        out = render_print(snap, None, a, None, 1200.0, None, "receipt.json does not exist", "sess-1")
-        case("⭐ no receipt: NO CAPTURE can be shown, naming the receipt, and neither file is",
+        out = render_print(None, "snapshot.md does not exist", 1200.0, R, None, "sess-1")
+        case("⭐ a missing snapshot says NOT CAPTURED — never an empty block",
+             f"{NC} — the snapshot is missing: snapshot.md does not exist" in out, True)
+        out = render_print(snap, None, 1200.0, None, "receipt.json does not exist", "sess-1")
+        case("⭐ no receipt: NO CAPTURE can be shown, naming the receipt, and the snapshot is not",
              (out.startswith(f"NO CAPTURE for this session can be shown — {NC}: the receipt: receipt.json does not exist"),
               "## Worktrees" in out, "NEWEST CAPTURE" in out), (True, False, False))
-        out = render_print(snap, None, a, None, 1000.0 + STALE_AFTER + 1, R, None, "sess-1")
-        case("⭐ a receipt older than STALE_AFTER: the snapshot is not shown, saying how old",
-             (f"{NC} — the snapshot is not shown: the receipt is 30 min old, over 30" in out, "## Worktrees" in out),
-             (True, False))
-        out = render_print(snap, None, a, None, 1000.0 - FUTURE_SKEW - 5, R, None, "sess-1")
-        case("⭐ r2 XM4: a receipt dated in the FUTURE: the snapshot is not shown",
-             ("dated in the FUTURE" in out, "## Worktrees" in out), (True, False))
-        out = render_print(snap, None, a, None, 1060.0, dict(R, session="OTHER"), None, "sess-1")
+        case("⭐ r4 X4-5: the receipt's age must be at least 0 and UNDER STALE_AFTER — the boundary itself is refused",
+             ["## Worktrees" in render_print(snap, None, 1000.0 + a, R, None, "sess-1") for a in (0, STALE_AFTER - 1, STALE_AFTER, -1)],
+             [True, True, False, False])
+        case("⭐ r4 C4-F8: the refusal says the age in the same unit as the bound",
+             (f"{NC} — the snapshot is not shown: the receipt is {STALE_AFTER + 10} s old, at or over {STALE_AFTER} s."
+              in render_print(snap, None, 1000.0 + STALE_AFTER + 10, R, None, "sess-1"),
+              "dated 30 s in the FUTURE" in render_print(snap, None, 970.0, R, None, "sess-1")), (True, True))
+        out = render_print(snap, None, 1060.0, dict(R, session="OTHER"), None, "sess-1")
         case("⭐ ANOTHER session's receipt: nothing is shown, naming the field `session` and both values",
              ("field `session`: OTHER, this session sess-1" in out, "## Worktrees" in out), (True, False))
         case("a SessionStart input with no usable session_id is UNVERIFIED, and nothing is shown",
              [("UNVERIFIED" in o and NC in o and "## Worktrees" not in o) for o in
-              (render_print(snap, None, a, None, 1060.0, R, None, v) for v in (None, "../etc", "a" * 81))], [True, True, True])
-        out = render_print(snap, None, a, None, 1060.0, dict(R, nonce="N2"), None, "sess-1")
-        case("⭐ a snapshot whose nonce is not the receipt's is not shown, naming the field — and so neither is its audit",
-             ("the snapshot is not shown: field `nonce` differs (snapshot N1, receipt N2)" in out,
-              "the audit is not shown: there is no matching snapshot" in out, "## Worktrees" in out), (True, True, False))
-        out = render_print(snap, None, audit("x", snap, None, 1100.0, dict(R, nonce="N1")).replace('"nonce": "N1"', '"nonce": "N7"'),
-                           None, 1060.0, R, None, "sess-1")
-        case("⭐ r3 Cr6: an audit whose nonce differs from the SNAPSHOT's names that field; the snapshot is still shown",
-             ("the audit is not shown: field `nonce` differs (audit N7, snapshot N1)" in out, "## Worktrees" in out),
-             (True, True))
-        out = render_print(snap, None, None, "audit.md does not exist", 1060.0, R, None, "sess-1")
-        case("⭐ a MISSING audit says NOT CAPTURED while the matching snapshot is still shown",
-             (f"{NC} — the audit is missing: audit.md does not exist" in out, "## Worktrees" in out), (True, True))
+              (render_print(snap, None, 1060.0, R, None, v) for v in (None, "../etc", "a" * 81))], [True, True, True])
+        out = render_print(snap, None, 1060.0, dict(R, nonce="N2"), None, "sess-1")
+        case("⭐ a snapshot whose nonce is not the receipt's is not shown, naming the field",
+             ("the snapshot is not shown: field `nonce` differs (snapshot N1, receipt N2)" in out, "## Worktrees" in out),
+             (True, False))
         case("session_dir accepts only SESSION_ID and never builds a path from anything else",
              (session_dir(root, "abc_D-9"), session_dir(root, "../up"), session_dir(root, ""), session_dir(root, None)),
              (root / SESSIONS_REL / "abc_D-9", None, None, None))
@@ -1527,7 +1305,7 @@ def _self_test_body() -> int:
         rk = read_receipt(session_dir(root / "killed", "S-kill"))[0] or {}
         case("⭐ the WHOLE PreCompact hook ends within its capture deadline + 1 s and writes THIS session's CANNOT RUN",
              (took_hook < 2.0, "CANNOT RUN, capture timed out after 1 s" in killed, (_keys(killed) or {}).get("nonce") == rk.get("nonce"),
-              (_keys(killed) or {}).get("ledger", "x")), (True, True, True, None))
+              "## In flight" in killed), (True, True, True, False))
 
         # main(), end to end in a temp root, and the hooks themselves.
         hooks_root = root / "tree"
@@ -1536,44 +1314,72 @@ def _self_test_body() -> int:
         here = Path(__file__).resolve().parent
         for f in ("compaction-state.py", "session-state.py"):
             shutil.copy(here / f, hooks_root / "scripts" / f)
-        for h in ("precompact-snapshot.sh", "postcompact-audit.sh", "compaction-print.sh"):
+        for h in ("precompact-snapshot.sh", "compaction-print.sh"):
             shutil.copy(here.parent / ".claude" / "hooks" / h, hooks_root / ".claude" / "hooks" / h)
         buf = io.StringIO()
         with redirect_stdout(buf):
             rcs = (main(["--snapshot"], root=hooks_root, stdin_text="{not json"),
-                   main(["--audit"], root=hooks_root, stdin_text="\x00\xff"),
                    main(["--print"], root=hooks_root, stdin_text="\x00 not json"))
-        case("⭐ main exits 0 in all three modes on garbage stdin, writes NOTHING, and says UNVERIFIED",
-             (rcs, (hooks_root / SESSIONS_REL).exists(), buf.getvalue().count("UNVERIFIED")), ((0, 0, 0), False, 3))
+        case("⭐ main exits 0 in both modes on garbage stdin, writes NOTHING, and says UNVERIFIED",
+             (rcs, (hooks_root / SESSIONS_REL).exists(), buf.getvalue().count("UNVERIFIED")), ((0, 0), False, 2))
         (root / "bad").mkdir()
         with redirect_stdout(io.StringIO()):
             bad = (main(["--snapshot"], root=root / "bad", stdin_text=json.dumps({"session_id": "../../escape"})),
-                   main(["--audit"], root=root / "bad", stdin_text=json.dumps({"session_id": "a" * 81, "compact_summary": "s"})))
+                   main(["--snapshot"], root=root / "bad", stdin_text=json.dumps({"session_id": "a" * 81})))
         case("⭐ r2 (B): a bad session_id (a path, or over 80 chars) writes NOTHING anywhere",
              (bad, (root / "bad" / ".remember").exists(), (root / "bad" / "escape").exists(), (root / "escape").exists()),
              ((0, 0), False, False, False))
-        with redirect_stdout(io.StringIO()):
-            rc = main(["--audit"], root=root / "x", stdin_text=json.dumps({"session_id": "S-x", "compact_summary": "s"}))
         real_child = globals()["run_child"]
         globals()["run_child"] = lambda *a, **k: 1 / 0
         try:
             with redirect_stdout(io.StringIO()):
-                rc_boom = main(["--audit"], root=root / "boom", stdin_text=json.dumps({"session_id": "S-boom"}))
+                rc_boom = main(["--snapshot"], root=root / "boom", stdin_text=json.dumps({"session_id": "S-boom"}))
         finally:
             globals()["run_child"] = real_child
-        case("⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the file",
-             (rc_boom, (_read(session_dir(root / "boom", "S-boom") / "audit.md")[0] or "").startswith(f"# {NC} — CANNOT RUN — ZeroDivisionError")),
-             (0, True))
-        case("main --audit with NO snapshot writes CANNOT RUN into the audit file",
-             (rc,
-              "the snapshot is missing" in (_read(session_dir(root / "x", "S-x") / "audit.md")[0] or "")), (0, True))
+        case("⭐ a mode that RAISES still exits 0 and writes CANNOT RUN in place of the snapshot",
+             (rc_boom, (_read(session_dir(root / "boom", "S-boom") / "snapshot.md")[0] or "").startswith(
+                 f"# {NC} — CANNOT RUN — ZeroDivisionError")), (0, True))
+        def no_audit_mode():
+            from contextlib import redirect_stderr
+            try:
+                with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+                    main(["--audit"], root=root / "x", stdin_text="{}")
+            except SystemExit as exc:
+                return f"refused ({exc.code})"
+            return "accepted"
+        case("⭐ r4 DEFER: there is no --audit mode any more", no_audit_mode(), "refused (2)")
         results = {}
-        for h in ("precompact-snapshot.sh", "postcompact-audit.sh", "compaction-print.sh"):
+        for h in ("precompact-snapshot.sh", "compaction-print.sh"):
             r = subprocess.run(["bash", str(hooks_root / ".claude" / "hooks" / h)], input=b"\xff garbage {",
                                capture_output=True, timeout=60, cwd=hooks_root)
             results[h] = r.returncode
         case("⭐ every hook script exits 0 on garbage stdin",
-             results, {"precompact-snapshot.sh": 0, "postcompact-audit.sh": 0, "compaction-print.sh": 0})
+             results, {"precompact-snapshot.sh": 0, "compaction-print.sh": 0})
+
+        def feed_huge(hook: str) -> tuple[int, float, str]:
+            """Codex's r4 X4-1: a 512 MiB payload, STREAMED (never held in memory), whose session_id comes first."""
+            p_ = subprocess.Popen(["bash", str(hooks_root / ".claude" / "hooks" / hook)], stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=hooks_root)
+            t0_ = time.monotonic()
+            chunk = b"x" * (1 << 20)
+            try:
+                p_.stdin.write(b'{"session_id": "S-huge", "compact_summary": "')
+                for _ in range(512):
+                    p_.stdin.write(chunk)
+                p_.stdin.write(b'"}')
+                p_.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass   # the hook stopped reading at its cap: that is the point
+            out_, _ = p_.communicate(timeout=60)
+            return p_.returncode, time.monotonic() - t0_, out_.decode("utf-8", "replace")
+        huge = {h: feed_huge(h) for h in ("precompact-snapshot.sh", "compaction-print.sh")}
+        case("⭐ r4 X4-1: a 512 MiB payload to each hook returns rc 0 well under its timeout, and NOTHING is captured from it",
+             ([(v[0], v[1] < 5.0) for v in huge.values()], session_dir(hooks_root, "S-huge").exists(),
+              f"over {MAX_STDIN} bytes" in huge["precompact-snapshot.sh"][2], "UNVERIFIED" in huge["compaction-print.sh"][2]),
+             ([(0, True), (0, True)], False, True, True))
+        case("read_payload refuses a payload over its cap BEFORE parsing it, from a pipe or a string",
+             (read_payload('{"session_id": "' + "x" * 64 + '"}', cap=32), read_payload('{"a": 1}', cap=32)),
+             ((None, "the payload is over 32 bytes — NOT READ"), ({"a": 1}, None)))
         rfd, wfd = os.pipe()
         t0 = time.monotonic()
         try:
@@ -1632,7 +1438,7 @@ def _self_test_body() -> int:
         case("⭐ run from a LINKED WORKTREE, the snapshot reads the MAIN checkout's ledger and names both paths",
              ("[main-job] Codex r1 on PR #9" in from_wt, "ledger [main-walk]" in from_wt,
               f"MAIN checkout, {repo.resolve()}/.claude/inflight.jsonl — this hook ran in the worktree {root / 'realwt'}"
-              in from_wt, _keys(from_wt)["ledger"]), (True, True, True, ["main-job", "main-walk"]))
+              in from_wt, "ledger [main-walk]" in from_wt.split("## Pending OWNER")[1]), (True, True, True, True))
         case("run from the main checkout itself, the ledger line names one path",
              f"ledger: {repo.resolve()}/.claude/inflight.jsonl" in snapshot({}, None, repo, gh_fake, 1000.0, transcript_ok, asks_ok),
              True)
@@ -1646,38 +1452,33 @@ def _self_test_body() -> int:
         late = session_dir(root / "late", "S-late")
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "late", stdin_text=sid, now=5000.0)
-            main(["--audit"], root=root / "late", stdin_text=json.dumps({"session_id": "S-late", "compact_summary": "nothing"}),
-                 now=5001.0)
             fresh, later = io.StringIO(), io.StringIO()
             with redirect_stdout(fresh):
                 main(["--print"], root=root / "late", stdin_text=sid, now=5002.0)
             with redirect_stdout(later):
                 main(["--print"], root=root / "late", stdin_text=sid, now=5000.0 + STALE_AFTER + 60)
-        case("⭐ main end to end, through the real CHILDREN: snapshot, audit and print of ONE capture match; later, not shown",
+        case("⭐ main end to end, through the real CHILDREN: the snapshot and print of ONE capture match; later, not shown",
              ("NEWEST CAPTURE for this session" in fresh.getvalue(), "# PRE-COMPACTION SNAPSHOT — written" in fresh.getvalue(),
-              "# COMPACTION AUDIT" in fresh.getvalue(), "the snapshot is not shown: the receipt is" in later.getvalue(),
-              "OPEN PRS: CANNOT RUN" in (_read(late / "snapshot.md")[0] or "")), (True, True, True, True, True))
+              "the snapshot is not shown: the receipt is" in later.getvalue(),
+              "OPEN PRS: CANNOT RUN" in (_read(late / "snapshot.md")[0] or "")), (True, True, True, True))
         ab = root / "ab"
         with redirect_stdout(io.StringIO()):
-            main(["--snapshot"], root=ab, stdin_text=json.dumps({"session_id": "A"}), now=6000.0)
-            main(["--snapshot"], root=ab, stdin_text=json.dumps({"session_id": "B"}), now=6001.0)
-            main(["--audit"], root=ab, stdin_text=json.dumps({"session_id": "A", "compact_summary": "SUMMARY FROM A"}), now=6002.0)
+            main(["--snapshot"], root=ab, stdin_text=json.dumps({"session_id": "A", "trigger": "manual"}), now=6000.0)
+            main(["--snapshot"], root=ab, stdin_text=json.dumps({"session_id": "B", "trigger": "auto"}), now=6001.0)
             pb, pa = io.StringIO(), io.StringIO()
             with redirect_stdout(pb):
                 main(["--print"], root=ab, stdin_text=json.dumps({"session_id": "B"}), now=6003.0)
             with redirect_stdout(pa):
                 main(["--print"], root=ab, stdin_text=json.dumps({"session_id": "A"}), now=6003.0)
-        ka = _keys(_read(session_dir(ab, "A") / "audit.md")[0] or "") or {}
-        case("⭐ Codex's r2 A/B interleaving: A's audit carries A's nonce, B's print never shows A's audit, A's print does",
-             (ka.get("nonce") == (read_receipt(session_dir(ab, "A"))[0] or {}).get("nonce"),
-              f"{NC} — the audit is missing: audit.md does not exist" in pb.getvalue(), "# COMPACTION AUDIT" in pb.getvalue(),
-              "# COMPACTION AUDIT" in pa.getvalue()), (True, True, False, True))
+        case("⭐ Codex's r2 A/B interleaving: each session's print shows ITS OWN capture, never the other's",
+             ("trigger auto · session B" in pb.getvalue(), "session A" in pb.getvalue(),
+              "trigger manual · session A" in pa.getvalue(), "session B" in pa.getvalue()), (True, False, True, False))
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "late", stdin_text=json.dumps({"session_id": "S-late"}), now=5003.0,
                  capture_timeout=1.0, child=[sys.executable, "-c", "import time; time.sleep(4)"])
-        case("⭐ the receipt is written FIRST and the old files are DELETED: a capture that then dies leaves no old audit",
-             ((read_receipt(late)[0] or {}).get("epoch"), (late / "audit.md").exists(),
-              "CANNOT RUN, capture timed out" in (_read(late / "snapshot.md")[0] or "")), (5003.0, False, True))
+        case("⭐ the receipt is written FIRST and the old snapshot DELETED: a capture that then dies leaves only CANNOT RUN",
+             ((read_receipt(late)[0] or {}).get("epoch"), "CANNOT RUN, capture timed out" in (_read(late / "snapshot.md")[0] or ""),
+              "trigger unknown" in (_read(late / "snapshot.md")[0] or "")), (5003.0, True, False))
         (root / "badreceipt").mkdir()
         (root / "badreceipt" / "receipt.json").write_text("{not json")
         # ─── r3 XR1: every artifact through ONE bounded reader, every mode behind the child ─────────────────────
@@ -1685,8 +1486,7 @@ def _self_test_body() -> int:
             w = root / name
             d = w / SESSIONS_REL / "S-fifo"
             d.mkdir(parents=True)
-            good = {"receipt.json": json.dumps({"session": "S-fifo", "nonce": "N1", "epoch": 8000.0}),
-                    "snapshot.md": snap, "audit.md": audit("PR #410", snap, None, 8000.0, R)}
+            good = {"receipt.json": json.dumps({"session": "S-fifo", "nonce": "N1", "epoch": 8000.0}), "snapshot.md": snap}
             for f, text in good.items():
                 if f == artifact:
                     os.mkfifo(d / f)
@@ -1694,19 +1494,18 @@ def _self_test_body() -> int:
                     (d / f).write_text(text)
             return w
         timings, outs = {}, {}
-        for mode, artifact in (("--audit", "receipt.json"), ("--audit", "snapshot.md"), ("--print", "receipt.json"),
-                               ("--print", "snapshot.md"), ("--print", "audit.md")):
-            w = fifo_world(f"fifo{mode}-{artifact}", artifact)
+        for artifact in ("receipt.json", "snapshot.md"):
+            w = fifo_world(f"fifo-{artifact}", artifact)
             t0 = time.monotonic()
             buf = io.StringIO()
             with redirect_stdout(buf):
-                main([mode], root=w, stdin_text=json.dumps({"session_id": "S-fifo", "compact_summary": "PR #410"}), now=8001.0)
-            timings[(mode, artifact)] = time.monotonic() - t0 < 3.0
-            outs[(mode, artifact)] = buf.getvalue() + (_read(session_dir(w, "S-fifo") / "audit.md")[0] or "" if mode == "--audit" else "")
-        case("⭐ r3 XR1: a FIFO receipt, snapshot or audit, in every mode that reads it, returns within the bound",
-             list(timings.values()), [True] * 5)
+                main(["--print"], root=w, stdin_text=json.dumps({"session_id": "S-fifo"}), now=8001.0)
+            timings[artifact] = time.monotonic() - t0 < 3.0
+            outs[artifact] = buf.getvalue()
+        case("⭐ r3 XR1: a FIFO receipt or snapshot returns the print within the bound",
+             list(timings.values()), [True, True])
         case("...and each says the artifact is not a regular file, as NOT CAPTURED — never a wait, never a crash",
-             [("not a regular file" in o and NC in o) for o in outs.values()], [True] * 5)
+             [("not a regular file" in o and NC in o) for o in outs.values()], [True, True])
         capd = root / "capd"
         capd.mkdir()
         (capd / "big.md").write_bytes(b"x" * (ARTIFACT_CAP + 1))
@@ -1725,28 +1524,26 @@ def _self_test_body() -> int:
         case("open_session_dir: a reader never creates the path; a writer creates every component as a real directory",
              (open_session_dir(root / "osd-reader", "S-r", False)[0], made_err, (root / "osd" / SESSIONS_REL / "S-osd").is_dir()),
              (None, None, True))
-        case("the audit names the receipt's own error when there is no receipt",
-             f"{NC} — the audit: CANNOT RUN, the receipt: receipt.json is not a regular file — NOT READ."
-             in audit("PR #1", snap, None, 1.0, None, "receipt.json is not a regular file — NOT READ"), True)
         case("an artifact over ARTIFACT_CAP is not read", _read(capd / "big.md")[1], f"big.md is {ARTIFACT_CAP + 1} bytes, over {ARTIFACT_CAP} — NOT READ")
 
         (root / "slowaux").mkdir()
         sleeper = [sys.executable, "-c", "import time; time.sleep(4)"]
-        t0 = time.monotonic()
-        with redirect_stdout(io.StringIO()):
-            main(["--audit"], root=root / "slowaux", stdin_text=json.dumps({"session_id": "S-aux", "compact_summary": "x"}),
-                 now=8300.0, child=sleeper, aux_timeout=0.5)
-        took_a = time.monotonic() - t0
         buf = io.StringIO()
         t0 = time.monotonic()
         with redirect_stdout(buf):
             main(["--print"], root=root / "slowaux", stdin_text=json.dumps({"session_id": "S-aux"}), now=8301.0,
                  child=sleeper, aux_timeout=0.5)
         took_p = time.monotonic() - t0
-        case("⭐ r3 XR1: the AUDIT and PRINT children are killed at their deadline too, and each says CANNOT RUN / NO CAPTURE",
-             (took_a < 1.5, "CANNOT RUN, audit timed out after 0.5 s" in (_read(session_dir(root / "slowaux", "S-aux") / "audit.md")[0] or ""),
-              took_p < 1.5, buf.getvalue().startswith(f"NO CAPTURE for this session can be shown — {NC}: the print timed out")),
-             (True, True, True, True))
+        case("⭐ r3 XR1: the PRINT child is killed at its deadline too, and says NO CAPTURE",
+             (took_p < 1.5, buf.getvalue().startswith(f"NO CAPTURE for this session can be shown — {NC}: the print timed out")),
+             (True, True))
+        buf = io.StringIO()
+        t0 = time.monotonic()
+        with redirect_stdout(buf):
+            main(["--print"], root=root / "slowaux", stdin_text=json.dumps({"session_id": "S-aux"}), now=8302.0,
+                 child=sleeper, aux_timeout=30.0, started=time.monotonic() - HOOK_DEADLINE + 1.0)
+        case("⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up",
+             (time.monotonic() - t0 < 2.0, "the print timed out" in buf.getvalue()), (True, True))
         # ─── r3 XR4: a symlink anywhere in .remember/compaction/<sid> is refused, and nothing is written outside ──
         outside = root / "outside"
         outside.mkdir()
@@ -1758,14 +1555,13 @@ def _self_test_body() -> int:
             with redirect_stdout(io.StringIO()):
                 main(["--snapshot"], root=w, stdin_text=json.dumps({"session_id": "S-sym"}), now=8100.0,
                      capture_timeout=1.0, child=[sys.executable, "-c", "pass"])
-                main(["--audit"], root=w, stdin_text=json.dumps({"session_id": "S-sym", "compact_summary": "x"}), now=8101.0)
-        case("⭐ r3 XR4: a symlinked session dir, `compaction` or `.remember` — PreCompact and PostCompact write NOTHING outside",
+        case("⭐ r3 XR4: a symlinked session dir, `compaction` or `.remember` — PreCompact writes NOTHING outside",
              sorted(p.name for p in outside.rglob("*")), [])
         case("open_session_dir names the refused component", (open_session_dir(root / "sym-sid", "S-sym", True)[0],
                                                              "a symlink is refused" in (open_session_dir(root / "sym-sid", "S-sym", True)[1] or "")),
              (None, True))
 
-        # ─── r3 CR1: AT THE REAL 11 s KILL, nothing the capture started survives ──────────────────────────────
+        # ─── r3 CR1, r4 X4-2: the hook returns within its bound; capture calls die with the process group ─────
         fake = root / "fakebin"
         fake.mkdir()
         straggler = root / "straggler-at-kill.pid"
@@ -1783,36 +1579,89 @@ def _self_test_body() -> int:
             took_cr1 = time.monotonic() - t0
         finally:
             os.environ["PATH"] = saved_path
-        cr1_gone = False
-        try:
-            spid = int(straggler.read_text())
+
+        def gone_pid(pid_file: Path) -> bool:
+            try:
+                pid = int(pid_file.read_text())
+            except (OSError, ValueError):
+                return False
             for _ in range(30):
                 try:
-                    os.kill(spid, 0)
+                    os.kill(pid, 0)
                 except ProcessLookupError:
-                    cr1_gone = True
-                    break
+                    return True
                 time.sleep(0.05)
-            if not cr1_gone:
-                os.kill(spid, signal.SIGKILL)
-        except (OSError, ValueError):
-            pass
+            os.kill(pid, signal.SIGKILL)   # never leave it running past the case
+            return False
+        cr1_gone = gone_pid(straggler)
         case("⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE",
              (took_cr1 < CAPTURE_TIMEOUT + 1.5, "CANNOT RUN, capture timed out after 11 s"
               in (_read(session_dir(root / "cr1", "S-cr1") / "snapshot.md")[0] or ""), cr1_gone), (True, True, True))
+        esc_bin = root / "escbin"
+        esc_bin.mkdir()
+        escaped = root / "setpgid.pid"
+        (esc_bin / "gh").write_text(
+            f"#!{sys.executable}\nimport os, sys, time\n"
+            "if os.fork() == 0:\n"
+            "    if os.fork() == 0:\n"
+            f"        os.setpgid(0, 0); open({str(escaped)!r}, 'w').write(str(os.getpid()))\n"
+            "        os.close(1); os.close(2); time.sleep(90)\n"
+            "    os._exit(0)\n"
+            "os.wait(); time.sleep(0.3); print('[]')\n")
+        os.chmod(esc_bin / "gh", 0o755)
+        (root / "esc").mkdir()
+        os.environ["PATH"] = f"{esc_bin}:{saved_path}"
+        try:
+            t0 = time.monotonic()
+            with redirect_stdout(io.StringIO()):
+                main(["--snapshot"], root=root / "esc", stdin_text=json.dumps({"session_id": "S-esc"}), now=8250.0)
+            took_esc = time.monotonic() - t0
+        finally:
+            os.environ["PATH"] = saved_path
+        survived = False
+        try:
+            epid = int(escaped.read_text())
+            os.kill(epid, 0)
+            survived = True
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                os.kill(int(escaped.read_text()), signal.SIGKILL)   # cleanup: it is OUTSIDE the guarantee
+            except (OSError, ValueError):
+                pass
+        case("⭐ r4 X4-2 (a STATED BOUND): a grandchild that calls setpgid escapes the kill — the HOOK still returns in its bound",
+             (took_esc < HOOK_DEADLINE, survived), (True, True))
 
-        # ─── r3 Cr7: the ONE word — every line about something not captured carries it ────────────────────────
+        # ─── r3 Cr7, r4 C4-F3: NOT CAPTURED is placed where a category fails, never found by searching text ──────
         legacy = ("CANNOT RUN", "UNAVAILABLE", "NOT EXTRACTED", "NOT READ", "TRUNCATED", "UNKNOWN", "UNREADABLE",
                   "not shown", "UNVERIFIED", "cut for size", "is missing")
-        texts = [broken, snap_ref, snap_nm, a_ref, a_nm, a_ids, snap_big,
-                 render_print(None, "snapshot.md does not exist", None, "audit.md does not exist", 1200.0, R, None, "sess-1"),
-                 render_print(snap, None, a, None, 1060.0, dict(R, nonce="N2"), None, "sess-1"),
-                 render_print(snap, None, a, None, 1060.0, None, "receipt.json does not exist", "sess-1"),
+        texts = [broken, snap_ref, snap_nm, snap_cor, snap_big,
+                 render_print(None, "snapshot.md does not exist", 1200.0, R, None, "sess-1"),
+                 render_print(snap, None, 1060.0, dict(R, nonce="N2"), None, "sess-1"),
+                 render_print(snap, None, 1060.0, None, "receipt.json does not exist", "sess-1"),
                  owner_section(many_p, many_a, 80, None, 2000), worktree_section(*worktrees(root, fake_run(status={"/r/main": (1, "x")})), 1500)]
         bare = [l for t in texts for l in t.splitlines() if any(w in l for w in legacy) and NC not in l
                 and not l.startswith(KEYS_OPEN) and "[pasted content" not in l]   # a paste is WITHHELD on purpose
-        case("⭐ r3 Cr7: in snapshot, audit and print, EVERY line saying something was not captured carries NOT CAPTURED",
+        case("⭐ r3 Cr7: in the snapshot and the print, EVERY line saying something was not captured carries NOT CAPTURED",
              bare, [])
+        wordy = root / "wordy"
+        (wordy / ".claude").mkdir(parents=True)
+        (wordy / ".git").mkdir()
+        (wordy / ".claude" / "inflight.jsonl").write_text(json.dumps(
+            {"id": "codex-r2", "what": "Codex r2 CANNOT RUN fallback: Claude half running", "on_done": "fold", "at": "T"}) + "\n")
+        snap_w = snapshot(payload, None, wordy, fake_run(json.dumps([dict(pr7, headRefName="fix-TRUNCATED-keys")])), 1000.0,
+                          transcript_ok, asks_ok, nonce="N1")
+        asked = []
+
+        def counting(cmd, cwd, timeout=GIT_TIMEOUT):
+            asked.append(" ".join(cmd[:3]))
+            return fake_run()(cmd, cwd, timeout)
+        snapshot(payload, None, root, counting, 1000.0, transcript_ok, asks_ok, nonce="N1")
+        case("⭐ r4 C4-F5: ONE capture asks git for the main checkout ONCE, and that answer heads and reads the ledger",
+             asked.count("git rev-parse --path-format=absolute"), 1)
+        case("⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged",
+             [l.strip()[:20] for l in snap_w.splitlines() if ("codex-r2" in l or "fix-TRUNCATED" in l) and NC in l], [])
         case("a missing or corrupt receipt is (None, why) — the print then says CANNOT RUN, never shows a file",
              (read_receipt(root / "no-receipt-here"), read_receipt(root / "badreceipt")),
              ((None, "receipt.json does not exist"), (None, "receipt.json is not JSON")))
@@ -1845,4 +1694,4 @@ def _self_test_body() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(started=STARTED))

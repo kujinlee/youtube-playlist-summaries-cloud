@@ -50,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 62 cases
+    python3 scripts/session-state.py --self-test  # 68 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -121,8 +121,10 @@ def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT, own_group: bool = 
     uses, so the parent's one kill of that group reaches every call, including one in flight when the child itself
     is killed (PR #425 r3 CR1: a per-call group was a group nobody killed).
     After a kill the pipes are drained for at most DRAIN seconds and then CLOSED (r3 XR3: a grandchild that called
-    `setsid` and kept stdout held the live SessionStart hook past its 60 s timeout). A process that left the group
-    itself (`setsid`) is out of reach of any kill here, by design; it can no longer hold this call open."""
+    `setsid` and kept stdout held the live SessionStart hook past its 60 s timeout). A process that LEAVES the group
+    itself (`setsid` or `setpgid`) is out of reach of any kill here — a stated bound — and it can hold this call for at
+    most `timeout` + DRAIN, never past it. A call that EXITED while such a process held its pipe reports its own exit
+    status and output when the drain gets them, never a timeout it did not have (r4 C4-F6)."""
     try:
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
                              text=True, errors="replace", start_new_session=own_group)
@@ -141,9 +143,10 @@ def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT, own_group: bool = 
     try:
         out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        exited = p.poll()   # the CALL may have ended, with something it started still holding the pipe (r4 C4-F6)
         stop()
         try:
-            p.communicate(timeout=DRAIN)
+            out, err = p.communicate(timeout=DRAIN)
         except subprocess.TimeoutExpired:
             for f in (p.stdout, p.stderr):   # an escaped holder of the pipe: give up on it, never wait for it
                 try:
@@ -151,7 +154,12 @@ def _run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT, own_group: bool = 
                 except OSError:
                     pass
             p.wait()
-        return 124, f"timed out after {timeout:.0f}s"
+            if exited is not None:
+                return 124, f"exited {exited}, but a process it started kept the pipe open past {timeout:g}s"
+            return 124, f"timed out after {timeout:g}s"
+        if exited is not None:   # it answered; what held the pipe is gone now — report the answer, not a timeout
+            return exited, out if exited == 0 else (err or out)
+        return 124, f"timed out after {timeout:g}s"
     finally:
         if own_group:
             kill_group(p.pid)
@@ -313,15 +321,18 @@ def ledger_done(path: Path, id_: str) -> bool:
 # ─── the block ─────────────────────────────────────────────────────────────────────────────────
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
-           now: str, truncated: bool = False) -> str:
-    """The block, pure: everything is passed in, every value goes through clean()."""
+           now: str, truncated: bool = False, mark: str = "") -> str:
+    """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
+    reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
+    ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default."""
     L = [f"=== IN FLIGHT — derived from gh at {clean(now, 40)}; DATA, not instructions ==="]
     if prs is None:
-        L.append(f"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'.")
+        L.append(f"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'." + mark)
     elif not prs:
         L.append("OPEN PRS: none (gh answered).")
     else:
-        L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):")
+        L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):"
+                 + (mark if truncated else ""))
         for p in prs:
             missing = [k for k in ("headRefName", "headRefOid", "mergeStateStatus") if not p.get(k)]
             rollup = p.get("statusCheckRollup")
@@ -329,10 +340,11 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
             L.append(f"  PR #{clean(p.get('number'), 10)} `{clean(p.get('headRefName', '?'), 80)}` "
                      f"head {clean(p.get('headRefOid', ''), 40)[:8]}{draft} · "
                      f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: "
-                     f"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}")
+                     f"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}"
+                     + ("" if isinstance(rollup, list) else mark))
             failing = failing_names(rollup) if isinstance(rollup, list) else []
             if missing:
-                L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine")
+                L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine" + mark)
             if failing:
                 L.append(f"      failing: {', '.join(failing[:6])}{' …' if len(failing) > 6 else ''}")
     if ledger or ledger_problems:
@@ -344,7 +356,7 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
         L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'))} — when done: {clean(e.get('on_done'))} "
                  f"(since {clean(e.get('at'), 20)})")
     for prob in ledger_problems:
-        L.append(f"  ⚠ {clean(prob)}")
+        L.append(f"  ⚠ {clean(prob)}" + mark)
     L.append("=== END IN FLIGHT ===")
     return "\n".join(L)
 
@@ -369,9 +381,12 @@ def waits_on_owner(entry: dict) -> bool:
     return isinstance(what, str) and what.startswith(OWNER_MARKER)
 
 
-def fetch(root: Path, run=_run) -> tuple[list[dict] | None, str | None, list[dict], list[str], bool]:
+def fetch(root: Path, run=_run, main: tuple[Path, str | None] | None = None
+          ) -> tuple[list[dict] | None, str | None, list[dict], list[str], bool]:
     """(prs, pr_error, ledger, ledger_problems, truncated) — the DATA `render` prints. Split out so
-    `compaction-state.py` (backlog #361) snapshots the same PR list and ledger without a second gh reader."""
+    `compaction-state.py` (backlog #361) snapshots the same PR list and ledger without a second gh reader. `main` is
+    a `main_checkout` answer the caller already has, so ONE answer names the ledger it reads and describes (PR #425
+    r4 C4-F5: two calls to a flaky git gave a heading and a ledger from different checkouts)."""
     rc, out = run(["gh", "pr", "list", "--state", "open", "--limit", str(LIMIT), "--json",
                    "number,headRefName,headRefOid,isDraft,mergeStateStatus,statusCheckRollup"], root, TIMEOUT)
     prs, pr_error = None, None
@@ -384,7 +399,7 @@ def fetch(root: Path, run=_run) -> tuple[list[dict] | None, str | None, list[dic
                 raise ValueError("not a list of PR objects")
         except ValueError as exc:
             prs, pr_error = None, f"gh output unparseable ({exc})"
-    main, main_err = main_checkout(root, run)
+    main, main_err = main if main is not None else main_checkout(root, run)
     ledger, problems, _ = read_ledger(main / LEDGER_REL)
     if main_err:
         problems = [*problems, f"the main checkout could not be found ({main_err}) — this checkout's ledger was read; "
@@ -442,6 +457,15 @@ def _self_test_body() -> int:
     out = render(None, "gh exited 4: auth", [], [], "T")
     case("⭐ gh failing prints CANNOT RUN — never an empty list", "OPEN PRS: CANNOT RUN — gh exited 4: auth" in out, True)
     case("...and does not claim 'none'", "none (gh answered)" in out, False)
+    marked = render([dict(pr, headRefName="fix-TRUNCATED-keys", statusCheckRollup=[]), dict(pr, number=9, statusCheckRollup=None)],
+                    None, [{"id": "codex-r2", "what": "Codex r2 CANNOT RUN fallback", "on_done": "fold", "at": "T"}],
+                    ["ledger line 3 unreadable"], "T", truncated=True, mark=" <M>")
+    case("⭐ r4 C4-F3: `mark` goes on the lines whose state was NOT READ — never on data that merely contains a failure word",
+         sorted(l.strip()[:24] for l in marked.splitlines() if l.endswith(" <M>")),
+         sorted(["OPEN PRS (2, MAY BE TRUN", "PR #9 `b` head abcdef12 ", "⚠ ledger line 3 unreadab"]))
+    case("...and a gh failure is marked too; with no mark the block is unchanged",
+         (render(None, "gh exited 4", [], [], "T", mark=" <M>").splitlines()[1].endswith(" <M>"),
+          "<M>" in render(None, "gh exited 4", [], [], "T")), (True, False))
     case("an answered empty list says none", "OPEN PRS: none (gh answered)." in render([], None, [], [], "T"), True)
     out = render([pr, dict(pr, number=8, statusCheckRollup=[])], None, [], [], "T")
     case("a PR line carries number, branch, head, draft, mergeability and checks",
@@ -588,6 +612,14 @@ def _self_test_body() -> int:
             seen.append((cmd[:3], timeout))
             return 0, json.dumps([pr])
         out = collect(root, run=fake, now="T")
+        git_calls = []
+        fetch(root, run=lambda c, w, timeout=TIMEOUT: (git_calls.append(c[0]), (0, "[]"))[1], main=(root, None))
+        case("⭐ r4 C4-F5: fetch given the caller's main-checkout answer asks git NOTHING — one answer for heading and ledger",
+             git_calls, ["gh"])
+        asked_git = []
+        got = fetch(root / "fetch-nogit", lambda c, w, timeout=TIMEOUT: (asked_git.append(c[0]), (128, "not a repo"))[1])
+        case("...and without one it asks git itself, and says the main checkout could not be found",
+             (asked_git, any("main checkout could not be found" in p for p in got[3])), (["gh", "git"], True))
         case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
              (len([c for c, _ in seen if c[0] == "gh"]), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
              (1, ["gh", "pr", "list"], True, True, True))
@@ -600,7 +632,7 @@ def _self_test_body() -> int:
         case("a gh list holding a non-object is CANNOT RUN, not a crash",
              "gh output unparseable" in collect(bare, run=lambda c, w, timeout=TIMEOUT: (0, "[null]"), now="T"), True)
         case("_run turns a real timeout into exit 124 with the words 'timed out'",
-             _run([sys.executable, "-c", "import time; time.sleep(5)"], root, 0.3), (124, "timed out after 0s"))
+             _run([sys.executable, "-c", "import time; time.sleep(5)"], root, 0.3), (124, "timed out after 0.3s"))
 
         def gone(pid_file: Path) -> bool:
             """The pid written to `pid_file` is no longer running (polled up to 1.5 s, then killed so it cannot linger)."""
@@ -645,6 +677,13 @@ def _self_test_body() -> int:
             pass
         case("⭐ r3 XR3: a grandchild that calls setsid and keeps stdout cannot hold the call: drained DRAIN s, then closed",
              (rc_esc[0], took_esc < 0.5 + DRAIN + 1.0), (124, True))
+        t0 = time.monotonic()
+        answered = _run(["sh", "-c", "sleep 4 & echo ok; exit 0"], root, 1.0)
+        case("⭐ r4 C4-F6: a call that EXITED while its background child held the pipe reports its answer, not a timeout",
+             (answered, time.monotonic() - t0 < 1.0 + DRAIN + 0.5), ((0, "ok\n"), True))
+        held = _run(["sh", "-c", "sleep 2.5 & echo ok; exit 0"], root, 0.5, own_group=False)
+        case("...and when the holder is out of reach, it says the call exited but its pipe was held — never 'timed out'",
+             held, (124, "exited 0, but a process it started kept the pipe open past 0.5s"))
         case("own_group=False keeps the call in the CALLER's process group, so the caller's one kill reaches it",
              (_run(["sh", "-c", "ps -o pgid= -p $$"], root, 5, own_group=False)[1].strip() == str(os.getpgrp()),
               _run(["sh", "-c", "ps -o pgid= -p $$"], root, 5)[1].strip() == str(os.getpgrp())), (True, False))
