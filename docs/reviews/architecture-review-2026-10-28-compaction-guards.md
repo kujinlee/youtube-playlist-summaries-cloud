@@ -71,6 +71,6 @@ withdrawn far enough, and the next step is DEFER the audit entirely, with the sn
 
 ## What did we decide this milestone that isn't written down?
 
-The owner's falsifier for these guards — *grade the first REAL compaction after #361 merges against four criteria* — is
+The falsifier for these guards — written by the coordinator at the owner's 04:12 request to test their effectiveness; the owner did not write its criteria — *grade the first REAL compaction after #361 merges against four criteria* — is
 held only in the in-flight ledger (`compaction-falsifier`). It belongs in the backlog #361 row, so it survives the ledger
 entry being closed.
