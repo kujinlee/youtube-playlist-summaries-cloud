@@ -849,7 +849,7 @@
       ]
     ],
     "expect": [
-      "⭐ #389: every plan in a line that still owes something is listed, with ITS progress and the "
+      "⭐ #389: every plan in a line that still owes something is listed, with ITS progress and the LINE's objective; finished and step-less plans are not"
     ]
   },
   {
