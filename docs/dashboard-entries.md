@@ -18058,11 +18058,13 @@ Branch `compaction-guards` (backlog #361, its PreCompact fallback). New `scripts
 8,000 characters, from `session-state.fetch`/`render` (a new split of `collect`, behaviour unchanged, 51/51 and its
 25 mutations killed), `git worktree list` plus one `git status` each, the ledger entries naming the owner or a page,
 `gen-dashboard.unresolved`, and the transcript: typed prompts are `origin.kind == "human"` without `isMeta`/
-`isCompactSummary`/`isSidechain`, and answers are non-error `tool_result`s of an `AskUserQuestion` tool use (either
-wording, so unpaired ones count too). `--audit` (PostCompact) lists every PR number, ledger id and pending decision
+`isCompactSummary`/`isSidechain` and with no `tool_result` block, and answers are non-error `tool_result`s of an
+`AskUserQuestion` tool use seen earlier in the window. `--audit` (PostCompact) lists every PR number, ledger id and pending decision
 the `compact_summary` does not name. `--print` (SessionStart, matcher `compact`) shows both under 9,800 characters,
 CANNOT RUN when a file is missing, STALE when the snapshot is over 30 minutes old or the audit is of another
 snapshot. Every hook exits 0 and never prints a decision, so compaction is never blocked; stdin is read with a 2 s
-deadline. 43 cases, 18 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
+deadline. Only an answer paired by `tool_use_id` with an `AskUserQuestion` is trusted (an automated review found
+the first version also took any tool output that began with an answer's wording); pasted blocks are withheld and
+accepted suggestions labelled. 58 cases, 21 mutations, all killed by the case each names. Dry run on this session's 79 MB transcript:
 the snapshot took 1.9 s, and a summary leaving out PR #392 was reported as dropping exactly that. ⚠ UNVERIFIED: a
 real `/compact` (the falsifier in the backlog row); the order of this block and the in-flight block is the harness's.

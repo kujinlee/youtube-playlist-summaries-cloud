@@ -4,8 +4,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "if origin.get(\"kind\") == \"human\" and not d.get(\"isMeta\") and not d.get(\"isCompactSummary\"):",
-        "if origin.get(\"kind\") == \"human\" and not d.get(\"isCompactSummary\"):"
+        "if origin.get(\"kind\") == \"human\" and not d.get(\"isMeta\") and not d.get(\"isCompactSummary\") and not results:",
+        "if origin.get(\"kind\") == \"human\" and not d.get(\"isCompactSummary\") and not results:"
       ]
     ],
     "expect": [
@@ -13,25 +13,12 @@
     ]
   },
   {
-    "name": "an answer whose tool use fell outside the read window is lost",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "if x.get(\"tool_use_id\") in asks or ANSWER_PREFIX.match(text):",
-        "if x.get(\"tool_use_id\") in asks:"
-      ]
-    ],
-    "expect": [
-      "⭐ every AskUserQuestion answer is kept, paired or by its wording, boilerplate stripped"
-    ]
-  },
-  {
     "name": "an ERRORED ask (a blocked card) is read as an answer",
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "if not (isinstance(x, dict) and x.get(\"type\") == \"tool_result\") or x.get(\"is_error\"):",
-        "if not (isinstance(x, dict) and x.get(\"type\") == \"tool_result\"):"
+        "            if x.get(\"is_error\"):\n                continue\n",
+        ""
       ]
     ],
     "expect": [
@@ -121,8 +108,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){int(key)}(?!\\d)\"",
-        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){int(key)}\""
+        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){key}(?!\\d)\"",
+        "rf\"(?:#\\s?|\\bPR[ -]?#?\\s?){key}\""
       ]
     ],
     "expect": [
@@ -186,8 +173,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        print(f\"compaction-state: CANNOT RUN — {exc.__class__.__name__}: {clean(exc, 200)}\")\n    return 0\n",
-        "        print(f\"compaction-state: CANNOT RUN — {exc.__class__.__name__}: {clean(exc, 200)}\")\n    return 1\n"
+        "                pass\n    return 0\n",
+        "                pass\n    return 1\n"
       ]
     ],
     "expect": [
@@ -231,6 +218,58 @@
     ],
     "expect": [
       "⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript"
+    ]
+  },
+  {
+    "name": "⛔ the prefix-only fallback is restored: tool output that LOOKS like an answer is trusted (the review's MEDIUM)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            if isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks:",
+        "            if (isinstance(x.get(\"tool_use_id\"), str) and x[\"tool_use_id\"] in asks) or ANSWER_PREFIX.match(text):"
+      ]
+    ],
+    "expect": [
+      "⭐ a Read result, an UNPAIRED result and an id-less pair that START with an answer wording are NOT answers"
+    ]
+  },
+  {
+    "name": "pasted content is shown as the owner's own words",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    text = PASTED.sub(lambda m: f\"[pasted content, {len(m.group(1).strip())} chars — not shown]\", text)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ pasted content is EXCLUDED and labelled; an accepted suggestion is LABELLED as one"
+    ]
+  },
+  {
+    "name": "a human-origin turn carrying a tool_result block is read as a prompt",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        " and not d.get(\"isCompactSummary\") and not results:",
+        " and not d.get(\"isCompactSummary\"):"
+      ]
+    ],
+    "expect": [
+      "a human-origin turn that carries a tool_result block is not a prompt"
+    ]
+  },
+  {
+    "name": "the closing tag's id is not matched, so the real transcript's pastes are shown",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "PASTED = re.compile(r\"<pasted_content\\b[^>]*>(.*?)(?:</pasted_content\\b[^>]*>|\\Z)\", re.S)",
+        "PASTED = re.compile(r\"<pasted_content\\b[^>]*>(.*?)(?:</pasted_content>|\\Z)\", re.S)"
+      ]
+    ],
+    "expect": [
+      "⭐ pasted content is EXCLUDED and labelled; an accepted suggestion is LABELLED as one"
     ]
   }
 ]

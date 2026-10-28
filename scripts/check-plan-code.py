@@ -1916,7 +1916,11 @@ EXPECTED_MUTATIONS = {
     "scripts/check-diff-coverage.py": 37,
     "scripts/session-state.py": 25,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
-    "scripts/compaction-state.py": 18,
+    # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
+    # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
+    # transcript's `</pasted_content id=…>` closer unmatched, a tool_result-carrying turn read as a prompt. Four
+    # anchors retargeted onto rewritten lines.
+    "scripts/compaction-state.py": 21,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6133,7 +6137,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2379)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2382)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
