@@ -3,7 +3,7 @@
 
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
-    python3 scripts/regen-pages.py --self-test             # 25 cases
+    python3 scripts/regen-pages.py --self-test             # 34 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -31,6 +31,7 @@ import importlib.util
 import json
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -39,7 +40,36 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 TIMEOUT = 120          # seconds, per generator; the slowest measured 2026-10-28 was gen-backlog-page, 17s
 THREADS_REL = "docs/goal-threads.md"
-MERGE_RE = re.compile(r"\bgh\s+pr\s+merge\b")
+SEPARATORS = ";&|()\n"
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def commands(cmd: str) -> list[list[str]]:
+    """PURE. The simple commands a Bash string EXECUTES, each as argv: tokenized with `shlex` (quotes
+    and `#` comments honoured) and split on `;` `&&` `||` `|` `&`, parentheses and newlines (round 1
+    X3: a regex fired on `echo "gh pr merge 433"`, a comment, and `gh pr merge-base`). Leading
+    `NAME=value` assignments are dropped. ⚠ BOUNDS: unbalanced quotes yield NO commands (a missed rebuild,
+    never a spurious one); shlex reads `a#b` as a comment where bash reads one word, which can only
+    hide a merge, not invent one; `bash -c '…'`, `eval` and `$(…)` are not looked inside."""
+    try:
+        lex = shlex.shlex(cmd, posix=True, punctuation_chars=SEPARATORS)
+        lex.whitespace = " \t\r"
+        lex.whitespace_split = True
+        tokens = list(lex)
+    except ValueError:
+        return []
+    out: list[list[str]] = [[]]
+    for t in tokens:
+        if t and set(t) <= set(SEPARATORS):
+            out.append([])
+        elif out[-1] or not ASSIGNMENT.match(t):
+            out[-1].append(t)
+    return [c for c in out if c]
+
+
+def is_merge(cmd: str) -> bool:
+    """PURE. Does this Bash string EXECUTE `gh pr merge …`? argv must be exactly `gh`, `pr`, `merge`."""
+    return any(c[:3] == ["gh", "pr", "merge"] for c in commands(cmd))
 
 
 def regenerable() -> dict[str, str]:
@@ -58,7 +88,7 @@ def pages_for(payload: object, pages: dict[str, str]) -> list[str]:
     ti = payload.get("tool_input")
     ti = ti if isinstance(ti, dict) else {}
     cmd, fp = ti.get("command"), ti.get("file_path")
-    if isinstance(cmd, str) and MERGE_RE.search(cmd):
+    if isinstance(cmd, str) and is_merge(cmd):
         return sorted(pages)
     if isinstance(fp, str) and (fp == THREADS_REL or fp.endswith("/" + THREADS_REL)):
         return [p for p in ("goal-tree",) if p in pages]
@@ -160,10 +190,25 @@ def _self_test_body() -> int:
 
     case("a merge rebuilds EVERY page", pages_for(bash("gh pr merge 425 --squash"), table),
          ["dashboard", "goal-tree", "goals"])
-    case("...however the merge is spelled after a cd", pages_for(bash("cd x && gh  pr merge 1"), table),
-         ["dashboard", "goal-tree", "goals"])
+    case("...also inside a compound command, after a cd",
+         pages_for(bash("cd x && gh  pr merge 1"), table), ["dashboard", "goal-tree", "goals"])
     case("⛔ a command that is not a merge rebuilds nothing", pages_for(bash("gh pr view 425"), table), [])
     case("⛔ `gh pr merged` is not `gh pr merge`", pages_for(bash("echo gh pr merged"), table), [])
+    case("⛔ X3: a QUOTED merge is text, not a command", pages_for(bash('echo "gh pr merge 433"'), table), [])
+    case("⛔ X3: a COMMENTED merge is not executed", pages_for(bash("# gh pr merge 433"), table), [])
+    case("⛔ X3: `gh pr merge-base` is not `gh pr merge`", pages_for(bash("gh pr merge-base 433"), table), [])
+    case("⛔ X3: a merge mentioned AFTER a comment marker is not executed",
+         pages_for(bash("ls # then gh pr merge 5"), table), [])
+    case("X3: a compound `cd x && gh pr merge 5` IS a merge", is_merge("cd x && gh pr merge 5"), True)
+    case("X3: after a pipe, a semicolon or a newline it is still a merge",
+         [is_merge(c) for c in ("a | gh pr merge 2", "ls; gh pr merge 3", "ls\ngh pr merge 7")],
+         [True, True, True])
+    case("X3: separators INSIDE a quoted argument do not split the command",
+         commands('gh pr merge 5 --body "a; b && c"'), [["gh", "pr", "merge", "5", "--body", "a; b && c"]])
+    case("X3: a leading NAME=value assignment is not the command name",
+         commands("GH_HOST=x gh pr merge 3"), [["gh", "pr", "merge", "3"]])
+    case("⛔ X3: unbalanced quotes yield no command — a missed rebuild, never a spurious one",
+         commands('gh pr merge 5 --body "oops'), [])
     case("an edit of the threads file rebuilds the goal tree alone",
          pages_for({"tool_input": {"file_path": "/x/y/docs/goal-threads.md"}}, table), ["goal-tree"])
     case("...also when the path is repo-relative",

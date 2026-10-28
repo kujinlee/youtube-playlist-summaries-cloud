@@ -998,7 +998,11 @@ EXPECTED_MUTATIONS = {
     # One RETIRED with its subject: the hand-rolled `--git-common-dir` read became
     # `session-state.main_checkout`, whose refusal the new no-main-checkout entry now pins; and one
     # for the backlog title escaped twice, found on the real page. Net +11.
-    "scripts/goal-tree.py": 36,
+    # ⟳ same day, round-1 fold (PR #433): 36 -> 50 — two retired with their subject (unreadable records
+    # are no longer items but a NOT READ source, X1), sixteen new: X1 per source, X2 consolidation and its
+    # two refusals plus the caller's items untouched, X4 actions, C4 stated-or-several, C2 the flag
+    # (and a `PR #N` in the tail is not a row, found on the real backlog).
+    "scripts/goal-tree.py": 51,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2089,7 +2093,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-28, owner decision D3 (backlog #363): every generated page rebuilt on merge — the
     # merge match, the threads path, the per-generator timeout, the advisory exit codes, a crashed
     # generator named, and silence on an unrelated command.
-    "scripts/regen-pages.py": 8,
+    # ⟳ same day, round-1 fold: 8 -> 12 — the regex entry retired with the regex; five for the
+    # executed-command match (X3): quoted text, merge-base, NAME=value, separators, newlines.
+    "scripts/regen-pages.py": 12,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
@@ -6191,7 +6197,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2474)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2493)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

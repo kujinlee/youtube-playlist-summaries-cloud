@@ -355,32 +355,6 @@
     ]
   },
   {
-    "name": "a dashboard entry the grammar could not read is dropped from NEEDS YOU",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "             \"unreadable\": True} for e in entries if e[\"error\"]]",
-        "             \"unreadable\": True} for e in entries if False]"
-      ]
-    ],
-    "expect": [
-      "the dashboard source is gen-dashboard's unresolved(), plus every entry it could not read"
-    ]
-  },
-  {
-    "name": "backlog lines the row parser refused are dropped from NEEDS YOU",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "    if unread:\n        out.append({\"source\": \"backlog\"",
-        "    if False:\n        out.append({\"source\": \"backlog\""
-      ]
-    ],
-    "expect": [
-      "⭐ NEEDS YOU gathers all three sources, each linked to where it came from"
-    ]
-  },
-  {
     "name": "no main checkout: the worktree's own (empty) ledger is read instead",
     "file": "scripts/goal-tree.py",
     "edits": [
@@ -469,6 +443,227 @@
     ],
     "expect": [
       "⛔ a title is plain TEXT, not HTML — the page escapes it once, so it is never escaped twice"
+    ]
+  },
+  {
+    "name": "X1: a ledger with an unreadable line still counts as read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if src[\"ledger_problems\"]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ X1: a truncated ledger line makes the ledger NOT READ — never 'nothing waits on you'"
+    ]
+  },
+  {
+    "name": "X1: a source's unreadable records are not turned into NOT READ",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if problems:\n            errors[key] =",
+        "        if False:\n            errors[key] ="
+      ]
+    ],
+    "expect": [
+      "⛔ X1: a backlog line the parser refuses makes the backlog NOT READ"
+    ]
+  },
+  {
+    "name": "X1: an unreadable dashboard entry is not reported",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for e in entries if e[\"error\"]]",
+        "for e in entries if False]"
+      ]
+    ],
+    "expect": [
+      "⛔ X1: an entry the store cannot read is a PROBLEM naming its id; readable asks are kept"
+    ]
+  },
+  {
+    "name": "X1: backlog lines the row parser refused are not reported",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                 if unread else [])",
+        "                 if False else [])"
+      ]
+    ],
+    "expect": [
+      "⛔ X1: a line the row parser refuses is a PROBLEM, never an item"
+    ]
+  },
+  {
+    "name": "X2: nothing is consolidated, so one decision is listed once per source",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if target is not None and it[\"source\"] not in {a[\"source\"] for a in target[\"also\"]}:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ X2: one decision recorded in three sources is ONE item that keeps every source"
+    ]
+  },
+  {
+    "name": "X2: two asks from ONE source citing a row are merged into one item",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and it[\"source\"] not in {a[\"source\"] for a in target[\"also\"]}:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "⛔ X2: two DIFFERENT asks from one source citing the same row stay two items"
+    ]
+  },
+  {
+    "name": "X2: an ask naming several rows is merged into one of them",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if it.get(\"row\") is None and len(named) == 1 else None",
+        "if it.get(\"row\") is None and named else None"
+      ]
+    ],
+    "expect": [
+      "⛔ X2: an ask naming two rows is not assigned to either"
+    ]
+  },
+  {
+    "name": "X2: consolidating writes into the caller's items",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    items = [dict(it, also=list(it.get(\"also\") or [])) for it in items]   # never the caller's dicts",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "consolidating never changes the caller's items"
+    ]
+  },
+  {
+    "name": "X4: a NEEDS-OWNER-ACTION row is listed as a decision",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        kind = \"action\" if tail.startswith(ACTION_SUFFIX) else \"decision\"",
+        "        kind = \"decision\""
+      ]
+    ],
+    "expect": [
+      "⭐ X4: NEEDS-OWNER-ACTION is an ACTION, not a decision, and its marker is not in the text"
+    ]
+  },
+  {
+    "name": "X4: a ledger ACTION: is listed as a decision",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        kind = \"action\" if rest.startswith(LEDGER_ACTION) else \"decision\"",
+        "        kind = \"decision\""
+      ]
+    ],
+    "expect": [
+      "the ledger source is session-state's WAITS-ON-OWNER predicate, marker stripped"
+    ]
+  },
+  {
+    "name": "X4: actions are headed as decisions",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"action\", \"action(s) only you can take\")",
+        "(\"action\", \"decision(s) only you can make, open now\")"
+      ]
+    ],
+    "expect": [
+      "⭐ X4: decisions and actions are two lists, each with its own count"
+    ]
+  },
+  {
+    "name": "C4: an unstated plural is not reported as several",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return \"several\" if MULTI_CUE.search(text) else None",
+        "    return None"
+      ]
+    ],
+    "expect": [
+      "⭐ C4: a stated count is used, an unstated plural says 'several', a single ask says nothing"
+    ]
+  },
+  {
+    "name": "C4: a stated count is replaced by 'several'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return int(m.group(1))",
+        "        return \"several\""
+      ]
+    ],
+    "expect": [
+      "⭐ C4: a stated count is used, an unstated plural says 'several', a single ask says nothing"
+    ]
+  },
+  {
+    "name": "C2: a row waiting on a decided row is not flagged",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                it[\"flag\"] = f\"may already be answered by backlog #{n}\"",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ C2: a row waiting on ANOTHER row that is decided is FLAGGED, and stays listed"
+    ]
+  },
+  {
+    "name": "C2: a row waiting on a row that STILL waits on the owner is flagged",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(not needs_owner(o) and re.search(",
+        "(re.search("
+      ]
+    ],
+    "expect": [
+      "⛔ C2: no flag when the other row still waits on the owner itself"
+    ]
+  },
+  {
+    "name": "C2: a closed other row does not flag",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(o[\"closed\"] or (",
+        "(False or ("
+      ]
+    ],
+    "expect": [
+      "⛔ C2: a closed other row flags too"
+    ]
+  },
+  {
+    "name": "C2: a `PR #N` in a row's tail is read as a row",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "re.finditer(r\"(\\bPR )?#(\\d+)\", tail) if not m.group(1)}",
+        "re.finditer(r\"(\\bPR )?#(\\d+)\", tail)}"
+      ]
+    ],
+    "expect": [
+      "⛔ C2: a `PR #N` in the tail is not a row, so it never flags"
     ]
   }
 ]
