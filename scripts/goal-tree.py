@@ -54,7 +54,7 @@ is shortened (Z2).
 ⭐ IT ABSORBED THE WORK-LINES PAGE (backlog #389, the owner's decision D2): a "PLANS NOT TICKED CLOSED" section
 lists every plan in a line that still owes something — its progress, its last touch, what it branched from and
 the line's objective — read through gen-work-lines' plan reader (`read_plans_noted`, `build_forest`,
-`line_state`), never a copy. The retired page's last output is frozen at `/work-lines-archive`, linked from
+`line_state`), never a copy. A frozen record of the retired page (plan contents withheld pending backlog #194) is at `/work-lines-archive`, linked from
 the timeline. One page now answers "which threads are live".
 
 THE PAGE IS A REPLAY (round 2 Y7): the tree and the timeline are the stored snapshots, and the page says
@@ -97,7 +97,7 @@ LOG_REL = ".claude/goal-tree-log.jsonl"
 DASHBOARD_REL = "docs/dashboard-entries.md"
 BACKLOG_REL = "docs/backlog.md"
 NEEDS_OWNER = "NEEDS-OWNER"
-# backlog #389: the work-lines page's job lives here now, and its last output is frozen at this url.
+# backlog #389: the work-lines page's job lives here now, and a frozen record of it is at this url.
 WORK_LINES_ARCHIVE = "/work-lines-archive"
 # The three sources of the NEEDS YOU list; "nothing waits on you" is said only when ALL were read.
 NEEDS_SOURCES = ("dashboard", "ledger", "backlog")

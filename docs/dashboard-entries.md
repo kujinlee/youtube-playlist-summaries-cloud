@@ -18215,9 +18215,10 @@ plans still owe something — is now on the goal tree, at http://127.0.0.1:7391/
 of every plan that is not ticked closed, with its progress, when it was last touched, and the
 objective of the line it belongs to. One page answers that question now, not two.
 
-The old page is not deleted. Its last output is frozen at http://127.0.0.1:7391/work-lines-archive,
+The old page is not deleted outright: a frozen record of it is at http://127.0.0.1:7391/work-lines-archive,
 marked as archived, and the goal tree links to it. The old address, /work-lines, now takes you there.
-Nothing rebuilds it any more.
+Nothing rebuilds it any more. The record keeps the page's counts but not what your plans say, because
+the repository is public and whether plans travel with it is still your decision (backlog #194).
 <!--tech-->
 Backlog #389. `scripts/goal-tree.py` gains `open_plans()` (every plan in an open line, through
 gen-work-lines' own `build_forest`/`line_state`/`label`), plan progress in the timeline, plans NOT
@@ -18226,6 +18227,7 @@ reader only: the renderer, CSS, `write_page` and the page-writing `main` are del
 exits 2 naming the archive). The rebuild calls in `check-plan-progress.py` (Stop hook) and
 `begin-plan.py` are removed; `explainer-serve.py` drops it from `REGENERABLE` (so `regen-pages`
 no longer runs it), empties `STALE_EXEMPT`, and redirects `/work-lines` to the archive. The archive
-is `docs/explainers/work-lines-archive.html`, rendered from 138 plan files at `40291231`; the plan
-files themselves stay git-ignored (whether they travel into git is backlog #194). Mutation entries
+is `docs/explainers/work-lines-archive.html`: the generator, commit `40291231`, its counts (138 plan
+files, 120 lines, 28 still owing) and the retirement notice; every string from plan CONTENTS is withheld
+pending backlog #194, and the plan files stay git-ignored. Mutation entries
 for the renderer and the rebuilds retire with them; new ones pin the absorption.

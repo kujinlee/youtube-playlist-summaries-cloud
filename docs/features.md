@@ -152,7 +152,7 @@ areas: (comprehensibility/goal-tree)
 #### work-lines
 state: absent
 for: Drew every plan as a line back to the plan it branched from.
-expected-because: retired 2026-10-28 into the goal-tree node above (the owner's decision D2, backlog #389) — two pages answering which threads are live left the reader with neither; its last output is frozen at http://127.0.0.1:7391/work-lines-archive.
+expected-because: retired 2026-10-28 into the goal-tree node above (the owner's decision D2, backlog #389) — two pages answering which threads are live left the reader with neither; a frozen record of it, with plan contents withheld pending backlog #194, is at http://127.0.0.1:7391/work-lines-archive.
 
 ### explainer-pages
 state: built

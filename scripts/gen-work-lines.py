@@ -7,7 +7,8 @@
 ⛔ THE WORK-LINES PAGE IS RETIRED (backlog #389, the owner's decision D2, 2026-10-28). The goal tree
 (`scripts/goal-tree.py`, http://127.0.0.1:7391/goal-tree) absorbed its job — which threads exist, why, and
 which plans still owe something — because two pages answering that left the reader with neither (the owner
-stopped reading this one when it looked un-updated). Its last output is frozen, tracked, at
+stopped reading this one when it looked un-updated). A frozen record of it — its counts and the
+retirement notice; plan contents are withheld pending backlog #194 — is tracked at
 `docs/explainers/work-lines-archive.html`, linked from the goal tree. What stays here is the READER the page
 was built on, which three scripts import so they cannot disagree about a plan: `begin-plan.py` (lineage,
 `row_for`), `check-banner-armed.py` (`plan_dirs`) and `goal-tree.py` (`read_plans_noted`, `build_forest`,
@@ -372,7 +373,7 @@ def main(argv: list[str]) -> int:
     if a.self_test:
         return _self_test()
     print(f"RETIRED — the work-lines page was absorbed into the goal tree (backlog #389): run "
-          f"`python3 scripts/goal-tree.py --snapshot --page`. Its last output is frozen at {ARCHIVE_REL}. "
+          f"`python3 scripts/goal-tree.py --snapshot --page`. Its archived record is at {ARCHIVE_REL}. "
           f"This file is now the plan-file reader that begin-plan.py, check-banner-armed.py and "
           f"goal-tree.py import.")
     return 2
