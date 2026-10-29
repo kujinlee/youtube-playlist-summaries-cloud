@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 49 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 53 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -212,6 +212,21 @@ def backlog_areas(text: str) -> tuple[set[str], list[str]]:
     return out, bad
 
 
+def kind_problems(text: str, anchors: set[str]) -> list[str]:
+    """backlog #394: a parent link naming a missing row or an unregistered anchor FAILS this gate; a
+    row with no kind is a WARNING printed here (reported, never guessed, never a failure). ⚠ The kind
+    is read by `gen-backlog-page.kind_mark` and is NEVER an area: the Bundle cell alone holds tags.
+    An unknown kind is a `ShapeError` from the parser, which `backlog_areas` already reports."""
+    bp = tags()
+    try:
+        rows = bp.parse(text.split("\n"))
+    except bp.ShapeError:
+        return []                       # reported once, by `backlog_areas`
+    for note in bp.missing_kind_notes(rows):
+        print(f"  ⚠ {note}", file=sys.stderr)
+    return [f"backlog.md {e}" for e in bp.parent_errors(rows, anchors)]
+
+
 def anchor_slugs(text: str) -> set[str]:
     return set(re.findall(r"^\|\s*`([a-z0-9-]+)`\s*\|", text, re.MULTILINE))
 
@@ -288,6 +303,7 @@ def main() -> int:
         print("CANNOT RUN — no `(area)` tags parsed from docs/backlog.md. Treat this as NOT RUN.", file=sys.stderr)
         return 2
     problems += area_problems
+    problems += kind_problems(BACKLOG.read_text(), declared)
     problems += check_nodes(nodes)
     problems += check_cross(nodes, declared, None if not areas else areas)
     if problems:
@@ -430,6 +446,20 @@ expected-because: standard for a hosted multi-tenant service.
           backlog_areas(_bl("| 1 | x | f | S | (worker) | open |")), ({"worker"}, []))
     ESCAPED = r"| 90 | a \| b | f | S | (comprehensibility) | open \| still |"
     check("a row with an ESCAPED PIPE is not dropped", backlog_areas(_bl(ESCAPED)), ({"comprehensibility"}, []))
+    # backlog #394: the kind marker ends the ITEM cell; it is never read as an area.
+    check("#394: a kind marker is not an area — only the Bundle cell is",
+          backlog_areas(_bl("| 1 | x ⟦kind: task · epic: feature-map⟧ | f | S | (worker) | open |")),
+          ({"worker"}, []))
+    check("⛔ #394: an unknown kind FAILS the gate, through the parser",
+          bool(backlog_areas(_bl("| 1 | x ⟦kind: decision⟧ | f | S | (worker) | open |"))[1]), True)
+    import contextlib as _cl, io as _io
+    with _cl.redirect_stderr(_io.StringIO()) as _warn:
+        _kp = kind_problems(_bl("| 1 | x ⟦kind: task · part of: backlog #9 · epic: nope⟧ | f | S | (w) | o |\n"
+                                "| 2 | y | f | S | (w) | o |"), {"feature-map"})
+    check("⛔ #394: a parent naming a missing row or an unregistered anchor FAILS the gate",
+          _kp, ["backlog.md row 1: `part of: backlog #9` names a row that does not exist",
+                "backlog.md row 1: `epic: nope` is not an anchor in docs/anchors.md"])
+    check("#394: a row with NO kind is a WARNING, not a failure", "row 2 declares no kind" in _warn.getvalue(), True)
     # ── PER TAG, NORMALISED (backlog #381) ───────────────────────────────────────────────────────
     check("a cell with two tags puts BOTH in use",
           backlog_areas(_bl("| 1 | x | f | S | (tooling) (cloud / Money) | open |")),

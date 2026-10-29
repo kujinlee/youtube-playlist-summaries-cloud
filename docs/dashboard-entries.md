@@ -18231,3 +18231,22 @@ is `docs/explainers/work-lines-archive.html`: the generator, commit `40291231`, 
 files, 120 lines, 28 still owing) and the retirement notice; every string from plan CONTENTS is withheld
 pending backlog #194, and the plan files stay git-ignored. Mutation entries
 for the renderer and the rebuilds retire with them; new ones pin the absorption.
+
+## 2026-10-28
+Every backlog item now says what kind of work it is — a story, a task or a defect — as you decided
+on the roles review page. Where an item is part of a bigger one, it says so, and the backlog page
+links to that parent. Nothing is guessed: an item with no kind is reported, and a kind the page
+doesn't know, or a link to an item or goal that doesn't exist, stops the page from being built.
+
+All 348 items are labelled. A decision is a task that is waiting on you; adding missing tests is a
+task, unless something was claimed to be true and wasn't. This also answers your old question in
+backlog #90 about splitting stories from tasks.
+<!--tech-->
+Backlog #394. The kind and the parents are a marker at the END of the Item cell —
+`⟦kind: task · part of: backlog #17 · epic: <anchor>⟧` — read by `gen-backlog-page.kind_mark` inside
+the one parser. Unknown kind or malformed marker → `ShapeError` (refused by the page and by
+`check-features`); a parent naming a missing row or an unregistered anchor → refused by both
+(`parent_errors`); no kind → reported (`missing_kind_notes`, a page drift note and a check-features
+warning). The Bundle (tag) cell is untouched, so a kind is never an area. Retagged from the first-pass
+proposal; #210 and #251 moved defect → task by ruling 3; parent links #64 → #59 and #372 → #369 not
+written (absorption and provenance, not parentage).

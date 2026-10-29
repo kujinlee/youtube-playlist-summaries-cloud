@@ -70,8 +70,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "r\"(?:[\u2705\ud83d\udd34\ud83d\udfe0\ud83d\udfe2\u23f3\u25c0]|#\\d+|\\b(?:currently|",
-        "r\"(?:[\u2705\ud83d\udd34\ud83d\udfe0\ud83d\udfe2\u23f3\u25c0]|#\\d+|\\b(?:now|currently|"
+        "r\"(?:[✅🔴🟠🟢⏳◀]|#\\d+|\\b(?:currently|",
+        "r\"(?:[✅🔴🟠🟢⏳◀]|#\\d+|\\b(?:now|currently|"
       ]
     ],
     "expect": "`now` is no longer a banned word"
@@ -125,8 +125,8 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "            if fragments:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) \u2014 flip it to `built`\")",
-        "            if False:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) \u2014 flip it to `built`\")"
+        "            if fragments:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) — flip it to `built`\")",
+        "            if False:\n                problems.append(f\"{where} is `absent` but names {fragments} fragment(s) — flip it to `built`\")"
       ]
     ],
     "expect": "an absent node WITH a fragment fails"
@@ -224,7 +224,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "A field starts at COLUMN 0 \u2014 no leading ",
+        "A field starts at COLUMN 0 — no leading ",
         "Fix the line. "
       ]
     ],
@@ -235,7 +235,7 @@
     "file": "scripts/check-features.py",
     "edits": [
       [
-        "f\"trusted \u2014 {e}\"]",
+        "f\"trusted — {e}\"]",
         "f\"trusted\"]"
       ]
     ],
@@ -328,5 +328,31 @@
       ]
     ],
     "expect": "a decorated row inside a copy of the REAL `## Items` table fails the gate, naming it"
+  },
+  {
+    "name": "#394: a bad parent link never fails the gate",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "    return [f\"backlog.md {e}\" for e in bp.parent_errors(rows, anchors)]",
+        "    return []"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row or an unregistered anchor FAILS the gate"
+    ]
+  },
+  {
+    "name": "#394: a row with no kind is not warned about",
+    "file": "scripts/check-features.py",
+    "edits": [
+      [
+        "        print(f\"  ⚠ {note}\", file=sys.stderr)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "#394: a row with NO kind is a WARNING, not a failure"
+    ]
   }
 ]

@@ -1097,7 +1097,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27, backlog #381 r4 — 18 -> 20: the block-header check dropped, and any non-`#`
     # header accepted as a legend (Codex X1, a `| No |` table whose row master's gate saw).
     # ⟳ 2026-10-27, backlog #381 DEFER probes — 20 -> 21: an empty tag group dropped in silence.
-    "scripts/gen-backlog-page.py": 21,
+    # ⟳ 2026-10-28, backlog #394 (one kind per row, explicit parents): 21 -> 33 — the marker's grammar
+    # (unknown kind, `kind:` first, parent shape, must END the cell, one marker), missing kinds
+    # reported, the three parent refusals, the marker stripped from the text, the card's kind, and
+    # parse reading it.
+    "scripts/gen-backlog-page.py": 33,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1960,7 +1964,8 @@ EXPECTED_MUTATIONS = {
     # 27 -> 28: an unreadable backlog treated as an empty one, burying its cause under 22 stale lines.
     # ⟳ 2026-10-27, backlog #381 r3 — 28 -> 30: the parser's unread lines ignored, and `unread=` no
     # longer handed to it (Codex X1 = Claude C1, a decorated row number dropped from the gate).
-    "scripts/check-features.py": 30,
+    # ⟳ 2026-10-28, backlog #394: 30 -> 32 — a bad parent fails the gate; a missing kind is warned.
+    "scripts/check-features.py": 32,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -6248,7 +6253,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2512)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2526)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
