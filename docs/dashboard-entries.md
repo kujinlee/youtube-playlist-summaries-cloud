@@ -18252,3 +18252,15 @@ some compactions ahead of time (marked `precomputed` in the transcript: 3 of thi
 hook runs at preparation time. At restore, the capture was 5h46m old, so the guard correctly refused to show it as
 current. What actually got the session back on track was the IN FLIGHT block, which is built from `git`, `gh` and the
 ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
+
+## 2026-10-29
+Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). Before
+every `git push`, a hook compares each line the branch adds against the words of every plan in every checkout.
+A line holding six words in a row from a plan is refused, naming the file and line but never the words, unless
+those six words were already in the repo. It cannot run in CI, which has no plans, so it runs where they are.
+A fresh clone with no plans is allowed to push, with a warning that nothing was checked. `ALLOW_PLAN_LEAK=1`
+lets a judged coincidence through.
+<!--tech-->
+`scripts/check-plan-leak.py` (57 self-test cases, 32 mutations, each killed by the case it names) and
+`.claude/hooks/check-plan-leak.sh`. Run on PR #434's pre-redaction commit it reports the one line the scratchpad
+scan found. Ignoring phrases that were already public removed 13 false hits on PRs #433, #434 and #425.

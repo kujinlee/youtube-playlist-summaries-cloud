@@ -1,0 +1,354 @@
+[
+ {
+  "name": "words stops casefolding, so an upper-case quotation of a plan step passes",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return WORD.findall(s.casefold())",
+    "    return WORD.findall(s)"
+   ]
+  ],
+  "expect": "⭐ a MARKUP-SPLIT match is still a hit: casefold, bold, code and commas do not hide it"
+ },
+ {
+  "name": "a word becomes any non-space run, so markup glued to a word hides the match",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "WORD = re.compile(r\"\\w+\")",
+    "WORD = re.compile(r\"\\S+\")"
+   ]
+  ],
+  "expect": "words casefolds and drops markup and punctuation"
+ },
+ {
+  "name": "an INDENTED list item stops being plan text, so a step's Doing/Why lines can be quoted freely",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "LIST_ITEM = re.compile(r\"^\\s*[-*+]\\s+(.+?)\\s*$\", re.M)",
+    "LIST_ITEM = re.compile(r\"^[-*+]\\s+(.+?)\\s*$\", re.M)"
+   ]
+  ],
+  "expect": "an indented sub-bullet is plan text too"
+ },
+ {
+  "name": "the serving objective stops being plan text — the PR #434 leak shape",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return [m.group(1) for m in serving.finditer(text)] + [m.group(1) for m in LIST_ITEM.finditer(text)]",
+    "    return [m.group(1) for m in LIST_ITEM.finditer(text)]"
+   ]
+  ],
+  "expect": "the objective is plan text too"
+ },
+ {
+  "name": "windows drops the last run of every plan string",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    for label, s in sources:\n        w = words(s)\n        for i in range(len(w) - n + 1):",
+    "    for label, s in sources:\n        w = words(s)\n        for i in range(len(w) - n):"
+   ]
+  ],
+  "expect": "windows of 6 over an 8-word string are 3, each labelled with its plan file"
+ },
+ {
+  "name": "windows ignores the size it is given and always cuts 6",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            out.setdefault(tuple(w[i:i + n]), label)",
+    "            out.setdefault(tuple(w[i:i + 6]), label)"
+   ]
+  ],
+  "expect": "windows of 8 over the same string are ONE run of 8 words — the size is the one GIVEN"
+ },
+ {
+  "name": "a `+++ ` line inside a hunk is read as a file header, so an added `++ ` line is never judged",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        elif header and line.startswith(\"+++ \"):",
+    "        elif line.startswith(\"+++ \"):"
+   ]
+  ],
+  "expect": "an added line whose own text starts `++ ` is content, not a file header"
+ },
+ {
+  "name": "the hunk header's new-side start is ignored, so every hit reports the wrong line",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            n = int(m.group(1)) if m else 0",
+    "            n = 1"
+   ]
+  ],
+  "expect": "⭐ KNOWN POSITIVE: a 6-word run of a plan step in an added line is a hit, at the right line"
+ },
+ {
+  "name": "removed lines are judged as if added, so deleting a leak is refused as one",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        elif line.startswith(\"+\") and path:",
+    "        elif line.startswith((\"+\", \"-\")) and path:"
+   ]
+  ],
+  "expect": "a REMOVED line carrying plan text is not judged"
+ },
+ {
+  "name": "a deleted file's removed lines are dropped, so the marker exemption cannot see them",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            old = line[6:] if line.startswith(\"--- a/\") else None",
+    "            old = None"
+   ]
+  ],
+  "expect": "a deleted file's lines are removed, not added"
+ },
+ {
+  "name": "the marker-only exemption is gone, so re-marking a backlog row is judged whole",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if m and body[:m.start()]",
+    "    if False and body[:m.start()]"
+   ]
+  ],
+  "expect": "⭐ a MARKER-ONLY line (equal to a removed line once its ⟦…⟧ marker is stripped) is not judged"
+ },
+ {
+  "name": "any line with a marker is exempt, so a marker plus a changed word slips through",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    " in removed.get(path, set()):\n        return m.group(0)",
+    " or True:\n        return m.group(0)"
+   ]
+  ],
+  "expect": "⭐ a marker PLUS a changed word is judged whole, and hits"
+ },
+ {
+  "name": "a marker-only line is judged on nothing, so a plan run hidden inside the marker passes",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        return m.group(0)\n    return body",
+    "        return \"\"\n    return body"
+   ]
+  ],
+  "expect": "the marker itself is still judged — a plan run inside a marker hits"
+ },
+ {
+  "name": "the marker exemption reads removed lines from EVERY file, not the line's own",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "body[m.end():] in removed.get(path, set())",
+    "body[m.end():] in set().union(*removed.values())"
+   ]
+  ],
+  "expect": "the exemption is per FILE: the same removed line in another file exempts nothing"
+ },
+ {
+  "name": "the public filter is ignored, so a phrase already in the repo blocks every push that repeats it",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            if src is not None and t not in public:",
+    "            if src is not None:"
+   ]
+  ],
+  "expect": "⭐ a window ALREADY PUBLIC at the base is not a hit"
+ },
+ {
+  "name": "a line with several plan runs is reported once per run, not once",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "                out.append((path, ln, src))\n                break",
+    "                out.append((path, ln, src))"
+   ]
+  ],
+  "expect": "⭐ KNOWN POSITIVE: a 6-word run of a plan step in an added line is a hit, at the right line"
+ },
+ {
+  "name": "candidate_windows returns every window of every added line, plan text or not",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "for t in ts if t in win}",
+    "for t in ts}"
+   ]
+  ],
+  "expect": "candidate_windows lists exactly the plan windows the added lines carry"
+ },
+ {
+  "name": "public_windows accepts any file holding a window's words, in any order",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            if t in cache[spec]:",
+    "            if True:"
+   ]
+  ],
+  "expect": "...nor one whose words are all at the base but not as that run"
+ },
+ {
+  "name": "scan never asks what is public, so the filter is defined and unused",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        public = public_windows(root, base, cands) if cands else set()",
+    "        public = set()"
+   ]
+  ],
+  "expect": "main: re-adding a phrase already public at the base is CLEAN"
+ },
+ {
+  "name": "no plan text found is scanned as if it were a clean comparison — the zero over nothing",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if not win:\n        return NO_PLANS",
+    "    if False:\n        return NO_PLANS"
+   ]
+  ],
+  "expect": "⭐ main with NO plan file is CANNOT RUN (2), never a pass"
+ },
+ {
+  "name": "scan reports hits and still exits 0",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return (HITS if hits else CLEAN), msg",
+    "    return CLEAN, msg"
+   ]
+  ],
+  "expect": "⭐ main over a built world: a leaked step exits 1 and names README.md:2"
+ },
+ {
+  "name": "only this checkout's plans are read, so a plan in the main checkout is invisible from a worktree",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    dirs, notes = gwl.plan_dirs(root)",
+    "    dirs, notes = [(root, root / \".claude\" / \"plans\")], []"
+   ]
+  ],
+  "expect": "⭐ a plan held in ANOTHER checkout is read: pushing from a worktree sees the main checkout's plan"
+ },
+ {
+  "name": "a hit carries the matched words instead of the plan file, so the refusal quotes the leak",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "                out.append((path, ln, src))",
+    "                out.append((path, ln, \" \".join(t)))"
+   ]
+  ],
+  "expect": "⛔ ...and its output NEVER contains the matched plan words"
+ },
+ {
+  "name": "no plans blocks the push instead of warning, so a fresh clone cannot push",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if rc == NO_PLANS:",
+    "    if False:"
+   ]
+  ],
+  "expect": "decide: NO PLANS fails OPEN — no permission decision — but loudly, to the user AND the model"
+ },
+ {
+  "name": "CANNOT RUN is waved through like a clean scan",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if rc == CLEAN:\n        return None",
+    "    if rc not in (HITS, NO_PLANS):\n        return None"
+   ]
+  ],
+  "expect": "decide: CANNOT RUN fails CLOSED"
+ },
+ {
+  "name": "the deny drops the scan's message, so the reader is not told which line to reword",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "\"gitignored and the repo is public).\\n\\n\" + msg + \"\\n\\nReword",
+    "\"gitignored and the repo is public).\\n\\nReword"
+   ]
+  ],
+  "expect": "decide: hits DENY, carrying the scan's message and the escape"
+ },
+ {
+  "name": "the escape flag is not honoured",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if not PUSH.search(cmd) or ESCAPE in cmd:",
+    "    if not PUSH.search(cmd):"
+   ]
+  ],
+  "expect": "hook_reply: the escape is honoured and the scan is not even run"
+ },
+ {
+  "name": "every Bash command is scanned as if it were a push",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if not PUSH.search(cmd) or",
+    "    if False or"
+   ]
+  ],
+  "expect": "hook_reply: a command that is not a push is untouched"
+ },
+ {
+  "name": "an unreadable hook payload allows the push",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    except (ValueError, AttributeError):\n        return _deny(",
+    "    except (ValueError, AttributeError):\n        return None\n        return _deny("
+   ]
+  ],
+  "expect": "hook_reply: an unreadable payload fails CLOSED"
+ },
+ {
+  "name": "--hook computes its reply and never prints it, so the harness sees silence and allows",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        if reply is not None:\n            print(json.dumps(reply))",
+    "        if False:\n            print(json.dumps(reply))"
+   ]
+  ],
+  "expect": "main --hook over the leak world prints a DENY and exits 0"
+ },
+ {
+  "name": "--window is parsed and ignored",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    rc, msg = scan(root, a.base, a.head, a.window)",
+    "    rc, msg = scan(root, a.base, a.head, WINDOW)"
+   ]
+  ],
+  "expect": "--window is read: at 9 words no 8-word plan string can hit"
+ },
+ {
+  "name": "a failing git is read as empty output, so a missing base compares nothing and passes",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if r.returncode not in ok:",
+    "    if False:"
+   ]
+  ],
+  "expect": "main with a base that does not exist is CANNOT RUN (3)"
+ }
+]
