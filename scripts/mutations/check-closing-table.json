@@ -539,5 +539,18 @@
     "expect": [
       "⭐ the turn rule RAISING is CANNOT RUN, never the warning code (backlog #152)"
     ]
+  },
+  {
+    "name": "backlog #357(1): an undecodable transcript raises out of the closing-table guard again",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        except (OSError, ImportError, UnicodeDecodeError) as exc:",
+        "        except (OSError, ImportError) as exc:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(1): an undecodable byte in the transcript -> CANNOT RUN, never a traceback"
+    ]
   }
 ]

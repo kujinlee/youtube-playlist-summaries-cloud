@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 155 cases
+    python3 scripts/check-closing-table.py --self-test   # 156 cases
 """
 from __future__ import annotations
 
@@ -904,8 +904,8 @@ def run_decide(payload: str) -> int:
     if isinstance(path, str) and path:
         try:
             banner = _load_banner_guard()
-            records = banner._parse_records(Path(path).read_text().splitlines())
-        except (OSError, ImportError) as exc:
+            records = banner._parse_records(Path(path).read_text(encoding="utf-8").splitlines())
+        except (OSError, ImportError, UnicodeDecodeError) as exc:   # backlog #357(1): an undecodable byte raised as exit 1
             print(f"CANNOT RUN: {exc}", file=sys.stderr)
             banner, records = None, None
 
@@ -1545,6 +1545,12 @@ def _self_test_body() -> int:
         empty.write_text("")
         check("run: transcript with zero records -> CANNOT RUN",
               run_decide(json.dumps({"transcript_path": str(empty)})), CANNOT_RUN)
+        undecodable = tmp / "undecodable.jsonl"
+        undecodable.write_bytes(b'{"type": "user"}\n\xff\n')
+        import contextlib as _cl357, io as _io357
+        with _cl357.redirect_stderr(_io357.StringIO()):
+            check("⭐ backlog #357(1): an undecodable byte in the transcript -> CANNOT RUN, never a traceback",
+                  _safe(lambda: run_decide(json.dumps({"transcript_path": str(undecodable)}))), CANNOT_RUN)
 
         # A real two-turn transcript: turn 1 pushes and closes with prose, turn 2 is live.
         def user(text, uuid=None):

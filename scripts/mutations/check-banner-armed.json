@@ -1239,5 +1239,31 @@
     "expect": [
       "⭐ this guard's OWN run_decide maps a raising turn rule to CANNOT RUN, not exit 1 (backlog #152 r1)"
     ]
+  },
+  {
+    "name": "backlog #357(2): a non-object payload raises out of the banner guard again",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if not isinstance(data, dict):\n        # ⛔ backlog #357(2)",
+        "    if False:\n        # ⛔ backlog #357(2)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN, never a traceback"
+    ]
+  },
+  {
+    "name": "backlog #357(1): an undecodable transcript raises out of the banner guard again",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        except (OSError, UnicodeDecodeError):     # backlog #357(1)",
+        "        except OSError:     # backlog #357(1)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN, never a traceback"
+    ]
   }
 ]

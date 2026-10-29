@@ -877,7 +877,8 @@ EXPECTED_MUTATIONS = {
     # leading-slug arrow). Four are new: an arrow in prose is not a destination (r3 F7, two
     # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
     # the warning (F6). Net +4.
-    "scripts/check-banner-armed.py": 94,
+    # ⟳ 94 -> 96 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    "scripts/check-banner-armed.py": 96,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -929,7 +930,8 @@ EXPECTED_MUTATIONS = {
     # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
     # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
     # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
-    "scripts/check-closing-table.py": 49,
+    # ⟳ 49 -> 50 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    "scripts/check-closing-table.py": 50,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -1201,7 +1203,8 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
-    "scripts/check-ci-watched.py": 42,
+    # ⟳ 42 -> 44 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    "scripts/check-ci-watched.py": 44,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -1967,7 +1970,8 @@ EXPECTED_MUTATIONS = {
     # BEFORE these were registered, which is the order the loop requires and I got wrong once.
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 10,
-    "scripts/check-handoff-path.py": 6,
+    # ⟳ 6 -> 7 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    "scripts/check-handoff-path.py": 7,
     "scripts/check-diff-coverage.py": 37,
     # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
     # refusal of a non-path answer, and the fallback said aloud.
@@ -2113,7 +2117,8 @@ EXPECTED_MUTATIONS = {
     # injected reader each have a case that names them.
     "scripts/check-doc-citations.py": 37,
     "scripts/check-reference-namespace.py": 9,
-    "scripts/check-transcript-references.py": 6,
+    # ⟳ 6 -> 9 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    "scripts/check-transcript-references.py": 9,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
@@ -6248,7 +6253,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2512)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2521)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -189,7 +189,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 239 cases
+    python3 scripts/check-banner-armed.py --self-test  # 241 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD WITH NO PLAN FILE, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -1298,6 +1298,12 @@ def run_decide(payload: str) -> int:
         data = json.loads(payload) if payload.strip() else {}
     except (ValueError, TypeError):
         data = {}
+    if not isinstance(data, dict):
+        # ⛔ backlog #357(2): `[]` is valid JSON, and `.get` on it raised out of the Stop hook as exit 1 — the code
+        # a real WARNING uses. A payload this guard cannot read is CANNOT RUN, said in so many words.
+        print(f"CANNOT RUN: the stop-hook payload is JSON but not an object ({type(data).__name__}), so this check "
+              "could not look for a step banner. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return CANNOT_RUN
 
     session_id = str(data.get("session_id", "") or "")
 
@@ -1306,8 +1312,8 @@ def run_decide(payload: str) -> int:
     path = data.get("transcript_path")
     if isinstance(path, str) and path:
         try:
-            all_records = _parse_records(Path(path).read_text().splitlines())
-        except OSError:
+            all_records = _parse_records(Path(path).read_text(encoding="utf-8").splitlines())
+        except (OSError, UnicodeDecodeError):     # backlog #357(1): an undecodable byte raised out as exit 1
             all_records = None
 
     if not all_records:
@@ -1660,6 +1666,16 @@ def _self_test_body() -> int:
                 globals()["windows"] = real
     case("⭐ this guard's OWN run_decide maps a raising turn rule to CANNOT RUN, not exit 1 (backlog #152 r1)",
          _safe_rc(_banner_rule_raises) == CANNOT_RUN)
+    def _banner_bad_input(payload_of) -> int:
+        import contextlib as _cl, io as _io, tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"; tp.write_bytes(b'{"type": "user"}\n\xff\n')
+            with _cl.redirect_stderr(_io.StringIO()):
+                return run_decide(payload_of(tp))
+    case("⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN, never a traceback",
+         _safe_rc(lambda: _banner_bad_input(lambda tp: json.dumps({"transcript_path": str(tp), "session_id": "s"}))) == CANNOT_RUN)
+    case("⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN, never a traceback",
+         _safe_rc(lambda: _banner_bad_input(lambda tp: "[]")) == CANNOT_RUN)
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
     # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE

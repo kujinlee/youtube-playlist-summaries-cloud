@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 88 cases
+    python3 scripts/check-ci-watched.py --self-test  # 92 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -533,15 +533,24 @@ def run_decide(payload: str = "") -> int:
     else:
         try:
             parsed = json.loads(raw)
-            rows = parsed if isinstance(parsed, list) else []
+            # ⛔ backlog #357(5): a row that is not an object (`[123]`) raised AttributeError in `decide`, and a
+            # non-list answer read as "no checks". Neither is a shape this guard can judge: CANNOT RUN.
+            rows = parsed if isinstance(parsed, list) and all(isinstance(r, dict) for r in parsed) else None
         except ValueError:
             rows = None
 
     watching = None
     sentinel = _sentinel()
-    if sentinel.is_dir():
-        # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
-        watching = relevant_arm([q.name for q in arms_newest_first(sentinel)], head)
+    try:
+        if sentinel.is_dir():
+            # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
+            watching = relevant_arm([q.name for q in arms_newest_first(sentinel)], head)
+    except OSError as exc:
+        # ⛔ backlog #357(4): an arm directory that cannot be listed (permission denied) raised out of the Stop hook
+        # before any verdict. Whether something is watching is then UNKNOWN — CANNOT RUN, never "nothing watches".
+        print(f"CANNOT RUN: the CI-watch arm directory could not be read ({exc}), so this check could not tell "
+              "whether CI is being watched. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return CANNOT_RUN
 
     code, message = decide(head, watching, rows)
     if code == WARN:
@@ -842,6 +851,45 @@ def _self_test_body() -> int:
     case("...and NOT quiet on the same shaped input with no_pr FALSE — an unreadable PR is "
          "CANNOT RUN, so the verdict tracks the flag rather than being QUIET either way",
          _decide_with(None, False) == CANNOT_RUN)
+
+    # ── backlog #357(4)(5): a malformed check row, or an unreadable arm directory, is CANNOT RUN ─────────────
+    def _decide_on(raw, sentinel=None):
+        """Drive `run_decide` with HEAD, the checks and (optionally) the arm directory stubbed. A crash is a VALUE."""
+        g = globals()
+        keep = {k: g[k] for k in ("_pr_checks_raw", "_skip_reason", "_run", "_sentinel")}
+        g["_pr_checks_raw"] = lambda: (raw, False)
+        g["_skip_reason"] = lambda: None
+        g["_run"] = lambda *a, **k: "cafef00dcafef00d"
+        if sentinel is not None:
+            g["_sentinel"] = lambda: sentinel
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                return run_decide()
+        except Exception as exc:                       # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+            return f"RAISED {type(exc).__name__}"
+        finally:
+            g.update(keep)
+
+    class _DeniedDir:
+        """An arm directory that exists and cannot be listed — `iterdir()` raises PermissionError."""
+        def is_dir(self):
+            return True
+
+        def iterdir(self):
+            raise PermissionError(13, "Permission denied", "ci-watching.d")
+    class _NoDir:
+        """No arm directory at all — nothing is watching."""
+        def is_dir(self):
+            return False
+    case("⭐ backlog #357(5): a check row that is not an object ([123]) is CANNOT RUN, never an AttributeError",
+         _decide_on("[123]") == CANNOT_RUN)
+    case("...and a checks answer that is JSON but not a list ({}) is CANNOT RUN too, never read as 'no checks'",
+         _decide_on("{}") == CANNOT_RUN)
+    case("...while a real pending row still WARNS, so the refusal is about the SHAPE, not every row",
+         _decide_on(json.dumps([{"name": "verify", "state": "PENDING"}]), _NoDir()) == WARN)
+    case("⭐ backlog #357(4): an arm directory that cannot be LISTED (permission denied) is CANNOT RUN, never a "
+         "traceback before any verdict",
+         _decide_on(json.dumps([{"name": "verify", "state": "PENDING"}]), _DeniedDir()) == CANNOT_RUN)
 
     # ── the WARN LOG (2026-09-22) ─────────────────────────────────────────────────────────
     # ⛔ WHY THIS EXISTS: this guard warned on a Stop hook and kept nothing, so when a PR was

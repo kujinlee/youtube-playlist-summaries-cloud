@@ -535,5 +535,31 @@
       ]
     ],
     "expect": "SENTINEL is not resolved at import (it is still None when the suite starts)"
+  },
+  {
+    "name": "backlog #357(5): a check row that is not an object reaches decide again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "            rows = parsed if isinstance(parsed, list) and all(isinstance(r, dict) for r in parsed) else None",
+        "            rows = parsed if isinstance(parsed, list) else []"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(5): a check row that is not an object ([123]) is CANNOT RUN, never an AttributeError"
+    ]
+  },
+  {
+    "name": "backlog #357(4): an unlistable arm directory raises out of the Stop hook again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    except OSError as exc:\n        # ⛔ backlog #357(4)",
+        "    except FileNotFoundError as exc:\n        # ⛔ backlog #357(4)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(4): an arm directory that cannot be LISTED (permission denied) is CANNOT RUN, never a traceback before any verdict"
+    ]
   }
 ]

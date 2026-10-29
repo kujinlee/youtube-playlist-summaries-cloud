@@ -18231,3 +18231,19 @@ is `docs/explainers/work-lines-archive.html`: the generator, commit `40291231`, 
 files, 120 lines, 28 still owing) and the retirement notice; every string from plan CONTENTS is withheld
 pending backlog #194, and the plan files stay git-ignored. Mutation entries
 for the renderer and the rebuilds retire with them; new ones pin the absorption.
+
+## 2026-10-29
+Five tooling checks no longer fail silently, or crash, on input they cannot read. The check that warns about bare
+reference numbers in a finished turn used to say nothing at all when the session transcript was corrupt — the same
+silence as "nothing to warn about"; it now says it could not run. All five — that one, the step-banner check, the
+closing-table check, the CI-watch check and the handoff-path check — could crash on an unreadable byte, a malformed
+hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. Nothing a working session sends them
+changes.
+<!--tech-->
+Branch `guards-cannot-run`, PR #439: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
+(d) stay open. `check-transcript-references` returns rc 2 when no transcript record parses, and refuses a non-object
+payload; `check-banner-armed`, `check-closing-table` and `check-transcript-references` read the transcript as UTF-8
+inside an `(OSError, UnicodeDecodeError)` handler; `check-handoff-path` catches `UnicodeDecodeError` (through the CLI
+too); `check-ci-watched` refuses a checks answer that is not a list of objects and an arm directory it cannot list.
+Every input exits 2 with a CANNOT RUN message and no traceback. 12 new cases, 9 new mutations plus one retargeted,
+each killed by the case it names; `EXPECTED_MUTATIONS` 2521.

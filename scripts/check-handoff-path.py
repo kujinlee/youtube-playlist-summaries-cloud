@@ -95,7 +95,7 @@ def check_file(path: Path) -> tuple[int, list[str]]:
         return 2, [f"CANNOT RUN — {path} does not exist. Treat this as NOT RUN, not as a pass."]
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(3): an undecodable byte raised out as a traceback
         return 2, [f"CANNOT RUN — cannot read {path}: {exc}. Treat this as NOT RUN."]
     if not text.strip():
         return 2, [f"CANNOT RUN — {path} is empty. Treat this as NOT RUN."]
@@ -141,7 +141,7 @@ def _self_test_body() -> int:
     #   'pristine upstream — the reversion this exists to catch: expected 1, got 0'
     # after:
     #   'pristine upstream — the reversion this exists to catch'
-    print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 3 file cases)")
+    print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 5 file cases)")
     for name, text, expected in CASES:
         got = 1 if check_text(text) else 0
         ok = got == expected
@@ -163,6 +163,31 @@ def _self_test_body() -> int:
         ok = code == 2
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] empty file is CANNOT RUN: got {code} want 2")
+
+        undecodable = tmp / "undecodable.md"
+        undecodable.write_bytes(GOOD.encode("utf-8") + b"\xff\n")
+        try:
+            code, _ = check_file(undecodable)
+        except Exception as exc:                   # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+            code = f"RAISED {type(exc).__name__}"
+        ok = code == 2
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ backlog #357(3): an undecodable SKILL.md is CANNOT RUN, never a traceback: "
+              f"got {code} want 2")
+
+        cli_root = tmp / "cli"
+        (cli_root / "scripts").mkdir(parents=True)
+        (cli_root / SKILL_REL).parent.mkdir(parents=True)
+        (cli_root / SKILL_REL).write_bytes(GOOD.encode("utf-8") + b"\xff\n")
+        (cli_root / "scripts" / Path(__file__).name).write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+        import subprocess as _sp357
+        cli = _sp357.run([sys.executable, str(cli_root / "scripts" / Path(__file__).name)], capture_output=True,
+                         text=True, timeout=60, stdin=_sp357.DEVNULL)
+        got = (cli.returncode, "Traceback" in cli.stderr, "CANNOT RUN" in cli.stderr)
+        ok = got == (2, False, True)
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ backlog #357(3): ...and through the plain CLI it exits 2, CANNOT RUN: "
+              f"got {got} want (2, False, True)")
 
         good = tmp / "good.md"
         good.write_text(GOOD, encoding="utf-8")
@@ -251,7 +276,7 @@ def _self_test_body() -> int:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
     failures += hook_failures
 
-    total = len(CASES) + 3 + 10     # 3 file cases and 10 hook cases follow the text cases
+    total = len(CASES) + 5 + 10     # 5 file cases and 10 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 

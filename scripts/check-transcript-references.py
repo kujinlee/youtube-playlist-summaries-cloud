@@ -2,7 +2,7 @@
 """Did the turn just completed show the reader a bare `#N`?
 
     python3 scripts/check-transcript-references.py --decide   # reads a Stop-hook payload on stdin
-    python3 scripts/check-transcript-references.py --self-test # 19 cases
+    python3 scripts/check-transcript-references.py --self-test # 22 cases
 
 WHY THIS EXISTS (owner's decision, 2026-10-20)
 ----------------------------------------------
@@ -127,18 +127,26 @@ def judge(payload: str) -> tuple[int, str, list[tuple[str, str]]]:
         data = json.loads(payload) if payload.strip() else {}
     except json.JSONDecodeError as exc:
         return 2, f"CANNOT RUN — the hook payload is not JSON: {exc}", []
+    if not isinstance(data, dict):     # backlog #357(2): `[]` is JSON, and `.get` on it raised out as exit 1
+        return 2, f"CANNOT RUN — the hook payload is JSON but not an object ({type(data).__name__})", []
     raw = data.get("transcript_path")
     if not raw:
         return 2, "CANNOT RUN — the hook payload carries no `transcript_path`", []
     path = pathlib.Path(raw)
     try:
-        lines = path.read_text().splitlines()
-    except OSError as exc:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(1): an undecodable byte raised out as exit 1
         return 2, f"CANNOT RUN — the transcript could not be read: {exc}", []
 
     cba = _owner("check-banner-armed")
+    records = cba._parse_records(lines)
+    if not records:
+        # ⛔ backlog #331(a): the permissive parser drops every malformed record, and the selector then finds no
+        # completed turn — rc 0, identical to a quiet first turn. NOTHING PARSED is blindness, not quiet: CANNOT RUN,
+        # the way `check-banner-armed` and `check-closing-table` already treat it.
+        return 2, "CANNOT RUN — no record in the transcript parses, so there is no turn this guard could read", []
     try:
-        window = cba.judged_window(cba.windows(cba._parse_records(lines)))
+        window = cba.judged_window(cba.windows(records))
     except Exception as exc:
         # ⛔ backlog #152 r1: unguarded, anything the borrowed turn rule raised left as exit 1 — the warning code.
         return 2, f"CANNOT RUN — the turn rule raised {type(exc).__name__}: {exc}", []
@@ -286,6 +294,24 @@ def _self_test_body() -> int:
                            [user("again"), assistant("x")])
         case("a turn that qualified everything is QUIET", judge(clean)[0], 0)
 
+        corrupt = pathlib.Path(td) / "corrupt.jsonl"
+        corrupt.write_text("not json\n")
+        case("⭐ backlog #331(a): a transcript NO record of which parses is CANNOT RUN (2), never a quiet pass",
+             judge(json.dumps({"transcript_path": str(corrupt)}))[0], 2)
+        undecodable = pathlib.Path(td) / "undecodable.jsonl"
+        undecodable.write_bytes(b'{"type": "user"}\n\xff\n')
+        try:
+            undecodable_rc = judge(json.dumps({"transcript_path": str(undecodable)}))[0]
+        except Exception as exc:                   # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+            undecodable_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN (2), never a traceback",
+             undecodable_rc, 2)
+        try:
+            list_rc = judge("[]")[0]
+        except Exception as exc:                   # noqa: BLE001
+            list_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN (2), never a traceback",
+             list_rc, 2)
         single = transcript([user("go"), assistant("see #291")])
         case("a session with only a live turn has NO SUBJECT, which is quiet not CANNOT RUN",
              judge(single)[0], 0)

@@ -8,7 +8,9 @@
         "CONSUMED_PATH = \"remember.md\""
       ]
     ],
-    "expect": ["near-miss: remember.md without the directory"]
+    "expect": [
+      "near-miss: remember.md without the directory"
+    ]
   },
   {
     "name": "a missing SKILL.md reports a PASS instead of CANNOT RUN",
@@ -19,7 +21,9 @@
         "return 0, [f\"CANNOT RUN — {path} does not exist. Treat this as NOT RUN, not as a pass.\"]"
       ]
     ],
-    "expect": ["missing file is CANNOT RUN"]
+    "expect": [
+      "missing file is CANNOT RUN"
+    ]
   },
   {
     "name": "an empty SKILL.md reports a PASS instead of CANNOT RUN",
@@ -30,7 +34,9 @@
         "return 0, [f\"CANNOT RUN — {path} is empty. Treat this as NOT RUN.\"]"
       ]
     ],
-    "expect": ["empty file is CANNOT RUN"]
+    "expect": [
+      "empty file is CANNOT RUN"
+    ]
   },
   {
     "name": "the violations-to-exit-code mapping is inverted",
@@ -41,7 +47,9 @@
         "    return (0 if violations else 1), violations"
       ]
     ],
-    "expect": ["compliant file exits 0"]
+    "expect": [
+      "compliant file exits 0"
+    ]
   },
   {
     "name": "any mention of mktemp short-circuits the check, so pristine upstream passes",
@@ -52,7 +60,9 @@
         "    violations: list[str] = []\n    if \"mktemp\" in text:\n        return violations\n    if CONSUMED_PATH not in text:"
       ]
     ],
-    "expect": ["pristine upstream — the reversion this exists to catch"]
+    "expect": [
+      "pristine upstream — the reversion this exists to catch"
+    ]
   },
   {
     "name": "backlog #111 r2: the checker writes no receipt, so every verdict reads as 'did not run'",
@@ -65,6 +75,19 @@
     ],
     "expect": [
       "hook: blocks /handoff when the skill names the wrong path"
+    ]
+  },
+  {
+    "name": "backlog #357(3): an undecodable SKILL.md raises a traceback again",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(3)",
+        "    except OSError as exc:   # backlog #357(3)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(3): an undecodable SKILL.md is CANNOT RUN, never a traceback"
     ]
   }
 ]

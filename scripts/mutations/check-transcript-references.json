@@ -30,8 +30,8 @@
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "        window = cba.judged_window(cba.windows(cba._parse_records(lines)))",
-        "        _wins = cba.windows(cba._parse_records(lines))\n        window = _wins[-1] if _wins else None"
+        "        window = cba.judged_window(cba.windows(records))",
+        "        _wins = cba.windows(records)\n        window = _wins[-1] if _wins else None"
       ]
     ],
     "expect": [
@@ -75,6 +75,45 @@
     ],
     "expect": [
       "⭐ a raising turn rule is CANNOT RUN (2), never the warning code (backlog #152 r1)"
+    ]
+  },
+  {
+    "name": "backlog #331(a): a transcript no record of which parses passes QUIET again",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    if not records:\n        # ⛔ backlog #331(a)",
+        "    if False:\n        # ⛔ backlog #331(a)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #331(a): a transcript NO record of which parses is CANNOT RUN (2), never a quiet pass"
+    ]
+  },
+  {
+    "name": "backlog #357(1): an undecodable transcript raises out of the guard again",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(1)",
+        "    except OSError as exc:   # backlog #357(1)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN (2), never a traceback"
+    ]
+  },
+  {
+    "name": "backlog #357(2): a non-object payload raises out of the guard again",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    if not isinstance(data, dict):     # backlog #357(2)",
+        "    if False:     # backlog #357(2)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN (2), never a traceback"
     ]
   }
 ]
