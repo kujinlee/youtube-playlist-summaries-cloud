@@ -18231,3 +18231,16 @@ is `docs/explainers/work-lines-archive.html`: the generator, commit `40291231`, 
 files, 120 lines, 28 still owing) and the retirement notice; every string from plan CONTENTS is withheld
 pending backlog #194, and the plan files stay git-ignored. Mutation entries
 for the renderer and the rebuilds retire with them; new ones pin the absorption.
+
+## 2026-10-29
+The overnight audit of the guard-and-gate-harness backlog checked all 125 open tooling rows against master: 112 are
+still valid, 7 were already fixed, 1 is obsolete, 4 wait on the owner and 1 could not be verified without a paid
+review run. This closes the 7 whose evidence was confirmed by reading it:
+- backlog #251 (PR #411), backlog #362 (PR #410), backlog #358 (PR #407), backlog #223 (PR #419, through backlog #364)
+  and backlog #252 (PR #405) were each merged but never ticked;
+- backlog #160 re-ran its own fixture on master and gives the right verdict;
+- backlog #107 is obsolete: what it described was deleted with plan mode (PR #271).
+Backlog #361 stays open on purpose: its own test, grading the first real compaction, has not happened yet. The same
+change records the owner's answers from the night before: plans stay private and the leak scan becomes a standing guard
+(backlog #194, backlog #393), the five old round documents get back-authored headers (backlog #306), backlog #90 folds
+into backlog #394, and the principle that a page is a perspective of links to other pages (backlog #384).
