@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 223 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 224 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -2620,6 +2620,10 @@ def _self_test_body() -> int:
              lambda: _with_root(_codex_chain, lambda _r: (
                  "2026-10-28-alias" in index_html(_r), "2026-10-28-chain" in index_html(_r), latest_target(_r)))
              == (False, False, "/2026-10-01-topic-live.html"))
+        case("#389 r3 Z1: classify names the chain's verdict directly, in its own root",
+             lambda: _with_root(_codex_chain, lambda _r: [classify(_r / n, _r) for n in (
+                 "2026-10-28-chain.html", "live.html")])
+             == [("retired", "/work-lines-archive"), ("live", None)])
         case("...while the independent live target is still served directly, and listed",
              lambda: _with_root(_codex_chain, lambda _r: (_drive_redirect("/live.html"),
                                                          "live.html" in index_html(_r))) == ((200, None), True))
