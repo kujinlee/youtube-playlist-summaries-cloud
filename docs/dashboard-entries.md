@@ -18254,17 +18254,21 @@ current. What actually got the session back on track was the IN FLIGHT block, wh
 ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
 
 ## 2026-10-29
-Two review-tool fixes. A review run from a second working copy now records the commit of the copy
-that was actually reviewed, rather than the commit of wherever the review tool happens to live —
-before, that mismatch made the merge check refuse with a message that did not explain why. And a
-review that writes "this half did not run" in the short form the round template recommends is now
-accepted; before, following the template turned the required check red unless the same thing was
-also written out a second way.
+The Codex review tool now reviews, and records, the working copy it is run from. Before, a review run
+from a second working copy recorded the commit of wherever the tool happened to live, and the merge
+check then refused with a message that did not say why. The reviewer is also started in that copy,
+and the tool's guard against writing its scratch output into `docs/reviews/` now holds however the
+path is spelled: through a link, with `..`, or in different capital letters on a Mac.
+
+The other half of this pull request, letting the round template's short "this half did not run" form
+count, was taken back out after three review rounds kept finding new holes in it. An architecture
+review explains why, and backlog #182 is open again with the direction it recommends.
 <!--tech-->
-Backlog #121: `scripts/codex-review.py` gains `reviewed_root()` (`git rev-parse --show-toplevel` on
-the cwd, never a fallback to `REPO_ROOT`); `main` passes it to `reviewed_state`, whose `repo_root` is
-now required, and the verdict records it as `tree`. Case: one repository, two worktrees at two
-commits, the wrapper copied into the first and driven from the second through a refusal path.
-Backlog #182: `scripts/check-review-rounds.py` `has_gap_line` falls back to `yaml_gap()`, which reads
-`halves.<codex|claude>: "GAP: <reason>"` from the ```yaml header only. Nine mutation entries added
-(4 + 5) and one rebound; `EXPECTED_MUTATIONS` 45 -> 49 and 36 -> 41.
+Backlog #121, `scripts/codex-review.py`: `reviewed_root()` (`git rev-parse --show-toplevel` on the cwd,
+never a fallback to `REPO_ROOT`) feeds `reviewed_state`, whose `repo_root` is now required, and the
+verdict's new `tree` field. Codex runs with `cwd=` that root and `env=unredirected()`. `resolve_out()`
+is `realpath` of the JOINED `--out`, resolved once in `main`; the location refusal also compares by
+identity (`same_dir_or_inside`, `(st_dev, st_ino)` of every existing ancestor) for a case-folding
+volume, and the watch covers the reviewed root's `docs/reviews/` even before it exists. Filing stays
+under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
+`docs/reviews/architecture-review-2026-10-29-gap-reader.md`.

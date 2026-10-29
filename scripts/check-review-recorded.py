@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 198 cases
+    python3 scripts/check-review-recorded.py --self-test  # 194 cases
 
 WHY THIS EXISTS
 ---------------
@@ -1119,10 +1119,7 @@ def _load_gap_line_parser():
     mod = importlib.util.module_from_spec(spec)
     sys.modules["_crr"] = mod
     spec.loader.exec_module(mod)
-    # ⟳ backlog #182 r1 X5/F4: ASKED FOR THE CODEX HALF, not for the first gap. One document can
-    # record both halves' gaps, and the first one found — by key order, or a prose line for the
-    # other half — used to hide the codex gap this file's only rule is about.
-    return lambda text: mod.has_gap_line(text, "codex")
+    return mod.has_gap_line
 
 
 def first_codex_gap(docs: "list[tuple[str, str]]", parse) -> "str | None":
@@ -2001,33 +1998,10 @@ def _self_test_body() -> int:
          _D in (first_codex_gap([(_D, "REVIEW GAP: codex — usage limit")], _parse) or ""), True)
     case("...a claude-only gap is NOT accepted, however emphatic",
          first_codex_gap([(_D, "**REVIEW GAP:** claude — not invoked; ran as r2")], _parse), None)
-    # ⚠ backlog #182 r1 (PR #439): the real parser now asks for the codex half, so it never hands
-    # this rule a claude gap and the case above passes on the PARSER alone — measured, the r2 High
-    # mutant survived it. The rule still owns any parser that answers for either half; a stub
-    # that does is what reaches it.
-    # ⛔ backlog #182 r2 X2 (Codex), verbatim: a codex gap QUOTED in a finding, after the first
-    # `## `, beside a real claude gap in the preamble. Round 1's every-match collection made it a
-    # waiver and the final-tree rule exited 0; only the preamble is read now.
-    case("#182 r2 X2 a codex gap quoted in a finding is not a waiver",
-         first_codex_gap([(_D, "# Round 1\n\nREVIEW GAP: claude — quota\n\n## Finding: sample "
-                               "input\n\n```text\nREVIEW GAP: codex — example only\n```\n")], _parse),
-         None)
-    case("...and the RULE refuses a claude gap even from a parser that returns one",
-         first_codex_gap([(_D, "x")], lambda _t: "claude: not invoked; ran as r2"), None)
     case("...and a codex gap is found past a claude one",
          first_codex_gap([("a.md", "REVIEW GAP: claude — not invoked"),
                           (_D, "REVIEW GAP: codex — usage limit")], _parse),
          f"{_D} — codex: usage limit")
-    # ⛔ backlog #182 r1 X5/F4 (PR #439): IN ONE DOCUMENT, too. The round header can record both
-    # halves' gaps, in either key order, beside a prose line for the other half; the parser used to
-    # return only the FIRST gap, so the codex one was invisible here and the final-tree check exit 2.
-    _hdr2 = ("# r2\n\n```yaml\nround: 2\nhalves:\n  claude: \"GAP: quota\"\n"
-             "  codex: \"GAP: usage limit\"\nfindings:\n```\n")
-    case("#182 r1 a YAML codex gap listed AFTER a claude one is found",
-         first_codex_gap([(_D, _hdr2)], _parse), f"{_D} — codex: usage limit")
-    case("#182 r1 …and a prose claude line does not shadow it",
-         first_codex_gap([(_D, "REVIEW GAP: claude — none\n\n" + _hdr2.replace(
-             '  claude: "GAP: quota"\n', "  claude: ran\n"))], _parse), f"{_D} — codex: usage limit")
     # ⚠ `parse` IS CALLED, not decorative — every case above passes the real parser, so none of them
     # could tell the difference between using the argument and importing one. Surfaced by
     # check-fixture-variation: a parameter no case varies is a clause no case guards.

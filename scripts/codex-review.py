@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 191 cases
+  scripts/codex-review.py --self-test  # 196 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -558,8 +558,39 @@ def resolve_out(out_path: str, cwd: "str | None" = None) -> str:
     return os.path.realpath(os.path.join(cwd or os.getcwd(), out_path))
 
 
-def out_location_refusal(out_path: str, reviewed: "str | None" = None) -> "str | None":
-    """Refuse an `--out` inside either artifact tree, or None. No filesystem beyond `realpath`.
+def same_dir_or_inside(path: str, tree: str, stat=os.stat) -> bool:
+    """Is `path`, or any EXISTING ancestor of it, the directory `tree` — by identity? IMPURE.
+
+    ⛔ backlog #121 r3 M3 (PR #439). `realpath` follows symlinks but does not fold case, so on
+    macOS's case-insensitive volume `Docs/Reviews/claude/x.md` named `docs/reviews/claude/` without
+    matching it as text. The filesystem's own answer to "is this the same directory" is
+    `(st_dev, st_ino)`, so that is what is compared — every existing ancestor against the tree,
+    which is true on any volume, whatever folds or aliases the spelling. A tree that does not exist
+    yet has no identity and matches nothing here; the lexical rule beside it still covers it.
+    `stat` is injectable so a case can model a case-folding volume on a case-sensitive one.
+    """
+    try:
+        t = stat(tree)
+    except OSError:
+        return False
+    p = path
+    while True:
+        try:
+            st = stat(p)
+            if (st.st_dev, st.st_ino) == (t.st_dev, t.st_ino):
+                return True
+        except OSError:
+            pass
+        parent = os.path.dirname(p)
+        if parent == p:
+            return False
+        p = parent
+
+
+def out_location_refusal(out_path: str, reviewed: "str | None" = None,
+                         stat=os.stat) -> "str | None":
+    """Refuse an `--out` inside either artifact tree, or None. Reads the filesystem (`realpath`,
+    and `stat` for identity — backlog #121 r3).
 
     ⛔ **r1 M5: THE SAFETY ARGUMENT WAS TRUE ONLY UNDER A CONDITION NOTHING ENFORCED.** Three texts
     assert that `quarantine()` cannot reach a promoted half because `dir_snapshot` is
@@ -591,7 +622,8 @@ def out_location_refusal(out_path: str, reviewed: "str | None" = None) -> "str |
     # compares equal to where it is (r2 X5: the r1 kill leaned on macOS's `/var` spelling instead).
     here = os.path.dirname(resolve_out(out_path))
     trees = {os.path.realpath(os.path.join(r, REVIEW_ROOT)) for r in (REPO_ROOT, reviewed) if r}
-    if not any(here == t or here.startswith(t + os.sep) for t in trees):
+    if not any(here == t or here.startswith(t + os.sep) or same_dir_or_inside(here, t, stat)
+               for t in trees):
         return None
     return (f"CANNOT RUN — --out is inside the artifact tree: {out_path}\n"
             f"  --out is a SCRATCH path and the documented shape puts it outside the repository "
@@ -2672,12 +2704,53 @@ def _self_test_body() -> int:
         # The r1 kill depended on macOS spelling `/var` and `/private/var` differently; with TMPDIR
         # already resolved the mutant survived. A reviewed root reached THROUGH a symlink is the
         # case the realpath exists for, on any platform.
-        _blink = os.path.join(td3, "b-link")
-        os.symlink(_wb, _blink)
+        # ⟳ r3: and its docs/reviews does NOT exist yet. Where it exists, the identity rule
+        # (`same_dir_or_inside`, r3 M3) already follows the link, so only a missing tree leaves the
+        # realpath of the TREE as the one thing that can answer — measured, the mutant survived the
+        # existing-tree form of this case once identity landed.
+        _e = os.path.join(td3, "e")
+        os.makedirs(_e)
+        _blink = os.path.join(td3, "e-link")
+        os.symlink(_e, _blink)
         chk("#121 r2 X5 a reviewed root named through a symlink still refuses an --out in its "
-            "docs/reviews", bool(out_location_refusal(os.path.join(os.path.realpath(_wb), "docs",
+            "docs/reviews", bool(out_location_refusal(os.path.join(os.path.realpath(_e), "docs",
                                                                      "reviews", "r.md"),
                                                     reviewed=_blink)), True)
+        # ── r3 M3 (Claude), the reviewer's input: a CASE VARIANT of docs/reviews ──────────────────
+        # `realpath` follows links but does not fold case, so on macOS's case-insensitive volume
+        # `--out <T>/Docs/Reviews/claude/p-r1-claude.md` was not refused and the write landed in
+        # `<T>/docs/reviews/claude/`. The refusal now also compares by IDENTITY — the
+        # (st_dev, st_ino) of every existing ancestor against each tree's — which is what the
+        # filesystem itself means by "the same directory", on any volume.
+        _t = os.path.join(td3, "t")
+        os.makedirs(os.path.join(_t, "docs", "reviews", "claude"))
+        _cv = os.path.join(_t, "Docs", "Reviews", "claude", "p-r1-claude.md")
+        _ci = os.path.isdir(os.path.join(_t, "DOCS"))
+        chk("#121 r3 M3 on THIS volume, a case variant of docs/reviews is refused exactly when the "
+            "volume folds case", bool(out_location_refusal(_cv, reviewed=_t)), _ci)
+        # The same rule on ANY platform: a `stat` that ALIASES a spelling no real volume folds
+        # (`Alias/Tree` -> `docs/reviews`), so the case is about identity alone — it holds on CI's
+        # case-sensitive Linux, and it does not lean on macOS folding case for it.
+        def _fold(p, _s=os.stat):
+            return _s(p.replace(os.sep + "Alias" + os.sep + "Tree", os.sep + "docs" + os.sep
+                                + "reviews"))
+        chk("⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled",
+            bool(out_location_refusal(os.path.join(_t, "Alias", "Tree", "claude", "p-r1-claude.md"),
+                                      reviewed=_t, stat=_fold)), True)
+        chk("#121 r3 M3 …and identity alone says nothing about a directory that is NOT the tree",
+            out_location_refusal(os.path.join(_t, "Alias", "Other", "x.md"), reviewed=_t,
+                                 stat=_fold), None)
+        # ⚠ The identity rule SUBSUMES the text prefix wherever the tree exists — measured, the r1 M5
+        # "only the root is refused" mutant then survived. The prefix still answers alone for a
+        # tree that does not exist yet, which identity cannot see; this is that case.
+        chk("#121 r3 an --out under a NOT-YET-EXISTING artifact tree's writer directory is refused",
+            bool(out_location_refusal(os.path.join(td3, "d", "docs", "reviews", "claude", "x.md"),
+                                      reviewed=os.path.join(td3, "d"))), True)
+        chk("#121 r3 M3 same_dir_or_inside walks UP to the tree from a deeper directory",
+            (same_dir_or_inside(os.path.join(_t, "docs", "reviews", "claude"),
+                                os.path.join(_t, "docs", "reviews")),
+             same_dir_or_inside(os.path.join(_t, "docs"), os.path.join(_t, "docs", "reviews"))),
+            (True, False))
 
     # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
     # than filed. `chk` already does `extra += 1` on every call, so this literal added a second

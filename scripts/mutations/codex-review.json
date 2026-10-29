@@ -435,13 +435,12 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if not any(here == t or here.startswith(t + os.sep) for t in trees):",
-        "    if not any(here == t for t in trees):"
+        "here == t or here.startswith(t + os.sep) or same_dir_or_inside",
+        "here == t or same_dir_or_inside"
       ]
     ],
     "expect": [
-      "an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
-      "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
+      "#121 r3 an --out under a NOT-YET-EXISTING artifact tree's writer directory is refused"
     ]
   },
   {
@@ -449,8 +448,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if not any(here == t or here.startswith(t + os.sep) for t in trees):\n        return None",
-        "    if any(here == t or here.startswith(t + os.sep) for t in trees):\n        return None"
+        "    if not any(here == t or here.startswith(t + os.sep) or same_dir_or_inside(here, t, stat)\n               for t in trees):\n        return None",
+        "    if any(here == t or here.startswith(t + os.sep) or same_dir_or_inside(here, t, stat)\n               for t in trees):\n        return None"
       ]
     ],
     "expect": [
@@ -725,5 +724,49 @@
     "expect": [
       "#121 r2 X4 an artifact directory created DURING the run is still watched"
     ]
+  },
+  {
+    "name": "#121 r3 M3 identity never matches, so only the spelling is compared",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            if (st.st_dev, st.st_ino) == (t.st_dev, t.st_ino):",
+        "            if False:"
+      ]
+    ],
+    "expect": "⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled"
+  },
+  {
+    "name": "#121 r3 M3 the refusal does not ask for identity",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        " or same_dir_or_inside(here, t, stat)",
+        ""
+      ]
+    ],
+    "expect": "⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled"
+  },
+  {
+    "name": "#121 r3 M3 the identity check stops at the directory itself, never walking up",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        parent = os.path.dirname(p)\n",
+        "        parent = p\n"
+      ]
+    ],
+    "expect": "#121 r3 M3 same_dir_or_inside walks UP to the tree from a deeper directory"
+  },
+  {
+    "name": "#121 r3 M3 the refusal drops the stat it was handed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "same_dir_or_inside(here, t, stat)",
+        "same_dir_or_inside(here, t)"
+      ]
+    ],
+    "expect": "⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled"
   }
 ]

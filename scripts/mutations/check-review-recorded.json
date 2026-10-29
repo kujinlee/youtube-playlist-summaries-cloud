@@ -218,7 +218,7 @@
       ]
     ],
     "expect": [
-      "...and the RULE refuses a claude gap even from a parser that returns one"
+      "...a claude-only gap is NOT accepted, however emphatic"
     ]
   },
   {
@@ -786,16 +786,5 @@
       "a LIST dirty is unusable too \u2014 a real head with an overlay nothing can read is the same vacuous comparison a NULL one is, and one record on disk actually carries it",
       "...as is a STRING dirty, so the rule is the TYPE and not a list of bad values"
     ]
-  },
-  {
-    "name": "#182 r1 the codex reader takes the FIRST gap again",
-    "file": "scripts/check-review-recorded.py",
-    "edits": [
-      [
-        "    return lambda text: mod.has_gap_line(text, \"codex\")",
-        "    return mod.has_gap_line"
-      ]
-    ],
-    "expect": "#182 r1 a YAML codex gap listed AFTER a claude one is found"
   }
 ]

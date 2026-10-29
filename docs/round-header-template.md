@@ -45,7 +45,7 @@ findings:
 | `round` | integer | the round number; the set must be a gapless `1..N` with no duplicates |
 | `fixes_nontrivial` | `true` `false` | were this round's fixes more than a reworded line? **`true` blocks convergence** — a non-trivial fix is unreviewed code |
 | `subject` | string | the branch or artifact under review |
-| `halves.<name>` | `ran`, or `"GAP: <reason>"` | whether each half ran; a gap carries its reason. ⟳ `check-review-rounds.py` reads this form as a gap (backlog #182) — a prose `REVIEW GAP:` line is no longer also needed. ⚠ **Only this exact spelling is read:** `codex:`/`claude:` at two spaces directly under `halves:`, the value in DOUBLE quotes, a reason that does not start with `#`, in the first fence of the document's PREAMBLE — the lines before the first `## ` heading. ⟳ r2 (PR #439): a declaration counts ONLY in the preamble, in either grammar; a `REVIEW GAP:` line or a header under a `## ` heading is read as an example, never as a declaration. Single or no quotes, a trailing comment, a flow mapping or a blank line inside `halves:` is NOT read, and the half counts as missing. The gap must name the half that is actually missing |
+| `halves.<name>` | `ran`, or a string starting `GAP:` | whether each half ran; a gap carries its reason |
 | `severity` | `Blocking` `High` `Medium` `Low` | as filed by the reviewer |
 | `aim` | `deliverable` `instrument` | does the finding sit in code the branch **ships**, or in a test, guard or harness that **measures** it? |
 | `fix_induced` | `true` `false` | was the defect introduced by a fix written **after** a previous round? ⚠ **UNDECIDED:** whether a fix written inside the SAME round — by its first half's fold, reviewed by its second half — counts; see backlog #347 |
