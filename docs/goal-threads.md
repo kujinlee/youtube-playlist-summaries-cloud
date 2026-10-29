@@ -51,3 +51,20 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #363 · the goal tree as a logged, generated page
 - bookkeeping · PR #423 · backlog #384, backlog #385 and backlog #386 filed; the design-ideas section
 - side · PR #423 · the tag-vocabulary survey page and the suite inventory page
+- fix · backlog #389, PR #434 · the work-lines page retires into the goal tree, its history archived (the owner's decision D2)
+
+## GOAL compaction-guards
+> 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
+> 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"
+- fix · backlog #361, PR #425 · a compaction leaves a snapshot of what is in flight and prints it back after
+
+## GOAL dashboard-decisions
+> 2026-10-28 09:46 "⏳ dashboard asks triage — VERIFIED 06:47, WAITS ON YOU (confirm 27 / 2 / 7) -> what is this?"
+> 2026-10-28 10:23 "Meanwhile, 7 dashboard decisions are waiting for you. -> what is this?"
+- fix · PR #427 · the dashboard clears 29 of its 36 waiting asks that later work had settled
+- fix · PR #428 · the six unreadable asks are asked again in the form the dashboard reads
+- fix · PR #429 · the owner's sixteen answers are applied to the backlog
+- fix · PR #432 · backlog #337 records the owner's re-answer, a third outcome value
+- fix · PR #430 · the memory-index budget warning runs when the index is edited (the owner's L3)
+- fix · PR #431 · the memory index is trimmed and sixteen unbacked memory files are committed (the owner's L2)
+- bookkeeping · PR #426 · backlog #388, backlog #389 and backlog #390 filed
