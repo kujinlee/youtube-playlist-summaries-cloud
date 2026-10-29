@@ -18252,3 +18252,11 @@ some compactions ahead of time (marked `precomputed` in the transcript: 3 of thi
 hook runs at preparation time. At restore, the capture was 5h46m old, so the guard correctly refused to show it as
 current. What actually got the session back on track was the IN FLIGHT block, which is built from `git`, `gh` and the
 ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
+
+## 2026-10-29
+A new page, the **dev speed monitor** (`/2026-10-29-topic-dev-speed-monitor.html`), measures where development time
+goes. Its headline: Opus 5.5 does not write tokens faster than Opus 5 (about 97 vs 99 tokens/s per message). What
+changed is how much work a PR needs: about 1,100 assistant messages per PR fell to about 70. That is an association,
+since the two windows held different work. CI's median per run grew from 4.5 to 25 minutes over seven weeks, all of it
+the mutation sweep growing inside one job, and nothing flagged it. Backlog #397 proposes a tripwire that would catch
+that kind of drift in the week it happens.
