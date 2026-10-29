@@ -18256,11 +18256,13 @@ ledger when the session restarts. Backlog #396 moves the snapshot onto that same
 ## 2026-10-29
 Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). Before
 every `git push`, a hook compares each line the branch adds against the words of every plan in every checkout.
-A line holding six words in a row from a plan is refused, naming the file and line but never the words, unless
-those six words were already in the repo. It cannot run in CI, which has no plans, so it runs where they are.
+A line holding eight words in a row from a plan is refused, naming the file and line, unless those eight words
+were already in the repo. The matched words appear only on your own terminal, so a false alarm takes seconds to
+judge. A plan fragment shorter than eight words in a row is not caught. It cannot run in CI, which has no plans, so it runs where they are.
 A fresh clone with no plans is allowed to push, with a warning that nothing was checked. `ALLOW_PLAN_LEAK=1`
 lets a judged coincidence through.
 <!--tech-->
-`scripts/check-plan-leak.py` (57 self-test cases, 32 mutations, each killed by the case it names) and
+`scripts/check-plan-leak.py` (63 self-test cases, 38 mutations, each killed by the case it names) and
 `.claude/hooks/check-plan-leak.sh`. Run on PR #434's pre-redaction commit it reports the one line the scratchpad
-scan found. Ignoring phrases that were already public removed 13 false hits on PRs #433, #434 and #425.
+scan found. At a 6-word window, ignoring phrases that were already public removed 13 false hits on PRs #433, #434 and #425;
+the owner then set the window to 8 words (1 false hit over the last 40 merged commits against 3 at six).

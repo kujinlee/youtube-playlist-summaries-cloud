@@ -52,7 +52,7 @@
     "    for label, s in sources:\n        w = words(s)\n        for i in range(len(w) - n):"
    ]
   ],
-  "expect": "windows of 6 over an 8-word string are 3, each labelled with its plan file"
+  "expect": "windows of 8 over a 10-word string are 3, each labelled with its plan file"
  },
  {
   "name": "windows ignores the size it is given and always cuts 6",
@@ -63,7 +63,7 @@
     "            out.setdefault(tuple(w[i:i + 6]), label)"
    ]
   ],
-  "expect": "windows of 8 over the same string are ONE run of 8 words — the size is the one GIVEN"
+  "expect": "windows of 10 over the same string are ONE run of 10 words — the size is the one GIVEN"
  },
  {
   "name": "a `+++ ` line inside a hunk is read as a file header, so an added `++ ` line is never judged",
@@ -85,7 +85,7 @@
     "            n = 1"
    ]
   ],
-  "expect": "⭐ KNOWN POSITIVE: a 6-word run of a plan step in an added line is a hit, at the right line"
+  "expect": "⭐ KNOWN POSITIVE: an 8-word run of a plan step in an added line is a hit, at the right line"
  },
  {
   "name": "removed lines are judged as if added, so deleting a leak is refused as one",
@@ -169,11 +169,11 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "                out.append((path, ln, src))\n                break",
-    "                out.append((path, ln, src))"
+    "                out.append((path, ln, src, \" \".join(t)))\n                break",
+    "                out.append((path, ln, src, \" \".join(t)))"
    ]
   ],
-  "expect": "⭐ KNOWN POSITIVE: a 6-word run of a plan step in an added line is a hit, at the right line"
+  "expect": "⭐ KNOWN POSITIVE: an 8-word run of a plan step in an added line is a hit, at the right line"
  },
  {
   "name": "candidate_windows returns every window of every added line, plan text or not",
@@ -224,8 +224,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    return (HITS if hits else CLEAN), msg",
-    "    return CLEAN, msg"
+    "    return (HITS if hits else CLEAN), msg, local_lines(hits)",
+    "    return CLEAN, msg, local_lines(hits)"
    ]
   ],
   "expect": "⭐ main over a built world: a leaked step exits 1 and names README.md:2"
@@ -242,15 +242,15 @@
   "expect": "⭐ a plan held in ANOTHER checkout is read: pushing from a worktree sees the main checkout's plan"
  },
  {
-  "name": "a hit carries the matched words instead of the plan file, so the refusal quotes the leak",
+  "name": "the report prints the matched phrase in place of the plan file, so stdout quotes the leak",
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "                out.append((path, ln, src))",
-    "                out.append((path, ln, \" \".join(t)))"
+    "for p, ln, src, _ in hits])",
+    "for p, ln, _, src in hits])"
    ]
   ],
-  "expect": "⛔ ...and its output NEVER contains the matched plan words"
+  "expect": "⛔ the report never carries the matched phrase"
  },
  {
   "name": "no plans blocks the push instead of warning, so a fresh clone cannot push",
@@ -334,11 +334,11 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    rc, msg = scan(root, a.base, a.head, a.window)",
-    "    rc, msg = scan(root, a.base, a.head, WINDOW)"
+    "    rc, msg, local = scan(root, a.base, a.head, a.window)",
+    "    rc, msg, local = scan(root, a.base, a.head, WINDOW)"
    ]
   ],
-  "expect": "--window is read: at 9 words no 8-word plan string can hit"
+  "expect": "--window is read: at 11 words no 10-word plan string can hit"
  },
  {
   "name": "a failing git is read as empty output, so a missing base compares nothing and passes",
@@ -350,5 +350,71 @@
    ]
   ],
   "expect": "main with a base that does not exist is CANNOT RUN (3)"
+ },
+ {
+  "name": "a deny never carries the matched phrase to the user, so a false positive cannot be judged",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        if local:\n            reply[\"systemMessage\"] = local",
+    "        if False:\n            reply[\"systemMessage\"] = local"
+   ]
+  ],
+  "expect": "⭐ decide: the phrase goes to the user-facing systemMessage of a deny and NOWHERE persisted"
+ },
+ {
+  "name": "the matched phrase is appended to the deny REASON, which reaches the model's context",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "f\"re-run prefixed with {ESCAPE}\")\n        if local:",
+    "f\"re-run prefixed with {ESCAPE}\" + local)\n        if local:"
+   ]
+  ],
+  "expect": "⭐ decide: the phrase goes to the user-facing systemMessage of a deny and NOWHERE persisted"
+ },
+ {
+  "name": "the CLI prints the matched phrases to STDOUT, which a redirect can persist",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if local:\n        print(local, file=sys.stderr)",
+    "    if local:\n        print(local)"
+   ]
+  ],
+  "expect": "⛔ ...and its STDOUT NEVER contains the matched plan words"
+ },
+ {
+  "name": "local_lines drops the phrase, so the local terminal shows nothing to judge",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "[f\"  {p}:{ln}: '{phrase}'\"",
+    "[f\"  {p}:{ln}\""
+   ]
+  ],
+  "expect": "⭐ local_lines carries the matched phrase, at its path:line"
+ },
+ {
+  "name": "scan computes the hits and hands back no local text",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    ", msg, local_lines(hits)\n",
+    ", msg, \"\"\n"
+   ]
+  ],
+  "expect": "⭐ ...while the LOCAL stderr shows the matched phrase at its path:line"
+ },
+ {
+  "name": "hook_reply drops the local text on the way to decide",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return decide(rc, msg, local)",
+    "    return decide(rc, msg)"
+   ]
+  ],
+  "expect": "⛔ main --hook: the phrase is in the systemMessage only — not the reason, not stderr"
  }
 ]

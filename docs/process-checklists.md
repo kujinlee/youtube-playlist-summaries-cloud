@@ -83,14 +83,17 @@ member behind a cast, so behavioural tests are the only net there.
 
 **The plan-leak push gate (backlog #393, 2026-10-29).** Plans under `.claude/plans/` stay private and
 the repo is public (backlog #194), so every `git push` runs `scripts/check-plan-leak.py --hook`: a line
-the branch ADDS to a tracked file must not carry six consecutive words of any checkout's plan objective
-or list item, unless those six words were already in a tracked file at `origin/master`. It cannot run
+the branch ADDS to a tracked file must not carry eight consecutive words of any checkout's plan objective
+or list item, unless those eight words were already in a tracked file at `origin/master`. It cannot run
 in CI (no plans there — a zero over nothing), so it is a PreToolUse hook. What it does:
-- **hits → the push is denied**, naming `path:line` and the plan FILE, never the words. Reword the line;
-  a judged coincidence (a generic phrase) is pushed with `ALLOW_PLAN_LEAK=1`.
+- **hits → the push is denied**, naming `path:line` and the plan FILE. The matched words are shown ONLY
+  on the local terminal (the deny's user-facing message; stderr by hand), never in the model's context or
+  any file. Reword the line; a judged coincidence (a generic phrase) is pushed with `ALLOW_PLAN_LEAK=1`.
 - **no plan files (a fresh clone) → allowed, with a NOT RUN warning** to the user and the model.
 - **CANNOT RUN otherwise (git failed, a plan unreadable) or the checker crashed → denied.**
-- Bounds: a quotation under six words, or wrapped across lines, passes; a plan's headings and paragraphs
+- Bounds: ⛔ **a plan fragment shorter than 8 consecutive words is not caught** (the owner's window,
+  2026-10-29: 1 false hit over 40 merged commits against 3 at six words, no catch lost), nor one wrapped
+  across lines; a plan's headings and paragraphs
   are not plan text. Run it by hand with `python3 scripts/check-plan-leak.py` (exit 0/1/2/3).
 
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.

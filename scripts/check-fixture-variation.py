@@ -317,9 +317,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     "check-plan-leak.py": (
         'candidate_windows.added', 'candidate_windows.n', 'candidate_windows.removed', 'candidate_windows.win',
-        'decide.msg', 'decide.rc', 'diff_lines.diff_text', 'hook_reply.payload', 'hook_reply.run',
+        'decide.local', 'decide.msg', 'decide.rc', 'diff_lines.diff_text', 'hook_reply.payload', 'hook_reply.run',
         'judged_text.body', 'judged_text.path', 'judged_text.removed', 'leak_hits.added', 'leak_hits.n',
-        'leak_hits.public', 'leak_hits.removed', 'leak_hits.win', 'main.argv', 'main.root', 'main.stdin',
+        'leak_hits.public', 'leak_hits.removed', 'leak_hits.win', 'local_lines.hits', 'main.argv', 'main.root',
+        'main.stdin',
         'plan_strings.serving', 'plan_strings.text', 'public_windows.base', 'public_windows.cands',
         'public_windows.root', 'report.hits', 'report.n', 'report.n_added', 'report.n_strings',
         'report.n_windows', 'windows.n', 'windows.sources', 'words.s',
