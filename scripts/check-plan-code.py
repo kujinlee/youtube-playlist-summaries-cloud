@@ -1276,8 +1276,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-29, backlog #182: 36 -> 41 — the template's YAML `halves.<name>: "GAP: …"` is read;
     #   r1 (PR #439) 41 -> 50 — the reader is narrowed: five entries retire with the old reader,
     #   fourteen pin the new grammar and the missing-half rule. The blank-line-skip mutant is gone
-    #   with its line: a blank line now ends `halves:`.
-    "scripts/check-review-rounds.py": 50,
+    #   with its line: a blank line now ends `halves:`. r2 50 -> 55 — a declaration counts only in
+    #   the PREAMBLE (`preamble`); two entries rebound to the moved lines.
+    "scripts/check-review-rounds.py": 55,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1703,8 +1704,10 @@ EXPECTED_MUTATIONS = {
     #     which is the state the message was in before this fold.
     # ⟳ 2026-10-29, backlog #121: 45 -> 49 — the head is the REVIEWED tree's, named in the record;
     #   r1 (PR #439) 49 -> 57 — Codex runs there, under the same git environment, and the --out
-    #   refusal and the watch cover that tree's docs/reviews.
-    "scripts/codex-review.py": 57,
+    #   refusal and the watch cover that tree's docs/reviews. r2 57 -> 60 — `--out` is resolved
+    #   through its symlinks before `..` (four added), the lexical-spelling entry retires with the
+    #   comparison it mutated, and two M5 entries are rebound.
+    "scripts/codex-review.py": 60,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -6256,7 +6259,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2539)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2547)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

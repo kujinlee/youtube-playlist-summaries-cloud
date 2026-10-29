@@ -30,7 +30,7 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "    for m in GAP.finditer(text):",
+        "    for m in GAP.finditer(preamble(text)):",
         "    for m in ():"
       ]
     ],
@@ -486,8 +486,8 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "    for i in range(start, len(lines)):",
-        "    for i in range(len(lines) - 1, start - 1, -1):"
+        "    for i in range(len(lines)):\n        f = FENCE.match(lines[i])",
+        "    for i in range(len(lines) - 1, -1, -1):\n        f = FENCE.match(lines[i])"
       ]
     ],
     "expect": [
@@ -612,7 +612,7 @@
       ]
     ],
     "expect": [
-      "#182 r1 F1 a ```yaml block quoted in a FINDING is not the header"
+      "#182 r2 inside the preamble, a yaml fence AFTER another fence is not the header"
     ]
   },
   {
@@ -652,6 +652,71 @@
     ],
     "expect": [
       "#182 r1 X5 both halves' gaps are returned, whatever the key order"
+    ]
+  },
+  {
+    "name": "#182 r2 the preamble is the whole document again",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    return \"\\n\".join(line for i, line in enumerate(lines[:end]) if i != title)",
+        "    return text"
+      ]
+    ],
+    "expect": [
+      "#182 r2 X1 a finding's yaml example is not the header, even as the first fence"
+    ]
+  },
+  {
+    "name": "#182 r2 X2 prose gap lines are read from the whole document",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "GAP.finditer(preamble(text))",
+        "GAP.finditer(text)"
+      ]
+    ],
+    "expect": [
+      "#182 r2 X2 a prose gap quoted after the first `## ` is not a declaration"
+    ]
+  },
+  {
+    "name": "#182 r2 X1 the header is looked for in the whole document",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    lines = preamble(text).split(\"\\n\")",
+        "    lines = text.split(\"\\n\")"
+      ]
+    ],
+    "expect": [
+      "#182 r2 X1 a finding's yaml example is not the header, even as the first fence"
+    ]
+  },
+  {
+    "name": "#182 r2 the preamble ignores fences, so a code comment is the title",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if f:\n            fence = f.group(1)",
+        "        if False:\n            fence = f.group(1)"
+      ]
+    ],
+    "expect": [
+      "#182 r2 a `# ` or `## ` line inside a fence is code, not the title or the end"
+    ]
+  },
+  {
+    "name": "#182 r2 lines above the title are dropped from the preamble",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "if i != title)",
+        "if title is not None and i > title)"
+      ]
+    ],
+    "expect": [
+      "#182 r2 …and a gap line ABOVE the title is in the preamble too (3 live rounds do this)"
     ]
   }
 ]

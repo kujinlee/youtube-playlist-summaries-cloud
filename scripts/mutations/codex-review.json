@@ -435,8 +435,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if not any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):",
-        "    if not any(h == t for h in heres for t in trees):"
+        "    if not any(here == t or here.startswith(t + os.sep) for t in trees):",
+        "    if not any(here == t for t in trees):"
       ]
     ],
     "expect": [
@@ -449,8 +449,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if not any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):\n        return None",
-        "    if any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):\n        return None"
+        "    if not any(here == t or here.startswith(t + os.sep) for t in trees):\n        return None",
+        "    if any(here == t or here.startswith(t + os.sep) for t in trees):\n        return None"
       ]
     ],
     "expect": [
@@ -653,21 +653,6 @@
     "expect": "#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out"
   },
   {
-    "name": "#121 r1 C2 the refusal compares only the lexical spelling",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    heres = {here, os.path.realpath(here)}",
-        "    heres = {here}"
-      ],
-      [
-        "             for f in (os.path.abspath, os.path.realpath)}",
-        "             for f in (os.path.abspath,)}"
-      ]
-    ],
-    "expect": "#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out"
-  },
-  {
     "name": "#121 r1 C2 the watch covers only this file's checkout",
     "file": "scripts/codex-review.py",
     "edits": [
@@ -688,5 +673,57 @@
       ]
     ],
     "expect": "#121 r1 C2 an agent write into the REVIEWED tree's docs/reviews is caught and moved out"
+  },
+  {
+    "name": "#121 r2 X3 --out is normalised before its symlinks are resolved",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return os.path.realpath(os.path.join(cwd or os.getcwd(), out_path))",
+        "    return os.path.realpath(os.path.abspath(os.path.join(cwd or os.getcwd(), out_path)))"
+      ]
+    ],
+    "expect": [
+      "#121 r2 X3 --out resolves THROUGH the symlink before `..`, to where it really lands"
+    ]
+  },
+  {
+    "name": "#121 r2 X3 main checks and writes the --out as typed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    args.out = resolve_out(args.out)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "#121 r2 X3 an `alias/..` --out onto an existing capture meets the OVERWRITE refusal"
+    ]
+  },
+  {
+    "name": "#121 r2 X5 the artifact trees are compared unresolved",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    trees = {os.path.realpath(os.path.join(r, REVIEW_ROOT))",
+        "    trees = {os.path.join(r, REVIEW_ROOT)"
+      ]
+    ],
+    "expect": [
+      "#121 r2 X5 a reviewed root named through a symlink still refuses an --out in its docs/reviews"
+    ]
+  },
+  {
+    "name": "#121 r2 X4 a missing artifact directory is not watched",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            if d not in dirs:\n                dirs.append(d)",
+        "            if os.path.isdir(d) and d not in dirs:\n                dirs.append(d)"
+      ]
+    ],
+    "expect": [
+      "#121 r2 X4 an artifact directory created DURING the run is still watched"
+    ]
   }
 ]

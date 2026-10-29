@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 197 cases
+    python3 scripts/check-review-recorded.py --self-test  # 198 cases
 
 WHY THIS EXISTS
 ---------------
@@ -2005,6 +2005,13 @@ def _self_test_body() -> int:
     # this rule a claude gap and the case above passes on the PARSER alone — measured, the r2 High
     # mutant survived it. The rule still owns any parser that answers for either half; a stub
     # that does is what reaches it.
+    # ⛔ backlog #182 r2 X2 (Codex), verbatim: a codex gap QUOTED in a finding, after the first
+    # `## `, beside a real claude gap in the preamble. Round 1's every-match collection made it a
+    # waiver and the final-tree rule exited 0; only the preamble is read now.
+    case("#182 r2 X2 a codex gap quoted in a finding is not a waiver",
+         first_codex_gap([(_D, "# Round 1\n\nREVIEW GAP: claude — quota\n\n## Finding: sample "
+                               "input\n\n```text\nREVIEW GAP: codex — example only\n```\n")], _parse),
+         None)
     case("...and the RULE refuses a claude gap even from a parser that returns one",
          first_codex_gap([(_D, "x")], lambda _t: "claude: not invoked; ran as r2"), None)
     case("...and a codex gap is found past a claude one",

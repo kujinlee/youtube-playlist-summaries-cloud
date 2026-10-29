@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 110 cases
+    python3 scripts/check-review-rounds.py --self-test # 119 cases
 
 WHY THIS EXISTS
 ---------------
@@ -196,6 +196,17 @@ KNOWN: set[tuple[str, int]] = {
     # missing BY NAME too. Exempted by name rather than re-filed: they are merged history.
     ("adopt-90", 1), ("adopt-90", 2), ("adopt-90", 3), ("adopt-90", 4),
     ("describe-twelve", 1), ("describe-twelve", 2), ("describe-twelve", 3),
+    # ⟳ backlog #182 r2 (PR #439): a declaration counts only in the PREAMBLE (`preamble`). These
+    # sixteen rounds each record a REAL gap — read one by one, none is a quotation or inside a fence
+    # — but under a `## ` heading or at the end of the document, where an example would stand too.
+    # Merged history, so exempted by name rather than re-filed.
+    ("closing-table", 7), ("closing-table", 8), ("closing-table", 10), ("closing-table", 11),
+    ("fix-src-viewer-escaping", 1), ("fix-src-viewer-escaping", 2),
+    ("late-flush-escalation-code", 1),
+    ("pin-python-interpreter", 4), ("pin-python-interpreter", 6), ("pin-python-interpreter", 7),
+    ("plan-coverage-verdict-union", 1), ("recall-llm", 9), ("referential-entry-gate-code", 1),
+    ("seed-explainer-serve-manifest", 1), ("seed-explainer-serve-manifest", 2),
+    ("seed-explainer-serve-manifest", 3),
 }
 
 
@@ -229,11 +240,45 @@ HALF_CHILD = re.compile(r"^  ([A-Za-z_][\w-]*):(.*)$")
 YAML_GAP_VALUE = re.compile(r'^[ \t]*"GAP:[ \t]*([^"#\s][^"]*?)[ \t]*"$')
 
 
-def header_body(text: str) -> "str | None":
-    """The body of the round header — the first fence after the title, if it is ```yaml. PURE."""
+def preamble(text: str) -> str:
+    """The lines before the first `## ` heading, less the `# ` title. PURE.
+
+    ⛔ backlog #182 r2 (PR #439): THE ONE PLACE A DECLARATION MAY STAND. Round 1 narrowed what a
+    declaration LOOKS like, and Codex refuted it with a yaml example that was a finding's first
+    fence and a prose codex gap quoted in a finding: both look exactly like declarations and are
+    examples of one, and no grammar of the line can tell them apart. Position can. A gap line and
+    the yaml header count only here; nothing after the first `## ` is ever read as either.
+    Measured over `docs/reviews`: 179 of 191 prose gap lines and 247 of 251 headers already stand
+    here.
+    ⚠ LINES ABOVE THE TITLE COUNT TOO. Measured on the live corpus: three rounds put the gap line
+    ABOVE the `# ` title (under the wrapper's stamp), and nothing quotes an example before a title.
+
+    ⚠ FENCE-AWARE. A `# ` or `## ` line inside a fenced block is code, not a heading: measured on the
+    live corpus, a shell comment (`# differential: …`) in a codex half's `text` block was taken as
+    the title and cut off the gap line above it, four rounds of one subject at once.
+    """
     lines = text.split("\n")
-    start = next((i + 1 for i, line in enumerate(lines) if line.startswith("# ")), 0)
-    for i in range(start, len(lines)):
+    end, fence, title = len(lines), "", None
+    for i, line in enumerate(lines):
+        f = FENCE.match(line)
+        if fence:
+            if f and not f.group(2) and len(f.group(1)) >= len(fence):
+                fence = ""
+            continue
+        if f:
+            fence = f.group(1)
+        elif line.startswith("## "):
+            end = i
+            break
+        elif line.startswith("# ") and title is None:
+            title = i
+    return "\n".join(line for i, line in enumerate(lines[:end]) if i != title)
+
+
+def header_body(text: str) -> "str | None":
+    """The body of the round header — the preamble's first fence, if it is ```yaml. PURE."""
+    lines = preamble(text).split("\n")
+    for i in range(len(lines)):
         f = FENCE.match(lines[i])
         if not f:
             continue
@@ -273,7 +318,7 @@ def gap_reasons(text: str) -> "dict[str, str]":
     or key order, hid a YAML `codex` gap from `check-review-recorded.first_codex_gap`.
     """
     out: "dict[str, str]" = {}
-    for m in GAP.finditer(text):
+    for m in GAP.finditer(preamble(text)):
         out.setdefault(m.group(1).lower(), m.group(2).strip())
     for who, why in yaml_gaps(text).items():
         out.setdefault(who, why)
@@ -800,11 +845,45 @@ def _self_test_body() -> int:
           gap_reasons(_hdr('  claude: "GAP: quota"\n  codex: "GAP: quota too"\n')),
           {"claude": "quota", "codex": "quota too"})
     check("#182 r1 F4 a prose claude gap does not shadow a YAML codex gap",
-          has_gap_line("REVIEW GAP: claude — none\n\n"
-                       + _hdr('  codex: "GAP: usage limit"\n  claude: ran\n'), "codex"),
+          has_gap_line(_hdr('  codex: "GAP: usage limit"\n  claude: ran\n').replace(
+              "# p r2\n", "# p r2\n\nREVIEW GAP: claude — none\n"), "codex"),
           "codex: usage limit")
     check("#182 r1 …and asking for one half never answers with the other",
           has_gap_line("REVIEW GAP: claude — none\n", "codex"), None)
+
+    # ── backlog #182 r2 (PR #439): A DECLARATION COUNTS ONLY IN THE PREAMBLE ─────────────────────
+    # ⛔ The round-1 bet narrowed WHAT a declaration looks like, and Codex refuted it with two
+    # inputs that look exactly like declarations and are EXAMPLES of one. No grammar of the line can
+    # tell those apart; position can. The preamble is the lines after the `# ` title and before the
+    # first `## ` heading, and nothing after it is ever read as a declaration or as the header.
+    check("#182 r2 the preamble is the lines between the title and the first `## ` heading",
+          preamble("# T\nkept\n## H\ndropped\n"), "kept")
+    check("#182 r2 …and with no title it starts at the top, so a bare gap line is still read",
+          preamble("REVIEW GAP: codex — usage limit\n## H\nx\n"), "REVIEW GAP: codex — usage limit")
+    check("#182 r2 …and a gap line ABOVE the title is in the preamble too (3 live rounds do this)",
+          preamble("<!-- stamp -->\nREVIEW GAP: codex — x\n\n# T\nkept\n## H\n"),
+          "<!-- stamp -->\nREVIEW GAP: codex — x\n\nkept")
+    # r2 X1 (Codex), verbatim: a finding's yaml example is the document's FIRST fence.
+    check("#182 r2 a `# ` or `## ` line inside a fence is code, not the title or the end",
+          preamble("REVIEW GAP: codex — x\n```text\n# comment\n## not a heading\n```\nafter\n## H\n"),
+          "REVIEW GAP: codex — x\n```text\n# comment\n## not a heading\n```\nafter")
+    check("#182 r2 X1 a finding's yaml example is not the header, even as the first fence",
+          gap_reasons('# Round 1 codex\n\n## Major: example input\n\n```yaml\nhalves:\n'
+                      '  claude: "GAP: example only"\n```\n'), {})
+    # r2 X2 (Codex), verbatim: a QUOTED prose codex gap inside a finding is not a waiver.
+    _x2 = ("# Round 1\n\nREVIEW GAP: claude — quota\n\n## Finding: sample input\n\n```text\n"
+           "REVIEW GAP: codex — example only\n```\n")
+    check("#182 r2 X2 a prose gap quoted after the first `## ` is not a declaration",
+          gap_reasons(_x2), {"claude": "quota"})
+    check("#182 r2 X2 …so asking for the codex half finds nothing",
+          has_gap_line(_x2, "codex"), None)
+    # ⚠ The preamble now hides r1 F1's input (its fence stands under a `## `), and that left the
+    # FIRST-fence rule with no case: measured, its mutant survived. Inside the preamble it still holds.
+    check("#182 r2 inside the preamble, a yaml fence AFTER another fence is not the header",
+          gap_reasons('# T\n\n```text\nan example\n```\n\n```yaml\nhalves:\n'
+                      '  claude: "GAP: x"\n```\n'), {})
+    check("#182 r2 an unclosed ```yaml fence is not a header",
+          gap_reasons('# T\n\n```yaml\nhalves:\n  claude: "GAP: x"\n'), {})
 
     # ── corpus(): ONE owner for the population (backlog #328) ────────────────────────
     with tempfile.TemporaryDirectory() as ctd:

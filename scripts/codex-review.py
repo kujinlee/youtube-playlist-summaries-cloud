@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 183 cases
+  scripts/codex-review.py --self-test  # 191 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -546,6 +546,18 @@ def promotion_path(review_id: str, who: str) -> str:
     return os.path.join(REPO_ROOT, REVIEW_ROOT, who, review_filename(review_id))
 
 
+def resolve_out(out_path: str, cwd: "str | None" = None) -> str:
+    """Where `--out` really lands: `realpath` of the JOINED path, nothing normalised first.
+
+    ⛔ backlog #121 r2 X3 (PR #439). `abspath` collapses `alias/..` LEXICALLY, before `realpath`
+    can follow `alias`, so `scratch/alias/../victim.md` with `alias -> docs/reviews/claude/sub`
+    read as `scratch/victim.md` while the file landed in `docs/reviews/claude/`. Measured end to
+    end: a filed review overwritten, rc 0, no intrusion reported. `main` resolves `--out` ONCE
+    with this, and the refusal, the watch and the overwrite check all read that one answer.
+    """
+    return os.path.realpath(os.path.join(cwd or os.getcwd(), out_path))
+
+
 def out_location_refusal(out_path: str, reviewed: "str | None" = None) -> "str | None":
     """Refuse an `--out` inside either artifact tree, or None. No filesystem beyond `realpath`.
 
@@ -566,23 +578,20 @@ def out_location_refusal(out_path: str, reviewed: "str | None" = None) -> "str |
     refuses nothing legitimate: the documented shape is `--out "$(mktemp -d)/r.md"`, OUTSIDE the
     repository entirely, and the durable copy is what `--review-id` names.
 
-    ⚠ LEXICAL FIRST, ON `abspath`. `realpath` resolves symlinks, which asks the filesystem a
-    question about a path that need not exist yet; the lexical answer is the one that holds before
-    the file does. ⟳ backlog #121 r1: the `realpath` spelling is compared IN ADDITION, never instead,
-    because the reviewed root arrives resolved — so it can only add refusals. A symlinked route around it is a determined caller, and this
+    ⟳ backlog #121 r2: RESOLVED, NOT LEXICAL. The lexical check this replaced was the hole: an
+    `alias/..` path is where the symlink says, not where the string says. `realpath` does not need
+    the file to exist — it resolves the components that do and keeps the rest. A symlinked route around it is a determined caller, and this
     guards the distracted one — the same bound `dir_snapshot`'s own comment states.
     """
     # ⟳ backlog #121 r1 C2: the REVIEWED tree's artifacts too. The agent runs at the reviewed root
     # (`run_codex(cwd=…)`), so that is where it guesses its way into `docs/reviews/`; the files this
     # wrapper FILES stay under `REPO_ROOT`, so both trees are refused.
-    # ⚠ `reviewed` comes from `reviewed_root`, which is a `realpath`, while `--out` arrives as the
-    # caller typed it — measured, `/var/…` against `/private/var/…` on macOS, and the refusal missed.
-    # So both spellings are compared as well as the lexical one; that only ever refuses MORE.
-    here = os.path.dirname(os.path.abspath(out_path)) or "."
-    heres = {here, os.path.realpath(here)}
-    trees = {f(os.path.join(r, REVIEW_ROOT)) for r in (REPO_ROOT, reviewed) if r
-             for f in (os.path.abspath, os.path.realpath)}
-    if not any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):
+    # ⟳ backlog #121 r2: BOTH SIDES RESOLVED, one way. `--out` by `resolve_out` (through every
+    # symlink, `..` after it — r2 X3), and each tree by `realpath`, so a root named through a link
+    # compares equal to where it is (r2 X5: the r1 kill leaned on macOS's `/var` spelling instead).
+    here = os.path.dirname(resolve_out(out_path))
+    trees = {os.path.realpath(os.path.join(r, REVIEW_ROOT)) for r in (REPO_ROOT, reviewed) if r}
+    if not any(here == t or here.startswith(t + os.sep) for t in trees):
         return None
     return (f"CANNOT RUN — --out is inside the artifact tree: {out_path}\n"
             f"  --out is a SCRATCH path and the documented shape puts it outside the repository "
@@ -913,11 +922,13 @@ def watched_dirs(out_path: str, reviewed: "str | None" = None) -> "list[str]":
     ⟳ backlog #121 r1 C2: the artifact roots of BOTH trees — `REPO_ROOT`, where this wrapper files,
     and the reviewed root, where the agent runs and was measured guessing its way in.
     """
-    dirs = [os.path.dirname(os.path.abspath(out_path)) or "."]
+    # ⟳ r2 X4: NO EXISTENCE FILTER. A reviewed root whose `docs/reviews/` is created DURING the run
+    # was never watched; `dir_snapshot` already answers a missing directory with `{}`.
+    dirs = [os.path.dirname(resolve_out(out_path))]
     for root in (REPO_ROOT, reviewed):
         for rel in ARTIFACT_ROOTS if root else ():
             d = os.path.join(root, rel)
-            if os.path.isdir(d) and d not in dirs:
+            if d not in dirs:
                 dirs.append(d)
     return dirs
 
@@ -1245,6 +1256,8 @@ def main() -> int:
     # ⟳ backlog #121: the tree the CALLER stands in, resolved to its top level — taken HERE, before
     # the `--out` refusal, because that refusal and the watch must cover its artifacts too (r1 C2).
     tree_at_dispatch = reviewed_root()
+    # ⟳ r2 X3: resolved ONCE, here; every check below and every write reads this answer.
+    args.out = resolve_out(args.out)
     out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)
     if out_refusal:
         print("[codex-review] " + out_refusal.replace("\n", "\n[codex-review] "), file=sys.stderr)
@@ -1784,8 +1797,9 @@ def _self_test_body() -> int:
     # that is exactly where the agent guessed its way to. Measured live on this branch.
     chk("docs/reviews is watched even when --out is outside the repo",
         os.path.join(REPO_ROOT, "docs/reviews") in watched_dirs("/tmp/elsewhere/out.md"), True)
+    # ⟳ backlog #121 r2: watched where it RESOLVES — `/tmp` is a symlink on macOS.
     chk("--out's own directory is watched too",
-        "/tmp/elsewhere" in watched_dirs("/tmp/elsewhere/out.md"), True)
+        os.path.realpath("/tmp/elsewhere") in watched_dirs("/tmp/elsewhere/out.md"), True)
     chk("no directory is watched twice",
         len(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))
         == len(set(watched_dirs(os.path.join(REPO_ROOT, "docs/reviews/x.md")))), True)
@@ -2596,6 +2610,74 @@ def _self_test_body() -> int:
                                       CR_PROBE=_probe))
         chk("#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out",
             (_r5.returncode, "inside the artifact tree" in (_r5.stdout + _r5.stderr)), (2, True))
+        # ── r2 X3 (Codex), verbatim layout: `alias/..` resolved LEXICALLY escapes every guard ────
+        # `scratch/alias -> B/docs/reviews/claude/sub`, `--out scratch/alias/../victim-r1-claude.md`.
+        # The real destination is `B/docs/reviews/claude/victim-r1-claude.md`; `abspath` collapsed
+        # `alias/..` to `scratch/` BEFORE `realpath` could follow the link, so the refusal, the watch
+        # and the overwrite check all looked at a scratch directory. Measured end to end: a filed
+        # review was overwritten, rc 0, no intrusion reported.
+        _sub = os.path.join(_wb, "docs", "reviews", "claude", "sub")
+        os.makedirs(_sub)
+        _victim = os.path.join(_wb, "docs", "reviews", "claude", "victim-r1-claude.md")
+        with open(_victim, "w", encoding="utf-8") as f:
+            f.write("a filed review\n")
+        os.makedirs(os.path.join(_wb, "scratch"))
+        os.symlink(_sub, os.path.join(_wb, "scratch", "alias"))
+        _esc = os.path.join("scratch", "alias", "..", "victim-r1-claude.md")
+        chk("#121 r2 X3 --out resolves THROUGH the symlink before `..`, to where it really lands",
+            resolve_out(_esc, cwd=_wb), os.path.realpath(_victim))
+        chk("#121 r2 X3 …so the refusal sees an `alias/..` path into the reviewed tree",
+            bool(out_location_refusal(os.path.join(_wb, _esc), reviewed=_wb)), True)
+        _r6 = subprocess.run([sys.executable, os.path.join(_was, "codex-review.py"),
+                              "--timeout", "5", "--model", "stub-slug", "--review-id",
+                              "wt-r4-codex", "--out", _esc, "a prompt"],
+                             capture_output=True, text=True, cwd=_wb,
+                             env=dict(_env3, PATH=_bin3 + os.pathsep + os.environ.get("PATH", ""),
+                                      CR_PROBE=_probe))
+        with open(_victim, encoding="utf-8") as f:
+            _vtext = f.read()
+        chk("⭐ #121 r2 X3 the real CLI refuses that --out, and the filed review is untouched",
+            (_r6.returncode, "inside the artifact tree" in (_r6.stdout + _r6.stderr), _vtext),
+            (2, True, "a filed review\n"))
+        # The OVERWRITE check reads the same resolution — outside the artifact tree, so the location
+        # refusal cannot answer for it: `alias2/../kept.md` lands on an existing capture.
+        _s2 = os.path.join(td3, "s2")
+        os.makedirs(os.path.join(_s2, "sub"))
+        with open(os.path.join(_s2, "kept.md"), "w", encoding="utf-8") as f:
+            f.write("an earlier capture\n")
+        os.symlink(os.path.join(_s2, "sub"), os.path.join(td3, "alias2"))
+        _r7 = subprocess.run([sys.executable, os.path.join(_was, "codex-review.py"),
+                              "--timeout", "5", "--model", "stub-slug", "--review-id",
+                              "wt-r5-codex", "--out", os.path.join("..", "alias2", "..", "kept.md"),
+                              "a prompt"], capture_output=True, text=True, cwd=_wb,
+                             env=dict(_env3, PATH=_bin3 + os.pathsep + os.environ.get("PATH", ""),
+                                      CR_PROBE=_probe))
+        chk("#121 r2 X3 an `alias/..` --out onto an existing capture meets the OVERWRITE refusal",
+            (_r7.returncode, "--allow-overwrite" in (_r7.stdout + _r7.stderr)), (2, True))
+        # ── r2 X4 (Codex): a reviewed root with NO docs/reviews yet is still watched ─────────────
+        _c = os.path.join(td3, "c")
+        os.makedirs(_c)
+        _w4 = watched_dirs(os.path.join(td3, "x.md"), reviewed=_c)
+        _b4 = snapshot_all(_w4)
+        os.makedirs(os.path.join(_c, "docs", "reviews"))
+        with open(os.path.join(_c, "docs", "reviews", "intruder.md"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        chk("#121 r2 X4 an artifact directory created DURING the run is still watched",
+            [n for _d, n, _w in intrusions(_b4, snapshot_all(_w4), set())], ["intruder.md"])
+        chk("…and a snapshot is keyed by exactly the directories it is given",
+            sorted(snapshot_all([_c, _s2])), sorted([_c, _s2]))
+        chk("#121 r2 a plain relative --out resolves against the cwd it is given",
+            resolve_out("plain.md", cwd=_s2), os.path.join(os.path.realpath(_s2), "plain.md"))
+        # ── r2 X5 (Codex): the realpath comparison, killed by an EXPLICIT symlink ────────────────
+        # The r1 kill depended on macOS spelling `/var` and `/private/var` differently; with TMPDIR
+        # already resolved the mutant survived. A reviewed root reached THROUGH a symlink is the
+        # case the realpath exists for, on any platform.
+        _blink = os.path.join(td3, "b-link")
+        os.symlink(_wb, _blink)
+        chk("#121 r2 X5 a reviewed root named through a symlink still refuses an --out in its "
+            "docs/reviews", bool(out_location_refusal(os.path.join(os.path.realpath(_wb), "docs",
+                                                                     "reviews", "r.md"),
+                                                    reviewed=_blink)), True)
 
     # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
     # than filed. `chk` already does `extra += 1` on every call, so this literal added a second
