@@ -988,7 +988,10 @@ EXPECTED_MUTATIONS = {
     # WT11, Codex's fixture) and `row_for` returning a label. Net +2.
     # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 24 + 14 = 38 — both
     # branches' entries kept, none retired; the render line now prints `label(n)`.
-    "scripts/gen-work-lines.py": 38,
+    # ⟳ backlog #389: 38 -> 25 — the PAGE retired, the plan reader stays. Fourteen entries RETIRE with
+    # the renderer they pinned (sort order, badge, escaping x3, open-line count, Refresh button, the
+    # three link kinds and their caveats, the not-read notes); one new pins the retired main's exit 2.
+    "scripts/gen-work-lines.py": 25,
     # ⟳ 2026-10-28, backlog #363: the logged goal tree joins at 25 — one entry per refusal in the
     # threads grammar, per derived-state rule (merged first, CANNOT RUN, closed, the subject tail),
     # per log rule (fingerprint, incomplete refused), per exit code, and the page's ordering and links.
@@ -1011,7 +1014,13 @@ EXPECTED_MUTATIONS = {
     # the whole-entry rewrite; four new: a disagreeing identity token is a conflict, not the identity (Z1),
     # and the count is read from the whole entry — display text, dashboard body, ledger text (Z2).
     # ⟳ round-4 (terminal) fold: 59 -> 64 — a declared 0 kept, compared and shown, in text and HTML (W2).
-    "scripts/goal-tree.py": 64,
+    # ⟳ backlog #389 (work-lines retired into the goal tree): 64 -> 71 — the absorbed plan list (only
+    # owing plans, newest first, progress in the timeline), plans NOT READ vs a missing directory, and
+    # the link to the frozen archive, and a vanished parent named rather than dropped.
+    # ⟳ #389 round-1 fold: 72 -> 75 — a worktree's plans still read when the main checkout has no
+    # .claude/plans/ (X3), and plans keyed by (checkout, slug) in the snapshot and timeline (X4, x2); the
+    # missing-directory entry re-anchored on the rewrite.
+    "scripts/goal-tree.py": 75,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1798,7 +1807,26 @@ EXPECTED_MUTATIONS = {
     # consults the environment`), which is why the decision stands and only its reason changed.
     # ⟳ 2026-10-22 (work lines, always current): 46 -> 48 — the `work-lines` Refresh allow-list
     # entry, and the STALE_EXEMPT set that makes its empty source list a stated decision.
-    "scripts/explainer-serve.py": 48,
+    # ⟳ backlog #389: 48 -> 48 net — two entries RETIRED with the work-lines page (its Refresh
+    # allow-list key and its STALE_EXEMPT entry no longer exist), two NEW for the redirect from its
+    # url to the frozen archive (the do_GET branch, the .html url).
+    # ⟳ #389 round-1 fold: 48 -> 50 — retirement moves from URL spellings to the CANONICAL page
+    # (X2 + C1): the url-map entry retires, three new pin the canonical match, the index filter and the
+    # root-only scope; the redirect and the no-extension rule are re-anchored on `page_candidates`.
+    # ⟳ #389 round-2 REDESIGN to identity: 50 -> 54 — three round-1 entries retire with the canonical-path
+    # rule they pinned (raw url, name-only index, subdirectory); seven new pin `retired_as`: (a) the name,
+    # its casefold, its normalisation, its root-only scope; (b) samefile, its symlink exclusion; and the
+    # index calling it. The decode-before-extension entry re-anchored (its line is now repeated).
+    # ⟳ #389 round-3 (route SPLIT): 54 -> 59 — the symlink chain is walked link by link in ONE classifier.
+    # Two r2 entries retire with the name-or-final-file rule (the bare name check, the name-only index);
+    # seven new pin every traversed name, the walk itself, the root bound, the hop bound, the 403, the
+    # index's call and the no-file name; (b) now pins hard links, and its symlink exclusion is re-anchored.
+    # ⟳ #389 round-4 (terminal) fold: 59 -> 61 — classification and serving share ONE selection
+    # (`served_candidate`): the named mismatch mutation, and serving a non-file candidate.
+    # ⟳ #389, CI red on PR #434 (Python 3.12 raises RuntimeError from resolve() on a loop): 61 -> 62 —
+    # every serve/index resolve goes through `resolve_or_none`; one entry pins RuntimeError in it, and the
+    # raw-containment entry is re-anchored onto the helper's call.
+    "scripts/explainer-serve.py": 62,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1858,7 +1886,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 31 -> 34 — record BEFORE the clear, the
     # rebuild as its own optional step, and the clear never querying the branch. Four entries
     # re-anchored onto the split `run_optional` calls.
-    "scripts/check-plan-progress.py": 35,
+    # ⟳ backlog #389: 35 -> 32 — the Stop hook's work-lines rebuild retired with the page: its three
+    # entries (the rebuild call, its never-raises boundary, its separation from the recorder) go with
+    # it; the mandatory-clear entry is RE-ANCHORED, since the clear it pins remains.
+    "scripts/check-plan-progress.py": 32,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
@@ -1887,7 +1918,8 @@ EXPECTED_MUTATIONS = {
     # bare-stem lookup back and is killed by the two-checkout case.
     # ⟳ r6 fold, 57 -> 58: `work_line` re-keyed by the display label is killed by F5c.
     # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 58 + 2 = 60, both kept.
-    "scripts/begin-plan.py": 69,
+    # ⟳ backlog #389: 69 -> 68 — the after-every-command work-lines rebuild retired with the page.
+    "scripts/begin-plan.py": 68,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -6216,7 +6248,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2504)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2512)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
