@@ -318,12 +318,13 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⟳ PR #443 r1: re-derived after the redesign onto git's pre-push hook.
     "check-plan-leak.py": (
         'candidate_windows.n', 'candidate_windows.removed', 'candidate_windows.runs', 'candidate_windows.win',
-        'judged_text.body', 'judged_text.key', 'judged_text.removed', 'leak_hits.n', 'leak_hits.public',
-        'leak_hits.removed', 'leak_hits.runs', 'leak_hits.win', 'main.argv', 'main.err', 'main.out',
-        'main.root', 'main.stdin', 'main.tty', 'parse_log.log_text', 'parse_updates.stdin_text',
-        'plan_strings.serving', 'plan_strings.text', 'public_in.cands', 'public_in.texts', 'report.hits',
-        'report.n', 'report.n_runs', 'report.n_strings', 'report.n_windows', 'show_lines.hits',
-        'unquote_path.raw', 'windows.n', 'windows.sources', 'words.s',
+        'hooks_status.root', 'judged_text.body', 'judged_text.key', 'judged_text.removed', 'leak_hits.n',
+        'leak_hits.public', 'leak_hits.removed', 'leak_hits.runs', 'leak_hits.win', 'main.argv', 'main.err',
+        'main.out', 'main.root', 'main.stdin', 'main.tty', 'parse_log.log_text', 'parse_messages.text',
+        'parse_updates.stdin_text', 'plan_strings.serving', 'plan_strings.text', 'public_in.cands',
+        'public_in.texts', 'report.hits', 'report.n', 'report.n_runs', 'report.n_strings', 'report.n_windows',
+        'session_start.root', 'show_lines.hits', 'tag_run.sha', 'tag_run.tag_text', 'unquote_path.raw',
+        'windows.n', 'windows.sources', 'words.s',
     ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (

@@ -1728,8 +1728,9 @@ EXPECTED_MUTATIONS = {
     # pinned in the commit that creates it. Each entry is killed by the case it names.
     # ⟳ same day, the owner's 8-word window and the LOCAL-only phrase: +6 for the phrase channel, -> 38.
     # ⟳ PR #443 r1, the REDESIGN onto git's pre-push hook: the entries are rebuilt over the new rule and
-    # entry points (one per Codex input X1-X11, the installer and --status), -> 54.
-    "scripts/check-plan-leak.py": 54,
+    # entry points (one per Codex input X1-X11, the installer and --status), -> 54; then +11 for the
+    # security review's folds (commit/tag/path metadata, the SessionStart enable-or-warn), -> 65.
+    "scripts/check-plan-leak.py": 65,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -6263,7 +6264,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2566)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2577)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -6,7 +6,6 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push*)",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-default-branch-push.sh",
             "statusMessage": "Checking branch rule..."
           },
@@ -148,6 +147,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh session-state.sh",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh ensure-plan-leak-hook.sh",
+            "timeout": 30
           }
         ]
       },

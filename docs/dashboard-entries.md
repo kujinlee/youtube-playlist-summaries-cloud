@@ -18259,8 +18259,10 @@ git's own pre-push hook, so it sees exactly what a push sends: every branch and 
 just the latest state. A commit that adds eight words in a row from any plan is refused, naming the file, line and
 commit, unless those words are already on the remote. The matched words are never printed by the hook; you can
 see them by running the checker with `--show` in your own terminal. A fragment shorter than eight words is not
-caught. It needs enabling once per clone (`scripts/install-git-hooks.sh`), which happens after merge. A fresh clone
-with no plans can still push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through.
+caught. Commit messages, tag messages and new file names are checked too. Each session switches the gate on if it
+is off, or warns loudly if something else has taken over git's hook setting. A fresh clone with no plans can still
+push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through; an agent also needs the
+owner's dangerous-push flag for it.
 <!--tech-->
 `scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
 remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read

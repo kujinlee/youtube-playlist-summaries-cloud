@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# PreToolUse hook — fires before every Bash tool call matching `git push`.
+# PreToolUse hook — fires before EVERY Bash tool call, and acts only on one that runs `git … push`.
+# ⟳ 2026-10-29 (backlog #393): it had an `if: Bash(git push*)` filter, which a command starting
+# `git -c … push` or `ALLOW_PLAN_LEAK=1 git push` does not match, so RULE 3 below could never have fired.
+# A non-push command leaves at the first grep.
 #
 # Enforces the branch+PR rule in docs/dev-process.md Phase 5: work goes on a
 # branch and merges through a PR. Direct pushes to the default branch are the
@@ -87,10 +90,27 @@ if [ "${1:-}" = "--self-test" ]; then
   probe "the word --force inside another command is not a push flag" \
                                                         "git commit -m 'do not --force this' && git push origin feat/x" allow
   probe "a non-push git command is untouched"           "git status"                          allow
+  # ── RULE 3 (backlog #393): the plan-leak gate's off-switches ──
+  probe "⭐ -c core.hooksPath=… on a push is denied"     "git -c core.hooksPath=/dev/null push origin feat/x" deny
+  probe "...and with -C and an odd case too"            "git -C /r -c core.HooksPath=/x push origin feat/x" deny
+  probe "--config-env core.hooksPath on a push is denied" "git --config-env=core.hooksPath=HP push origin feat/x" deny
+  probe "GIT_CONFIG_* naming core.hooksPath is denied"  "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hookspath GIT_CONFIG_VALUE_0=/x git push origin feat/x" deny
+  probe "⭐ ALLOW_PLAN_LEAK=1 on a push is denied"        "ALLOW_PLAN_LEAK=1 git push origin feat/x" deny
+  probe "...unless the owner's ALLOW_DANGEROUS_PUSH=1 is given too" \
+                                                        "ALLOW_DANGEROUS_PUSH=1 ALLOW_PLAN_LEAK=1 git push origin feat/x" allow
+  probe "⭐ a push behind -c is still SEEN as a push (here: its --force is denied)" \
+                                                        "git -c user.name=x push --force origin feat/x" deny
+  probe "an ordinary -c on a push is allowed"           "git -c user.name=x push origin feat/x" allow
+  probe "a git config of hooksPath with no push is untouched" "git config core.hooksPath .githooks" allow
 
   printf '\nself-test: %s/%s passed\n' "$pass" "$((pass+fail))"
   [ "$fail" -eq 0 ] && exit 0 || exit 1
 fi
+
+# A `git` invocation's global options before the subcommand: any `-flag`, and the ones that take a SEPARATE
+# value (`-c k=v`, `-C dir`, `--config-env k=v`, …). ⟳ 2026-10-29 (backlog #393): the pattern was `-flag`
+# only, so `git -c core.hooksPath=/dev/null push` was not seen as a push at all.
+GITOPTS='((-c|-C|--config-env|--git-dir|--work-tree|--namespace|--exec-path)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*'
 
 payload="$(cat)"
 cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")"
@@ -109,7 +129,7 @@ deny() {
 }
 
 # Not a push at all (the `if` filter should prevent this, but be defensive).
-printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push([[:space:]]|$)' || allow
+printf '%s' "$cmd" | grep -Eq "(^|[;&|[:space:]])git[[:space:]]+${GITOPTS}push([[:space:]]|\$)" || allow
 
 # ── RULE 2: never-routine push forms, checked BEFORE the branch rule ────────────────
 # Ordering matters: `git push --force origin master` is dangerous for BOTH reasons, and
@@ -120,7 +140,7 @@ if ! printf '%s' "$cmd" | grep -q 'ALLOW_DANGEROUS_PUSH=1'; then
   # multi-line command must not be read as a push flag. `grep -o` is per-line and
   # `[^;&|]*` stops at a command separator.
   push_only="$(printf '%s' "$cmd" \
-    | grep -oE 'git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push([[:space:]]+[^;&|]*)?' || true)"
+    | grep -oE "git[[:space:]]+${GITOPTS}push([[:space:]]+[^;&|]*)?" || true)"
 
   # ⚠ `--force-with-lease` CONTAINS `--force`, so a substring test would deny the safe
   # form while claiming to allow it. Match the flag as a whole word: end-of-string, or
@@ -139,6 +159,25 @@ Instead:
 That form is allowed by this hook and needs no flag.
 
 Deliberate exception: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
+  fi
+
+  # ── RULE 3 (backlog #393): the plan-leak gate's two off-switches ──────────────────────────────────
+  # The plan-leak gate is git's own pre-push hook (`.githooks/pre-push`); IT OWNS THE DECISION. This rule
+  # reads command TEXT, so it is DEFENCE IN DEPTH ONLY: an alias, a script or an exported variable it never
+  # sees gets past it. It refuses the two visible ways an agent switches that hook off — repointing
+  # `core.hooksPath` (`-c`, `--config-env`, `GIT_CONFIG_*`, a `git config` in the same command), and the
+  # gate's own escape `ALLOW_PLAN_LEAK=1` — unless the owner's ALLOW_DANGEROUS_PUSH=1 is also given.
+  if printf '%s' "$cmd" | grep -qi 'hookspath'; then
+    deny "Blocked: this push changes \`core.hooksPath\`, which switches off git's pre-push hooks — including the
+plan-leak gate (.githooks/pre-push, backlog #393), which refuses pushes that quote a private plan.
+
+Push without it. If the owner means it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
+  fi
+  if printf '%s' "$cmd" | grep -q 'ALLOW_PLAN_LEAK=1'; then
+    deny "Blocked: ALLOW_PLAN_LEAK=1 skips the plan-leak gate (backlog #393), which refuses a push quoting a
+private plan. Skipping it is the owner's call, not an agent's: reword the commits it named instead.
+
+If the owner has judged the hit a coincidence: re-run prefixed with ALLOW_DANGEROUS_PUSH=1 as well"
   fi
 
   if printf '%s' "$push_only" | grep -qE '(^|[[:space:]])--no-verify([[:space:]=]|$)'; then
@@ -182,13 +221,13 @@ current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 # `grep -o` is per-line and `[^;&|]*` stops at a command separator, so only the
 # real push invocation and its own arguments are ever inspected.
 push_cmds="$(printf '%s' "$cmd" \
-  | grep -oE 'git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push([[:space:]]+[^;&|]*)?' || true)"
+  | grep -oE "git[[:space:]]+${GITOPTS}push([[:space:]]+[^;&|]*)?" || true)"
 [ -n "$push_cmds" ] || allow
 
 targets_default=0
 while IFS= read -r one; do
   [ -n "$one" ] || continue
-  args="$(printf '%s' "$one" | sed -E 's/^git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push[[:space:]]*//')"
+  args="$(printf '%s' "$one" | sed -E "s/^git[[:space:]]+${GITOPTS}push[[:space:]]*//")"
   toks="$(printf '%s' "$args" | tr ' \t' '\n\n' | grep -v '^-' | grep -v '^$' || true)"
   n="$(printf '%s\n' "$toks" | grep -c . || true)"
   if [ "$n" -ge 2 ]; then

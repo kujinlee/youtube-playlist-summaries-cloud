@@ -301,8 +301,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "f\"  {p}:{ln} in {c[:10]}: '{phrase}'\"",
-    "f\"  {p}:{ln} in {c[:10]}\""
+    "f\"  {_where(p, ln)} in {c[:10]}: '{phrase}'\"",
+    "f\"  {_where(p, ln)} in {c[:10]}\""
    ]
   ],
   "expect": "show_lines carries the matched phrase at its path:line"
@@ -592,5 +592,126 @@
    ]
   ],
   "expect": "--install-hooks sets core.hooksPath, and --status then says ACTIVE"
+ },
+ {
+  "name": "a NEW file's path is no longer scanned, so a file NAMED with plan words is pushed",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            if path and new_file:",
+    "            if False:"
+   ]
+  ],
+  "expect": "⭐ METADATA: a NEW FILE NAMED with plan words is REFUSED, though its content is clean"
+ },
+ {
+  "name": "every file is treated as new, so a modified file's unchanged name is judged again",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            new_file = line == \"--- /dev/null\"",
+    "            new_file = True"
+   ]
+  ],
+  "expect": "...but a MODIFIED file's path is not"
+ },
+ {
+  "name": "commit messages are not scanned",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            runs += parse_messages(pushed_messages(root, heads, exclude)) + tag_runs(root, heads)",
+    "            runs += tag_runs(root, heads)"
+   ]
+  ],
+  "expect": "⭐ METADATA: plan text in a pushed COMMIT MESSAGE is REFUSED"
+ },
+ {
+  "name": "annotated tag objects are not scanned",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            for k in kinds if k.endswith(\" tag\")]",
+    "            for k in kinds if False]"
+   ]
+  ],
+  "expect": "⭐ METADATA: plan text in a pushed ANNOTATED TAG's message is REFUSED"
+ },
+ {
+  "name": "parse_messages drops every record",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        if sep and sha.strip():",
+    "        if False:"
+   ]
+  ],
+  "expect": "parse_messages reads each commit's full message as one run"
+ },
+ {
+  "name": "a hit in a file's NAME is reported as line 0",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return f\"{path}:{ln}\" if ln else f\"{path} (its file NAME)\"",
+    "    return f\"{path}:{ln}\""
+   ]
+  ],
+  "expect": "a hit in a path itself is reported as the file NAME, not line 0"
+ },
+ {
+  "name": "session_start never installs, so a clone with no hooks path stays unguarded",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        if not cur:\n            rc, imsg = install_hooks(root)",
+    "        if False:\n            rc, imsg = install_hooks(root)"
+   ]
+  ],
+  "expect": "session_start with core.hooksPath UNSET enables the hook, quietly"
+ },
+ {
+  "name": "session_start reports a hooks path pointing ELSEWHERE quietly",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        return True, (f\"⚠ THE PLAN-LEAK PUSH GATE IS OFF — {msg}.",
+    "        return False, (f\"⚠ THE PLAN-LEAK PUSH GATE IS OFF — {msg}."
+   ]
+  ],
+  "expect": "⛔ session_start with core.hooksPath ELSEWHERE warns LOUDLY and does NOT overwrite it"
+ },
+ {
+  "name": "session_start does not recognise an ACTIVE gate",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        if active:\n            return False, msg",
+    "        if False:\n            return False, msg"
+   ]
+  ],
+  "expect": "session_start when already ACTIVE is quiet and says so"
+ },
+ {
+  "name": "a refused install is reported quietly",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            return True, f\"⚠ THE PLAN-LEAK PUSH GATE IS OFF in this clone — {imsg}\"",
+    "            return False, f\"⚠ THE PLAN-LEAK PUSH GATE IS OFF in this clone — {imsg}\""
+   ]
+  ],
+  "expect": "session_start warns LOUDLY when the install is refused (live hooks would be switched off)"
+ },
+ {
+  "name": "--session-start prints a loud warning as plain text, which never reaches the user",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "        if loud:\n            print(json.dumps(",
+    "        if False:\n            print(json.dumps("
+   ]
+  ],
+  "expect": "the SHIPPED SessionStart hook prints the loud warning as JSON, to the user and the model"
  }
 ]
