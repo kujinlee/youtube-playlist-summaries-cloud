@@ -794,10 +794,10 @@ jobs:
       - name: check-dashboard-entry self-test
         run: python3 scripts/check-dashboard-entry.py --self-test
 
-      # ── The work-lines page: every plan, chained to the plan it branched from ──
+      # ── The plan-file reader (the work-lines page it drew retired into the goal tree, backlog #389) ──
       #
-      # Its subject (.claude/plans/) is gitignored, so CI can only run the pure cases; the
-      # page itself is built locally. check-selftest-counts also executes this suite, but
+      # Its subject (.claude/plans/) is gitignored, so CI runs the pure and constructed-checkout
+      # cases; the real plans are read locally, by the goal tree. check-selftest-counts also executes this suite, but
       # only to compare a count — this step is what names it when a case goes red.
 
       - name: gen-work-lines self-test

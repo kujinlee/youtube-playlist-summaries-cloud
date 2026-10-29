@@ -52,32 +52,6 @@
     ]
   },
   {
-    "name": "completed lines sort first again, burying everything that still owes something",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "    for r in sorted(_by_date, key=lambda n: 0 if line_state(n) == \"open\" else 1):",
-        "    for r in sorted(_by_date, key=lambda n: 1 if line_state(n) == \"open\" else 0):"
-      ]
-    ],
-    "expect": [
-      "⭐ an OPEN line sorts above a COMPLETED one, even when the completed one is newer"
-    ]
-  },
-  {
-    "name": "the badge asserts abandonment from an unticked box",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        badge, cls = f'{n[\"ticked\"]}/{n[\"total\"]} not ticked closed', \"st-open\"",
-        "        badge, cls = f'{n[\"ticked\"]}/{n[\"total\"]} abandoned', \"st-open\""
-      ]
-    ],
-    "expect": [
-      "⛔ the BADGE says 'not ticked closed' and never 'abandoned'"
-    ]
-  },
-  {
     "name": "a missing plan directory renders an empty page instead of CANNOT RUN",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -87,20 +61,7 @@
       ]
     ],
     "expect": [
-      "a MISSING plan directory is CANNOT RUN (2) and the message NAMES it"
-    ]
-  },
-  {
-    "name": "the slug is not escaped, so a plan name can inject markup",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "    return html.escape(str(x), quote=True)",
-        "    return str(x)"
-      ]
-    ],
-    "expect": [
-      "a slug is HTML-escaped, so a plan name cannot inject markup"
+      "a MISSING plan directory raises, and the message NAMES it"
     ]
   },
   {
@@ -127,32 +88,6 @@
     ],
     "expect": [
       "⭐ `parent: -` is a STARTED line — no parent, and distinguishable from nothing recorded"
-    ]
-  },
-  {
-    "name": "the serving line is not escaped, so a stated objective can inject markup",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "<p class=\"serving\">“{esc(r[\"serving\"])}”</p>",
-        "<p class=\"serving\">“{r[\"serving\"]}”</p>"
-      ]
-    ],
-    "expect": [
-      "the serving line and an orphan's name are escaped too"
-    ]
-  },
-  {
-    "name": "the open-line count states ALL lines, so a page of finished work still says it owes something",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "f'<strong>{len(open_lines)} still owe something</strong>. '",
-        "f'<strong>{len(roots)} still owe something</strong>. '"
-      ]
-    ],
-    "expect": [
-      "the count of lines that still owe something is the REAL count"
     ]
   },
   {
@@ -195,19 +130,6 @@
     ]
   },
   {
-    "name": "the page renders no Refresh button, so a hand-edited plan cannot be rebuilt from the page",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        page_chrome.chrome_bar(\"work-lines\", generated),",
-        "        page_chrome.chrome_bar(\"work-lines\", generated, refresh=False),"
-      ]
-    ],
-    "expect": [
-      "⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome"
-    ]
-  },
-  {
     "name": "a parent-source with no parent marker is read as a link",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -218,97 +140,6 @@
     ],
     "expect": [
       "...a live marker has none, and a source with NO parent marker is not a link"
-    ]
-  },
-  {
-    "name": "a reconstructed node is drawn like a live one",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "    li = ('<li class=\"from-banner\">' if banner else '<li class=\"rebuilt\">') if src else \"<li>\"",
-        "    li = ('<li class=\"from-banner\">' if banner else \"<li>\") if src else \"<li>\""
-      ]
-    ],
-    "expect": [
-      "⛔ a RECONSTRUCTED node is drawn distinctly and says where it came from; a live one is not"
-    ]
-  },
-  {
-    "name": "the caveat no longer says what the mark means",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        'was rebuilt afterwards from the session transcripts by replaying every plan command; and '",
-        "        'was rebuilt; and '"
-      ]
-    ],
-    "expect": [
-      "...and the page's caveat says, once, what the dashed mark means"
-    ]
-  },
-  {
-    "name": "a reconstructed start of a line reads as live",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "'recorded' + (' (reconstructed)' if r.get(\"source\") else '') + '</p>')",
-        "'recorded</p>')"
-      ]
-    ],
-    "expect": [
-      "a reconstructed START of a line says it was reconstructed; a live one does not"
-    ]
-  },
-  {
-    "name": "the provenance is not escaped",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        rec = (f' <span class=\"recon\" title=\"reconstructed from {esc(src)}\">reconstructed'",
-        "        rec = (f' <span class=\"recon\" title=\"reconstructed from {src}\">reconstructed'"
-      ]
-    ],
-    "expect": [
-      "the provenance is HTML-escaped, so a transcript id cannot inject markup"
-    ]
-  },
-  {
-    "name": "a banner link is drawn as a transcript replay",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "    banner = bool(src) and src.startswith(\"banner\")",
-        "    banner = False"
-      ]
-    ],
-    "expect": [
-      "⭐ THREE kinds of link, each drawn and labelled differently"
-    ]
-  },
-  {
-    "name": "a banner link's tooltip does not say it is a banner",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        rec = (f' <span class=\"from-banner-tag\" title=\"from a banner: {esc(src)}\">from banner'",
-        "        rec = (f' <span class=\"from-banner-tag\" title=\"{esc(src)}\">from banner'"
-      ]
-    ],
-    "expect": [
-      "...a banner link's tooltip names the banner it rests on"
-    ]
-  },
-  {
-    "name": "the caveat stops naming the banner kind",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        'one drawn <span class=\"banner-key\">double and marked “from banner”</span> rests only on a '",
-        "        'one drawn <span class=\"banner-key\">double</span> rests only on a '"
-      ]
-    ],
-    "expect": [
-      "...and the caveat says in one sentence what each of the three kinds rests on"
     ]
   },
   {
@@ -351,19 +182,6 @@
     ]
   },
   {
-    "name": "the page drops the notes saying what was NOT read",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        parts.append(f'<p class=\"warn\">⚠ {esc(note)}</p>')",
-        "        pass"
-      ]
-    ],
-    "expect": [
-      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — and the PAGE says so"
-    ]
-  },
-  {
     "name": "plan_dirs NOTES a checkout whose folder is gone again, hedging every warning",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -374,7 +192,7 @@
     ],
     "expect": [
       "WT5 a registered checkout whose folder is GONE is skipped with NO note — it holds no plans to miss (r3 Claude F2)",
-      "WT6c ...and the page carries no 'not read' warning for it"
+      "WT6c ...and the reader carries no 'not read' note for it"
     ]
   },
   {
@@ -400,7 +218,7 @@
       ]
     ],
     "expect": [
-      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — and the PAGE says so"
+      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal"
     ]
   },
   {
@@ -480,7 +298,7 @@
       ]
     ],
     "expect": [
-      "WT11 a hand-named `kid @ main.md` beside `kid` held twice: THREE nodes kept, ONE open line, and the page says 1 still owing"
+      "WT11 a hand-named `kid @ main.md` beside `kid` held twice: THREE nodes kept, ONE open line"
     ]
   },
   {
@@ -494,6 +312,19 @@
     ],
     "expect": [
       "WT4d row_for resolves a duplicated slug in the asking checkout, else main"
+    ]
+  },
+  {
+    "name": "#389: the retired page-writing main reports success",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "          f\"goal-tree.py import.\")\n    return 2",
+        "          f\"goal-tree.py import.\")\n    return 0"
+      ]
+    ],
+    "expect": [
+      "⛔ the retired page-writing main exits 2, names the goal tree and the archive, and writes nothing"
     ]
   }
 ]

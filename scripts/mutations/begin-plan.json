@@ -377,19 +377,6 @@
     ]
   },
   {
-    "name": "a state change no longer rebuilds the work-lines page, so it is current only when someone asks",
-    "file": "scripts/begin-plan.py",
-    "edits": [
-      [
-        "    _pp.refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)\n    return rc",
-        "    return rc"
-      ]
-    ],
-    "expect": [
-      "⭐ arming a plan REBUILDS the work-lines page, without being asked"
-    ]
-  },
-  {
     "name": "the printed banner omits the work line, so the chain exists only on a page nobody has open",
     "file": "scripts/begin-plan.py",
     "edits": [

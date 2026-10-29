@@ -144,6 +144,16 @@ for: Lets anyone find what the system does, what it omits on purpose, and the fr
 anchors: feature-map
 areas: (comprehensibility/feature-map)
 
+#### goal-tree
+state: built
+for: Shows every thread of work under the owner request it serves, what waits on the owner, and which plans are not ticked closed — at http://127.0.0.1:7391/goal-tree.
+areas: (comprehensibility/goal-tree)
+
+#### work-lines
+state: absent
+for: Drew every plan as a line back to the plan it branched from.
+expected-because: retired 2026-10-28 into the goal-tree node above (the owner's decision D2, backlog #389) — two pages answering which threads are live left the reader with neither; a frozen record of it, with plan contents withheld pending backlog #194, is at http://127.0.0.1:7391/work-lines-archive.
+
 ### explainer-pages
 state: built
 for: Lets a person have a subject they choose explained in a page they can ask questions inside.
