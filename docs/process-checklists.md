@@ -94,10 +94,12 @@ command's form does not matter. CI has no plans (a zero over nothing), so CI run
   `.claude/hooks/ensure-plan-leak-hook.sh` runs when the path is unset — and when it points ELSEWHERE, warns
   LOUDLY that the gate is OFF and changes nothing. `--status` says whether it is active in THIS checkout — a
   worktree on a branch older than `.githooks/pre-push` pushes unchecked.
-- **The agent push hook refuses the off-switches** it can see, after shlex-tokenising the command:
-  `core.hooksPath` on a push command, and `ALLOW_PLAN_LEAK=1` without the owner's `ALLOW_DANGEROUS_PUSH=1`
-  (a push command it cannot tokenise is refused too). It reads command text, so it is defence in depth
-  only; the pre-push hook owns the decision.
+- **The agent push hook refuses the off-switches** it can see: a push command whose raw text mentions
+  `hookspath` or `ALLOW_PLAN_LEAK` anywhere (casefolded, quotes and backslashes deleted — deliberately not a
+  parser) is denied without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence in
+  depth only; the pre-push hook owns the decision. It now runs on EVERY Bash call (a `git push*` filter
+  cannot match `git -c … push`): measured 2026-10-29, median **31 ms** added per non-push call (50 runs
+  through `run-hook.sh`, p90 39 ms, on a loaded machine), against 0 before.
 - ⛔ **The gate prevents ACCIDENTAL publication. It is not a boundary against a determined agent:** anything
   with a shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
 - **hits → the push is refused**, naming `path:line`, the commit and the plan FILE, never the words, in every

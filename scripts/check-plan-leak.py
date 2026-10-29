@@ -64,7 +64,7 @@ not plan text. A remote tip this clone has never fetched cannot be read, so its 
 ⚠ THE GATE IS OPT-IN PER CLONE, and two things keep it on: `.claude/hooks/ensure-plan-leak-hook.sh` runs
 `--session-start` at every Claude Code session (enables it when `core.hooksPath` is unset; warns LOUDLY and
 changes nothing when it points elsewhere), and `.claude/hooks/block-default-branch-push.sh` refuses an agent's
-push that sets `core.hooksPath` or `ALLOW_PLAN_LEAK=1` without `ALLOW_DANGEROUS_PUSH=1`. That one reads command
+push that mentions `hookspath` or `ALLOW_PLAN_LEAK` anywhere in its raw text without `ALLOW_DANGEROUS_PUSH=1`. That one reads command
 TEXT, so it is defence in depth only; this hook owns the decision.
 ⛔ THE GATE PREVENTS *ACCIDENTAL* PUBLICATION. It is not a boundary against a determined agent: anything with a
 shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).

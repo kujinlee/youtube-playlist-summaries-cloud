@@ -102,13 +102,13 @@ if [ "${1:-}" = "--self-test" ]; then
                                                         "git -c user.name=x push --force origin feat/x" deny
   probe "an ordinary -c on a push is allowed"           "git -c user.name=x push origin feat/x" allow
   probe "a git config of hooksPath with no push is untouched" "git config core.hooksPath .githooks" allow
-  probe "⭐ QUOTES do not hide hooksPath (shlex normalises them)" "git -c \"core.hooks\"Path=/dev/null push origin feat/x" deny
-  probe "...nor a BACKSLASH"                             "git -c core.hooks\\Path=/dev/null push origin feat/x" deny
-  probe "⭐ a QUOTED ALLOW_PLAN_LEAK=1 is still denied"    "ALLOW_PLAN_LEAK='1' git push origin feat/x" deny
-  probe "...and a quoted NAME too"                       "\"ALLOW_PLAN_LEAK\"=1 git push origin feat/x" deny
-  probe "ALLOW_PLAN_LEAK=0 is not the escape and is allowed" "ALLOW_PLAN_LEAK=0 git push origin feat/x" allow
-  probe "⭐ a push command shlex cannot parse is denied" "git push origin \"feat/x" deny
-  probe "...unless ALLOW_DANGEROUS_PUSH=1"              "ALLOW_DANGEROUS_PUSH=1 git push origin \"feat/x" allow
+  probe "⭐ the reviewer's COMMENT form is denied (raw text, not a parse)" "git push origin feat/x # -c core.hooksPath=/dev/null" deny
+  probe "⭐ QUOTES do not hide hooksPath"                "git -c \"core.hooks\"Path=/dev/null push origin feat/x" deny
+  probe "⭐ nor a BACKSLASH"                              "git -c core.hooks\\Path=/dev/null push origin feat/x" deny
+  probe "a QUOTED ALLOW_PLAN_LEAK=1 is denied"            "ALLOW_PLAN_LEAK='1' git push origin feat/x" deny
+  probe "...and a quoted NAME"                            "\"ALLOW_PLAN_LEAK\"=1 git push origin feat/x" deny
+  probe "ALLOW_PLAN_LEAK in ANY form is denied — even =0" "ALLOW_PLAN_LEAK=0 git push origin feat/x" deny
+  probe "an unbalanced quote no longer denies a normal push" "git push origin \"feat/x" allow
 
   printf '\nself-test: %s/%s passed\n' "$pass" "$((pass+fail))"
   [ "$fail" -eq 0 ] && exit 0 || exit 1
@@ -170,38 +170,28 @@ Deliberate exception: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
 
   # ── RULE 3 (backlog #393): the plan-leak gate's two off-switches ──────────────────────────────────
   # The plan-leak gate is git's own pre-push hook (`.githooks/pre-push`); IT OWNS THE DECISION. This rule
-  # refuses the two VISIBLE ways an agent switches that hook off — repointing `core.hooksPath` (`-c`,
-  # `--config-env`, `GIT_CONFIG_*`, a `git config` in the same command), and the gate's own escape
-  # `ALLOW_PLAN_LEAK=1` — unless the owner's ALLOW_DANGEROUS_PUSH=1 is also given.
-  # The command is TOKENISED with Python's shlex first, so quotes and backslashes (`"core.hooks"Path`,
-  # `ALLOW_PLAN_LEAK='1'`) are normalised before matching; a push command shlex cannot parse is refused too.
+  # refuses a push command whose RAW text mentions `hookspath` or `allow_plan_leak` ANYWHERE — casefolded,
+  # with quotes and backslashes deleted first — unless the owner's ALLOW_DANGEROUS_PUSH=1 is also given.
+  # ⛔ DELIBERATELY NOT A PARSER (PR #443, the coordinator's final rule after a third security pass). A shlex
+  # step was tried and each refinement opened a new differential with bash (`#` comments, exact tokens) —
+  # the wall. A substring over-denies, and a false denial costs a moment where a false pass costs a leak.
   # ⛔ THE BOUND, SAID PLAINLY: this reads command TEXT and is defence in depth only. The gate exists to
   # prevent ACCIDENTAL publication; an agent with a shell can always bypass git hooks (`--no-verify` behind
   # an alias, another clone, plumbing such as `git send-pack`, an exported variable). It is NOT a boundary
-  # against a determined agent, and this rule does not chase every spelling.
-  rule3="$(printf '%s' "$cmd" | python3 -c '
-import shlex, sys
-try:
-    toks = list(shlex.shlex(sys.stdin.read(), posix=True, punctuation_chars=True))
-except ValueError:
-    print("unparseable"); sys.exit()
-if any("hookspath" in t.casefold() for t in toks):
-    print("hookspath")
-elif any(t.startswith("ALLOW_PLAN_LEAK=") and t.split("=", 1)[1] == "1" for t in toks):
-    print("escape")
-' 2>/dev/null || echo unparseable)"
-  case "$rule3" in
-    hookspath) deny "Blocked: this push changes \`core.hooksPath\`, which switches off git's pre-push hooks — including the
-plan-leak gate (.githooks/pre-push, backlog #393), which refuses pushes that quote a private plan.
+  # against a determined agent.
+  norm="$(printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '[:upper:]' '[:lower:]')"
+  if printf '%s' "$norm" | grep -q 'hookspath'; then
+    deny "Blocked: this push command mentions \`core.hooksPath\`, which can switch off git's pre-push hooks —
+including the plan-leak gate (.githooks/pre-push, backlog #393), which refuses pushes that quote a private plan.
 
-Push without it. If the owner means it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1";;
-    escape) deny "Blocked: ALLOW_PLAN_LEAK=1 skips the plan-leak gate (backlog #393), which refuses a push quoting a
-private plan. Skipping it is the owner's call, not an agent's: reword the commits it named instead.
+Push without it. If the owner means it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
+  fi
+  if printf '%s' "$norm" | grep -q 'allow_plan_leak'; then
+    deny "Blocked: this push command mentions ALLOW_PLAN_LEAK, the plan-leak gate's escape (backlog #393).
+Skipping that gate is the owner's call, not an agent's: reword the commits it named instead.
 
-If the owner has judged the hit a coincidence: re-run prefixed with ALLOW_DANGEROUS_PUSH=1 as well";;
-    unparseable) deny "Blocked: this push command could not be tokenised (unbalanced quotes?), so the plan-leak
-off-switch check (backlog #393) cannot read it. Rewrite it plainly, or re-run prefixed with ALLOW_DANGEROUS_PUSH=1";;
-  esac
+If the owner has judged the hit a coincidence: re-run prefixed with ALLOW_DANGEROUS_PUSH=1 as well"
+  fi
 
   if printf '%s' "$push_only" | grep -qE '(^|[[:space:]])--no-verify([[:space:]=]|$)'; then
     deny "Blocked: \`--no-verify\` skips the checks this push is supposed to clear.
