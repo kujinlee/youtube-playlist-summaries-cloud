@@ -55,7 +55,7 @@ class them ARCHIVAL and do not list them one by one.
 | docs/explainers/2026-10-2{3,7}-*.html (+ fragments) | ARCHIVAL | dated explainers, snapshots of their day |
 | docs/features.md, CONTEXT.md, README, CLAUDE.md, .claude/commands, .claude/settings.json, .claude/skills | none | zero hits |
 | rendered goal-tree page, timeline intro | ARCHIVAL | "Before this page, the plan history was drawn by the work-lines page, now retired and FROZEN: the work-lines archive (backlog #389)". The only work-lines href on the page is `/work-lines-archive` |
-| rendered goal-tree page, PLANS NOT TICKED CLOSED | data | two plan objectives quote "…so the work-lines tree cannot silently lose a branch". These are the owner's own words stored in plan files, not a presentation |
+| rendered goal-tree page, PLANS NOT TICKED CLOSED | data | two plan objectives quote "…[a plan objective — redacted pending backlog #194]". These are the owner's own words stored in plan files, not a presentation |
 
 ## FAILS-IF 1: does a generated page still present work-lines as current?
 
