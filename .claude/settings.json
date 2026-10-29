@@ -6,6 +6,7 @@
         "hooks": [
           {
             "type": "command",
+            "if": "Bash(*push*)",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-default-branch-push.sh",
             "statusMessage": "Checking branch rule..."
           },

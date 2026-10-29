@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# PreToolUse hook — fires before EVERY Bash tool call, and acts only on one that runs `git … push`.
-# ⟳ 2026-10-29 (backlog #393): it had an `if: Bash(git push*)` filter, which a command starting
-# `git -c … push` or `ALLOW_PLAN_LEAK=1 git push` does not match, so RULE 3 below could never have fired.
-# A non-push command leaves at the first grep.
+# PreToolUse hook — fires before every Bash tool call whose text CONTAINS `push` (`if: Bash(*push*)`), and
+# acts only on one that runs `git … push`.
+# ⟳ 2026-10-29 (backlog #393): the filter was `Bash(git push*)`, which a command starting `git -c … push`,
+# `ALLOW_PLAN_LEAK=1 git push` or `cd x && git push` does not match, so RULE 3 below could never have fired.
+# MEASURED on Claude Code 2.1.309 with a marker hook (not read from docs): `Bash(*push*)` fired on `echo push`,
+# `git -c a=b push`, `ALLOW_PLAN_LEAK=1 git push` and `cd . && git push`, and NOT on `ls .` or `pwd .`, which
+# an unfiltered control hook saw run. Only a deliberately obfuscated push (`$'\x70ush'`) slips past it — an
+# out-of-scope evasion. Unfiltered, the hook cost a median 31 ms on every non-push Bash call.
 #
 # Enforces the branch+PR rule in docs/dev-process.md Phase 5: work goes on a
 # branch and merges through a PR. Direct pushes to the default branch are the

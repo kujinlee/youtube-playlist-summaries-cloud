@@ -97,9 +97,10 @@ command's form does not matter. CI has no plans (a zero over nothing), so CI run
 - **The agent push hook refuses the off-switches** it can see: a push command whose raw text mentions
   `hookspath` or `ALLOW_PLAN_LEAK` anywhere (casefolded, quotes and backslashes deleted — deliberately not a
   parser) is denied without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence in
-  depth only; the pre-push hook owns the decision. It now runs on EVERY Bash call (a `git push*` filter
-  cannot match `git -c … push`): measured 2026-10-29, median **31 ms** added per non-push call (50 runs
-  through `run-hook.sh`, p90 39 ms, on a loaded machine), against 0 before. Known, OUT-OF-SCOPE evasions (a fourth security pass, declined deliberately): shell expansions (`$'…'`, `${…}`), config includes (`include.path`, `includeIf`) and `GIT_CONFIG_*` set outside the command reach `core.hooksPath` without the word appearing; they are deliberate, never accidental, and the pre-push hook plus the SessionStart status check own the decision.
+  depth only; the pre-push hook owns the decision. Its filter is `if: Bash(*push*)` (a `git push*` filter
+  cannot match `git -c … push`); verified empirically on Claude Code 2.1.309 to fire on every push form
+  tried and not on `ls`/`pwd`, so a non-push Bash call costs **0 ms**. A command containing `push` pays the
+  hook's own run: median **31 ms** (50 runs through `run-hook.sh`, p90 39 ms, on a loaded machine). Known, OUT-OF-SCOPE evasions (a fourth security pass, declined deliberately): shell expansions (`$'…'`, `${…}`), config includes (`include.path`, `includeIf`) and `GIT_CONFIG_*` set outside the command reach `core.hooksPath` without the word appearing; they are deliberate, never accidental, and the pre-push hook plus the SessionStart status check own the decision.
 - ⛔ **The gate prevents ACCIDENTAL publication. It is not a boundary against a determined agent:** anything
   with a shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
 - **hits → the push is refused**, naming `path:line`, the commit and the plan FILE, never the words, in every
