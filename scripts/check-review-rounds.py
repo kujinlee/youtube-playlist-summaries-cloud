@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 99 cases
+    python3 scripts/check-review-rounds.py --self-test # 110 cases
 
 WHY THIS EXISTS
 ---------------
@@ -189,6 +189,13 @@ KNOWN: set[tuple[str, int]] = {
     ("plan-serve-bounding", 7), ("plan-serve-bounding", 8),
     ("spec-proven-absence", 1),
     ("spec-serve-deadline", 1), ("spec-serve-deadline", 2), ("spec-serve-deadline", 3),
+    # ⟳ backlog #182 r1 (PR #439): these seven passed only because ANY gap excused ANY absence.
+    # Each round is ONE file, filed as `<subject>-r<N>-coordinator.md`, that is itself the Codex
+    # half (its first line is the wrapper's `<!-- codex-review: model=… -->` stamp), beside a
+    # `REVIEW GAP: claude` line. Under the rule that the gap must be the MISSING half's, codex is
+    # missing BY NAME too. Exempted by name rather than re-filed: they are merged history.
+    ("adopt-90", 1), ("adopt-90", 2), ("adopt-90", 3), ("adopt-90", 4),
+    ("describe-twelve", 1), ("describe-twelve", 2), ("describe-twelve", 3),
 }
 
 
@@ -204,36 +211,80 @@ def parse(name: str) -> tuple[str, int, str] | None:
 # sanctions `halves.<name>: "GAP: <reason>"`, and on PR #345 an author who wrote exactly that got a
 # red required job, because only the prose line above was read. Both are accepted: the prose line is
 # what a document with NO header can carry, and ~40 round documents rely on it.
-# ⚠ ONLY the first ```yaml block (the header, `check-review-decision.parse_header`'s rule), and only
-# the `halves:` mapping inside it — a `GAP:` quoted in a finding or a note is not a gap.
-# ⚠ ONLY a flow scalar — bare, "double" or 'single' quoted. A `|`/`>` block scalar is NOT read: the
-# corpus holds two, both in review documents ABOUT the parser, neither a real gap.
-YAML_HEADER = re.compile(r"```yaml\n(.*?)```", re.S)
-YAML_GAP = re.compile(r"""^[ \t]+(codex|claude):[ \t]*(["']?)GAP:[ \t]*(\S.*?)[ \t]*\2[ \t]*$""")
+# ⛔ r1 (PR #439): NARROWED TO THE ONE FORM THE CORPUS USES, not parsed more. The first reader was a
+# permissive hand parser over YAML it could not really parse, and it accepted a key inside a block
+# scalar, a comment as a reason, and a `yaml` fence quoted anywhere in a finding. Measured: all 87
+# YAML gap lines in `docs/reviews` are a two-space `codex:`/`claude:` directly under `halves:`, with
+# a double-quoted `"GAP: <reason>"`. So that is the grammar, and every other spelling — single or
+# no quotes, a trailing comment, a flow mapping, CRLF — is NOT read and fails CLOSED, as a missing
+# half (r1 C4, declined on purpose: widening the grammar is what produced the other findings).
+#   * the header is the FIRST fence after the `# ` title (the template's position), and it must be
+#     a ```yaml fence — a ````markdown fence quoting the template is not a header;
+#   * only `halves:` at column 0, then only its direct children at EXACTLY two spaces, and the walk
+#     STOPS at the first line that is not one — so block-scalar contents are never read. A blank
+#     line inside `halves:` ends it too (the corpus has none);
+#   * a reason is required, and one starting `#` is a comment, not a reason.
+FENCE = re.compile(r"^(`{3,})(\S*)[ \t]*$")
+HALF_CHILD = re.compile(r"^  ([A-Za-z_][\w-]*):(.*)$")
+YAML_GAP_VALUE = re.compile(r'^[ \t]*"GAP:[ \t]*([^"#\s][^"]*?)[ \t]*"$')
 
 
-def yaml_gap(text: str) -> str | None:
-    """The reason the header's `halves:` records for a missing half, or None. PURE."""
-    m = YAML_HEADER.search(text)
-    if not m:
+def header_body(text: str) -> "str | None":
+    """The body of the round header — the first fence after the title, if it is ```yaml. PURE."""
+    lines = text.split("\n")
+    start = next((i + 1 for i, line in enumerate(lines) if line.startswith("# ")), 0)
+    for i in range(start, len(lines)):
+        f = FENCE.match(lines[i])
+        if not f:
+            continue
+        if f.group(1) != "```" or f.group(2) != "yaml":
+            return None
+        for j in range(i + 1, len(lines)):
+            if lines[j].rstrip() == "```":
+                return "\n".join(lines[i + 1:j])
         return None
-    in_halves = False
-    for line in m.group(1).split("\n"):
-        if not line.strip():
-            continue
-        if not line[:1].isspace():
-            in_halves = line.rstrip() == "halves:"
-            continue
-        g = YAML_GAP.match(line) if in_halves else None
-        if g:
-            return f"{g.group(1)}: {g.group(3).strip()}"
     return None
 
 
-def has_gap_line(text: str) -> str | None:
-    """The stated reason a half is missing, in EITHER grammar, or None. PURE."""
-    m = GAP.search(text)
-    return f"{m.group(1)}: {m.group(2).strip()}" if m else yaml_gap(text)
+def yaml_gaps(text: str) -> "dict[str, str]":
+    """{half: reason} for every half the header's `halves:` records as a GAP. PURE."""
+    body = header_body(text)
+    if body is None:
+        return {}
+    lines = body.split("\n")
+    at = next((i for i, line in enumerate(lines) if line.rstrip() == "halves:"), None)
+    if at is None:
+        return {}
+    out: "dict[str, str]" = {}
+    for line in lines[at + 1:]:
+        c = HALF_CHILD.match(line)
+        if not c:
+            break
+        g = YAML_GAP_VALUE.match(c.group(2)) if c.group(1) in HALVES else None
+        if g:
+            out.setdefault(c.group(1), g.group(1))
+    return out
+
+
+def gap_reasons(text: str) -> "dict[str, str]":
+    """{half: reason} for EVERY half this document records as missing, in EITHER grammar. PURE.
+
+    ⛔ r1 X5/F4: a single answer let the first gap found hide the others — a prose `claude` line,
+    or key order, hid a YAML `codex` gap from `check-review-recorded.first_codex_gap`.
+    """
+    out: "dict[str, str]" = {}
+    for m in GAP.finditer(text):
+        out.setdefault(m.group(1).lower(), m.group(2).strip())
+    for who, why in yaml_gaps(text).items():
+        out.setdefault(who, why)
+    return out
+
+
+def has_gap_line(text: str, half: "str | None" = None) -> str | None:
+    """`"<half>: <reason>"` for the named half's gap — or, with no half, for the first — or None. PURE."""
+    gaps = gap_reasons(text)
+    who = half if half is not None else next(iter(gaps), None)
+    return f"{who}: {gaps[who]}" if who in gaps else None
 
 
 # ── backlog #68 (d): THIS IS THE CONSUMER THAT IS NOT THE CALLER ───────────────────────────────
@@ -632,7 +683,12 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
         present = [w for w in HALVES if w in files]
         if len(present) >= 2:
             continue
-        if any(has_gap_line(p.read_text(errors="replace")) for p in files.values()):
+        # ⛔ r1 X1/F2: the gap must be the MISSING half's. Any gap at all used to pass, so a codex
+        # gap beside a codex half on disk excused an absent claude half.
+        gapped = set()
+        for p in files.values():
+            gapped |= gap_reasons(p.read_text(errors="replace")).keys()
+        if all(w in gapped for w in HALVES if w not in files):
             continue
         if key in known:
             exempt_used.add(key)
@@ -696,31 +752,59 @@ def _self_test_body() -> int:
     # "GAP: …"` and the required `verify` job went red, because only the prose line was read. The
     # header is built here in the TEMPLATE's own shape — quoted, under `halves:`, inside the fenced
     # ```yaml block after the title — so this is the form an author following it actually writes.
+    # ⟳ r1 (PR #439): the reader is NARROWED to the one form the corpus uses (87 of 87 lines), and
+    # each reviewer's concrete input below is a case. An unread form fails CLOSED, as a missing half.
     def _hdr(halves: str) -> str:
         return ("# p r2\n\n```yaml\nround: 2\nfixes_nontrivial: false\nsubject: p\n"
                 f"halves:\n{halves}findings:\n  - {{id: M1, severity: Medium}}\n```\n\nbody\n")
     check("#182 the template's YAML gap is read, and names the half and its reason",
-          has_gap_line(_hdr('  codex: ran\n  claude: "GAP: this session spawns no subagents"\n')),
-          "claude: this session spawns no subagents")
-    check("#182 …a single-quoted or bare YAML string is the same gap",
-          (has_gap_line(_hdr("  codex: 'GAP: usage limit'\n  claude: ran\n")),
-           has_gap_line(_hdr("  codex: GAP: usage limit\n  claude: ran\n"))),
-          ("codex: usage limit", "codex: usage limit"))
+          gap_reasons(_hdr('  codex: ran\n  claude: "GAP: this session spawns no subagents"\n')),
+          {"claude": "this session spawns no subagents"})
     check("#182 the prose form still passes beside it — two halves, one concern, both readable",
           has_gap_line("**REVIEW GAP:** codex — usage limit"), "codex: usage limit")
     check("#182 a YAML GAP with no reason is not a gap — the reason is the point",
-          has_gap_line(_hdr('  codex: ran\n  claude: "GAP:"\n')), None)
+          gap_reasons(_hdr('  codex: ran\n  claude: "GAP:"\n')), {})
     check("#182 …nor are the corpus's reasonless spellings `gap` and `skipped`",
-          (has_gap_line(_hdr("  codex: ran\n  claude: gap\n")),
-           has_gap_line(_hdr("  codex: ran\n  claude: skipped\n"))), (None, None))
-    check("#182 …nor a half that is not one of the two, nor an unbalanced quote",
-          (has_gap_line(_hdr('  gemini: "GAP: no key"\n')),
-           has_gap_line(_hdr("  claude: \"GAP: no key'\n"))), (None, None))
+          (gap_reasons(_hdr("  codex: ran\n  claude: gap\n")),
+           gap_reasons(_hdr("  codex: ran\n  claude: skipped\n"))), ({}, {}))
+    check("#182 …nor a half that is not one of the two",
+          gap_reasons(_hdr('  gemini: "GAP: no key"\n')), {})
+    check("#182 r1 only a DOUBLE-quoted value is read — single-quoted and bare are not the form",
+          (gap_reasons(_hdr("  codex: 'GAP: usage limit'\n")),
+           gap_reasons(_hdr("  codex: GAP: usage limit\n"))), ({}, {}))
+    # r1 X3 (Codex): a comment is not a reason, and downstream it waived the final-tree check.
+    check("#182 r1 X3 a comment where the reason belongs is not a reason",
+          (gap_reasons(_hdr("  codex: GAP: # comment only\n")),
+           gap_reasons(_hdr('  codex: "GAP: # comment only"\n'))), ({}, {}))
+    # r1 X2 (Codex): a key inside a block scalar under `halves:` is not a `halves` field.
+    check("#182 r1 X2 a `claude:` line inside a block scalar under halves is not a gap",
+          gap_reasons(_hdr('  notes: |\n    claude: "GAP: example only"\n')), {})
+    check("#182 r1 …and a child after a deeper-indented line is not read either — the walk stops",
+          gap_reasons(_hdr('  notes: |\n    x\n  claude: "GAP: after the scalar"\n')), {})
     check("#182 a `GAP:` OUTSIDE `halves:` is not a gap — a finding may quote the grammar",
-          has_gap_line(_hdr("  codex: ran\n").replace(
-              "subject: p\n", 'subject: p\nnote:\n  claude: "GAP: quoted in a note"\n')), None)
+          gap_reasons(_hdr("  codex: ran\n").replace(
+              "subject: p\n", 'subject: p\nnote:\n  claude: "GAP: quoted in a note"\n')), {})
     check("#182 …and neither is one in a fenced block that is not the yaml header",
-          has_gap_line('```text\nhalves:\n  claude: "GAP: an example"\n```\n'), None)
+          gap_reasons('```text\nhalves:\n  claude: "GAP: an example"\n```\n'), {})
+    # r1 F1 (Claude) / C1: a solo half QUOTING the template's example inside a finding. The first
+    # fence after the title is a ````markdown fence, so there is no header to read.
+    _quoted = ('# Round 2 codex\n\n## M1 the template example\n\n````markdown\n```yaml\nround: 3\n'
+               'halves:\n  codex: ran\n  claude: "GAP: this session spawns no subagents"\n```\n````\n')
+    check("#182 r1 F1 a ```yaml block quoted in a FINDING is not the header", gap_reasons(_quoted), {})
+    # r1 X6: the LAST yaml fence is not the header either — the first fence after the title is.
+    check("#182 r1 X6 only the FIRST fence after the title is the header, not a later yaml one",
+          gap_reasons(_hdr('  codex: ran\n  claude: ran\n')
+                      + '\n```yaml\nhalves:\n  claude: "GAP: a later block"\n```\n'), {})
+    # r1 X5 / F4: EVERY half's gap, so order and the prose line cannot hide the codex one.
+    check("#182 r1 X5 both halves' gaps are returned, whatever the key order",
+          gap_reasons(_hdr('  claude: "GAP: quota"\n  codex: "GAP: quota too"\n')),
+          {"claude": "quota", "codex": "quota too"})
+    check("#182 r1 F4 a prose claude gap does not shadow a YAML codex gap",
+          has_gap_line("REVIEW GAP: claude — none\n\n"
+                       + _hdr('  codex: "GAP: usage limit"\n  claude: ran\n'), "codex"),
+          "codex: usage limit")
+    check("#182 r1 …and asking for one half never answers with the other",
+          has_gap_line("REVIEW GAP: claude — none\n", "codex"), None)
 
     # ── corpus(): ONE owner for the population (backlog #328) ────────────────────────
     with tempfile.TemporaryDirectory() as ctd:
@@ -840,6 +924,18 @@ def _self_test_body() -> int:
                                    '  claude: "GAP: not invoked; ran as r3"\nfindings:\n```\n'})
         check("#182 solo half + the template's YAML gap ONLY passes the audit",
               audit(d, set())[0], [])
+        # r1 X1 (Codex) / F2 (Claude): the gap must be the MISSING half's. A codex gap beside a codex
+        # half on disk explains nothing about the claude half that is absent.
+        d = tree({"p-r1-codex.md": "```yaml\nround: 1\nhalves:\n  codex: \"GAP: unavailable\"\n"
+                                   "  claude: ran\nfindings:\n```\n"})
+        check("#182 r1 X1 a gap for the PRESENT half does not excuse the missing one",
+              len(audit(d, set())[0]), 1)
+        d = tree({"p-r1-codex.md": "x", "p-r1-coordinator.md":
+                  "# r1\n\n```yaml\nround: 1\nhalves:\n  codex: \"GAP: timed out once, re-ran\"\n"
+                  "  claude: ran\nfindings:\n```\n"})
+        check("#182 r1 F2 …nor does one recorded in the coordinator's header", len(audit(d, set())[0]), 1)
+        d = tree({"p-r1-codex.md": "REVIEW GAP: codex — re-ran after a timeout"})
+        check("#182 r1 …and the same rule holds for the prose line", len(audit(d, set())[0]), 1)
 
         d = tree({"p-r1-codex.md": "x"})
         check("KNOWN exempts it", audit(d, {("p", 1)})[0] == [], True)

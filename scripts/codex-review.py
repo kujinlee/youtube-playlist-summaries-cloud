@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 176 cases
+  scripts/codex-review.py --self-test  # 183 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -546,8 +546,8 @@ def promotion_path(review_id: str, who: str) -> str:
     return os.path.join(REPO_ROOT, REVIEW_ROOT, who, review_filename(review_id))
 
 
-def out_location_refusal(out_path: str) -> "str | None":
-    """Refuse an `--out` inside the artifact tree, or None. PURE — no filesystem, no `realpath`.
+def out_location_refusal(out_path: str, reviewed: "str | None" = None) -> "str | None":
+    """Refuse an `--out` inside either artifact tree, or None. No filesystem beyond `realpath`.
 
     ⛔ **r1 M5: THE SAFETY ARGUMENT WAS TRUE ONLY UNDER A CONDITION NOTHING ENFORCED.** Three texts
     assert that `quarantine()` cannot reach a promoted half because `dir_snapshot` is
@@ -566,14 +566,23 @@ def out_location_refusal(out_path: str) -> "str | None":
     refuses nothing legitimate: the documented shape is `--out "$(mktemp -d)/r.md"`, OUTSIDE the
     repository entirely, and the durable copy is what `--review-id` names.
 
-    ⚠ LEXICAL, ON `abspath`, NOT `realpath`. `realpath` resolves symlinks, which asks the
-    filesystem a question about a path that need not exist yet; the check must give the same
-    answer before the file does. A symlinked route around it is a determined caller, and this
+    ⚠ LEXICAL FIRST, ON `abspath`. `realpath` resolves symlinks, which asks the filesystem a
+    question about a path that need not exist yet; the lexical answer is the one that holds before
+    the file does. ⟳ backlog #121 r1: the `realpath` spelling is compared IN ADDITION, never instead,
+    because the reviewed root arrives resolved — so it can only add refusals. A symlinked route around it is a determined caller, and this
     guards the distracted one — the same bound `dir_snapshot`'s own comment states.
     """
-    tree = os.path.join(REPO_ROOT, REVIEW_ROOT)
+    # ⟳ backlog #121 r1 C2: the REVIEWED tree's artifacts too. The agent runs at the reviewed root
+    # (`run_codex(cwd=…)`), so that is where it guesses its way into `docs/reviews/`; the files this
+    # wrapper FILES stay under `REPO_ROOT`, so both trees are refused.
+    # ⚠ `reviewed` comes from `reviewed_root`, which is a `realpath`, while `--out` arrives as the
+    # caller typed it — measured, `/var/…` against `/private/var/…` on macOS, and the refusal missed.
+    # So both spellings are compared as well as the lexical one; that only ever refuses MORE.
     here = os.path.dirname(os.path.abspath(out_path)) or "."
-    if here != tree and not here.startswith(tree + os.sep):
+    heres = {here, os.path.realpath(here)}
+    trees = {f(os.path.join(r, REVIEW_ROOT)) for r in (REPO_ROOT, reviewed) if r
+             for f in (os.path.abspath, os.path.realpath)}
+    if not any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):
         return None
     return (f"CANNOT RUN — --out is inside the artifact tree: {out_path}\n"
             f"  --out is a SCRATCH path and the documented shape puts it outside the repository "
@@ -898,13 +907,18 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARTIFACT_ROOTS = ("docs/reviews",)
 
 
-def watched_dirs(out_path: str) -> "list[str]":
-    """Every directory whose contents must not change behind the wrapper's back. PURE-ish."""
+def watched_dirs(out_path: str, reviewed: "str | None" = None) -> "list[str]":
+    """Every directory whose contents must not change behind the wrapper's back. PURE-ish.
+
+    ⟳ backlog #121 r1 C2: the artifact roots of BOTH trees — `REPO_ROOT`, where this wrapper files,
+    and the reviewed root, where the agent runs and was measured guessing its way in.
+    """
     dirs = [os.path.dirname(os.path.abspath(out_path)) or "."]
-    for rel in ARTIFACT_ROOTS:
-        d = os.path.join(REPO_ROOT, rel)
-        if os.path.isdir(d) and d not in dirs:
-            dirs.append(d)
+    for root in (REPO_ROOT, reviewed):
+        for rel in ARTIFACT_ROOTS if root else ():
+            d = os.path.join(root, rel)
+            if os.path.isdir(d) and d not in dirs:
+                dirs.append(d)
     return dirs
 
 
@@ -1073,7 +1087,8 @@ def classify(exit_code: int, stdout: str, message: "str | None",
     )
 
 
-def run_codex(model: str, prompt: str, timeout: int) -> "tuple[int, str, str | None, bool]":
+def run_codex(model: str, prompt: str, timeout: int,
+              cwd: "str | None" = None) -> "tuple[int, str, str | None, bool]":
     """One `codex exec`. Returns (exit_code, stdout, final_message_or_None, timed_out).
 
     stdin is closed: `codex exec` otherwise blocks on "Reading additional input from stdin..." and
@@ -1116,6 +1131,12 @@ def run_codex(model: str, prompt: str, timeout: int) -> "tuple[int, str, str | N
                 stderr=subprocess.STDOUT,
                 text=True,
                 timeout=timeout,
+                # ⛔ backlog #121 r1 X4/X6: the reviewer is handed the tree the RECORD describes —
+                # run AT the reviewed root, under the same `unredirected` environment
+                # `reviewed_state` reads it with. Inheriting `GIT_DIR` handed Codex a different
+                # repository from the one the verdict named.
+                cwd=cwd,
+                env=unredirected(),
             )
             code, out = p.returncode, p.stdout
         except subprocess.TimeoutExpired as e:
@@ -1221,7 +1242,10 @@ def main() -> int:
     # above: an `--out` inside `docs/reviews/` would make the artifact tree a watched root, and
     # the run must not start at all. It refuses before the snapshot is taken, so the hazard it
     # names — a quarantine of whatever is in that directory — cannot be reached.
-    out_refusal = out_location_refusal(args.out)
+    # ⟳ backlog #121: the tree the CALLER stands in, resolved to its top level — taken HERE, before
+    # the `--out` refusal, because that refusal and the watch must cover its artifacts too (r1 C2).
+    tree_at_dispatch = reviewed_root()
+    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)
     if out_refusal:
         print("[codex-review] " + out_refusal.replace("\n", "\n[codex-review] "), file=sys.stderr)
         return 2
@@ -1254,7 +1278,7 @@ def main() -> int:
     # directory so an intrusion is detected and named instead of being discovered days later.
     out_dir = os.path.dirname(os.path.abspath(args.out)) or "."
     out_name = os.path.basename(args.out)
-    watched = watched_dirs(args.out)
+    watched = watched_dirs(args.out, reviewed=tree_at_dispatch)
     before = snapshot_all(watched)
 
     # ── backlog #68 (d): every exit from here on leaves testimony on disk ──
@@ -1264,9 +1288,7 @@ def main() -> int:
     # Taken ONCE, here, before any candidate runs — this is the tree the reviewer is handed. Taken
     # at `emit` instead it would describe the tree after the run, and a commit made while a 15-minute
     # review was in flight would be recorded as something the reviewer had seen.
-    # ⟳ backlog #121: the tree the CALLER stands in, resolved to its top level — and named in the
-    # record, so a head that looks wrong can be traced to the tree it was read from.
-    tree_at_dispatch = reviewed_root()
+    # backlog #121: named in the record, so a head that looks wrong can be traced to its tree.
     head_at_dispatch, dirty_at_dispatch = reviewed_state(tree_at_dispatch)
     # ⟳ **backlog #176: THE PATH IS THE SUPPLIED ID AND NOTHING ELSE.** It used to be derived from
     # `--out`'s basename and then, across four rounds of fixes, disambiguated by a run token over
@@ -1332,7 +1354,7 @@ def main() -> int:
     attempts = []
     for slug in models:
         print(f"[codex-review] trying {slug} ...", file=sys.stderr)
-        code, stdout, message, timed_out = run_codex(slug, prompt, args.timeout)
+        code, stdout, message, timed_out = run_codex(slug, prompt, args.timeout, cwd=tree_at_dispatch)
         # ⚠ THE SELF-REFERENCE CHECK IS GIVEN THE *PROMOTION* PATH, NOT `--out`. The tell it looks
         # for is a final message naming the file it is about to become — and the name an agent can
         # infer, and was measured inferring, is the durable `<subject>-r<N>-<writer>.md`, never the
@@ -2521,6 +2543,59 @@ def _self_test_body() -> int:
             "the wrapper lives in", _v3.get("head") == _hb, True)
         chk("…and the verdict NAMES the tree it measured, so a wrong head is diagnosable from "
             "the file", _v3.get("tree"), os.path.realpath(_wb))
+        # ── r1 X4 + X6 (PR #439): WHERE CODEX RUNS, AND IN WHICH GIT CONTEXT ─────────────────────
+        # The record above is half the claim; the other half is that the reviewer is HANDED that
+        # tree. Codex measured the split: under an exported `GIT_DIR` the record stripped it and
+        # described A while the Codex subprocess inherited it and saw B. And `cwd=REPO_ROOT` on the
+        # subprocess survived the suite, because the refusal drive never reaches `run_codex`. So this
+        # drive DISPATCHES — to a stub that writes down where it ran, then exits without a review —
+        # from a SUBDIRECTORY of B (so "no cwd" and "the reviewed root" differ) with `GIT_DIR`
+        # exported at A's repository. `--model` forces one slug, so no model cache is consulted.
+        # ⚠ NOT beside `--out`: that directory is WATCHED, and a file the stub creates there is
+        # quarantined as an intrusion — measured, it took the probe with it.
+        os.makedirs(os.path.join(td3, "probe"))
+        os.makedirs(os.path.join(_wb, "docs", "reviews"))
+        _intruder = os.path.join(_wb, "docs", "reviews", "intruder.md")
+        _probe = os.path.join(td3, "probe", "probe.txt")
+        with open(os.path.join(_bin3, "codex"), "w", encoding="utf-8") as f:
+            f.write('#!/bin/sh\n{ pwd -P; git rev-parse --show-toplevel; '
+                    'echo "GIT_DIR=${GIT_DIR-unset}"; } > "$CR_PROBE" 2>&1\n'
+                    '[ -n "$CR_INTRUDE" ] && echo x > "$CR_INTRUDE"\nexit 97\n')
+        _r4 = subprocess.run([sys.executable, os.path.join(_was, "codex-review.py"),
+                              "--timeout", "20", "--model", "stub-slug", "--review-id",
+                              "wt-r2-codex", "--out", os.path.join(td3, "r2.md"), "a prompt"],
+                             capture_output=True, text=True, cwd=os.path.join(_wb, "sub"),
+                             env=dict(_env3, PATH=_bin3 + os.pathsep + os.environ.get("PATH", ""),
+                                      CR_PROBE=_probe, CR_INTRUDE=_intruder,
+                                      GIT_DIR=os.path.join(_wa, ".git")))
+        _seen = []
+        if os.path.isfile(_probe):
+            with open(_probe, encoding="utf-8") as f:
+                _seen = f.read().split("\n")
+        chk("#121 r1 the dispatch drive reached the (stub) reviewer",
+            (_r4.returncode, len(_seen) >= 3), (1, True))
+        chk("⭐ #121 r1 X6 the reviewer runs AT the reviewed root, not in the wrapper's checkout",
+            _seen[:1], [os.path.realpath(_wb)])
+        chk("⭐ #121 r1 X4 the reviewer gets the SAME git context the record describes — GIT_DIR "
+            "stripped, so git there answers about B", _seen[1:3],
+            [os.path.realpath(_wb), "GIT_DIR=unset"])
+        # ── r1 C2: the `--out` refusal and the intrusion watch cover the REVIEWED tree's artifacts.
+        # The stub above also wrote into B's docs/reviews, as the agent was measured doing.
+        chk("#121 r1 C2 an agent write into the REVIEWED tree's docs/reviews is caught and moved out",
+            ("intruder.md" in _r4.stderr, os.path.exists(_intruder)), (True, False))
+        _inb = os.path.join(_wb, "docs", "reviews", "r.md")
+        chk("#121 r1 C2 an --out inside the REVIEWED tree's docs/reviews is refused",
+            bool(out_location_refusal(_inb, reviewed=_wb)), True)
+        chk("#121 r1 C2 …and the reviewed tree's docs/reviews is a watched root",
+            os.path.join(_wb, "docs", "reviews") in watched_dirs(os.path.join(td3, "x.md"),
+                                                                 reviewed=_wb), True)
+        _r5 = subprocess.run([sys.executable, os.path.join(_was, "codex-review.py"),
+                              "--timeout", "5", "--review-id", "wt-r3-codex", "--out", _inb,
+                              "a prompt"], capture_output=True, text=True, cwd=_wb,
+                             env=dict(_env3, PATH=_bin3 + os.pathsep + os.environ.get("PATH", ""),
+                                      CR_PROBE=_probe))
+        chk("#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out",
+            (_r5.returncode, "inside the artifact tree" in (_r5.stdout + _r5.stderr)), (2, True))
 
     # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
     # than filed. `chk` already does `extra += 1` on every call, so this literal added a second

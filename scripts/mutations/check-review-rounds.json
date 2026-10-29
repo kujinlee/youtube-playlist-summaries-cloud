@@ -26,12 +26,12 @@
     ]
   },
   {
-    "name": "PROSE gap lines stop being found, so the documented Codex-down escape hatch silently stops working for every document without a YAML header (rebound by backlog #182, which added the YAML fallback to this line)",
+    "name": "PROSE gap lines stop being found, so the documented Codex-down escape hatch silently stops working for every document without a YAML header (rebound by backlog #182 r1, which moved the prose read into gap_reasons)",
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "    return f\"{m.group(1)}: {m.group(2).strip()}\" if m else yaml_gap(text)",
-        "    return yaml_gap(text)"
+        "    for m in GAP.finditer(text):",
+        "    for m in ():"
       ]
     ],
     "expect": [
@@ -473,8 +473,8 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "if m else yaml_gap(text)",
-        "if m else None"
+        "    for who, why in yaml_gaps(text).items():",
+        "    for who, why in {}.items():"
       ]
     ],
     "expect": [
@@ -482,16 +482,72 @@
     ]
   },
   {
-    "name": "#182 a GAP anywhere in the header counts, not only under halves",
+    "name": "#182 r1 X6 the header is searched for from the END of the document, so a later fence wins",
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "        g = YAML_GAP.match(line) if in_halves else None",
-        "        g = YAML_GAP.match(line)"
+        "    for i in range(start, len(lines)):",
+        "    for i in range(len(lines) - 1, start - 1, -1):"
       ]
     ],
     "expect": [
-      "#182 a `GAP:` OUTSIDE `halves:` is not a gap — a finding may quote the grammar"
+      "#182 the template's YAML gap is read, and names the half and its reason"
+    ]
+  },
+  {
+    "name": "#182 r1 X2 any indentation is a child of halves, so block-scalar contents are read",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "HALF_CHILD = re.compile(r\"^  ([A-Za-z_]",
+        "HALF_CHILD = re.compile(r\"^\\s+([A-Za-z_]"
+      ]
+    ],
+    "expect": [
+      "#182 r1 X2 a `claude:` line inside a block scalar under halves is not a gap"
+    ]
+  },
+  {
+    "name": "#182 r1 the walk skips a non-child line instead of stopping at it",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if not c:\n            break",
+        "        if not c:\n            continue"
+      ]
+    ],
+    "expect": [
+      "#182 r1 …and a child after a deeper-indented line is not read either — the walk stops"
+    ]
+  },
+  {
+    "name": "#182 r1 single-quoted and bare values are read too",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "YAML_GAP_VALUE = re.compile(r'^[ \\t]*\"GAP:",
+        "YAML_GAP_VALUE = re.compile(r'^[ \\t]*[\"\\']?GAP:"
+      ],
+      [
+        "[ \\t]*\"$')",
+        "[ \\t]*[\"\\']?$')"
+      ]
+    ],
+    "expect": [
+      "#182 r1 only a DOUBLE-quoted value is read — single-quoted and bare are not the form"
+    ]
+  },
+  {
+    "name": "#182 r1 X3 a reason may start with #, so a comment is a reason",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "([^\"#\\s][^\"]*?)",
+        "([^\"\\s][^\"]*?)"
+      ]
+    ],
+    "expect": [
+      "#182 r1 X3 a comment where the reason belongs is not a reason"
     ]
   },
   {
@@ -499,8 +555,8 @@
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "GAP:[ \\t]*(\\S.*?)[ \\t]*\\2",
-        "GAP:[ \\t]*(.*?)[ \\t]*\\2"
+        "GAP:[ \\t]*([^\"#\\s][^\"]*?)",
+        "GAP:[ \\t]*([^\"]*?)"
       ]
     ],
     "expect": [
@@ -508,29 +564,94 @@
     ]
   },
   {
-    "name": "#182 the closing quote need not match the opening one",
+    "name": "#182 any key under halves is a half",
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "(\\S.*?)[ \\t]*\\2[ \\t]*$",
-        "(\\S.*?)[ \\t]*[\"']?[ \\t]*$"
+        "if c.group(1) in HALVES else None",
+        "if True else None"
       ]
     ],
     "expect": [
-      "#182 …nor a half that is not one of the two, nor an unbalanced quote"
+      "#182 …nor a half that is not one of the two"
     ]
   },
   {
-    "name": "#182 any fenced block is read as the header",
+    "name": "#182 any top-level mapping is read as halves",
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "YAML_HEADER = re.compile(r\"```yaml\\n(.*?)```\", re.S)",
-        "YAML_HEADER = re.compile(r\"```\\w*\\n(.*?)```\", re.S)"
+        "at = next((i for i, line in enumerate(lines) if line.rstrip() == \"halves:\"), None)",
+        "at = next((i for i, line in enumerate(lines) if line.rstrip().endswith(\":\")), None)"
+      ]
+    ],
+    "expect": [
+      "#182 a `GAP:` OUTSIDE `halves:` is not a gap — a finding may quote the grammar"
+    ]
+  },
+  {
+    "name": "#182 any 3-backtick fence is read as the header",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "if f.group(1) != \"```\" or f.group(2) != \"yaml\":",
+        "if f.group(1) != \"```\":"
       ]
     ],
     "expect": [
       "#182 …and neither is one in a fenced block that is not the yaml header"
+    ]
+  },
+  {
+    "name": "#182 r1 F1 a non-yaml first fence is skipped, so a yaml block quoted in a finding becomes the header",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "            return None\n        for j in range(i + 1, len(lines)):",
+        "            continue\n        for j in range(i + 1, len(lines)):"
+      ]
+    ],
+    "expect": [
+      "#182 r1 F1 a ```yaml block quoted in a FINDING is not the header"
+    ]
+  },
+  {
+    "name": "#182 r1 X1 any gap excuses any missing half",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        if all(w in gapped for w in HALVES if w not in files):",
+        "        if gapped:"
+      ]
+    ],
+    "expect": [
+      "#182 r1 X1 a gap for the PRESENT half does not excuse the missing one"
+    ]
+  },
+  {
+    "name": "#182 r1 F4 asking for a half answers with the first gap found",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "    who = half if half is not None else next(iter(gaps), None)",
+        "    who = next(iter(gaps), None)"
+      ]
+    ],
+    "expect": [
+      "#182 r1 …and asking for one half never answers with the other"
+    ]
+  },
+  {
+    "name": "#182 r1 X5 only the first YAML gap is returned",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "            out.setdefault(c.group(1), g.group(1))",
+        "            return {c.group(1): g.group(1)}"
+      ]
+    ],
+    "expect": [
+      "#182 r1 X5 both halves' gaps are returned, whatever the key order"
     ]
   }
 ]

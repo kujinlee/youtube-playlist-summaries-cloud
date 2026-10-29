@@ -435,8 +435,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if here != tree and not here.startswith(tree + os.sep):",
-        "    if here != tree:"
+        "    if not any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):",
+        "    if not any(h == t for h in heres for t in trees):"
       ]
     ],
     "expect": [
@@ -449,8 +449,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if here != tree and not here.startswith(tree + os.sep):\n        return None",
-        "    if here == tree or here.startswith(tree + os.sep):\n        return None"
+        "    if not any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):\n        return None",
+        "    if any(h == t or h.startswith(t + os.sep) for h in heres for t in trees):\n        return None"
       ]
     ],
     "expect": [
@@ -470,7 +470,7 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    out_refusal = out_location_refusal(args.out)",
+        "    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)",
         "    out_refusal = None"
       ]
     ],
@@ -596,5 +596,97 @@
       ]
     ],
     "expect": "…and the verdict NAMES the tree it measured, so a wrong head is diagnosable from the file"
+  },
+  {
+    "name": "#121 r1 X6 the Codex subprocess runs in the wrapper's own checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "                cwd=cwd,\n",
+        "                cwd=REPO_ROOT,\n"
+      ]
+    ],
+    "expect": "⭐ #121 r1 X6 the reviewer runs AT the reviewed root, not in the wrapper's checkout"
+  },
+  {
+    "name": "#121 r1 X4 the Codex subprocess inherits GIT_DIR again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "                cwd=cwd,\n                env=unredirected(),\n",
+        "                cwd=cwd,\n"
+      ]
+    ],
+    "expect": "⭐ #121 r1 X4 the reviewer gets the SAME git context the record describes — GIT_DIR stripped, so git there answers about B"
+  },
+  {
+    "name": "#121 r1 main does not tell run_codex where the reviewed tree is",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "run_codex(slug, prompt, args.timeout, cwd=tree_at_dispatch)",
+        "run_codex(slug, prompt, args.timeout)"
+      ]
+    ],
+    "expect": "⭐ #121 r1 X6 the reviewer runs AT the reviewed root, not in the wrapper's checkout"
+  },
+  {
+    "name": "#121 r1 C2 the --out refusal covers only this file's checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "for r in (REPO_ROOT, reviewed) if r",
+        "for r in (REPO_ROOT,) if r"
+      ]
+    ],
+    "expect": "#121 r1 C2 an --out inside the REVIEWED tree's docs/reviews is refused"
+  },
+  {
+    "name": "#121 r1 C2 main does not hand the reviewed tree to the --out refusal",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "out_location_refusal(args.out, reviewed=tree_at_dispatch)",
+        "out_location_refusal(args.out)"
+      ]
+    ],
+    "expect": "#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out"
+  },
+  {
+    "name": "#121 r1 C2 the refusal compares only the lexical spelling",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    heres = {here, os.path.realpath(here)}",
+        "    heres = {here}"
+      ],
+      [
+        "             for f in (os.path.abspath, os.path.realpath)}",
+        "             for f in (os.path.abspath,)}"
+      ]
+    ],
+    "expect": "#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out"
+  },
+  {
+    "name": "#121 r1 C2 the watch covers only this file's checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    for root in (REPO_ROOT, reviewed):",
+        "    for root in (REPO_ROOT,):"
+      ]
+    ],
+    "expect": "#121 r1 C2 …and the reviewed tree's docs/reviews is a watched root"
+  },
+  {
+    "name": "#121 r1 C2 main does not hand the reviewed tree to the watch",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "watched_dirs(args.out, reviewed=tree_at_dispatch)",
+        "watched_dirs(args.out)"
+      ]
+    ],
+    "expect": "#121 r1 C2 an agent write into the REVIEWED tree's docs/reviews is caught and moved out"
   }
 ]
