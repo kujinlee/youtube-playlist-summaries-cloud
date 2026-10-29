@@ -18244,3 +18244,11 @@ Backlog #361 stays open on purpose: its own test, grading the first real compact
 change records the owner's answers from the night before: plans stay private and the leak scan becomes a standing guard
 (backlog #194, backlog #393), the five old round documents get back-authored headers (backlog #306), backlog #90 folds
 into backlog #394, and the principle that a page is a perspective of links to other pages (backlog #384).
+
+## 2026-10-29
+The compaction guards (backlog #361) were graded on their first real compaction, and **the restore half failed**. The
+cause was measured. The snapshot was taken at 20:58, but the compaction itself landed at 02:44. The harness prepares
+some compactions ahead of time (marked `precomputed` in the transcript: 3 of this session's 11), and the PreCompact
+hook runs at preparation time. At restore, the capture was 5h46m old, so the guard correctly refused to show it as
+current. What actually got the session back on track was the IN FLIGHT block, which is built from `git`, `gh` and the
+ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
