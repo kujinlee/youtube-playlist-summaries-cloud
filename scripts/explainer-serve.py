@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 216 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 223 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -758,10 +758,11 @@ def explainers(root: pathlib.Path) -> list[pathlib.Path]:
     """Explainer PAGES, newest first by mtime. Composer fragments are not pages — see above."""
     if not root.is_dir():
         return []
-    # ⛔ backlog #389: a RETIRED page is never listed (nor so reachable from `/` or /latest) — by the same
-    # `retired_as` the server redirects on, so an alias or a differently-cased name is filtered too (r2 Y4).
+    # ⛔ backlog #389: only a LIVE page is listed (so reachable from `/` and /latest) — by the same `classify`
+    # the server redirects on, so an alias, a chain through the retired name, a differently-cased name or a
+    # refused chain is never listed (r2 Y4, r3 Z1).
     return sorted((p for p in root.glob("*.html")
-                   if p.is_file() and not is_fragment(p) and retired_as(p.name, p, root) is None),
+                   if p.is_file() and not is_fragment(p) and classify(p, root)[0] == "live"),
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -813,37 +814,82 @@ def requested_name(url_path: str) -> str | None:
     head, name = posixpath.split(posixpath.normpath("/" + bare.lstrip("/")))
     if head != "/" or not name or name in (".", ".."):
         return None
-    return name if "." in name else name + ".html"   # casefolded once, by `retired_as`
+    return name if "." in name else name + ".html"   # casefolded once, by `retirement`
 
 
-def retired_as(name: str | None, path: pathlib.Path | None, root: pathlib.Path) -> str | None:
-    """THE ONE retirement decision (backlog #389 r2, REDESIGN to identity), for a request and for an
-    index candidate alike. -> the archive url, or None. Retired when EITHER
-      (a) its requested NAME, casefolded, is a retired name — whatever the file behind it is (a symlink
-          named `work-lines.html` pointing at a live page is still the retired page); OR
-      (b) the file it resolves to is the SAME FILE (`os.path.samefile`) as a retired page that exists in
-          the root as a regular file — every alias, symlink and spelling of it, in the index too.
-    ⚠ (b) compares against a retired entry only when that entry is a REAL file, not a symlink: a
-    symlink named `work-lines.html` that points at `live.html` is retired by (a), and does not retire
-    `live.html` itself."""
+MAX_HOPS = 16   # symlinks followed, link by link, before a chain is REFUSED (a loop ends here too)
+
+
+def _inside(p: pathlib.Path, root: pathlib.Path) -> bool:
+    """Lexically inside the served root, as given or as resolved (`~/explainers` is itself a symlink)."""
+    bases = {pathlib.Path(os.path.normpath(root.absolute())), root.resolve()}
+    return any(p == b or b in p.parents for b in bases)
+
+
+def classify(lexical: pathlib.Path, root: pathlib.Path) -> tuple[str, str | None]:
+    """THE ONE retirement decision (backlog #389), for a request, an index candidate and /latest alike.
+    -> ("retired", archive url) | ("refused", why) | ("live", None).
+
+    ⟳ r3 (Z1, route SPLIT): r2 judged the requested name and the FINAL file, so `chain -> alias ->
+    work-lines.html -> live.html` served stale content — resolution erased the retired name in the
+    middle. Now the symlink chain is walked LINK BY LINK with `os.readlink`, each step normalised against
+    the link's own directory, and a request is retired when ANY name it traverses, casefolded, is a
+    retired name; or (hard links) when the final file is the same file as a REAL retired page.
+    ⛔ A chain that leaves the served root, or runs past MAX_HOPS (a loop), is REFUSED — the handler
+    answers 403 — never served. ⚠ BOUND: only the FINAL component's symlinks are walked; a symlinked
+    DIRECTORY on the way is not, though `safe_path` still refuses anything it resolves outside the root."""
+    cur = pathlib.Path(os.path.normpath(lexical.absolute()))
+    names, hops = [cur.name], 0
+    while True:
+        if not _inside(cur, root):
+            return "refused", "its symlink chain leaves the served root"
+        if not os.path.islink(cur):
+            break
+        hops += 1
+        if hops > MAX_HOPS:
+            return "refused", f"its symlink chain is longer than {MAX_HOPS} links (or loops)"
+        cur = pathlib.Path(os.path.normpath(cur.parent / os.readlink(cur)))
+        names.append(cur.name)
+    for n in names:
+        if n.casefold() in _RETIRED_FOLDED:
+            return "retired", _RETIRED_FOLDED[n.casefold()]
+    if os.path.exists(cur):
+        for retired, target in RETIRED_FILES.items():
+            rp = root / retired
+            try:
+                if rp.is_file() and not rp.is_symlink() and os.path.samefile(cur, rp):
+                    return "retired", target
+            except OSError:
+                continue
+    return "live", None
+
+
+def lexical_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
+    """The UNRESOLVED paths a request names, existing ones only: decoded once, `.`/`..` collapsed, then the
+    `.html` fallback for a bare name — `page_candidates` before the filesystem resolves anything."""
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    rel = posixpath.normpath("/" + bare.lstrip("/")).lstrip("/")
+    if not rel or rel in (".", ".."):
+        return []
+    out = [root / rel] + ([root / (rel + ".html")] if "." not in rel.rsplit("/", 1)[-1] else [])
+    return [p for p in out if os.path.lexists(p)]
+
+
+def retirement(url_path: str, root: pathlib.Path) -> tuple[str, str | None]:
+    """A request's verdict: a retired NAME (even with no file behind it) is retired; otherwise the first
+    path it names that exists is `classify`d. -> ("retired", url) | ("refused", why) | ("live", None)."""
+    name = requested_name(url_path)
     if name is not None and name.casefold() in _RETIRED_FOLDED:
-        return _RETIRED_FOLDED[name.casefold()]
-    if path is None:
-        return None
-    for retired, target in RETIRED_FILES.items():
-        rp = root / retired
-        try:
-            if rp.is_file() and not rp.is_symlink() and os.path.samefile(path, rp):
-                return target
-        except OSError:
-            continue
-    return None
+        return "retired", _RETIRED_FOLDED[name.casefold()]
+    for lex in lexical_candidates(url_path, root):
+        return classify(lex, root)
+    return "live", None
 
 
 def retired_target(url_path: str, root: pathlib.Path) -> str | None:
-    """The archive a request for a RETIRED page redirects to, or None — `retired_as` over the name the
-    url asks for and the file the resolver would serve, whether or not a stale copy is on disk."""
-    return retired_as(requested_name(url_path), resolve_page(url_path, root), root)
+    """The archive a request for a RETIRED page redirects to, or None."""
+    kind, info = retirement(url_path, root)
+    return info if kind == "retired" else None
 
 
 def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
@@ -1223,11 +1269,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
-        if retired_target(path, ROOT):
+        verdict, info = retirement(path, ROOT)
+        if verdict == "retired":
             self.send_response(302)
-            self.send_header("Location", retired_target(path, ROOT))
+            self.send_header("Location", info)
             self.end_headers()
             return
+        if verdict == "refused":
+            return self._send(403, f"refused: {info}".encode(), "text/plain; charset=utf-8")
         if path == "/_rev":
             # Change detection for the injected live-reload client. Goes through resolve_page —
             # the SAME resolver the page GET below uses — so the two agree by construction: if
@@ -2556,6 +2605,59 @@ def _self_test_body() -> int:
                  "2026-10-28-work-lines.html" in index_html(_r), latest_target(_r),
                  _drive_redirect("/2026-10-28-work-lines.html")))
              == (False, "/2026-10-01-topic-live.html", (302, "/work-lines-archive")))
+        # ⛔ #389 r3 Z1 (route SPLIT): Codex's chain, a chain leaving the root, and a loop.
+        def _codex_chain(r):
+            (r / "live.html").write_text("<p>STALE work-lines page</p>")
+            (r / "work-lines.html").symlink_to("live.html")
+            (r / "2026-10-28-alias.html").symlink_to("work-lines.html")
+            (r / "2026-10-28-chain.html").symlink_to("2026-10-28-alias.html")
+            (r / "2026-10-01-topic-live.html").write_text("<p>a dated live page</p>")
+        case("⭐ #389 r3 Z1: a chain THROUGH the retired name redirects at every link, alias and chain alike",
+             lambda: _with_root(_codex_chain, lambda _r: [_drive_redirect(u) for u in (
+                 "/2026-10-28-alias.html", "/2026-10-28-chain.html", "/work-lines.html")])
+             == [(302, "/work-lines-archive")] * 3)
+        case("⭐ #389 r3 Z1: neither the alias nor the chain is listed, and /latest never picks them",
+             lambda: _with_root(_codex_chain, lambda _r: (
+                 "2026-10-28-alias" in index_html(_r), "2026-10-28-chain" in index_html(_r), latest_target(_r)))
+             == (False, False, "/2026-10-01-topic-live.html"))
+        case("...while the independent live target is still served directly, and listed",
+             lambda: _with_root(_codex_chain, lambda _r: (_drive_redirect("/live.html"),
+                                                         "live.html" in index_html(_r))) == ((200, None), True))
+
+        def _escape_and_loop(r):
+            (r / "outside.html").write_text("<p>outside the served root</p>")
+            (r / "served").mkdir()
+            (r / "served" / "2026-10-02-out.html").symlink_to("../outside.html")
+            (r / "served" / "2026-10-03-a.html").symlink_to("2026-10-03-b.html")
+            (r / "served" / "2026-10-03-b.html").symlink_to("2026-10-03-a.html")
+            (r / "served" / "2026-10-04-live.html").write_text("<p>live</p>")
+
+        def _served(fn):
+            def _run(_r):
+                _real = globals()["ROOT"]
+                globals()["ROOT"] = _r / "served"
+                try:
+                    return fn(_r / "served")
+                finally:
+                    globals()["ROOT"] = _real
+            return _with_root(_escape_and_loop, _run)
+        case("⛔ #389 r3: a symlink chain that LEAVES the served root is refused, never served",
+             lambda: _served(lambda sr: classify(sr / "2026-10-02-out.html", sr)[0]) == "refused")
+        case("⛔ #389 r3: a symlink LOOP is refused within the hop bound, never served",
+             lambda: _served(lambda sr: classify(sr / "2026-10-03-a.html", sr))
+             == ("refused", f"its symlink chain is longer than {MAX_HOPS} links (or loops)"))
+        case("⛔ #389 r3: the handler answers a refused chain with 403, and the index lists neither",
+             lambda: _served(lambda sr: (_drive_redirect("/2026-10-02-out.html")[0],
+                                         _drive_redirect("/2026-10-03-a.html")[0],
+                                         [p.name for p in explainers(sr)]))
+             == (403, 403, ["2026-10-04-live.html"]))
+        def _hard_link(r):
+            (r / "work-lines.html").write_text("<p>STALE</p>")
+            os.link(r / "work-lines.html", r / "2026-10-29-hard.html")
+        case("⭐ #389 r3: a HARD LINK to the retired page (no symlink to walk) is the same file, so retired",
+             lambda: _with_root(_hard_link, lambda _r: (_drive_redirect("/2026-10-29-hard.html"),
+                                                       "2026-10-29-hard" in index_html(_r)))
+             == ((302, "/work-lines-archive"), False))
         case("⛔ #389 r1: the index does NOT list a retired page whose stale file exists",
              lambda: _with_stale_root(lambda _r: ("work-lines.html" not in index_html(_r),
                                                   "2026-10-01-topic-live.html" in index_html(_r))) == (True, True))

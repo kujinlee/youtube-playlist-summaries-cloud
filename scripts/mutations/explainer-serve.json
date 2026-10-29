@@ -510,8 +510,8 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "        if retired_target(path, ROOT):\n            self.send_response(302)",
-        "        if False:\n            self.send_response(302)"
+        "        verdict, info = retirement(path, ROOT)\n        if verdict == \"retired\":",
+        "        verdict, info = retirement(path, ROOT)\n        if False:"
       ]
     ],
     "expect": [
@@ -519,25 +519,12 @@
     ]
   },
   {
-    "name": "#389 r2 (a): the requested NAME is not consulted, so a symlink named work-lines.html serves its target",
-    "file": "scripts/explainer-serve.py",
-    "edits": [
-      [
-        "    if name is not None and name.casefold() in _RETIRED_FOLDED:\n        return _RETIRED_FOLDED[name.casefold()]",
-        "    if False:\n        return None"
-      ]
-    ],
-    "expect": [
-      "⭐ #389 r2 Y2: a symlink NAMED work-lines.html redirects, whatever it points at"
-    ]
-  },
-  {
     "name": "#389 r2 (a): the name is compared case-sensitively, so /WORK-LINES.html is a different page",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "    if name is not None and name.casefold() in _RETIRED_FOLDED:",
-        "    if name is not None and name in _RETIRED_FOLDED:"
+        "    name = requested_name(url_path)\n    if name is not None and name.casefold() in _RETIRED_FOLDED:",
+        "    name = requested_name(url_path)\n    if name is not None and name in _RETIRED_FOLDED:"
       ]
     ],
     "expect": [
@@ -571,16 +558,16 @@
     ]
   },
   {
-    "name": "#389 r2 (b): the resolved file is not compared with the retired page, so an alias is served",
+    "name": "#389 r3 (b): the final file is not compared with the retired page, so a hard link is served",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "            if rp.is_file() and not rp.is_symlink() and os.path.samefile(path, rp):",
+        "            if rp.is_file() and not rp.is_symlink() and os.path.samefile(cur, rp):",
         "            if False:"
       ]
     ],
     "expect": [
-      "⭐ #389 r2 Y4: an ALIAS of the retired file is neither listed nor served"
+      "⭐ #389 r3: a HARD LINK to the retired page (no symlink to walk) is the same file, so retired"
     ]
   },
   {
@@ -588,8 +575,8 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "and not rp.is_symlink() and os.path.samefile(path, rp)",
-        "and os.path.samefile(path, rp)"
+        "and not rp.is_symlink() and os.path.samefile(cur, rp)",
+        "and os.path.samefile(cur, rp)"
       ]
     ],
     "expect": [
@@ -597,16 +584,94 @@
     ]
   },
   {
-    "name": "#389 r2: the index filters by file name only, so an alias of the retired page is listed",
+    "name": "#389 r3 Z1: only the LAST name of a symlink chain is judged, so a chain through work-lines.html serves",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "and retired_as(p.name, p, root) is None),",
-        "and p.name not in RETIRED_FILES),"
+        "    for n in names:\n        if n.casefold() in _RETIRED_FOLDED:",
+        "    for n in names[-1:]:\n        if n.casefold() in _RETIRED_FOLDED:"
       ]
     ],
     "expect": [
-      "⭐ #389 r2 Y4: an ALIAS of the retired file is neither listed nor served"
+      "⭐ #389 r3 Z1: a chain THROUGH the retired name redirects at every link, alias and chain alike"
+    ]
+  },
+  {
+    "name": "#389 r3 Z1: the symlink chain is not walked, so an alias's own name is all that is judged",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "        cur = pathlib.Path(os.path.normpath(cur.parent / os.readlink(cur)))\n        names.append(cur.name)",
+        "        break"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r3 Z1: a chain THROUGH the retired name redirects at every link, alias and chain alike"
+    ]
+  },
+  {
+    "name": "#389 r3: a chain that leaves the served root is followed",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "        if not _inside(cur, root):\n            return \"refused\"",
+        "        if False:\n            return \"refused\""
+      ]
+    ],
+    "expect": [
+      "⛔ #389 r3: a symlink chain that LEAVES the served root is refused, never served"
+    ]
+  },
+  {
+    "name": "#389 r3: a chain past the hop bound is treated as live",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "            return \"refused\", f\"its symlink chain is longer than",
+        "            return \"live\", f\"its symlink chain is longer than"
+      ]
+    ],
+    "expect": [
+      "⛔ #389 r3: a symlink LOOP is refused within the hop bound, never served"
+    ]
+  },
+  {
+    "name": "#389 r3: the handler serves a refused chain instead of answering 403",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "        if verdict == \"refused\":\n            return self._send(403",
+        "        if False:\n            return self._send(403"
+      ]
+    ],
+    "expect": [
+      "⛔ #389 r3: the handler answers a refused chain with 403, and the index lists neither"
+    ]
+  },
+  {
+    "name": "#389 r3: the index lists every file, retired and refused alike",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "and classify(p, root)[0] == \"live\"),",
+        "),"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r3 Z1: neither the alias nor the chain is listed, and /latest never picks them"
+    ]
+  },
+  {
+    "name": "#389 r3: a retired NAME with no file behind it is not retired",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "    name = requested_name(url_path)\n    if name is not None",
+        "    name = None\n    if name is not None"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r2: with NO stale file at all, every spelling of the retired NAME still redirects"
     ]
   }
 ]
