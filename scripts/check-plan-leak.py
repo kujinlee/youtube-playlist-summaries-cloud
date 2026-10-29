@@ -1,87 +1,93 @@
 #!/usr/bin/env python3
-"""No line this branch adds to a TRACKED file quotes a private plan — the plan-content leak scan, standing.
+"""No commit a push sends adds a line that quotes a private plan — git's own pre-push hook, standing.
 
-    python3 scripts/check-plan-leak.py                      # this checkout's branch against origin/master
-    python3 scripts/check-plan-leak.py --base B --head H --window 6
-    python3 scripts/check-plan-leak.py --hook               # PreToolUse: the hook JSON on stdin
-    python3 scripts/check-plan-leak.py --self-test          # 63 cases
+    .githooks/pre-push                                  # git runs it: `--pre-push <remote> <url>`, refs on stdin
+    scripts/install-git-hooks.sh [--status]             # enable it once per clone (`core.hooksPath .githooks`)
+    python3 scripts/check-plan-leak.py [--base B] [--head H]   # by hand: the commits in H not in B
+    python3 scripts/check-plan-leak.py --show           # by hand, in a TERMINAL: also print the matched words
+    python3 scripts/check-plan-leak.py --self-test      # 84 cases
 
 WHY THIS EXISTS (backlog #393). The repo is PUBLIC and the session plans under `.claude/plans/` are
 gitignored, which the owner decided on 2026-10-29 they STAY (backlog #194). Measured 2026-10-28 on PR #434:
 a review document quoted a plan's objective, and a whole-string comparison missed it. A scan of every
-6-word run of plan text against every ADDED tracked line found it (5 hits on the pre-redaction commit, 0
-at its head). It lived in a session scratchpad; this is that scan made permanent.
+6-word run of plan text against every ADDED tracked line found it.
 
-⛔ WHY IT RUNS BEFORE A PUSH AND NOT IN CI. CI checks out the repo WITHOUT `.claude/plans/` — they are
-gitignored — so a CI run would compare the diff against nothing and report a zero over nothing, which this
-repo counts as CANNOT RUN, never a pass. The plans exist only where the work is done, so the gate is a
-PreToolUse hook on `git push` (`.claude/hooks/check-plan-leak.sh`, which only launches `--hook` here). CI
-runs the `--self-test`, which builds its own synthetic plans and needs none of the real ones.
+⛔ WHY GIT'S PRE-PUSH HOOK, AND NOT A CLAUDE CODE HOOK OR A CI STEP (PR #443 round 1, a redesign). The first
+version was a PreToolUse hook that read the shell COMMAND and diffed HEAD against `origin/master`. A command's
+text cannot say what a push sends: history, not the endpoint tree (r1 X1); refs other than HEAD (X2); `git -C`,
+`-c` and aliases (X3); an escape word in a comment (X4). Git itself tells a pre-push hook, on stdin, exactly
+which local and remote objects each ref update carries, whatever the command, alias or directory. So:
+  * EVERY COMMIT the remote lacks is scanned — `local_sha --not <every remote tip present here>` — each one
+    diffed against its first parent, with `--text` (X6) and C-quoted paths decoded (X5). Deletions send nothing.
+  * "PUBLIC" IS THE REMOTE'S OWN STATE: `git ls-remote <url>` heads and tags plus the remote shas on stdin,
+    never a local `origin/master` anyone can `update-ref` (X7).
+  * CI has no `.claude/plans/` (gitignored), so a CI scan would be a zero over nothing; CI runs the
+    `--self-test`, which builds bare remotes and drives REAL `git push` through the shipped hook.
 
-THE RULE, which is the scratchpad scan's, kept:
-  * PLAN TEXT is every `<!-- serving: … -->` objective (`gen-work-lines.SERVING`, the plan reader's own
-    grammar) and every LIST ITEM of every plan in EVERY checkout (`gen-work-lines.plan_dirs`, the one place
-    that answers which plan directories exist). ⟳ Widened from the scratchpad's `- [ ]` steps to every list
-    item, because a step's indented `Doing:`/`Why:` lines are the most prose-like text a plan holds.
-  * Words are runs of `\\w` after casefolding, so markup and punctuation between words cannot hide a match.
-  * A HIT is an added line holding any `--window` (default 8) consecutive words of one plan string.
-  * A MARKER-ONLY line is not judged whole: an added line that equals a line the same diff REMOVES from
-    the same file once one trailing `⟦…⟧` kind marker is stripped (backlog #394) is judged on its MARKER
-    ALONE — the rest of it was already in the base, so only the marker is new.
-  * ⟳ A run ALREADY PUBLIC is not a hit: a window that occurs in a tracked file at `--base` reveals
-    nothing new (`public_windows`). Without this the widened plan text matched cited paths and repo
-    vocabulary on 3 of 4 merged PRs at a 6-word window (#435, #434, #433, #425: 0, 1, 6 and 6 lines, none
-    a leak); with it, 0. Measured on
-    PR #434's pre-redaction commit `e58364f9cd`, it still reports (at 6 words and at 8) the one line in the file
-    where the scratchpad scan found its matches.
+THE RULE:
+  * PLAN TEXT is every `<!-- serving: … -->` objective (`gen-work-lines.SERVING`) and every LIST ITEM of every
+    plan in EVERY checkout (`gen-work-lines.plan_dirs`). If that discovery reports anything it could not read,
+    the push is BLOCKED (X8): a partial plan set is not a scan.
+  * Words are runs of `\\w` after `str.casefold()`, so markup and punctuation between words cannot hide a match.
+  * A HIT is a run of CONSECUTIVE added lines in one hunk (joined, X9) holding `--window` (default 8)
+    consecutive words of one plan string, reported at the line where the run of words starts.
+  * A MARKER-ONLY line is judged on its marker alone: an added line equal to a line the same commit REMOVES
+    from the same file once one `⟦…⟧` kind marker is stripped (backlog #394).
+  * A run ALREADY PUBLIC is not a hit: one present in a file at a remote tip, found with THE SAME
+    normalisation as the matcher, in Python (X10; `git grep -i` does not fold `ß` to `ss`).
 
-THE OUTPUT NAMES THE FILE AND LINE AND THE PLAN FILE, NEVER THE MATCHED WORDS: stdout and the deny reason
-reach logs and the model's context, and quoting the leak there would be the leak. ⟳ The owner, 2026-10-29:
-the matched phrase IS shown on the LOCAL terminal (stderr by hand; the deny's user-facing `systemMessage`
-in the hook), never in `additionalContext` or any file, so a false positive takes seconds to judge.
+OUTPUT: `path:line`, the commit and the plan FILE, never the matched words, in EVERY channel the hook or a
+by-hand run writes (X11: stderr is captured by tools and redirects too). `--show` prints the words, and only
+to a terminal: it refuses when stdout is not a TTY.
 
-EXIT CODES: 0 = no hit · 1 = hits (each `path:line` listed) · 2 = CANNOT RUN, no plan text found in any
-checkout (the hook FAILS OPEN on this one, loudly, so a fresh clone is not blocked) · 3 = CANNOT RUN, git
-failed or a plan could not be read (the hook fails CLOSED).
+ESCAPE: `ALLOW_PLAN_LEAK=1` in the push's real ENVIRONMENT (`ALLOW_PLAN_LEAK=1 git push …`), for a judged
+coincidence. It skips THIS check only and says so. Chosen over `git push --no-verify`, which also works, because
+`--no-verify` skips every pre-push check and the agent push hook refuses it (it needs `ALLOW_DANGEROUS_PUSH=1`);
+a judged false positive should not need the dangerous-push decision. Text in a command is no longer read at all.
 
-BOUNDS, stated: ⛔ A PLAN FRAGMENT SHORTER THAN 8 CONSECUTIVE WORDS IS NOT CAUGHT (the default window, set
-by the owner 2026-10-29: over the last 40 merged commits 8 words gave 1 false hit against 3 at 6, and the
-same 4 lines on the bulk-leak commit `f8e974a4`), nor one wrapped across two lines; a generic phrase can
-match a plan step by coincidence, so a hit needs READING, and `ALLOW_PLAN_LEAK=1` is the escape for a judged
-coincidence. The diff is `base...head` of COMMITTED work in the checkout the hook
-runs in: a push naming another ref, or `git -C <elsewhere> push`, is judged by this checkout's HEAD.
-Prose outside list items and objectives (a plan's headings, paragraphs and blockquotes) is not plan text.
+EXIT CODES: 0 = no hit (or escaped, or no plan text at all — see below) · 1 = hits · 2 = CANNOT RUN, no plan
+text in any checkout (BY HAND; the hook ALLOWS this one, loudly, so a fresh clone is not blocked) · 3 = CANNOT
+RUN, git failed, a plan could not be read or plan discovery was incomplete (the hook BLOCKS) · 4 = refused
+(`--show` without a terminal; installing over a different hooks path).
 
-WHAT WOULD MAKE THIS FAIL (its falsifier): an 8-word run of plan text in an added tracked line exits 0, or
-the scan exits 0 when no plan could be read.
+BOUNDS, stated: ⛔ A PLAN FRAGMENT SHORTER THAN 8 CONSECUTIVE WORDS IS NOT CAUGHT (the owner's window,
+2026-10-29: over the last 40 merged commits 8 words gave 1 false hit against 3 at 6, with the same 4 lines on
+the bulk-leak commit `f8e974a4`). A generic phrase can match by coincidence, so a hit needs READING. The hook
+runs only where `core.hooksPath` is `.githooks` AND the checkout holds `.githooks/pre-push` — a worktree on a
+branch older than this file pushes UNCHECKED, and `--status` says so. A plan's headings and paragraphs are
+not plan text. A remote tip this clone has never fetched cannot be read, so its content is not counted public
+(a false hit, never a missed one).
+
+WHAT WOULD MAKE THIS FAIL (its falsifier): a push whose commits add an 8-word run of plan text succeeds through
+the installed hook, or the hook allows a push when it could not read the plans or the remote.
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import os
 import pathlib
 import re
 import subprocess
 import sys
 
-CLEAN, HITS, NO_PLANS, CANNOT = 0, 1, 2, 3
+CLEAN, HITS, NO_PLANS, CANNOT, REFUSED = 0, 1, 2, 3, 4
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WINDOW = 8   # the owner's decision 2026-10-29 — see BOUNDS
-ESCAPE = "ALLOW_PLAN_LEAK=1"
-GIT_TIMEOUT = 30   # seconds for `git diff`; a timeout is CANNOT RUN, never a pass
+ESCAPE = "ALLOW_PLAN_LEAK"
+HOOKS_PATH = ".githooks"
+GIT_TIMEOUT = 60   # seconds per git call; a timeout is CANNOT RUN, never a pass
+ZERO = "0" * 40
+COMMIT_TAG = "plan-leak-commit "   # the `--format` line that opens each commit in `pushed_log`
 
 WORD = re.compile(r"\w+")
 LIST_ITEM = re.compile(r"^\s*[-*+]\s+(.+?)\s*$", re.M)
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-# A `git push` invocation. The same shape `.claude/hooks/block-default-branch-push.sh` greps for; the
-# settings `if: Bash(git push*)` filter is the first line of defence, and this is the second.
-PUSH = re.compile(r"(^|[;&|\s])git\s+(-\S+\s+)*push(\s|$)")
 # ⚠ A MINIMAL LOCAL COPY of backlog #394's marker rule. Its owner is `check-reference-namespace.marker_only`
 # (via `gen-backlog-page.kind_mark`), which had NOT landed on master when this guard was written. When it
 # lands, import it from there and delete this copy — one rule, one place.
 MARKER = re.compile(r"\s*⟦[^⟦⟧]*⟧")
+C_ESCAPES = {"n": 10, "t": 9, '"': 34, "\\": 92, "a": 7, "b": 8, "f": 12, "r": 13, "v": 11}
 
 
 def _plan_reader():
@@ -94,6 +100,8 @@ def _plan_reader():
     spec.loader.exec_module(mod)
     return mod
 
+
+# ── the rules (pure) ─────────────────────────────────────────────────────────────────────────────────
 
 def words(s: str) -> list[str]:
     """PURE. The casefolded word runs of `s`."""
@@ -115,240 +123,350 @@ def windows(sources: list[tuple[str, str]], n: int) -> dict[tuple[str, ...], str
     return out
 
 
-def diff_lines(diff_text: str) -> tuple[list[tuple[str, int, str]], dict[str, set[str]]]:
-    """PURE. -> ([(path, new line number, body) per ADDED line], {path: every line REMOVED from it}).
+def unquote_path(raw: str) -> str:
+    """PURE. A diff-header path as git wrote it, C-quoted (`"b/a\\"b.md"`) or not, with its `a/`/`b/` kept."""
+    if not (len(raw) >= 2 and raw.startswith('"') and raw.endswith('"')):
+        return raw
+    body, out, i = raw[1:-1], bytearray(), 0
+    while i < len(body):
+        c = body[i]
+        if c == "\\" and i + 1 < len(body):
+            nxt = body[i + 1]
+            if nxt in "01234567":
+                out.append(int(body[i + 1:i + 4], 8))
+                i += 4
+                continue
+            out.append(C_ESCAPES.get(nxt, ord(nxt)))
+            i += 2
+            continue
+        out += c.encode()
+        i += 1
+    return out.decode("utf-8", "replace")
 
-    A `---`/`+++` pair is a file header only between `diff --git` and the first hunk, so an added line
-    whose own text starts `++ ` is content, not a header. A deleted file has no `b/` side: its lines
-    are removed, never added."""
-    added: list[tuple[str, int, str]] = []
-    removed: dict[str, set[str]] = {}
-    path: str | None = None
-    old: str | None = None
-    header = False
-    n = 0
-    for line in diff_text.split("\n"):
-        if line.startswith("diff --git "):
-            header, path, old = True, None, None
+
+def parse_log(log_text: str):
+    """PURE. `pushed_log`'s text -> (runs, removed).
+
+    runs: [(commit, path, [(new line number, body)…])] — each a maximal run of CONSECUTIVE added lines in one
+    hunk. removed: {(commit, path): every line that commit removes from that path}. A `---`/`+++` pair is a
+    header only between `diff --git` and the first hunk, so an added line whose text starts `++ ` is content.
+    A deleted file has no `b/` side: its lines are removed, never added."""
+    runs: list = []
+    removed: dict[tuple[str, str], set[str]] = {}
+    commit, path, old, header, n, run = "", None, None, False, 0, None
+    for line in log_text.split("\n"):
+        if line.startswith(COMMIT_TAG):
+            commit, path, old, header, run = line[len(COMMIT_TAG):].strip(), None, None, False, None
+        elif line.startswith("diff --git "):
+            header, path, old, run = True, None, None, None
         elif header and line.startswith("--- "):
-            old = line[6:] if line.startswith("--- a/") else None
+            p = unquote_path(line[4:])
+            old = p[2:] if p.startswith("a/") else None
         elif header and line.startswith("+++ "):
-            path = line[6:] if line.startswith("+++ b/") else None
+            p = unquote_path(line[4:])
+            path = p[2:] if p.startswith("b/") else None
         elif line.startswith("@@"):
-            header = False
+            header, run = False, None
             m = HUNK.match(line)
             n = int(m.group(1)) if m else 0
         elif header:
             continue
         elif line.startswith("+") and path:
-            added.append((path, n, line[1:]))
+            if run is None:
+                run = (commit, path, [])
+                runs.append(run)
+            run[2].append((n, line[1:]))
             n += 1
         elif line.startswith("-") and (path or old):
-            removed.setdefault(path or old, set()).add(line[1:])
-    return added, removed
+            removed.setdefault((commit, path or old), set()).add(line[1:])
+            run = None
+        else:
+            run = None
+    return runs, removed
 
 
-def judged_text(path: str, body: str, removed: dict[str, set[str]]) -> str:
-    """PURE. The part of added line `body` (of `path`) that is judged: its marker alone when stripping one
-    `⟦…⟧` marker reproduces a line this diff removes from the SAME file, else the whole line."""
+def judged_text(key: tuple[str, str], body: str, removed: dict[tuple[str, str], set[str]]) -> str:
+    """PURE. The part of added line `body` that is judged: its marker alone when stripping one `⟦…⟧` marker
+    reproduces a line the same commit removes from the same file (`key`), else the whole line."""
     m = MARKER.search(body)
-    if m and body[:m.start()] + body[m.end():] in removed.get(path, set()):
+    if m and body[:m.start()] + body[m.end():] in removed.get(key, set()):
         return m.group(0)
     return body
 
 
-def line_windows(added: list[tuple[str, int, str]], removed: dict[str, set[str]], n: int):
-    """PURE. Yield (path, line, [every n-word run of the line's JUDGED text]) per added line."""
-    for path, ln, body in added:
-        w = words(judged_text(path, body, removed))
-        yield path, ln, [tuple(w[i:i + n]) for i in range(len(w) - n + 1)]
+def run_windows(runs, removed: dict[tuple[str, str], set[str]], n: int):
+    """PURE. Yield (commit, path, [(line where the window starts, window)…]) per run, its lines JOINED."""
+    for commit, path, lines in runs:
+        flat: list[tuple[int, str]] = []
+        for ln, body in lines:
+            flat += [(ln, w) for w in words(judged_text((commit, path), body, removed))]
+        yield commit, path, [(flat[i][0], tuple(w for _, w in flat[i:i + n])) for i in range(len(flat) - n + 1)]
 
 
-def candidate_windows(win: dict[tuple[str, ...], str], added: list[tuple[str, int, str]],
-                      removed: dict[str, set[str]], n: int) -> set[tuple[str, ...]]:
-    """PURE. Every plan window that some added line carries — the only ones worth asking `public_windows`."""
-    return {t for _, _, ts in line_windows(added, removed, n) for t in ts if t in win}
+def candidate_windows(win: dict[tuple[str, ...], str], runs, removed, n: int) -> set[tuple[str, ...]]:
+    """PURE. Every plan window some pushed run carries — the only ones worth asking `public_windows`."""
+    return {t for _, _, ts in run_windows(runs, removed, n) for _, t in ts if t in win}
 
 
-def leak_hits(win: dict[tuple[str, ...], str], added: list[tuple[str, int, str]],
-              removed: dict[str, set[str]], n: int,
-              public: set[tuple[str, ...]]) -> list[tuple[str, int, str, str]]:
-    """PURE. [(path, line, plan file, matched phrase)] — one per added line carrying an n-word run of plan
-    text that is NOT already `public` (present in the base tree). The phrase is for `local_lines` ONLY."""
-    out = []
-    for path, ln, ts in line_windows(added, removed, n):
-        for t in ts:
+def leak_hits(win: dict[tuple[str, ...], str], runs, removed, n: int,
+              public: set[tuple[str, ...]]) -> list[tuple[str, int, str, str, str]]:
+    """PURE. [(path, line, commit, plan file, phrase)] — one per (commit, path, line) where a run of plan text
+    that is NOT `public` starts. The phrase is for `show_lines` ONLY."""
+    out, seen = [], set()
+    for commit, path, ts in run_windows(runs, removed, n):
+        for ln, t in ts:
             src = win.get(t)
-            if src is not None and t not in public:
-                out.append((path, ln, src, " ".join(t)))
-                break
+            if src is not None and t not in public and (commit, path, ln) not in seen:
+                seen.add((commit, path, ln))
+                out.append((path, ln, commit, src, " ".join(t)))
     return out
 
 
-def report(hits: list[tuple[str, int, str, str]], n_strings: int, n_windows: int, n_added: int, n: int) -> str:
-    """PURE. The verdict text: counts, then `path:line` and the plan FILE per hit — never the words."""
+def public_in(texts, cands: set[tuple[str, ...]]) -> set[tuple[str, ...]]:
+    """PURE. The candidates that occur in any of `texts`, under the matcher's own normalisation. A text is
+    tokenised only when its casefolded form holds every word of some candidate (a cheap, exact superset)."""
+    out: set[tuple[str, ...]] = set()
+    for text in texts:
+        folded = text.casefold()
+        live = [t for t in cands - out if all(w in folded for w in t)]
+        if not live:
+            continue
+        w = WORD.findall(folded)
+        k = len(live[0])
+        have = {tuple(w[i:i + k]) for i in range(len(w) - k + 1)}
+        out |= {t for t in live if t in have}
+    return out
+
+
+def report(hits, n_strings: int, n_windows: int, n_runs: int, n: int) -> str:
+    """PURE. The verdict text: counts, then `path:line`, the commit and the plan FILE per hit — never the words."""
     head = (f"plan-leak: plan strings {n_strings} · {n}-word windows {n_windows} · "
-            f"added tracked lines {n_added} · hits {len(hits)}")
-    return "\n".join([head] + [f"  HIT {p}:{ln}  (a run of plan text from {src})" for p, ln, src, _ in hits])
+            f"added runs {n_runs} · hits {len(hits)}")
+    return "\n".join([head] + [f"  HIT {p}:{ln} in {c[:10]}  (a run of plan text from {src})"
+                               for p, ln, c, src, _ in hits])
 
 
-def local_lines(hits: list[tuple[str, int, str, str]]) -> str:
-    """PURE. The matched phrase per hit, for the LOCAL TERMINAL ONLY — stderr, or the hook's user-facing
-    `systemMessage`. ⛔ Never stdout, `permissionDecisionReason` or `additionalContext`: those reach a log or
-    the model's context, from which a phrase can be pasted into a tracked file — the leak this gate stops."""
-    if not hits:
-        return ""
-    return "\n".join(["plan-leak, LOCAL ONLY — the matched words, so a false positive can be judged in "
-                      "seconds. Never paste them into a tracked file, a commit or a PR:"]
-                     + [f"  {p}:{ln}: '{phrase}'" for p, ln, _, phrase in hits])
+def show_lines(hits) -> str:
+    """PURE. The matched phrase per hit — `--show` ONLY, and `main` writes it only to a terminal."""
+    return "\n".join(f"  {p}:{ln} in {c[:10]}: '{phrase}'" for p, ln, c, _, phrase in hits)
 
 
-def read_plan_sources(root: pathlib.Path) -> tuple[list[tuple[str, str]], list[str]]:
-    """The FETCH. -> ([(plan label, plan string)], notes) over every checkout. Raises on an unreadable plan."""
+def parse_updates(stdin_text: str) -> list[tuple[str, str]]:
+    """PURE. git's pre-push stdin -> [(local_sha, remote_sha)]. A deletion (local all zeros) sends nothing and
+    is dropped. ⛔ A malformed line RAISES ValueError — a guess about what a push sends is not a scan."""
+    out = []
+    for line in stdin_text.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) != 4 or not all(re.fullmatch(r"[0-9a-f]{40,64}", p) for p in (parts[1], parts[3])):
+            raise ValueError(f"unreadable pre-push line: {line[:120]!r}")
+        if set(parts[1]) != {"0"}:
+            out.append((parts[1], parts[3]))
+    return out
+
+
+# ── the fetch (git, the plan files) ──────────────────────────────────────────────────────────────────
+
+def _git(root: pathlib.Path, *args: str, ok=(0,), data: bytes | None = None) -> bytes:
+    """The ONE git runner. Raises RuntimeError on any failure — never returns b'' for one."""
+    try:
+        # ⛔ Inherited GIT_* are dropped: a git HOOK exports `GIT_DIR`, which `-C` does not override.
+        r = subprocess.run(["git", "-C", str(root), "-c", "core.quotePath=false", *args],
+                           capture_output=True, timeout=GIT_TIMEOUT, input=data,
+                           stdin=None if data is not None else subprocess.DEVNULL,
+                           env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"git {args[0]} could not run ({type(exc).__name__})") from exc
+    if r.returncode not in ok:
+        raise RuntimeError(f"git {args[0]} failed: {r.stderr.decode('utf-8', 'replace').strip()[:200]}")
+    return r.stdout
+
+
+def read_plan_sources(root: pathlib.Path) -> list[tuple[str, str]]:
+    """-> [(plan label, plan string)] over every checkout. ⛔ RAISES when discovery was incomplete (X8)."""
     gwl = _plan_reader()
     dirs, notes = gwl.plan_dirs(root)
+    if notes:
+        raise RuntimeError("plan discovery was incomplete: " + "; ".join(notes))
     sources: list[tuple[str, str]] = []
     for checkout, d in dirs:
         if not d.is_dir():
             continue
         for f in sorted(d.glob("*.md")):
-            if not f.is_file():
-                continue
-            text = f.read_text(errors="replace")
-            label = f"{checkout.name}/.claude/plans/{f.name}"
-            sources += [(label, s) for s in plan_strings(text, gwl.SERVING)]
-    return sources, notes
+            if f.is_file():
+                text = f.read_text(errors="replace")
+                sources += [(f"{checkout.name}/.claude/plans/{f.name}", s) for s in plan_strings(text, gwl.SERVING)]
+    return sources
 
 
-def _git(root: pathlib.Path, *args: str, ok=(0,)) -> str:
-    """The FETCH's one git runner. Raises RuntimeError on any failure — never returns '' for one."""
+def remote_tips(root: pathlib.Path, url: str) -> list[str]:
+    """Every head and tag sha the REMOTE reports now (`git ls-remote`). Raises when it cannot be asked."""
+    out = _git(root, "ls-remote", "--heads", "--tags", url).decode()
+    return sorted({line.split()[0] for line in out.splitlines() if line.strip()})
+
+
+def local_commits(root: pathlib.Path, shas: list[str]) -> list[str]:
+    """The `shas` that name a commit (or a tag of one) this clone HOLDS. One `cat-file --batch-check` call."""
+    if not shas:
+        return []
+    out = _git(root, "cat-file", "--batch-check=%(objectname) %(objecttype)",
+               data="".join(f"{s}^{{commit}}\n" for s in shas).encode()).decode().splitlines()
+    return sorted({line.split()[0] for line in out if line.endswith(" commit")})
+
+
+def pushed_log(root: pathlib.Path, heads: list[str], exclude: list[str]) -> str:
+    """Every commit in `heads` and not in `exclude`, each diffed against its FIRST parent: `-U0`, `--text`,
+    no renames, no external diff or textconv. Decoded with replacement, so binary content is still read."""
+    out = _git(root, "log", "-p", "--text", "-U0", "--no-color", "--no-ext-diff", "--no-textconv",
+               "--no-renames", "--diff-merges=first-parent", f"--format={COMMIT_TAG}%H",
+               *heads, "--not", *exclude, "--")
+    return out.decode("utf-8", "replace")
+
+
+def public_texts(root: pathlib.Path, tips: list[str]):
+    """Yield the text of every distinct blob at every tip in `tips` (binary content included, decoded)."""
+    blobs: set[str] = set()
+    for tip in tips:
+        for line in _git(root, "ls-tree", "-r", "-z", tip).split(b"\0"):
+            meta = line.split(b"\t", 1)[0].split()
+            if len(meta) == 3 and meta[1] == b"blob":
+                blobs.add(meta[2].decode())
+    if not blobs:
+        return
+    data = _git(root, "cat-file", "--batch", data=("\n".join(sorted(blobs)) + "\n").encode())
+    i = 0
+    while i < len(data):
+        j = data.index(b"\n", i)
+        size = int(data[i:j].split()[2])
+        yield data[j + 1:j + 1 + size].decode("utf-8", "replace")
+        i = j + 1 + size + 1
+
+
+def scan(root: pathlib.Path, heads: list[str], exclude: list[str], public_tips: list[str], n: int):
+    """-> (exit code, message, hits). Every CANNOT RUN says so in words; none of them is a pass."""
     try:
-        # ⛔ Inherited GIT_* are dropped, as `gen-work-lines.plan_dirs` does: a hook context can export
-        # `GIT_DIR`, which `-C` does not override.
-        r = subprocess.run(["git", "-C", str(root), "-c", "core.quotePath=false", *args],
-                           capture_output=True, text=True, timeout=GIT_TIMEOUT, stdin=subprocess.DEVNULL,
-                           env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError(f"git {args[0]} could not run ({type(exc).__name__})") from exc
-    if r.returncode not in ok:
-        raise RuntimeError(f"git {args[0]} failed: {r.stderr.strip()[:200]}")
-    return r.stdout
-
-
-def branch_diff(root: pathlib.Path, base: str, head: str) -> str:
-    """The FETCH. The `-U0` diff of `base...head`; external diff drivers and textconv are refused."""
-    return _git(root, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U0", f"{base}...{head}")
-
-
-def public_windows(root: pathlib.Path, base: str, cands: set[tuple[str, ...]]) -> set[tuple[str, ...]]:
-    """The FETCH. The candidates that ALREADY occur in a tracked file at `base` — public before this branch.
-
-    ⭐ WHY THIS EXISTS, MEASURED 2026-10-29: plan text includes the paths and repo vocabulary a plan cites
-    (`docs/reviews/architecture-review-2026-10-…` is six words), so on PRs #435, #434, #433 and #425 the
-    scan without it hit 0, 1, 6 and 6 lines — every one a phrase already in the repo, none a leak. A
-    run already public before the branch reveals nothing new. Only candidates are looked up: `git grep`
-    narrows to files holding all of a window's words, and only those are tokenised."""
-    out: set[tuple[str, ...]] = set()
-    cache: dict[str, set[tuple[str, ...]]] = {}
-    for t in sorted(cands):
-        pats = [a for w in sorted(set(t)) for a in ("-e", w)]
-        hits = _git(root, "grep", "-l", "-I", "-i", "-F", "--all-match", *pats, base, "--", ok=(0, 1))
-        for spec in hits.splitlines():
-            if spec not in cache:
-                w = words(_git(root, "show", spec))
-                cache[spec] = {tuple(w[i:i + len(t)]) for i in range(len(w) - len(t) + 1)} & cands
-            if t in cache[spec]:
-                out.add(t)
-                break
-    return out
-
-
-def scan(root: pathlib.Path, base: str, head: str, n: int) -> tuple[int, str, str]:
-    """-> (exit code, message, LOCAL-only text). Every CANNOT RUN says so in words; none of them is a pass.
-    The third element carries matched phrases and must only ever reach the local terminal."""
-    try:
-        sources, notes = read_plan_sources(root)
+        sources = read_plan_sources(root)
     except Exception as exc:  # noqa: BLE001 — any failure to read the plans is CANNOT RUN (3)
         return CANNOT, (f"plan-leak: CANNOT RUN — the plans could not be read ({type(exc).__name__}: {exc}). "
-                        f"Treat this as NOT RUN."), ""
+                        f"Treat this as NOT RUN."), []
     win = windows(sources, n)
     if not win:
-        return NO_PLANS, (f"plan-leak: CANNOT RUN — no plan text found in any checkout's .claude/plans/ "
-                          f"({len(sources)} plan strings, none of {n} words or more). Nothing was compared, "
-                          f"so treat this as NOT RUN." + "".join(f"\n  note: {x}" for x in notes)), ""
+        return NO_PLANS, (f"plan-leak: CANNOT RUN — no plan text in any checkout's .claude/plans/ "
+                          f"({len(sources)} plan strings, none of {n} words or more). Nothing was compared, so "
+                          f"treat this as NOT RUN."), []
     try:
-        added, removed = diff_lines(branch_diff(root, base, head))
-        cands = candidate_windows(win, added, removed, n)
-        public = public_windows(root, base, cands) if cands else set()
-    except RuntimeError as exc:
-        return CANNOT, f"plan-leak: CANNOT RUN — {exc}. Treat this as NOT RUN.", ""
-    hits = leak_hits(win, added, removed, n, public)
-    msg = report(hits, len(sources), len(win), len(added), n) + "".join(f"\n  note: {x}" for x in notes)
-    return (HITS if hits else CLEAN), msg, local_lines(hits)
+        runs, removed = parse_log(pushed_log(root, heads, exclude)) if heads else ([], {})
+        cands = candidate_windows(win, runs, removed, n)
+        public = public_in(public_texts(root, public_tips), cands) if cands else set()
+    except Exception as exc:  # noqa: BLE001 — any git or decode failure is CANNOT RUN (3)
+        return CANNOT, f"plan-leak: CANNOT RUN — {exc}. Treat this as NOT RUN.", []
+    hits = leak_hits(win, runs, removed, n, public)
+    return (HITS if hits else CLEAN), report(hits, len(sources), len(win), len(runs), n), hits
 
 
-def _deny(reason: str) -> dict:
-    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                   "permissionDecisionReason": reason}}
+# ── the hooks path ───────────────────────────────────────────────────────────────────────────────────
+
+def hooks_status(root: pathlib.Path) -> tuple[bool, str]:
+    """-> (active, message) for the checkout at `root`. Active iff `core.hooksPath` is `.githooks` AND this
+    checkout holds an executable `.githooks/pre-push`."""
+    cur = _git(root, "config", "--get", "core.hooksPath", ok=(0, 1)).decode().strip()
+    hook = root / HOOKS_PATH / "pre-push"
+    if cur != HOOKS_PATH:
+        return False, (f"plan-leak hook NOT ACTIVE: core.hooksPath is {cur or 'unset'!r}, not {HOOKS_PATH!r}. "
+                       f"Run scripts/install-git-hooks.sh")
+    if not (hook.is_file() and os.access(hook, os.X_OK)):
+        return False, (f"plan-leak hook NOT ACTIVE in this checkout: {HOOKS_PATH}/pre-push is missing or not "
+                       f"executable here (a branch older than the hook) — pushes from here are UNCHECKED")
+    return True, "plan-leak hook ACTIVE — every push from this checkout runs .githooks/pre-push"
 
 
-def decide(rc: int, msg: str, local: str = "") -> dict | None:
-    """PURE. The hook's reply for a scan's (rc, msg, local); None is silence, which allows the push.
-    `local` (the matched phrases) goes ONLY into the user-facing `systemMessage` of a deny.
+def install_hooks(root: pathlib.Path) -> tuple[int, str]:
+    """Set `core.hooksPath` to `.githooks`. Idempotent. ⛔ REFUSES a different existing hooks path, and live
+    hooks in the git dir — setting the path would silently switch those off."""
+    cur = _git(root, "config", "--get", "core.hooksPath", ok=(0, 1)).decode().strip()
+    if cur == HOOKS_PATH:
+        return CLEAN, f"already installed: core.hooksPath is {HOOKS_PATH!r}"
+    if cur:
+        return REFUSED, (f"REFUSED: core.hooksPath is already {cur!r}. Setting it to {HOOKS_PATH!r} would switch "
+                         f"those hooks off; merge them by hand, then re-run.")
+    common = pathlib.Path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
+    live = sorted(p.name for p in (common / "hooks").glob("*") if p.is_file() and not p.name.endswith(".sample"))
+    if live:
+        return REFUSED, (f"REFUSED: {common / 'hooks'} holds live hooks ({', '.join(live)}), which "
+                         f"core.hooksPath would switch off. Move them into {HOOKS_PATH}/ first.")
+    _git(root, "config", "core.hooksPath", HOOKS_PATH)
+    return CLEAN, f"installed: core.hooksPath = {HOOKS_PATH!r} (shared by every worktree of this clone)"
 
-    Only NO_PLANS fails open, and loudly: a fresh clone has no plans and must still be able to push.
-    Any other code — CANNOT, or one this function has never heard of — fails CLOSED."""
-    if rc == CLEAN:
-        return None
-    if rc == HITS:
-        reply = _deny("Blocked: this push adds tracked lines that quote a PRIVATE plan (.claude/plans/ is "
-                      "gitignored and the repo is public).\n\n" + msg + "\n\nReword each line named above so "
-                      "it no longer carries the plan's words. If a hit is a coincidental generic phrase, "
-                      f"re-run prefixed with {ESCAPE}")
-        if local:
-            reply["systemMessage"] = local
-        return reply
+
+# ── entry points ─────────────────────────────────────────────────────────────────────────────────────
+
+def pre_push(root: pathlib.Path, url: str, stdin_text: str, n: int, err) -> int:
+    """git's pre-push hook. Non-zero aborts the push. Writes ONLY to `err` (git shows it to the pusher)."""
+    if os.environ.get(ESCAPE) == "1":
+        print(f"plan-leak: {ESCAPE}=1 is set in this push's environment — the plan-leak scan was SKIPPED.",
+              file=err)
+        return CLEAN
+    try:
+        updates = parse_updates(stdin_text)
+        tips = local_commits(root, remote_tips(root, url) + [r for _, r in updates if r != ZERO])
+    except Exception as exc:  # noqa: BLE001 — not knowing what is pushed, or what is public, blocks
+        print(f"plan-leak: CANNOT RUN — {exc}. The push is BLOCKED; fix it, or set {ESCAPE}=1.", file=err)
+        return CANNOT
+    if not updates:
+        return CLEAN   # only deletions: nothing is sent
+    rc, msg, _ = scan(root, [l for l, _ in updates], tips, tips, n)
+    print(msg, file=err)
     if rc == NO_PLANS:
-        warn = ("⚠ plan-leak push gate NOT RUN — no plan files were found, so nothing was compared and this "
-                "push was NOT checked for quoted plan text.\n" + msg)
-        return {"systemMessage": warn,
-                "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": warn}}
-    return _deny(f"Blocked: the plan-leak push gate could not run (rc {rc}), so this push is unchecked.\n\n"
-                 f"{msg}\n\nFix what it names, or re-run prefixed with {ESCAPE}")
+        print("⚠ plan-leak NOT RUN: no plan files were found, so this push was NOT checked for plan text. "
+              "Allowed (a fresh clone has none).", file=err)
+        return CLEAN
+    if rc == HITS:
+        print(f"Blocked: the commits above add lines quoting a PRIVATE plan (the repo is public). Reword them "
+              f"(`git commit --amend` / rebase), or for a judged coincidence push with {ESCAPE}=1. "
+              f"`python3 scripts/check-plan-leak.py --show` in a terminal prints the matched words.", file=err)
+    elif rc != CLEAN:
+        print(f"The push is BLOCKED; fix what is named, or set {ESCAPE}=1.", file=err)
+    return rc
 
 
-def hook_reply(payload: str, run) -> dict | None:
-    """The hook's reply to one PreToolUse `payload`. `run` performs the scan; it is called only for a push
-    that is not escaped."""
-    try:
-        cmd = json.loads(payload).get("tool_input", {}).get("command") or ""
-    except (ValueError, AttributeError):
-        return _deny("Blocked: the plan-leak push gate could not read the hook payload, so this push is "
-                     f"unchecked. Re-run prefixed with {ESCAPE} to push anyway.")
-    if not PUSH.search(cmd) or ESCAPE in cmd:
-        return None
-    rc, msg, local = run()
-    return decide(rc, msg, local)
-
-
-def main(argv: list[str], root: pathlib.Path = ROOT, stdin=None) -> int:
+def main(argv: list[str], root: pathlib.Path = ROOT, stdin=None, out=None, err=None, tty=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base", default="origin/master")
     ap.add_argument("--head", default="HEAD")
     ap.add_argument("--window", type=int, default=WINDOW)
-    ap.add_argument("--hook", action="store_true", help="read the PreToolUse JSON on stdin, reply in JSON")
+    ap.add_argument("--show", action="store_true", help="also print the matched words — to a terminal only")
+    ap.add_argument("--pre-push", nargs=2, metavar=("REMOTE", "URL"), help="run as git's pre-push hook")
+    ap.add_argument("--install-hooks", action="store_true")
+    ap.add_argument("--hooks-status", action="store_true")
     a = ap.parse_args(argv)
+    out, err = out or sys.stdout, err or sys.stderr
     if a.window < 1:
         ap.error("--window must be at least 1")
-    if a.hook:
-        reply = hook_reply((stdin or sys.stdin).read(), lambda: scan(root, a.base, a.head, a.window))
-        if reply is not None:
-            print(json.dumps(reply))
-        return 0
-    rc, msg, local = scan(root, a.base, a.head, a.window)
-    print(msg)
-    if local:
-        print(local, file=sys.stderr)
+    if a.pre_push:
+        return pre_push(root, a.pre_push[1], (stdin or sys.stdin).read(), a.window, err)
+    if a.install_hooks or a.hooks_status:
+        try:
+            rc, msg = install_hooks(root) if a.install_hooks else ((lambda s: (CLEAN if s[0] else HITS, s[1]))
+                                                                   (hooks_status(root)))
+        except RuntimeError as exc:
+            rc, msg = CANNOT, f"CANNOT RUN — {exc}"
+        print(msg, file=out)
+        return rc
+    if a.show and not (out.isatty() if tty is None else tty):
+        print("REFUSED: --show prints private plan words and writes only to a terminal; stdout is not one "
+              "(a tool capture or a redirect would keep them).", file=err)
+        return REFUSED
+    try:
+        base = _git(root, "rev-parse", "--verify", f"{a.base}^{{commit}}").decode().strip()
+        head = _git(root, "rev-parse", "--verify", f"{a.head}^{{commit}}").decode().strip()
+    except RuntimeError as exc:
+        print(f"plan-leak: CANNOT RUN — {exc}. Treat this as NOT RUN.", file=out)
+        return CANNOT
+    rc, msg, hits = scan(root, [head], [base], [base], a.window)
+    print(msg, file=out)
+    if a.show and hits:
+        print(show_lines(hits), file=out)
     return rc
 
 
@@ -360,7 +478,6 @@ def _self_test() -> int:
 
 
 def _self_test_body() -> int:
-    import contextlib
     import io
     import shutil
     import tempfile
@@ -387,31 +504,33 @@ def _self_test_body() -> int:
     STEP = "calibrate the walrus engine before teatime tomorrow evening near Dover"  # 10 words
     OBJ = "teach the lighthouse keeper to juggle seven turnips every winter"       # 10 words
     SUB = "because the parrot refuses every second Tuesday morning without fail"   # 10 words
+    UML = "the Straße beside the old mill floods every spring"                     # 9 words, a ß
     NEAR = "we calibrate the walrus engine before teatime tomorrow lunch"            # 7 words of STEP
     PLAN = (f"# a plan\n\n<!-- serving: {OBJ} -->\n\n### Task 1\n\n- [ ] **Step 1** — {STEP}\n"
-            f"  - **Why:** {SUB}\n\nplain prose about seven quiet harbour lanterns glowing late\n")
+            f"  - **Why:** {SUB}\n  - {UML}\n\nplain prose about seven quiet harbour lanterns glowing late\n")
     src = [("p.md", s) for s in plan_strings(PLAN, SERVING)]
     W8 = windows(src, 8)
+    C = "c0ffee"
 
-    def hits_of(diff, n=8, win=None):
-        added, removed = diff_lines(diff)
-        return [(p, ln) for p, ln, _, _ in leak_hits(W8 if win is None else win, added, removed, n, set())]
-
-    def one_file(path, plus, minus=(), start=1):
+    def log_of(path, plus, minus=(), start=1, commit=C, qpath=None):
+        q = qpath or f"b/{path}"
         body = "".join(f"-{x}\n" for x in minus) + "".join(f"+{x}\n" for x in plus)
-        return (f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+        return (f"{COMMIT_TAG}{commit}\n\ndiff --git a/{path} b/{path}\n--- a/{path}\n+++ {q}\n"
                 f"@@ -{start},{len(minus)} +{start},{len(plus)} @@\n{body}")
 
+    def hits_of(log, n=8, win=None, public=frozenset()):
+        runs, removed = parse_log(log)
+        return [(p, ln) for p, ln, _, _, _ in leak_hits(W8 if win is None else win, runs, removed, n, set(public))]
+
     # ── the plan text ────────────────────────────────────────────────────────────────────────────────
-    check("plan_strings reads the objective, the step and its indented sub-bullet",
-          lambda: [s for s in plan_strings(PLAN, SERVING)],
-          [OBJ, f"[ ] **Step 1** — {STEP}", f"**Why:** {SUB}"])
+    check("plan_strings reads the objective, the step and its indented sub-bullets",
+          lambda: plan_strings(PLAN, SERVING), [OBJ, f"[ ] **Step 1** — {STEP}", f"**Why:** {SUB}", UML])
     check("...and NOT a plain prose line, which is outside plan text by the stated bound",
           lambda: any("lanterns" in s for s in plan_strings(PLAN, SERVING)), False)
     check("the objective is read through the serving pattern it is GIVEN, not a constant",
           lambda: plan_strings("<!-- goal: a b -->\n", re.compile(r"<!--\s*goal:\s*(.+?)\s*-->")), ["a b"])
-    check("words casefolds and drops markup and punctuation",
-          lambda: words("**Calibrate** the `walrus`, ENGINE!"), ["calibrate", "the", "walrus", "engine"])
+    check("words casefolds (ß to ss) and drops markup and punctuation",
+          lambda: words("**Calibrate** the `walrus`, STRAßE!"), ["calibrate", "the", "walrus", "strasse"])
     check("windows of 8 over a 10-word string are 3, each labelled with its plan file",
           lambda: sorted(set(windows([("a.md", STEP)], 8).values())) + [len(windows([("a.md", STEP)], 8))],
           ["a.md", 3])
@@ -420,234 +539,343 @@ def _self_test_body() -> int:
     check("a plan string shorter than the window yields no window",
           lambda: windows([("a.md", "only seven words are written right here")], 8), {})
 
-    # ── the diff ─────────────────────────────────────────────────────────────────────────────────────
-    two_hunks = (one_file("docs/a.md", ["harmless line"], start=3)
+    # ── reading what a push sends ────────────────────────────────────────────────────────────────────
+    two_hunks = (log_of("docs/a.md", ["harmless line"], start=3)
                  + f"@@ -10,0 +12,2 @@\n+another harmless line\n+we must {STEP} ok\n")
     check("⭐ KNOWN POSITIVE: an 8-word run of a plan step in an added line is a hit, at the right line",
           lambda: hits_of(two_hunks), [("docs/a.md", 13)])
-    check("the objective is plan text too",
-          lambda: hits_of(one_file("README.md", [f"note: {OBJ}."])), [("README.md", 1)])
-    check("an indented sub-bullet is plan text too",
-          lambda: hits_of(one_file("README.md", [f"x {SUB}"])), [("README.md", 1)])
-    check("a 7-word NEAR MISS is not a hit at the default 8",
-          lambda: hits_of(one_file("docs/a.md", [NEAR])), [])
+    check("the objective is plan text too", lambda: hits_of(log_of("README.md", [f"note: {OBJ}."])),
+          [("README.md", 1)])
+    check("an indented sub-bullet is plan text too", lambda: hits_of(log_of("README.md", [f"x {SUB}"])),
+          [("README.md", 1)])
+    check("a 7-word NEAR MISS is not a hit at the default 8", lambda: hits_of(log_of("docs/a.md", [NEAR])), [])
     check("⭐ a MARKUP-SPLIT match is still a hit: casefold, bold, code and commas do not hide it",
-          lambda: hits_of(one_file("docs/a.md", ["**CALIBRATE** the `walrus`, engine — before teatime, "
-                                                 "*tomorrow* EVENING"])), [("docs/a.md", 1)])
+          lambda: hits_of(log_of("docs/a.md", ["**CALIBRATE** the `walrus`, engine — before teatime, "
+                                               "*tomorrow* EVENING"])), [("docs/a.md", 1)])
     check("the window size is the one GIVEN: the 7-word run hits at --window 7",
-          lambda: hits_of(one_file("docs/a.md", [NEAR]), 7, windows(src, 7)), [("docs/a.md", 1)])
+          lambda: hits_of(log_of("docs/a.md", [NEAR]), 7, windows(src, 7)), [("docs/a.md", 1)])
+    half = words(STEP)
+    check("⭐ X9: a run WRAPPED across two consecutive added lines is joined, and hits where it starts",
+          lambda: hits_of(log_of("docs/a.md", ["intro " + " ".join(half[:5]), " ".join(half[5:]) + " end"])),
+          [("docs/a.md", 1)])
+    check("...but two added lines in DIFFERENT hunks are not joined",
+          lambda: hits_of(log_of("docs/a.md", [" ".join(half[:5])]) + f"@@ -9,0 +9 @@\n+{' '.join(half[5:])}\n"), [])
+    check("...nor two separated by a removed line",
+          lambda: hits_of(f"{COMMIT_TAG}{C}\ndiff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,1 +1,2 @@\n"
+                          f"+{' '.join(half[:5])}\n-gone\n+{' '.join(half[5:])}\n"), [])
     check("a REMOVED line carrying plan text is not judged",
-          lambda: hits_of(one_file("docs/a.md", ["harmless"], [f"old {STEP}"])), [])
+          lambda: hits_of(log_of("docs/a.md", ["harmless"], [f"old {STEP}"])), [])
     check("an added line whose own text starts `++ ` is content, not a file header",
-          lambda: hits_of(one_file("docs/a.md", [f"++ {STEP}"])), [("docs/a.md", 1)])
+          lambda: hits_of(log_of("docs/a.md", [f"++ {STEP}"])), [("docs/a.md", 1)])
+    check("⭐ X5: a C-QUOTED path is decoded, not dropped",
+          lambda: hits_of(log_of('q"n.md', [STEP], qpath='"b/q\\"n.md"')), [('q"n.md', 1)])
+    check("unquote_path decodes octal escapes to UTF-8 and leaves a plain path alone",
+          lambda: (unquote_path('"b/caf\\303\\251.md"'), unquote_path("b/plain.md")), ("b/café.md", "b/plain.md"))
     check("a deleted file's lines are removed, not added",
-          lambda: diff_lines("diff --git a/x.md b/x.md\ndeleted file mode 100644\n--- a/x.md\n+++ /dev/null\n"
-                             f"@@ -1 +0,0 @@\n-{STEP}\n"), ([], {"x.md": {STEP}}))
+          lambda: parse_log(f"{COMMIT_TAG}{C}\ndiff --git a/x.md b/x.md\ndeleted file mode 100644\n--- a/x.md\n"
+                            f"+++ /dev/null\n@@ -1 +0,0 @@\n-{STEP}\n"), ([], {(C, "x.md"): {STEP}}))
+    check("each commit's lines are keyed to THAT commit",
+          lambda: [r[0] for r in parse_log(log_of("a.md", ["x"], commit="aaa") + log_of("a.md", ["y"], commit="bbb"))[0]],
+          ["aaa", "bbb"])
     row = "| 7 | the item text | x |"
     marked = "| 7 | the item text ⟦kind: defect⟧ | x |"
     check("⭐ a MARKER-ONLY line (equal to a removed line once its ⟦…⟧ marker is stripped) is not judged",
-          lambda: judged_text("docs/backlog.md", marked, {"docs/backlog.md": {row}}), " ⟦kind: defect⟧")
+          lambda: judged_text((C, "docs/backlog.md"), marked, {(C, "docs/backlog.md"): {row}}), " ⟦kind: defect⟧")
     plan_row = f"| 7 | {STEP} | x |"
     check("...so a marker added to a line ALREADY quoting plan text in the base is not a new hit",
-          lambda: hits_of(one_file("docs/backlog.md", [f"| 7 | {STEP} ⟦kind: defect⟧ | x |"], [plan_row])), [])
+          lambda: hits_of(log_of("docs/backlog.md", [f"| 7 | {STEP} ⟦kind: defect⟧ | x |"], [plan_row])), [])
     check("⭐ a marker PLUS a changed word is judged whole, and hits",
-          lambda: hits_of(one_file("docs/backlog.md", [f"| 7 | now {STEP} ⟦kind: defect⟧ | x |"], [plan_row])),
+          lambda: hits_of(log_of("docs/backlog.md", [f"| 7 | now {STEP} ⟦kind: defect⟧ | x |"], [plan_row])),
           [("docs/backlog.md", 1)])
     check("the marker itself is still judged — a plan run inside a marker hits",
-          lambda: hits_of(one_file("docs/backlog.md", [f"| 7 | the item text ⟦kind: {STEP}⟧ | x |"], [row])),
+          lambda: hits_of(log_of("docs/backlog.md", [f"| 7 | the item text ⟦kind: {STEP}⟧ | x |"], [row])),
           [("docs/backlog.md", 1)])
     check("the exemption is per FILE: the same removed line in another file exempts nothing",
-          lambda: judged_text("docs/other.md", marked, {"docs/backlog.md": {row}}), marked)
+          lambda: judged_text((C, "docs/other.md"), marked, {(C, "docs/backlog.md"): {row}}), marked)
+    check("...and per COMMIT: a line removed by another commit exempts nothing",
+          lambda: judged_text(("other", "docs/backlog.md"), marked, {(C, "docs/backlog.md"): {row}}), marked)
 
-    one = one_file("docs/a.md", [f"we {STEP} ok"])
-    a1, r1 = diff_lines(one)
-    first = tuple(words(STEP)[:8])
-    check("candidate_windows lists exactly the plan windows the added lines carry",
-          lambda: sorted(candidate_windows(W8, a1, r1, 8)), sorted(windows([("p.md", STEP)], 8)))
-    check("candidate_windows reads the window size GIVEN: at 10 there is one",
-          lambda: len(candidate_windows(windows(src, 10), a1, r1, 10)), 1)
-    check("⭐ a window ALREADY PUBLIC at the base is not a hit",
-          lambda: leak_hits(W8, a1, r1, 8, set(windows([("p.md", STEP)], 8))), [])
-    check("...but one private window left on the line still hits",
-          lambda: [(p, ln) for p, ln, _, _ in leak_hits(W8, a1, r1, 8, {first})], [("docs/a.md", 1)])
-
-    a2, r2 = diff_lines(one_file("docs/backlog.md", [f"| 7 | {STEP} ⟦kind: defect⟧ | x |"], [plan_row]))
-    check("candidate_windows reads the JUDGED text: a marker-only line offers no candidate",
-          lambda: candidate_windows(W8, a2, r2, 8), set())
     check("judged_text returns an unmarked line whole",
-          lambda: judged_text("docs/a.md", f"plain {STEP}", {"docs/a.md": {"plain"}}), f"plain {STEP}")
+          lambda: judged_text((C, "docs/a.md"), f"plain {STEP}", {(C, "docs/a.md"): {"plain"}}), f"plain {STEP}")
+    runs1, rem1 = parse_log(log_of("docs/a.md", [f"we {STEP} ok"]))
+    first = tuple(words(STEP)[:8])
+    check("candidate_windows lists exactly the plan windows the pushed runs carry",
+          lambda: sorted(candidate_windows(W8, runs1, rem1, 8)), sorted(windows([("p.md", STEP)], 8)))
+    check("candidate_windows reads the window size GIVEN: at 10 there is one",
+          lambda: len(candidate_windows(windows(src, 10), runs1, rem1, 10)), 1)
+    runs2, rem2 = parse_log(log_of("docs/backlog.md", [f"| 7 | {STEP} ⟦kind: defect⟧ | x |"], [plan_row]))
+    check("candidate_windows reads the JUDGED text: a marker-only line offers no candidate",
+          lambda: candidate_windows(W8, runs2, rem2, 8), set())
+    check("⭐ a window ALREADY PUBLIC is not a hit",
+          lambda: leak_hits(W8, runs1, rem1, 8, set(windows([("p.md", STEP)], 8))), [])
+    check("...but one private window left on the run still hits",
+          lambda: [(p, ln) for p, ln, _, _, _ in leak_hits(W8, runs1, rem1, 8, {first})], [("docs/a.md", 1)])
+    check("public_in finds a candidate in a text, under casefold",
+          lambda: public_in([f"Old copy: {STEP.upper()}."], {first}), {first})
+    check("⭐ X10: public_in folds ß the way the matcher does — `STRASSE` text makes a `Straße` run public",
+          lambda: public_in([UML.upper().replace("ß", "SS")], set(windows([("p.md", UML)], 8))),
+          set(windows([("p.md", UML)], 8)))
+    check("public_in does not count the words in another ORDER",
+          lambda: public_in([" ".join(reversed(first))], {first}), set())
 
-    # ── the report and the hook decision ─────────────────────────────────────────────────────────────
-    hit1 = [("docs/a.md", 13, "main/.claude/plans/p.md", " ".join(first))]
+    hit1 = [("docs/a.md", 13, "abcdef0123456789", "main/.claude/plans/p.md", " ".join(first))]
     rep = report(hit1, 3, 9, 4, 8)
-    loc = local_lines(hit1)
+    check("the report names the file, the line, the commit and the plan FILE",
+          lambda: ("docs/a.md:13" in rep, "abcdef0123" in rep, "main/.claude/plans/p.md" in rep, "hits 1" in rep),
+          (True, True, True, True))
     check("⛔ the report never carries the matched phrase", lambda: " ".join(first) in rep, False)
-    check("⭐ local_lines carries the matched phrase, at its path:line",
-          lambda: f"docs/a.md:13: '{' '.join(first)}'" in loc, True)
-    check("local_lines of no hits is empty", lambda: local_lines([]), "")
-    check("the report names the file, the line and the plan FILE",
-          lambda: ("docs/a.md:13" in rep, "main/.claude/plans/p.md" in rep, "hits 1" in rep), (True, True, True))
-    check("the report's counts are the ones GIVEN",
-          lambda: report([], 5, 2, 7, 4).splitlines(),
-          ["plan-leak: plan strings 5 · 4-word windows 2 · added tracked lines 7 · hits 0"])
-    check("decide: a clean scan is silence", lambda: decide(CLEAN, "x"), None)
-    check("⭐ decide: the phrase goes to the user-facing systemMessage of a deny and NOWHERE persisted",
-          lambda: (" ".join(first) in decide(HITS, rep, loc)["systemMessage"],
-                   " ".join(first) in decide(HITS, rep, loc)["hookSpecificOutput"]["permissionDecisionReason"],
-                   "additionalContext" in decide(HITS, rep, loc)["hookSpecificOutput"]),
-          (True, False, False))
-    check("decide: hits DENY, carrying the scan's message and the escape",
-          lambda: (decide(HITS, rep)["hookSpecificOutput"]["permissionDecision"],
-                   "docs/a.md:13" in decide(HITS, rep)["hookSpecificOutput"]["permissionDecisionReason"],
-                   ESCAPE in decide(HITS, rep)["hookSpecificOutput"]["permissionDecisionReason"]),
-          ("deny", True, True))
-    check("decide: NO PLANS fails OPEN — no permission decision — but loudly, to the user AND the model",
-          lambda: ("permissionDecision" in decide(NO_PLANS, "m")["hookSpecificOutput"],
-                   "NOT RUN" in decide(NO_PLANS, "m")["systemMessage"],
-                   "NOT RUN" in decide(NO_PLANS, "m")["hookSpecificOutput"]["additionalContext"]),
-          (False, True, True))
-    check("decide: CANNOT RUN fails CLOSED", lambda: decide(CANNOT, "m")["hookSpecificOutput"]["permissionDecision"],
-          "deny")
-    check("decide: a code it has never heard of fails CLOSED too",
-          lambda: decide(9, "m")["hookSpecificOutput"]["permissionDecision"], "deny")
+    check("the report's counts are the ones GIVEN", lambda: report([], 5, 2, 7, 4).splitlines(),
+          ["plan-leak: plan strings 5 · 4-word windows 2 · added runs 7 · hits 0"])
+    check("show_lines carries the matched phrase at its path:line",
+          lambda: f"docs/a.md:13 in abcdef0123: '{' '.join(first)}'" in show_lines(hit1), True)
+    check("show_lines of no hits is empty", lambda: show_lines([]), "")
+    Z, A, B = ZERO, "a" * 40, "b" * 40
+    check("parse_updates reads a ref update and DROPS a deletion",
+          lambda: parse_updates(f"refs/heads/x {A} refs/heads/x {B}\n(delete) {Z} refs/heads/y {A}\n"), [(A, B)])
+    check("parse_updates keeps a NEW ref, whose remote sha is all zeros",
+          lambda: parse_updates(f"refs/tags/t {B} refs/tags/t {Z}\n"), [(B, Z)])
+    check("⛔ parse_updates REFUSES a line it cannot read",
+          lambda: _raises(lambda: parse_updates("garbage\n")),
+          "ValueError")
 
-    def payload(cmd):
-        return json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}})
-
-    calls = []
-
-    def fake_run():
-        calls.append(1)
-        return HITS, rep, loc
-
-    check("hook_reply: a push is scanned and denied on hits",
-          lambda: hook_reply(payload("git push -u origin feat/x"), fake_run)["hookSpecificOutput"]
-          ["permissionDecision"], "deny")
-    check("hook_reply: the escape is honoured and the scan is not even run",
-          lambda: (hook_reply(payload(f"{ESCAPE} git push origin feat/x"), fake_run), len(calls)), (None, 1))
-    check("hook_reply: a command that is not a push is untouched",
-          lambda: (hook_reply(payload("git status && echo push"), fake_run), len(calls)), (None, 1))
-    check("hook_reply: a clean scan of a push is silence",
-          lambda: hook_reply(payload("git push origin feat/x"), lambda: (CLEAN, "c", "")), None)
-    check("hook_reply: a push with no plans is ALLOWED with a warning",
-          lambda: "NOT RUN" in hook_reply(payload("git push"), lambda: (NO_PLANS, "n", ""))["systemMessage"], True)
-    check("hook_reply: an unreadable payload fails CLOSED",
-          lambda: hook_reply("not json", fake_run)["hookSpecificOutput"]["permissionDecision"], "deny")
-
-    # ── main, over worlds a case BUILT ───────────────────────────────────────────────────────────────
+    # ── REAL `git push` through the SHIPPED hook, into bare remotes the cases build ─────────────────
     td = pathlib.Path(tempfile.mkdtemp(prefix="plan-leak-"))
+    real_git = shutil.which("git")
     try:
-        def git(repo, *args):
+        def git(repo, *args, env=None, check_rc=True):
             r = subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com",
-                                *args], capture_output=True, text=True)
-            if r.returncode != 0:
+                                *args], capture_output=True, text=True, env=env)
+            if check_rc and r.returncode != 0:
                 raise RuntimeError(f"git {args}: {r.stderr}")
-            return r.stdout
-
-        def world(name, plan, added_text):
-            r = td / name
-            r.mkdir()
-            git(r, "init", "-q", "-b", "master")
-            (r / ".gitignore").write_text(".claude/plans/\n")
-            (r / "README.md").write_text("base\n")
-            git(r, "add", "-A")
-            git(r, "commit", "-q", "-m", "base")
-            git(r, "branch", "base")
-            if plan is not None:
-                (r / ".claude" / "plans").mkdir(parents=True)
-                (r / ".claude" / "plans" / "fx.md").write_text(plan)
-            (r / "README.md").write_text(f"base\n{added_text}\n")
-            git(r, "commit", "-q", "-am", "head")
             return r
 
-        def captured(thunk):
-            buf, ebuf = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(ebuf):
-                rc = thunk()
-            return rc, buf.getvalue(), ebuf.getvalue()
+        def world(name, plan=PLAN, base_files=None):
+            """A bare remote and a clone with the hook INSTALLED. The guard's own files are untracked and
+            excluded, so the remote never holds the synthetic phrases in this source."""
+            bare, w = td / f"{name}.git", td / name
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(bare)], check=True)
+            subprocess.run(["git", "clone", "-q", str(bare), str(w)], check=True, capture_output=True)
+            git(w, "checkout", "-q", "-b", "master")
+            (w / ".git" / "info" / "exclude").write_text(".claude/\nscripts/\n.githooks/\n")
+            for rel in ("scripts/check-plan-leak.py", "scripts/gen-work-lines.py", "scripts/install-git-hooks.sh",
+                        ".githooks/pre-push"):
+                (w / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / rel, w / rel)
+            for rel, text in (base_files or {"README.md": "base\n"}).items():
+                (w / rel).write_text(text)
+            git(w, "add", "-A")
+            git(w, "commit", "-q", "-m", "base")
+            git(w, "push", "-q", "origin", "master")
+            if plan is not None:
+                (w / ".claude" / "plans").mkdir(parents=True)
+                (w / ".claude" / "plans" / "fx.md").write_text(plan)
+            r = subprocess.run(["bash", str(w / "scripts" / "install-git-hooks.sh")], cwd=w, capture_output=True,
+                               text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"install: {r.stdout}{r.stderr}")
+            return w
 
-        leak = world("leak", PLAN, f"we {STEP} now")
-        rc, out, err = captured(lambda: main(["--base", "base"], root=leak))
-        check("⭐ main over a built world: a leaked step exits 1 and names README.md:2",
-              lambda: (rc, "README.md:2" in out), (HITS, True))
-        check("⛔ ...and its STDOUT NEVER contains the matched plan words",
+        def commit(w, rel, text, msg="c"):
+            (w / rel).parent.mkdir(parents=True, exist_ok=True)
+            (w / rel).write_bytes(text.encode() if isinstance(text, str) else text)
+            git(w, "add", "--", rel)
+            git(w, "commit", "-q", "-m", msg)
+
+        def push(w, *args, env=None, cwd=None):
+            r = subprocess.run(["git", *args], cwd=cwd or w, capture_output=True, text=True,
+                               env={**os.environ, **(env or {})})
+            return r.returncode, r.stdout + r.stderr
+
+        def remote_has(w, ref):
+            return git(w, "ls-remote", "origin", ref).stdout.strip() != ""
+
+        w = world("plain")
+        commit(w, "README.md", f"base\nwe {STEP} now\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ REAL PUSH: a commit adding plan text is REFUSED by the installed hook, and named at README.md:2",
+              lambda: (rc != 0, "README.md:2" in out, "HIT" in out), (True, True, True))
+        check("⛔ ...and nothing the push printed carries the matched words",
               lambda: any(" ".join(words(STEP)[i:i + 3]) in " ".join(words(out)) for i in range(8)), False)
-        check("⭐ ...while the LOCAL stderr shows the matched phrase at its path:line",
-              lambda: f"README.md:2: '{' '.join(first)}'" in err, True)
-        clean = world("clean", PLAN, "nothing private here at all, just six or more words")
-        check("main over a clean world exits 0",
-              lambda: captured(lambda: main(["--base", "base"], root=clean))[0], CLEAN)
-        bare = world("bare", None, f"we {STEP} now")
-        check("⭐ main with NO plan file is CANNOT RUN (2), never a pass",
-              lambda: (lambda r: (r[0], "NOT RUN" in r[1]))(captured(lambda: main(["--base", "base"], root=bare))), (NO_PLANS, True))
-        check("main with a base that does not exist is CANNOT RUN (3)",
-              lambda: captured(lambda: main(["--base", "no-such-ref"], root=leak))[0], CANNOT)
-        check("--window is read: at 11 words no 10-word plan string can hit",
-              lambda: captured(lambda: main(["--base", "base", "--window", "11"], root=leak))[0], CLEAN)
-        pub = world("pub", PLAN, f"again: {STEP}")
-        (pub / "OLD.md").write_text(f"an older public copy: {STEP}\n")
-        git(pub, "add", "OLD.md")
-        git(pub, "commit", "-q", "-m", "public")
-        git(pub, "branch", "-f", "base")
-        (pub / "README.md").write_text(f"base\nand again: {STEP}\n")
-        git(pub, "commit", "-q", "-am", "head2")
-        check("⭐ public_windows finds a window already in a tracked file at the base",
-              lambda: public_windows(pub, "base", {first}), {first})
-        check("...and not one that the base does not hold",
-              lambda: public_windows(leak, "base", {first}), set())
-        scrambled = tuple(reversed(first))
-        check("public_windows reads the base it is GIVEN: at the first commit nothing is public",
-              lambda: public_windows(pub, "master~3", {first}), set())
-        check("...nor one whose words are all at the base but not as that run",
-              lambda: public_windows(pub, "base", {scrambled}), set())
-        check("main: re-adding a phrase already public at the base is CLEAN",
-              lambda: captured(lambda: main(["--base", "base"], root=pub))[0], CLEAN)
-        wt = td / "wt"
-        git(bare, "worktree", "add", "-q", "-b", "side", str(wt), "base")
-        (bare / ".claude" / "plans").mkdir(parents=True)
-        (bare / ".claude" / "plans" / "main-plan.md").write_text(PLAN)
-        (wt / "notes.md").write_text(f"see: {OBJ}\n")
-        git(wt, "add", "notes.md")
-        git(wt, "commit", "-q", "-m", "side")
-        check("⭐ a plan held in ANOTHER checkout is read: pushing from a worktree sees the main checkout's plan",
-              lambda: (lambda r: (r[0], "notes.md:1" in r[1]))(captured(lambda: main(["--base", "base"], root=wt))), (HITS, True))
-        rc, out, err = captured(lambda: main(["--hook", "--base", "base"], root=leak,
-                                            stdin=io.StringIO(payload("git push origin master"))))
-        check("main --hook over the leak world prints a DENY and exits 0",
-              lambda: (rc, json.loads(out)["hookSpecificOutput"]["permissionDecision"]), (0, "deny"))
-        check("⛔ main --hook: the phrase is in the systemMessage only — not the reason, not stderr",
-              lambda: (" ".join(first) in json.loads(out)["systemMessage"],
-                       " ".join(first) in json.dumps(json.loads(out)["hookSpecificOutput"]),
-                       " ".join(first) in err), (True, False, False))
+        check("...and the remote did not move", lambda: git(w, "rev-parse", "origin/master").stdout ==
+              git(w, "ls-remote", "origin", "refs/heads/master").stdout.split()[0] + "\n", True)
+        rc, out = push(w, "push", "origin", "master", env={ESCAPE: "1"})
+        check("⭐ the escape is the push's real ENVIRONMENT: ALLOW_PLAN_LEAK=1 lets it through, and says so",
+              lambda: (rc, "SKIPPED" in out), (0, True))
 
-        # The SHIPPED shim, run as the harness runs it, over a copy of this world.
-        shim_src = ROOT / ".claude" / "hooks" / "check-plan-leak.sh"
-        nop = world("nop", None, f"we {STEP} now")
-        for d in (leak, nop):
-            (d / ".claude" / "hooks").mkdir(parents=True, exist_ok=True)
-            shutil.copy(shim_src, d / ".claude" / "hooks" / shim_src.name)
-            (d / "scripts").mkdir(exist_ok=True)
-            for s in ("check-plan-leak.py", "gen-work-lines.py"):
-                shutil.copy(ROOT / "scripts" / s, d / "scripts" / s)
-            git(d, "update-ref", "refs/remotes/origin/master", "base")   # the hook's default base
+        w = world("history")
+        commit(w, "a.md", f"{STEP}\n")
+        commit(w, "a.md", "clean again\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ X1: a leak committed and then removed is still REFUSED — history is pushed, not the tree",
+              lambda: (rc != 0, "a.md:1" in out), (True, True))
 
-        def shim(repo, cmd):
-            r = subprocess.run(["bash", str(repo / ".claude" / "hooks" / shim_src.name)], cwd=repo,
-                               input=payload(cmd), capture_output=True, text=True)
-            return r.returncode, r.stdout, r.stderr
+        w = world("refs")
+        git(w, "checkout", "-q", "-b", "secret")
+        commit(w, "s.md", f"{OBJ}\n")
+        git(w, "checkout", "-q", "master")
+        rc, out = push(w, "push", "origin", "secret")
+        check("⭐ X2: pushing a leaking branch from a clean HEAD is REFUSED",
+              lambda: (rc != 0, "s.md:1" in out, remote_has(w, "refs/heads/secret")), (True, True, False))
+        git(w, "tag", "t1", "secret")
+        rc, out = push(w, "push", "origin", "t1")
+        check("X2: so is a TAG pointing at a leaking commit", lambda: (rc != 0, remote_has(w, "refs/tags/t1")),
+              (True, False))
+        rc, out = push(w, "push", "origin", "--all")
+        check("X2: and `--all`", lambda: (rc != 0, remote_has(w, "refs/heads/secret")), (True, False))
+        rc, out = push(w, "-C", str(w), "-c", "x.y=z", "push", "origin", "secret", cwd=td)
+        check("⭐ X3: `git -C <repo> -c x.y=z push` from ANOTHER directory is REFUSED",
+              lambda: (rc != 0, "s.md:1" in out), (True, True))
+        git(w, "config", "alias.ship", "push origin secret")
+        rc, out = push(w, "ship")
+        check("X3: so is an ALIAS for push", lambda: (rc != 0, "s.md:1" in out), (True, True))
+        rc, out = push(w, "push", "origin", "secret", env={ESCAPE: "0"})
+        check("X4: an escape variable set to anything but 1 does not escape", lambda: rc != 0, True)
+        git(w, "push", "-q", "origin", "master:refs/heads/master-copy")
+        rc, out = push(w, "push", "origin", ":refs/heads/master-copy")
+        check("a DELETION sends nothing and is not scanned — no plan-leak verdict line at all",
+              lambda: "plan-leak:" in out, False)
 
-        rc, out, _ = shim(leak, "git push origin feat/x")
-        check("⭐ the SHIPPED hook denies a push from the leak world",
-              lambda: (rc, '"permissionDecision": "deny"' in out), (0, True))
-        rc, out, _ = shim(nop, "git push origin feat/x")
-        check("the shipped hook FAILS OPEN, loudly, in a world with no plans",
-              lambda: (rc, "permissionDecision" in out, "NOT RUN" in out), (0, False, True))
-        (leak / "scripts" / "check-plan-leak.py").write_text("raise SystemExit(1)\n")
-        rc, out, err = shim(leak, "git push origin feat/x")
-        check("⛔ a CRASHED checker blocks the push (exit 2), it does not wave it through",
-              lambda: (rc, "did not run" in err), (2, True))
-        check("...and the escape still lets a deliberate push through a crashed checker",
-              lambda: shim(leak, f"{ESCAPE} git push origin feat/x")[0], 0)
+        w = world("quoted")
+        commit(w, 'q"n.md', f"{STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ X5 REAL PUSH: a leak in a file whose name git QUOTES is REFUSED, named unquoted",
+              lambda: (rc != 0, 'q"n.md:1' in out), (True, True))
+
+        w = world("binary")
+        commit(w, "b.bin", b"\x00\x01binary " + STEP.encode() + b"\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ X6 REAL PUSH: plan text in a BINARY file is REFUSED", lambda: (rc != 0, "b.bin:1" in out), (True, True))
+
+        w = world("fakebase")
+        commit(w, "x.md", f"{STEP}\n")
+        git(w, "update-ref", "refs/remotes/origin/master", "HEAD")
+        commit(w, "y.md", f"again {STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ X7: a leak placed in a LOCAL origin/master by update-ref is not 'public' — REFUSED",
+              lambda: (rc != 0, "x.md:1" in out, "y.md:1" in out), (True, True, True))
+
+        w = world("public", base_files={"README.md": "base\n", "old.md": f"already said: {STEP}\n"})
+        commit(w, "new.md", f"said again: {STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("a phrase ALREADY ON THE REMOTE is public: the push is allowed", lambda: (rc, "hits 0" in out), (0, True))
+
+        w = world("umlaut", base_files={"README.md": "base\n", "old.md": f"{UML}\n"})
+        commit(w, "new.md", UML.upper().replace("ß", "SS") + "\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ X10 REAL PUSH: an upper-cased `STRASSE` copy of a public `Straße` run is allowed",
+              lambda: rc, 0)
+
+        w = world("wrap")
+        commit(w, "w.md", "intro " + " ".join(half[:5]) + "\n" + " ".join(half[5:]) + " end\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ X9 REAL PUSH: a run wrapped across two lines is REFUSED", lambda: (rc != 0, "w.md:1" in out),
+              (True, True))
+
+        w = world("newref")
+        git(w, "checkout", "-q", "-b", "fresh")
+        rc, out = push(w, "push", "origin", "fresh")
+        check("a NEW branch whose commits the remote already has is allowed", lambda: rc, 0)
+
+        w = world("worktree")
+        (w / ".claude").rename(td / "moved-claude")
+        wt = td / "worktree-side"
+        git(w, "worktree", "add", "-q", "-b", "side", str(wt))
+        (wt / ".claude").mkdir()
+        (td / "moved-claude" / "plans").rename(wt / ".claude" / "plans")
+        commit(w, "m.md", f"{SUB}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ a plan held only in ANOTHER worktree is read: the push is REFUSED", lambda: (rc != 0, "m.md:1" in out),
+              (True, True))
+        # X8 is driven through the hook's own entry point with the stdin git sends, not through `git push`:
+        # measured, git PREPENDS its exec-path (which holds a real `git`) to a hook's PATH, so a PATH shim
+        # cannot reach the hook's git calls. In-process, the shim is first on PATH for every git it runs.
+        shim = td / "shim"
+        shim.mkdir()
+        (shim / "git").write_text(f'#!/bin/sh\nfor a in "$@"; do [ "$a" = worktree ] && exit 128; done\n'
+                                  f'exec "{real_git}" "$@"\n')
+        (shim / "git").chmod(0o755)
+        x8_head = git(w, "rev-parse", "HEAD").stdout.strip()
+        x8_base = git(w, "rev-parse", "origin/master").stdout.strip()
+        saved_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{shim}:{saved_path}"
+        try:
+            o8, e8 = io.StringIO(), io.StringIO()
+            rc = main(["--pre-push", "origin", str(td / "worktree.git")], root=w,
+                      stdin=io.StringIO(f"refs/heads/master {x8_head} refs/heads/master {x8_base}\n"), out=o8, err=e8)
+        finally:
+            os.environ["PATH"] = saved_path
+        check("⭐ X8: when `git worktree list` FAILS the push is BLOCKED, not scanned with fewer plans",
+              lambda: (rc, "CANNOT RUN" in e8.getvalue(), "incomplete" in e8.getvalue()), (CANNOT, True, True))
+
+        w = world("noplans", plan=None)
+        commit(w, "n.md", f"{STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("with NO plan files the push is ALLOWED, loudly NOT RUN", lambda: (rc, "NOT RUN" in out), (0, True))
+
+        w = world("crash")
+        commit(w, "c.md", "harmless\n")
+        (w / "scripts" / "check-plan-leak.py").write_text("raise SystemExit(5)\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⛔ a CRASHED checker aborts the push — git refuses on any non-zero hook", lambda: rc != 0, True)
+
+        # main, driven directly over the worlds above
+        def drive(argv, root, stdin_text="", tty=None):
+            o, e = io.StringIO(), io.StringIO()
+            rc = main(argv, root=root, stdin=io.StringIO(stdin_text), out=o, err=e, tty=tty)
+            return rc, o.getvalue(), e.getvalue()
+
+        p = td / "plain"
+        head = git(p, "rev-parse", "HEAD").stdout.strip()
+        rc, o, e = drive(["--pre-push", "origin", str(td / "no-such.git")], p,
+                         f"refs/heads/master {head} refs/heads/master {ZERO}\n")
+        check("⭐ the remote cannot be asked (ls-remote fails): CANNOT RUN, BLOCKED", lambda: (rc, "CANNOT RUN" in e),
+              (CANNOT, True))
+        rc, o, e = drive(["--pre-push", "origin", str(td / "plain.git")], p, "not a ref line\n")
+        check("an unreadable pre-push stdin BLOCKS", lambda: rc, CANNOT)
+        rc, o, e = drive(["--base", "HEAD~1", "--head", "HEAD"], p)
+        check("by hand: --base/--head scans the commits between, exit 1, path:line on stdout",
+              lambda: (rc, "README.md:2" in o), (HITS, True))
+        check("⛔ ...and without --show the words appear in NEITHER stream",
+              lambda: " ".join(first) in o + e, False)
+        rc, o, e = drive(["--base", "HEAD~1", "--show"], p, tty=False)
+        check("⭐ X11: --show REFUSES when stdout is not a terminal, and prints no words",
+              lambda: (rc, " ".join(first) in o + e), (REFUSED, False))
+        rc, o, e = drive(["--base", "HEAD~1", "--show"], p, tty=True)
+        check("--show on a terminal prints the matched words", lambda: (rc, " ".join(first) in o), (HITS, True))
+        rc, o, e = drive(["--base", "HEAD~1", "--window", "11"], p)
+        check("--window is read: at 11 words no 10-word plan string can hit", lambda: rc, CLEAN)
+        rc, o, e = drive(["--base", "no-such-ref"], p)
+        check("by hand with a base that does not exist: CANNOT RUN (3)", lambda: rc, CANNOT)
+        rc, o, e = drive(["--base", "origin/master"], td / "noplans")
+        check("by hand with no plans: CANNOT RUN (2), never a pass", lambda: (rc, "NOT RUN" in o), (NO_PLANS, True))
+
+        # the installer and --status
+        check("--hooks-status: ACTIVE in an installed world", lambda: drive(["--hooks-status"], p)[0], CLEAN)
+        rc, o, e = drive(["--install-hooks"], p)
+        check("--install-hooks is idempotent", lambda: (rc, "already" in o), (CLEAN, True))
+        fresh = td / "fresh"
+        subprocess.run(["git", "init", "-q", str(fresh)], check=True)
+        rc, o, e = drive(["--hooks-status"], fresh)
+        check("--hooks-status: NOT ACTIVE before installing", lambda: (rc, "NOT ACTIVE" in o), (HITS, True))
+        (fresh / ".githooks").mkdir()
+        shutil.copy2(ROOT / ".githooks" / "pre-push", fresh / ".githooks" / "pre-push")
+        rc, o, e = drive(["--install-hooks"], fresh)
+        check("--install-hooks sets core.hooksPath, and --status then says ACTIVE",
+              lambda: (rc, git(fresh, "config", "core.hooksPath").stdout.strip(), drive(["--hooks-status"], fresh)[0]),
+              (CLEAN, HOOKS_PATH, CLEAN))
+        (fresh / ".githooks" / "pre-push").unlink()
+        rc, o, e = drive(["--hooks-status"], fresh)
+        check("--hooks-status: NOT ACTIVE in a checkout without the hook file (an older branch)",
+              lambda: (rc, "UNCHECKED" in o), (HITS, True))
+        git(fresh, "config", "core.hooksPath", "elsewhere")
+        rc, o, e = drive(["--install-hooks"], fresh)
+        check("⛔ --install-hooks REFUSES to overwrite a different core.hooksPath",
+              lambda: (rc, git(fresh, "config", "core.hooksPath").stdout.strip()), (REFUSED, "elsewhere"))
+        git(fresh, "config", "--unset", "core.hooksPath")
+        (fresh / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n")
+        rc, o, e = drive(["--install-hooks"], fresh)
+        check("⛔ --install-hooks REFUSES while live hooks in .git/hooks would be switched off",
+              lambda: (rc, "pre-commit" in o), (REFUSED, True))
     finally:
         shutil.rmtree(td, ignore_errors=True)
 
@@ -656,6 +884,15 @@ def _self_test_body() -> int:
         return 1
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 0
+
+
+def _raises(thunk) -> str:
+    """The name of the exception `thunk` raises, or 'no raise'."""
+    try:
+        thunk()
+    except Exception as exc:  # noqa: BLE001
+        return type(exc).__name__
+    return "no raise"
 
 
 if __name__ == "__main__":

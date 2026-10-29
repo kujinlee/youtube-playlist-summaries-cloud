@@ -18254,15 +18254,14 @@ current. What actually got the session back on track was the IN FLIGHT block, wh
 ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
 
 ## 2026-10-29
-Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). Before
-every `git push`, a hook compares each line the branch adds against the words of every plan in every checkout.
-A line holding eight words in a row from a plan is refused, naming the file and line, unless those eight words
-were already in the repo. The matched words appear only on your own terminal, so a false alarm takes seconds to
-judge. A plan fragment shorter than eight words in a row is not caught. It cannot run in CI, which has no plans, so it runs where they are.
-A fresh clone with no plans is allowed to push, with a warning that nothing was checked. `ALLOW_PLAN_LEAK=1`
-lets a judged coincidence through.
+Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). It is
+git's own pre-push hook, so it sees exactly what a push sends: every branch and tag, and every commit in it, not
+just the latest state. A commit that adds eight words in a row from any plan is refused, naming the file, line and
+commit, unless those words are already on the remote. The matched words are never printed by the hook; you can
+see them by running the checker with `--show` in your own terminal. A fragment shorter than eight words is not
+caught. It needs enabling once per clone (`scripts/install-git-hooks.sh`), which happens after merge. A fresh clone
+with no plans can still push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through.
 <!--tech-->
-`scripts/check-plan-leak.py` (63 self-test cases, 38 mutations, each killed by the case it names) and
-`.claude/hooks/check-plan-leak.sh`. Run on PR #434's pre-redaction commit it reports the one line the scratchpad
-scan found. At a 6-word window, ignoring phrases that were already public removed 13 false hits on PRs #433, #434 and #425;
-the owner then set the window to 8 words (1 false hit over the last 40 merged commits against 3 at six).
+`scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
+remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
+the command text; the redesign removes their common cause, and each finding is now a case.

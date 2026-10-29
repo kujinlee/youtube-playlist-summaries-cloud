@@ -515,8 +515,9 @@ jobs:
 
       # backlog #393: the plan-leak push gate. ⛔ ONLY ITS SELF-TEST RUNS HERE — the scan itself cannot:
       # `.claude/plans/` is gitignored, so this runner has no plan to compare against and a scan would be
-      # a zero over nothing (CANNOT RUN). The scan runs where the plans exist, as a PreToolUse hook on
-      # `git push` (`.claude/hooks/check-plan-leak.sh`). The suite builds its own synthetic plans.
+      # a zero over nothing (CANNOT RUN). The scan runs where the plans exist, as git's own pre-push hook
+      # (`.githooks/pre-push`, enabled by `scripts/install-git-hooks.sh`). The suite builds bare remotes
+      # and synthetic plans, and drives real `git push` through the shipped hook.
       - name: check-plan-leak self-test
         run: python3 scripts/check-plan-leak.py --self-test
 

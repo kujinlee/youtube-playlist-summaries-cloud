@@ -315,15 +315,15 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #393 (2026-10-29): the plan-leak push gate, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ PR #443 r1: re-derived after the redesign onto git's pre-push hook.
     "check-plan-leak.py": (
-        'candidate_windows.added', 'candidate_windows.n', 'candidate_windows.removed', 'candidate_windows.win',
-        'decide.local', 'decide.msg', 'decide.rc', 'diff_lines.diff_text', 'hook_reply.payload', 'hook_reply.run',
-        'judged_text.body', 'judged_text.path', 'judged_text.removed', 'leak_hits.added', 'leak_hits.n',
-        'leak_hits.public', 'leak_hits.removed', 'leak_hits.win', 'local_lines.hits', 'main.argv', 'main.root',
-        'main.stdin',
-        'plan_strings.serving', 'plan_strings.text', 'public_windows.base', 'public_windows.cands',
-        'public_windows.root', 'report.hits', 'report.n', 'report.n_added', 'report.n_strings',
-        'report.n_windows', 'windows.n', 'windows.sources', 'words.s',
+        'candidate_windows.n', 'candidate_windows.removed', 'candidate_windows.runs', 'candidate_windows.win',
+        'judged_text.body', 'judged_text.key', 'judged_text.removed', 'leak_hits.n', 'leak_hits.public',
+        'leak_hits.removed', 'leak_hits.runs', 'leak_hits.win', 'main.argv', 'main.err', 'main.out',
+        'main.root', 'main.stdin', 'main.tty', 'parse_log.log_text', 'parse_updates.stdin_text',
+        'plan_strings.serving', 'plan_strings.text', 'public_in.cands', 'public_in.texts', 'report.hits',
+        'report.n', 'report.n_runs', 'report.n_strings', 'report.n_windows', 'show_lines.hits',
+        'unquote_path.raw', 'windows.n', 'windows.sources', 'words.s',
     ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
