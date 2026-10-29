@@ -673,5 +673,31 @@
     "expect": [
       "⭐ #389 r2: with NO stale file at all, every spelling of the retired NAME still redirects"
     ]
+  },
+  {
+    "name": "#389 r4 W1: retirement classifies the first candidate that EXISTS, not the one the server serves",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "    sc = served_candidate(url_path, root)\n    if sc is not None:\n        return classify(sc[0], root)",
+        "    sc = None\n    if sc is not None:\n        return classify(sc[0], root)"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r4 W1: a DIRECTORY never suppresses classifying the .html fallback the server serves"
+    ]
+  },
+  {
+    "name": "#389 r4: resolve_page serves the direct candidate even when it is not a file",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "    return next(((lex, res) for lex, res in page_candidates(url_path, root) if res.is_file()), None)",
+        "    return next(((lex, res) for lex, res in page_candidates(url_path, root)), None)"
+      ]
+    ],
+    "expect": [
+      "an extensionless path for a file that does not exist is None"
+    ]
   }
 ]

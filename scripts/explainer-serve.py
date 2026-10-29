@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 224 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 227 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -786,22 +786,30 @@ def latest_target(root: pathlib.Path) -> str | None:
     return "/" + urllib.parse.quote(found[0].name) if found else None
 
 
-def page_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
-    """The contained paths a GET for `url_path` may serve, in order: the direct path, then — for an
-    EXTENSIONLESS final segment only — the same name with `.html`. Existence is NOT checked here.
-    ONE rule shared by `resolve_page` (which serves the first that exists) and `retired_target` (which
-    asks whether one of them IS a retired page), so the two cannot read one request differently."""
+def page_candidates(url_path: str, root: pathlib.Path) -> list[tuple[pathlib.Path, pathlib.Path]]:
+    """The contained candidates a GET for `url_path` may serve, in order, each as (its UNRESOLVED path,
+    its resolved path): the direct path, then — for an EXTENSIONLESS final segment only — the same name
+    with `.html`. Existence is NOT checked here; `served_candidate` picks the one the server serves."""
     out = []
     hit = safe_path(url_path, root)
-    if hit is not None:
-        out.append(hit)
     # ⛔ DECODE BEFORE ASKING "DID IT HAVE AN EXTENSION?" — see `resolve_page` for the measured history.
     bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    rel = posixpath.normpath("/" + bare.lstrip("/")).lstrip("/")
+    if hit is not None:
+        out.append((root / rel, hit))
     if "." not in bare.rsplit("/", 1)[-1]:
         alt = safe_path(urllib.parse.quote(bare) + ".html", root)
         if alt is not None:
-            out.append(alt)
+            out.append((root / (rel + ".html"), alt))
     return out
+
+
+def served_candidate(url_path: str, root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
+    """THE candidate a GET serves — the first whose resolved path is a FILE — as (unresolved, resolved),
+    or None. ONE selection, shared by `resolve_page` (which serves it) and `retirement` (which classifies
+    exactly it). ⟳ #389 r4 (W1): classification picked the first candidate that EXISTED, so an `alias/`
+    directory was classified live while `alias.html`, a hard link to the retired page, was served."""
+    return next(((lex, res) for lex, res in page_candidates(url_path, root) if res.is_file()), None)
 
 
 def requested_name(url_path: str) -> str | None:
@@ -876,13 +884,19 @@ def lexical_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
 
 
 def retirement(url_path: str, root: pathlib.Path) -> tuple[str, str | None]:
-    """A request's verdict: a retired NAME (even with no file behind it) is retired; otherwise the first
-    path it names that exists is `classify`d. -> ("retired", url) | ("refused", why) | ("live", None)."""
+    """A request's verdict: a retired NAME (even with no file behind it) is retired; otherwise the very
+    candidate the server would serve (`served_candidate`) is `classify`d. -> ("retired", url) | ("refused", why) | ("live", None)."""
     name = requested_name(url_path)
     if name is not None and name.casefold() in _RETIRED_FOLDED:
         return "retired", _RETIRED_FOLDED[name.casefold()]
+    sc = served_candidate(url_path, root)
+    if sc is not None:
+        return classify(sc[0], root)           # EXACTLY what the server would serve, walked unresolved
+    # Nothing would be served: a dangling, looping or escaping LINK still gets its verdict (403), and
+    # an existing directory is never a verdict at all.
     for lex in lexical_candidates(url_path, root):
-        return classify(lex, root)
+        if os.path.islink(lex):
+            return classify(lex, root)
     return "live", None
 
 
@@ -922,9 +936,10 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # The middle and bottom rows INVERTED between master and the first fix — i.e. it was a
     # regression at `%25`, not a gap it failed to reach. Quoting restores the invariant the rule
     # needs: the fallback resolves exactly the string the extension test judged.
-    # The candidates are `page_candidates`, shared with `retired_target` (backlog #389): the direct
-    # path, then the `.html` fallback for an extensionless name. The first that EXISTS is served.
-    return next((c for c in page_candidates(url_path, root) if c.is_file()), None)
+    # The selection is `served_candidate`, shared with `retirement` (backlog #389 r4): the direct path,
+    # then the `.html` fallback for an extensionless name; the first that is a FILE is served.
+    sc = served_candidate(url_path, root)
+    return sc[1] if sc is not None else None
 
 
 def index_html(root: pathlib.Path) -> str:
@@ -2662,6 +2677,22 @@ def _self_test_body() -> int:
              lambda: _with_root(_hard_link, lambda _r: (_drive_redirect("/2026-10-29-hard.html"),
                                                        "2026-10-29-hard" in index_html(_r)))
              == ((302, "/work-lines-archive"), False))
+        def _dir_beside_hard_link(r):                 # Codex r4 W1
+            (r / "work-lines.html").write_text("<p>STALE work-lines page</p>")
+            (r / "alias").mkdir()
+            os.link(r / "work-lines.html", r / "alias.html")
+        case("⭐ #389 r4 W1: a DIRECTORY never suppresses classifying the .html fallback the server serves",
+             lambda: _with_root(_dir_beside_hard_link, lambda _r: (
+                 _drive_redirect("/alias"), _drive_redirect("/alias.html"), "alias.html" in index_html(_r)))
+             == ((302, "/work-lines-archive"), (302, "/work-lines-archive"), False))
+        case("#389 r4: a root without the file serves nothing for the same url",
+             lambda: _with_root(lambda r: (r / "alias").mkdir(), lambda _empty: served_candidate("/alias", _empty))
+             is None)
+        case("#389 r4: classification and serving pick the SAME candidate",
+             lambda: _with_root(_dir_beside_hard_link, lambda _r: (
+                 served_candidate("/alias", _r)[1].name, resolve_page("/alias", _r).name,
+                 served_candidate("/work-lines.html", _r)[0].name, served_candidate("/nothing-here", _r)))
+             == ("alias.html", "alias.html", "work-lines.html", None))
         case("⛔ #389 r1: the index does NOT list a retired page whose stale file exists",
              lambda: _with_stale_root(lambda _r: ("work-lines.html" not in index_html(_r),
                                                   "2026-10-01-topic-live.html" in index_html(_r))) == (True, True))

@@ -1821,7 +1821,9 @@ EXPECTED_MUTATIONS = {
     # Two r2 entries retire with the name-or-final-file rule (the bare name check, the name-only index);
     # seven new pin every traversed name, the walk itself, the root bound, the hop bound, the 403, the
     # index's call and the no-file name; (b) now pins hard links, and its symlink exclusion is re-anchored.
-    "scripts/explainer-serve.py": 59,
+    # ⟳ #389 round-4 (terminal) fold: 59 -> 61 — classification and serving share ONE selection
+    # (`served_candidate`): the named mismatch mutation, and serving a non-file candidate.
+    "scripts/explainer-serve.py": 61,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -6243,7 +6245,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2509)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2511)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
