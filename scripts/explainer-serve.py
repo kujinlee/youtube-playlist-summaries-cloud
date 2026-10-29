@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 211 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 216 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -85,6 +85,7 @@ import io
 import json
 import os
 import pathlib
+import posixpath
 import re
 import shlex
 import signal
@@ -174,6 +175,7 @@ STALE_EXEMPT: dict[str, str] = {}
 # retirement read the raw url while the resolver decoded and normalised it. It is now keyed by the
 # CANONICAL page — the file name the resolver would serve, from the root — see `retired_target`.
 RETIRED_FILES = {"work-lines.html": "/work-lines-archive"}
+_RETIRED_FOLDED = {k.casefold(): v for k, v in RETIRED_FILES.items()}
 
 
 def stale_verdict(built_ns: int, newest_source_ns: int) -> str:
@@ -756,9 +758,10 @@ def explainers(root: pathlib.Path) -> list[pathlib.Path]:
     """Explainer PAGES, newest first by mtime. Composer fragments are not pages — see above."""
     if not root.is_dir():
         return []
-    # ⛔ backlog #389 r1: a RETIRED page's file is never listed (nor so reachable from `/` or /latest).
+    # ⛔ backlog #389: a RETIRED page is never listed (nor so reachable from `/` or /latest) — by the same
+    # `retired_as` the server redirects on, so an alias or a differently-cased name is filtered too (r2 Y4).
     return sorted((p for p in root.glob("*.html")
-                   if p.is_file() and not is_fragment(p) and p.name not in RETIRED_FILES),
+                   if p.is_file() and not is_fragment(p) and retired_as(p.name, p, root) is None),
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -800,15 +803,47 @@ def page_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
     return out
 
 
-def retired_target(url_path: str, root: pathlib.Path) -> str | None:
-    """The archive a request for a RETIRED page redirects to, or None. Decided on the canonical page
-    (`page_candidates`: decoded, `.`/`..` collapsed, `.html` added to a bare name), never the raw url,
-    and whether or not a stale copy of the file is on disk."""
-    base = root.resolve()
-    for c in page_candidates(url_path, root):
-        if c.parent == base and c.name in RETIRED_FILES:
-            return RETIRED_FILES[c.name]
+def requested_name(url_path: str) -> str | None:
+    """PURE. The page NAME a url asks for, before the filesystem is consulted: decoded once (as
+    `safe_path` decodes), `.`/`..` collapsed, `.html` on a bare name — or None for a path
+    below the root. ⟳ #389 r2 (Y2, Y3): the round-1 rule judged only the RESOLVED file, so a symlink NAMED
+    `work-lines.html` pointing at a live page lost the retired name, and `/WORK-LINES.html` (one file on
+    a case-insensitive filesystem) matched no key."""
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    head, name = posixpath.split(posixpath.normpath("/" + bare.lstrip("/")))
+    if head != "/" or not name or name in (".", ".."):
+        return None
+    return name if "." in name else name + ".html"   # casefolded once, by `retired_as`
+
+
+def retired_as(name: str | None, path: pathlib.Path | None, root: pathlib.Path) -> str | None:
+    """THE ONE retirement decision (backlog #389 r2, REDESIGN to identity), for a request and for an
+    index candidate alike. -> the archive url, or None. Retired when EITHER
+      (a) its requested NAME, casefolded, is a retired name — whatever the file behind it is (a symlink
+          named `work-lines.html` pointing at a live page is still the retired page); OR
+      (b) the file it resolves to is the SAME FILE (`os.path.samefile`) as a retired page that exists in
+          the root as a regular file — every alias, symlink and spelling of it, in the index too.
+    ⚠ (b) compares against a retired entry only when that entry is a REAL file, not a symlink: a
+    symlink named `work-lines.html` that points at `live.html` is retired by (a), and does not retire
+    `live.html` itself."""
+    if name is not None and name.casefold() in _RETIRED_FOLDED:
+        return _RETIRED_FOLDED[name.casefold()]
+    if path is None:
+        return None
+    for retired, target in RETIRED_FILES.items():
+        rp = root / retired
+        try:
+            if rp.is_file() and not rp.is_symlink() and os.path.samefile(path, rp):
+                return target
+        except OSError:
+            continue
     return None
+
+
+def retired_target(url_path: str, root: pathlib.Path) -> str | None:
+    """The archive a request for a RETIRED page redirects to, or None — `retired_as` over the name the
+    url asks for and the file the resolver would serve, whether or not a stale copy is on disk."""
+    return retired_as(requested_name(url_path), resolve_page(url_path, root), root)
 
 
 def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
@@ -2480,6 +2515,47 @@ def _self_test_body() -> int:
              lambda: _with_stale_root(lambda _r: retired_target("/sub/work-lines.html", _r)) is None)
         case("...while a live page beside it is still served, not redirected",
              lambda: _with_stale_root(lambda _r: _drive_get("/2026-10-01-topic-live.html")[0]) == 200)
+        # ⛔ #389 r2 (REDESIGN to identity): symlinks and case. Each world is built in a temp root.
+        def _with_root(build, fn):
+            import tempfile as _tfr
+            with _tfr.TemporaryDirectory() as _sd:
+                _sr = pathlib.Path(_sd)
+                build(_sr)
+                _real_root = globals()["ROOT"]
+                globals()["ROOT"] = _sr
+                try:
+                    return fn(_sr)
+                finally:
+                    globals()["ROOT"] = _real_root
+
+        def _symlink_to_live(r):                      # Codex Y2: a symlink NAMED work-lines.html -> live
+            (r / "live.html").write_text("<p>a live page</p>")
+            (r / "work-lines.html").symlink_to("live.html")
+
+        def _alias_of_stale(r):                       # Codex Y4: an alias symlink to the stale file
+            (r / "work-lines.html").write_text("<p>STALE</p>")
+            (r / "2026-10-28-work-lines.html").symlink_to("work-lines.html")
+            (r / "2026-10-01-topic-live.html").write_text("<p>live</p>")
+        case("⭐ #389 r2: with NO stale file at all, every spelling of the retired NAME still redirects",
+             lambda: _with_root(lambda r: None, lambda _r: [retired_target(u, _r) for u in (
+                 "/WORK-LINES.html", "/./work-lines.html", "/%77ork-lines", "/sub/../work-lines.html")])
+             == ["/work-lines-archive"] * 4)
+        case("⭐ #389 r2 Y2: a symlink NAMED work-lines.html redirects, whatever it points at",
+             lambda: _with_root(_symlink_to_live, lambda _r: [_drive_redirect(u) for u in (
+                 "/work-lines.html", "/work-lines")]) == [(302, "/work-lines-archive")] * 2)
+        case("...while the live page it points at is still served, and still listed",
+             lambda: _with_root(_symlink_to_live, lambda _r: (_drive_redirect("/live.html"),
+                                                             "live.html" in index_html(_r),
+                                                             "work-lines.html" in index_html(_r)))
+             == ((200, None), True, False))
+        case("⭐ #389 r2 Y3: a differently-CASED name is the retired page too",
+             lambda: _with_stale_root(lambda _r: [_drive_redirect(u) for u in (
+                 "/WORK-LINES.html", "/WoRk-LiNeS.hTmL", "/Work-Lines")]) == [(302, "/work-lines-archive")] * 3)
+        case("⭐ #389 r2 Y4: an ALIAS of the retired file is neither listed nor served",
+             lambda: _with_root(_alias_of_stale, lambda _r: (
+                 "2026-10-28-work-lines.html" in index_html(_r), latest_target(_r),
+                 _drive_redirect("/2026-10-28-work-lines.html")))
+             == (False, "/2026-10-01-topic-live.html", (302, "/work-lines-archive")))
         case("⛔ #389 r1: the index does NOT list a retired page whose stale file exists",
              lambda: _with_stale_root(lambda _r: ("work-lines.html" not in index_html(_r),
                                                   "2026-10-01-topic-live.html" in index_html(_r))) == (True, True))

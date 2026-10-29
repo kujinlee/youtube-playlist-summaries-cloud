@@ -466,8 +466,8 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "    bare = urllib.parse.unquote(url_path.split(\"?\", 1)[0].split(\"#\", 1)[0])",
-        "    bare = url_path.split(\"?\", 1)[0].split(\"#\", 1)[0]"
+        "    # ⛔ DECODE BEFORE ASKING \"DID IT HAVE AN EXTENSION?\" — see `resolve_page` for the measured history.\n    bare = urllib.parse.unquote(url_path.split(\"?\", 1)[0].split(\"#\", 1)[0])",
+        "    # ⛔ DECODE BEFORE ASKING \"DID IT HAVE AN EXTENSION?\" — see `resolve_page` for the measured history.\n    bare = url_path.split(\"?\", 1)[0].split(\"#\", 1)[0]"
       ]
     ],
     "expect": "…and the SINGLE-encoded spelling of a dot gets the same refusal"
@@ -519,42 +519,94 @@
     ]
   },
   {
-    "name": "#389 r1: retirement reads the RAW url again, so an encoded or normalised spelling serves the stale copy",
+    "name": "#389 r2 (a): the requested NAME is not consulted, so a symlink named work-lines.html serves its target",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "    for c in page_candidates(url_path, root):\n        if c.parent == base and c.name in RETIRED_FILES:\n            return RETIRED_FILES[c.name]\n    return None",
-        "    return RETIRED_FILES.get(url_path.lstrip(\"/\"))"
+        "    if name is not None and name.casefold() in _RETIRED_FOLDED:\n        return _RETIRED_FOLDED[name.casefold()]",
+        "    if False:\n        return None"
       ]
     ],
     "expect": [
-      "⭐ #389 r1: every spelling of the retired page REDIRECTS, even with a stale copy on disk"
+      "⭐ #389 r2 Y2: a symlink NAMED work-lines.html redirects, whatever it points at"
     ]
   },
   {
-    "name": "#389 r1: the index lists a retired page's stale file",
+    "name": "#389 r2 (a): the name is compared case-sensitively, so /WORK-LINES.html is a different page",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "if p.is_file() and not is_fragment(p) and p.name not in RETIRED_FILES),",
-        "if p.is_file() and not is_fragment(p)),"
+        "    if name is not None and name.casefold() in _RETIRED_FOLDED:",
+        "    if name is not None and name in _RETIRED_FOLDED:"
       ]
     ],
     "expect": [
-      "⛔ #389 r1: the index does NOT list a retired page whose stale file exists"
+      "⭐ #389 r2: with NO stale file at all, every spelling of the retired NAME still redirects"
     ]
   },
   {
-    "name": "#389 r1: a same-named file in a subdirectory is taken for the retired page",
+    "name": "#389 r2 (a): the requested name is not normalised, so /./work-lines.html and /sub/../ escape",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "        if c.parent == base and c.name in RETIRED_FILES:",
-        "        if c.name in RETIRED_FILES:"
+        "    head, name = posixpath.split(posixpath.normpath(\"/\" + bare.lstrip(\"/\")))",
+        "    head, name = posixpath.split(\"/\" + bare.lstrip(\"/\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r2: with NO stale file at all, every spelling of the retired NAME still redirects"
+    ]
+  },
+  {
+    "name": "#389 r2 (a): a same-named file in a subdirectory is taken for the retired page",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "    if head != \"/\" or not name or name in (\".\", \"..\"):",
+        "    if not name or name in (\".\", \"..\"):"
       ]
     ],
     "expect": [
       "...but a same-named file in a SUBDIRECTORY is a different page, not the retired one"
+    ]
+  },
+  {
+    "name": "#389 r2 (b): the resolved file is not compared with the retired page, so an alias is served",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "            if rp.is_file() and not rp.is_symlink() and os.path.samefile(path, rp):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r2 Y4: an ALIAS of the retired file is neither listed nor served"
+    ]
+  },
+  {
+    "name": "#389 r2 (b): a symlink named work-lines.html retires the live page it points at",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "and not rp.is_symlink() and os.path.samefile(path, rp)",
+        "and os.path.samefile(path, rp)"
+      ]
+    ],
+    "expect": [
+      "...while the live page it points at is still served, and still listed"
+    ]
+  },
+  {
+    "name": "#389 r2: the index filters by file name only, so an alias of the retired page is listed",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "and retired_as(p.name, p, root) is None),",
+        "and p.name not in RETIRED_FILES),"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r2 Y4: an ALIAS of the retired file is neither listed nor served"
     ]
   }
 ]

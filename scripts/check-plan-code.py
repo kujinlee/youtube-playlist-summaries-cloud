@@ -1813,7 +1813,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ #389 round-1 fold: 48 -> 50 — retirement moves from URL spellings to the CANONICAL page
     # (X2 + C1): the url-map entry retires, three new pin the canonical match, the index filter and the
     # root-only scope; the redirect and the no-extension rule are re-anchored on `page_candidates`.
-    "scripts/explainer-serve.py": 50,
+    # ⟳ #389 round-2 REDESIGN to identity: 50 -> 54 — three round-1 entries retire with the canonical-path
+    # rule they pinned (raw url, name-only index, subdirectory); seven new pin `retired_as`: (a) the name,
+    # its casefold, its normalisation, its root-only scope; (b) samefile, its symlink exclusion; and the
+    # index calling it. The decode-before-extension entry re-anchored (its line is now repeated).
+    "scripts/explainer-serve.py": 54,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -6235,7 +6239,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2500)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2504)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
