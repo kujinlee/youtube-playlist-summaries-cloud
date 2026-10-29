@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 227 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 228 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -304,6 +304,22 @@ SRC_ROOT_ENV = "EXPLAINER_DOCS_ROOT"
 
 # ── pure helpers, all covered by --self-test ─────────────────────────────────────────────────────
 
+# ⛔ WHAT `Path.resolve()` RAISES DEPENDS ON THE PYTHON VERSION (backlog #389, CI red on PR #434): on a
+# symlink LOOP, 3.12 — the version CI pins — raises RuntimeError; 3.13+ raises OSError (ELOOP) or returns
+# a path. Every resolve on the serve and index paths goes through `resolve_or_none`, so no call site can treat
+# one version's loop as a crash and another's as a refusal.
+UNRESOLVABLE = (OSError, ValueError, RuntimeError)
+
+
+def resolve_or_none(p: pathlib.Path) -> pathlib.Path | None:
+    """`p.resolve()`, or None when it cannot be resolved — a loop (RuntimeError on 3.12, OSError later),
+    a NUL byte (ValueError), a name too long. Never raises."""
+    try:
+        return p.resolve()
+    except UNRESOLVABLE:
+        return None
+
+
 def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     """Resolve a URL path inside `root`, or None if it escapes or is not a servable type.
 
@@ -322,11 +338,14 @@ def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # OSError joins ValueError because a path can also be unresolvable for
     # filesystem reasons (ENAMETOOLONG, ELOOP), and this function's contract is
     # "a path inside root, or None" — never "or an exception".
+    # ⟳ backlog #389: the resolves are `resolve_or_none`, which also absorbs 3.12's RuntimeError on a loop.
+    candidate, base = resolve_or_none(root / raw), resolve_or_none(root)
+    if candidate is None or base is None:
+        return None                      # not a resolvable path at all
     try:
-        candidate = (root / raw).resolve()
-        candidate.relative_to(root.resolve())
-    except (OSError, ValueError):
-        return None                      # escaped the root, or is not a resolvable path at all
+        candidate.relative_to(base)
+    except ValueError:
+        return None                      # escaped the root
     if candidate.suffix.lower() not in SERVABLE:
         return None
     return candidate
@@ -830,7 +849,7 @@ MAX_HOPS = 16   # symlinks followed, link by link, before a chain is REFUSED (a 
 
 def _inside(p: pathlib.Path, root: pathlib.Path) -> bool:
     """Lexically inside the served root, as given or as resolved (`~/explainers` is itself a symlink)."""
-    bases = {pathlib.Path(os.path.normpath(root.absolute())), root.resolve()}
+    bases = {pathlib.Path(os.path.normpath(root.absolute())), resolve_or_none(root)} - {None}
     return any(p == b or b in p.parents for b in bases)
 
 
@@ -1362,7 +1381,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             text = target.read_text(errors="replace")
             if "raw=1" in (self.path.split("?", 1)[1] if "?" in self.path else ""):
                 return self._send(200, text.encode(), "text/plain; charset=utf-8")
-            rel = str(target.relative_to(root.resolve()))
+            rel = str(target.relative_to(resolve_or_none(root) or root))
             return self._send(200, source_shell(rel, text).encode(), "text/html; charset=utf-8")
         resolved = resolve_page(path, ROOT)
         if resolved is None or not resolved.is_file():
@@ -2627,6 +2646,27 @@ def _self_test_body() -> int:
             (r / "2026-10-28-alias.html").symlink_to("work-lines.html")
             (r / "2026-10-28-chain.html").symlink_to("2026-10-28-alias.html")
             (r / "2026-10-01-topic-live.html").write_text("<p>a dated live page</p>")
+        # ⛔ CI red on PR #434: Python 3.12 raises RuntimeError from resolve() on a symlink loop. Simulated
+        # here on any interpreter, so the 3.12 path is exercised where the suite runs.
+        def _try(fn):
+            try:
+                return fn()
+            except Exception as exc:                  # noqa: BLE001 - named, so the case reddens by name
+                return f"RAISED {type(exc).__name__}"
+        def _resolve_raises_runtime(fn):
+            _real = pathlib.Path.resolve
+            def _boom(self, *a, **k):
+                raise RuntimeError(f"Symlink loop from {str(self)!r}")
+            pathlib.Path.resolve = _boom
+            try:
+                return fn()
+            finally:
+                pathlib.Path.resolve = _real
+        case("⛔ #389: a resolve() that raises RuntimeError (3.12's symlink loop) is unresolvable, never a crash",
+             lambda: _resolve_raises_runtime(lambda: [_try(lambda: resolve_or_none(pathlib.Path("/x/a.html"))),
+                                                      _try(lambda: resolve_or_none(pathlib.Path("/y/b.html"))),
+                                                      _try(lambda: safe_path("/a.html", pathlib.Path("/x")))])
+             == [None, None, None])
         case("⭐ #389 r3 Z1: a chain THROUGH the retired name redirects at every link, alias and chain alike",
              lambda: _with_root(_codex_chain, lambda _r: [_drive_redirect(u) for u in (
                  "/2026-10-28-alias.html", "/2026-10-28-chain.html", "/work-lines.html")])

@@ -1823,7 +1823,10 @@ EXPECTED_MUTATIONS = {
     # index's call and the no-file name; (b) now pins hard links, and its symlink exclusion is re-anchored.
     # ⟳ #389 round-4 (terminal) fold: 59 -> 61 — classification and serving share ONE selection
     # (`served_candidate`): the named mismatch mutation, and serving a non-file candidate.
-    "scripts/explainer-serve.py": 61,
+    # ⟳ #389, CI red on PR #434 (Python 3.12 raises RuntimeError from resolve() on a loop): 61 -> 62 —
+    # every serve/index resolve goes through `resolve_or_none`; one entry pins RuntimeError in it, and the
+    # raw-containment entry is re-anchored onto the helper's call.
+    "scripts/explainer-serve.py": 62,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -6245,7 +6248,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2511)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2512)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

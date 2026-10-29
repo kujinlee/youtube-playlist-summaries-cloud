@@ -147,8 +147,8 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "        candidate = (root / raw).resolve()\n        candidate.relative_to(root.resolve())",
-        "        candidate = root / raw\n        candidate.relative_to(root)"
+        "    candidate, base = resolve_or_none(root / raw), resolve_or_none(root)",
+        "    candidate, base = root / raw, root"
       ]
     ],
     "expect": "safe_path refuses a traversal to a SERVABLE file that really exists outside the root"
@@ -698,6 +698,19 @@
     ],
     "expect": [
       "an extensionless path for a file that does not exist is None"
+    ]
+  },
+  {
+    "name": "#389 CI: RuntimeError (Python 3.12's symlink loop) escapes resolve_or_none",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "UNRESOLVABLE = (OSError, ValueError, RuntimeError)",
+        "UNRESOLVABLE = (OSError, ValueError)"
+      ]
+    ],
+    "expect": [
+      "⛔ #389: a resolve() that raises RuntimeError (3.12's symlink loop) is unresolvable, never a crash"
     ]
   }
 ]
