@@ -18250,3 +18250,7 @@ the one parser. Unknown kind or malformed marker → `ShapeError` (refused by th
 warning). The Bundle (tag) cell is untouched, so a kind is never an area. Retagged from the first-pass
 proposal; #210 and #251 moved defect → task by ruling 3; parent links #64 → #59 and #372 → #369 not
 written (absorption and provenance, not parentage).
+`check-reference-namespace.py` gains ONE exemption, approved by the owner on 2026-10-29: an added line
+that is byte-identical to a removed line once its kind marker is removed by `kind_mark` is not judged.
+The 306 old bare references that the retag resurfaced are queued as backlog #395, to be qualified by
+evidence.

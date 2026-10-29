@@ -64,6 +64,17 @@ adjacent qualifier and inline-code quoting. It does NOT decide which namespace a
   * commit messages and PR bodies. GitHub autolinks `#N` there, usefully and correctly, and a
     commit message cannot be amended after the fact. The habit still applies; the gate does not.
 
+⛔ ONE EXEMPTION FOR A MARKER-ONLY EDIT (backlog #394, the owner's decision 2026-10-29)
+------------------------------------------------------------------------------------
+Backlog #394 put a `⟦kind: …⟧` marker at the end of every backlog row's Item cell, which rewrites
+every row's LINE — so 306 bare references ALREADY ON MASTER, across 87 rows, read as "added". The
+added-lines axis exists so that NOTHING MIGRATES and only new prose is judged; a line whose only
+change is that marker adds no prose. So an added line is NOT judged when, with its kind marker
+removed by the parser's own rule (`gen-backlog-page.kind_mark`, never a second regex), it is
+BYTE-IDENTICAL to a line the same diff removes from the same file. Everything else is judged exactly
+as before: a new line, any change of wording, one changed character. Qualifying the old references by
+evidence is its own row, backlog #395.
+
 FAILS IF
 --------
   * an added line in a scoped file carries a bare `#N` with no adjacent qualifier and no inline-code
@@ -71,7 +82,7 @@ FAILS IF
   * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
     a pass.
 
-  --self-test  runs 26 cases over diff texts this file builds, including that each failure mode is
+  --self-test  runs 31 cases over diff texts this file builds, including that each failure mode is
                DETECTED and that both main() worlds are driven.
 """
 from __future__ import annotations
@@ -153,6 +164,7 @@ def violations(diff_text: str, scope: tuple[str, ...] = SCOPE) -> list[str]:
     """
     out: list[str] = []
     path: str | None = None
+    removed = removed_lines(diff_text)
     for line in diff_text.splitlines():
         if line.startswith("+++ b/"):
             path = line[6:]
@@ -162,6 +174,8 @@ def violations(diff_text: str, scope: tuple[str, ...] = SCOPE) -> list[str]:
         if not in_scope(path, scope):
             continue
         body = line[1:]
+        if marker_only(path, body, removed):
+            continue
         for m in BARE.finditer(body):
             if in_inline_code(body, m.start()):
                 continue
@@ -173,6 +187,61 @@ def violations(diff_text: str, scope: tuple[str, ...] = SCOPE) -> list[str]:
                 f"`PR {m.group(0)}`, `task {m.group(0)}` or whichever it is\n"
                 f"    {body.strip()[:160]}"
             )
+    return out
+
+
+_BACKLOG_PARSER = None
+
+
+def _backlog_parser():
+    """`gen-backlog-page`, loaded once — it OWNS the kind-marker rule this file must not restate."""
+    global _BACKLOG_PARSER
+    if _BACKLOG_PARSER is None:
+        import importlib.util as _ilu
+        spec = _ilu.spec_from_file_location("_gen_backlog_page", Path(__file__).with_name("gen-backlog-page.py"))
+        _BACKLOG_PARSER = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(_BACKLOG_PARSER)
+    return _BACKLOG_PARSER
+
+
+def without_kind_marker(body: str) -> str | None:
+    """The table row `body` with its Item cell's kind marker removed, or None if it carries none (or
+    an invalid one, which is then judged like any other line). The marker's trailing whitespace is
+    kept as the cell's own, so a marker-only edit reproduces the original line BYTE FOR BYTE."""
+    gb = _backlog_parser()
+    cells = gb.CELL_SPLIT.split(body)
+    if len(cells) < 4 or cells[0].strip():
+        return None
+    item = cells[2]
+    try:
+        rest, kind, _ = gb.kind_mark(item, cells[1].strip())
+    except gb.ShapeError:
+        return None
+    if kind is None:
+        return None
+    cells[2] = rest + item[len(item.rstrip()):]
+    return "|".join(cells)
+
+
+def marker_only(path: str, body: str, removed: dict[str, set[str]]) -> bool:
+    """True if `body`, an added line of `path`, differs from a line the diff removes from `path`
+    ONLY by its kind marker. PURE apart from loading the parser."""
+    stripped = without_kind_marker(body) if "⟦" in body else None
+    if stripped is None:
+        return False
+    same_file = removed.get(path, set())
+    return stripped in same_file
+
+
+def removed_lines(diff_text: str) -> dict[str, set[str]]:
+    """{path: every line the unified diff REMOVES from it}. PURE."""
+    out: dict[str, set[str]] = {}
+    path: str | None = None
+    for line in diff_text.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+        elif line.startswith("-") and not line.startswith(("--- a/", "--- /dev/null")) and path:
+            out.setdefault(path, set()).add(line[1:])
     return out
 
 
@@ -351,6 +420,26 @@ def _self_test_body() -> int:
             rc_hook_ok = main(["--base", hw_base], root=hookworld)
         case("...and OK there once qualified, so the second root is not a one-way fixture",
              rc_hook_ok, OK)
+
+    # ── backlog #394: a MARKER-ONLY edit of an existing row is not new prose ─────────────────
+    BL = "docs/backlog.md"
+    OLD = "| 31 | **Gate** see #17 and #18 | x | S | (tooling) | open |"
+    NEW = "| 31 | **Gate** see #17 and #18 ⟦kind: task⟧ | x | S | (tooling) | open |"
+
+    def _swap(old: str, new: str | None) -> str:
+        return (f"--- a/{BL}\n+++ b/{BL}\n@@ -1 +1 @@\n-{old}\n" + (f"+{new}\n" if new is not None else ""))
+    case("#394: a MARKER-ONLY change to an existing row is exempt", violations(_swap(OLD, NEW)), [])
+    case("#394: a marker plus ONE changed word is judged",
+         len(violations(_swap(OLD, NEW.replace("see #17", "per #17")))), 2)
+    case("#394: a NEW row carrying a marker and a bare #N is judged",
+         len(violations(_d(BL, "| 395 | **New** see #17 ⟦kind: task⟧ | x | S | (tooling) | open |"))), 1)
+    case("#394: a removed line with no matching added line changes nothing",
+         violations(_swap(OLD, "| 32 | **Other** see #19 | x | S | (tooling) | open |")), [
+             f"{BL}: bare `#19` with no namespace — write `backlog #19`, `PR #19`, `task #19` or whichever it is\n"
+             f"    | 32 | **Other** see #19 | x | S | (tooling) | open |"])
+    case("#394: the marker must match a line removed from the SAME file",
+         len(violations(f"--- a/docs/plugins.md\n+++ b/docs/plugins.md\n@@ -1 +0,0 @@\n-{OLD}\n"
+                        f"--- a/{BL}\n+++ b/{BL}\n@@ -1 +1 @@\n-| 7 | unrelated |\n+{NEW}\n")), 2)
 
     print(f"{cases - failed}/{cases} passed")
     return OK if failed == 0 else VIOLATION

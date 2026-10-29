@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 53 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 54 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -460,6 +460,10 @@ expected-because: standard for a hosted multi-tenant service.
           _kp, ["backlog.md row 1: `part of: backlog #9` names a row that does not exist",
                 "backlog.md row 1: `epic: nope` is not an anchor in docs/anchors.md"])
     check("#394: a row with NO kind is a WARNING, not a failure", "row 2 declares no kind" in _warn.getvalue(), True)
+    with _cl.redirect_stderr(_io.StringIO()) as _quiet:
+        _ok = kind_problems(_bl("| 3 | x ⟦kind: story · epic: feature-map⟧ | f | S | (w) | o |",
+                                "| 4 | y ⟦kind: defect · part of: backlog #3⟧ | f | S | (w) | o |"), {"feature-map", "cloud-sync"})
+    check("#394: valid kinds and parents raise nothing and warn nothing", (_ok, _quiet.getvalue()), ([], ""))
     # ── PER TAG, NORMALISED (backlog #381) ───────────────────────────────────────────────────────
     check("a cell with two tags puts BOTH in use",
           backlog_areas(_bl("| 1 | x | f | S | (tooling) (cloud / Money) | open |")),

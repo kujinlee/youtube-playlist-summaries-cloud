@@ -2117,7 +2117,9 @@ EXPECTED_MUTATIONS = {
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
     "scripts/check-doc-citations.py": 37,
-    "scripts/check-reference-namespace.py": 9,
+    # ⟳ 2026-10-29, backlog #394: 9 -> 14 — the marker-only exemption: applied, byte-identical, not for a
+    # new row, not for an unmarked line, and only against the SAME file's removed lines.
+    "scripts/check-reference-namespace.py": 14,
     "scripts/check-transcript-references.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -6253,7 +6255,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2526)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2531)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

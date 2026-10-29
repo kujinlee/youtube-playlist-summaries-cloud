@@ -115,5 +115,70 @@
     "expect": [
       "`deliverable #2` is a QUALIFIED reference, not a bare one"
     ]
+  },
+  {
+    "name": "#394: the marker-only exemption is never applied, so every retagged row's OLD references fire again",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        if marker_only(path, body, removed):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "#394: a MARKER-ONLY change to an existing row is exempt"
+    ]
+  },
+  {
+    "name": "#394: the comparison is LOOSE (same length, not byte-identical), so a changed word slips through",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    return stripped in same_file",
+        "    return len(stripped) in {len(x) for x in same_file}"
+      ]
+    ],
+    "expect": [
+      "#394: a marker plus ONE changed word is judged"
+    ]
+  },
+  {
+    "name": "#394: a marked line with nothing removed is exempt, so a NEW row escapes",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    same_file = removed.get(path, set())",
+        "    same_file = removed.get(path) or {stripped}"
+      ]
+    ],
+    "expect": [
+      "#394: a NEW row carrying a marker and a bare #N is judged"
+    ]
+  },
+  {
+    "name": "#394: any removal in a file exempts its unmarked added lines",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    if stripped is None:\n        return False",
+        "    if stripped is None:\n        return bool(removed.get(path))"
+      ]
+    ],
+    "expect": [
+      "#394: a removed line with no matching added line changes nothing"
+    ]
+  },
+  {
+    "name": "#394: the removed line may come from ANY file",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "marker_only(path, body, removed)",
+        "marker_only(\"*\", body, {\"*\": set().union(*removed.values())})"
+      ]
+    ],
+    "expect": [
+      "#394: the marker must match a line removed from the SAME file"
+    ]
   }
 ]
