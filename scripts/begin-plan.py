@@ -318,8 +318,8 @@ def _load_work_lines():
 def work_line(slug, plans: list[dict]) -> str:
     """PURE. The banner's `> **Line:**` row: the chain from `slug` back to its root.
 
-    ⭐ Asked 2026-10-22 alongside the page: the page answers "what did I never walk back to"
-    across every line; this answers "which line is THIS step on" at the moment a step starts,
+    ⭐ Asked 2026-10-22 alongside the work-lines page, whose job the goal tree's plan list now does
+    (backlog #389): that list answers "what did I never walk back to" across every line; this answers "which line is THIS step on" at the moment a step starts,
     where the reader actually is. Built from the plan files' own parent markers.
 
     ⛔ IT NEVER INVENTS A CHAIN. Three ways a walk can stop short, and each is SAID in the line:
@@ -378,8 +378,8 @@ def _banner_line(plan_abs: Path) -> str:
         return work_line("", plans)
     # ⟳ r3 Claude F5: `read_plans` reads EVERY checkout, and a slug held in two of them is
     # labelled `slug @ <checkout>` — so the bare stem found nothing and the banner said "not in
-    # .claude/plans/" about a file in its own directory. `row_for` is the page's own resolver
-    # (THIS checkout's copy, else main), so the banner and the page name the same row.
+    # .claude/plans/" about a file in its own directory. `row_for` is the plan reader's own
+    # resolver (THIS checkout's copy, else main), so the banner and the goal tree name the same row.
     return work_line(wl.row_for(plans, plan_abs.stem, ROOT) or plan_abs.stem, plans)
 
 

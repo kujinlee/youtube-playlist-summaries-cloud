@@ -257,8 +257,8 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "    if \".\" in bare.rsplit(\"/\", 1)[-1]:\n        return None",
-        "    if False:\n        return None"
+        "    if \".\" not in bare.rsplit(\"/\", 1)[-1]:\n        alt = safe_path(",
+        "    if True:\n        alt = safe_path("
       ]
     ],
     "expect": "resolve_page does NOT glue .html onto a name that already had an extension"
@@ -510,7 +510,7 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "        if retired_target(path):\n            self.send_response(302)",
+        "        if retired_target(path, ROOT):\n            self.send_response(302)",
         "        if False:\n            self.send_response(302)"
       ]
     ],
@@ -519,16 +519,42 @@
     ]
   },
   {
-    "name": "#389: the retired page's .html url is not redirected",
+    "name": "#389 r1: retirement reads the RAW url again, so an encoded or normalised spelling serves the stale copy",
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "RETIRED_PAGES = {\"/work-lines\": \"/work-lines-archive\", \"/work-lines.html\": \"/work-lines-archive\"}",
-        "RETIRED_PAGES = {\"/work-lines\": \"/work-lines-archive\"}"
+        "    for c in page_candidates(url_path, root):\n        if c.parent == base and c.name in RETIRED_FILES:\n            return RETIRED_FILES[c.name]\n    return None",
+        "    return RETIRED_FILES.get(url_path.lstrip(\"/\"))"
       ]
     ],
     "expect": [
-      "⛔ backlog #389: the retired work-lines page is NOT regenerable, and its urls go to the archive"
+      "⭐ #389 r1: every spelling of the retired page REDIRECTS, even with a stale copy on disk"
+    ]
+  },
+  {
+    "name": "#389 r1: the index lists a retired page's stale file",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "if p.is_file() and not is_fragment(p) and p.name not in RETIRED_FILES),",
+        "if p.is_file() and not is_fragment(p)),"
+      ]
+    ],
+    "expect": [
+      "⛔ #389 r1: the index does NOT list a retired page whose stale file exists"
+    ]
+  },
+  {
+    "name": "#389 r1: a same-named file in a subdirectory is taken for the retired page",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "        if c.parent == base and c.name in RETIRED_FILES:",
+        "        if c.name in RETIRED_FILES:"
+      ]
+    ],
+    "expect": [
+      "...but a same-named file in a SUBDIRECTORY is a different page, not the retired one"
     ]
   }
 ]

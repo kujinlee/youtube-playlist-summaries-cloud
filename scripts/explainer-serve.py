@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 207 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 211 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -167,15 +167,13 @@ PAGE_SOURCES = {
 # ⟳ backlog #389: EMPTY now — its one member, the work-lines page, retired. The case below still
 # holds this set equal to the pages with no sources, so the next exemption must be named here.
 STALE_EXEMPT: dict[str, str] = {}
-# ⛔ A RETIRED PAGE'S URL GOES TO ITS ARCHIVE (backlog #389). A stale copy of the old file may still sit
-# in a checkout's served directory (it was never tracked); serving it would present a retired page as
-# current, which is that row's FAILS-IF. So its url redirects to the frozen, tracked archive instead.
-RETIRED_PAGES = {"/work-lines": "/work-lines-archive", "/work-lines.html": "/work-lines-archive"}
-
-
-def retired_target(url_path: str) -> str | None:
-    """PURE. The archive a retired page's url now redirects to, or None for any other url."""
-    return RETIRED_PAGES.get(url_path)
+# ⛔ A RETIRED PAGE REDIRECTS TO ITS ARCHIVE, AND IS NEVER LISTED (backlog #389). A stale copy of the
+# old file may still sit in a checkout's served directory (it was never tracked); serving or listing it
+# would present a retired page as current, which is that row's FAILS-IF. ⟳ r1 (both halves): this was a
+# map of URL SPELLINGS, and `/%77ork-lines.html` and `/./work-lines.html` served the stale copy, because
+# retirement read the raw url while the resolver decoded and normalised it. It is now keyed by the
+# CANONICAL page — the file name the resolver would serve, from the root — see `retired_target`.
+RETIRED_FILES = {"work-lines.html": "/work-lines-archive"}
 
 
 def stale_verdict(built_ns: int, newest_source_ns: int) -> str:
@@ -758,7 +756,9 @@ def explainers(root: pathlib.Path) -> list[pathlib.Path]:
     """Explainer PAGES, newest first by mtime. Composer fragments are not pages — see above."""
     if not root.is_dir():
         return []
-    return sorted((p for p in root.glob("*.html") if p.is_file() and not is_fragment(p)),
+    # ⛔ backlog #389 r1: a RETIRED page's file is never listed (nor so reachable from `/` or /latest).
+    return sorted((p for p in root.glob("*.html")
+                   if p.is_file() and not is_fragment(p) and p.name not in RETIRED_FILES),
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -782,6 +782,35 @@ def latest_target(root: pathlib.Path) -> str | None:
     return "/" + urllib.parse.quote(found[0].name) if found else None
 
 
+def page_candidates(url_path: str, root: pathlib.Path) -> list[pathlib.Path]:
+    """The contained paths a GET for `url_path` may serve, in order: the direct path, then — for an
+    EXTENSIONLESS final segment only — the same name with `.html`. Existence is NOT checked here.
+    ONE rule shared by `resolve_page` (which serves the first that exists) and `retired_target` (which
+    asks whether one of them IS a retired page), so the two cannot read one request differently."""
+    out = []
+    hit = safe_path(url_path, root)
+    if hit is not None:
+        out.append(hit)
+    # ⛔ DECODE BEFORE ASKING "DID IT HAVE AN EXTENSION?" — see `resolve_page` for the measured history.
+    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
+    if "." not in bare.rsplit("/", 1)[-1]:
+        alt = safe_path(urllib.parse.quote(bare) + ".html", root)
+        if alt is not None:
+            out.append(alt)
+    return out
+
+
+def retired_target(url_path: str, root: pathlib.Path) -> str | None:
+    """The archive a request for a RETIRED page redirects to, or None. Decided on the canonical page
+    (`page_candidates`: decoded, `.`/`..` collapsed, `.html` added to a bare name), never the raw url,
+    and whether or not a stale copy of the file is on disk."""
+    base = root.resolve()
+    for c in page_candidates(url_path, root):
+        if c.parent == base and c.name in RETIRED_FILES:
+            return RETIRED_FILES[c.name]
+    return None
+
+
 def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     """The file a GET should serve, or None. `safe_path` first; then, for an EXTENSIONLESS path,
     the same name with `.html` — so `/backlog-table` serves `backlog-table.html`.
@@ -792,9 +821,6 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     Existence is checked HERE, unlike in `safe_path`, whose job is containment only. Returning a
     path to a file that is not there would make `/anything` look resolvable and push the real
     decision onto every caller."""
-    hit = safe_path(url_path, root)
-    if hit is not None and hit.is_file():
-        return hit
     # ⛔ DECODE BEFORE ASKING "DID IT HAVE AN EXTENSION?" — found 2026-09-16 by the Codex half,
     # retroactively, after three Claude rounds had cased `/secret.env` and never its encoded twin.
     # MEASURED on the pre-fix code, with `secret.env.html` present in the root:
@@ -804,9 +830,6 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # still judged a path by its pre-decoded form — a classifier and its resolver disagreeing about
     # what the same request says. ⚠ Unquote only; no `.lower()` and no normalisation beyond it,
     # because the question is the literal presence of a dot in the final segment.
-    bare = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0])
-    if "." in bare.rsplit("/", 1)[-1]:
-        return None                      # it HAD an extension; the fallback is not a second chance
     # ⛔⛔ RE-ENCODED, BECAUSE `safe_path` UNQUOTES AGAIN — and the first version of this fix did
     # not, which MOVED the bypass instead of closing it. `bare` is now decoded (above), and handing
     # it to `safe_path` decodes a SECOND time, so the classifier judged one decoding and the
@@ -818,8 +841,9 @@ def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     # The middle and bottom rows INVERTED between master and the first fix — i.e. it was a
     # regression at `%25`, not a gap it failed to reach. Quoting restores the invariant the rule
     # needs: the fallback resolves exactly the string the extension test judged.
-    alt = safe_path(urllib.parse.quote(bare) + ".html", root)
-    return alt if alt is not None and alt.is_file() else None
+    # The candidates are `page_candidates`, shared with `retired_target` (backlog #389): the direct
+    # path, then the `.html` fallback for an extensionless name. The first that EXISTS is served.
+    return next((c for c in page_candidates(url_path, root) if c.is_file()), None)
 
 
 def index_html(root: pathlib.Path) -> str:
@@ -1164,9 +1188,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
-        if retired_target(path):
+        if retired_target(path, ROOT):
             self.send_response(302)
-            self.send_header("Location", retired_target(path))
+            self.send_header("Location", retired_target(path, ROOT))
             self.end_headers()
             return
         if path == "/_rev":
@@ -1536,9 +1560,11 @@ def _self_test_body() -> int:
                       all(STALE_EXEMPT.values())) == ([], [], True))
         case("⛔ backlog #389: the retired work-lines page is NOT regenerable, and its urls go to the archive",
              lambda: ("work-lines" not in REGENERABLE,
-                      [retired_target(u) for u in ("/work-lines", "/work-lines.html", "/goal-tree")])
+                      [retired_target(u, REPO / "docs" / "explainers")
+                       for u in ("/work-lines", "/work-lines.html", "/goal-tree")])
              == (True, ["/work-lines-archive", "/work-lines-archive", None]))
-        case("...and a live page's url is not redirected", lambda: retired_target("/dashboard") is None)
+        case("...and a live page's url is not redirected",
+             lambda: retired_target("/dashboard", REPO / "docs" / "explainers") is None)
         case("...and the archive it redirects to is a real, tracked file that says it is ARCHIVED",
              lambda: "ARCHIVED" in (REPO / "docs/explainers/work-lines-archive.html").read_text())
 
@@ -2431,6 +2457,32 @@ def _self_test_body() -> int:
             return got.get("code"), got.get("Location")
         case("⭐ backlog #389: GET /work-lines REDIRECTS to the archive, end to end through do_GET",
              lambda: _drive_redirect("/work-lines") == (302, "/work-lines-archive"))
+        # ⛔ backlog #389 r1 (both halves): with a STALE work-lines.html on disk, every spelling of the
+        # page — encoded, `./`-normalised, bare, `.html` — redirects; none serves the stale copy, and
+        # the index does not list it. A temp root, so the real served directory is never touched.
+        def _with_stale_root(fn):
+            import tempfile as _tfr
+            with _tfr.TemporaryDirectory() as _sd:
+                _sr = pathlib.Path(_sd)
+                (_sr / "work-lines.html").write_text("<p>STALE live page</p>")
+                (_sr / "2026-10-01-topic-live.html").write_text("<p>a live page</p>")
+                _real_root = globals()["ROOT"]
+                globals()["ROOT"] = _sr
+                try:
+                    return fn(_sr)
+                finally:
+                    globals()["ROOT"] = _real_root
+        case("⭐ #389 r1: every spelling of the retired page REDIRECTS, even with a stale copy on disk",
+             lambda: _with_stale_root(lambda _r: [_drive_redirect(u) for u in (
+                 "/%77ork-lines.html", "/./work-lines.html", "/work-lines", "/work-lines.html",
+                 "/sub/../work-lines.html")]) == [(302, "/work-lines-archive")] * 5)
+        case("...but a same-named file in a SUBDIRECTORY is a different page, not the retired one",
+             lambda: _with_stale_root(lambda _r: retired_target("/sub/work-lines.html", _r)) is None)
+        case("...while a live page beside it is still served, not redirected",
+             lambda: _with_stale_root(lambda _r: _drive_get("/2026-10-01-topic-live.html")[0]) == 200)
+        case("⛔ #389 r1: the index does NOT list a retired page whose stale file exists",
+             lambda: _with_stale_root(lambda _r: ("work-lines.html" not in index_html(_r),
+                                                  "2026-10-01-topic-live.html" in index_html(_r))) == (True, True))
         def _drive_post(route, raw: bytes, length=None, headers=None):
             got = {}
             h = object.__new__(Handler)

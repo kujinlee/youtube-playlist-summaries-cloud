@@ -896,8 +896,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    elif not plan_dir.is_dir():",
-        "    elif False:"
+        "            if not plan_dir.is_dir():\n                notes0.append(",
+        "            if False:\n                notes0.append("
       ]
     ],
     "expect": [
@@ -941,6 +941,45 @@
     ],
     "expect": [
       "#389: a plan whose recorded parent no longer exists says so, instead of reading as a new line"
+    ]
+  },
+  {
+    "name": "#389 r1 X3: a missing main .claude/plans/ ends the read, so a worktree's plans vanish",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                read_from = next((pd for _, pd in dirs if pd.is_dir()), None)",
+        "                read_from = None"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r1 X3: a worktree's plans are read when the MAIN checkout has no .claude/plans/, and the missing directory is still a note"
+    ]
+  },
+  {
+    "name": "#389 r1 X4: the timeline keys plans by their display label, so two alike-labelled plans overwrite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return json.dumps(p.get(\"id\", p[\"plan\"]))",
+        "    return json.dumps(p[\"plan\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r1 X4: ticking one of two alike-labelled plans IS progress in the timeline, not a wording change"
+    ]
+  },
+  {
+    "name": "#389 r1 X4: a plan's id is its display label",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "out.append({\"id\": _json_id(wl.plan_key(n)),",
+        "out.append({\"id\": wl.label(n),"
+      ]
+    ],
+    "expect": [
+      "⭐ #389 r1 X4: two plans that DISPLAY alike stay two records, keyed by (checkout, slug)"
     ]
   }
 ]

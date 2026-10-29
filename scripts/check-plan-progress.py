@@ -343,7 +343,7 @@ def decide(
     ), unticked
 
 
-# ── the work line: what a FINISHED plan leaves behind, and the page it feeds ─────────────────
+# ── the work line: what a FINISHED plan leaves behind, for the next plan's lineage ───────────
 
 def render_last_plan(plan_rel: str, branch: str | None, when: str, *,
                      session: str | None = None, fingerprint: str | None = None) -> str:

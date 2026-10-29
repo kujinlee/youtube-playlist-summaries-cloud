@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 162 cases
+    python3 scripts/goal-tree.py --self-test                 # 165 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -324,11 +324,12 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     cn = {(n["source"], n["ref"]) for n in cur.get("needs") or []}
     out += [f"needs you, new: {r} ({s})" for s, r in sorted(cn - pn)]
     out += [f"needs you, cleared: {r} ({s})" for s, r in sorted(pn - cn)]
-    pp = {p["plan"]: p for p in prev.get("plans") or []}
-    cp = {p["plan"]: p for p in cur.get("plans") or []}
-    out += [f"plan not ticked closed, new: {k} ({cp[k]['ticked']}/{cp[k]['total']})" for k in sorted(set(cp) - set(pp))]
-    out += [f"plan no longer owing: {k}" for k in sorted(set(pp) - set(cp))]
-    out += [f"plan progress: {k} {pp[k]['ticked']}/{pp[k]['total']} → {cp[k]['ticked']}/{cp[k]['total']}"
+    pp = {_plan_id(p): p for p in prev.get("plans") or []}
+    cp = {_plan_id(p): p for p in cur.get("plans") or []}
+    out += [f"plan not ticked closed, new: {cp[k]['plan']} ({cp[k]['ticked']}/{cp[k]['total']})"
+            for k in sorted(set(cp) - set(pp))]
+    out += [f"plan no longer owing: {pp[k]['plan']}" for k in sorted(set(pp) - set(cp))]
+    out += [f"plan progress: {cp[k]['plan']} {pp[k]['ticked']}/{pp[k]['total']} → {cp[k]['ticked']}/{cp[k]['total']}"
             for k in sorted(set(pp) & set(cp)) if pp[k]["ticked"] != cp[k]["ticked"]]
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
@@ -495,6 +496,17 @@ def counts_conflict(item: dict) -> bool:
 
 
 # ── PLANS NOT TICKED CLOSED: the work-lines page's job, absorbed (backlog #389) ──────────────
+def _json_id(key) -> list | str:
+    """A plan key as it survives JSON: a `(checkout, slug)` tuple becomes a list, a bare slug stays."""
+    return [str(k) for k in key] if isinstance(key, tuple) else str(key)
+
+
+def _plan_id(p: dict) -> str:
+    """The key a snapshot's plan records are compared on — the identity, never the display label (a
+    record logged before r1 carries no `id`, and falls back to its label)."""
+    return json.dumps(p.get("id", p["plan"]))
+
+
 def open_plans(plans: list[dict], wl) -> list[dict]:
     """PURE over `wl` (gen-work-lines, THE plan reader). Every plan in a line that still owes something,
     each with its own progress and the line's objective — the question the work-lines page answered.
@@ -511,7 +523,10 @@ def open_plans(plans: list[dict], wl) -> list[dict]:
         while stack:
             n, parent = stack.pop()
             if not n["done"] and not n["empty"]:
-                out.append({"plan": wl.label(n), "ticked": n["ticked"], "total": n["total"],
+                # ⟳ r1 X4: `id` is the reader's (checkout, slug) identity; `plan` is DISPLAY only, and
+                # two plans can display alike (`kid` held twice beside a literal `kid @ main.md`).
+                out.append({"id": _json_id(wl.plan_key(n)),
+                            "plan": wl.label(n), "ticked": n["ticked"], "total": n["total"],
                             "touched": n["touched"], "line": wl.label(root),
                             "serving": root.get("serving"),
                             # a parent build_forest could not find is NAMED, never dropped silently
@@ -607,12 +622,22 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
     plan_dir = main / ".claude" / "plans"
     if main_why:
         errors["plans"] = f"the main checkout could not be named, so its plans were NOT READ ({main_why})"
-    elif not plan_dir.is_dir():
-        src["plan_notes"] = [f"no .claude/plans/ in the main checkout ({main}) — no plan is armed there"]
     else:
         try:
-            plans, notes = (read_plans or wl.read_plans_noted)(plan_dir)
-            src["plans"], src["plan_notes"] = open_plans(plans, wl), list(notes)
+            # ⟳ r1 X3: a main checkout with no `.claude/plans/` does NOT end the read — a linked
+            # worktree's plans are still read, through any checkout's directory that exists (the reader
+            # enumerates every checkout from there). The missing directory stays a note.
+            notes0, read_from = [], plan_dir
+            if not plan_dir.is_dir():
+                notes0.append(f"no .claude/plans/ in the main checkout ({main}) — no plan is armed there")
+                dirs, dnotes = wl.plan_dirs(main)
+                notes0 += list(dnotes)
+                read_from = next((pd for _, pd in dirs if pd.is_dir()), None)
+            if read_from is None:
+                src["plan_notes"] = notes0
+            else:
+                plans, notes = (read_plans or wl.read_plans_noted)(read_from)
+                src["plans"], src["plan_notes"] = open_plans(plans, wl), notes0 + list(notes)
         except Exception as exc:                  # noqa: BLE001 - NOT READ, named, never "none"
             errors["plans"] = f"{plan_dir} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
     return src
@@ -1410,7 +1435,7 @@ def _self_test_body() -> int:
          ["gone (no longer exists)"])
     import types as _types
     _wl_up = _types.SimpleNamespace(build_forest=_wl.build_forest, line_state=_wl.line_state,
-                                    label=lambda r: r["slug"].upper())
+                                    plan_key=_wl.plan_key, label=lambda r: r["slug"].upper())
     case("#389: names are the plan READER's labels, never re-derived here",
          [(p["plan"], p["line"], p["parent"]) for p in open_plans(_pf, _wl_up)],
          [("KID", "SHIP", "SHIP"), ("BARE", "BARE", None)])
@@ -1421,11 +1446,27 @@ def _self_test_body() -> int:
           any(ln.startswith("├─ kid · 1/2 · 2026-10-22 · branched from ship · line ship: \"ship the page\"")
               for ln in _pt),
           "⚠ plans: a checkout could not be read" in _pt), (True, True, True))
-    _ps2 = dict(_ps, plans=[dict(_op[0], ticked=2), {**_op[1], "plan": "new-one"}])
+    _ps2 = dict(_ps, plans=[dict(_op[0], ticked=2), {**_op[1], "plan": "new-one", "id": "new-one"}])
     case("#389: the timeline reports a plan's progress, a new owing plan, and one no longer owing",
          sorted(c for c in changes(_ps, _ps2) if c.startswith("plan")),
          ["plan no longer owing: bare", "plan not ticked closed, new: new-one (0/3)",
           "plan progress: kid 1/2 → 2/2"])
+    # ⟳ r1 X4 (Codex's collision): `kid` held in main AND a worktree, beside a literal `kid @ main.md` in
+    # main. Two records display as `kid @ main`; ticking the LITERAL file must still read as progress.
+    _c1 = {**_wl.parse_plan("kid", "- [ ] a\n- [ ] b", "2026-10-01"), "key": ("/m", "kid"), "where": "main"}
+    _c2 = {**_wl.parse_plan("kid @ main", "- [ ] a\n- [ ] b", "2026-10-01"), "key": ("/m", "kid @ main")}
+    _c3 = {**_wl.parse_plan("kid", "- [ ] a", "2026-10-01"), "key": ("/w", "kid"), "where": "wt"}
+    _before = open_plans([_c1, _c2, _c3], _wl)
+    # Ticking the main checkout's `kid` — the record a label-keyed dict overwrites with the literal
+    # `kid @ main.md`, measured: keyed by label, this progress vanished from the timeline.
+    _c1t = {**_wl.parse_plan("kid", "- [x] a\n- [ ] b", "2026-10-01"), "key": ("/m", "kid"), "where": "main"}
+    _after = open_plans([_c1t, _c2, _c3], _wl)
+    case("⭐ #389 r1 X4: two plans that DISPLAY alike stay two records, keyed by (checkout, slug)",
+         (sorted(p["plan"] for p in _before), len({_plan_id(p) for p in _before})),
+         (["kid @ main", "kid @ main", "kid @ wt"], 3))
+    case("⭐ #389 r1 X4: ticking one of two alike-labelled plans IS progress in the timeline, not a wording change",
+         [c for c in changes(dict(_ps, plans=_before), dict(_ps, plans=_after)) if c.startswith("plan")],
+         ["plan progress: kid @ main 0/2 → 1/2"])
     case("⭐ #389: the page links the FROZEN work-lines archive",
          f'<a href="{WORK_LINES_ARCHIVE}">the work-lines archive</a>' in render_page([_ps], "t"), True)
 
@@ -1628,6 +1669,46 @@ def _self_test_body() -> int:
              buf_nomain.getvalue()), (2, True))
         case("⛔ a checkout with no threads file is CANNOT RUN, saying which file",
              (rc_none, f"{THREADS_REL} does not exist" in buf.getvalue()), (2, True))
+
+    # ── r1 X3 (Codex's arrangement): a REAL git worktree whose plans exist while the MAIN checkout has
+    # no `.claude/plans/` at all. Real git, because `plan_dirs` reads `git worktree list`; the suite runs
+    # inside `fixture_git.isolated()`, so no caller GIT_* reaches it.
+    import subprocess as _sp
+    with tempfile.TemporaryDirectory() as dx:
+        _m = pathlib.Path(dx).resolve() / "main"
+        _m.mkdir()
+
+        def _git(*args, cwd=_m):
+            return _sp.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+                            "-C", str(cwd), *args], capture_output=True, text=True, timeout=60)
+        _git("init", "-q")
+        _git("commit", "-q", "--allow-empty", "-m", "root")
+        _side = pathlib.Path(dx).resolve() / "side"
+        _git("worktree", "add", "-q", str(_side), "-b", "side")
+        (_side / ".claude" / "plans").mkdir(parents=True)
+        (_side / ".claude" / "plans" / "side-only.md").write_text("<!-- parent: - -->\n- [ ] a")
+        (_m / "docs").mkdir()
+        (_m / DASHBOARD_REL).write_text(DASH_FIXTURE)
+        (_m / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
+
+        def _run_x3(cmd, cwd, timeout):
+            if cmd[:2] == ["git", "rev-parse"]:
+                return 0, str(_m / ".git") + "\n"
+            if cmd[:2] == ["git", "fetch"]:
+                return 0, ""
+            if cmd[:2] == ["git", "log"]:
+                return 0, "abc1234\tone (#20)\n"
+            if cmd[:3] == ["gh", "pr", "list"]:
+                return 0, "[]"
+            if cmd[:2] == ["gh", "repo"]:
+                return 0, '{"nameWithOwner": "o/r"}'
+            return 1, "unexpected"
+        _sx = collect(_m, _run_x3)
+        case("⭐ #389 r1 X3: a worktree's plans are read when the MAIN checkout has no .claude/plans/, "
+             "and the missing directory is still a note",
+             ([p["plan"] for p in _sx["plans"]], "plans" in _sx["errors"],
+              any("no .claude/plans/ in the main checkout" in n for n in _sx["plan_notes"])),
+             (["side-only"], False, True))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

@@ -122,9 +122,9 @@ THE THREAD CLASS (`unknown-thread`, owner's decision 2026-10-22 — option A: wa
 The goal tree's plan list (read by `scripts/gen-work-lines.py`; the work-lines page that first showed
 it retired, backlog #389) knows a thread exactly when
 `.claude/plans/<slug>.md` exists in ANY checkout — armed or not, finished or not. On 2026-10-22 a side job was run
-on banners alone, so it had no plan file and never reached that page, and none of the three
+on banners alone, so it had no plan file and never reached that list, and none of the three
 classes above could notice: they ask whether a bannered job STOPPED PARTWAY, not whether the
-thread it ran on is one the page knows. The rule:
+thread it ran on is one the plan reader knows. The rule:
 
     warn  <=>  the judged turn's LAST banner `> **Thread:**` row names a READABLE slug, AND
                no checkout's `.claude/plans/<slug>.md` exists.
@@ -159,8 +159,8 @@ thread it ran on is one the page knows. The rule:
     `also=<class>` naming any original class that fired the same turn (`also=-` for none), so the
     count of turns ONLY this class caught is one grep (`thread_log_line`).
   * ⭐ EVERY CHECKOUT (owner's decision 2026-10-22, option A). The plan files are those of every
-    checkout `git worktree list` reports, via `gen-work-lines.plan_dirs` — the page's own reader,
-    so the two cannot disagree. Measured: two `chrome-bar-fold` turns warned while that plan sat in
+    checkout `git worktree list` reports, via `gen-work-lines.plan_dirs` — the reader the goal
+    tree's plan list uses, so the two cannot disagree. Measured: two `chrome-bar-fold` turns warned while that plan sat in
     a worktree's `.claude/plans/`. If git cannot answer, only this checkout is read and the warning
     SAYS so; an unlistable directory is skipped and named. A registered checkout whose folder is
     GONE is skipped silently — it holds no plans to miss (r3 Claude F2). If NOTHING could be
@@ -169,8 +169,8 @@ thread it ran on is one the page knows. The rule:
     already answers the question, so that turn is not warned about.
   * ⚠ A REUSED SLUG IS NOT SEEN — a documented bound, accepted by the coordinator (r2 Codex 2). A
     new side job named like an OLD plan's slug is hidden behind the old file: the check is the
-    filename, not whether that plan describes this work, and the page then shows the new work
-    under the old plan. No lifecycle is tracked to close this.
+    filename, not whether that plan describes this work, and the goal tree then shows the new
+    work under the old plan. No lifecycle is tracked to close this.
 
 MODE: WARN through the same channel and log as the rest (`unknown-thread`, detail
 `<kind> <slug>`), naming the command that creates the plan. BLOCK is ONE named switch,
@@ -571,11 +571,11 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
     return best
 
 
-# ── THE FOURTH CLASS: a THREAD the work-lines page does not know (added 2026-10-22) ──────────
-# The banner's `> **Thread:**` row names the thread from the PLAN SLUG (CLAUDE.md), and
-# `scripts/gen-work-lines.py` shows a thread exactly when `.claude/plans/<slug>.md` exists —
-# armed or not, finished or not. A thread switched to by banner alone has no such file and never
-# reaches that page. See the module docstring, section THE THREAD CLASS, for the rule and bounds.
+# ── THE FOURTH CLASS: a THREAD with no plan file (added 2026-10-22) ──────────────────────────
+# The banner's `> **Thread:**` row names the thread from the PLAN SLUG (CLAUDE.md), and the plan
+# reader (`scripts/gen-work-lines.py`, which the goal tree's plan list reads through) knows a thread
+# exactly when `.claude/plans/<slug>.md` exists — armed or not, finished or not. A thread switched
+# to by banner alone has no such file and never reaches that list. See the module docstring, section THE THREAD CLASS, for the rule and bounds.
 THREAD_RE = re.compile(r"^>\s*\*\*Thread:\*\*(.*)$")
 _SLUG = r"`([A-Za-z0-9][A-Za-z0-9._-]*)`"
 _LEADING_SLUG_RE = re.compile(r"^\s*" + _SLUG)
@@ -1027,10 +1027,10 @@ def known_threads(plan_dir: Path) -> set[str] | None:
 
 
 def known_everywhere() -> tuple[set[str] | None, list[str]]:
-    """The threads the work-lines page shows: the plan slugs of EVERY checkout. -> (known, notes).
+    """The threads the plan reader knows: the plan slugs of EVERY checkout. -> (known, notes).
 
     ⭐ The owner's decision 2026-10-22 (option A). The directories come from
-    `gen-work-lines.plan_dirs` — the page's own reader, so this check and the page cannot disagree
+    `gen-work-lines.plan_dirs` — the goal tree's plan reader, so this check and that list cannot disagree
     about which checkouts count. `notes` name what was NOT read (git unable to list worktrees, a
     directory that exists and could not be listed); a warning carries them.
     ⚠ READ AT JUDGING TIME, NOT SAMPLED: a plan created after the turn ended already answers it.
