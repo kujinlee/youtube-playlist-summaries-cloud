@@ -87,15 +87,19 @@ the repo is public (backlog #194), so git's own pre-push hook (`.githooks/pre-pu
 of a checkout's plan objective or list item, consecutive added lines joined, unless those eight words are
 already on the remote. It reads what git says is sent (every ref, every commit in the range), so the
 command's form does not matter. CI has no plans (a zero over nothing), so CI runs only its `--self-test`.
-- **Commit messages, annotated tags and NEW file names are pushed text too**, and are scanned the same way.
+- **Commit messages, annotated tags (peeled, a tag of a tag included) and ADDED file names (empty files too)
+  are pushed text**, and are scanned the same way.
 - **Enabled per clone** by `scripts/install-git-hooks.sh` (sets `core.hooksPath .githooks`, shared by
   worktrees; refuses to replace another hooks path), which the SessionStart hook
   `.claude/hooks/ensure-plan-leak-hook.sh` runs when the path is unset — and when it points ELSEWHERE, warns
   LOUDLY that the gate is OFF and changes nothing. `--status` says whether it is active in THIS checkout — a
   worktree on a branch older than `.githooks/pre-push` pushes unchecked.
-- **The agent push hook refuses the off-switches** it can see: `core.hooksPath` on a push command, and
-  `ALLOW_PLAN_LEAK=1` without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence
-  in depth only; the pre-push hook owns the decision.
+- **The agent push hook refuses the off-switches** it can see, after shlex-tokenising the command:
+  `core.hooksPath` on a push command, and `ALLOW_PLAN_LEAK=1` without the owner's `ALLOW_DANGEROUS_PUSH=1`
+  (a push command it cannot tokenise is refused too). It reads command text, so it is defence in depth
+  only; the pre-push hook owns the decision.
+- ⛔ **The gate prevents ACCIDENTAL publication. It is not a boundary against a determined agent:** anything
+  with a shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
 - **hits → the push is refused**, naming `path:line`, the commit and the plan FILE, never the words, in every
   channel. The owner sees the words with `python3 scripts/check-plan-leak.py --show` in a terminal (it
   refuses a non-terminal stdout). Reword the commit; a judged coincidence is pushed with

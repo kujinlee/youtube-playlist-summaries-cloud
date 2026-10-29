@@ -594,34 +594,67 @@
   "expect": "--install-hooks sets core.hooksPath, and --status then says ACTIVE"
  },
  {
-  "name": "a NEW file's path is no longer scanned, so a file NAMED with plan words is pushed",
+  "name": "added file paths are no longer scanned, so an EMPTY file NAMED with plan words is pushed",
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "            if path and new_file:",
-    "            if False:"
+    "                     + parse_added_paths(added_paths(root, heads, exclude)) + tag_runs(root, heads))",
+    "                     + tag_runs(root, heads))"
+   ]
+  ],
+  "expect": "⭐ METADATA: an EMPTY new file (no hunk at all) NAMED with plan words is REFUSED"
+ },
+ {
+  "name": "the added-paths listing filters for MODIFIED files instead of added ones",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "\"--diff-filter=A\"",
+    "\"--diff-filter=M\""
    ]
   ],
   "expect": "⭐ METADATA: a NEW FILE NAMED with plan words is REFUSED, though its content is clean"
  },
  {
-  "name": "every file is treated as new, so a modified file's unchanged name is judged again",
+  "name": "parse_added_paths keeps git's record newline in the first name",
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "            new_file = line == \"--- /dev/null\"",
-    "            new_file = True"
+    "            name = name.lstrip(\"\\n\")",
+    "            pass"
    ]
   ],
-  "expect": "...but a MODIFIED file's path is not"
+  "expect": "parse_added_paths: each ADDED file's path is a run of its own, at line 0, under its commit"
+ },
+ {
+  "name": "a tag of a tag is not PEELED, so the middle tag's message is pushed unread",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "            todo.append(tag_target(text))",
+    "            pass"
+   ]
+  ],
+  "expect": "⭐ METADATA: a tag of a tag is PEELED — plan text in the MIDDLE tag's message is REFUSED"
+ },
+ {
+  "name": "tag_target never finds the object a tag points at",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return m.group(1) if m else \"\"",
+    "    return \"\""
+   ]
+  ],
+  "expect": "tag_target reads the object a tag points at"
  },
  {
   "name": "commit messages are not scanned",
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "            runs += parse_messages(pushed_messages(root, heads, exclude)) + tag_runs(root, heads)",
-    "            runs += tag_runs(root, heads)"
+    "            runs += (parse_messages(pushed_messages(root, heads, exclude))",
+    "            runs += ([]"
    ]
   ],
   "expect": "⭐ METADATA: plan text in a pushed COMMIT MESSAGE is REFUSED"
@@ -631,8 +664,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "            for k in kinds if k.endswith(\" tag\")]",
-    "            for k in kinds if False]"
+    "        if kind == \"tag\":",
+    "        if False:"
    ]
   ],
   "expect": "⭐ METADATA: plan text in a pushed ANNOTATED TAG's message is REFUSED"

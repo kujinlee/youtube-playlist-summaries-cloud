@@ -5,7 +5,7 @@
     scripts/install-git-hooks.sh [--status]             # enable it once per clone (`core.hooksPath .githooks`)
     python3 scripts/check-plan-leak.py [--base B] [--head H]   # by hand: the commits in H not in B
     python3 scripts/check-plan-leak.py --show           # by hand, in a TERMINAL: also print the matched words
-    python3 scripts/check-plan-leak.py --self-test      # 102 cases
+    python3 scripts/check-plan-leak.py --self-test      # 105 cases
 
 WHY THIS EXISTS (backlog #393). The repo is PUBLIC and the session plans under `.claude/plans/` are
 gitignored, which the owner decided on 2026-10-29 they STAY (backlog #194). Measured 2026-10-28 on PR #434:
@@ -34,7 +34,8 @@ THE RULE:
   * A MARKER-ONLY line is judged on its marker alone: an added line equal to a line the same commit REMOVES
     from the same file once one `⟦…⟧` kind marker is stripped (backlog #394).
   * METADATA is pushed text too: every scanned commit's full message (`%B`), every pushed ANNOTATED TAG
-    object (`git cat-file tag`), and every NEW file's path (security review of the redesign, 2026-10-29).
+    object, PEELED through a tag of a tag (`git cat-file tag`), and every ADDED file's path, empty files
+    included (`--diff-filter=A`; two security passes over the redesign, 2026-10-29).
   * A run ALREADY PUBLIC is not a hit: one present in a file at a remote tip, found with THE SAME
     normalisation as the matcher, in Python (X10; `git grep -i` does not fold `ß` to `ss`).
 
@@ -65,6 +66,8 @@ not plan text. A remote tip this clone has never fetched cannot be read, so its 
 changes nothing when it points elsewhere), and `.claude/hooks/block-default-branch-push.sh` refuses an agent's
 push that sets `core.hooksPath` or `ALLOW_PLAN_LEAK=1` without `ALLOW_DANGEROUS_PUSH=1`. That one reads command
 TEXT, so it is defence in depth only; this hook owns the decision.
+⛔ THE GATE PREVENTS *ACCIDENTAL* PUBLICATION. It is not a boundary against a determined agent: anything with a
+shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
 
 WHAT WOULD MAKE THIS FAIL (its falsifier): a push whose commits add an 8-word run of plan text succeeds through
 the installed hook, or the hook allows a push when it could not read the plans or the remote.
@@ -157,26 +160,23 @@ def parse_log(log_text: str):
     """PURE. `pushed_log`'s text -> (runs, removed).
 
     runs: [(commit, path, [(new line number, body)…])] — each a maximal run of CONSECUTIVE added lines in one
-    hunk, plus, for a NEW file, a run of its own path at line 0. removed: {(commit, path): every line that commit removes from that path}. A `---`/`+++` pair is a
+    hunk. (A new file's NAME is read by `parse_added_paths`, which also sees an EMPTY file with no hunk.) removed: {(commit, path): every line that commit removes from that path}. A `---`/`+++` pair is a
     header only between `diff --git` and the first hunk, so an added line whose text starts `++ ` is content.
     A deleted file has no `b/` side: its lines are removed, never added."""
     runs: list = []
     removed: dict[tuple[str, str], set[str]] = {}
-    commit, path, old, header, n, run, new_file = "", None, None, False, 0, None, False
+    commit, path, old, header, n, run = "", None, None, False, 0, None
     for line in log_text.split("\n"):
         if line.startswith(COMMIT_TAG):
             commit, path, old, header, run = line[len(COMMIT_TAG):].strip(), None, None, False, None
         elif line.startswith("diff --git "):
-            header, path, old, run, new_file = True, None, None, None, False
+            header, path, old, run = True, None, None, None
         elif header and line.startswith("--- "):
             p = unquote_path(line[4:])
             old = p[2:] if p.startswith("a/") else None
-            new_file = line == "--- /dev/null"
         elif header and line.startswith("+++ "):
             p = unquote_path(line[4:])
             path = p[2:] if p.startswith("b/") else None
-            if path and new_file:
-                runs.append((commit, path, [(0, path)]))   # a NEW file's NAME is pushed text too
         elif line.startswith("@@"):
             header, run = False, None
             m = HUNK.match(line)
@@ -205,6 +205,20 @@ def parse_messages(text: str) -> list:
         sha, sep, body = rec.lstrip("\n").partition("\x01")
         if sep and sha.strip():
             out.append((sha.strip(), "<commit message>", list(enumerate(body.split("\n"), 1))))
+    return out
+
+
+def parse_added_paths(text: str) -> list:
+    """PURE. `added_paths`' text (`\x01<sha>\0` then NUL-separated paths, per commit) -> a run per ADDED file
+    holding its path at line 0. Taken from `--diff-filter=A`, not from diff headers: an EMPTY new file has
+    no hunk and no `+++` line worth trusting, and its NAME is pushed text all the same."""
+    out = []
+    for rec in text.split("\x01"):
+        sha, _, rest = rec.partition("\0")
+        for name in rest.split("\0"):
+            name = name.lstrip("\n")
+            if sha.strip() and name:
+                out.append((sha.strip(), name, [(0, name)]))
     return out
 
 
@@ -362,14 +376,34 @@ def pushed_messages(root: pathlib.Path, heads: list[str], exclude: list[str]) ->
     return _git(root, "log", "-z", "--format=%H%x01%B", *heads, "--not", *exclude, "--").decode("utf-8", "replace")
 
 
+def added_paths(root: pathlib.Path, heads: list[str], exclude: list[str]) -> str:
+    """Every file ADDED by a commit `pushed_log` scans (renames count as adds), NUL-separated, unquoted."""
+    return _git(root, "log", "--diff-filter=A", "--name-only", "-z", "--no-renames",
+                "--diff-merges=first-parent", "--format=%x01%H", *heads, "--not", *exclude, "--"
+                ).decode("utf-8", "replace")
+
+
+def tag_target(tag_text: str) -> str:
+    """PURE. The `object <sha>` a tag object points at ('' if none)."""
+    m = re.match(r"object ([0-9a-f]{40,64})\n", tag_text)
+    return m.group(1) if m else ""
+
+
 def tag_runs(root: pathlib.Path, heads: list[str]) -> list:
-    """A run per ANNOTATED TAG object among `heads` (a pushed tag ref's local sha), from `git cat-file tag`."""
-    if not heads:
-        return []
-    kinds = _git(root, "cat-file", "--batch-check=%(objectname) %(objecttype)",
-                 data="".join(f"{h}\n" for h in heads).encode()).decode().splitlines()
-    return [tag_run(k.split()[0], _git(root, "cat-file", "tag", k.split()[0]).decode("utf-8", "replace"))
-            for k in kinds if k.endswith(" tag")]
+    """A run per ANNOTATED TAG object reachable from `heads` by PEELING: while an object is a tag, its whole
+    text is a run and its target is examined next — a tag of a tag carries two messages."""
+    out, seen, todo = [], set(), list(heads)
+    while todo:
+        sha = todo.pop()
+        if sha in seen:
+            continue
+        seen.add(sha)
+        kind = _git(root, "cat-file", "-t", sha).decode().strip()
+        if kind == "tag":
+            text = _git(root, "cat-file", "tag", sha).decode("utf-8", "replace")
+            out.append(tag_run(sha, text))
+            todo.append(tag_target(text))
+    return out
 
 
 def public_texts(root: pathlib.Path, tips: list[str]):
@@ -406,7 +440,8 @@ def scan(root: pathlib.Path, heads: list[str], exclude: list[str], public_tips: 
     try:
         runs, removed = parse_log(pushed_log(root, heads, exclude)) if heads else ([], {})
         if heads:
-            runs += parse_messages(pushed_messages(root, heads, exclude)) + tag_runs(root, heads)
+            runs += (parse_messages(pushed_messages(root, heads, exclude))
+                     + parse_added_paths(added_paths(root, heads, exclude)) + tag_runs(root, heads))
         cands = candidate_windows(win, runs, removed, n)
         public = public_in(public_texts(root, public_tips), cands) if cands else set()
     except Exception as exc:  # noqa: BLE001 — any git or decode failure is CANNOT RUN (3)
@@ -657,11 +692,12 @@ def _self_test_body() -> int:
     check("each commit's lines are keyed to THAT commit",
           lambda: [r[0] for r in parse_log(log_of("a.md", ["x"], commit="aaa") + log_of("a.md", ["y"], commit="bbb"))[0]],
           ["aaa", "bbb"])
-    check("a NEW file's path is a run of its own, at line 0",
-          lambda: parse_log(f"{COMMIT_TAG}{C}\ndiff --git a/n.md b/n.md\nnew file mode 100644\n--- /dev/null\n"
-                            f"+++ b/n.md\n@@ -0,0 +1 @@\n+x\n")[0], [(C, "n.md", [(0, "n.md")]), (C, "n.md", [(1, "x")])])
-    check("...but a MODIFIED file's path is not",
-          lambda: [r for r in parse_log(log_of("m.md", ["x"]))[0] if r[2][0][0] == 0], [])
+    check("parse_added_paths: each ADDED file's path is a run of its own, at line 0, under its commit",
+          lambda: parse_added_paths('\x01aaa\0\nd/z\0\x01bbb\0\ne mpty.md\0q"x\0'),
+          [("aaa", "d/z", [(0, "d/z")]), ("bbb", "e mpty.md", [(0, "e mpty.md")]), ("bbb", 'q"x', [(0, 'q"x')])])
+    check("parse_added_paths of no added file is no runs", lambda: parse_added_paths(""), [])
+    check("tag_target reads the object a tag points at",
+          lambda: (tag_target("object " + "a" * 40 + "\ntype tag\n"), tag_target("garbage")), ("a" * 40, ""))
     check("parse_messages reads each commit's full message as one run",
           lambda: parse_messages(f"aaa\x01subject\n\nbody line\n\0bbb\x01other\0"),
           [("aaa", "<commit message>", [(1, "subject"), (2, ""), (3, "body line"), (4, "")]),
@@ -846,6 +882,18 @@ def _self_test_body() -> int:
         rc, out = push(w, "push", "origin", "master")
         check("⭐ METADATA: a NEW FILE NAMED with plan words is REFUSED, though its content is clean",
               lambda: (rc != 0, "(its file NAME)" in out), (True, True))
+        git(w, "reset", "-q", "--hard", "origin/master")
+        commit(w, "-".join(words(OBJ)) + ".md", "")
+        rc, out = push(w, "push", "origin", "master")
+        check("⭐ METADATA: an EMPTY new file (no hunk at all) NAMED with plan words is REFUSED",
+              lambda: (rc != 0, "(its file NAME)" in out), (True, True))
+        git(w, "reset", "-q", "--hard", "origin/master")
+        git(w, "tag", "-a", "inner", "-m", "a plain inner tag")
+        git(w, "tag", "-a", "outer", "inner", "-m", f"outer: {SUB}")
+        git(w, "tag", "-a", "outer2", "outer", "-m", "a plain outermost tag")
+        rc, out = push(w, "push", "origin", "outer2")
+        check("⭐ METADATA: a tag of a tag is PEELED — plan text in the MIDDLE tag's message is REFUSED",
+              lambda: (rc != 0, "<annotated tag>" in out, remote_has(w, "refs/tags/outer2")), (True, True, False))
 
         w = world("quoted")
         commit(w, 'q"n.md', f"{STEP}\n")
