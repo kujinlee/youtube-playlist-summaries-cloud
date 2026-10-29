@@ -18252,3 +18252,19 @@ some compactions ahead of time (marked `precomputed` in the transcript: 3 of thi
 hook runs at preparation time. At restore, the capture was 5h46m old, so the guard correctly refused to show it as
 current. What actually got the session back on track was the IN FLIGHT block, which is built from `git`, `gh` and the
 ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
+
+## 2026-10-29
+Two review-tool fixes. A review run from a second working copy now records the commit of the copy
+that was actually reviewed, rather than the commit of wherever the review tool happens to live —
+before, that mismatch made the merge check refuse with a message that did not explain why. And a
+review that writes "this half did not run" in the short form the round template recommends is now
+accepted; before, following the template turned the required check red unless the same thing was
+also written out a second way.
+<!--tech-->
+Backlog #121: `scripts/codex-review.py` gains `reviewed_root()` (`git rev-parse --show-toplevel` on
+the cwd, never a fallback to `REPO_ROOT`); `main` passes it to `reviewed_state`, whose `repo_root` is
+now required, and the verdict records it as `tree`. Case: one repository, two worktrees at two
+commits, the wrapper copied into the first and driven from the second through a refusal path.
+Backlog #182: `scripts/check-review-rounds.py` `has_gap_line` falls back to `yaml_gap()`, which reads
+`halves.<codex|claude>: "GAP: <reason>"` from the ```yaml header only. Nine mutation entries added
+(4 + 5) and one rebound; `EXPECTED_MUTATIONS` 45 -> 49 and 36 -> 41.

@@ -45,7 +45,7 @@ findings:
 | `round` | integer | the round number; the set must be a gapless `1..N` with no duplicates |
 | `fixes_nontrivial` | `true` `false` | were this round's fixes more than a reworded line? **`true` blocks convergence** — a non-trivial fix is unreviewed code |
 | `subject` | string | the branch or artifact under review |
-| `halves.<name>` | `ran`, or a string starting `GAP:` | whether each half ran; a gap carries its reason |
+| `halves.<name>` | `ran`, or a string starting `GAP:` | whether each half ran; a gap carries its reason. ⟳ `check-review-rounds.py` reads this form as a gap (backlog #182) — a prose `REVIEW GAP:` line is no longer also needed |
 | `severity` | `Blocking` `High` `Medium` `Low` | as filed by the reviewer |
 | `aim` | `deliverable` `instrument` | does the finding sit in code the branch **ships**, or in a test, guard or harness that **measures** it? |
 | `fix_induced` | `true` `false` | was the defect introduced by a fix written **after** a previous round? ⚠ **UNDECIDED:** whether a fix written inside the SAME round — by its first half's fold, reviewed by its second half — counts; see backlog #347 |

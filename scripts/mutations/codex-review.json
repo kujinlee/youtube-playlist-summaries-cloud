@@ -552,5 +552,49 @@
       "…and an OVER-LENGTH id is told its length and the cap, which is the one reason a caller cannot work out by looking",
       "…while a SEPARATOR still gets the separator rule, so naming the reason did not lose the one rule the message always named"
     ]
+  },
+  {
+    "name": "#121 main reads the head of the checkout this file lives in again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    head_at_dispatch, dirty_at_dispatch = reviewed_state(tree_at_dispatch)",
+        "    head_at_dispatch, dirty_at_dispatch = reviewed_state(REPO_ROOT)"
+      ]
+    ],
+    "expect": "⭐ #121 a review run FROM worktree B records B's head, not the head of the checkout the wrapper lives in"
+  },
+  {
+    "name": "#121 reviewed_root asks git for the wrong thing, not the top level",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "[\"git\", \"-C\", here, \"rev-parse\", \"--show-toplevel\"]",
+        "[\"git\", \"-C\", here, \"rev-parse\", \"--show-prefix\"]"
+      ]
+    ],
+    "expect": "#121 reviewed_root resolves the TOP LEVEL of the checkout it is asked from, even from a subdirectory"
+  },
+  {
+    "name": "#121 outside a repository reviewed_root falls back to this file's checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return os.path.realpath(top) if p.returncode == 0 and top else here",
+        "    return os.path.realpath(top) if p.returncode == 0 and top else REPO_ROOT"
+      ]
+    ],
+    "expect": "…and outside any repository it answers with the directory itself, never this file's checkout — whose head would be a confident answer about the wrong tree"
+  },
+  {
+    "name": "#121 the verdict no longer names the tree it measured",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        \"tree\": tree,",
+        "        \"tree\": None,"
+      ]
+    ],
+    "expect": "…and the verdict NAMES the tree it measured, so a wrong head is diagnosable from the file"
   }
 ]

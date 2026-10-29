@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 168 cases
+  scripts/codex-review.py --self-test  # 176 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -650,7 +650,8 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
                    model: "str | None" = None, attempts: "list[str] | None" = None,
                    intrusions_seen: "list[str] | None" = None,
                    head: "str | None" = None, dirty: "dict[str, str] | None" = None,
-                   prompt: "str | None" = None, refused: bool = False) -> dict:
+                   prompt: "str | None" = None, refused: bool = False,
+                   tree: "str | None" = None) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
@@ -673,7 +674,8 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
     all, so a caller naming their testimony deliberately still wrote a record keyed by scratch.
     The spelling is `review_filename`'s, shared with the promotion, so the two cannot drift.
 
-    `head` and `dirty` describe WHAT was reviewed; `reviewed_state` below gathers them. `head` is
+    `head` and `dirty` describe WHAT was reviewed; `reviewed_state` below gathers them, from the
+    checkout `tree` names (backlog #121 — a head with no tree beside it cannot be checked). `head` is
     always present, `None` when it could not be established — an absent field and a null one read
     the same to a downstream `.get()`, but only the null one distinguishes "no answer" from "old
     schema" when a human opens the file.
@@ -711,6 +713,7 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
         "attempts": list(attempts or []),
         "intrusions": list(intrusions_seen or []),
         "head": head,
+        "tree": tree,
         "dirty": None if dirty is None else dict(dirty),
         "prompt": prompt,
     }
@@ -746,7 +749,32 @@ def unredirected(env: "dict[str, str] | None" = None) -> dict:
     return out
 
 
-def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[str, str] | None]":
+def reviewed_root(cwd: "str | None" = None) -> str:
+    """The top level of the checkout the review is dispatched FROM. IMPURE. Backlog #121.
+
+    ⛔ NOT `REPO_ROOT`. That is where this FILE lives, and the reviewer is handed the working
+    directory — `codex exec` is spawned with no `cwd=`, so it reviews the tree the caller stands in.
+    MEASURED on PR #295: invoked by its path in the main checkout from inside a linked worktree, the
+    wrapper recorded `995d8b2f`, a commit on a different branch, for two rounds.
+
+    ⚠ OUTSIDE A REPOSITORY IT RETURNS THE DIRECTORY ITSELF, never a fallback to `REPO_ROOT`:
+    `reviewed_state` then finds no head and records null, which the consumer routes to CANNOT RUN.
+    A fallback would put a confident head about the wrong tree back into the record.
+    """
+    try:
+        here = os.path.realpath(cwd or os.getcwd())
+    except OSError:
+        return os.path.realpath(cwd or ".")
+    try:
+        p = subprocess.run(["git", "-C", here, "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, timeout=60, env=unredirected())
+    except (OSError, subprocess.SubprocessError):
+        return here
+    top = p.stdout.strip()
+    return os.path.realpath(top) if p.returncode == 0 and top else here
+
+
+def reviewed_state(repo_root: str) -> "tuple[str | None, dict[str, str] | None]":
     """`(HEAD commit, {uncommitted path: "<mode> <object-id>" the reviewer was handed})`. IMPURE.
 
     WHY BOTH, and the second one is not decoration. `head` alone answers the question for a clean
@@ -777,7 +805,9 @@ def reviewed_state(repo_root: "str | None" = None) -> "tuple[str | None, dict[st
     `check-review-recorded.classify_verdict` counts a null `dirty` as UNUSABLE, which routes to
     CANNOT RUN rather than to a pass. `{}` keeps its real meaning: the tree WAS clean.
     """
-    root = repo_root or REPO_ROOT
+    # ⛔ REQUIRED, no `or REPO_ROOT` default — backlog #121. The default WAS the defect: the one
+    # production call passed nothing, so every verdict described the checkout this file is in.
+    root = repo_root
 
     def git(*args: str, env: "dict[str, str] | None" = None) -> "str | None":
         try:
@@ -1234,7 +1264,10 @@ def main() -> int:
     # Taken ONCE, here, before any candidate runs — this is the tree the reviewer is handed. Taken
     # at `emit` instead it would describe the tree after the run, and a commit made while a 15-minute
     # review was in flight would be recorded as something the reviewer had seen.
-    head_at_dispatch, dirty_at_dispatch = reviewed_state()
+    # ⟳ backlog #121: the tree the CALLER stands in, resolved to its top level — and named in the
+    # record, so a head that looks wrong can be traced to the tree it was read from.
+    tree_at_dispatch = reviewed_root()
+    head_at_dispatch, dirty_at_dispatch = reviewed_state(tree_at_dispatch)
     # ⟳ **backlog #176: THE PATH IS THE SUPPLIED ID AND NOTHING ELSE.** It used to be derived from
     # `--out`'s basename and then, across four rounds of fixes, disambiguated by a run token over
     # the dispatch HEAD, the tree and the prompt — an allocator for a namespace whose names were
@@ -1257,6 +1290,7 @@ def main() -> int:
                              reason=reason, refused=refused,
                              model=model, attempts=attempts,
                              head=head_at_dispatch, dirty=dirty_at_dispatch,
+                             tree=tree_at_dispatch,
                              prompt=getattr(args, "prompt_file", None),
                              intrusions_seen=[f"{os.path.join(d, n)}: {w}" for d, n, w in (hits or [])])
         where = testimony_path(args.review_id, refused=refused)
@@ -2226,6 +2260,11 @@ def _self_test_body() -> int:
     _s = verdict_record(gate_ran=True, exit_code=0, review_id="observer-log-owner-r5-codex",
                         reason="r", head="abc123", dirty={"scripts/a.py": "b10b"})
     chk("the verdict records the commit the reviewer was handed", _s["head"], "abc123")
+    # backlog #121: the checkout the head was read from, carried as given — two distinct values, so
+    # the field cannot be a constant that happens to match the one end-to-end case below.
+    chk("#121 the verdict records the checkout its head was read from",
+        (verdict_record(gate_ran=True, exit_code=0, review_id="observer-log-owner-r5-codex",
+                        reason="r", tree="/wt/b")["tree"], _r["tree"]), ("/wt/b", None))
     # ⛔ CONTENT, NOT A PATH LIST — r1 Blocking. A path alone still matches after the file is edited
     # AGAIN, so the check subtracted it and certified content nobody reviewed. Reproduced in a
     # scratch repo; the entry is what makes "the reviewer saw THIS" answerable — and after r4 its
@@ -2411,6 +2450,77 @@ def _self_test_body() -> int:
         # And the real repo's answer must DIFFER from the non-repo one — the parameter matters.
         chk("the repo_root argument is load-bearing: two roots, two different answers",
             _head2 == _head, False)
+
+    # ── backlog #121: THE HEAD OF THE TREE UNDER REVIEW, NOT OF THE CHECKOUT THIS FILE IS IN ─────
+    # ⛔ MEASURED on PR #295: two verdicts named `995d8b2f`, a commit on ANOTHER branch, because the
+    # wrapper was invoked by its path in the main checkout while the reviewed tree was a linked
+    # worktree, and `REPO_ROOT` comes from `__file__`. So the fixture is that exact shape: one
+    # repository, two worktrees at two different commits, the wrapper living in the FIRST and run
+    # FROM the second. Driven through `main` by a refusal (an `--out` that already exists), which
+    # writes testimony carrying the head and reaches no model — the call site is the subject, and a
+    # pure case on `reviewed_root` alone would stay green with `main` still asking the wrong tree.
+    with tempfile.TemporaryDirectory() as td3:
+        _env3 = dict(unredirected(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,
+                     GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+        _wa, _wb = os.path.join(td3, "a"), os.path.join(td3, "b")
+
+        def _git3(cwd: str, *a: str) -> "subprocess.CompletedProcess":
+            return subprocess.run(["git", "-C", cwd, "-c", "user.email=t@example.com",
+                                   "-c", "user.name=t", "-c", "commit.gpgsign=false", *a],
+                                  capture_output=True, text=True, env=_env3)
+        os.makedirs(_wa)
+        _git3(_wa, "init", "-q", ".")
+        with open(os.path.join(_wa, "f.txt"), "w", encoding="utf-8") as f:
+            f.write("one\n")
+        _git3(_wa, "add", "-A")
+        _git3(_wa, "commit", "-q", "--no-verify", "-m", "c1")
+        _git3(_wa, "worktree", "add", "-q", "-b", "other", _wb)
+        with open(os.path.join(_wb, "f.txt"), "w", encoding="utf-8") as f:
+            f.write("two\n")
+        _git3(_wb, "commit", "-q", "--no-verify", "-am", "c2")
+        _ha = _git3(_wa, "rev-parse", "HEAD").stdout.strip()
+        _hb = _git3(_wb, "rev-parse", "HEAD").stdout.strip()
+        chk("#121 fixture: two worktrees of one repository, at two DIFFERENT commits",
+            (len(_ha), len(_hb), _ha != _hb), (40, 40, True))
+        os.makedirs(os.path.join(_wb, "sub"))
+        chk("#121 reviewed_root resolves the TOP LEVEL of the checkout it is asked from, "
+            "even from a subdirectory", reviewed_root(os.path.join(_wb, "sub")),
+            os.path.realpath(_wb))
+        chk("…and a different checkout gets a different answer, so the argument is really read",
+            reviewed_root(_wa), os.path.realpath(_wa))
+        chk("…and outside any repository it answers with the directory itself, never this file's "
+            "checkout — whose head would be a confident answer about the wrong tree",
+            reviewed_root(td3), os.path.realpath(td3))
+        # The wrapper, filed inside worktree A exactly as it is filed inside the main checkout.
+        _was = os.path.join(_wa, "scripts")
+        os.makedirs(_was)
+        for _n in ("codex-review.py", "check-review-rounds.py", "codex-frontier-model.py"):
+            shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), _n),
+                        os.path.join(_was, _n))
+        os.makedirs(os.path.join(_wa, "docs", "reviews", "verdicts"))
+        _bin3 = os.path.join(td3, "bin")
+        os.makedirs(_bin3)
+        with open(os.path.join(_bin3, "codex"), "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\nexit 97\n")  # containment, as in the sandbox above
+        os.chmod(os.path.join(_bin3, "codex"), 0o755)
+        _cap3 = os.path.join(td3, "r.md")
+        with open(_cap3, "w", encoding="utf-8") as f:
+            f.write("a capture already here\n")
+        _r3 = subprocess.run([sys.executable, os.path.join(_was, "codex-review.py"),
+                              "--timeout", "5", "--review-id", "wt-r1-codex", "--out", _cap3,
+                              "a prompt"], capture_output=True, text=True, cwd=_wb,
+                             env=dict(_env3, PATH=_bin3 + os.pathsep + os.environ.get("PATH", "")))
+        _v3 = {}
+        _vp3 = os.path.join(_wa, "docs", "reviews", "verdicts", "wt-r1-codex.refused.verdict.json")
+        if os.path.isfile(_vp3):
+            with open(_vp3, encoding="utf-8") as f:
+                _v3 = json.load(f)
+        chk("#121 the drive refused before any model, and left its testimony",
+            (_r3.returncode, bool(_v3)), (2, True))
+        chk("⭐ #121 a review run FROM worktree B records B's head, not the head of the checkout "
+            "the wrapper lives in", _v3.get("head") == _hb, True)
+        chk("…and the verdict NAMES the tree it measured, so a wrong head is diagnosable from "
+            "the file", _v3.get("tree"), os.path.realpath(_wb))
 
     # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
     # than filed. `chk` already does `extra += 1` on every call, so this literal added a second

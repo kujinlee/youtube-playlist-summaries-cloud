@@ -26,12 +26,12 @@
     ]
   },
   {
-    "name": "gap lines stop being found at all, so the documented Codex-down escape hatch silently stops working and every legitimate solo half fails",
+    "name": "PROSE gap lines stop being found, so the documented Codex-down escape hatch silently stops working for every document without a YAML header (rebound by backlog #182, which added the YAML fallback to this line)",
     "file": "scripts/check-review-rounds.py",
     "edits": [
       [
-        "    return f\"{m.group(1)}: {m.group(2).strip()}\" if m else None",
-        "    return None"
+        "    return f\"{m.group(1)}: {m.group(2).strip()}\" if m else yaml_gap(text)",
+        "    return yaml_gap(text)"
       ]
     ],
     "expect": [
@@ -466,6 +466,71 @@
     ],
     "expect": [
       "a solo ROUND 1 does not carry the alternation hint — round 1 never alternates"
+    ]
+  },
+  {
+    "name": "#182 the YAML gap is not read",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "if m else yaml_gap(text)",
+        "if m else None"
+      ]
+    ],
+    "expect": [
+      "#182 the template's YAML gap is read, and names the half and its reason"
+    ]
+  },
+  {
+    "name": "#182 a GAP anywhere in the header counts, not only under halves",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "        g = YAML_GAP.match(line) if in_halves else None",
+        "        g = YAML_GAP.match(line)"
+      ]
+    ],
+    "expect": [
+      "#182 a `GAP:` OUTSIDE `halves:` is not a gap — a finding may quote the grammar"
+    ]
+  },
+  {
+    "name": "#182 a YAML GAP needs no reason",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "GAP:[ \\t]*(\\S.*?)[ \\t]*\\2",
+        "GAP:[ \\t]*(.*?)[ \\t]*\\2"
+      ]
+    ],
+    "expect": [
+      "#182 a YAML GAP with no reason is not a gap — the reason is the point"
+    ]
+  },
+  {
+    "name": "#182 the closing quote need not match the opening one",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "(\\S.*?)[ \\t]*\\2[ \\t]*$",
+        "(\\S.*?)[ \\t]*[\"']?[ \\t]*$"
+      ]
+    ],
+    "expect": [
+      "#182 …nor a half that is not one of the two, nor an unbalanced quote"
+    ]
+  },
+  {
+    "name": "#182 any fenced block is read as the header",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "YAML_HEADER = re.compile(r\"```yaml\\n(.*?)```\", re.S)",
+        "YAML_HEADER = re.compile(r\"```\\w*\\n(.*?)```\", re.S)"
+      ]
+    ],
+    "expect": [
+      "#182 …and neither is one in a fenced block that is not the yaml header"
     ]
   }
 ]

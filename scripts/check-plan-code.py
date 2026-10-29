@@ -1273,7 +1273,8 @@ EXPECTED_MUTATIONS = {
     #   their text; the sweep is what found them, and it is still in no local suite.
     # ⟳ 2026-10-24, backlog #339: 34 -> 35 — the solo-half failure names the PAIRING rule; r1 fold
     #   35 -> 36 — the hint is neutral between the two readings and skips round 1.
-    "scripts/check-review-rounds.py": 36,
+    # ⟳ 2026-10-29, backlog #182: 36 -> 41 — the template's YAML `halves.<name>: "GAP: …"` is read.
+    "scripts/check-review-rounds.py": 41,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1696,7 +1697,8 @@ EXPECTED_MUTATIONS = {
     #     moves `MAX_ID_LEN` so the two cases cannot silently agree with a cap that shifted. TWO
     #     hold M3: the reason returning the WRONG rule, and the reason being computed and dropped,
     #     which is the state the message was in before this fold.
-    "scripts/codex-review.py": 45,
+    # ⟳ 2026-10-29, backlog #121: 45 -> 49 — the head is the REVIEWED tree's, named in the record.
+    "scripts/codex-review.py": 49,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -6248,7 +6250,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2512)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2521)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
