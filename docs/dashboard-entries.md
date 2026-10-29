@@ -18261,7 +18261,7 @@ closing-table check, the CI-watch check and the handoff-path check — could cra
 hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. Nothing a working session sends them
 changes.
 <!--tech-->
-Branch `guards-cannot-run`, PR #439: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
+Branch `guards-cannot-run`, PR #440: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
 (d) stay open. `check-transcript-references` returns rc 2 when no transcript record parses, and refuses a non-object
 payload; `check-banner-armed`, `check-closing-table` and `check-transcript-references` read the transcript as UTF-8
 inside an `(OSError, UnicodeDecodeError)` handler; `check-handoff-path` catches `UnicodeDecodeError` (through the CLI
