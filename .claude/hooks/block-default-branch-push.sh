@@ -179,6 +179,10 @@ Deliberate exception: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
   # prevent ACCIDENTAL publication; an agent with a shell can always bypass git hooks (`--no-verify` behind
   # an alias, another clone, plumbing such as `git send-pack`, an exported variable). It is NOT a boundary
   # against a determined agent.
+  # Known, OUT-OF-SCOPE evasions (a fourth security pass, declined deliberately): shell expansions (`$'…'`,
+  # `${…}`), config includes (`include.path`, `includeIf`) and `GIT_CONFIG_*` set outside the command reach
+  # `core.hooksPath` without the word appearing; they are deliberate, never accidental, and the pre-push
+  # hook plus the SessionStart status check own the decision.
   norm="$(printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '[:upper:]' '[:lower:]')"
   if printf '%s' "$norm" | grep -q 'hookspath'; then
     deny "Blocked: this push command mentions \`core.hooksPath\`, which can switch off git's pre-push hooks —

@@ -99,7 +99,7 @@ command's form does not matter. CI has no plans (a zero over nothing), so CI run
   parser) is denied without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence in
   depth only; the pre-push hook owns the decision. It now runs on EVERY Bash call (a `git push*` filter
   cannot match `git -c … push`): measured 2026-10-29, median **31 ms** added per non-push call (50 runs
-  through `run-hook.sh`, p90 39 ms, on a loaded machine), against 0 before.
+  through `run-hook.sh`, p90 39 ms, on a loaded machine), against 0 before. Known, OUT-OF-SCOPE evasions (a fourth security pass, declined deliberately): shell expansions (`$'…'`, `${…}`), config includes (`include.path`, `includeIf`) and `GIT_CONFIG_*` set outside the command reach `core.hooksPath` without the word appearing; they are deliberate, never accidental, and the pre-push hook plus the SessionStart status check own the decision.
 - ⛔ **The gate prevents ACCIDENTAL publication. It is not a boundary against a determined agent:** anything
   with a shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
 - **hits → the push is refused**, naming `path:line`, the commit and the plan FILE, never the words, in every
