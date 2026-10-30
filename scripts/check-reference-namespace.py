@@ -74,12 +74,15 @@ removed by the parser's own rule (`gen-backlog-page.kind_mark`, never a second r
 BYTE-IDENTICAL to a line of the SAME PATH AT THE BASE (`git show <base>:<path>`, compared as lines).
 Everything else is judged exactly as before: a new line, any change of wording, one changed character.
 Qualifying the old references by evidence is its own row, backlog #395.
-⛔ PR #442 r2 — NO DIFF TEXT IS READ FOR THE REMOVED SIDE. Rounds 1 and 2 matched the diff's removed
-lines, which meant recognising each file's header by its text; a deleted file whose content is
-`-- a/docs/backlog.md` renders as that header, and credited its row to the backlog. So: a path absent
-at the base (a new file, a rename's target) exempts nothing; each base line exempts as many marked
-copies as the base holds it, less the copies the head still carries unmarked; and added lines come
-from git run ONCE PER PATH, where a line that looks like a header is inside a hunk and so is content.
+⛔ PR #442 r2 — NO HEADER IS RECOGNISED BY ITS TEXT. Rounds 1 and 2 matched the removed lines of a
+diff spanning SEVERAL paths, which meant recognising each file's header by its text; a deleted file
+whose content is `-- a/docs/backlog.md` renders as that header, and credited its row to the backlog.
+So git runs ONCE PER PATH, where everything after the first hunk header is content of that path; a
+path absent at the base (a new file, a rename's target) exempts nothing; and each removed line
+exempts as many marked copies as the path loses it, less the copies the path still gains unmarked.
+⛔ PR #442 r3 — BOTH SIDES COME FROM THAT ONE DIFF. r2 read the head as raw worktree bytes while the
+diff is clean-filtered, so under `.gitattributes text eol=crlf` a kept row ended in `\r` and let its
+marked duplicate through. Per line, removed minus added equals base minus head, in git's own view.
 
 FAILS IF
 --------
@@ -88,7 +91,7 @@ FAILS IF
   * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
     a pass.
 
-  --self-test  runs 46 cases over lines and repositories this file builds, including that each failure mode is
+  --self-test  runs 49 cases over lines and repositories this file builds, including that each failure mode is
                DETECTED and that both main() worlds are driven.
 """
 from __future__ import annotations
@@ -163,7 +166,17 @@ def in_scope(path: str, scope: tuple[str, ...] = SCOPE) -> bool:
 
 
 def added_lines(one_path_diff: str) -> list[str]:
-    """The lines a ONE-PATH unified diff adds. PURE.
+    """The lines a ONE-PATH unified diff adds. PURE."""
+    return hunk_lines(one_path_diff, "+")
+
+
+def removed_lines(one_path_diff: str) -> list[str]:
+    """The lines a ONE-PATH unified diff removes. PURE."""
+    return hunk_lines(one_path_diff, "-")
+
+
+def hunk_lines(one_path_diff: str, sign: str) -> list[str]:
+    """The lines of a ONE-PATH unified diff that carry `sign` (`+` added, `-` removed). PURE.
 
     ⛔ PR #442 r2: everything before the first hunk header is the header and everything after it is
     content, so an added line whose text LOOKS like a header (`++ b/scripts/x.py` renders as
@@ -176,7 +189,7 @@ def added_lines(one_path_diff: str) -> list[str]:
     for line in one_path_diff.split("\n"):
         if line.startswith("@@"):
             in_hunk = True
-        elif in_hunk and line.startswith("+"):
+        elif in_hunk and line.startswith(sign):
             out.append(line[1:])
     return out
 
@@ -246,14 +259,16 @@ def without_kind_marker(body: str) -> str | None:
 
 
 def exemption_budget(base: list[str] | None, head: list[str]) -> Counter[str]:
-    """{line: how many marker-only copies of it `head` may add}. PURE.
+    """{line: how many marker-only copies of it the head may add}. PURE.
 
-    ⛔ PR #442 r2: read from the BASE VERSION OF THE SAME PATH, never from removed diff text — two
-    rounds trusted a header recognised by its text, and a deleted file's content can spell one. A
-    path absent at the base (`base` None: a new file, or a rename's target) exempts nothing, so prose
-    moved in from another file is judged. A line counts as many times as the base holds it, LESS the
-    copies `head` still carries unmarked: adding a marked duplicate of a row that is still there is
-    a new copy of its references, not a marker-only edit."""
+    `base` and `head` are ONE PATH's two sides: its removed and added lines (what `scan` passes), or
+    its whole files — per line, `Counter(base) - Counter(head)` is the same number either way. A line
+    counts as many times as the base side holds it, LESS the copies the head side still carries
+    unmarked: adding a marked duplicate of a row that is still there is a new copy of its references,
+    not a marker-only edit. A path absent at the base (`base` None, or a diff that removes nothing:
+    a new file, or a rename's target) exempts nothing, so prose moved in from another file is judged.
+    ⛔ PR #442 r2: never removed text from a diff of SEVERAL paths — two rounds trusted a header
+    recognised by its text, and a deleted file's content can spell one."""
     if base is None:
         return Counter()
     return Counter(base) - Counter(head)
@@ -293,18 +308,6 @@ def path_diff(root: Path, base: str, path: str, head: str | None = None) -> str:
                 base, *([head] if head else []), "--", path)
 
 
-def file_lines(root: Path, rev: str | None, path: str) -> list[str] | None:
-    """`path`'s lines at `rev` (the worktree when None), or None if it is not a file there."""
-    if rev is None:
-        f = root / path
-        return f.read_bytes().decode("utf-8", "surrogateescape").split("\n") if f.is_file() else None
-    entry = _git(root, "ls-tree", "-z", rev, "--", path).split("\0")[0]
-    meta, _, name = entry.partition("\t")
-    if name != path or meta.split(" ")[1:2] != ["blob"]:
-        return None
-    return _git(root, "cat-file", "blob", meta.split(" ")[2]).split("\n")
-
-
 def scan(root: Path, base: str, head: str | None = None,
          scope: tuple[str, ...] = SCOPE) -> list[str]:
     """Every violation `base`..`head` adds, one git diff per path. Raises on a git failure."""
@@ -312,9 +315,11 @@ def scan(root: Path, base: str, head: str | None = None,
     for path in changed_paths(root, base, head):
         if not in_scope(path, scope):
             continue
-        added = added_lines(path_diff(root, base, path, head))
-        budget = (exemption_budget(file_lines(root, base, path), file_lines(root, head, path) or [])
-                  if any("⟦" in a for a in added) else None)
+        diff = path_diff(root, base, path, head)
+        added = added_lines(diff)
+        # ⛔ PR #442 r3: BOTH sides from this one-path diff, so both are git's clean-filtered view. Read
+        # from the worktree's raw bytes, an `eol=crlf` row that stays ends in `\r` and cancels nothing.
+        budget = exemption_budget(removed_lines(diff), added) if any("⟦" in a for a in added) else None
         out += violations(path, added, budget, scope)
     return out
 
@@ -582,6 +587,21 @@ def _self_test_body() -> int:
         subprocess.run(["git", "-C", str(ok[0]), "-c", "user.email=t@t", "-c", "user.name=t",
                         "commit", "-qm", "head"], check=True, capture_output=True, env=fixture_git.env())
         case("...and a committed marker-only edit is exempt there too", scan(*ok, head="HEAD"), [])
+        # PR #442 r3 F2: a repo-controlled `eol=crlf` attribute checks the file out with CRLF, while
+        # git's diff reads it through the clean filter, as LF. The row that STAYS must be counted in
+        # that same view, or it ends in `\r`, cancels nothing, and its marked copy is exempt.
+        crlf = _world("crlf", {BL: f"{FILLER}{OLD}\n"},
+                      {".gitattributes": f"{BL} text eol=crlf\n",
+                       BL: f"{FILLER}{OLD}\n{NEW}\n".replace("\n", "\r\n")})
+        case("r3 F2: the eol=crlf world really holds CRLF in the worktree, so the next case is not ambient",
+             b"\r\n" in (crlf[0] / BL).read_bytes())
+        case("r3 F2: under `eol=crlf`, a row that stays unmarked still does not exempt a marked copy",
+             len(scan(*crlf)), 2)
+        # PR #442 r3 F3: `\x1c` is a line break to `splitlines()`, not to git. Split there, the text
+        # after it loses its `+` and is never read as added.
+        fs = _world("fs", {SPINE: "a line\n"}, {SPINE: "a line\nnote\x1cthen see #77\n"})
+        case("r3 F3: an added line holding `\\x1c` is ONE line, so the bare #N after it is judged",
+             len(scan(*fs)), 1)
 
     print(f"{cases - failed}/{cases} passed")
     return OK if failed == 0 else VIOLATION

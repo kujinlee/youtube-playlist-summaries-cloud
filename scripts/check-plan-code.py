@@ -2139,7 +2139,10 @@ EXPECTED_MUTATIONS = {
     # removed diff text. Two retired with their subject (the removed-lines dict and its `--- a/` key);
     # six added: every path read, the head read as the base, an absent path holding its own lines, an
     # unconsumed budget, the head's unmarked copies not subtracted, and added lines read outside a hunk.
-    "scripts/check-reference-namespace.py": 20,
+    # ⟳ 2026-10-30, PR #442 r3: 20 -> 22 — both sides now come from the one-path diff. Three anchors
+    # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
+    # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
+    "scripts/check-reference-namespace.py": 22,
     "scripts/check-transcript-references.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -6275,7 +6278,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2563)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2565)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

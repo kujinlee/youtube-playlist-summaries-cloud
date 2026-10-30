@@ -182,25 +182,25 @@
     ]
   },
   {
-    "name": "PR #442 r2: the base lookup reads EVERY path at the base, so a row deleted or renamed from another file exempts its copy (X1, X4)",
+    "name": "PR #442 r2: the removed side is read from a diff of EVERY path, so a row deleted from another file exempts its copy (X1)",
     "file": "scripts/check-reference-namespace.py",
     "edits": [
       [
-        "        budget = (exemption_budget(file_lines(root, base, path), file_lines(root, head, path) or [])",
-        "        budget = (exemption_budget([l for p in _git(root, \"ls-tree\", \"-r\", \"--name-only\", base).split(\"\\n\") if p\n                                    for l in file_lines(root, base, p) or []], file_lines(root, head, path) or [])"
+        "exemption_budget(removed_lines(diff), ",
+        "exemption_budget(removed_lines(_git(root, \"diff\", \"--unified=0\", \"--no-renames\", \"--no-color\", base, *([head] if head else []))), "
       ]
     ],
     "expect": [
-      "r2 X4: ...both of the moved row's references are judged"
+      "r2 X1: ...both of the moved row's references are judged"
     ]
   },
   {
-    "name": "PR #442 r2: the base is read at the HEAD, so the marked line is compared with itself and nothing is ever exempt",
+    "name": "PR #442 r2: the two sides are SWAPPED, so the marked line is the base side and nothing is ever exempt",
     "file": "scripts/check-reference-namespace.py",
     "edits": [
       [
-        "exemption_budget(file_lines(root, base, path), file_lines",
-        "exemption_budget(file_lines(root, head, path), file_lines"
+        "removed_lines(diff), added)",
+        "added, removed_lines(diff))"
       ]
     ],
     "expect": [
@@ -251,12 +251,38 @@
     "file": "scripts/check-reference-namespace.py",
     "edits": [
       [
-        "        elif in_hunk and line.startswith(\"+\"):",
-        "        elif line.startswith(\"+\") and not line.startswith(\"+++\"):"
+        "        elif in_hunk and line.startswith(sign):",
+        "        elif line.startswith(sign) and not line.startswith(sign * 3):"
       ]
     ],
     "expect": [
       "r2: an added line that LOOKS like a header is content, never a new path"
+    ]
+  },
+  {
+    "name": "PR #442 r3 F2: the head side is the worktree's RAW bytes against the base file (the r2 form), so under `eol=crlf` a kept row ends in \\r and its marked duplicate is exempt",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        budget = exemption_budget(removed_lines(diff), added) if any(\"⟦\" in a for a in added) else None",
+        "        budget = exemption_budget(_git(root, \"show\", f\"{base}:{path}\").split(\"\\n\") if _git(root, \"ls-tree\", base, \"--\", path) else None, (root / path).read_bytes().decode(\"utf-8\", \"surrogateescape\").split(\"\\n\")) if any(\"⟦\" in a for a in added) else None"
+      ]
+    ],
+    "expect": [
+      "r3 F2: under `eol=crlf`, a row that stays unmarked still does not exempt a marked copy"
+    ]
+  },
+  {
+    "name": "PR #442 r3 F3: diff lines are split by `splitlines()` (the pre-r2 form), so text after a `\\x1c` loses its `+` and is never judged",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    for line in one_path_diff.split(\"\\n\"):",
+        "    for line in one_path_diff.splitlines():"
+      ]
+    ],
+    "expect": [
+      "r3 F3: an added line holding `\\x1c` is ONE line, so the bare #N after it is judged"
     ]
   }
 ]
