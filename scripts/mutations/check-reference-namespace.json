@@ -180,5 +180,18 @@
     "expect": [
       "#394: the marker must match a line removed from the SAME file"
     ]
+  },
+  {
+    "name": "#394: an invalid marker RAISES out of the gate instead of being judged",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    except gb.ShapeError:\n        return None",
+        "    except gb.ShapeError:\n        raise"
+      ]
+    ],
+    "expect": [
+      "#394: an INVALID marker on a changed line is still judged, never exempt and never a crash"
+    ]
   }
 ]

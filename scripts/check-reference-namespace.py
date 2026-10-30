@@ -82,7 +82,7 @@ FAILS IF
   * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
     a pass.
 
-  --self-test  runs 31 cases over diff texts this file builds, including that each failure mode is
+  --self-test  runs 32 cases over diff texts this file builds, including that each failure mode is
                DETECTED and that both main() worlds are driven.
 """
 from __future__ import annotations
@@ -437,6 +437,13 @@ def _self_test_body() -> int:
          violations(_swap(OLD, "| 32 | **Other** see #19 | x | S | (tooling) | open |")), [
              f"{BL}: bare `#19` with no namespace — write `backlog #19`, `PR #19`, `task #19` or whichever it is\n"
              f"    | 32 | **Other** see #19 | x | S | (tooling) | open |"])
+    def _judged(diff: str):
+        try:
+            return len(violations(diff))
+        except Exception as exc:                   # noqa: BLE001 - a crash is a wrong answer here
+            return f"raised {type(exc).__name__}"
+    case("#394: an INVALID marker on a changed line is still judged, never exempt and never a crash",
+         _judged(_swap(OLD, OLD.replace(" | x |", " ⟦kind: decision⟧ | x |", 1))), 2)
     case("#394: the marker must match a line removed from the SAME file",
          len(violations(f"--- a/docs/plugins.md\n+++ b/docs/plugins.md\n@@ -1 +0,0 @@\n-{OLD}\n"
                         f"--- a/{BL}\n+++ b/{BL}\n@@ -1 +1 @@\n-| 7 | unrelated |\n+{NEW}\n")), 2)

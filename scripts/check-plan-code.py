@@ -2119,7 +2119,8 @@ EXPECTED_MUTATIONS = {
     "scripts/check-doc-citations.py": 37,
     # ⟳ 2026-10-29, backlog #394: 9 -> 14 — the marker-only exemption: applied, byte-identical, not for a
     # new row, not for an unmarked line, and only against the SAME file's removed lines.
-    "scripts/check-reference-namespace.py": 14,
+    # ⟳ 2026-10-29, PR #442 r1: 14 -> 15 — an invalid marker is judged, never raised.
+    "scripts/check-reference-namespace.py": 15,
     "scripts/check-transcript-references.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -6255,7 +6256,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2531)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2532)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
