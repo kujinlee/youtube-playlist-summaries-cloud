@@ -18261,6 +18261,29 @@ since the two windows held different work. CI's median per run grew from 4.5 to 
 the mutation sweep growing inside one job, and nothing flagged it. Backlog #397 proposes a tripwire that would catch
 that kind of drift in the week it happens.
 
+## 2026-10-29
+Every backlog item now says what kind of work it is — a story, a task or a defect — as you decided
+on the roles review page. Where an item is part of a bigger one, it says so, and the backlog page
+links to that parent. Nothing is guessed: an item with no kind is reported, and a kind the page
+doesn't know, or a link to an item or goal that doesn't exist, stops the page from being built.
+
+All 348 items are labelled. A decision is a task that is waiting on you; adding missing tests is a
+task, unless something was claimed to be true and wasn't. This also answers your old question in
+backlog #90 about splitting stories from tasks.
+<!--tech-->
+Backlog #394. The kind and the parents are a marker at the END of the Item cell —
+`⟦kind: task · part of: backlog #17 · epic: <anchor>⟧` — read by `gen-backlog-page.kind_mark` inside
+the one parser. Unknown kind or malformed marker → `ShapeError` (refused by the page and by
+`check-features`); a parent naming a missing row or an unregistered anchor → refused by both
+(`parent_errors`); no kind → reported (`missing_kind_notes`, a page drift note and a check-features
+warning). The Bundle (tag) cell is untouched, so a kind is never an area. Retagged from the first-pass
+proposal; #210 and #251 moved defect → task by ruling 3; parent links #64 → #59 and #372 → #369 not
+written (absorption and provenance, not parentage).
+`check-reference-namespace.py` gains ONE exemption, approved by the owner on 2026-10-29: an added line
+that is byte-identical to a removed line once its kind marker is removed by `kind_mark` is not judged.
+The 306 old bare references that the retag resurfaced are queued as backlog #395, to be qualified by
+evidence.
+
 ## 2026-10-30
 **Usage limit:** for several weeks the weekly limit has stopped all work for about a day. Measured over the 24 hours
 before the latest halt, and weighted by token type, **reused long-lived agents spent about 70% of the usage**, mostly
@@ -18299,13 +18322,13 @@ under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
 `docs/reviews/architecture-review-2026-10-29-gap-reader.md`.
 
 ## 2026-10-30
-
 The dev-speed page now answers the owner's questions about the mutation sweep:
 - **What is feasible.** Caching one guard's suite (`check-main-drivable`) removes about 59% of the sweep's work, and it is being built. Stopping each mutant at its named failing case would save about 16% (backlog #405). Small caches in four other guards save about 4.8% (backlog #406). The compaction guard's tests mostly wait on real 11-second deadlines, about 7% (backlog #407).
 - **What is deferred.** The page lists every filed-but-unbuilt item.
 
 It also records a correction: one line had said an item "is filed" before it was.
 
+## 2026-10-30
 **Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
 one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
 a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
