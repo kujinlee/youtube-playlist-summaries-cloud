@@ -313,6 +313,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #399 (2026-10-30): every parameter varied by a case; none exempt.
+    "check-usage-pace.py": (
+        "evaluate.missing", "evaluate.now", "evaluate.text", "local_time.t", "main.argv", "main.env",
+        "override_active.env", "override_active.root", "prompt_output.message", "prompt_output.verdict",
+        "spawn_output.message", "spawn_output.override", "spawn_output.verdict",
+    ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
         "binary_paths.diff_text",

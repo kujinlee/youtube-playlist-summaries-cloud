@@ -18270,3 +18270,15 @@ natural pause. The statusline now shows the 5-hour and weekly usage (and runs tw
 will pace new work from that number, and backlog #398 records a push hook that mistakes heredoc prose for a push. The
 dev-speed page answers the owner's two questions about why Opus 5.5 merges more PRs: about half of it is smaller
 PRs and half is cheaper review rounds.
+
+## 2026-10-30
+**Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
+one-line warning with the reset time reaches the conversation; at 90% or more starting a NEW subagent is refused,
+while work already running carries on. You can let spawns through anyway with `ALLOW_SPAWN_OVER_LIMIT=1` or by
+creating `.claude/allow-spawn-over-limit`. If the cached number is missing or more than 15 minutes old, every prompt
+says so loudly, but nothing is blocked, so a statusline hiccup cannot stop work.
+<!--tech-->
+Backlog #399. `scripts/check-usage-pace.py` (rules separate from the file read, 79 self-test cases, 27 mutations all
+killed by their named case); hooks `.claude/hooks/usage-pace-prompt.sh` (UserPromptSubmit) and
+`.claude/hooks/usage-pace-spawn.sh` (PreToolUse on Agent), both through `run-hook.sh`. The deny travels as JSON at
+exit 0, and every non-zero exit is mapped to 1, so a broken checker can never block a prompt.

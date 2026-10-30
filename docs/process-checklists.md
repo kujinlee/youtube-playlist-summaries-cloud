@@ -146,7 +146,7 @@ A reused agent's context only grows, and every wake-up after an idle wait re-wri
 
 **The coordinator** is NOT reset per PR. Re-reading its context is cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts (handoff, then `/clear`) only at a natural pause when the owner is present, such as the start of a day.
 
-**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`; backlog #399 builds the pacing hook that reads it.
+**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`, and the pacing hook (backlog #399) reads it. At **80%** weekly every prompt carries a one-line WARN with the reset time; at **90%** a NEW subagent spawn is denied (work in flight continues). The owner's override is `ALLOW_SPAWN_OVER_LIMIT=1` or `touch .claude/allow-spawn-over-limit` in the checkout. A missing or stale cache is a loud CANNOT RUN on every prompt and blocks nothing. The rules live once, in `scripts/check-usage-pace.py`.
 
 ## TDD Policy
 

@@ -1,0 +1,353 @@
+[
+  {
+    "name": "the REFUSE threshold moves off 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "REFUSE_AT = 90.0",
+        "REFUSE_AT = 90.1"
+      ]
+    ],
+    "expect": [
+      "weekly 90 is REFUSE-SPAWN"
+    ]
+  },
+  {
+    "name": "the WARN threshold moves off 80",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "WARN_AT = 80.0",
+        "WARN_AT = 80.1"
+      ]
+    ],
+    "expect": [
+      "weekly 80 is WARN"
+    ]
+  },
+  {
+    "name": "REFUSE becomes strictly above 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= REFUSE_AT:",
+        "    if weekly > REFUSE_AT:"
+      ]
+    ],
+    "expect": [
+      "weekly 90 is REFUSE-SPAWN"
+    ]
+  },
+  {
+    "name": "WARN becomes strictly above 80",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= WARN_AT:",
+        "    if weekly > WARN_AT:"
+      ]
+    ],
+    "expect": [
+      "weekly 80 is WARN"
+    ]
+  },
+  {
+    "name": "the five-hour WARN becomes strictly above 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "five[0] >= FIVE_HOUR_WARN_AT",
+        "five[0] > FIVE_HOUR_WARN_AT"
+      ]
+    ],
+    "expect": [
+      "five-hour 90 is WARN"
+    ]
+  },
+  {
+    "name": "a five-hour window whose reset has arrived still warns",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "five[1] > now",
+        "five[1] >= now"
+      ]
+    ],
+    "expect": [
+      "a five-hour window whose reset passed adds nothing"
+    ]
+  },
+  {
+    "name": "a cache exactly 15 min old reads as stale",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age > MAX_AGE_S:",
+        "    if age >= MAX_AGE_S:"
+      ]
+    ],
+    "expect": [
+      "a cache exactly 15 min old is still read"
+    ]
+  },
+  {
+    "name": "the staleness rule is deleted, so an old cache reads as current",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age > MAX_AGE_S:\n        return cannot(f\"the cache is",
+        "    if False:\n        return cannot(f\"the cache is"
+      ]
+    ],
+    "expect": [
+      "a cache 15 min + 1 s old is CANNOT RUN (stale)"
+    ]
+  },
+  {
+    "name": "the future-cache rule is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age < -FUTURE_SLACK_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a cache 61 s in the future is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a seven_day reset exactly now still reads as current",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if resets <= now:",
+        "    if resets < now:"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly now is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a MISSING cache reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if text is None:\n        return cannot(missing)",
+        "    if text is None:\n        return OK, \"\""
+      ]
+    ],
+    "expect": [
+      "a missing cache is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "no seven_day window reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if seven is None:\n        return cannot(\"the cache has no seven_day window\")",
+        "    if seven is None:\n        return OK, \"\""
+      ]
+    ],
+    "expect": [
+      "no seven_day window is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a boolean passes as a percentage",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(x, (int, float)) and not isinstance(x, bool) and",
+        "isinstance(x, (int, float)) and"
+      ]
+    ],
+    "expect": [
+      "a boolean percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "NaN passes as a percentage",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " and math.isfinite(x)",
+        ""
+      ]
+    ],
+    "expect": [
+      "a NaN percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a negative percentage passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not is_number(p) or p < 0:",
+        "if not is_number(p):"
+      ]
+    ],
+    "expect": [
+      "a negative percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the override is ignored, so the owner cannot let a spawn through",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict != REFUSE or override:",
+        "    if verdict != REFUSE:"
+      ]
+    ],
+    "expect": [
+      "spawn: REFUSE with the override allows"
+    ]
+  },
+  {
+    "name": "a WARN also denies the spawn",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict != REFUSE or override:\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\"",
+        "    if verdict not in (REFUSE, WARN) or override:\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\""
+      ]
+    ],
+    "expect": [
+      "spawn: WARN, CANNOT RUN and OK allow"
+    ]
+  },
+  {
+    "name": "any value of the override env var counts",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "env.get(OVERRIDE_ENV) == \"1\"",
+        "env.get(OVERRIDE_ENV) is not None"
+      ]
+    ],
+    "expect": [
+      "override: env =0 is not"
+    ]
+  },
+  {
+    "name": "the override FILE is ignored",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or os.path.exists(os.path.join(root, OVERRIDE_FILE))",
+        ""
+      ]
+    ],
+    "expect": [
+      "override: the file is active"
+    ]
+  },
+  {
+    "name": "the prompt hook is silent on CANNOT RUN, so a missing cache reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict == OK:\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\"",
+        "    if verdict in (OK, CANNOT_RUN):\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\""
+      ]
+    ],
+    "expect": [
+      "prompt: CANNOT RUN adds the notice to context"
+    ]
+  },
+  {
+    "name": "main's spawn path drops the override it computed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "out = spawn_output(verdict, message, override_active(env, args.root))",
+        "out = spawn_output(verdict, message, False)"
+      ]
+    ],
+    "expect": [
+      "run-hook: the override FILE lets a 95% spawn through"
+    ]
+  },
+  {
+    "name": "main's hook mode returns the verdict's exit code",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return 0 if args.hook else RC[verdict]",
+        "    return RC[verdict]"
+      ]
+    ],
+    "expect": [
+      "main: spawn hook at 95% denies, rc 0"
+    ]
+  },
+  {
+    "name": "main ignores --cache and reads the live cache",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "read_cache(os.path.expanduser(args.cache))",
+        "read_cache(os.path.expanduser(DEFAULT_CACHE))"
+      ]
+    ],
+    "expect": [
+      "main: the verdict's exit codes"
+    ]
+  },
+  {
+    "name": "the REFUSE message drops the override hint",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{OVERRIDE_HINT}.{five_note}\")",
+        "f\"{five_note}\")"
+      ]
+    ],
+    "expect": [
+      "REFUSE names the override"
+    ]
+  },
+  {
+    "name": "the REFUSE message drops the reset time",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "work in flight continues. Resets {local_time(resets)}; ",
+        "work in flight continues. "
+      ]
+    ],
+    "expect": [
+      "REFUSE names the reset in local time"
+    ]
+  },
+  {
+    "name": "a bad --hook value is accepted, so a typo in the hook would print nothing and allow",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        elif a == \"--hook\" and v not in (\"prompt\", \"spawn\"):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "main: a bad --hook value is refused, rc 2"
+    ]
+  },
+  {
+    "name": "a flag with no value is silently dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if v is None:\n            raise ValueError(f\"{a} needs a value\")",
+        "        if v is None:\n            break"
+      ]
+    ],
+    "expect": [
+      "main: a flag with no value is refused, rc 2"
+    ]
+  }
+]
