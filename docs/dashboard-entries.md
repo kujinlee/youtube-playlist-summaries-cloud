@@ -18270,3 +18270,10 @@ natural pause. The statusline now shows the 5-hour and weekly usage (and runs tw
 will pace new work from that number, and backlog #398 records a push hook that mistakes heredoc prose for a push. The
 dev-speed page answers the owner's two questions about why Opus 5.5 merges more PRs: about half of it is smaller
 PRs and half is cheaper review rounds.
+
+## 2026-10-30
+The dev-speed page answers two more of the owner's questions:
+- **Why CI time jumped in week 42.** The mutation sweep's total work grew about 5.8× in under three weeks, faster than sharding could absorb, and on code PRs the slowest shard now sits at 24–29 minutes against a 30-minute limit. PR #445 resizes the sweep.
+- **How much the self-test count check costs.** Agents ran it locally 366 times in 8 days. Backlog #402, at the owner's request, makes the local run cover only changed scripts and leaves the full run to CI.
+
+Backlog #403 records that the review-recorded gate cannot see a final round run by the Claude half.
