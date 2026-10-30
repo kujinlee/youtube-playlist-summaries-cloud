@@ -2,7 +2,7 @@
 """Did the turn just completed show the reader a bare `#N`?
 
     python3 scripts/check-transcript-references.py --decide   # reads a Stop-hook payload on stdin
-    python3 scripts/check-transcript-references.py --self-test # 25 cases
+    python3 scripts/check-transcript-references.py --self-test # 26 cases
 
 WHY THIS EXISTS (owner's decision, 2026-10-20)
 ----------------------------------------------
@@ -261,6 +261,19 @@ def _self_test_body() -> int:
     case("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
          "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
          isinstance(_hostile, list) and len(_hostile) >= 14 and set(_hostile) == {(2, False)})
+    # ⛔ PR #440 r3 C4: rc 2 above is also what a DROPPED S_ISREG check gives (a writer-less FIFO reads as empty),
+    # so the case above passes for an ambient reason on these three. This one asserts the refusal's REASON.
+    def _non_regular_cli():
+        br = _owner("bounded_read")
+        with tempfile.TemporaryDirectory() as d:
+            me = [str(pathlib.Path(__file__).resolve()), "--decide"]
+            return [br.run_cli_naming(me, b, br.NOT_REGULAR) for _, b in br.non_regular_payloads(pathlib.Path(d))]
+    try:
+        _non_regular = _non_regular_cli()
+    except Exception as exc:                       # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+        _non_regular = f"RAISED {type(exc).__name__}"
+    case("⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else",
+         isinstance(_non_regular, list) and len(_non_regular) == 3 and set(_non_regular) == {(2, False, True)})
     # ── payload handling: CANNOT RUN is distinct from QUIET ──
     case("no transcript_path is CANNOT RUN", judge("{}")[0], 2)
     case("a non-JSON payload is CANNOT RUN", judge("not json")[0], 2)

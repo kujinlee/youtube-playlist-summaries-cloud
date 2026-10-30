@@ -1278,5 +1278,18 @@
     "expect": [
       "transcript_records: a transcript whose every record has a non-object `message` is CANNOT RUN — the turn rule's filter leaves nothing to read"
     ]
+  },
+  {
+    "name": "PR #440 r3 C4: the CANNOT RUN message drops the reader's reason — a FIFO refusal reads like any other",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN: {why}. \"",
+        "        print(f\"CANNOT RUN. \""
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else"
+    ]
   }
 ]

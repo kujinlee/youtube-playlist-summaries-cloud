@@ -189,7 +189,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 246 cases
+    python3 scripts/check-banner-armed.py --self-test  # 247 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD WITH NO PLAN FILE, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -1722,6 +1722,17 @@ def _self_test_body() -> int:
     case("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
          "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
          isinstance(_hostile, list) and [g for _, g in _hostile] == [(2, False)] * len(_hostile) and len(_hostile) >= 14)
+    # ⛔ PR #440 r3 C4: rc 2 above is also what a DROPPED S_ISREG check gives (a writer-less FIFO reads as empty),
+    # so the case above passes for an ambient reason on these three. This one asserts the refusal's REASON.
+    def _non_regular_cli() -> list:
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            me = [str(Path(__file__).resolve()), "--decide"]
+            return [bounded_read.run_cli_naming(me, b, bounded_read.NOT_REGULAR)
+                    for _, b in bounded_read.non_regular_payloads(Path(d))]
+    _non_regular = _safe_rc(_non_regular_cli)
+    case("⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else",
+         isinstance(_non_regular, list) and len(_non_regular) == 3 and set(_non_regular) == {(2, False, True)})
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
     # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE

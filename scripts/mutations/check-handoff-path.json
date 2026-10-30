@@ -100,7 +100,20 @@
       ]
     ],
     "expect": [
-      "⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang"
+      "⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang, and refused AS not a regular file"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the SKILL.md refusal drops the reader's reason — a FIFO there reads like an empty file",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "cannot read {path}: {why}. Treat",
+        "cannot read {path}. Treat"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang, and refused AS not a regular file"
     ]
   }
 ]

@@ -882,10 +882,13 @@ EXPECTED_MUTATIONS = {
     # six entries on `transcript_lines` and the stdin read retire with their subject (re-entered in that file's
     # manifest) and three are new — the bounded stdin read, the reader's refusal dropped at the turn rule, and the
     # turn filter's own refusal.
-    "scripts/check-banner-armed.py": 97,
+    # ⟳ 97 -> 98 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
+    "scripts/check-banner-armed.py": 98,
     # ⟳ PR #440 r2: THE ONE bounded reader for the five guards' untrusted input, pinned in the commit that creates
     # it. Two of its entries moved here from `check-ci-watched` with the stdin read; the rest are the r1/r2 classes.
-    "scripts/bounded_read.py": 22,
+    # ⟳ 22 -> 29 (PR #440 r3): the stdin bound's VALUES and exact-cap edge (C3, four), the non-regular refusal's
+    # NAME (C4), and the `--stdin` mode the registered Stop hook now reads its payload through (C5, two).
+    "scripts/bounded_read.py": 29,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -939,7 +942,8 @@ EXPECTED_MUTATIONS = {
     # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
     # ⟳ 49 -> 51 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
     # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
-    "scripts/check-closing-table.py": 51,
+    # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
+    "scripts/check-closing-table.py": 52,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -1997,7 +2001,8 @@ EXPECTED_MUTATIONS = {
     "scripts/check-guard-coverage.py": 10,
     # ⟳ 6 -> 7 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
     # ⟳ 7 -> 8 (PR #440 r2): the SKILL.md is read by `bounded_read`, so a FIFO there cannot hang the hook.
-    "scripts/check-handoff-path.py": 8,
+    # ⟳ 8 -> 9 (PR #440 r3 C4): the SKILL.md refusal must carry the reader's reason, so a FIFO is not "empty".
+    "scripts/check-handoff-path.py": 9,
     "scripts/check-diff-coverage.py": 37,
     # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
     # refusal of a non-path answer, and the fallback said aloud.
@@ -2147,7 +2152,8 @@ EXPECTED_MUTATIONS = {
     # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
     # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names
     # that case too.
-    "scripts/check-transcript-references.py": 7,
+    # ⟳ 7 -> 8 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
+    "scripts/check-transcript-references.py": 8,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
@@ -6284,7 +6290,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2578)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2589)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

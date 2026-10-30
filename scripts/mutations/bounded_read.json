@@ -287,5 +287,98 @@
     "expect": [
       "read_stream: a pipe that closes is read to EOF"
     ]
+  },
+  {
+    "name": "PR #440 r3 C3(a): MAX_STDIN shrunk to 4 KiB — every real payload over it would be CANNOT RUN",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "MAX_STDIN = 1024 * 1024 ",
+        "MAX_STDIN = 4 * 1024 "
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: the stdin bound is 1 MiB"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(b): STDIN_WAIT cut to 0.05 s — a payload that is merely slow is refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "STDIN_WAIT = 2.0 ",
+        "STDIN_WAIT = 0.05 "
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: the stdin wait is 2 s",
+      "⭐ r3 C3: a payload that arrives 0.5 s late is read under the DEFAULT wait"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(c): read_stream's pipe bound off by one — a payload of exactly `cap` bytes is refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if total > cap:\n                return None, f\"stdin carries",
+        "            if total >= cap:\n                return None, f\"stdin carries"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: read_stream: a PIPE of exactly `cap` bytes is read"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(c): read_stream's descriptor-less bound off by one — exactly `cap` bytes refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if len(data) > cap:\n                return None",
+        "            if len(data) >= cap:\n                return None"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: read_stream: a descriptor-less stream of exactly `cap` bytes is read"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the non-regular refusal stops naming itself — a FIFO refusal is indistinguishable from an empty read",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "return None, f\"{path} {NOT_REGULAR} — NOT READ",
+        "return None, f\"{path} — NOT READ"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: each non-regular transcript_path — a FIFO, a directory, /dev/zero — is refused AS not regular, never read and refused for something else"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C5: --stdin reads the hook's stdin UNBOUNDED — `$(cat)` again, a held-open pipe hangs the Stop hook",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "    data, why = read_stream(sys.stdin)\n",
+        "    data, why = sys.stdin.buffer.read(), \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C5: the REAL hook with stdin held OPEN finishes on the bound — CANNOT RUN, exit 1 — never the unbounded `$(cat)` that waited for the pipe to close",
+      "⭐ r3 C5: the REAL hook refuses a payload over MAX_STDIN — exit 1, the bound named — and passes nothing on"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C5: --stdin's refusal exits 0 — the hook's lost payload becomes a SILENT stop",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "as NOT RUN.\", file=sys.stderr)\n        return 2\n",
+        "as NOT RUN.\", file=sys.stderr)\n        return 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C5: the REAL hook with stdin held OPEN finishes on the bound — CANNOT RUN, exit 1 — never the unbounded `$(cat)` that waited for the pipe to close"
+    ]
   }
 ]

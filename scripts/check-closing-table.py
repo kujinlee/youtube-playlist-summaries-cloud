@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 159 cases
+    python3 scripts/check-closing-table.py --self-test   # 160 cases
 """
 from __future__ import annotations
 
@@ -1540,6 +1540,16 @@ def _self_test_body() -> int:
     check("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
           "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
           isinstance(_hostile, list) and len(_hostile) >= 14 and set(_hostile) == {(2, False)}, True)
+    # ⛔ PR #440 r3 C4: rc 2 above is also what a DROPPED S_ISREG check gives (a writer-less FIFO reads as empty),
+    # so the case above passes for an ambient reason on these three. This one asserts the refusal's REASON.
+    def _non_regular_cli() -> list:
+        with tempfile.TemporaryDirectory() as d:
+            me = [str(Path(__file__).resolve()), "--decide"]
+            return [bounded_read.run_cli_naming(me, b, bounded_read.NOT_REGULAR)
+                    for _, b in bounded_read.non_regular_payloads(Path(d))]
+    _non_regular = _safe(_non_regular_cli)
+    check("⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else",
+          isinstance(_non_regular, list) and len(_non_regular) == 3 and set(_non_regular) == {(2, False, True)}, True)
     check("run: empty payload -> CANNOT RUN", _safe(lambda: run_decide("")), CANNOT_RUN)
     check("run: malformed json -> CANNOT RUN", _safe(lambda: run_decide("{not json")), CANNOT_RUN)
     check("run: payload is a list -> CANNOT RUN", _safe(lambda: run_decide("[]")), CANNOT_RUN)

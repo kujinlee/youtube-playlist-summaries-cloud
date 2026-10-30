@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ONE bounded reader for the untrusted input five guards read — data, or CANNOT RUN with a reason.
 
-    python3 scripts/bounded_read.py --self-test  # 45 cases
+    python3 scripts/bounded_read.py --self-test  # 56 cases
+    python3 scripts/bounded_read.py --stdin      # stdin to stdout, bounded; rc 2 = CANNOT RUN (the Stop hook's read)
 
 ⛔ WHY THIS EXISTS (PR #440 round 2, the redesign). Five guards read input they do not control — the Stop hook's
 payload on stdin, the transcript it names, `gh`'s checks answer, a vendored SKILL.md — and each validated a
@@ -27,6 +28,9 @@ THE RULES, each owned here and nowhere else
     still growing, so the bound is 2.5x the largest real input and a transcript past it is CANNOT RUN — loud,
     never truncated into a different verdict. Stdin is bounded at `MAX_STDIN` (1 MiB; a Stop payload is a few
     hundred bytes) and in TIME by `STDIN_WAIT`, because `read()` on a pipe that never closes blocks forever.
+    ⟳ PR #440 r3 C5: the registered Stop hook used to read its stdin with `INPUT=$(cat)` BEFORE any guard ran, so
+    those bounds held for a guard's direct `--decide` and not on the hook path. The hook now reads it through
+    `python3 scripts/bounded_read.py --stdin`, the same `read_stream`, and hands each guard the bytes it got.
   * EVERY EXCEPTION FROM A PARSE IS CANNOT RUN (r2 X2). The handler at each public function is `except
     Exception`, DELIBERATELY BROAD, and this module is the one place in the five guards it is allowed: the
     failures that escaped before (`RecursionError`, `ValueError` from a NUL byte, `TypeError` from a number,
@@ -57,6 +61,9 @@ from pathlib import Path
 MAX_FILE = 256 * 1024 * 1024   # bytes; the measurement behind it is in the docstring
 MAX_STDIN = 1024 * 1024        # bytes
 STDIN_WAIT = 2.0               # seconds a payload may take to arrive and close
+# The words every non-regular-file refusal carries, so a case can tell "refused as not regular" from "read as
+# empty and refused for that" — under a dropped S_ISREG check both are rc 2 (PR #440 r3 C4).
+NOT_REGULAR = "is not a regular file"
 
 
 def _failed(step: str, exc: BaseException) -> str:
@@ -79,7 +86,7 @@ def read_file(path: object, cap: int = MAX_FILE) -> tuple[bytes | None, str]:
         try:
             st = os.fstat(fd)
             if not stat.S_ISREG(st.st_mode):
-                return None, f"{path} is not a regular file — NOT READ (a FIFO or a device would block, a directory has no bytes)"
+                return None, f"{path} {NOT_REGULAR} — NOT READ (a FIFO or a device would block, a directory has no bytes)"
             # ONE bound, enforced on the bytes actually read: a pre-check on `st_size` as well would be a second
             # copy that masks this one, and a live transcript can grow after the `fstat`.
             chunks, total = [], 0
@@ -268,24 +275,66 @@ def hostile_payloads(d: Path) -> list[tuple[str, bytes]]:
         ("r2 X2: a 200,000-deep array", b"[" * 200000 + b"]" * 200000),
         ("r2 X4: a FIFO with no writer as transcript_path", path(fifo)),
         ("a directory as transcript_path", path(d)),
+        # r3 C4: a DEVICE. Read without the S_ISREG check it is not empty, as a writer-less FIFO is: it is 256 MiB.
+        ("r3 C4: /dev/zero, a device, as transcript_path", path("/dev/zero")),
         ("r2 X1: an undecodable record mid-transcript", path(d / "undecodable.jsonl")),
         ("r2 X1: the judged record truncated mid-transcript", path(d / "truncated.jsonl")),
         ("r1 m3: one good record then three non-JSON", path(d / "not-json.jsonl")),
     ]
 
 
-def run_cli(argv: list[str], stdin: bytes, timeout: float = 30) -> tuple[object, bool]:
-    """SELF-TEST HELPER: run a guard's REAL entry point as the Stop hook does — raw stdin BYTES, a subprocess.
-    -> (rc, printed a traceback?), or ("HUNG", False) past `timeout`, so a hang is a NAMED red, not a dead suite.
-    PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C locale Python reads stdin with surrogateescape, which
-    would hide an undecodable payload on one machine and not another (r1 m1)."""
+# The hostile payloads whose refusal must NAME a non-regular file (r3 C4). Writer-less, a FIFO reads as EMPTY
+# and a directory raises, so without the S_ISREG check each is still rc 2 — for a different reason.
+NON_REGULAR = ("r2 X4: a FIFO with no writer as transcript_path", "a directory as transcript_path",
+               "r3 C4: /dev/zero, a device, as transcript_path")
+
+
+def non_regular_payloads(d: Path) -> list[tuple[str, bytes]]:
+    """SELF-TEST FIXTURE: the members of `hostile_payloads` named in `NON_REGULAR` — the same list, filtered."""
+    return [(n, b) for n, b in hostile_payloads(d) if n in NON_REGULAR]
+
+
+def _spawn(argv: list[str], stdin: bytes, timeout: float):
+    """-> the CompletedProcess, or None past `timeout`. PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C
+    locale Python reads stdin with surrogateescape, which would hide an undecodable payload on one machine and
+    not another (r1 m1)."""
     import subprocess
     try:
-        p = subprocess.run([sys.executable, *argv], input=stdin, capture_output=True, timeout=timeout,
-                           env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        return subprocess.run([sys.executable, *argv], input=stdin, capture_output=True, timeout=timeout,
+                              env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     except subprocess.TimeoutExpired:
+        return None
+
+
+def run_cli(argv: list[str], stdin: bytes, timeout: float = 30) -> tuple[object, bool]:
+    """SELF-TEST HELPER: run a guard's REAL entry point as the Stop hook does — raw stdin BYTES, a subprocess.
+    -> (rc, printed a traceback?), or ("HUNG", False) past `timeout`, so a hang is a NAMED red, not a dead suite."""
+    p = _spawn(argv, stdin, timeout)
+    if p is None:
         return "HUNG", False
     return p.returncode, b"Traceback" in p.stderr
+
+
+def run_cli_naming(argv: list[str], stdin: bytes, reason: str, timeout: float = 30) -> tuple[object, bool, bool]:
+    """SELF-TEST HELPER: `run_cli`, and whether the output NAMES `reason` -> (rc, traceback?, named?), or
+    ("HUNG", False, False). rc 2 alone cannot tell which refusal fired; this can (PR #440 r3 C4)."""
+    p = _spawn(argv, stdin, timeout)
+    if p is None:
+        return "HUNG", False, False
+    return p.returncode, b"Traceback" in p.stderr, reason.encode() in p.stdout + p.stderr
+
+
+def main_stdin() -> int:
+    """`--stdin`: copy THIS process's stdin to stdout, bounded by `read_stream` — rc 0 — or print CANNOT RUN and
+    return 2 with nothing on stdout. The registered Stop hook's one read of its payload (PR #440 r3 C5)."""
+    data, why = read_stream(sys.stdin)
+    if data is None:
+        print(f"CANNOT RUN — the Stop hook's stdin: {why}. Every guard after this gets an EMPTY payload, so each is "
+              f"CANNOT RUN too. Treat this stop's checks as NOT RUN.", file=sys.stderr)
+        return 2
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    return 0
 
 
 # ── --self-test ─────────────────────────────────────────────────────────────────────────────────
@@ -428,6 +477,12 @@ def _self_test_body() -> int:
         case("a non-object payload is refused BY NAME, at two distinct types — not by the broad catch's fallback",
              outcome(lambda: [stop_transcript(b)[2] for b in (b"null", b"5")]),
              ["the hook payload is JSON but not an object (NoneType)", "the hook payload is JSON but not an object (int)"])
+        # ⛔ r3 C4: rc 2 alone passed for an AMBIENT reason — with the S_ISREG check dropped, a writer-less FIFO
+        # reads as empty ("no record") and a directory raises, both still CANNOT RUN. So the reason is asserted.
+        case("⭐ r3 C4: each non-regular transcript_path — a FIFO, a directory, /dev/zero — is refused AS not "
+             "regular, never read and refused for something else",
+             outcome(lambda: [(n, NOT_REGULAR in stop_transcript(b)[2]) for n, b in non_regular_payloads(d)], 30),
+             [(n, True) for n in NON_REGULAR])
 
         # ── read_stream: bytes AND time ───────────────────────────────────────────────────────────
         class _Tty:
@@ -459,6 +514,27 @@ def _self_test_body() -> int:
              "CANNOT RUN")
         case("⭐ read_stream: a pipe that NEVER closes is CANNOT RUN after `wait`, never a hang",
              outcome(lambda: rc(_pipe(b"", False, 0.2))), "CANNOT RUN")
+        # ⛔ r3 C3: the bound's VALUES and its exact-cap edge were unpinned — three mutants survived every suite.
+        case("⭐ r3 C3: the stdin bound is 1 MiB", MAX_STDIN, 1048576)
+        case("⭐ r3 C3: the stdin wait is 2 s", STDIN_WAIT, 2.0)
+        case("⭐ r3 C3: read_stream: a PIPE of exactly `cap` bytes is read",
+             outcome(lambda: _pipe(b"x" * 10, True, 2.0, cap=10)), (b"x" * 10, ""))
+        case("⭐ r3 C3: read_stream: a descriptor-less stream of exactly `cap` bytes is read",
+             outcome(lambda: read_stream(io.BytesIO(b"x" * 10), cap=10)), (b"x" * 10, ""))
+
+        def _late(data: bytes, after: float):
+            """A pipe whose writer sends `data` and closes `after` seconds in, read under the DEFAULT wait."""
+            r, w = os.pipe()
+            def send() -> None:
+                import time
+                time.sleep(after)
+                os.write(w, data)
+                os.close(w)
+            threading.Thread(target=send, daemon=True).start()
+            with os.fdopen(r, "rb") as fh:
+                return read_stream(fh)
+        case("⭐ r3 C3: a payload that arrives 0.5 s late is read under the DEFAULT wait",
+             outcome(lambda: _late(b'{"a": 1}', 0.5)), (b'{"a": 1}', ""))
         # Through a real process, as a hook runs it: stdin held open by the parent.
         child = subprocess.Popen([sys.executable, "-c",
                                   "import sys; sys.path.insert(0, sys.argv[1]); import bounded_read as b; "
@@ -475,6 +551,79 @@ def _self_test_body() -> int:
             child.stdout.close()
         case("read_stream in a child whose stdin pipe is EMPTY and OPEN refuses rather than hanging", said, "True")
 
+        # ── --stdin, and the registered Stop hook that reads its payload through it (r3 C5) ──────────
+        me = [str(Path(__file__).resolve()), "--stdin"]
+        payload = b'{"transcript_path": "/t.jsonl", "session_id": "s", "x": "\\u00e9"}'
+        got = _spawn(me, payload, 30)
+        case("--stdin copies a closed payload to stdout byte for byte, rc 0",
+             None if got is None else (got.returncode, got.stdout), (0, payload))
+        got = _spawn(me, b"x" * (MAX_STDIN + 1), 30)
+        case("--stdin: a payload over MAX_STDIN is rc 2, NOTHING on stdout, CANNOT RUN on stderr",
+             None if got is None else (got.returncode, got.stdout, b"CANNOT RUN" in got.stderr), (2, b"", True))
+
+        # The REAL hook file, in a fake checkout whose five scripts are stubs that record the stdin they get, so
+        # nothing is written into this checkout's `.claude/`. Its subject is the hook's OWN read, before any guard.
+        root = Path(__file__).resolve().parent.parent
+        hook = root / ".claude" / "hooks" / "block-idle-stop.sh"
+        if not hook.exists():
+            case("the hook cases NOT CHECKED — no .claude/ in this tree (a real checkout missing the hook FAILS here)",
+                 (root / ".claude").exists(), False)
+        else:
+            fake = d / "checkout"
+            (fake / ".claude" / "hooks").mkdir(parents=True)
+            (fake / "scripts").mkdir()
+            (fake / ".claude" / "hooks" / hook.name).write_bytes(hook.read_bytes())
+            (fake / "scripts" / "bounded_read.py").write_bytes(Path(__file__).resolve().read_bytes())
+            readers = ("check-banner-armed.py", "check-transcript-references.py", "check-closing-table.py",
+                       "check-ci-watched.py")
+            for name in readers:
+                (fake / "scripts" / name).write_text(
+                    "import sys\nopen(__file__ + '.in', 'wb').write(sys.stdin.buffer.read())\n")
+            (fake / "scripts" / "check-plan-progress.py").write_text("import sys\nsys.exit(0)\n")
+
+            def through_hook(data: bytes, close: bool, secs: float = 15.0):
+                """-> (rc, stderr) of the hook with `data` on stdin, held OPEN unless `close`; "HUNG" past `secs`."""
+                for name in readers:
+                    (fake / "scripts" / (name + ".in")).unlink(missing_ok=True)
+                h = subprocess.Popen(["bash", str(fake / ".claude" / "hooks" / hook.name)], cwd=fake,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    if close:
+                        _, err = h.communicate(data, timeout=secs)
+                    else:
+                        h.stdin.write(data)
+                        h.stdin.flush()
+                        h.wait(timeout=secs)          # stdin still OPEN: nothing has closed it
+                        err = h.stderr.read()
+                    return h.returncode, err
+                except subprocess.TimeoutExpired:
+                    h.kill()
+                    h.wait()
+                    return "HUNG"
+                finally:
+                    for f in (h.stdin, h.stdout, h.stderr):
+                        if f and not f.closed:
+                            f.close()
+            def seen() -> list:
+                """What each stub guard was handed on stdin; None for one that never ran."""
+                return [(fake / "scripts" / (n + ".in")).read_bytes() if (fake / "scripts" / (n + ".in")).exists()
+                        else None for n in readers]
+            got = through_hook(payload, True)
+            case("the REAL hook hands every guard the payload byte for byte when stdin closes, and exits 0",
+                 got if got == "HUNG" else (got[0], seen()),
+                 (0, [payload] * len(readers)))
+            got = through_hook(payload, False)
+            case("⭐ r3 C5: the REAL hook with stdin held OPEN finishes on the bound — CANNOT RUN, exit 1 — never "
+                 "the unbounded `$(cat)` that waited for the pipe to close",
+                 got if got == "HUNG" else (got[0], b"did not close" in got[1],
+                                            seen()),
+                 (1, True, [b""] * len(readers)))
+            got = through_hook(b"x" * (MAX_STDIN + 1), True)
+            case("⭐ r3 C5: the REAL hook refuses a payload over MAX_STDIN — exit 1, the bound named — and passes "
+                 "nothing on", got if got == "HUNG" else (got[0], b"byte bound" in got[1],
+                                                          seen()),
+                 (1, True, [b""] * len(readers)))
+
     failed = sum(1 for _, ok in cases if not ok)
     print(f"\n{len(cases) - failed}/{len(cases)} self-test cases passed")
     return 1 if failed else 0
@@ -484,5 +633,7 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         sys.exit(_self_test())
+    if sys.argv[1:] == ["--stdin"]:
+        sys.exit(main_stdin())
     print(__doc__.split("\n\n")[0], file=sys.stderr)
     sys.exit(2)

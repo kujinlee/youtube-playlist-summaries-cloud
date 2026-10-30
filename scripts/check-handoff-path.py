@@ -201,13 +201,16 @@ def _self_test_body() -> int:
         try:
             cli = _sp357.run([sys.executable, str(cli_root / "scripts" / Path(__file__).name)], capture_output=True,
                              text=True, timeout=20, stdin=_sp357.DEVNULL)
-            got = (cli.returncode, "Traceback" in cli.stderr, "CANNOT RUN" in cli.stderr)
+            # ⛔ PR #440 r3 C4: and it must be refused AS a non-regular file. With the S_ISREG check dropped, a
+            # writer-less FIFO reads as EMPTY and is refused as "SKILL.md is empty" — rc 2 for an ambient reason.
+            got = (cli.returncode, "Traceback" in cli.stderr, "CANNOT RUN" in cli.stderr,
+                   bounded_read.NOT_REGULAR in cli.stderr)
         except _sp357.TimeoutExpired:
             got = "HUNG"
-        ok = got == (2, False, True)
+        ok = got == (2, False, True, True)
         failures += not ok
-        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang: "
-              f"got {got} want (2, False, True)")
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang, "
+              f"and refused AS not a regular file: got {got} want (2, False, True, True)")
 
         good = tmp / "good.md"
         good.write_text(GOOD, encoding="utf-8")
