@@ -154,5 +154,85 @@
     "expect": [
       "W10 with no qualifying base is NOT RUN, and that is a FAILURE, not a pass"
     ]
+  },
+  {
+    "name": "#388: the crowding bound is never reached",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "                    if n >= bound:",
+        "                    if False:"
+      ]
+    ],
+    "expect": [
+      "a directory at the bound is crowded; one under it is not",
+      "a crowded ANCESTOR makes its child crowded too (bash reads every ancestor)"
+    ]
+  },
+  {
+    "name": "#388: off by one — a directory AT the bound is not crowded",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "                for n, _ in enumerate(it, 1):",
+        "                for n, _ in enumerate(it, 0):"
+      ]
+    ],
+    "expect": [
+      "a directory at the bound is crowded; one under it is not"
+    ]
+  },
+  {
+    "name": "#388: only the directory itself is counted, not its ancestors",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    chain = (path, *path.parents)",
+        "    chain = (path,)"
+      ]
+    ],
+    "expect": [
+      "a crowded ANCESTOR makes its child crowded too (bash reads every ancestor)"
+    ]
+  },
+  {
+    "name": "#388: the walk ignores `top`",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    for d in chain[:chain.index(top) + 1] if top in chain else chain:",
+        "    for d in chain:"
+      ]
+    ],
+    "expect": [
+      "a directory at the bound is crowded; one under it is not"
+    ]
+  },
+  {
+    "name": "#388: world_base takes the first existing candidate",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "        if c.is_dir() and not crowded_dirs(c.resolve(), bound, top):",
+        "        if c.is_dir():"
+      ]
+    ],
+    "expect": [
+      "world_base skips a crowded candidate and a missing one, and takes the next",
+      "world_base with every candidate crowded is None (CANNOT RUN), never the first"
+    ]
+  },
+  {
+    "name": "#388: a timed-out launch crashes the suite instead of reddening its world",
+    "file": "scripts/check-run-hook.py",
+    "edits": [
+      [
+        "    except subprocess.TimeoutExpired:\n        # ⟳ backlog #388",
+        "    except ZeroDivisionError:\n        # ⟳ backlog #388"
+      ]
+    ],
+    "expect": [
+      "a launch past its budget is a named red world (TIMED_OUT), not a crash"
+    ]
   }
 ]

@@ -27,6 +27,16 @@ inherited `GIT_DIR` once wrote into the live repository).
 code, EXACTLY (the push gate denies through stdout); and W10 proves its own precondition — its cwd has
 no `.git` ancestor — or is NOT RUN, a failure, instead of blaming the launcher for the host's TMPDIR.
 
+⟳ backlog #388: THE WORLDS ARE BUILT UNDER AN UNCROWDED BASE. W12's cwd is over 1024 characters, so
+`getcwd(3)` fails and bash resolves the cwd ITSELF — reading each ancestor directory until it finds the
+child's name — at every shell start and at the launcher's `pwd -P`. MEASURED 2026-10-30 on the host
+whose suite timed out: its TMPDIR held 349,445 entries (leaked `tmpXXXXXXXX` directories), and one
+`bash -c 'pwd -P'` in a long cwd under it took 47 s, against 0.025 s under its 456-entry sibling `C/`
+and 0.022 s under `/private/tmp`. One W12 launch took 80–93 s of the 60 s budget; the other 199 took
+30 ms at the median. Not the launcher and not the budget: the host's directory. So the scratch root is
+the first of `outside_candidates()` with no directory on its path holding `CROWDED` entries or more,
+and none qualifying is CANNOT RUN. Linux `getcwd` handles long paths in the kernel, so CI never paid it.
+
 WHAT WOULD MAKE THIS FAIL (its falsifier): a world whose exit code, hook file or output streams differ
 from the review's table, or a mutant whose named world stays green.
 
@@ -37,7 +47,7 @@ is NOT run here. W15 (a session launched in a subdirectory loads no project hook
 any launcher and has no case.
 
     python3 scripts/check-run-hook.py               # the worlds, over the repo's launcher
-    python3 scripts/check-run-hook.py --self-test  # 72 cases
+    python3 scripts/check-run-hook.py --self-test  # 79 cases
 
 EXIT CODES (repo convention): 0 = every world as required · 1 = a world differs · 2 = CANNOT RUN
 (no git, no launcher, a world that could not be built — never a pass).
@@ -76,6 +86,7 @@ printf 'probe-stderr-364\\n' >&2
 exit "${PROBE_EXIT:-7}"
 """
 SEG = "d" * 100  # one path segment of the long-path world
+TIMED_OUT = -999  # a launch past its budget: no real exit code, and distinct from every one above
 
 
 class CannotRun(Exception):
@@ -132,7 +143,8 @@ class Result:
     out: str = ""
 
 
-def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str], out: Path) -> Result:
+def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str], out: Path,
+           timeout: float = 60) -> Result:
     """Run the registered command from `cwd` as the harness does: `/bin/sh -c`, CLAUDE_PROJECT_DIR set.
 
     `PWD` is the cwd as GIVEN (logical, as a shell that had `cd`'d there would export it), so a
@@ -150,7 +162,11 @@ def launch(cwd: Path, project: str | None, args: list[str], extra: dict[str, str
     try:
         chdir_parts(cwd)
         r = subprocess.run(["/bin/sh", "-c", cmd], env=env, input=PAYLOAD, capture_output=True, text=True,
-                           timeout=60)
+                           timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # ⟳ backlog #388: a launch past its budget is a RED WORLD, named by its case — never an uncaught
+        # exception that ends the suite with a traceback and no `[FAIL]` line, which is how it read.
+        return Result(TIMED_OUT, None, None, None, f"TIMED OUT after {timeout} s")
     finally:
         os.chdir(saved)
 
@@ -192,6 +208,44 @@ def no_git_base(candidates: list[Path]) -> Path | None:
 
 def outside_candidates() -> list[Path]:
     return [Path(tempfile.gettempdir()), Path("/tmp"), Path("/var/tmp")]
+
+
+# Backlog #388. Measured 2026-10-30: a long-cwd `pwd -P` took 0.07 s under a fresh 10,000-entry base
+# and 47 s under a 349,445-entry one, so this bound sits where the cost was still negligible.
+CROWDED = 10_000
+
+
+def crowded_dirs(path: Path, bound: int, top: Path) -> list[Path]:
+    """`path` and each ancestor of it up to `top`, holding `bound` entries or more — what bash's own
+    cwd resolution reads, entry by entry, when the cwd is over PATH_MAX (`top` is `/` there; a case
+    passes its fixture root). Counting stops at `bound`, so a crowded directory costs one bounded
+    read. An unreadable one is skipped: bash cannot read it either, so it fails loudly, not slowly."""
+    out = []
+    chain = (path, *path.parents)
+    for d in chain[:chain.index(top) + 1] if top in chain else chain:
+        try:
+            with os.scandir(d) as it:
+                for n, _ in enumerate(it, 1):
+                    if n >= bound:
+                        out.append(d)
+                        break
+        except OSError:
+            continue
+    return out
+
+
+def world_base(candidates: list[Path], bound: int, top: Path = Path("/")) -> Path | None:
+    """The first existing candidate with no crowded directory on its path, or None (CANNOT RUN)."""
+    for c in candidates:
+        if c.is_dir() and not crowded_dirs(c.resolve(), bound, top):
+            return c.resolve()
+    return None
+
+
+def no_world_base() -> str:
+    return (f"no base among {[str(c) for c in outside_candidates()]} is free of a directory holding "
+            f"{CROWDED}+ entries, and W12's over-1024-character cwd makes bash read every entry of each "
+            f"(backlog #388)")
 
 
 def discard(w: World) -> None:
@@ -532,8 +586,31 @@ def _self_test_body(launcher: Path = REPO_ROOT / LAUNCHER_REL) -> int:
                  apply_mutant("needle needle", probe), None))
     rows.append(("a mutant whose anchor occurs once is applied", apply_mutant("a needle b", probe), "a pin b"))
 
-    with tempfile.TemporaryDirectory() as td:
+    # Backlog #388: the base the worlds are built under. Bounds of 3 and 4 on fixtures built here.
+    with tempfile.TemporaryDirectory() as cd:
+        c = Path(cd).resolve()
+        crowded, sparse = c / "crowded", c / "sparse"
+        for i in range(4):
+            (crowded / f"e{i}").mkdir(parents=True)
+        (crowded / "e0" / "child").mkdir()
+        sparse.mkdir()
+        rows.append(("a directory at the bound is crowded; one under it is not",
+                     (crowded_dirs(crowded, 4, c), crowded_dirs(crowded, 5, c)), ([crowded], [])))
+        rows.append(("a crowded ANCESTOR makes its child crowded too (bash reads every ancestor)",
+                     crowded_dirs(crowded / "e0" / "child", 3, c), [crowded]))
+        rows.append(("world_base skips a crowded candidate and a missing one, and takes the next",
+                     world_base([crowded, c / "missing", sparse], 4, c), sparse))
+        rows.append(("world_base with every candidate crowded is None (CANNOT RUN), never the first",
+                     world_base([crowded / "e1", crowded], 3, c), None))
+
+    base = world_base(outside_candidates(), CROWDED)
+    if base is None:
+        print(f"CANNOT RUN — {no_world_base()}. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory(dir=base) as td:
         x = Path(td).resolve()
+        rows.append(("⭐ the worlds' scratch root has no crowded directory on its path (backlog #388)",
+                     crowded_dirs(x, CROWDED, Path("/")), []))
         try:
             w = build(x / "w", launcher)
         except (CannotRun, OSError) as exc:
@@ -560,6 +637,17 @@ def _suite_over_world(rows: list, w: World, x: Path, launcher: Path) -> None:
     markers.mkdir()
     results = run_worlds(w, markers)
     rows.extend(results)
+    # Backlog #388: a hook that outlives the budget. `sleep 2` against 0.5 s; the orphaned sleep keeps
+    # the pipes open, so this case costs about 2 s. The second launch is its control: inside the budget
+    # the same machinery returns the probe's own code.
+    (w.main / ".claude/hooks/slow.sh").write_text("sleep 2\n")
+    try:
+        slow = launch(w.main / "scripts", str(w.main), ["slow.sh"], {}, markers / "slow", 0.5).rc
+        fast = launch(w.main, None, ["probe.sh"], {"PROBE_EXIT": "0"}, markers / "fast", 60).rc
+    except subprocess.TimeoutExpired:
+        slow = fast = "raised"
+    rows.append(("a launch past its budget is a named red world (TIMED_OUT), not a crash", slow, TIMED_OUT))
+    rows.append(("...and inside its budget the same launch returns the hook's own code", fast, 0))
     real = (w.main / LAUNCHER_REL).read_text()
     if red_names(results):
         rows.append(("the control is green, so the mutants mean something", "RED", "green"))
@@ -636,7 +724,11 @@ def main(argv: list[str] | None = None, launcher: Path = REPO_ROOT / LAUNCHER_RE
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
-    with tempfile.TemporaryDirectory() as td:
+    base = world_base(outside_candidates(), CROWDED)
+    if base is None:
+        print(f"CANNOT RUN — {no_world_base()}. Treat this as NOT RUN, not as a pass.")
+        return 2
+    with tempfile.TemporaryDirectory(dir=base) as td:
         code, results = check(launcher, Path(td).resolve())
     if code == 2:
         print(f"CANNOT RUN — {results[0][1][0]}. Treat this as NOT RUN, not as a pass.")

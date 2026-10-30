@@ -81,6 +81,12 @@ guard. **Commit the fix before mutating** (`git checkout` also reverts an uncomm
 member behind a cast, so behavioural tests are the only net there.
 *(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
 
+**Local gates are SCOPED; the full runs are CI's (backlog #402, the split backlog #208 made for the
+mutation sweep).** Before a push, run `python3 scripts/check-selftest-counts.py --changed` (against
+`origin/master` by default), not the bare command: it runs only the pinned suites the branch can have
+moved, and prints `nothing to check` when there are none. The unscoped run stays in `ci.yml` on every
+PR. Measured 2026-10-30 — the bare run was made locally 366 times in eight days.
+
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
 
 ---

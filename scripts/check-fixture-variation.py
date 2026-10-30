@@ -1181,6 +1181,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #402 (2026-10-30): the scoped-mode cases are the first in the suite to call `audit`, and its
+    # two borrowed functions have ONE implementation each by design — the file imports them from
+    # check-plan-code rather than copying the rule, which is the defect its docstring refuses.
+    "check-selftest-counts.py:audit.count_drift": "the borrowed rule has one implementation by design (check-plan-code.count_drift); a second would be the copy this script exists not to make",
+    "check-selftest-counts.py:audit.child_env": "the borrowed HOME redirect has one implementation by design (check-plan-code.child_env); a second would be the copy this script exists not to make",
     # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
     # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
     "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",

@@ -54,12 +54,36 @@ FAILS IF
   * a child suite exits non-zero (its own cases are red — the count means nothing);
   * a child prints no parseable `N/M … passed` line  -> exit 2, CANNOT RUN, never a pass.
 
+SCOPED MODE — THE LOCAL GATE (backlog #402)
+--------------------------------------------
+The full run starts every pinned suite, about 351 s under load. Agents ran it 366 times locally in
+eight days, while CI runs it on every PR anyway. So locally the gate is SCOPED:
+
+  * `--only <script>…` checks the named pinned suites. A name not in POPULATION is an ERROR (rc 2),
+    never skipped: a typo that checks nothing would read as a pass.
+  * `--changed [--base origin/master]` checks the suites the branch can have moved: the files in
+    `git diff --name-only <base>...HEAD`, plus uncommitted and untracked edits (a local gate runs
+    before the commit as often as after it), CLOSED over a dependency rule — a script is reached
+    when its CODE imports a reached module by name, or a non-docstring string constant in it holds a
+    reached file's basename (how `spec_from_file_location(SCRIPTS / "check-plan-code.py")`,
+    `LAUNCHER_REL` and every `docs/…` path constant name what they read). Read with `ast`, so a
+    comment or a docstring mentioning a file is not a dependency; a string in an error message is,
+    which over-selects — the safe direction. A dependency built at runtime from pieces is NOT seen.
+  * an empty scope prints `nothing to check` and exits 0 — said, never a silent pass.
+  * the POPULATION ratchet is never scoped: it only parses, so it always covers every script.
+
+The unscoped run stays CI's (`.github/workflows/ci.yml`), unchanged.
+
 Usage:
-    python3 scripts/check-selftest-counts.py
-    python3 scripts/check-selftest-counts.py --self-test  # 18 cases
+    python3 scripts/check-selftest-counts.py                       # every pinned suite (CI)
+    python3 scripts/check-selftest-counts.py --changed             # the local gate
+    python3 scripts/check-selftest-counts.py --changed --base <ref>
+    python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
+    python3 scripts/check-selftest-counts.py --self-test  # 37 cases
 """
 from __future__ import annotations
 
+import argparse
 import ast
 import importlib.util
 import re
@@ -394,8 +418,11 @@ def printed_total(out: str) -> int | None:
     return total
 
 
-def audit(root: Path, pinned: frozenset[str], count_drift, child_env) -> tuple[list[str], list[str]]:
-    """(problems, cannot_run). Kept separate so a cannot-run is never reported as a pass."""
+def audit(root: Path, pinned: frozenset[str], count_drift, child_env,
+          only: frozenset[str] | None = None) -> tuple[list[str], list[str]]:
+    """(problems, cannot_run). Kept separate so a cannot-run is never reported as a pass.
+
+    `only` scopes which suites RUN; the population ratchet always covers every script."""
     problems: list[str] = []
     cannot: list[str] = []
 
@@ -404,7 +431,7 @@ def audit(root: Path, pinned: frozenset[str], count_drift, child_env) -> tuple[l
 
     with tempfile.TemporaryDirectory() as td:
         env = child_env(Path(td))
-        for name in sorted(pinned & found):
+        for name in sorted(pinned & found if only is None else pinned & found & only):
             script = root / "scripts" / name
             try:
                 rc, out = run_self_test(script, env)
@@ -427,9 +454,110 @@ def audit(root: Path, pinned: frozenset[str], count_drift, child_env) -> tuple[l
     return problems, cannot
 
 
+# ── scoped mode (backlog #402) ──────────────────────────────────────────────────────────────────
+class CannotScope(Exception):
+    """The scope could not be computed (git failed, a name is unknown): rc 2, never a pass."""
+
+
+def code_refs(src: str) -> tuple[frozenset[str], tuple[str, ...]]:
+    """(module names imported, non-docstring string constants) of `src`. Unparseable -> nothing.
+
+    Comments never reach the AST, and docstrings are dropped by position, so PROSE naming a file is
+    not a dependency — only code that imports it or holds its name in a string."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return frozenset(), ()
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                docs.add(id(body[0].value))
+    imports, strings = set(), []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            imports.add(node.module.split(".")[0])
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
+            strings.append(node.value)
+    return frozenset(imports), tuple(strings)
+
+
+def depends_on(refs: tuple[frozenset[str], tuple[str, ...]], path: str) -> bool:
+    """True when code with `refs` imports `path` (a `.py` by its stem) or holds its basename."""
+    imports, strings = refs
+    p = Path(path)
+    if p.suffix == ".py" and p.stem in imports:
+        return True
+    return any(p.name in s for s in strings)
+
+
+def reached(changed: set[str], sources: dict[str, str]) -> set[str]:
+    """`changed`, plus every `scripts/<name>` that references a changed path, plus — to a fixpoint —
+    every script that IMPORTS a reached module by name.
+
+    `sources` maps a script's basename to its text. ONE hop for a string reference, a fixpoint for an
+    import, and the asymmetry is measured: `check-plan-code.py` holds every script's path as a
+    dictionary KEY (`EXPECTED_MUTATIONS`), so closing over strings too made a one-file change reach
+    24 of 68 suites through it. An import puts the imported code inside the importer's suite, which
+    a name in a dictionary does not."""
+    refs = {name: code_refs(src) for name, src in sources.items()}
+    reach = set(changed)
+    reach |= {f"scripts/{n}" for n, r in refs.items() if any(depends_on(r, p) for p in changed)}
+    grew = True
+    while grew:
+        grew = False
+        stems = {Path(p).stem for p in reach if p.startswith("scripts/") and p.endswith(".py")}
+        for name, (imports, _) in refs.items():
+            key = f"scripts/{name}"
+            if key not in reach and imports & stems:
+                reach.add(key)
+                grew = True
+    return reach
+
+
+def git_lines(root: Path, *args: str) -> list[str]:
+    proc = subprocess.run(["git", *args], cwd=str(root), capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise CannotScope(f"`git {' '.join(args)}` exited {proc.returncode}: {proc.stderr.strip()}")
+    return [ln for ln in proc.stdout.split("\n") if ln]
+
+
+def changed_paths(root: Path, base: str) -> set[str]:
+    """What the branch moved: committed since the merge base, plus uncommitted and untracked edits."""
+    return (set(git_lines(root, "diff", "--name-only", f"{base}...HEAD"))
+            | set(git_lines(root, "diff", "--name-only", "HEAD"))
+            | set(git_lines(root, "ls-files", "--others", "--exclude-standard")))
+
+
+def only_names(names: list[str], pinned: frozenset[str]) -> frozenset[str]:
+    """`--only`'s names as POPULATION basenames. An unknown name RAISES — a typo must not check nothing."""
+    picked = {n[len("scripts/"):] if n.startswith("scripts/") else n for n in names}
+    unknown = sorted(picked - pinned)
+    if unknown:
+        raise CannotScope(f"not in POPULATION: {', '.join(unknown)} — no declared count to check "
+                          f"(a name, e.g. check-run-hook.py)")
+    return frozenset(picked)
+
+
+def changed_scope(root: Path, pinned: frozenset[str], base: str) -> frozenset[str]:
+    """The pinned suites `--changed` runs: the branch's changed paths, closed over the dependency rule."""
+    sources = {p.name: p.read_text(encoding="utf-8") for p in sorted((root / "scripts").glob("*.py"))}
+    reach = reached(changed_paths(root, base), sources)
+    return frozenset(n for n in pinned if f"scripts/{n}" in reach)
+
+
 def main() -> int:
     if "--self-test" in sys.argv:
         return self_test()
+    ap = argparse.ArgumentParser(description="Every declared --self-test case count, checked by running it.")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--only", nargs="+", metavar="SCRIPT", help="check only these pinned suites")
+    mode.add_argument("--changed", action="store_true", help="check only the suites this branch can move")
+    ap.add_argument("--base", default="origin/master", help="the ref --changed diffs against")
+    args = ap.parse_args(sys.argv[1:])
 
     try:
         pc = _load_plan_code()
@@ -437,7 +565,19 @@ def main() -> int:
         print(f"CANNOT RUN — {exc}. Treat this as NOT RUN.", file=sys.stderr)
         return 2
 
-    problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env)
+    only = None
+    try:
+        if args.only:
+            only = only_names(args.only, POPULATION)
+        elif args.changed:
+            only = changed_scope(ROOT, POPULATION, args.base)
+    except CannotScope as exc:
+        print(f"CANNOT RUN — {exc}. Treat this as NOT RUN.", file=sys.stderr)
+        return 2
+    scope = ("" if only is None else
+             " (scope: --only)" if args.only else f" (scope: --changed against {args.base})")
+
+    problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only)
 
     if cannot:
         print("CANNOT RUN — a declared count could not be read. Treat these as NOT CHECKED:\n",
@@ -451,8 +591,15 @@ def main() -> int:
             print(f"  ✗ {p}")
         return 1
 
-    print(f"self-test counts: {len(POPULATION)} script(s) declare a count, "
-          f"every one verified by running it")
+    if only is None:
+        print(f"self-test counts: {len(POPULATION)} script(s) declare a count, "
+              f"every one verified by running it")
+    elif not only:
+        print(f"self-test counts: nothing to check{scope} — no changed file reaches a pinned suite; "
+              f"the population ratchet passed over all {len(POPULATION)}. The full run is CI's.")
+    else:
+        print(f"self-test counts: {len(only)} of {len(POPULATION)} pinned suite(s) verified by running "
+              f"them{scope}: {', '.join(sorted(only))}. The full run is CI's.")
     return 0
 
 
@@ -537,6 +684,98 @@ def _self_test_body() -> int:
     # A drifted count must be reported THROUGH the borrowed function, not a local copy.
     check("a drifted count is reported by count_drift",
           "[DRIFT]" in (cd('"""x\n\n    --self-test  # 5 cases\n"""', 6) or ""), True)
+
+    # ── scoped mode (backlog #402): the dependency rule ──
+    # A refusal comes back as TEXT, never as an exception: an uncaught one would end the suite and
+    # leave a mutation run with no `[FAIL]` line to attribute.
+    def result(fn):
+        try:
+            return fn()
+        except CannotScope as exc:
+            return f"CannotScope: {exc}"
+
+    check("a docstring or a comment naming a file is NOT a reference",
+          depends_on(code_refs('"""reads a.py"""\n# a.py\ndef f():\n    """a.py"""\n'), "scripts/a.py"), False)
+    check("a string constant holding the basename IS a reference",
+          depends_on(code_refs('X = "scripts/a.py"\n'), "scripts/a.py"), True)
+    check("an import of the stem IS a reference",
+          depends_on(code_refs("import fixture_git\n"), "scripts/fixture_git.py"), True)
+    check("an import matches a .py only — `import backlog` does not reach docs/backlog.md",
+          depends_on(code_refs("import backlog\n"), "docs/backlog.md"), False)
+    srcs = {"a.py": "", "b.py": 'P = "a.py"\n', "c.py": 'P = "b.py"\n', "d.py": "import b\n",
+            "e.py": "import d\n", "f.py": ""}
+    check("a changed script is reached, an unrelated one is not",
+          sorted(reached({"scripts/f.py"}, srcs)), ["scripts/f.py"])
+    check("an unparseable script reaches nothing, and is not itself reached",
+          sorted(reached({"scripts/a.py"}, {"a.py": "", "x.py": "def (: a.py"})), ["scripts/a.py"])
+    check("a string reference is ONE hop; an import is closed to a fixpoint",
+          sorted(reached({"scripts/a.py"}, srcs)),
+          ["scripts/a.py", "scripts/b.py", "scripts/d.py", "scripts/e.py"])
+    check("--only accepts a bare name or a scripts/ path",
+          result(lambda: only_names(["a.py", "scripts/b.py"], frozenset({"a.py", "b.py", "c.py"}))),
+          frozenset({"a.py", "b.py"}))
+    check("--only with a name outside POPULATION is an ERROR, never a skip",
+          str(result(lambda: only_names(["a.py", "nope.py"], frozenset({"a.py"})))).startswith(
+              "CannotScope: not in POPULATION: nope.py"), True)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "scripts").mkdir()
+
+        def git(*args: str) -> None:
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=str(root),
+                           check=True, capture_output=True)
+
+        for n, body in (("a.py", "A = 1\n"), ("b.py", "import a\n"), ("c.py", "C = 1\n")):
+            (root / "scripts" / n).write_text(body)
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        git("branch", "base")
+        pinned = frozenset({"a.py", "b.py", "c.py", "d.py"})
+        check("a clean branch with no commits is an EMPTY scope", changed_scope(root, pinned, "base"), frozenset())
+        (root / "scripts/c.py").write_text("C = 2\n")
+        git("commit", "-qam", "c moves")
+        # The BASE moves after the fork: three dots diff from the merge base, so its own later
+        # commit is not the branch's change. Two dots would put a.py in scope.
+        git("checkout", "-q", "base")
+        (root / "scripts/a.py").write_text("A = 9\n")
+        git("commit", "-qam", "the base moves on")
+        git("checkout", "-q", "-")
+        check("--changed reaches a script committed since the base",
+              changed_scope(root, pinned, "base"), frozenset({"c.py"}))
+        check("…and against HEAD the committed change is out of scope", changed_scope(root, pinned, "HEAD"),
+              frozenset())
+        (root / "scripts/a.py").write_text("A = 2\n")
+        check("an UNCOMMITTED edit is in scope, with its importer",
+              changed_scope(root, pinned, "base"), frozenset({"a.py", "b.py", "c.py"}))
+        (root / "scripts/d.py").write_text("D = 1\n")
+        check("an UNTRACKED script is in scope", "d.py" in changed_scope(root, pinned, "base"), True)
+        check("an unknown base is CANNOT RUN, never an empty scope",
+              str(result(lambda: changed_scope(root, pinned, "no-such-ref"))).startswith("CannotScope: `git diff"), True)
+
+    # ── scoped mode: `only` scopes which suites RUN, never the population ratchet ──
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "scripts").mkdir()
+        decl = '"""x\n\n    --self-test  # 1 cases\n"""\nimport sys\n'
+        (root / "scripts/ok.py").write_text(decl + 'print("1/1 passed")\n')
+        (root / "scripts/red.py").write_text(decl + 'print("0/1 passed")\nsys.exit(1)\n')
+        pinned = frozenset({"ok.py", "red.py"})
+        check("unscoped, the red suite is reported",
+              [p.split(":")[0] for p in audit(root, pinned, cd, pc.child_env)[0]], ["red.py"])
+        check("scoped to the green one, the red suite does not run", audit(root, pinned, cd, pc.child_env,
+                                                                        frozenset({"ok.py"})), ([], []))
+    with tempfile.TemporaryDirectory() as td:
+        other = Path(td)
+        (other / "scripts").mkdir()
+        (other / "scripts/ok.py").write_text(decl + 'print("1/1 passed")\n')
+        (other / "scripts/new.py").write_text(decl + 'print("1/1 passed")\n')
+        check("…but the population ratchet is never scoped",
+              any("new.py" in p for p in audit(other, frozenset({"ok.py"}), cd, pc.child_env, frozenset())[0]), True)
+        check("--changed outside a git checkout is CANNOT RUN, never an empty scope",
+              str(result(lambda: changed_scope(other, frozenset({"ok.py"}), "HEAD"))).startswith(
+                  "CannotScope: `git diff"), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

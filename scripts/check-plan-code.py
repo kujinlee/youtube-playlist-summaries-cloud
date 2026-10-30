@@ -1859,7 +1859,9 @@ EXPECTED_MUTATIONS = {
     # deleting the `passed` filter still returned 8; (2) the borrowed-name case re-derived the
     # comprehension instead of calling it, so deleting the real rule left the case green. A
     # second implementation of one rule, tested against itself.
-    "scripts/check-selftest-counts.py": 8,
+    # backlog #402 (2026-10-30): 8 -> 21, the scoped mode — the dependency rule, the three change
+    # sources, the --only refusal, and `only` scoping the runs but never the population ratchet.
+    "scripts/check-selftest-counts.py": 21,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
@@ -2031,7 +2033,8 @@ EXPECTED_MUTATIONS = {
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
-    "scripts/check-run-hook.py": 12,
+    # backlog #388 (2026-10-30): 12 -> 18, the uncrowded world base (the bound, its ancestors, `top`, the pick) and a timed-out launch as a red world.
+    "scripts/check-run-hook.py": 18,
     # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces. 17 -> 36 and 6 -> 12 in the
     # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules); 36 -> 45 in round 2's
     # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
@@ -6262,7 +6265,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2538)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2557)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

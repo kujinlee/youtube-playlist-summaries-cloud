@@ -15,7 +15,7 @@ ffmpeg install failed first, twice, so `verify` never reached the namespace gate
 
 **How to apply:** before every push of a PR branch run, in its worktree:
 `python3 scripts/check-reference-namespace.py --base origin/master && python3 scripts/check-fixture-variation.py`
-(plus check-docs, check-selftest-counts). `check-merge-ready.py --pr N` runs the PR-only steps too, but only after
+(plus check-docs, and `check-selftest-counts.py --changed` — scoped locally since backlog #402; the full run is CI's). `check-merge-ready.py --pr N` runs the PR-only steps too, but only after
 CI exists. A new pure function: vary EVERY parameter in at least two cases. When CI fails on ffmpeg, the steps
 after it were NOT run — run them locally before calling the branch green.
 
