@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 246 cases
+    python3 scripts/check-plan-code.py --self-test          # 270 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -82,6 +82,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import contextlib
+import functools
 import io
 import json
 import os
@@ -737,6 +738,234 @@ def run_suite_parts(d: pathlib.Path, name: str) -> tuple[int, str, str]:
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
     rc, out, err = run_suite_parts(d, name)
     return rc, merged_output(out, err)
+
+
+# ── backlog #405: STOP A MUTANT'S SUITE AT THE CASE ITS ENTRY NAMES ──────────────────────────
+# Every mutant used to re-run its guard's WHOLE suite, though its `expect` already names the case
+# that must catch it. Once every named case has printed `[FAIL] <name>`, the rest of the suite
+# cannot change "killed" or "attributed" — PROVIDED the suite's own printer and trailer are
+# intact, which is what `suite_contract_spans` is for. Every case BEFORE the named one still runs,
+# so state shared between cases is untouched.
+#
+# ⚠ WHAT AN EARLY STOP DOES NOT SEE, stated rather than hidden — all three are the full sweep's
+# (`--full-sweep`, which CI runs weekly and on any change to this file):
+#   * a LATER case that would hang: in full the suite times out (rc 2, NOT CHECKED); stopped, the
+#     kill stands, because the named case really did go red;
+#   * a named case printed TWICE: in full `len(m) != 1` refuses the attribution; stopped at the
+#     first print, it is attributed;
+#   * a suite that prints `[FAIL]` and still exits 0 for a reason no mutation put there.
+#
+# The stop is SIGINT to the child's PROCESS GROUP, never SIGKILL: SIGINT is a KeyboardInterrupt,
+# so `finally` blocks and `fixture_git.isolated()` restore what they took, and the re-control
+# after the sequence is what proves they did.
+STOP_GRACE = 10
+
+
+@functools.lru_cache(maxsize=128)
+def suite_contract_spans(src: str) -> "tuple[tuple[int, int], ...]":
+    """The line spans where a suite talks to this harness. PURE.
+
+    A mutant there can make a suite PRINT `[FAIL] <name>` and still exit 0 — e.g. a trailer
+    edited to `return 0`. In full that is a survivor; stopped at the print it would be a kill,
+    which is the one outcome #405 must never produce. So a mutant touching any span below runs
+    its suite in FULL:
+      * every function holding a `[FAIL` literal or a bare `FAIL` (the
+        `[{'ok' if ok else 'FAIL'}]` printers) — the case printer;
+      * every function whose name contains `self_test` — the suite body, whose end is the
+        trailer that turns a fail count into an exit code;
+      * every line naming a `self_test` symbol — the dispatch, `return _self_test()`.
+    ⚠ CONSERVATIVE BY CONSTRUCTION: it also catches production functions that merely mention
+    `FAIL` or a `self_test` name (measured at `0af605cc`: 66 of 2,538 entries, and every one runs
+    as it did before #405). A source that does not parse is ALL contract. Cached: one parse per
+    target, not one per mutant — the sweep asks it of every entry.
+    """
+    import ast
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return ((1, src.count("\n") + 1),)
+
+    def _printer(n) -> bool:
+        return any(isinstance(k, ast.Constant) and isinstance(k.value, str)
+                   and ("[FAIL" in k.value or k.value == "FAIL") for k in ast.walk(n))
+    spans = []
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                "self_test" in n.name or _printer(n)):
+            spans.append((n.lineno, n.end_lineno))
+        elif ((isinstance(n, ast.Name) and "self_test" in n.id)
+              or (isinstance(n, ast.Attribute) and "self_test" in n.attr)):
+            spans.append((n.lineno, n.end_lineno))
+    return tuple(spans)
+
+
+def needs_full_suite(mut: dict, src: str) -> bool:
+    """Must this mutant's suite run to the end, whatever its named cases print? PURE.
+
+    True when an edit lands on `suite_contract_spans`, when an edit's text carries the contract's
+    own tokens (`[FAIL]`, `passed` — the reader side, e.g. `control_is_green`), or when an anchor
+    cannot be placed in the ORIGINAL source exactly once (a later edit anchored on an earlier
+    one's output): an edit this cannot locate is treated as one that might touch the contract.
+    """
+    spans = suite_contract_spans(src)
+    for find, repl in mut.get("edits", []):
+        if any(tok in find + repl for tok in ("[FAIL]", "passed")):
+            return True
+        if src.count(find) != 1:
+            return True
+        lo = src[:src.index(find)].count("\n") + 1
+        hi = lo + find.count("\n")
+        if any(lo <= s_hi and hi >= s_lo for s_lo, s_hi in spans):
+            return True
+    return False
+
+
+def _reset_sigint() -> None:
+    # A backgrounded shell starts its jobs with SIGINT IGNORED, and an ignored disposition
+    # survives exec — Python then never installs KeyboardInterrupt, so every stop would ride out
+    # STOP_GRACE and read as a CANNOT RUN.
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _reap_group(proc, sig) -> None:
+    """Signal what is left of `proc`'s group, and wait (bounded) for it to go.
+
+    `proc.poll()` inside the loop is load-bearing: an exited leader stays a ZOMBIE until it is
+    reaped, a zombie still answers `killpg(pgid, 0)`, and the loop would then spin out its whole
+    bound on a group that is already dead.
+    """
+    try:
+        os.killpg(proc.pid, sig)
+    except ProcessLookupError:
+        return
+    end = time.monotonic() + STOP_GRACE
+    while time.monotonic() < end:
+        proc.poll()
+        if not _group_alive(proc.pid):
+            return
+        time.sleep(0.05)
+
+
+def sigterm_as_exit(restore=None):
+    """Make SIGTERM a `SystemExit` for the length of a sweep, so `run_suite_until`'s `finally` runs.
+
+    ⛔ A mutant's suite runs in its OWN SESSION (`start_new_session`), so a terminal's Ctrl-C never
+    reaches it, and a SIGTERM to the harness — `kill`, a timeout wrapper — used to end the harness
+    with the suite still running. MEASURED while building #405: a sweep stopped with `pkill` left
+    its `check-plan-code.py --self-test` child running under launchd (ppid 1). Ctrl-C is already a
+    KeyboardInterrupt, so SIGTERM is the one that needed converting.
+    Returns the previous handler; pass it back as `restore` to put it back. Off the main thread
+    `signal.signal` cannot be called, and nothing is changed.
+    """
+    import signal
+
+    def _exit(signum, _frame):
+        raise SystemExit(128 + signum)
+    try:
+        return signal.signal(signal.SIGTERM, _exit if restore is None else restore)
+    except ValueError:
+        return None
+
+
+def run_suite_until(d: pathlib.Path, name: str,
+                    stop_names: "list[str]") -> tuple[int, str, str, bool]:
+    """`(rc, stdout, stderr, stopped)` — `run_suite_parts`, but it stops at the named cases.
+
+    Streams the suite unbuffered. Once EVERY name in `stop_names` has printed its `[FAIL]` line
+    (read by `parse_fail_names`, the same reader attribution uses), the child's process group gets
+    SIGINT and `rc` is 1: the named cases are red. A suite that ends first is returned exactly as
+    `run_suite_parts` would return it. A suite that does not exit within STOP_GRACE of the SIGINT
+    is a CANNOT RUN (rc 2) — its `finally` blocks cannot be shown to have run.
+    """
+    import queue
+    import signal
+    import threading
+    env = child_env(d)
+    env["PYTHONUNBUFFERED"] = "1"
+    proc = subprocess.Popen([sys.executable, name, "--self-test"], cwd=d, env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            start_new_session=True, preexec_fn=_reset_sigint)
+    lines: "queue.Queue" = queue.Queue()
+    err_parts: list = []
+
+    def _pump_out():
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+    pumps = [threading.Thread(target=_pump_out, daemon=True),
+             threading.Thread(target=lambda: err_parts.append(proc.stderr.read()), daemon=True)]
+    for t in pumps:
+        t.start()
+    out_parts: list = []
+    pending = set(stop_names)
+    stopped = timed_out = False
+    deadline = time.monotonic() + SUITE_TIMEOUT
+    hung = (2, "", f"CANNOT RUN — {name} --self-test did not finish in {SUITE_TIMEOUT}s. NOT CHECKED.",
+            False)
+    try:
+        while True:
+            try:
+                line = lines.get(timeout=max(0.0, deadline - time.monotonic()))
+            except queue.Empty:
+                timed_out = True
+                break
+            if line is None:
+                break
+            out_parts.append(line)
+            if pending:
+                pending.difference_update(parse_fail_names(line))
+                if not pending:
+                    stopped = True
+                    break
+        if timed_out:
+            return hung
+        if stopped:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGINT)
+            try:
+                proc.wait(timeout=STOP_GRACE)
+            except subprocess.TimeoutExpired:
+                return 2, "".join(out_parts), (
+                    f"CANNOT RUN — {name} --self-test was stopped at its named case(s) but did "
+                    f"not exit within {STOP_GRACE}s of SIGINT, so its cleanup cannot be shown "
+                    f"to have run. NOT CHECKED."), False
+        else:
+            proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        for t in pumps:
+            t.join(timeout=STOP_GRACE)
+        while True:
+            try:
+                line = lines.get_nowait()
+            except queue.Empty:
+                break
+            if line is not None:
+                out_parts.append(line)
+        rc = proc.returncode
+        if stopped and rc != 0:
+            rc = 1
+        return rc, "".join(out_parts), "".join(err_parts), stopped
+    except subprocess.TimeoutExpired:
+        return hung
+    finally:
+        # Nothing of the group outlives the call, whichever way it left: SIGINT first, so
+        # cleanup still gets its chance, and SIGKILL only for what ignored it.
+        if proc.poll() is None or _group_alive(proc.pid):
+            _reap_group(proc, signal.SIGINT)
+            if proc.poll() is None or _group_alive(proc.pid):
+                _reap_group(proc, signal.SIGKILL)
+        if proc.poll() is None:
+            proc.wait()
 
 
 
@@ -1412,7 +1641,10 @@ EXPECTED_MUTATIONS = {
     #   eleven entries added, none retired. ⟳ r1 fold: 128 -> 131 — four anchors this branch orphaned
     #   REBOUND (r1 CLAUDE H2, plus two of its own), three added for main()'s --only wiring and CI=true.
     #   ⟳ r2 fold: 131 -> 133 — a failed control is reported before, and priced out of, a budget refusal.
-    "scripts/check-plan-code.py": 137,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-10-30, backlog #405: 137 -> 158 — twenty-one added for the early stop (`run_suite_until`,
+    #   `needs_full_suite`, `full_sweep_needed`, `sigterm_as_exit` and two call sites), none retired;
+    #   four anchors REBOUND.
+    "scripts/check-plan-code.py": 158,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2322,6 +2554,21 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
 SHARD_SPEC = re.compile(r"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$")
 
 
+# backlog #405: the files whose change makes a PR's sweep run in FULL. This one holds the early
+# stop itself, so a change here is exactly when "stopped at the named case" must be re-earned.
+FULL_SWEEP_TRIGGERS = ("scripts/check-plan-code.py",)
+
+
+def full_sweep_needed(changed: "list[str] | None") -> bool:
+    """PURE. Should this PR's sweep run every suite to the end (`--full-sweep`)? Backlog #405.
+
+    Here, not in `ci.yml`, for `sweep_needed`'s reason below. An UNDETERMINED change set (`None`)
+    is a full sweep: an unanswered question never buys the cheaper gate. The weekly run in
+    `.github/workflows/mutation-full-sweep.yml` is the other half — it needs no trigger at all.
+    """
+    return changed is None or any(c in FULL_SWEEP_TRIGGERS for c in changed)
+
+
 def sweep_needed(changed: "list[str] | None") -> bool:
     """PURE. Should the mutation sweep run, given the paths a branch changed? Backlog #173.
 
@@ -2616,6 +2863,7 @@ def mutate_delivered(root: pathlib.Path,
                      shard: "tuple[int, int] | None" = None,
                      budget: "float | None" = None,
                      only: "frozenset | None" = None,
+                     full_sweep: bool = False,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
 
@@ -2776,7 +3024,8 @@ def mutate_delivered(root: pathlib.Path,
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
-                                                          progress=progress)
+                                                          progress=progress,
+                                                          early_stop=not full_sweep)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         # ⚠ WHAT THIS SHARD DECLARED, not what the manifest holds. `len(muts)` here makes every
@@ -2827,7 +3076,8 @@ def mutate_delivered(root: pathlib.Path,
 
 
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
-                  progress=None) -> tuple[bool, list[str], list[dict], list[str]]:
+                  progress=None, early_stop: bool = False,
+                  ) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -2838,6 +3088,11 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     guard below was bought with a review round, so a diff that alters behaviour is a
     defect in the refactor, not an improvement. Proof is a measurement, not a reading:
     43 mutations / 0 survivors before and after.
+
+    ⟳ backlog #405: `early_stop` runs each mutant through `run_suite_until`, stopping at the
+    cases its `expect` names — unless `needs_full_suite` says its edit touches the suite's own
+    printer or trailer. OFF by default, so every caller that predates it behaves as before; each
+    entry records `stopped_early`, so a reader can tell a stopped kill from a full one.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
     for position, mut in enumerate(muts, 1):
@@ -2879,8 +3134,15 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         if src is None:
             continue
         orig = (d / fname).read_text()
+        _want = mut.get("expect")
+        _names = [_want] if isinstance(_want, str) else list(_want or [])
+        early = early_stop and bool(_names) and not needs_full_suite(mut, orig)
         (d / fname).write_text(src)
-        rc, out = run_suite(d, fname)
+        if early:
+            rc, _so, _se, stopped = run_suite_until(d, fname, _names)
+            out = merged_output(_so, _se)
+        else:
+            (rc, out), stopped = run_suite(d, fname), False
         (d / fname).write_text(orig)
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
@@ -2902,7 +3164,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # a survivor and `trustworthy` stays True — found by the Codex half of the code
             # review, 2026-09-03, in the fix that exists to prevent exactly this.
             ev_muts.append({"name": name, "caught": False, "fails": fails,
-                            "measured": False})
+                            "measured": False, "stopped_early": False})
             ev_survivors.append(name)
             report.append(
                 f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
@@ -2948,7 +3210,8 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # branch lost a whole run: eight entries, every one killed, not one attributable,
         # and a summary line byte-identical to success.
         ev_muts.append({"name": name, "caught": caught, "fails": fails,
-                        "attributed": caught and not unnamed, "measured": True})
+                        "attributed": caught and not unnamed, "measured": True,
+                        "stopped_early": stopped})
         if not caught:
             ok = False
             ev_survivors.append(name)
@@ -3034,6 +3297,21 @@ def _entries_of(v) -> list:
     bug in coverage_verdict's `raises`. This is the reporting path, not the reading path.
     """
     return v.mutations if isinstance(v, Measured) else v.entries
+
+
+def early_stop_line(muts: list, full_sweep: bool) -> str:
+    """How many mutants were stopped at their named case — backlog #405. PURE.
+
+    On stderr, beside the tally rather than in it: a stopped kill and a full one are the same
+    verdict, so the tally must not read differently; this line is how a reader tells the sweep
+    that ran from the one that was asked for.
+    """
+    if full_sweep:
+        return (f"full sweep: all {len(muts)} mutant suite(s) ran to the end "
+                f"(--full-sweep, backlog #405)")
+    n = sum(1 for m in muts if m.get("stopped_early") is True)
+    return (f"early stop: {n} of {len(muts)} mutant suite(s) stopped at their named case(s); "
+            f"the rest ran to the end (backlog #405)")
 
 
 def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=None) -> str:
@@ -3192,6 +3470,21 @@ def _budget_wiring(root: pathlib.Path) -> dict:
         if saved is not None:
             os.environ["CI"] = saved
     return out
+
+
+def _full_sweep_wiring(root: pathlib.Path) -> tuple:
+    """`main()` over ROOT with and without --full-sweep: (rc, full-sweep?, rc, full-sweep?).
+
+    A small function for the reason `_budget_wiring` is one: `check-main-drivable` prices each
+    `main()` call site by its enclosing function, and inside `_self_test` that price is the suite's.
+    """
+    out = []
+    for extra in (["--full-sweep"], []):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = main(["--mutate", str(root), "--allow-long-local", *extra])
+        out += [rc, "full sweep:" in err.getvalue()]
+    return tuple(out)
 
 
 def _self_test() -> int:
@@ -6262,7 +6555,13 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2538)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2559)
+    case("#405: a PR that changes the harness runs the FULL sweep",
+         full_sweep_needed(["docs/x.md", "scripts/check-plan-code.py"]), True)
+    case("#405: ...an undetermined change set runs it too",
+         full_sweep_needed(None), True)
+    case("#405: ...and a PR that changes only a guard stops early",
+         full_sweep_needed(["scripts/check-x.py", "scripts/mutations/check-x.json"]), False)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -6369,6 +6668,249 @@ def _self_test_body() -> int:
              all("CANNOT RUN" in p for p in _probs) and any("supabase" in p for p in _probs),
              True)
 
+    # ── backlog #405: a mutant's suite STOPS at the case its entry names ─────────────────────
+    # ⚠ LAST ON PURPOSE: these spawn and sleep (~5s), and a mutant of this file that stops early
+    # at an earlier named case skips them — placed first, every such mutant paid for them.
+    # Each fixture is a suite that would run on for a long time AFTER its named case goes red,
+    # so "stopped" is observable as elapsed time, and a stop that never happened cannot pass.
+    import signal as _signal
+
+    def _es_suite(body: str) -> str:
+        return ('import os, pathlib, subprocess, sys, time\n'
+                'D = pathlib.Path(__file__).parent\n'
+                'def f():\n    return 1\n\n\n'
+                'def _self_test():\n'
+                '    fail = 0\n' + body +
+                '    print("1/1 passed")\n'
+                '    return 1 if fail else 0\n\n\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+
+    def _gone(pid: int) -> bool:
+        _end = time.monotonic() + 5
+        while time.monotonic() < _end:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            time.sleep(0.05)
+        return False
+
+    _mut2 = {"name": "f returns two", "file": "es.py",
+             "edits": [["def f():\n    return 1", "def f():\n    return 2"]], "expect": "f is one"}
+    _saved_grace = STOP_GRACE
+    try:
+        globals()["STOP_GRACE"] = 0.3
+        with tempfile.TemporaryDirectory() as _td:
+            _d = pathlib.Path(_td)
+            (_d / "es.py").write_text(_es_suite(
+                '    if f() != 1:\n'
+                '        print("  [FAIL] f is one: got %r want 1" % f()); fail += 1\n'
+                '        time.sleep(8)\n'))
+            _t0 = time.monotonic()
+            _okE, _repE, _evE, _ = run_mutations(_d, [_mut2], {"es.py"}, early_stop=True)
+            case("#405: a mutant whose named case is red is recorded killed AND attributed, and "
+                 "the suite is stopped there",
+                 (_okE, [(m["caught"], m["attributed"], m["stopped_early"]) for m in _evE],
+                  time.monotonic() - _t0 < 6), (True, [(True, True, True)], True))
+            # ⛔ The same stop with SIGINT IGNORED in this process — what a backgrounded shell hands
+            # its jobs. Without `_reset_sigint` the child inherits the ignore and rides out the
+            # grace, which is a CANNOT RUN, not a kill.
+            _old = _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
+            try:
+                _rcI = run_suite_until(_d, "es.py", ["never printed"])[0]   # the unmutated suite: f is 1
+                (_d / "es.py").write_text((_d / "es.py").read_text().replace(
+                    "def f():\n    return 1", "def f():\n    return 2"))
+                _rcI2, _, _, _stI = run_suite_until(_d, "es.py", ["f is one"])
+            finally:
+                _signal.signal(_signal.SIGINT, _old)
+            case("#405: a stop still works when the harness itself runs with SIGINT ignored",
+                 (_rcI2, _stI), (1, True))
+            case("#405: ...and an unmutated suite that names nothing red runs to its end, green",
+                 _rcI, 0)
+
+        with tempfile.TemporaryDirectory() as _td:
+            _d = pathlib.Path(_td)
+            (_d / "es.py").write_text(_es_suite(
+                '    if f() != 1:\n'
+                '        print("  [FAIL] f is one: got %r want 1" % f()); fail += 1\n'
+                '    time.sleep(0.5)\n'
+                '    print("  [FAIL] something else: got 1 want 2"); fail += 1\n'))
+            _mutP = dict(_mut2, expect=["f is one", "a case that never fails"])
+            _t0 = time.monotonic()
+            _okP, _repP, _evP, _ = run_mutations(_d, [_mutP], {"es.py"}, early_stop=True)
+            case("#405: a PARTIAL red (one of two named cases) is not a stop — the suite runs to "
+                 "its end and is judged exactly as before",
+                 (_okP, [(m["caught"], m["attributed"], m["stopped_early"], m["fails"]) for m in _evP],
+                  time.monotonic() - _t0 >= 0.5),
+                 (False, [(True, False, False, ["f is one", "something else"])], True))
+
+        with tempfile.TemporaryDirectory() as _td:
+            _d = pathlib.Path(_td)
+            (_d / "es.py").write_text(_es_suite(
+                '    if f() != 1:\n'
+                '        print("  [FAIL] f is one: got %r want 1" % f()); fail += 1\n'))
+            # The trailer edited to exit 0 over a red case. In FULL that is a survivor; stopped at
+            # the `[FAIL]` print it would be a kill — the one outcome #405 must never produce.
+            _mutT = dict(_mut2, edits=_mut2["edits"] + [["    return 1 if fail else 0",
+                                                         "    return 0"]])
+            _okT, _repT, _evT, _ = run_mutations(_d, [_mutT], {"es.py"}, early_stop=True)
+            case("#405: a mutant that edits the suite's own TRAILER runs in full, so a [FAIL] "
+                 "over exit 0 stays a SURVIVOR",
+                 (_okT, [(m["caught"], m["stopped_early"]) for m in _evT]), (False, [(False, False)]))
+            _src = (_d / "es.py").read_text()
+            case("#405: needs_full_suite — an edit to production code may stop early",
+                 needs_full_suite(_mut2, _src), False)
+            case("#405: needs_full_suite — an edit inside the suite body (the trailer) runs in full",
+                 needs_full_suite({"edits": [["    return 1 if fail else 0", "    return 0"]]}, _src), True)
+            case("#405: needs_full_suite — an edit to a `[{'ok' if ok else 'FAIL'}]` printer runs in full",
+                 needs_full_suite({"edits": [["got=", "got:"]]},
+                                  "def chk(n, ok):\n    print(f\"  [{'ok' if ok else 'FAIL'}] {n} got=\")\n"),
+                 True)
+            case("#405: needs_full_suite — an edit to the dispatch line `_self_test()` runs in full",
+                 needs_full_suite({"edits": [["    sys.exit(_self_test())", "    sys.exit(0)"]]}, _src),
+                 True)
+            case("#405: needs_full_suite — an edit whose anchor cannot be placed once runs in full",
+                 needs_full_suite({"edits": [["def f():\n    return 1", "def f():\n    return 2"],
+                                             ["return 2", "return 3"]]}, _src), True)
+            case("#405: needs_full_suite — a suite body with no printer in it still runs in full (its trailer)",
+                 needs_full_suite({"edits": [["    return 1 if fail else 0", "    return 0"]]},
+                                  "def _self_test():\n    fail = 0\n    return 1 if fail else 0\n"), True)
+            case("#405: needs_full_suite — a multi-line edit that ENDS inside the suite runs in full",
+                 needs_full_suite({"edits": [["    return 1\n\n\ndef _self_test():",
+                                              "    return 2\n\n\ndef _self_test():"]]}, _src), True)
+            case("#405: needs_full_suite — a source that does not parse is all contract",
+                 needs_full_suite({"edits": [["x = (", "y = ("]]}, "def f(:\n    x = (\n"), True)
+            case("#405: needs_full_suite — an edit that carries the contract's own token runs in full",
+                 needs_full_suite({"edits": [["def f():\n    return 1",
+                                              "def f():\n    return '[FAIL] x'"]]}, _src), True)
+
+        with tempfile.TemporaryDirectory() as _td:
+            _d = pathlib.Path(_td)
+            # SIGINT is the stop so that `finally` restores; a grandchild that IGNORES SIGINT is
+            # what is left for the group reaper.
+            (_d / "es.py").write_text(_es_suite(
+                '    (D / "pid").write_text(str(os.getpid()))\n'
+                '    kid = subprocess.Popen([sys.executable, "-c", "import signal, time; '
+                'signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(20)"])\n'
+                '    (D / "kid").write_text(str(kid.pid))\n'
+                '    (D / "scratch").write_text("taken")\n'
+                '    try:\n'
+                '        if f() != 1:\n'
+                '            print("  [FAIL] f is one: got %r want 1" % f()); fail += 1\n'
+                '        time.sleep(8)\n'
+                '    finally:\n'
+                '        (D / "scratch").unlink()\n'
+                '        (D / "restored").write_text("yes")\n'))
+            (_d / "es.py").write_text((_d / "es.py").read_text().replace(
+                "def f():\n    return 1", "def f():\n    return 2"))
+            _rcC, _, _, _stC = run_suite_until(_d, "es.py", ["f is one"])
+            case("#405: a SIGINT stop lets the suite's `finally` restore, and leaves no process and "
+                 "no stray file behind",
+                 (_rcC, _stC, (_d / "restored").is_file(), (_d / "scratch").exists(),
+                  _gone(int((_d / "pid").read_text())), _gone(int((_d / "kid").read_text()))),
+                 (1, True, True, False, True, True))
+
+        with tempfile.TemporaryDirectory() as _td:
+            _d = pathlib.Path(_td)
+            (_d / "es.py").write_text(_es_suite(
+                '    signal = __import__("signal")\n'
+                '    signal.signal(signal.SIGINT, signal.SIG_IGN)\n'
+                '    (D / "pid").write_text(str(os.getpid()))\n'
+                '    if f() != 1:\n'
+                '        print("  [FAIL] f is one: got %r want 1" % f()); fail += 1\n'
+                '    time.sleep(8)\n'))
+            (_d / "es.py").write_text((_d / "es.py").read_text().replace(
+                "def f():\n    return 1", "def f():\n    return 2"))
+            _t0 = time.monotonic()
+            _rcG, _, _seG, _stG = run_suite_until(_d, "es.py", ["f is one"])
+            case("#405: a suite that IGNORES SIGINT is bounded — a CANNOT RUN, never a kill, and "
+                 "nothing is left running",
+                 (_rcG, _stG, "did not exit within" in _seG, time.monotonic() - _t0 < 6,
+                  _gone(int((_d / "pid").read_text()))), (2, False, True, True, True))
+        with tempfile.TemporaryDirectory() as _tdH:
+            # A different tree and a different NAME: the hang message must name the suite it ran.
+            _dH = pathlib.Path(_tdH) / "sub"
+            _dH.mkdir()
+            (_dH / "hang.py").write_text(_es_suite('    time.sleep(8)\n'))
+            _saved_timeout = SUITE_TIMEOUT
+            try:
+                globals()["SUITE_TIMEOUT"] = 0.5
+                _rcH, _, _seH, _stH = run_suite_until(_dH, "hang.py", ["f is one"])
+            finally:
+                globals()["SUITE_TIMEOUT"] = _saved_timeout
+            case("#405: a streamed suite that never reaches its named case and hangs is rc 2, "
+                 "a CANNOT RUN", (_rcH, _stH, "hang.py --self-test did not finish" in _seH),
+                 (2, False, True))
+    finally:
+        globals()["STOP_GRACE"] = _saved_grace
+
+    # A harness stopped by SIGTERM must not leave a mutant's suite running in its own session.
+    with tempfile.TemporaryDirectory() as _tdS:
+        _rS = pathlib.Path(_tdS)
+        for _rel in HARNESS_TREE:
+            (_rS / _rel).mkdir(parents=True, exist_ok=True)
+        (_rS / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
+        (_rS / "scripts" / "es.py").write_text(_es_suite(
+            '    if f() != 1:\n'
+            '        (pathlib.Path(os.environ["ES_PID"])).write_text(str(os.getpid()))\n'
+            '        time.sleep(20)\n'))
+        (_rS / "scripts" / "mutations" / "es.json").write_text(json.dumps(
+            [dict(_mut2, file="scripts/es.py")]))
+        _pidf = _rS / "child.pid"
+        _outer = subprocess.Popen(
+            [sys.executable, "-c",
+             "import importlib.util, sys\n"
+             "spec = importlib.util.spec_from_file_location('cpc', sys.argv[1])\n"
+             "m = importlib.util.module_from_spec(spec); sys.modules['cpc'] = m\n"
+             "spec.loader.exec_module(m)\n"
+             "m.EXPECTED_MUTATIONS.clear(); m.EXPECTED_MUTATIONS['scripts/es.py'] = 1\n"
+             "sys.exit(m.main(['--mutate', sys.argv[2], '--allow-long-local']))\n",
+             str(pathlib.Path(__file__).resolve()), str(_rS)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env={**os.environ, "ES_PID": str(_pidf)})
+        _end = time.monotonic() + 20
+        while not _pidf.is_file() and time.monotonic() < _end and _outer.poll() is None:
+            time.sleep(0.05)
+        _seen_child = _pidf.is_file()
+        time.sleep(0.2)
+        _outer.terminate()
+        try:
+            _outer.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            _outer.kill()
+            _outer.wait()
+        case("#405: a SIGTERM to the harness leaves no mutant suite running behind it",
+             (_seen_child, _seen_child and _gone(int(_pidf.read_text()))), (True, True))
+
+    # The CALL SITES: `mutate_delivered` stops by default, and `--full-sweep` reaches it.
+    _saved = dict(EXPECTED_MUTATIONS)
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS["scripts/es.py"] = 1
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td)
+            for _rel in HARNESS_TREE:
+                (_r / _rel).mkdir(parents=True, exist_ok=True)
+            (_r / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
+            (_r / "scripts" / "es.py").write_text(_es_suite(
+                '    if f() != 1:\n'
+                '        print("  [FAIL] f is one: got %r want 1" % f()); fail += 1\n'
+                '        time.sleep(0.5)\n'))
+            (_r / "scripts" / "mutations" / "es.json").write_text(json.dumps(
+                [dict(_mut2, file="scripts/es.py")]))
+            _evD = mutate_delivered(_r)[2]
+            case("#405: --mutate stops a mutant at its named case by default",
+                 [m.get("stopped_early") for m in getattr(_evD, "mutations", [])], [True])
+            _evF = mutate_delivered(_r, full_sweep=True)[2]
+            case("#405: ...and with full_sweep every suite runs to its end",
+                 [m.get("stopped_early") for m in getattr(_evF, "mutations", [])], [False])
+            case("#405: ...and main() hands --full-sweep through to the sweep",
+                 _full_sweep_wiring(_r), (0, True, 0, False))
+    finally:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS.update(_saved)
+
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
     # it cannot drift silently the way `# 12 cases` did against a 19-case suite.
@@ -6396,6 +6938,10 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
                     help="With --mutate: run only the mutations targeting SCRIPT, written as the "
                          "manifest's `file` (e.g. scripts/check-x.py; repeatable). "
                          "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
+    ap.add_argument("--full-sweep", action="store_true",
+                    help="With --mutate: run every mutant's suite to the END instead of stopping "
+                         "at the case its entry names (backlog #405). What the weekly CI sweep "
+                         "runs, and every PR that changes this file.")
     ap.add_argument("--allow-long-local", action="store_true",
                     help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
     ap.add_argument("--compare", metavar="DIR",
@@ -6505,8 +7051,9 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         if why:
             print(why, file=sys.stderr)
             return 2
-    if (a.only or a.allow_long_local) and not a.mutate:
-        print("CANNOT RUN — --only and --allow-long-local only mean something with --mutate ROOT. "
+    if (a.only or a.allow_long_local or a.full_sweep) and not a.mutate:
+        print("CANNOT RUN — --only, --allow-long-local and --full-sweep only mean something with "
+              "--mutate ROOT. "
               "NOTHING WAS MEASURED.", file=sys.stderr)
         return 2
     if a.only and shard is not None:
@@ -6543,8 +7090,11 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         budget = None if (_ci or a.allow_long_local) else (
             LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
         only = frozenset(a.only) if a.only else None
+        _prev_term = sigterm_as_exit()
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
-                                               shard=shard, budget=budget, only=only)
+                                               shard=shard, budget=budget, only=only,
+                                               full_sweep=a.full_sweep)
+        sigterm_as_exit(_prev_term)
         if report and report[0].startswith(LOCAL_REFUSAL):
             print(report[0], file=sys.stderr)
             return 2
@@ -6581,6 +7131,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # rather than the gate: the gate is defended by the type; the refusal is the part a
         # one-line edit can still get wrong quietly.
         if isinstance(verdict, Measured):
+            print(early_stop_line(verdict.mutations, a.full_sweep), file=sys.stderr)
             print(tally_line(ok, verdict, shard, only))
         else:
             # NO tally — and that includes the FILE count. On a control-failure run

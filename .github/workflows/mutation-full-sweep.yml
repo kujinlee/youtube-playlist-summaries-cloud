@@ -1,0 +1,85 @@
+# The mutation sweep with NO early stop — backlog #405.
+#
+# `ci.yml`'s `mutation-sweep` stops each mutant's suite once every case its manifest entry names has
+# printed `[FAIL] <name>`. That is sound for the kill, but blind to what runs AFTER the named case: a
+# later case that hangs, a named case printed twice, a suite that prints `[FAIL]` and exits 0 (the
+# full list is on `run_suite_until` in scripts/check-plan-code.py). This workflow re-earns those, by
+# running every suite to the end:
+#   * WEEKLY, on a schedule — so the full verdict is never more than seven days old;
+#   * on demand (`workflow_dispatch`).
+# The third trigger is not here: a PR that changes `scripts/check-plan-code.py` already runs its
+# own sweep in full (`full_sweep_needed`, called from `ci.yml`).
+#
+# ⚠ A scheduled failure appears on NO pull request's check list, and GitHub disables schedules on a
+# public repository after 60 days without activity — the same two weaknesses `schema-gates.yml`'s
+# nightly states. FAILS IF: this file's schedule is removed, or a week passes with no run.
+name: Mutation full sweep
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'      # 06:00 UTC every Monday
+  workflow_dispatch:
+
+concurrency:
+  group: mutation-full-sweep-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Not fail-fast, for `mutation-sweep`'s reason: one survivor says nothing about other shards.
+      fail-fast: false
+      matrix:
+        # The same split as `ci.yml`'s `mutation-sweep`; a full sweep is that sweep's cost before #405.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: The Python pin took effect
+        run: python3 scripts/check-python-pin.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Mutation manifest, every suite run to the end (one shard)
+        env:
+          SHARD_INDEX: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        run: |
+          python3 scripts/check-plan-code.py --mutate . \
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" --full-sweep
+
+  full-sweep-complete:
+    needs: full-sweep
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Every shard of the full sweep reported green
+        env:
+          SWEEP: ${{ needs.full-sweep.result }}
+        run: |
+          if [ "$SWEEP" != "success" ]; then
+            echo "FAILED — the full mutation sweep reported '$SWEEP', not 'success'."
+            echo "A cancelled or skipped shard measured NOTHING: treat the full-sweep evidence"
+            echo "for this commit as NOT CHECKED until every shard is green."
+            exit 1
+          fi
+          echo "the full mutation sweep is green in every shard"

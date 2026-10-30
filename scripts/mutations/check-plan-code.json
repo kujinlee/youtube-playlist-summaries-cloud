@@ -400,8 +400,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "\"attributed\": caught and not unnamed, \"measured\": True})",
-        "\"attributed\": caught, \"measured\": True})"
+        "\"attributed\": caught and not unnamed, \"measured\": True,",
+        "\"attributed\": caught, \"measured\": True,"
       ]
     ],
     "expect": [
@@ -503,8 +503,8 @@
     "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase — the long one — is the one with no progress",
     "edits": [
       [
-        "progress=progress)",
-        "progress=None)"
+        "progress=progress,\n                                                          early_stop",
+        "progress=None,\n                                                          early_stop"
       ]
     ],
     "expect": "every phase of --mutate reports its position when a caller asks",
@@ -514,8 +514,8 @@
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only)",
-        "mutate_delivered(mroot, shard=shard, budget=budget, only=only)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only,",
+        "mutate_delivered(mroot, shard=shard, budget=budget, only=only,"
       ]
     ],
     "expect": [
@@ -1557,7 +1557,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if (a.only or a.allow_long_local) and not a.mutate:",
+        "    if (a.only or a.allow_long_local or a.full_sweep) and not a.mutate:",
         "    if False:"
       ]
     ],
@@ -1695,5 +1695,236 @@
     "expect": [
       "...and `--only` naming ANOTHER target still refuses it — the pre-check is whole-manifest (r1 L1)"
     ]
+  },
+  {
+    "name": "#405: the stop never fires, so every mutant runs its whole suite",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                if not pending:\n                    stopped = True",
+        "                if False:\n                    stopped = True"
+      ]
+    ],
+    "expect": "#405: a mutant whose named case is red is recorded killed AND attributed, and the suite is stopped there"
+  },
+  {
+    "name": "#405: a stopped suite keeps its SIGINT exit code, so the kill reads as a non-red exit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if stopped and rc != 0:\n            rc = 1\n",
+        "        if False:\n            rc = 1\n"
+      ]
+    ],
+    "expect": "#405: a mutant whose named case is red is recorded killed AND attributed, and the suite is stopped there"
+  },
+  {
+    "name": "#405: the stop fires on ANY named case, not on all of them",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                pending.difference_update(parse_fail_names(line))",
+        "                pending.clear() if parse_fail_names(line) else None"
+      ]
+    ],
+    "expect": "#405: a PARTIAL red (one of two named cases) is not a stop — the suite runs to its end and is judged exactly as before"
+  },
+  {
+    "name": "#405: run_mutations stops early without asking needs_full_suite",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        early = early_stop and bool(_names) and not needs_full_suite(mut, orig)",
+        "        early = early_stop and bool(_names)"
+      ]
+    ],
+    "expect": "#405: a mutant that edits the suite's own TRAILER runs in full, so a [FAIL] over exit 0 stays a SURVIVOR"
+  },
+  {
+    "name": "#405: the stop is SIGKILL, so the suite's finally never restores",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                os.killpg(proc.pid, signal.SIGINT)\n            try:",
+        "                os.killpg(proc.pid, signal.SIGKILL)\n            try:"
+      ]
+    ],
+    "expect": "#405: a SIGINT stop lets the suite's `finally` restore, and leaves no process and no stray file behind"
+  },
+  {
+    "name": "#405: the group reaper is skipped, so a grandchild outlives the call",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if proc.poll() is None or _group_alive(proc.pid):\n            _reap_group(proc, signal.SIGINT)",
+        "        if False:\n            _reap_group(proc, signal.SIGINT)"
+      ]
+    ],
+    "expect": "#405: a SIGINT stop lets the suite's `finally` restore, and leaves no process and no stray file behind"
+  },
+  {
+    "name": "#405: a suite that ignores SIGINT is credited as a kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                return 2, \"\".join(out_parts), (",
+        "                return 1, \"\".join(out_parts), ("
+      ]
+    ],
+    "expect": "#405: a suite that IGNORES SIGINT is bounded — a CANNOT RUN, never a kill, and nothing is left running"
+  },
+  {
+    "name": "#405: the child inherits an IGNORED SIGINT, so a backgrounded run cannot stop",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                            start_new_session=True, preexec_fn=_reset_sigint)",
+        "                            start_new_session=True)"
+      ]
+    ],
+    "expect": "#405: a stop still works when the harness itself runs with SIGINT ignored"
+  },
+  {
+    "name": "#405: mutate_delivered never asks for the early stop",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                                                          early_stop=not full_sweep)",
+        "                                                          early_stop=False)"
+      ]
+    ],
+    "expect": "#405: --mutate stops a mutant at its named case by default"
+  },
+  {
+    "name": "#405: main() drops --full-sweep on the floor",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                                               full_sweep=a.full_sweep)",
+        "                                               full_sweep=False)"
+      ]
+    ],
+    "expect": "#405: ...and main() hands --full-sweep through to the sweep"
+  },
+  {
+    "name": "#405: the bare-FAIL printer shape is no longer contract",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                   and (\"[FAIL\" in k.value or k.value == \"FAIL\") for k in ast.walk(n))",
+        "                   and (\"[FAIL\" in k.value) for k in ast.walk(n))"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — an edit to a `[{'ok' if ok else 'FAIL'}]` printer runs in full"
+  },
+  {
+    "name": "#405: a self_test-named function is no longer contract unless it prints",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                \"self_test\" in n.name or _printer(n)):",
+        "                _printer(n)):"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — a suite body with no printer in it still runs in full (its trailer)"
+  },
+  {
+    "name": "#405: the dispatch line naming _self_test is no longer contract",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        elif ((isinstance(n, ast.Name) and \"self_test\" in n.id)",
+        "        elif ((False)"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — an edit to the dispatch line `_self_test()` runs in full"
+  },
+  {
+    "name": "#405: an edit that cannot be placed once is assumed safe to stop",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if src.count(find) != 1:\n            return True",
+        "        if src.count(find) != 1:\n            continue"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — an edit whose anchor cannot be placed once runs in full"
+  },
+  {
+    "name": "#405: a multi-line edit is placed by its FIRST line only",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        hi = lo + find.count(\"\\n\")",
+        "        hi = lo"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — a multi-line edit that ENDS inside the suite runs in full"
+  },
+  {
+    "name": "#405: an unparsable source is treated as having no contract",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return ((1, src.count(\"\\n\") + 1),)",
+        "        return ()"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — a source that does not parse is all contract"
+  },
+  {
+    "name": "#405: the contract's own tokens in an edit are not consulted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if any(tok in find + repl for tok in (\"[FAIL]\", \"passed\")):",
+        "        if False:"
+      ]
+    ],
+    "expect": "#405: needs_full_suite — an edit that carries the contract's own token runs in full"
+  },
+  {
+    "name": "#405: a streamed suite that hangs is reported as a plain failure",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    hung = (2, \"\", f\"CANNOT RUN",
+        "    hung = (1, \"\", f\"CANNOT RUN"
+      ]
+    ],
+    "expect": "#405: a streamed suite that never reaches its named case and hangs is rc 2, a CANNOT RUN"
+  },
+  {
+    "name": "#405: a PR that changes the harness no longer gets the full sweep",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return changed is None or any(c in FULL_SWEEP_TRIGGERS for c in changed)",
+        "    return changed is None"
+      ]
+    ],
+    "expect": "#405: a PR that changes the harness runs the FULL sweep"
+  },
+  {
+    "name": "#405: an undetermined change set buys the cheaper sweep",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return changed is None or any(",
+        "    return changed is not None and any("
+      ]
+    ],
+    "expect": "#405: ...an undetermined change set runs it too"
+  },
+  {
+    "name": "#405: SIGTERM is left at its default, so a stopped harness orphans its suite",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return signal.signal(signal.SIGTERM, _exit if restore is None else restore)",
+        "        return signal.getsignal(signal.SIGTERM)"
+      ]
+    ],
+    "expect": "#405: a SIGTERM to the harness leaves no mutant suite running behind it"
   }
 ]

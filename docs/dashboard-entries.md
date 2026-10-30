@@ -18304,3 +18304,24 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 - **What is deferred.** The page lists every filed-but-unbuilt item.
 
 It also records a correction: one line had said an item "is filed" before it was.
+
+## 2026-10-30
+The mutation sweep now stops each test run as soon as the check it is supposed to trip has failed.
+Before, every planted bug re-ran its script's whole test suite even after the named check had already
+caught it. Two cases still run in full: a planted bug in the part of a suite that reports its own
+results (82 of 2,559), and every planted bug in a pull request that changes the sweep tool itself.
+A new weekly job runs the whole sweep in full, to catch the few things a stopped run cannot see.
+The before and after timings are in the pull request (backlog #405).
+<!--tech-->
+`scripts/check-plan-code.py`: `run_suite_until` streams a mutant's suite (`PYTHONUNBUFFERED=1`) and,
+once every `expect` name has printed `[FAIL] <name>` (`parse_fail_names`), sends SIGINT to the
+child's process group (`start_new_session`; SIGINT reset to default in the child), waits
+`STOP_GRACE`, and records rc 1 with `stopped_early: true`. A child still running after that wait is a
+CANNOT RUN (rc 2), and the `finally` reaps the group (SIGINT, then SIGKILL for what ignores it).
+`needs_full_suite` / `suite_contract_spans` choose full runs (printer, `*self_test*` bodies,
+dispatch, `[FAIL]`/`passed` tokens, unplaceable anchors). `--full-sweep` turns the early stop off;
+`full_sweep_needed` sets it from `ci.yml` when the diff touches the harness or cannot be read;
+`.github/workflows/mutation-full-sweep.yml` runs it Mondays 06:00 UTC and on `workflow_dispatch`.
+`sigterm_as_exit` makes SIGTERM a `SystemExit` during a sweep, because a suite in its own session
+otherwise outlives a killed harness. This was observed while building it. The control runs are
+unchanged. 270 self-test cases, `EXPECTED_MUTATIONS` 137 → 158 for this file (sum 2,559).

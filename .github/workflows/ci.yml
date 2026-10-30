@@ -1199,6 +1199,11 @@ jobs:
           # here is unmeasurable by construction. Every significant finding on this branch landed
           # in the unmeasured areas while the covered code held under three rounds.
           verdict = mod.sweep_verdict(changed, os.environ["DIFF_TAKEN"] == "1")
+          # backlog #405: whether the sweep stops each mutant at its named case or runs it to the
+          # end is decided by `full_sweep_needed`, not here. Written straight to the step's
+          # outputs so the line protocol below is unchanged; a missing value reads as FULL.
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"full={'true' if mod.full_sweep_needed(changed) else 'false'}\n")
           print(verdict)
           need = verdict != "SKIP"
           # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
@@ -1283,6 +1288,7 @@ jobs:
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
+          FULL: ${{ steps.mutated_code.outputs.full }}
         run: |
           # ⛔ NO LOGIC LIVES HERE ANY MORE — ROUND 6 M1, AND IT IS WHY THIS ONE GUARD SHIPPED
           # WRONG IN THREE CONSECUTIVE ROUNDS WITH EVERY GATE GREEN. `grep -rln SHARD_INDEX` over
@@ -1298,8 +1304,14 @@ jobs:
           #                                                        (round 6 L1)
           # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
           # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+          # ⟳ backlog #405: each mutant stops at the case its entry names, UNLESS this PR changes
+          # the harness (`full_sweep_needed`) — then every suite runs to the end. Anything but an
+          # explicit `false` is a full sweep, so a lost output costs time, never soundness. The
+          # weekly full sweep is `.github/workflows/mutation-full-sweep.yml`.
+          FULL_FLAG=--full-sweep
+          if [ "$FULL" = "false" ]; then FULL_FLAG=; fi
           python3 scripts/check-plan-code.py --mutate . \
-            --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" $FULL_FLAG
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
