@@ -178,6 +178,44 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <p><b>Why this matters for monitoring:</b> the lever is <i>work per unit</i>: how many messages, rounds and gate runs a PR needs. Raw speed is a constant we don't control. A tripwire on "seconds per step" alone would miss the biggest effect on this page.</p>
 <p class="horizon">measured how: <code>model_speed.py</code> over every <code>*.jsonl</code> in the project's transcript directory. For each main-thread assistant message with ≥200 output tokens, it takes the gap from the preceding user or tool-result entry, keeps gaps between 0 and 600 s, and reads <code>usage.output_tokens</code>. ⚠ It uses the first entry per message id, so a streamed message may be timed at its first block, not its last.</p>
 
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-29 04:54):</b> how did this become possible? Why can Opus 5.5 merge more PRs than Opus 5 by doing less work? Probably Opus 5.5 is doing much smarter work than Opus 5.</p>
+<p><b>A: partly yes, but the biggest measured change is WHERE the work happens, and it corrects this page.</b> The "messages per PR" figure above counted only the main conversation. Counting subagents too (their transcripts sit in each session's <code>subagents/</code> folder), over the same two windows:</p>
+<table><tr><th></th><th>Opus 5 window (10-13..10-21, 9 days, 7 PRs)</th><th>Opus 5.5 window (10-23..10-28, 6 days, 47 PRs)</th></tr>
+<tr><td>output tokens, main conversation</td><td>9.35 M</td><td>3.36 M</td></tr>
+<tr><td>output tokens, subagents</td><td>0.41 M (4%)</td><td>5.14 M (60%)</td></tr>
+<tr><td><b>total output tokens</b></td><td>9.76 M (1.08 M/day)</td><td>8.50 M (1.42 M/day)</td></tr>
+<tr><td>total output tokens per merged PR</td><td>1.39 M</td><td>0.18 M</td></tr>
+<tr><td>tool calls that returned an error</td><td>217 of 11,477 (1.9%)</td><td>97 of 8,345 (1.2%)</td></tr></table>
+<p>What this says, and what it doesn't:</p>
+<ul>
+<li><b>The total work per DAY barely moved:</b> about 1.1 M against 1.4 M output tokens a day. What moved is how much of it became merged PRs, about 7.7× fewer tokens per PR. So "doing less work" is right per PR, not per day.</li>
+<li><b>Work moved off the main conversation:</b> from 4% to 60% of output in subagents. Subagents run in parallel, each with a small, focused context, and the main conversation stays short enough to coordinate, which is how several slices move at once (this very night: five). That is a working pattern, and the model is only part of why it happens.</li>
+<li><b>Fewer failed tool calls:</b> 1.9% → 1.2%. That is consistent with "smarter", but small.</li>
+<li><b>Not separable from the process changes in the same window:</b> merge-when-ready (10-25) removed the wait on the owner, the local sweep stopped running in full (10-26), and docs-only PRs skip the CI sweep. The 10-23..10-24 sub-window, before both rules, still showed 4 PRs a day. So the model change is likely real, but its share is not measured.</li>
+</ul>
+<p class="horizon">measured how: <code>how.py</code> (scratchpad) over every <code>*.jsonl</code> including <code>*/subagents/*.jsonl</code>, counting each assistant message id once, summing <code>usage.output_tokens</code>, and reading <code>is_error</code> on tool results. The subagents' own model was not checked: some may run on a different model.</p>
+</div>
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-29 04:59):</b> 7.7× fewer tokens per PR is a huge difference. We need to understand correctly how this is achieved.</p>
+<p><b>A: it splits two ways, and both point the same direction: about half is SMALLER PRs, and about half is each unit of work costing less.</b> Same two windows, all output tokens (main conversation plus subagents):</p>
+<table><tr><th></th><th>Opus 5 window (10-13..10-21)</th><th>Opus 5.5 window (10-23..10-28)</th><th>ratio</th></tr>
+<tr><td>merged PRs (docs-only / code)</td><td>7 (3 / 4)</td><td>47 (13 / 34)</td><td></td></tr>
+<tr><td>lines changed per merged PR</td><td>3,009</td><td>1,276</td><td>2.4× smaller</td></tr>
+<tr><td>output tokens per changed line</td><td>463</td><td>142</td><td>3.3× cheaper</td></tr>
+<tr><td>review rounds landed</td><td>34 over 7 subjects</td><td>184 over 34 subjects</td><td></td></tr>
+<tr><td>review rounds per merged PR</td><td>4.9</td><td>3.9</td><td>1.25× fewer</td></tr>
+<tr><td><b>output tokens per review round</b></td><td>287 k</td><td>46 k</td><td><b>6.2× cheaper</b></td></tr></table>
+<p><b>Split 1, by size:</b> 2.4× smaller PRs × 3.3× fewer tokens per changed line ≈ 7.8×. <b>Split 2, by review:</b> 1.25× fewer rounds per PR × 6.2× cheaper rounds ≈ 7.8×. Both multiply back to the observed figure.</p>
+<p><b>The largest single factor is the cost of one review round: 287 k → 46 k output tokens.</b> A round is the repo's unit of correction (review, then fold). What the data shows about where that went:</p>
+<ul>
+<li>In the Opus 5 window, 96% of output was written in top-level sessions and 4% in subagents. In the Opus 5.5 window it was 40% and 60%. Folds and review halves are now handed to fresh subagents with a narrow brief, instead of the coordinator working through them in its own long conversation.</li>
+<li>⚠ "Top-level" includes peer sessions as well as the coordinator, because a peer's transcript is a top-level file too. So this shows the shift toward delegated, narrow-context work, but it cannot apportion it precisely between the coordinator and peers.</li>
+<li>The Opus 5 window held long review episodes: 4 subjects carried 28 of its 34 rounds (two of them 8 rounds each). Long episodes are where a round costs the most, because each fold re-derives context.</li>
+</ul>
+<p><b>What is NOT shown:</b> how much of the cheaper round is the model (better first answers, fewer retries: failed tool calls 1.9% → 1.2%) and how much is the working pattern (delegation, smaller slices, merge-when-ready from 10-25). Both changed in the same week. <b>To separate them, a later window would have to hold one fixed while the other varies.</b> The tripwire log (backlog #397) would make that possible by recording tokens, rounds and lines per PR going forward.</p>
+<p class="horizon">measured how: PRs and their files from <code>gh pr list --json files</code> (docs-only means every changed path under <code>docs/</code>); rounds are review documents added to master per window, from <code>git log --diff-filter=A</code>, counted as (subject, round) pairs; tokens from <code>how.py</code>, as in the answer above.</p>
+</div>
 <h2 id="baseline">Baseline: the four numbers to watch</h2>
 <h3 id="b-ci">1 · CI wall-clock per run</h3>
 <figure class="fig"><svg viewBox="0 0 560 210" role="img" aria-label="CI median minutes per week">

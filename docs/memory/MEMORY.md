@@ -11,6 +11,7 @@
 - [⭐⭐ A class fix needs an INDEPENDENT copy + identity case](a-class-fix-needs-an-independent-copy-and-an-identity-case.md) — looping over the set under test makes the case LIST shrink, not redden (57/57→56/56). The one sound duplicate
 - [⭐⭐ A guard can MANDATE the duplication it audits](a-guard-can-mandate-the-duplication-it-audits.md) — deleting the stale copy went RED; 4 rounds could only reword. Ask what a guard FORBIDS
 - [⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — green says nothing about the BASE (use `origin/master`); a red is a STOP, it hid a second failure. ⭐ **Never read `$?` after a PIPE**, and `grep | head || echo MISSING` can NEVER fire. ⭐⭐ **A restore verified against WHAT I DID lost a 32KB review** — diff the old tip BEFORE `reset --hard`
+- [A tool's mode may REPLAY, not read](a-tool-whose-mode-replays-must-be-called-with-the-mode-that-reads.md) — goal-tree `--print` without `--snapshot` replays the log; `parse` wants LINES. Each bit me twice on 10-28
 - [⭐⭐ A signal needs its BASE RATE](a-signal-needs-its-base-rate.md) — 3× in ONE day: thrashing armed on **67%** of the corpus, `converged()` false **12 of 12**, and a grep that reported a false zero. The signals were all CORRECT; the inference was not
 - [⭐⭐ A sweeping conclusion that ends the work early](a-sweeping-conclusion-that-ends-the-work-early.md) — **2× in one session**, each refuted by the NEXT round: "0 in the verdict logic" and "the property is untestable". Both honest, both CONVENIENT. Ask: does this conclusion mean I can stop?
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
@@ -100,6 +101,7 @@
 
 - [⛔ "Nothing needs you" must read the DASHBOARD first](nothing-needs-you-must-read-the-dashboard.md) — 10-27: I said none all day; `/dashboard` held 37 unresolved asks (29 unreadable). Regenerate and quote its count
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
+- [⛔ About to REUSE a teammate or PARK an agent?](usage-is-cache-rewrites-of-parked-agents.md) — reused teammates were ~70% of weighted usage (cache RE-WRITES after idling); fresh agent per slice+round, coordinator /clear only at natural pauses (owner 10-30)
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
 - [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
 - [⛔ Parallel threads need a GOAL TREE](parallel-threads-need-a-thread-map.md) — root = user request; each thread tagged fix/blocker/bookkeeping/side, named by backlog row (never reused T1/T2); one-line banner carries the tag
