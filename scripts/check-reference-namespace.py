@@ -82,7 +82,7 @@ FAILS IF
   * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
     a pass.
 
-  --self-test  runs 32 cases over diff texts this file builds, including that each failure mode is
+  --self-test  runs 33 cases over diff texts this file builds, including that each failure mode is
                DETECTED and that both main() worlds are driven.
 """
 from __future__ import annotations
@@ -234,14 +234,21 @@ def marker_only(path: str, body: str, removed: dict[str, set[str]]) -> bool:
 
 
 def removed_lines(diff_text: str) -> dict[str, set[str]]:
-    """{path: every line the unified diff REMOVES from it}. PURE."""
+    """{path: every line the unified diff REMOVES from it}. PURE.
+
+    ⛔ Keyed on the SOURCE header `--- a/<path>`, never on `+++ b/` (PR #442 r1 M1): a deleted file's
+    target is `+++ /dev/null`, so a `+++`-keyed path kept the PREVIOUS file's name and credited the
+    deleted file's lines to it. A new file (`--- /dev/null`) removes nothing; a rename credits its
+    removals to the OLD name, so a moved line never matches the file it moved into."""
     out: dict[str, set[str]] = {}
-    path: str | None = None
+    src: str | None = None
     for line in diff_text.splitlines():
-        if line.startswith("+++ b/"):
-            path = line[6:]
-        elif line.startswith("-") and not line.startswith(("--- a/", "--- /dev/null")) and path:
-            out.setdefault(path, set()).add(line[1:])
+        if line.startswith("--- a/"):
+            src = line[6:]
+        elif line.startswith("--- /dev/null"):
+            src = None
+        elif line.startswith("-") and src:
+            out.setdefault(src, set()).add(line[1:])
     return out
 
 
@@ -444,6 +451,12 @@ def _self_test_body() -> int:
             return f"raised {type(exc).__name__}"
     case("#394: an INVALID marker on a changed line is still judged, never exempt and never a crash",
          _judged(_swap(OLD, OLD.replace(" | x |", " ⟦kind: decision⟧ | x |", 1))), 2)
+    # PR #442 r1 M1: a DELETED file's header is `+++ /dev/null`, so a path taken from `+++ b/` kept the
+    # PREVIOUS file's name and credited the deleted file's lines to it. `git diff` orders
+    # docs/backlog.md before docs/backlog.old.md, which is exactly that shape.
+    case("#394: a line removed by DELETING another file never exempts a marked line (PR #442 r1 M1)",
+         len(violations(f"--- a/{BL}\n+++ b/{BL}\n@@ -1,0 +2 @@\n+{NEW}\n"
+                        f"--- a/docs/backlog.old.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-{OLD}\n")), 2)
     case("#394: the marker must match a line removed from the SAME file",
          len(violations(f"--- a/docs/plugins.md\n+++ b/docs/plugins.md\n@@ -1 +0,0 @@\n-{OLD}\n"
                         f"--- a/{BL}\n+++ b/{BL}\n@@ -1 +1 @@\n-| 7 | unrelated |\n+{NEW}\n")), 2)

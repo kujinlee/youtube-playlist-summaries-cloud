@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 200 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 202 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -933,6 +933,10 @@ class ShapeError(Exception):
 # the schemas every reader checks. Rulings: (1) only three kinds — a decision is a task plus its
 # NEEDS-OWNER marker; (3) adding missing coverage is a task, a defect only when a claim is false
 # because of the gap.
+# ⚠ RESTRICTION (PR #442 r1 m3): an Item cell can NEVER contain `⟦` or `⟧` outside its one trailing
+# marker — not even quoted in inline code, and a single such row refuses the whole page. To document
+# the syntax in a row, put the example in its Status cell. Skipping backticked spans was rejected: it
+# would be a second grammar inside this one.
 KINDS = ("story", "task", "defect")
 KIND_MARK = re.compile(r"\s*⟦([^⟦⟧]*)⟧\s*$")
 PARENT_FIELD = re.compile(r"part of: backlog #(\d+)|epic: ([a-z0-9]+(?:-[a-z0-9]+)*)")
@@ -3659,6 +3663,14 @@ def _self_test_body() -> int:
     # lines rather than to `parse`'s output, which is the whole of backlog #110.
     case("the REAL backlog has no row the parser silently skips",
          lambda: _unread_of(BACKLOG.read_text().splitlines()) == [])
+    # PR #442 r1 (both halves) re-decided four rows by the owner's rulings; pinned so a re-tag that
+    # undoes a reviewed decision goes red here rather than silently.
+    _re = {r["num"]: r for r in real}
+    case("#394: the REAL backlog keeps the kinds and parents round 1 re-decided (PR #442 r1 X1, m1, m2)",
+         lambda: [(_re[n]["kind"], _re[n]["parents"]) for n in (222, 195, 53, 107)]
+         == [("task", []), ("task", []), ("task", []), ("defect", [])])
+    case("#394: an Item cell cannot QUOTE the marker, even in inline code — the stated restriction (PR #442 r1 m3)",
+         lambda: "a second" in _msg_of(lambda: kind_mark("x `⟦kind: task⟧` prose ⟦kind: task⟧", "9")))
     case("#394: the REAL backlog — every row declares a kind, and every parent link resolves",
          lambda: (missing_kind_notes(real), parent_errors(real, registry_anchors())) == ([], []))
     # ⭐ The live counterpart: the REAL backlog must not state closed-ness two ways at once.

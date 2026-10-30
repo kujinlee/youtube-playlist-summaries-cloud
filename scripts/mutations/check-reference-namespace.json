@@ -193,5 +193,18 @@
     "expect": [
       "#394: an INVALID marker on a changed line is still judged, never exempt and never a crash"
     ]
+  },
+  {
+    "name": "#394: removed lines keyed on `+++ b/` again, so a DELETED file's lines are credited to the previous file (PR #442 r1 M1)",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        if line.startswith(\"--- a/\"):\n            src = line[6:]",
+        "        if line.startswith(\"+++ b/\"):\n            src = line[6:]"
+      ]
+    ],
+    "expect": [
+      "#394: a line removed by DELETING another file never exempts a marked line (PR #442 r1 M1)"
+    ]
   }
 ]
