@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 441 cases
+    python3 scripts/check-main-drivable.py --self-test   # 445 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -324,6 +324,16 @@ def _memo_by_node(build):
     frozenset, a dict a read-only view. A caller that mutates fails loudly instead of corrupting
     every later answer for that node. No caller mutates today; this is what keeps it so.
     ⚠ POSITIONAL ARGUMENTS ONLY, on purpose: a keyword call raises rather than missing the cache.
+    ⛔ PRECONDITION — A TREE IS NEVER MODIFIED AFTER A MEMOISED HELPER HAS SEEN IT. The key is the
+    node's identity, not its content, so an edit to a node already asked about is answered from the
+    old content (r1 Codex Minor: rename an import's `asname` and the cached answer keeps the old
+    one). Nothing here transforms or annotates a tree; an importer that does must `ast.parse` again.
+    ⚠ BOUNDED, LEAST-RECENTLY-USED, `_MEMO_MAX` ENTRIES PER HELPER (r1 Codex Minor: unbounded, an
+    importer that kept asking grew ~30 MB over 20,000 discarded trees). A cap, not a clear at the
+    end of `assess()`: `check-fixture-git-isolation.py` calls `suite_entries` directly and never
+    enters `assess()`, so a lifecycle hung on `assess()` would leave the one long-lived importer
+    unbounded. The reuse that pays for this is all inside ONE `classify()` — measured, at most 26
+    entries per helper over every real guard — so evicting an old tree's entries loses nothing.
     """
     memo: dict[tuple, tuple[tuple, object]] = {}
 
@@ -340,8 +350,16 @@ def _memo_by_node(build):
             elif isinstance(out, dict):
                 out = types.MappingProxyType(out)
             hit = memo[key] = (args, out)
+            if len(memo) > _MEMO_MAX:
+                del memo[next(iter(memo))]            # the least recently used, its arguments with it
+        else:
+            memo[key] = memo.pop(key)                # most recently used goes last
         return hit[1]
+    cached.memo = memo                                 # read by the lifetime cases, never written
     return cached
+
+
+_MEMO_MAX = 64
 
 
 def module_globals(tree: ast.Module) -> set[str]:
@@ -4494,6 +4512,55 @@ def _self_test_body() -> int:                                      # noqa: C901 
          ([ast.unparse(v) for _, v in _bound_values("td", _two)],
           [ast.unparse(v) for _, v in _bound_values("p", _two)]),
          (["first()"], ["second()"]))
+    # ⚠ `p` BEFORE `P`, deliberately: a case-folded key caches `p` and then answers `P` from it.
+    _case = ast.parse("def f():\n    p = first()\n    P = second()\n").body[0]
+    case("...and a name is told apart by its EXACT spelling: `p` and `P` are two names, two "
+         "answers (r1 Codex Minor — a key that ignored case survived 441/441)",
+         ([ast.unparse(v) for _, v in _bound_values("p", _case)],
+          [ast.unparse(v) for _, v in _bound_values("P", _case)]),
+         (["first()"], ["second()"]))
+    _built: list[ast.AST] = []
+    _counted = _memo_by_node(lambda t: _built.append(t) or len(t.body))
+    _once = ast.parse("x = 1\ny = 2\n")
+    case("⛔ the memo IS A CACHE: two calls on one tree build once (r1 Codex Minor — losing the "
+         "reuse kept every answer right, lost the whole speedup, and survived 441/441)",
+         (_counted(_once), _counted(_once), len(_built)), (2, 2, 1))
+
+    import gc
+    import weakref
+    # ⛔ DIRECT, NOT BY ALLOCATOR CHURN (r1 Codex Minor): the 256-tree case above goes red only if
+    # CPython happens to reuse a freed address, and under an instrument that retains every tree it
+    # cannot. This asks the entry itself whether it holds the node its key names.
+    _held = ast.parse("from builtins import globals as g\n")
+    _held_ref = weakref.ref(_held)
+    note_globals_imports(_held)
+    del _held
+    gc.collect()
+    _alive = _held_ref()
+    case("⛔ a memo ENTRY keeps alive the node its key names, so that id cannot be reused while "
+         "the entry exists — asserted on the node, not on what the allocator does (backlog #401)",
+         (_alive is not None,
+          any(isinstance(a, tuple) and a and a[0] is _alive
+              for a, _ in note_globals_imports.memo.values())),
+         (True, True))
+    del _alive
+    # ⚠ `_kept` IS TOUCHED BEFORE EVERY INSERT, so a cap that evicts by insertion order rather
+    # than by use loses it on the second eviction; `_MEMO_MAX` fresh trees force exactly two. Touched
+    # AFTER, an evicted `_kept` is simply re-inserted, and the first draft survived that way.
+    _old, _kept = (ast.parse("from builtins import globals as g\n") for _ in range(2))
+    _old_ref, _kept_ref = weakref.ref(_old), weakref.ref(_kept)
+    note_globals_imports(_old)
+    note_globals_imports(_kept)
+    for _ in range(_MEMO_MAX):
+        note_globals_imports(_kept)
+        note_globals_imports(ast.parse("from builtins import globals as g\n"))
+    del _old, _kept
+    gc.collect()
+    case("⛔ the memo is BOUNDED: past `_MEMO_MAX` entries the least recently USED goes, and its "
+         "tree with it (r1 Codex Minor — unbounded, ~30 MB over 20,000 discarded trees)",
+         (_old_ref() is None, _kept_ref() is not None,
+          len(note_globals_imports.memo) <= _MEMO_MAX),
+         (True, True, True))
 
     def _refuses(op) -> bool:
         try:

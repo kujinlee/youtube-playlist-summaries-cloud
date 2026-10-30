@@ -18308,6 +18308,10 @@ Backlog #401. `scripts/check-main-drivable.py` gains `_memo_by_node`, a cache ke
 identity of a helper's AST arguments. Each entry holds those nodes, so no id can be reused while it
 exists, and the answer it hands back is frozen. It wraps `_all_functions`, `note_globals_imports`,
 `_own_scope`, `_bound_values`, `_defs_in_scope` and a new per-tree `_class_methods` behind
-`_resolve_callee`. `_parents` already had its own cache. There are three new cases and the suite
-now has 441. Six new mutation entries take `EXPECTED_MUTATIONS` from 183 to 189 and the declared
-sum from 2538 to 2544. One anchor moved: the r9 nested-class entry now points into `_class_methods`.
+`_resolve_callee`. `_parents` already had its own cache. The memo is capped at `_MEMO_MAX` (64)
+entries per helper, least recently used first out, because `check-fixture-git-isolation.py` calls
+`suite_entries` directly and never reaches `assess()`. Asking about 20,000 discarded trees used to
+keep about 30 MB; it now keeps 0.1 MB. A tree must not be edited once a memoised helper has seen it.
+There are seven new cases and the suite now has 445. Eleven new mutation entries take
+`EXPECTED_MUTATIONS` from 183 to 194 and the declared sum from 2538 to 2549. One anchor moved: the
+r9 nested-class entry now points into `_class_methods`.

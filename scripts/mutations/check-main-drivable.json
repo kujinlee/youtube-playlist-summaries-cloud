@@ -2456,5 +2456,70 @@
    "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo that never REUSES an answer keeps every answer right and loses the whole speedup (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "        hit = memo.get(key)\n",
+    "        hit = None\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the memo IS A CACHE: two calls on one tree build once (r1 Codex Minor \u2014 losing the reuse kept every answer right, lost the whole speedup, and survived 441/441)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo key that ignores CASE answers `P` with `p`'s binding (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "        key = tuple(id(a) if isinstance(a, ast.AST) else a for a in args)\n",
+    "        key = tuple(id(a) if isinstance(a, ast.AST) else a.lower() if isinstance(a, str) else a for a in args)\n"
+   ]
+  ],
+  "expect": [
+   "...and a name is told apart by its EXACT spelling: `p` and `P` are two names, two answers (r1 Codex Minor \u2014 a key that ignored case survived 441/441)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo with NO EVICTION retains every tree it was ever asked about (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "            if len(memo) > _MEMO_MAX:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the memo is BOUNDED: past `_MEMO_MAX` entries the least recently USED goes, and its tree with it (r1 Codex Minor \u2014 unbounded, ~30 MB over 20,000 discarded trees)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo that evicts by INSERTION order drops the entry still in use (backlog #401)",
+  "edits": [
+   [
+    "            memo[key] = memo.pop(key)                # most recently used goes last\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the memo is BOUNDED: past `_MEMO_MAX` entries the least recently USED goes, and its tree with it (r1 Codex Minor \u2014 unbounded, ~30 MB over 20,000 discarded trees)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo ENTRY that does not hold its arguments lets the node die and its id be reused, asserted on the node rather than the allocator (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "            hit = memo[key] = (args, out)\n",
+    "            hit = memo[key] = (None, out)\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a memo ENTRY keeps alive the node its key names, so that id cannot be reused while the entry exists \u2014 asserted on the node, not on what the allocator does (backlog #401)"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]
