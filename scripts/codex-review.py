@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 196 cases
+  scripts/codex-review.py --self-test  # 203 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -91,6 +91,7 @@ import inspect
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import importlib.util
@@ -587,6 +588,42 @@ def same_dir_or_inside(path: str, tree: str, stat=os.stat) -> bool:
         p = parent
 
 
+def write_capture(path: str, text: str) -> None:
+    """Write `text` to `path` by EXCLUSIVE creation and an atomic rename. RAISES on failure.
+
+    ⛔ backlog #121 r4 X2/X3 (PR #439). `open(--out, "w")` follows whatever entry is at `--out`:
+    measured, a HARD LINK from the scratch path to a filed review truncated that review, and a
+    SYMLINK planted at `--out` while the run was in flight was followed into the artifact tree —
+    both rc 0, no intrusion reported. So the capture never opens the entry: it is written to a new
+    file in the same directory (`O_CREAT | O_EXCL`, plus `O_NOFOLLOW` where the platform has it),
+    and `os.replace` puts that file in the entry's place. A link, hard or symbolic, is REPLACED,
+    never written through. Whether a PRE-EXISTING `--out` may be replaced at all is still
+    `overwrite_refusal`'s decision, taken before the run.
+    """
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    for _ in range(100):
+        tmp = os.path.join(d, f".{os.path.basename(path)}.{secrets.token_hex(8)}.tmp")
+        try:
+            fd = os.open(tmp, flags, 0o644)
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise FileExistsError(f"no free temporary name beside {path}")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def out_location_refusal(out_path: str, reviewed: "str | None" = None,
                          stat=os.stat) -> "str | None":
     """Refuse an `--out` inside either artifact tree, or None. Reads the filesystem (`realpath`,
@@ -609,23 +646,31 @@ def out_location_refusal(out_path: str, reviewed: "str | None" = None,
     refuses nothing legitimate: the documented shape is `--out "$(mktemp -d)/r.md"`, OUTSIDE the
     repository entirely, and the durable copy is what `--review-id` names.
 
-    ⟳ backlog #121 r2: RESOLVED, NOT LEXICAL. The lexical check this replaced was the hole: an
-    `alias/..` path is where the symlink says, not where the string says. `realpath` does not need
-    the file to exist — it resolves the components that do and keeps the rest. A symlinked route around it is a determined caller, and this
-    guards the distracted one — the same bound `dir_snapshot`'s own comment states.
+    ⟳ backlog #121 r2–r4: RESOLVED, THEN COMPARED BY IDENTITY, OVER THE WHOLE CHECKOUT. A lexical
+    check was the hole twice — an `alias/..` path is where the symlink says, and `DOCS/REVIEWS` on a
+    case-folding volume is `docs/reviews` — so the answer is the filesystem's, not the string's.
+    ⚠ Not covered, stated rather than hidden: a directory SWAPPED for a link between this check and
+    the write, and bind-mount aliases (not exercised).
     """
-    # ⟳ backlog #121 r1 C2: the REVIEWED tree's artifacts too. The agent runs at the reviewed root
+    # ⟳ backlog #121 r1 C2: the REVIEWED checkout too. The agent runs at the reviewed root
     # (`run_codex(cwd=…)`), so that is where it guesses its way into `docs/reviews/`; the files this
-    # wrapper FILES stay under `REPO_ROOT`, so both trees are refused.
-    # ⟳ backlog #121 r2: BOTH SIDES RESOLVED, one way. `--out` by `resolve_out` (through every
-    # symlink, `..` after it — r2 X3), and each tree by `realpath`, so a root named through a link
-    # compares equal to where it is (r2 X5: the r1 kill leaned on macOS's `/var` spelling instead).
+    # wrapper FILES stay under `REPO_ROOT`, so both checkouts are refused. r2: `--out` is resolved
+    # by `resolve_out`, through every symlink before `..` (r2 X3).
+    # ⛔ backlog #121 r4 X1 (PR #439): ONE RULE, BY IDENTITY, OVER THE WHOLE CHECKOUT. Comparing
+    # against `docs/reviews` needed that directory to exist to have an identity, and its text
+    # spelling to match when it did not: `<B>/DOCS/REVIEWS/claude/x.md` in a checkout with no
+    # `docs/reviews` yet was written into the artifact tree, rc 0 (and an NFD spelling likewise).
+    # Scratch output belongs OUTSIDE the repository, so the rule needs no spelling at all: refuse
+    # when any EXISTING ancestor of the resolved --out is, by (st_dev, st_ino), this file's
+    # checkout or the reviewed one — both of which exist, so both have an identity.
+    # `same_dir_or_inside` already skips the components that do not exist yet, so the nearest
+    # existing ancestor is the first one it compares.
+    # Grepped first: no caller or document passes an in-repo --out outside `docs/reviews`.
     here = os.path.dirname(resolve_out(out_path))
-    trees = {os.path.realpath(os.path.join(r, REVIEW_ROOT)) for r in (REPO_ROOT, reviewed) if r}
-    if not any(here == t or here.startswith(t + os.sep) or same_dir_or_inside(here, t, stat)
-               for t in trees):
+    if not any(same_dir_or_inside(here, root, stat) for root in (REPO_ROOT, reviewed) if root):
         return None
-    return (f"CANNOT RUN — --out is inside the artifact tree: {out_path}\n"
+    return (f"CANNOT RUN — --out is inside the artifact tree or a checkout that holds one: "
+            f"{out_path}\n"
             f"  --out is a SCRATCH path and the documented shape puts it outside the repository "
             f"(`--out \"$(mktemp -d)/r.md\"`).\n"
             f"  Its directory becomes a WATCHED root, so on the failure path quarantine() would "
@@ -1416,9 +1461,8 @@ def main() -> int:
             # what was validated.
             body = (message or "").strip()
             artifact = f"<!-- codex-review: model={slug} -->\n\n{body}\n"
-            os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-            with open(args.out, "w", encoding="utf-8") as f:
-                f.write(artifact)
+            # ⟳ backlog #121 r4 X2/X3: by exclusive creation and rename, never through the entry.
+            write_capture(args.out, artifact)
             # ⭐ THE PROMOTION, WHICH USED TO BE A COMMENT IN `docs/plugins.md` (`# then promote`).
             # Nothing implemented it, so the review's durable name was assigned by hand, AFTER the
             # run that wrote the testimony about it — which is why no derivation of that name could
@@ -2145,10 +2189,12 @@ def _self_test_body() -> int:
             for t in ("CANNOT RUN", "mktemp -d")), True)
     chk("the documented shape — a scratch path outside the repository — is NOT refused",
         out_location_refusal(os.path.join(tempfile.gettempdir(), "codexrev", "r.md")), None)
-    # ⚠ THE PREFIX NEAR-MISS, which a bare `startswith` gets wrong. `docs/reviews-archive/` is a
-    # different directory and refusing it would be the over-refusal direction of the same bug.
+    # ⚠ THE PREFIX NEAR-MISS, which a bare `startswith` gets wrong. ⟳ backlog #121 r4: the rule is
+    # now the whole CHECKOUT by identity, so `docs/reviews-archive/` is refused with it; the
+    # near-miss that must still pass is a sibling of the checkout whose name starts with its own.
     chk("…nor is a sibling whose name merely STARTS with the artifact tree's",
-        out_location_refusal(os.path.join(REPO_ROOT, "docs", "reviews-archive", "r.md")), None)
+        out_location_refusal(os.path.join(os.path.dirname(REPO_ROOT),
+                                          os.path.basename(REPO_ROOT) + "-sibling", "r.md")), None)
     chk("…nor anything outside the repository at all",
         out_location_refusal(os.path.join(os.path.dirname(REPO_ROOT), "elsewhere", "r.md")), None)
 
@@ -2227,7 +2273,9 @@ def _self_test_body() -> int:
     # ⚠ NO MODEL IS CONTACTED AND NONE COULD BE: every refusal below returns before
     # `resolve_candidates()`. That is a property of where the checks sit, not luck, and a case
     # whose failure mode is "pay for a Codex run during --self-test" would be worse than no case.
-    with tempfile.TemporaryDirectory() as _sb:
+    # ⟳ backlog #121 r4 X1: the scratch dir is OUTSIDE the sandbox checkout, as the documented
+    # shape is — an --out anywhere inside a checkout is refused now, by identity.
+    with tempfile.TemporaryDirectory() as _sb, tempfile.TemporaryDirectory() as _sbx:
         _sbs = os.path.join(_sb, "scripts")
         os.makedirs(_sbs)
         for _n in ("codex-review.py", "check-review-rounds.py", "codex-frontier-model.py"):
@@ -2236,7 +2284,6 @@ def _self_test_body() -> int:
         _sbv = os.path.join(_sb, "docs", "reviews", "verdicts")
         os.makedirs(_sbv)
         os.makedirs(os.path.join(_sb, "docs", "reviews", "codex"))
-        os.makedirs(os.path.join(_sb, "scratch"))
         # THE PRE-STATE OF THE MEASUREMENT: a real review, filed, and the committed testimony that
         # a real gate produced it. This is what a re-dispatch used to destroy.
         _committed = os.path.join(_sbv, "sandbox-r1-codex.verdict.json")
@@ -2272,7 +2319,7 @@ def _self_test_body() -> int:
             return r.returncode, r.stdout + r.stderr
 
         _rc_d, _msg_d = _sbrun("--review-id", "sandbox-r1-codex",
-                               "--out", os.path.join(_sb, "scratch", "r.md"), "a prompt")
+                               "--out", os.path.join(_sbx, "r.md"), "a prompt")
         chk("a re-dispatch whose review is already filed REFUSES, reaching no model", _rc_d, 2)
         with open(_committed, encoding="utf-8") as f:
             _post = json.load(f)
@@ -2725,24 +2772,25 @@ def _self_test_body() -> int:
         _t = os.path.join(td3, "t")
         os.makedirs(os.path.join(_t, "docs", "reviews", "claude"))
         _cv = os.path.join(_t, "Docs", "Reviews", "claude", "p-r1-claude.md")
-        _ci = os.path.isdir(os.path.join(_t, "DOCS"))
-        chk("#121 r3 M3 on THIS volume, a case variant of docs/reviews is refused exactly when the "
-            "volume folds case", bool(out_location_refusal(_cv, reviewed=_t)), _ci)
-        # The same rule on ANY platform: a `stat` that ALIASES a spelling no real volume folds
-        # (`Alias/Tree` -> `docs/reviews`), so the case is about identity alone — it holds on CI's
-        # case-sensitive Linux, and it does not lean on macOS folding case for it.
+        # ⟳ r4 X1: refused on EVERY volume now, because it is inside the checkout `_t`.
+        chk("#121 r3 M3 a case variant of docs/reviews is refused, on any volume",
+            bool(out_location_refusal(_cv, reviewed=_t)), True)
+        # The identity rule on ANY platform: a `stat` that ALIASES a spelling no real volume folds
+        # (`<td3>/Alias/Tree` -> the checkout `_t`), for a path that is lexically OUTSIDE `_t`, so
+        # the case is about identity alone — it holds on CI's case-sensitive Linux, and it does not
+        # lean on macOS folding case for it.
         def _fold(p, _s=os.stat):
-            return _s(p.replace(os.sep + "Alias" + os.sep + "Tree", os.sep + "docs" + os.sep
-                                + "reviews"))
+            return _s(p.replace(os.sep + "Alias" + os.sep + "Tree", os.sep + "t"))
         chk("⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled",
-            bool(out_location_refusal(os.path.join(_t, "Alias", "Tree", "claude", "p-r1-claude.md"),
+            bool(out_location_refusal(os.path.join(td3, "Alias", "Tree", "docs", "reviews",
+                                                   "claude", "p-r1-claude.md"),
                                       reviewed=_t, stat=_fold)), True)
         chk("#121 r3 M3 …and identity alone says nothing about a directory that is NOT the tree",
-            out_location_refusal(os.path.join(_t, "Alias", "Other", "x.md"), reviewed=_t,
+            out_location_refusal(os.path.join(td3, "Alias", "Other", "x.md"), reviewed=_t,
                                  stat=_fold), None)
-        # ⚠ The identity rule SUBSUMES the text prefix wherever the tree exists — measured, the r1 M5
-        # "only the root is refused" mutant then survived. The prefix still answers alone for a
-        # tree that does not exist yet, which identity cannot see; this is that case.
+        # ⟳ r4: a checkout whose docs/reviews does not exist yet is covered by the CHECKOUT's
+        # identity, which exists — the case r3 needed a text prefix for.
+        os.makedirs(os.path.join(td3, "d"))
         chk("#121 r3 an --out under a NOT-YET-EXISTING artifact tree's writer directory is refused",
             bool(out_location_refusal(os.path.join(td3, "d", "docs", "reviews", "claude", "x.md"),
                                       reviewed=os.path.join(td3, "d"))), True)
@@ -2751,9 +2799,89 @@ def _self_test_body() -> int:
                                 os.path.join(_t, "docs", "reviews")),
              same_dir_or_inside(os.path.join(_t, "docs"),
                                 os.path.join(_t, "docs", "reviews", "claude")),
-             same_dir_or_inside(os.path.join(_t, "Alias", "Tree", "claude"),
-                                os.path.join(_t, "docs", "reviews"), stat=_fold)),
+             same_dir_or_inside(os.path.join(td3, "Alias", "Tree", "docs"), _t, stat=_fold)),
             (True, False, True))
+
+        # ── r4 (PR #439), the DEFER fold: Codex's inputs, through the REAL CLI ───────────────────
+        # A stub `codex` that PRODUCES a review (unlike the ones above, which exit without one), so
+        # the capture is actually written: that write is where X2 and X3 live. Optionally it plants
+        # a symlink at `--out` mid-run (X3), the way an agent with full access could.
+        _bin4 = os.path.join(td3, "bin4")
+        os.makedirs(_bin4)
+        with open(os.path.join(_bin4, "codex"), "w", encoding="utf-8") as f:
+            f.write('#!/bin/sh\no=""; prev=""\nfor a in "$@"; do [ "$prev" = "-o" ] && o="$a"; '
+                    'prev="$a"; done\n[ -n "$CR_LATE" ] && ln -s "$CR_VICTIM" "$CR_LATE"\n'
+                    'printf "%s\\n" "$CR_REVIEW" > "$o"\nexit 0\n')
+        os.chmod(os.path.join(_bin4, "codex"), 0o755)
+        _review = ("NOT CONVERGED\n\n" + "1. Major - a finding about the code under review. " * 8)
+
+        def _drive4(review_id: str, out: str, cwd: str, *extra: str, **env):
+            return subprocess.run([sys.executable, os.path.join(_was, "codex-review.py"),
+                                   "--timeout", "20", "--model", "stub-slug", "--review-id",
+                                   review_id, "--out", out, *extra, "a prompt"],
+                                  capture_output=True, text=True, cwd=cwd,
+                                  env=dict(_env3, PATH=_bin4 + os.pathsep + os.environ.get("PATH", ""),
+                                           CR_REVIEW=_review, **env))
+        _victim_text = "a filed review\n"
+        # r4 X1: a checkout whose docs/reviews does NOT exist yet, and an --out spelled in other
+        # capitals. Measured on this case-insensitive volume: rc 0, written into the artifact tree.
+        _g = os.path.join(td3, "g")
+        os.makedirs(os.path.join(_g, "docs"))
+        _git3(_g, "init", "-q", ".")
+        with open(os.path.join(_g, "docs", "README"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        _git3(_g, "add", "-A")
+        _git3(_g, "commit", "-q", "--no-verify", "-m", "g")
+        _rx1 = _drive4("wt-r6-codex", os.path.join(_g, "DOCS", "REVIEWS", "claude", "x.md"), _g)
+        chk("⭐ #121 r4 X1 an --out into a NOT-YET-EXISTING review tree, in other capitals, is "
+            "refused by the real CLI", (_rx1.returncode, "inside the artifact tree" in _rx1.stderr,
+                                        os.path.exists(os.path.join(_g, "docs", "reviews"))),
+            (2, True, False))
+        chk("#121 r4 X1 …and so is ANY --out inside the reviewed checkout, however spelled",
+            bool(out_location_refusal(os.path.join(_g, "Scratch", "x.md"), reviewed=_g)), True)
+        # r4 X2: a HARD LINK from the scratch --out to a filed review. Opening `--out` for writing
+        # truncated the review through the link: rc 0, victim changed, no intrusion.
+        _scr = os.path.join(td3, "scr")
+        os.makedirs(_scr)
+        with open(_victim, "w", encoding="utf-8") as f:
+            f.write(_victim_text)
+        os.link(_victim, os.path.join(_scr, "hard.md"))
+        _rx2 = _drive4("wt-r7-codex", os.path.join(_scr, "hard.md"), _wb, "--allow-overwrite")
+        with open(_victim, encoding="utf-8") as f:
+            _v2 = f.read()
+        with open(os.path.join(_scr, "hard.md"), encoding="utf-8") as f:
+            _h2 = f.read()
+        chk("⭐ #121 r4 X2 a hard-linked --out is REPLACED, never written through: the filed review "
+            "is untouched", (_rx2.returncode, _v2, "a finding about the code" in _h2),
+            (0, _victim_text, True))
+        # r4 X3: a SYMLINK planted at --out while the run is in flight.
+        _late = os.path.join(_scr, "late.md")
+        _rx3 = _drive4("wt-r8-codex", _late, _wb, CR_LATE=_late, CR_VICTIM=_victim)
+        with open(_victim, encoding="utf-8") as f:
+            _v3t = f.read()
+        chk("⭐ #121 r4 X3 a symlink planted at --out mid-run is replaced, never followed",
+            (_rx3.returncode, _v3t, os.path.islink(_late)), (0, _victim_text, False))
+        # The capture is written by exclusive creation then rename, so nothing is left behind.
+        chk("#121 r4 the exclusive temporary file does not outlive the rename",
+            sorted(os.listdir(_scr)), ["hard.md", "late.md"])
+        # --allow-overwrite still governs a PRE-EXISTING --out.
+        with open(os.path.join(_scr, "kept.md"), "w", encoding="utf-8") as f:
+            f.write("an earlier capture\n")
+        _rx5 = _drive4("wt-r9-codex", os.path.join(_scr, "kept.md"), _wb)
+        chk("#121 r4 …and without --allow-overwrite a pre-existing --out is still refused",
+            _rx5.returncode, 2)
+        # r4 X4 (Codex): DEVICE identity. Tree (dev=1, ino=42) and a scratch ancestor
+        # (dev=2, ino=42) are different directories; an inode-only comparison called them one.
+        from types import SimpleNamespace as _NS
+
+        def _devs(p):
+            if p == "/t":
+                return _NS(st_dev=1, st_ino=42)
+            if p in ("/s/x", "/s"):
+                return _NS(st_dev=2, st_ino=42)
+            raise OSError(p)
+        chk("#121 r4 X4 the same inode on ANOTHER device is not the tree",
+            same_dir_or_inside("/s/x", "/t", stat=_devs), False)
 
     # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
     # than filed. `chk` already does `extra += 1` on every call, so this literal added a second
