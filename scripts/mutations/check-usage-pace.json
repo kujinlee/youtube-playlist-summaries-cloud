@@ -1240,5 +1240,114 @@
     "expect": [
       "is_control_message: a control message OUTSIDE tool_input is not"
     ]
+  },
+  {
+    "name": "the payload read stops AT the bound, not one byte past it (r4 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "b = os.read(0, limit + 1 - n)",
+        "b = os.read(0, limit - n)"
+      ]
+    ],
+    "expect": [
+      "run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 95% (r4 X2)",
+      "read_payload: exactly the bound is read, one byte over is None"
+    ]
+  },
+  {
+    "name": "a payload one byte over the bound is kept (r4 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "box.append(None if n > limit else",
+        "box.append(None if n > limit + 1 else"
+      ]
+    ],
+    "expect": [
+      "read_payload: exactly the bound is read, one byte over is None"
+    ]
+  },
+  {
+    "name": "the stdin reader is not a daemon, so a held-open writer holds the hook (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "reader = threading.Thread(target=take, daemon=True)",
+        "reader = threading.Thread(target=take, daemon=False)"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)",
+      "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
+    ]
+  },
+  {
+    "name": "an unread stdin is taken for a subagent's report (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return box[0] if box else None",
+        "return box[0] if box else '{\"agent_id\": \"a1\"}'"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)",
+      "read_payload: a writer that stays open is None, within its deadline"
+    ]
+  },
+  {
+    "name": "the wake gate's stdin read has no deadline again (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "payload = read_payload() or \"\"  # unusable stdin: neither",
+        "payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode(\"utf-8\", errors=\"replace\")  # unusable stdin: neither"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)"
+    ]
+  },
+  {
+    "name": "the prompt hook's stdin read has no deadline again (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "payload = read_payload() or \"\"  # unusable stdin: no session",
+        "payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode(\"utf-8\", errors=\"replace\")  # unusable stdin: no session"
+      ]
+    ],
+    "expect": [
+      "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
+    ]
+  },
+  {
+    "name": "a control message's type is looked up before it is known to be a string (r4 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not isinstance(kind, str) or kind not in CONTROL_MESSAGES:",
+        "if kind not in CONTROL_MESSAGES:"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a list or an object as `type` is False, not a crash (r4 X3)",
+      "main: wake hook at 95% DENIES a control message whose `type` is a list or an object (r4 X3)",
+      "run-hook: a control message whose `type` is a list or an object is DENIED at 95%, rc 0 (r4 X3)"
+    ]
+  },
+  {
+    "name": "the missing-cache case reads an EXISTING cache (r4 X4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "absent_path = os.path.join(tmp, \"absent.json\")",
+        "absent_path = cpath"
+      ]
+    ],
+    "expect": [
+      "main: wake hook with a MISSING cache (and no --now) allows, silently, because it is absent"
+    ]
   }
 ]

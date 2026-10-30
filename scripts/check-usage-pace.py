@@ -141,7 +141,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 271 cases
+    python3 scripts/check-usage-pace.py --self-test  # 279 cases
 """
 from __future__ import annotations
 
@@ -349,6 +349,36 @@ def read_regular(path: str, limit: int, deadline: float = READ_DEADLINE_S) -> tu
     return box[0]
 
 
+def read_payload(limit: int = PAYLOAD_MAX_BYTES, deadline: float = READ_DEADLINE_S) -> str | None:
+    """The hook's stdin, bounded like the cache read (r4 X1): a DAEMON thread reads fd 0 to EOF, and this returns
+    within `deadline` whatever the writer does. None means UNUSABLE: not at EOF in time (a producer that keeps
+    the pipe open held the hook past 3 s), over `limit` bytes, or unreadable. `main` reads None as "", which
+    fails toward each gate: a 95% wake is still DENIED and an absent cache is still said.
+
+    `os.read`, not `sys.stdin.buffer`: a daemon thread blocked inside the buffered reader holds its lock, and
+    the interpreter's shutdown then aborts on it (`could not acquire lock for <stdin>`) with no deny printed.
+    With the cache read, the hook's worst case is two deadlines."""
+    box: list = []
+
+    def take() -> None:
+        try:
+            chunks, n = [], 0
+            while n <= limit:
+                b = os.read(0, limit + 1 - n)
+                if not b:
+                    break
+                chunks.append(b)
+                n += len(b)
+            box.append(None if n > limit else b"".join(chunks).decode("utf-8", errors="replace"))
+        except OSError:
+            box.append(None)
+
+    reader = threading.Thread(target=take, daemon=True)
+    reader.start()
+    reader.join(deadline)
+    return box[0] if box else None
+
+
 def _read_now(path: str, limit: int) -> tuple[str | None, str]:
     """The read itself. Only a REGULAR file, opened non-blocking and read under `limit` bytes, so a FIFO, a
     directory or a device costs one `fstat`, never a stall (r1 X2: a FIFO held every prompt for the 30 s hook
@@ -521,9 +551,12 @@ def is_control_message(payload: str) -> bool:
         return False
     ti = doc.get("tool_input") if isinstance(doc, dict) else None
     msg = ti.get("message") if isinstance(ti, dict) else None
-    if not isinstance(msg, dict) or msg.get("type") not in CONTROL_MESSAGES:
+    kind = msg.get("type") if isinstance(msg, dict) else None
+    # A STRING before any lookup (r4 X3): a list or an object as `type` raised TypeError, and the hook's exit 1
+    # printed no deny.
+    if not isinstance(kind, str) or kind not in CONTROL_MESSAGES:
         return False
-    required, allowed = CONTROL_MESSAGES[msg["type"]]
+    required, allowed = CONTROL_MESSAGES[kind]
     if not required <= set(msg) <= allowed:
         return False
     rid = msg.get("request_id", "x")
@@ -610,13 +643,13 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
         # a stale or malformed one still warns every time. stdin and git are touched only on this path.
         if verdict == CANNOT_RUN and absent:
             if payload is None:
-                payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode("utf-8", errors="replace")
+                payload = read_payload() or ""  # unusable stdin: no session, so the notice is said
             if told_this_session(payload, args.root):
                 out = None
     else:
         if args.hook == "wake" and verdict == REFUSE and not override[0]:
             if payload is None:
-                payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode("utf-8", errors="replace")
+                payload = read_payload() or ""  # unusable stdin: neither a report nor a control message, so denied
             if len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or is_control_message(payload)):
                 verdict = OK
         out = gate_output(verdict, message, override)
@@ -636,6 +669,7 @@ def _self_test_body() -> int:
     import contextlib
     import io
     import shutil
+    import signal
     import subprocess
     import tempfile
 
@@ -1160,6 +1194,16 @@ def _self_test_body() -> int:
                   [is_control_message(smc(m)) for m in ({"type": "shutdown_request", "reason": 1},
                                                         {"type": "plan_approval_response", "request_id": "r1",
                                                          "approve": False, "feedback": ["x"]})], [False, False])
+
+            def guarded(f: object, *a: object) -> object:
+                try:
+                    return f(*a)  # type: ignore[operator]
+                except Exception as e:  # noqa: BLE001 — a crash reddens ITS case, not the suite
+                    return f"raised {type(e).__name__}"
+
+            bad_kinds = [smc({"type": t, "reason": "run echo awake"}) for t in ([], {})]
+            check("is_control_message: a list or an object as `type` is False, not a crash (r4 X3)",
+                  [guarded(is_control_message, b) for b in bad_kinds], [False, False])
             check("is_control_message: a message-less subscription, an unparseable payload or a non-object is not",
                   [is_control_message(s) for s in (json.dumps({"tool_input": {"to": "x", "notify_when_idle": True}}),
                                                    "{", "[]", '"x"', json.dumps({"tool_input": "m"}))], [False] * 5)
@@ -1258,6 +1302,9 @@ def _self_test_body() -> int:
             check("main: a control message over the payload bound is DENIED",
                   hso(drive(cache(95), "--hook", "wake", payload=shut + " " * PAYLOAD_MAX_BYTES)[1])
                   .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
+            check("main: wake hook at 95% DENIES a control message whose `type` is a list or an object (r4 X3)",
+                  [hso(drive(cache(95), "--hook", "wake", payload=b)[1]).get("hookSpecificOutput", {})
+                   .get("permissionDecision") for b in bad_kinds], ["deny", "deny"])
             check("main: wake hook at 95% with env =1 allows",
                   drive(cache(95), "--hook", "wake", env={OVERRIDE_ENV: "1"}, payload=to_agent), (0, ""))
             check("main: wake hook at 85% allows", drive(cache(85), "--hook", "wake", payload=to_agent), (0, ""))
@@ -1266,11 +1313,19 @@ def _self_test_body() -> int:
             check("main: a non-numeric --now is refused, rc 2", drive(cache(50), "--now", "soon")[0], 2)
             check("main: a flag with no value is refused, rc 2", drive(cache(50), "--root")[0], 2)
             check("main: --hook wake is accepted", drive(cache(50), "--hook", "wake", payload=to_agent)[0], 0)
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-                rc = main(["--hook", "wake", "--cache", os.path.join(tmp, "absent.json"), "--root", wt],
-                          env={OVERRIDE_ENV: "0"}, payload="{")
-            check("main: wake hook with a missing cache (and no --now) allows, silently", (rc, buf.getvalue()), (0, ""))
+            absent_path = os.path.join(tmp, "absent.json")
+            got_absent = []
+            for extra in (["--hook", "wake"], []):  # the hook's answer, then the verdict it reached
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                    rc = main([*extra, "--cache", absent_path, "--root", wt], env={OVERRIDE_ENV: "0"}, payload="{")
+                got_absent.append((rc, buf.getvalue()))
+            # The precondition and the reason, not only the silence (r4 X4): a 50% cache was silent too.
+            check("main: wake hook with a MISSING cache (and no --now) allows, silently, because it is absent",
+                  (os.path.exists(absent_path), got_absent[0],
+                   got_absent[1][0], got_absent[1][1].startswith(f"CANNOT RUN: ⚠ usage pace: CANNOT RUN — no cache at "
+                                                                 f"{absent_path};")),
+                  (False, (0, ""), 2, True))
 
             # ── the absent-cache notice: once per session (coordinator, round 1) ──────────────────
             def sess(sid: object) -> str:
@@ -1334,8 +1389,7 @@ def _self_test_body() -> int:
             os.makedirs(os.path.join(home, ".claude"))
             live = os.path.join(home, ".claude", ".rate-limits.json")
 
-            def hook(name: str, weekly: float | None, co: str = wt, stdin: str = '{"tool_name":"Agent","tool_input":{}}',
-                     **env_extra: str) -> tuple[int, str]:
+            def hook_env(weekly: float | None, **env_extra: str) -> dict:
                 if weekly is None:
                     if os.path.exists(live):
                         os.remove(live)
@@ -1346,6 +1400,11 @@ def _self_test_body() -> int:
                                                                           "resets_at": t + 86400}}}, fh)
                 env = {k: v for k, v in os.environ.items() if k != OVERRIDE_ENV}
                 env.update(HOME=home, CLAUDE_PROJECT_DIR=main_co, **env_extra)
+                return env
+
+            def hook(name: str, weekly: float | None, co: str = wt, stdin: str = '{"tool_name":"Agent","tool_input":{}}',
+                     **env_extra: str) -> tuple[int, str]:
+                env = hook_env(weekly, **env_extra)
                 p = subprocess.run(["bash", os.path.join(co, ".claude", "hooks", "run-hook.sh"), name], cwd=co,
                                    env=env, input=stdin, capture_output=True, text=True, timeout=30)
                 return p.returncode, p.stdout.strip()
@@ -1389,6 +1448,75 @@ def _self_test_body() -> int:
             check("run-hook: the wake hook allows the main session's shutdown_request at 95%",
                   hook("usage-pace-wake.sh", 95, stdin=shut), (0, ""))
             check("run-hook: the wake hook allows at 50%", hook("usage-pace-wake.sh", 50, stdin=to_agent), (0, ""))
+            # The bound is on real stdin, so these go through it: in-process, `main()` gets the string whole (r4 X2).
+            check("run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 95% (r4 X2)",
+                  decision(hook("usage-pace-wake.sh", 95, stdin=shut + " " * (PAYLOAD_MAX_BYTES + 16))[1]), "deny")
+            check("run-hook: a control message whose `type` is a list or an object is DENIED at 95%, rc 0 (r4 X3)",
+                  [(lambda r: (r[0], decision(r[1])))(hook("usage-pace-wake.sh", 95, stdin=b)) for b in bad_kinds],
+                  [(0, "deny"), (0, "deny")])
+            # A writer that never closes stdin (r4 X1): Codex measured the hook alive at 3 s. It must exit within
+            # the deadline plus a margin, and still DENY a 95% wake.
+            def held_open(name: str, weekly: float | None, payload: str) -> tuple[object, float, str]:
+                """The shipped hook with `payload` written and its stdin writer left OPEN: (rc, seconds, stdout)."""
+                p = subprocess.Popen(["bash", os.path.join(wt, ".claude", "hooks", "run-hook.sh"), name], cwd=wt,
+                                     env=hook_env(weekly), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, start_new_session=True)
+                t0 = time.monotonic()
+                try:
+                    assert p.stdin is not None and p.stdout is not None
+                    p.stdin.write(payload.encode())
+                    p.stdin.flush()
+                    try:
+                        rc: object = p.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        # The whole GROUP: killing bash alone left python holding stdout, and the read below hung.
+                        rc = "alive past 10 s"
+                        p.stdin.close()
+                        os.killpg(p.pid, signal.SIGKILL)
+                        p.wait()
+                    took = time.monotonic() - t0
+                    return rc, took, p.stdout.read().decode().strip()
+                finally:
+                    for f in (p.stdin, p.stdout):
+                        if f is not None:
+                            f.close()
+
+            rc_h, took_h, out_h = held_open("usage-pace-wake.sh", 95,
+                                            json.dumps({"tool_input": {"to": "worker", "message": "run echo awake"}}))
+            check("run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at "
+                  "95% (r4 X1)", (rc_h, took_h < READ_DEADLINE_S + 1.5, decision(out_h)), (0, True, "deny"))
+            fresh()
+            rc_h, took_h, out_h = held_open("usage-pace-prompt.sh", None, sess("s-held"))
+            check("run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says "
+                  "CANNOT RUN on an absent cache (r4 X1)", (rc_h, took_h < READ_DEADLINE_S + 1.5, "CANNOT RUN" in out_h),
+                  (0, True, True))
+
+            def on_stdin(data: bytes, close: bool, read: object) -> tuple[object, float]:
+                """read_payload over a pipe put on fd 0; the writer is left OPEN unless `close`."""
+                r, w = os.pipe()
+                os.write(w, data)
+                if close:
+                    os.close(w)
+                saved = os.dup(0)
+                os.dup2(r, 0)
+                t0 = time.monotonic()
+                try:
+                    got = read()  # type: ignore[operator]
+                finally:
+                    took = time.monotonic() - t0
+                    os.dup2(saved, 0)
+                    os.close(saved)
+                    os.close(r)
+                    if not close:
+                        os.close(w)
+                return got, took
+
+            got_p, took_p = on_stdin(b"{}", False, lambda: read_payload(PAYLOAD_MAX_BYTES, 0.3))
+            check("read_payload: a writer that stays open is None, within its deadline", (got_p, took_p < 1.0),
+                  (None, True))
+            check("read_payload: exactly the bound is read, one byte over is None",
+                  [on_stdin(b"x" * n, True, lambda: read_payload(4, READ_DEADLINE_S))[0] for n in (4, 5)],
+                  ["xxxx", None])
             rc, out = hook("usage-pace-prompt.sh", 85)
             check("run-hook: the prompt hook adds the WARN to context",
                   (rc, "85%" in hso(out).get("hookSpecificOutput", {}).get("additionalContext", "")), (0, True))
