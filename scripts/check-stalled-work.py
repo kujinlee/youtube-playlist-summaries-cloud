@@ -1047,7 +1047,13 @@ def _self_test_body() -> int:
             return r[0], "\n".join(r[1])
         GOOD = json.dumps({"data": {"repository": {"pullRequests": {"totalCount": 1, "nodes": [
             _row(3, "real", "c" * 40, date="2026-10-29T10:44:40Z")]}}}})
-        check("F9: the real gh wrapper reads gh's reply", lambda: "#3 real (draft)" in stubbed(GOOD)[1], True)
+        # macOS scans a freshly written executable on its FIRST exec, which once took past gh's 3 s
+        # budget under load (measured: 2 of 6 suite runs while a sweep ran). Exec it once, untimed.
+        (stub / "out").write_text("")
+        (stub / "rc").write_text("0")
+        subprocess.run([str(stub / "gh")], capture_output=True, timeout=60)
+        check("F9: the real gh wrapper reads gh's reply",
+              lambda: (lambda r: (r[0], "#3 real (draft)" in r[1]))(stubbed(GOOD)), (STALLED_RC, True))
         check("F9: gh printing {} is CANNOT RUN, not 0 open PRs", lambda: stubbed("{}")[0], CANNOT_RUN)
         check("F9: gh printing null is CANNOT RUN", lambda: stubbed("null")[0], CANNOT_RUN)
         check("F9: gh exiting non-zero is CANNOT RUN, its stderr flattened to one line",
