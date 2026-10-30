@@ -113,7 +113,7 @@
       ]
     ],
     "expect": [
-      "a cache 61 s in the future is CANNOT RUN"
+      "a cache 6 s in the future is CANNOT RUN"
     ]
   },
   {
@@ -199,12 +199,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if verdict != REFUSE or override:",
+        "    if verdict != REFUSE or override[0]:",
         "    if verdict != REFUSE:"
       ]
     ],
     "expect": [
-      "spawn: REFUSE with the override allows"
+      "gate: REFUSE with the override allows"
     ]
   },
   {
@@ -212,12 +212,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if verdict != REFUSE or override:\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\"",
-        "    if verdict not in (REFUSE, WARN) or override:\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\""
+        "    if verdict != REFUSE or override[0]:\n        return None\n    return json.dumps({\"systemMessage\"",
+        "    if verdict not in (REFUSE, WARN) or override[0]:\n        return None\n    return json.dumps({\"systemMessage\""
       ]
     ],
     "expect": [
-      "spawn: WARN, CANNOT RUN and OK allow"
+      "gate: WARN, CANNOT RUN and OK allow"
     ]
   },
   {
@@ -230,7 +230,7 @@
       ]
     ],
     "expect": [
-      "override: env =0 is not"
+      "locate_override: env =0 is not"
     ]
   },
   {
@@ -238,12 +238,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        " or os.path.exists(os.path.join(root, OVERRIDE_FILE))",
-        ""
+        "    active, note = override_rule(*read_regular(path, CACHE_MAX_BYTES), now)",
+        "    active, note = False, \"\""
       ]
     ],
     "expect": [
-      "override: the file is active"
+      "locate_override: the MAIN checkout's file counts from a worktree"
     ]
   },
   {
@@ -251,8 +251,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if verdict == OK:\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\"",
-        "    if verdict in (OK, CANNOT_RUN):\n        return None\n    return json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\""
+        "    if verdict == OK:\n        return None\n    context = ",
+        "    if verdict in (OK, CANNOT_RUN):\n        return None\n    context = "
       ]
     ],
     "expect": [
@@ -264,12 +264,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "out = spawn_output(verdict, message, override_active(env, args.root))",
-        "out = spawn_output(verdict, message, False)"
+        "    override = locate_override(env, args.root, now) if verdict == REFUSE else (False, \"\")",
+        "    override = (False, \"\")"
       ]
     ],
     "expect": [
-      "run-hook: the override FILE lets a 95% spawn through"
+      "run-hook: the MAIN checkout's override lets a 95% spawn through from a worktree"
     ]
   },
   {
@@ -277,8 +277,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    return 0 if args.hook else RC[verdict]",
-        "    return RC[verdict]"
+        "    if out:\n        print(out)\n    return 0\n",
+        "    if out:\n        print(out)\n    return RC[verdict]\n"
       ]
     ],
     "expect": [
@@ -290,8 +290,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "read_cache(os.path.expanduser(args.cache))",
-        "read_cache(os.path.expanduser(DEFAULT_CACHE))"
+        "read_regular(cache_path, CACHE_MAX_BYTES)",
+        "read_regular(os.path.expanduser(DEFAULT_CACHE), CACHE_MAX_BYTES)"
       ]
     ],
     "expect": [
@@ -299,29 +299,16 @@
     ]
   },
   {
-    "name": "the REFUSE message drops the override hint",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "f\"{OVERRIDE_HINT}.{five_note}\")",
-        "f\"{five_note}\")"
-      ]
-    ],
-    "expect": [
-      "REFUSE names the override"
-    ]
-  },
-  {
     "name": "the REFUSE message drops the reset time",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "work in flight continues. Resets {local_time(resets)}; ",
-        "work in flight continues. "
+        "report to main is allowed. Resets {local_time(resets)}.{five_note}\")",
+        "report to main is allowed.{five_note}\")"
       ]
     ],
     "expect": [
-      "REFUSE names the reset in local time"
+      "REFUSE, the whole message (fixed string; it names no override)"
     ]
   },
   {
@@ -329,7 +316,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        elif a == \"--hook\" and v not in (\"prompt\", \"spawn\"):",
+        "        elif a == \"--hook\" and v not in (\"prompt\", \"spawn\", \"wake\"):",
         "        elif False:"
       ]
     ],
@@ -348,6 +335,487 @@
     ],
     "expect": [
       "main: a flag with no value is refused, rc 2"
+    ]
+  },
+  {
+    "name": "the REFUSE message hands the override to the model it constrains (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "wake an agent, are REFUSED (at {pct(REFUSE_AT)});",
+        "wake an agent, are REFUSED (at {pct(REFUSE_AT)}; override: {OVERRIDE_ENV}=1);"
+      ]
+    ],
+    "expect": [
+      "the REFUSE message (the model's) names no override"
+    ]
+  },
+  {
+    "name": "local_time lets the platform's exception escape (r1 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except (OverflowError, OSError, ValueError) as e:\n        raise Malformed(f\"the time",
+        "    except ZeroDivisionError as e:\n        raise Malformed(f\"the time"
+      ]
+    ],
+    "expect": [
+      "local_time(1e+300) raises Malformed, never a bare exception"
+    ]
+  },
+  {
+    "name": "evaluate is no longer total: a Malformed time escapes (r1 M3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return _evaluate(text, now, missing)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing)\n    except ZeroDivisionError as e:"
+      ]
+    ],
+    "expect": [
+      "a seven_day resets_at of -1e300 at 95% is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the reset horizon is deleted, so a millisecond epoch reads as a reset",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if r > now + span + HORIZON_SLACK_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a seven_day resets_at of a millisecond epoch at 95% is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the reset horizon excludes its own boundary",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if r > now + span + HORIZON_SLACK_S:",
+        "if r >= now + span + HORIZON_SLACK_S:"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly 7 days + 1 h ahead is read"
+    ]
+  },
+  {
+    "name": "the seven-day window is held to the five-hour horizon",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "window(rl, \"seven_day\", now, SEVEN_DAY_S)",
+        "window(rl, \"seven_day\", now, FIVE_HOUR_S)"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly 7 days + 1 h ahead is read"
+    ]
+  },
+  {
+    "name": "the five-hour window is held to the seven-day horizon",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "window(rl, \"five_hour\", now, FIVE_HOUR_S)",
+        "window(rl, \"five_hour\", now, SEVEN_DAY_S)"
+      ]
+    ],
+    "expect": [
+      "a five-hour reset 1 s past its horizon is unreadable, never a reading"
+    ]
+  },
+  {
+    "name": "a malformed five-hour window disables the weekly verdict again (r1 M3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        five, five_note = None, f\" The five-hour window is unreadable ({e}): treat it as NOT RUN.\"",
+        "        return cannot(f\"the cache is malformed: {e}\")"
+      ]
+    ],
+    "expect": [
+      "weekly 95 with a five-hour resets_at 1e300 still REFUSES"
+    ]
+  },
+  {
+    "name": "a malformed five-hour window at a low weekly is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if five_note:\n        return WARN",
+        "    if False:\n        return WARN"
+      ]
+    ],
+    "expect": [
+      "weekly 10 with a malformed five-hour window is WARN, never silent"
+    ]
+  },
+  {
+    "name": "the future allowance is back to 60 s (r1 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "FUTURE_SLACK_S = 5",
+        "FUTURE_SLACK_S = 60"
+      ]
+    ],
+    "expect": [
+      "a cache 6 s in the future is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the cache is opened blocking, so a FIFO stalls the hook (r1 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "a FIFO cache is CANNOT RUN within 5 s, and says why"
+    ]
+  },
+  {
+    "name": "a non-regular file is read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(os.fstat(fd).st_mode):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_regular: a directory is not a regular file"
+    ]
+  },
+  {
+    "name": "the byte bound is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if n > limit:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_regular: one byte over the bound is refused"
+    ]
+  },
+  {
+    "name": "the byte bound refuses its own limit",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if n > limit:\n            return None, f\"{path} is over",
+        "        if n >= limit:\n            return None, f\"{path} is over"
+      ]
+    ],
+    "expect": [
+      "read_regular: exactly the bound is read"
+    ]
+  },
+  {
+    "name": "a missing file reads as unreadable, not absent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return None, \"\"",
+        "    except FileNotFoundError:\n        return None, \"x\""
+      ]
+    ],
+    "expect": [
+      "read_regular: no file is (None, '')"
+    ]
+  },
+  {
+    "name": "an exported GIT_DIR redirects the override's location",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if k not in (\"GIT_DIR\", \"GIT_WORK_TREE\", \"GIT_COMMON_DIR\")",
+        "if True"
+      ]
+    ],
+    "expect": [
+      "override_path: an exported GIT_DIR does not redirect it"
+    ]
+  },
+  {
+    "name": "the override is read from the session's checkout, not the main one (r1 m1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return os.path.join(os.path.dirname(common), OVERRIDE_FILE), \"\"",
+        "    return os.path.join(root, OVERRIDE_FILE), \"\""
+      ]
+    ],
+    "expect": [
+      "override_path: from a WORKTREE it is the MAIN checkout's file"
+    ]
+  },
+  {
+    "name": "a git dir not named .git is taken as a checkout's",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if os.path.basename(common) != \".git\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_path: a git dir not named .git (a submodule's shape) is None, with a reason"
+    ]
+  },
+  {
+    "name": "the override never expires (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if expiry <= now:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: an expired file is not active, and says expired"
+    ]
+  },
+  {
+    "name": "the override is still valid at its expiry instant",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if expiry <= now:",
+        "if expiry < now:"
+      ]
+    ],
+    "expect": [
+      "override_rule: an expiry exactly now is NOT active"
+    ]
+  },
+  {
+    "name": "the 7-day cap on the override is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if expiry > now + OVERRIDE_MAX_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: more than 7 days ahead is NOT active"
+    ]
+  },
+  {
+    "name": "a non-finite expiry counts as an override",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if not math.isfinite(expiry):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: 'nan' is not active"
+    ]
+  },
+  {
+    "name": "the deny REASON carries the owner's instructions to the model (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"permissionDecisionReason\": message}})",
+        "\"permissionDecisionReason\": f\"{message} {owner_text(override)}\"}})"
+      ]
+    ],
+    "expect": [
+      "gate: REFUSE without an override DENIES, the reason is the bare message"
+    ]
+  },
+  {
+    "name": "the deny tells the owner nothing (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "json.dumps({\"systemMessage\": f\"{message} {owner_text(override)}\".rstrip(),\n                       \"hookSpecificOutput\"",
+        "json.dumps({\"hookSpecificOutput\""
+      ]
+    ],
+    "expect": [
+      "gate: the deny tells the OWNER how to override"
+    ]
+  },
+  {
+    "name": "the prompt WARN reaches only the model (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict == WARN:\n        out[\"systemMessage\"] = message",
+        "    if False:\n        out[\"systemMessage\"] = message"
+      ]
+    ],
+    "expect": [
+      "prompt: WARN also tells the OWNER (systemMessage)"
+    ]
+  },
+  {
+    "name": "the prompt REFUSE reaches only the model (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    elif verdict == REFUSE:\n        out[\"systemMessage\"]",
+        "    elif False:\n        out[\"systemMessage\"]"
+      ]
+    ],
+    "expect": [
+      "prompt: REFUSE tells the OWNER how to override"
+    ]
+  },
+  {
+    "name": "the prompt context carries the owner's instructions to the model (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"additionalContext\": context}}",
+        "\"additionalContext\": context + owner_text(override)}}"
+      ]
+    ],
+    "expect": [
+      "prompt: REFUSE's model context never carries the owner's instructions"
+    ]
+  },
+  {
+    "name": "an ACTIVE override is not named in the prompt context",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(ACTIVE_NOTE if verdict == REFUSE and override[0] else \"\")",
+        "(\"\")"
+      ]
+    ],
+    "expect": [
+      "prompt: an ACTIVE override is named in the context at REFUSE"
+    ]
+  },
+  {
+    "name": "a report to main is refused at 95%, stranding finished work",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            if len(payload) <= PAYLOAD_MAX_BYTES and addressed_home(payload):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% allows a report to main"
+    ]
+  },
+  {
+    "name": "the payload bound is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "len(payload) <= PAYLOAD_MAX_BYTES and addressed_home(payload)",
+        "addressed_home(payload)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% DENIES a payload over the bound, even to main"
+    ]
+  },
+  {
+    "name": "the wake hook never denies (r1 M1 reverted)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        out = gate_output(verdict, message, override)",
+        "        out = None if args.hook == \"wake\" else gate_output(verdict, message, override)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% DENIES a message to an agent"
+    ]
+  },
+  {
+    "name": "any recipient whose name CONTAINS main is exempt",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "to.split(\" [\", 1)[0].strip() in HOME_RECIPIENTS",
+        "any(h in to for h in HOME_RECIPIENTS)"
+      ]
+    ],
+    "expect": [
+      "addressed_home: a name that merely CONTAINS main is not"
+    ]
+  },
+  {
+    "name": "a recipient with a [ref] is not recognised as home",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(to, str) and to.split(\" [\", 1)[0].strip() in HOME_RECIPIENTS",
+        "isinstance(to, str) and to in HOME_RECIPIENTS"
+      ]
+    ],
+    "expect": [
+      "addressed_home: to main with a [ref]"
+    ]
+  },
+  {
+    "name": "the percentage is rounded, not floored (r1 m3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    s = repr(float(p))",
+        "    s = repr(round(float(p), 1))"
+      ]
+    ],
+    "expect": [
+      "pct(89.9999) is 89.9% (floored)"
+    ]
+  },
+  {
+    "name": "the zone abbreviation is dropped (r1 X4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"%a %m-%d %H:%M %Z\"",
+        "\"%a %m-%d %H:%M\""
+      ]
+    ],
+    "expect": [
+      "local_time: the SAME wall clock an hour later is PST"
+    ]
+  },
+  {
+    "name": "UTC is shown as local time (r1 m2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "time.strftime(\"%a %m-%d %H:%M %Z\", time.localtime(t))",
+        "time.strftime(\"%a %m-%d %H:%M %Z\", time.gmtime(t))"
+      ]
+    ],
+    "expect": [
+      "local_time: a PST instant"
+    ]
+  },
+  {
+    "name": "an astronomical count is printed in full",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return f\"{x:.0f}\" if abs(x) < 1e7 else",
+        "    return f\"{x:.0f}\" if True else"
+      ]
+    ],
+    "expect": [
+      "count: an astronomical one is short"
     ]
   }
 ]

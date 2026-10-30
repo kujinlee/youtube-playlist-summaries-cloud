@@ -2182,7 +2182,10 @@ EXPECTED_MUTATIONS = {
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
-    "scripts/check-usage-pace.py": 27,
+    # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
+    # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
+    # regular-file read, the expiring main-checkout override, the two readers, and the SendMessage gate.
+    "scripts/check-usage-pace.py": 63,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -6251,7 +6254,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2539)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2575)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

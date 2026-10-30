@@ -89,6 +89,10 @@ playwright/.auth/
 .claude/executing-plan
 .claude/executing-plan.state
 
+# The owner's override of the usage pacing gate (backlog #399, PR #446 r1 M2): an expiry epoch, read from the
+# MAIN checkout by scripts/check-usage-pace.py. Committed, it would override every clone and worktree on arrival.
+.claude/allow-spawn-over-limit
+
 # Session plans written by scripts/begin-plan.py. Deliberately NOT in docs/superpowers/plans/:
 # that directory is the anchor registry's population (check-anchors.py globs it and requires a
 # Goal + Anchor header on every dated file) and it is the durable design corpus. A session to-do

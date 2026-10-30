@@ -315,9 +315,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #399 (2026-10-30): every parameter varied by a case; none exempt.
     "check-usage-pace.py": (
-        "evaluate.missing", "evaluate.now", "evaluate.text", "local_time.t", "main.argv", "main.env",
-        "override_active.env", "override_active.root", "prompt_output.message", "prompt_output.verdict",
-        "spawn_output.message", "spawn_output.override", "spawn_output.verdict",
+        # ⟳ PR #446 r1 fold: override_active and spawn_output are gone (the override now expires and is read
+        # from the MAIN checkout; the spawn and wake gates share gate_output), so their keys go with them.
+        "addressed_home.payload", "count.x", "evaluate.missing", "evaluate.now", "evaluate.text",
+        "gate_output.message", "gate_output.override", "gate_output.verdict", "local_time.t",
+        "locate_override.env", "locate_override.now", "locate_override.root", "main.argv", "main.env",
+        "main.payload", "override_path.root", "override_rule.now", "override_rule.reason", "override_rule.text",
+        "pct.p", "prompt_output.message", "prompt_output.override", "prompt_output.verdict",
+        "read_regular.limit", "read_regular.path", "safe_time.t",
     ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
