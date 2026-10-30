@@ -18297,3 +18297,10 @@ identity (`same_dir_or_inside`, `(st_dev, st_ino)` of every existing ancestor) f
 volume, and the watch covers the reviewed root's `docs/reviews/` even before it exists. Filing stays
 under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
 `docs/reviews/architecture-review-2026-10-29-gap-reader.md`.
+
+## 2026-10-30
+The dev-speed page now answers the owner's questions about the mutation sweep:
+- **What is feasible.** Caching one guard's suite (`check-main-drivable`) removes about 59% of the sweep's work, and it is being built. Stopping each mutant at its named failing case would save about 16% (backlog #405). Small caches in four other guards save about 4.8% (backlog #406). The compaction guard's tests mostly wait on real 11-second deadlines, about 7% (backlog #407).
+- **What is deferred.** The page lists every filed-but-unbuilt item.
+
+It also records a correction: one line had said an item "is filed" before it was.
