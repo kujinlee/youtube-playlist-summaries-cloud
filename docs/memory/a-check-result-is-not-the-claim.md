@@ -297,3 +297,5 @@ the guards themselves (`python3 a && python3 b && git commit …`). An `echo rc=
   suite (no `[FAIL]` line, unattributable); a temp world missing the loader returned CANNOT RUN from the IMPORT, not the
   path under test; a "NOT READ" assertion matched a different note's "NOT READ". Each surfaced as a survivor or an
   unattributed kill — **the mutation run is what finds these; run it scoped after every case edit.**
+
+**2026-10-29: a gate scanned HEAD while a rebase had STOPPED on a conflict**, so HEAD was master and it said `hits: 0` over 0 lines; the push then sent the branch ref, unscanned. It was clean, but by luck. **Gate on the exact ref being pushed** (`--head $(git rev-parse <branch>)`), and never chain a push after a rebase without checking that it finished.
