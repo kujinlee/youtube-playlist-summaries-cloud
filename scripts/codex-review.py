@@ -2749,8 +2749,11 @@ def _self_test_body() -> int:
         chk("#121 r3 M3 same_dir_or_inside walks UP to the tree from a deeper directory",
             (same_dir_or_inside(os.path.join(_t, "docs", "reviews", "claude"),
                                 os.path.join(_t, "docs", "reviews")),
-             same_dir_or_inside(os.path.join(_t, "docs"), os.path.join(_t, "docs", "reviews"))),
-            (True, False))
+             same_dir_or_inside(os.path.join(_t, "docs"),
+                                os.path.join(_t, "docs", "reviews", "claude")),
+             same_dir_or_inside(os.path.join(_t, "Alias", "Tree", "claude"),
+                                os.path.join(_t, "docs", "reviews"), stat=_fold)),
+            (True, False, True))
 
     # ⛔ THERE WAS AN `extra += 13` HERE AND IT WAS DOUBLE-COUNTING — r12 Medium, and it is worse
     # than filed. `chk` already does `extra += 1` on every call, so this literal added a second
