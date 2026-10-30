@@ -253,7 +253,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </div>
 <div class="wrap ex-body">
 <h1>Dev speed: where the time goes, and a tripwire for new slow steps</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-29 03:42 · 30234b4c · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 10:15 · 30234b4c · uncommitted changes</time></span></div></div>
 <p class="horizon">as of master <code>c983a114</code> · 2026-10-29 03:40 PDT · data from <code>gh run list</code> (1,000 CI runs, 09-06 → 10-29), <code>gh pr list</code> (400 merged PRs, 07-17 → 10-29), all 318 session transcripts of this project, and local timings taken tonight</p>
 <div class="reading"><b>Reading:</b> dev speed is the wall-clock time from a request to a merged PR. This page is (1) a baseline of what we've measured, (2) where the time goes, (3) remedies, and (4) what to collect so that a new slow step is caught when it lands, not weeks later.</div>
 
@@ -264,6 +264,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <li><a href="#history">Slowdowns that crept in before</a></li>
 <li><a href="#remedies">Remedies: done and candidate</a></li>
 <li><a href="#tripwire">Proposal: a tripwire so the next one is caught when it lands</a></li>
+<li><a href="#usage">The usage limit: the slowdown that costs a whole day</a></li>
 <li><a href="#blind">Where we're blind today</a></li>
 <li><a href="#mi">What was measured and what was inferred</a></li>
 </ol></div>
@@ -285,6 +286,44 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <p><b>Why this matters for monitoring:</b> the lever is <i>work per unit</i>: how many messages, rounds and gate runs a PR needs. Raw speed is a constant we don't control. A tripwire on "seconds per step" alone would miss the biggest effect on this page.</p>
 <p class="horizon">measured how: <code>model_speed.py</code> over every <code>*.jsonl</code> in the project's transcript directory. For each main-thread assistant message with ≥200 output tokens, it takes the gap from the preceding user or tool-result entry, keeps gaps between 0 and 600 s, and reads <code>usage.output_tokens</code>. ⚠ It uses the first entry per message id, so a streamed message may be timed at its first block, not its last.</p>
 
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-29 04:54):</b> how did this become possible? Why can Opus 5.5 merge more PRs than Opus 5 by doing less work? Probably Opus 5.5 is doing much smarter work than Opus 5.</p>
+<p><b>A: partly yes, but the biggest measured change is WHERE the work happens, and it corrects this page.</b> The "messages per PR" figure above counted only the main conversation. Counting subagents too (their transcripts sit in each session's <code>subagents/</code> folder), over the same two windows:</p>
+<table><tr><th></th><th>Opus 5 window (10-13..10-21, 9 days, 7 PRs)</th><th>Opus 5.5 window (10-23..10-28, 6 days, 47 PRs)</th></tr>
+<tr><td>output tokens, main conversation</td><td>9.35 M</td><td>3.36 M</td></tr>
+<tr><td>output tokens, subagents</td><td>0.41 M (4%)</td><td>5.14 M (60%)</td></tr>
+<tr><td><b>total output tokens</b></td><td>9.76 M (1.08 M/day)</td><td>8.50 M (1.42 M/day)</td></tr>
+<tr><td>total output tokens per merged PR</td><td>1.39 M</td><td>0.18 M</td></tr>
+<tr><td>tool calls that returned an error</td><td>217 of 11,477 (1.9%)</td><td>97 of 8,345 (1.2%)</td></tr></table>
+<p>What this says, and what it doesn't:</p>
+<ul>
+<li><b>The total work per DAY barely moved:</b> about 1.1 M against 1.4 M output tokens a day. What moved is how much of it became merged PRs, about 7.7× fewer tokens per PR. So "doing less work" is right per PR, not per day.</li>
+<li><b>Work moved off the main conversation:</b> from 4% to 60% of output in subagents. Subagents run in parallel, each with a small, focused context, and the main conversation stays short enough to coordinate, which is how several slices move at once (this very night: five). That is a working pattern, and the model is only part of why it happens.</li>
+<li><b>Fewer failed tool calls:</b> 1.9% → 1.2%. That is consistent with "smarter", but small.</li>
+<li><b>Not separable from the process changes in the same window:</b> merge-when-ready (10-25) removed the wait on the owner, the local sweep stopped running in full (10-26), and docs-only PRs skip the CI sweep. The 10-23..10-24 sub-window, before both rules, still showed 4 PRs a day. So the model change is likely real, but its share is not measured.</li>
+</ul>
+<p class="horizon">measured how: <code>how.py</code> (scratchpad) over every <code>*.jsonl</code> including <code>*/subagents/*.jsonl</code>, counting each assistant message id once, summing <code>usage.output_tokens</code>, and reading <code>is_error</code> on tool results. The subagents' own model was not checked: some may run on a different model.</p>
+</div>
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-29 04:59):</b> 7.7× fewer tokens per PR is a huge difference. We need to understand correctly how this is achieved.</p>
+<p><b>A: it splits two ways, and both point the same direction: about half is SMALLER PRs, and about half is each unit of work costing less.</b> Same two windows, all output tokens (main conversation plus subagents):</p>
+<table><tr><th></th><th>Opus 5 window (10-13..10-21)</th><th>Opus 5.5 window (10-23..10-28)</th><th>ratio</th></tr>
+<tr><td>merged PRs (docs-only / code)</td><td>7 (3 / 4)</td><td>47 (13 / 34)</td><td></td></tr>
+<tr><td>lines changed per merged PR</td><td>3,009</td><td>1,276</td><td>2.4× smaller</td></tr>
+<tr><td>output tokens per changed line</td><td>463</td><td>142</td><td>3.3× cheaper</td></tr>
+<tr><td>review rounds landed</td><td>34 over 7 subjects</td><td>184 over 34 subjects</td><td></td></tr>
+<tr><td>review rounds per merged PR</td><td>4.9</td><td>3.9</td><td>1.25× fewer</td></tr>
+<tr><td><b>output tokens per review round</b></td><td>287 k</td><td>46 k</td><td><b>6.2× cheaper</b></td></tr></table>
+<p><b>Split 1, by size:</b> 2.4× smaller PRs × 3.3× fewer tokens per changed line ≈ 7.8×. <b>Split 2, by review:</b> 1.25× fewer rounds per PR × 6.2× cheaper rounds ≈ 7.8×. Both multiply back to the observed figure.</p>
+<p><b>The largest single factor is the cost of one review round: 287 k → 46 k output tokens.</b> A round is the repo's unit of correction (review, then fold). What the data shows about where that went:</p>
+<ul>
+<li>In the Opus 5 window, 96% of output was written in top-level sessions and 4% in subagents. In the Opus 5.5 window it was 40% and 60%. Folds and review halves are now handed to fresh subagents with a narrow brief, instead of the coordinator working through them in its own long conversation.</li>
+<li>⚠ "Top-level" includes peer sessions as well as the coordinator, because a peer's transcript is a top-level file too. So this shows the shift toward delegated, narrow-context work, but it cannot apportion it precisely between the coordinator and peers.</li>
+<li>The Opus 5 window held long review episodes: 4 subjects carried 28 of its 34 rounds (two of them 8 rounds each). Long episodes are where a round costs the most, because each fold re-derives context.</li>
+</ul>
+<p><b>What is NOT shown:</b> how much of the cheaper round is the model (better first answers, fewer retries: failed tool calls 1.9% → 1.2%) and how much is the working pattern (delegation, smaller slices, merge-when-ready from 10-25). Both changed in the same week. <b>To separate them, a later window would have to hold one fixed while the other varies.</b> The tripwire log (backlog #397) would make that possible by recording tokens, rounds and lines per PR going forward.</p>
+<p class="horizon">measured how: PRs and their files from <code>gh pr list --json files</code> (docs-only means every changed path under <code>docs/</code>); rounds are review documents added to master per window, from <code>git log --diff-filter=A</code>, counted as (subject, round) pairs; tokens from <code>how.py</code>, as in the answer above.</p>
+</div>
 <h2 id="baseline">Baseline: the four numbers to watch</h2>
 <h3 id="b-ci">1 · CI wall-clock per run</h3>
 <figure class="fig"><svg viewBox="0 0 560 210" role="img" aria-label="CI median minutes per week">
@@ -302,6 +341,89 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <text x="69" y="143">4.5</text><text x="125" y="141">4.8</text><text x="181" y="115">8.5</text><text x="237" y="103">10.3</text><text x="293" y="94">11.6</text><text x="349" y="136">5.5</text><text x="405" y="12">23.5</text><text x="461" y="13">25.4</text><text x="517" y="21">22.1</text>
 </g></svg>
 <figcaption>Median minutes per successful CI run, by ISO week (W36 = early Sept, W44 = this week). Runs per week: 11, 150, 62, 69, 21, 27, 14, 41, 87. W41's low median is a mix: sharding landed that week and its p90 was already 23.8 min.</figcaption></figure>
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-30 06:22):</b> why did CI wall-clock per run increase dramatically from week 42?</p>
+<p><b>A: sharding split the sweep, but the sweep's total work grew about 5.8× in under three weeks, faster than the split could absorb.</b> A mutation sweep re-runs a guard's WHOLE test suite once per mutation entry, so its cost is entries × each guard's suite time. Both factors grew:</p>
+<table><tr><th>date</th><th>mutation entries</th><th>total sweep work</th><th>per entry</th><th>slowest shard</th></tr>
+<tr><td>10-05, when sharding was designed (PR #366)</td><td>1,211</td><td>1,606 s</td><td>≈1.3 s</td><td>353 s ≈ 6 min with 8 shards</td></tr>
+<tr><td>10-24, when it went from 8 to 12 shards (backlog #231)</td><td>2,003</td><td>≈9,336 s</td><td>≈4.7 s</td><td>27.0 min with 8 shards; 19.5 min PREDICTED with 12</td></tr>
+<tr><td>10-28/29, on recent code PRs</td><td>2,512 (master, 10-30)</td><td></td><td></td><td><b>24–29 min</b>, against a 30-minute timeout</td></tr></table>
+<ul>
+<li><b>W42 is when that growth landed on every run.</b> Sharding (10-06) had turned one 15-minute step into parallel shards of about 6 minutes, but each shard also pays a fixed "control" pass over every suite (about 150–220 s), which does not shrink as shards are added. As entries were added and suites grew (each new case lengthens every mutation of that guard), the shards grew from about 6 to over 20 minutes.</li>
+<li><b>Until 10-21 every PR paid it, docs-only ones too.</b> The skip for PRs that change no mutated code landed on 10-21, which is why this week's docs PRs run in 5–7 minutes while code PRs still take about half an hour.</li>
+<li><b>⚠ It is about to hit its ceiling again.</b> Backlog #231's own trip line is "any shard exceeds 1,500 s (25 min)". Recent code PRs ran 24–29 minutes per slowest shard. Its documented lever is more shards (the repository is public, so runners cost nothing), with a floor of about 220 s that sharding cannot remove. The deeper lever is the per-entry cost: slow suites, multiplied by how many entries target them.</li>
+<li><b>This is exactly what the tripwire (backlog #397) is for:</b> each week's step looked small, and nothing flagged the 4.5× growth in per-entry cost.</li>
+</ul>
+<p><b>Q (the owner, 10-30 07:40):</b> why did the per-entry cost increase from 1.3 s to 4.7 s?</p>
+<p><b>A: one guard, not a general slowdown.</b> Each mutation entry re-runs ITS OWN guard's test suite, so "per entry" is an average weighted by how many entries each guard has. Between 10-06 and 10-24 the entries added were:</p>
+<table><tr><th>manifest</th><th>entries 10-06</th><th>entries 10-24</th><th>its suite in CI</th></tr>
+<tr><td><b><code>check-main-drivable</code></b></td><td>0</td><td><b>183</b></td><td><b>48 s</b></td></tr>
+<tr><td><code>check-decision-scheme</code></td><td>0</td><td>125</td><td>small</td></tr>
+<tr><td><code>backfill-work-lines</code></td><td>0</td><td>108</td><td>small</td></tr>
+<tr><td><code>page_chrome</code></td><td>11</td><td>89</td><td>small</td></tr>
+<tr><td>everything else</td><td colspan="2">about 380 more entries</td><td>mostly 2–13 s</td></tr></table>
+<p>183 entries × 48 s ≈ <b>8,800 s</b> of added work: nearly all of the growth from 1,606 s to about 9,300 s. The other new entries mostly belong to fast suites. That one guard is <b>68%</b> of today's mutation work (measured on CI run 40799920596), which is filed as backlog #401: make its suite faster, or trim entries that test the same thing. That would cut the code-PR critical path more than any number of shards.</p>
+<p><b>Q (the owner, 10-30 07:43):</b> can we find the feasibility of these ideas?</p>
+<p><b>A: yes. A fresh, read-only analyst measured all three, and one idea removes most of the cost on its own.</b></p>
+<table><tr><th>idea</th><th>feasibility</th><th>saving (of 12,965 s of sweep work)</th><th>effort</th></tr>
+<tr><td><b>1. Make <code>check-main-drivable</code>'s suite faster</b> by caching four helpers that re-walk the same syntax trees</td><td><b>high</b></td><td>suite <b>68 s → 9 s</b> (7.4×), with all 183 mutants still caught by the cases they name, MEASURED locally. In CI about <b>−7,600 s ≈ 59%</b> (inferred from the measured ratio)</td><td>S</td></tr>
+<tr><td>3b. Stop a mutant's run as soon as its named case fails (SIGINT, so cleanup still runs), with a periodic full sweep to keep soundness</td><td>high</td><td>about 8% more on that guard and 7% on <code>compaction-state</code>, both measured; about 12% elsewhere, NOT measured</td><td>M; helps every guard</td></tr>
+<tr><td>2. Trim duplicate mutation entries</td><td>low</td><td><b>≈ 0 s defensible</b>: the 23 entries that share a killing case and a function each mutate a DIFFERENT clause, so merging them would delete coverage</td><td>—</td></tr>
+<tr><td>3a. Run only the named case</td><td>low</td><td>—</td><td>L: every suite computes its values inline, so each would need restructuring</td></tr></table>
+<p><b>Why idea 1 works:</b> one case is 90% of the suite. It classifies every real guard file and walks the same large syntax trees about 52 million times. The helpers it calls are pure functions of the tree, so remembering their answers changes no result. It only stops recomputing them.</p>
+<p><b>Q (the owner, 10-30 09:31):</b> make <code>check-main-drivable</code>'s suite faster by caching the four helpers that re-walk the same syntax trees.</p>
+<p><b>A: in progress since 08:25.</b> A fresh implementer is adding the caches on a branch from master, with mutation entries for the caches themselves (a cache that returned another node's answer must be caught). It is gated on the full scoped sweep: all 183 of this guard's mutants must still be killed by the case each names, as the study measured. The before and after timings go in its pull request. This page records the result when it merges.</p>
+<p><b>Q (the owner, 10-30 09:33):</b> my question was not specific to the check-main-drivable suite. I asked if the caching technique can be extended to other mutation checks too.</p>
+<p><b>A: I misread your note, and the corrected answer is likely yes, but it is being measured before anything is claimed.</b> The next most expensive suites (CI share of mutation work: <code>compaction-state</code> 8.7%, <code>check-fixture-git-isolation</code> 4.1%, <code>check-fixture-variation</code> 2.6%, <code>gen-backlog-page</code> 2.1%, <code>check-rc-contract</code> 1.5%) include several guards that parse EVERY script's syntax tree, the same shape as idea 1. Two extensions are being studied:</p>
+<ul>
+<li><b>(a) per-guard caching</b>, like idea 1: remember pure, repeated work within one suite run;</li>
+<li><b>(b) a shared, content-addressed parse cache</b> across mutation runs. Each mutant is a new process, but every file except the mutated one is unchanged, so a cache keyed by a hash of the file's CONTENT can be reused safely across all runs, and a mutated file can never hit a stale entry.</li>
+</ul>
+<p><b>Result of the study (10-30, read-only, local ratios converted to CI seconds; the machine was busy, at load 4.7–14):</b> caching extends to <b>four of the nine</b> next-most-expensive guards. Together they save about <b>626 s of 12,965 s (4.8%)</b>.</p>
+<table><tr><th>guard (CI s × entries)</th><th>where its time goes</th><th>saving from caching</th></tr>
+<tr><td><code>gen-backlog-page</code> (13.0 × 21)</td><td>a markup scan called 158,001 times on 6,061 distinct inputs</td><td>suite 15.7 → 2.95 s (−81%), 186/186 pass; <b>≈ −221 s</b></td></tr>
+<tr><td><code>goal-tree</code> (1.9 × 75)</td><td>re-compiles 3 sibling scripts 71 times</td><td>5.31 → 0.71 s (−87%), 165/165; <b>≈ −124 s</b></td></tr>
+<tr><td><code>check-fixture-variation</code> (8.1 × 42)</td><td>parses 120 distinct files 531 times</td><td>11.8 → 5.7–7.0 s (−41 to −52%), 67/67; <b>≈ −139 to −177 s</b></td></tr>
+<tr><td><code>brief-compose</code> (2.9 × 45)</td><td>the same page scan, 1,866 calls on 361 inputs</td><td>3.43 → 1.75 s (−49%); <b>≈ −64 s</b>, free with the gen-backlog change</td></tr>
+<tr><td><code>compaction-state</code> (20.8 × 54)</td><td><b>18.5 of 22.8 s is WAITING</b>: cases that test a real deadline (one waits 11 s)</td><td>0 from caching; a different lever (below)</td></tr>
+<tr><td><code>session-state</code>, <code>check-fixture-git-isolation</code>, <code>check-plan-code</code>, <code>check-rc-contract</code></td><td>waiting on kill timers, mostly distinct work, nested subprocesses</td><td>≈ 0 to −40 s</td></tr></table>
+<p><b>A shared on-disk parse cache is NOT worth building.</b> Parsing is a small share of these suites once the in-process caches exist.</p>
+<p><b>The bigger lever is not caching.</b> The harness could stop a mutant's suite as soon as the case its manifest entry names has gone red, then confirm soundness with a periodic full sweep (idea 3b above). That saves about <b>2,050 s (≈16%)</b> and changes no guard. A further lever: <code>compaction-state</code>'s cost is real waiting, so its deadline cases could run with a shorter, test-only timeout. That is not measured yet.</p>
+<p><b>Q (the owner, 10-30 10:08):</b> explain what the deadline is and why it is waiting for it. How often does this happen (% of the overall process)?</p>
+<p><b>What the deadline is.</b> <code>scripts/compaction-state.py</code> is the compaction guard: the PreCompact hook that snapshots in-flight state before Claude Code compacts the conversation. Claude Code kills a hook that runs past its <code>timeout</code>, which is 15 s in <code>.claude/settings.json</code>. The guard therefore budgets itself:</p>
+<table><tr><th>constant</th><th>value</th><th>what it bounds</th></tr>
+<tr><td><code>HOOK_DEADLINE</code></td><td>13.5 s</td><td>the whole hook from process start (stdin, parse, child, publish), safely under the harness's 15 s</td></tr>
+<tr><td><code>CAPTURE_TIMEOUT</code></td><td>11.0 s</td><td>the child that collects the snapshot (git, gh) is KILLED, with its whole process group, at 11 s</td></tr>
+<tr><td><code>GH_TIMEOUT</code> / <code>GIT_TIMEOUT</code></td><td>8 s / 3 s</td><td>each single call inside that child</td></tr></table>
+<p><b>Why the tests wait for it.</b> The guard's most important promise is "a hung <code>gh</code> or <code>git</code> can never hold up a compaction". The only way to PROVE that is to make a real child hang and watch the guard kill it at the real deadline. So a case such as "a slow git then a hung gh that backgrounds a sleep: killed at the REAL 11 s, and the sleep is GONE" genuinely sits there for 11 s. That is correct, but it is slow: <b>about 18.5 of the suite's 22.8 s is spent waiting on the clock</b>, not computing.</p>
+<p><b>How often, as a share of the whole.</b></p>
+<ul>
+<li><b>One run of its self-test:</b> about 81% waiting, about 20 s per run in CI.</li>
+<li><b>The mutation sweep:</b> the suite re-runs once per mutation entry, 54 times: 20.8 s × 54 ≈ 1,123 s, which is <b>8.7% of all mutation work</b>. Of that, about 81% is waiting, so roughly <b>900 s ≈ 7% of the sweep</b> is just this guard waiting on deadlines. This is inferred: 81% is the local share applied to the CI figure.</li>
+<li><b>The overall process:</b> small and indirect. The sweep runs in parallel shards, so these seconds lengthen one shard of a code PR by a few minutes. They are never on the coordinator's or the owner's own time.</li>
+</ul>
+<p><b>The remedy, and its trade-off.</b> Let the deadline constants be SCALED by a test-only setting (for example ×0.1, so the 11 s kill fires at 1.1 s) in MUTATION runs only, where a mutant just has to be caught. Keep one real-time run of the self-test in CI's ordinary check, so "killed at the REAL 11 s" is still proven once per change. Expected saving: most of that ≈ 900 s. Risk: a scaled deadline could hide a bug that only appears at full scale, which is why the one real-time run stays. Not built and not measured; it will be filed as a backlog row.</p>
+<p><b>Q (the owner, 10-30 10:14):</b> what is not being built now (deferred in the backlog)?</p>
+<p><b>Being built now:</b> the <code>check-main-drivable</code> caching (backlog #401, ≈ 59% of the sweep), and the shard resize to 24 (PR #445).</p>
+<table><tr><th>deferred: filed, not being built</th><th>row</th><th>estimated saving or purpose</th></tr>
+<tr><td>Stop a mutant's suite at its named failing case, plus a periodic full sweep</td><td>#405</td><td>≈ 16% of the sweep</td></tr>
+<tr><td>Caches in four more guards' suites</td><td>#406</td><td>≈ 4.8% (−626 s)</td></tr>
+<tr><td>Scaled deadlines for <code>compaction-state</code> in mutation runs only</td><td>#407</td><td>≈ 7% (not measured)</td></tr>
+<tr><td>Count check: changed scripts locally, full run in CI (you asked for it "when convenient")</td><td>#402</td><td>≈ 366 local runs in 8 days</td></tr>
+<tr><td>Fix the <code>check-run-hook</code> timeout flake</td><td>#388</td><td>a red result that means something again</td></tr>
+<tr><td>The dev-speed tripwire: log CI job times, warn on a 25% week-over-week rise</td><td>#397</td><td>catch the next slow step in the week it lands</td></tr>
+<tr><td>Snapshot taken at restore time (the compaction guard's broken half)</td><td>#396</td><td>a restore that survives a precomputed compaction</td></tr>
+<tr><td>Recorded-round gate cannot see a Claude final round</td><td>#403</td><td>avoids an extra Codex round per PR</td></tr>
+<tr><td>Review wrapper remainder (a parent symlink swapped mid-run, a failed write losing a paid review)</td><td>#400</td><td>safety</td></tr>
+<tr><td>A subagent can wake a sibling past the usage gate</td><td>#404</td><td>usage</td></tr>
+<tr><td>The push hook reads heredoc prose as a push</td><td>#398</td><td>false blocks</td></tr></table>
+<p><b>Decided NOT to build:</b> trimming duplicate mutation entries (each tests a different clause), running only the named case (every suite would need restructuring), and a shared on-disk parse cache (parsing is too small a share).</p>
+<p><b>Order by saving ÷ effort:</b> (1) <code>check-main-drivable</code> caching, in progress, ≈ 59%; (2) stop at the named case, ≈ 16%; (3) the four small caches above, ≈ 5%, a few lines each.</p>
+
+<p><b>What happens now:</b> idea 1 is being built as its own pull request (backlog #401), with mutations for the caches themselves. Idea 3b is filed as backlog #405 (⟳ corrected 10-30 10:15: this line said "is filed" before it was; it was only in my notes). Idea 2 is not pursued.</p>
+<p class="horizon">measured how: entries per manifest at <code>7f7a1577</code> (10-06) and <code>a50ddc36</code> (10-24); suite seconds from the timestamped shard logs of CI run 40799920596, measured on 10-30.</p>
+<p class="horizon">measured how: entry counts from <code>scripts/mutations/*.json</code> at commits <code>7f7a1577</code> (10-06), <code>a50ddc36</code> (10-24) and <code>origin/master</code>; the work and per-shard figures are quoted from the measured comments in <code>.github/workflows/ci.yml</code> (the mutation-sweep job); recent shard times from <code>gh run view --json jobs</code> on the last six green code-PR runs.</p>
+</div>
 <p><b>Cause, read from the job timings:</b> one step drove it all, the <b>mutation sweep</b>.</p>
 <div class="scroll"><table class="num">
 <tr><th>Week</th><th>Where the sweep ran</th><th>Its cost</th></tr>
@@ -347,6 +469,22 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </table></div>
 <p class="horizon">measured how: wall-clock around each command on master <code>c983a114</code>, in a scratch worktree, 10-29 03:30 PDT; the leak-scan sizes are real master ranges (<code>~1</code>, <code>~10</code>, <code>~40</code>)</p>
 
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-30 07:30):</b> how important is it to have accurate counts? What is the impact of this relatively long step on the overall process delay?</p>
+<p><b>How important:</b> moderately. Every guard's docstring declares how many self-test cases it has, and each suite already compares that number with the cases that actually ran, which catches a test that silently disappears. <code>check-selftest-counts</code> is the OUTSIDE observer of that in-suite check: it catches the comparison itself being deleted (backlog #69). That is real value, but it is a check on a check, and <b>CI runs it on every pull request</b> (about 1.7 min, in parallel with the other jobs).</p>
+<p><b>Its impact on delay, measured from the transcripts since 10-23:</b></p>
+<table><tr><th></th><th>value</th></tr>
+<tr><td>local runs by agents</td><td><b>366 in 8 days</b> (peak 125 on 10-27)</td></tr>
+<tr><td>time per run</td><td>351 s at load average 18, against about 1.7 min in CI</td></tr>
+<tr><td>runs whose result mentioned the flaky <code>check-run-hook</code> (backlog #388)</td><td><b>44</b>: red for a reason unrelated to the change</td></tr></table>
+<ul>
+<li><b>Wall time:</b> at a few minutes each, 366 runs is on the order of 15–20 hours of agent time over 8 days (an estimate: the per-run time varies with load). Every slice and fold waits on it before it can finish.</li>
+<li><b>Contention:</b> it runs about 80 suites one after another, so while it runs, every other agent on the machine is slower.</li>
+<li><b>Noise:</b> the flaky case makes it red often. The agents learned to write "only check-run-hook red", which teaches everyone to read past a red result. That is the expensive part.</li>
+</ul>
+<p><b>Remedy (proposed):</b> run it locally only for the scripts a branch CHANGED (seconds, not minutes), and leave the full run to CI. That is the same split the owner chose for the mutation sweep on 10-25. Fix the flake separately (backlog #388), so that a red result means something again.</p>
+<p class="horizon">measured how: every <code>Bash</code> tool call containing <code>check-selftest-counts</code> (not its own <code>--self-test</code>) in all transcripts and subagent transcripts since 10-23, and whether its result mentioned a <code>check-run-hook</code> failure. The 351 s is the single timed run on this page.</p>
+</div>
 <h2 id="kinds">The kinds of speed impact</h2>
 <p>Each kind is <b>cost per occurrence × how often it occurs</b>. The second factor is what a new slow step quietly multiplies.</p>
 <div class="scroll"><table>
@@ -395,8 +533,28 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </ol>
 <p>All five feed one page section like <a href="#baseline">the baseline</a> above, regenerated on merge, so a reader sees this week against last without asking.</p>
 
+<h2 id="usage">The usage limit: the slowdown that costs a whole day</h2>
+<p><b>The largest single speed loss is not a slow step; it is a stop.</b> For several weeks the weekly usage limit has halted all work for about a day. On 10-29 at 05:02 it stopped four agents mid-task, and nothing ran again until 10-30 05:02. <b>No work was lost</b>: every commit was intact, both review files were complete, and recovery took about ten minutes from git, the ledger and the agent list. <b>The cost is the idle day.</b> Better recovery cannot buy that back; spending less can.</p>
+<p><b>Where the usage went</b>, over the 24 hours before the halt. Weighted by token type, using API list prices as a proxy because the plan's own weighting is not documented: cache read 0.1×, 1-hour cache write 2×, output 5×.</p>
+<div class="scroll"><table>
+<tr><th>Where</th><th>Weighted share</th><th>What it was made of</th></tr>
+<tr><td>five long-lived, <b>reused</b> teammates</td><td><b>69.5%</b></td><td>mostly cache <b>writes</b>: 65 full-context rebuilds of 100k tokens or more, after an agent idled past its cache lifetime and was woken</td></tr>
+<tr><td>the coordinator</td><td>25.9%</td><td>mostly cheap reads; its 1-hour cache rarely expired (3 rebuilds)</td></tr>
+<tr><td><b>fresh</b> subagents</td><td>4.3%</td><td>about a 65k-token build each, then they finish</td></tr>
+</table></div>
+<p>Unweighted, 99% of the raw tokens are cache reads, which made the coordinator look like the problem. Weighting moved the problem to the reused agents. The owner caught that the first estimate had not weighted cache costs or counted the cost of a reset.</p>
+<p><b>What changed (the owner's decisions, 10-30):</b></p>
+<ul>
+<li><b>A fresh subagent means a NEW one:</b> per slice, per fold and per review round. No agent is parked waiting for a "go". This is now in <code>docs/process-checklists.md</code> → <i>Agent lifetime</i>, with the Phase 3 line of <code>docs/dev-process.md</code> pointing to it.</li>
+<li><b>The coordinator is not reset per PR.</b> Its re-reads are cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts only at a natural pause when the owner is present.</li>
+<li><b>The statusline shows the 5-hour and weekly usage</b> (<code>[5h:22% wk:3%]</code>) and caches it in <code>~/.claude/.rate-limits.json</code>. It is the only documented surface that receives that number; hooks, environment variables and the CLI do not. Its parsing was folded from nine processes to two, so it runs in about 58 ms where it took 115 ms, measured under load.</li>
+<li><b>Backlog #399</b> will read that cache: a warning at 80% weekly, and no new subagent spawns at 90% without an override. It waits on the owner confirming that the cached value matches <code>/usage</code>.</li>
+</ul>
+<p class="horizon">measured how: the same transcript scan as above, over 10-28 05:00 → 10-29 05:05 PDT, summing <code>usage.cache_read_input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>input_tokens</code> and <code>output_tokens</code> per assistant message id. "Reused teammate" means the five named long-lived implementers; a rebuild is a single message whose cache write was 100k tokens or more. ⚠ The weights are a proxy: how the plan counts each token type toward the limit is not documented.</p>
+
 <h2 id="blind">Where we're blind today</h2>
 <ul>
+<li><b>The weekly usage percentage was invisible</b> until 10-30. It is now cached from the statusline; see the section above.</li>
 <li><b>Codex review duration is not recorded.</b> The verdict json has no elapsed field, so the cost of a review half can only be guessed from commit times.</li>
 <li><b>No per-step local timing log.</b> Every local number on this page was taken by hand tonight.</li>
 <li><b>Agent CPU contention is not measured.</b> Tonight's local timings were taken at load 18; how much of the 351 s is contention is unknown.</li>
