@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Enable this repo's tracked git hooks (`.githooks/`, backlog #393) for this clone and every worktree of it.
 #
-#     scripts/install-git-hooks.sh            # set core.hooksPath = .githooks (idempotent)
-#     scripts/install-git-hooks.sh --status   # is the plan-leak pre-push hook active HERE? (exit 0 = yes)
+#     scripts/install-git-hooks.sh            # set core.hooksPath = <main checkout>/.githooks, absolute (idempotent)
+#     scripts/install-git-hooks.sh --status   # is the plan-leak pre-push hook active in this clone? (exit 0 = yes)
 #
 # It REFUSES a different existing core.hooksPath, and live hooks in .git/hooks, because setting the path
 # would silently switch those off. The logic is `scripts/check-plan-leak.py --install-hooks|--hooks-status`.

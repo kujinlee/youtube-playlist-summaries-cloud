@@ -114,8 +114,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "        elif line.startswith(\"+\") and path:",
-    "        elif line.startswith((\"+\", \"-\")) and path:"
+    "        elif line.startswith(\"+\"):\n            if not path:",
+    "        elif line.startswith((\"+\", \"-\")):\n            if not path:"
    ]
   ],
   "expect": "a REMOVED line carrying plan text is not judged"
@@ -301,8 +301,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "f\"  {_where(p, ln)} in {c[:10]}: '{phrase}'\"",
-    "f\"  {_where(p, ln)} in {c[:10]}\""
+    "f\"  {_where(p, ln, set())} in {c[:10]}: '{phrase}'\"",
+    "f\"  {_where(p, ln, set())} in {c[:10]}\""
    ]
   ],
   "expect": "show_lines carries the matched phrase at its path:line"
@@ -532,8 +532,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    if cur != HOOKS_PATH:\n        return False",
-    "    if False:\n        return False"
+    "    if cur != str(want):\n",
+    "    if False:\n"
    ]
   ],
   "expect": "--hooks-status: NOT ACTIVE before installing"
@@ -554,7 +554,7 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    if cur == HOOKS_PATH:\n        return CLEAN",
+    "    if cur == want:\n        return CLEAN",
     "    if False:\n        return CLEAN"
    ]
   ],
@@ -565,7 +565,7 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    if cur:\n        return REFUSED",
+    "    if cur and cur != HOOKS_PATH:\n        return REFUSED",
     "    if False:\n        return REFUSED"
    ]
   ],
@@ -576,8 +576,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    if live:\n        return REFUSED",
-    "    if False:\n        return REFUSED"
+    "        if live:\n            return REFUSED",
+    "        if False:\n            return REFUSED"
    ]
   ],
   "expect": "⛔ --install-hooks REFUSES while live hooks in .git/hooks would be switched off"
@@ -587,7 +587,7 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    _git(root, \"config\", \"core.hooksPath\", HOOKS_PATH)",
+    "    _git(root, \"config\", \"core.hooksPath\", want)",
     "    pass"
    ]
   ],
@@ -686,18 +686,18 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "    return f\"{path}:{ln}\" if ln else f\"{path} (its file NAME)\"",
-    "    return f\"{path}:{ln}\""
+    "    return f\"{shown}:{ln}\" if ln else f\"{shown} (its file NAME)\"",
+    "    return f\"{shown}:{ln}\""
    ]
   ],
-  "expect": "a hit in a path itself is reported as the file NAME, not line 0"
+  "expect": "⛔ r2 F5: a hit in a path itself is reported as a file NAME by its length — the path IS the words"
  },
  {
   "name": "session_start never installs, so a clone with no hooks path stays unguarded",
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "        if not cur:\n            rc, imsg = install_hooks(root)",
+    "        if not cur or cur == HOOKS_PATH:\n            rc, imsg = install_hooks(root)",
     "        if False:\n            rc, imsg = install_hooks(root)"
    ]
   ],
@@ -746,5 +746,93 @@
    ]
   ],
   "expect": "the SHIPPED SessionStart hook prints the loud warning as JSON, to the user and the model"
+ },
+ {
+  "name": "r2 F1: the diff prefixes stop being forced, so diff.noprefix drops every added line",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "               \"--src-prefix=a/\", \"--dst-prefix=b/\", \"--no-renames\",",
+    "               \"--no-renames\","
+   ]
+  ],
+  "expect": "⛔ r2 F1 REAL PUSH: with diff.noprefix set in the repo, a leak is still REFUSED and named"
+ },
+ {
+  "name": "r2 F1: only the SOURCE prefix is forced — diff.dstPrefix config reaches the `+++` header",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "\"--dst-prefix=b/\", ",
+    ""
+   ]
+  ],
+  "expect": "⛔ r2 F1 REAL PUSH: with diff.srcPrefix and diff.dstPrefix set, a leak is still REFUSED and named"
+ },
+ {
+  "name": "r2 F1: an added line with no readable path is SKIPPED again — a green verdict over nothing",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "                raise ValueError(\"an added line sits under a diff header whose `b/` path could not be read\")",
+    "                continue"
+   ]
+  ],
+  "expect": "⛔ r2 F1: an added line under a `+++` header with no `b/` prefix is CANNOT RUN, never skipped"
+ },
+ {
+  "name": "r2 F4: refs/replace is honoured again, so a replaced commit hides the leak it pushes",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    ",\n                                \"GIT_NO_REPLACE_OBJECTS\": \"1\"})",
+    "})"
+   ]
+  ],
+  "expect": "⛔ r2 F4 REAL PUSH: a `refs/replace` swap does not hide the leak — the ORIGINAL objects are read"
+ },
+ {
+  "name": "r2 F3: the hooks path is relative again, so `git --git-dir=… push` from elsewhere runs no hook",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    return common.parent / HOOKS_PATH",
+    "    return pathlib.Path(HOOKS_PATH)"
+   ]
+  ],
+  "expect": "⛔ r2 F3 REAL PUSH: `git --git-dir=<repo>/.git push` from an UNRELATED directory is still checked"
+ },
+ {
+  "name": "r2 F3: the old relative hooks path is refused as foreign instead of upgraded",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    if cur and cur != HOOKS_PATH:",
+    "    if cur:"
+   ]
+  ],
+  "expect": "⛔ r2 F3: the RELATIVE `.githooks` an older install wrote is upgraded to the absolute path"
+ },
+ {
+  "name": "r2 F5: a path that is itself a hit is printed, and the path IS the matched words",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    "    shown = f\"<a path ADDED by this commit that quotes plan text, {len(path)} chars>\" if path in named else path",
+    "    shown = path"
+   ]
+  ],
+  "expect": "⛔ r2 F5: a hit in a path itself is reported as a file NAME by its length — the path IS the words"
+ },
+ {
+  "name": "r2 F5: a CONTENT hit in a file whose name is a hit prints that name",
+  "file": "scripts/check-plan-leak.py",
+  "edits": [
+   [
+    " if path in named else path",
+    " if path in named and not ln else path"
+   ]
+  ],
+  "expect": "⛔ r2 F5: ...and a CONTENT hit in that same file does not print the path either"
  }
 ]

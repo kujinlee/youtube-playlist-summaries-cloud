@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # git's pre-push hook (backlog #393): refuse a push whose commits add a line quoting a private plan.
-# Enabled per clone by `scripts/install-git-hooks.sh` (`core.hooksPath .githooks`, shared by worktrees).
+# Enabled per clone by `scripts/install-git-hooks.sh` (`core.hooksPath` = the MAIN checkout's absolute
+# `.githooks`, shared by every worktree), so this file and the checker it runs are the main checkout's.
 # Everything — which commits are sent, what the remote already holds, the verdict — is decided by
 # `scripts/check-plan-leak.py --pre-push`, which is tested there. git aborts the push on ANY non-zero exit,
 # so a crash of the checker blocks too. Escape: ALLOW_PLAN_LEAK=1 in the push's environment.

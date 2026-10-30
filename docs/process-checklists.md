@@ -89,11 +89,13 @@ already on the remote. It reads what git says is sent (every ref, every commit i
 command's form does not matter. CI has no plans (a zero over nothing), so CI runs only its `--self-test`.
 - **Commit messages, annotated tags (peeled, a tag of a tag included) and ADDED file names (empty files too)
   are pushed text**, and are scanned the same way.
-- **Enabled per clone** by `scripts/install-git-hooks.sh` (sets `core.hooksPath .githooks`, shared by
-  worktrees; refuses to replace another hooks path), which the SessionStart hook
-  `.claude/hooks/ensure-plan-leak-hook.sh` runs when the path is unset — and when it points ELSEWHERE, warns
-  LOUDLY that the gate is OFF and changes nothing. `--status` says whether it is active in THIS checkout — a
-  worktree on a branch older than `.githooks/pre-push` pushes unchecked.
+- **Enabled per clone** by `scripts/install-git-hooks.sh` (sets `core.hooksPath` to the MAIN checkout's
+  `.githooks` as an ABSOLUTE path, so every worktree and `git --git-dir=… push` from any directory runs the
+  same hook — a relative path resolved from the caller's directory and pushed unchecked, PR #443 r2; refuses
+  to replace another hooks path), which the SessionStart hook `.claude/hooks/ensure-plan-leak-hook.sh` runs
+  when the path is unset or relative — and when it points ELSEWHERE, warns LOUDLY that the gate is OFF and
+  changes nothing. `--status` says whether it is active — a MAIN checkout on a branch older than
+  `.githooks/pre-push` leaves the whole clone unchecked, and a moved clone's stale path reads as ELSEWHERE.
 - **The agent push hook refuses the off-switches** it can see: a push command whose raw text mentions
   `hookspath` or `ALLOW_PLAN_LEAK` anywhere (casefolded, quotes and backslashes deleted — deliberately not a
   parser) is denied without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence in

@@ -2,10 +2,10 @@
 """No commit a push sends adds a line that quotes a private plan — git's own pre-push hook, standing.
 
     .githooks/pre-push                                  # git runs it: `--pre-push <remote> <url>`, refs on stdin
-    scripts/install-git-hooks.sh [--status]             # enable it once per clone (`core.hooksPath .githooks`)
+    scripts/install-git-hooks.sh [--status]             # enable it once per clone (`core.hooksPath`, absolute)
     python3 scripts/check-plan-leak.py [--base B] [--head H]   # by hand: the commits in H not in B
     python3 scripts/check-plan-leak.py --show           # by hand, in a TERMINAL: also print the matched words
-    python3 scripts/check-plan-leak.py --self-test      # 105 cases
+    python3 scripts/check-plan-leak.py --self-test      # 119 cases
 
 WHY THIS EXISTS (backlog #393). The repo is PUBLIC and the session plans under `.claude/plans/` are
 gitignored, which the owner decided on 2026-10-29 they STAY (backlog #194). Measured 2026-10-28 on PR #434:
@@ -19,6 +19,8 @@ text cannot say what a push sends: history, not the endpoint tree (r1 X1); refs 
 which local and remote objects each ref update carries, whatever the command, alias or directory. So:
   * EVERY COMMIT the remote lacks is scanned — `local_sha --not <every remote tip present here>` — each one
     diffed against its first parent, with `--text` (X6) and C-quoted paths decoded (X5). Deletions send nothing.
+    The diff's `a/`/`b/` prefixes are FORCED, whatever `diff.*Prefix` config says, and an added line whose path
+    cannot be read is CANNOT RUN (r2 F1); `refs/replace` is ignored, as the push ignores it (r2 F4).
   * "PUBLIC" IS THE REMOTE'S OWN STATE: `git ls-remote <url>` heads and tags plus the remote shas on stdin,
     never a local `origin/master` anyone can `update-ref` (X7).
   * CI has no `.claude/plans/` (gitignored), so a CI scan would be a zero over nothing; CI runs the
@@ -40,7 +42,8 @@ THE RULE:
     normalisation as the matcher, in Python (X10; `git grep -i` does not fold `ß` to `ss`).
 
 OUTPUT: `path:line`, the commit and the plan FILE, never the matched words, in EVERY channel the hook or a
-by-hand run writes (X11: stderr is captured by tools and redirects too). `--show` prints the words, and only
+by-hand run writes (X11: stderr is captured by tools and redirects too). A path that is ITSELF a hit is
+printed by its length only, for its content hits too: that path is the matched words (r2 F5). `--show` prints the words, and only
 to a terminal: it refuses when stdout is not a TTY.
 
 ESCAPE: `ALLOW_PLAN_LEAK=1` in the push's real ENVIRONMENT (`ALLOW_PLAN_LEAK=1 git push …`), for a judged
@@ -56,9 +59,12 @@ RUN, git failed, a plan could not be read or plan discovery was incomplete (the 
 BOUNDS, stated: ⛔ A PLAN FRAGMENT SHORTER THAN 8 CONSECUTIVE WORDS IS NOT CAUGHT (the owner's window,
 2026-10-29: over the last 40 merged commits 8 words gave 1 false hit against 3 at 6, with the same 4 lines on
 the bulk-leak commit `f8e974a4`). A generic phrase can match by coincidence, so a hit needs READING. The hook
-runs only where `core.hooksPath` is `.githooks` AND the checkout holds `.githooks/pre-push` — a worktree on a
-branch older than this file pushes UNCHECKED, and `--status` says so. A plan's headings and paragraphs are
-not plan text. A remote tip this clone has never fetched cannot be read, so its content is not counted public
+runs only where `core.hooksPath` is the MAIN checkout's ABSOLUTE `.githooks` AND that directory holds
+`pre-push` (r2 F3: a relative path was resolved from the caller's directory, so `git --git-dir=… push` from
+elsewhere and a worktree without the file pushed UNCHECKED). Every worktree now runs the main checkout's
+hook, so a MAIN checkout on a branch older than this file leaves the whole clone UNCHECKED, and a clone
+moved on disk keeps a stale path; `--status` and the SessionStart warning say so. A plan's headings and
+paragraphs are not plan text. A remote tip this clone has never fetched cannot be read, so its content is not counted public
 (a false hit, never a missed one).
 
 ⚠ THE GATE IS OPT-IN PER CLONE, and two things keep it on: `.claude/hooks/ensure-plan-leak-hook.sh` runs
@@ -162,7 +168,8 @@ def parse_log(log_text: str):
     runs: [(commit, path, [(new line number, body)…])] — each a maximal run of CONSECUTIVE added lines in one
     hunk. (A new file's NAME is read by `parse_added_paths`, which also sees an EMPTY file with no hunk.) removed: {(commit, path): every line that commit removes from that path}. A `---`/`+++` pair is a
     header only between `diff --git` and the first hunk, so an added line whose text starts `++ ` is content.
-    A deleted file has no `b/` side: its lines are removed, never added."""
+    A deleted file has no `b/` side: its lines are removed, never added. ⛔ An ADDED line under a header whose
+    path could not be read RAISES ValueError (r2 F1): skipping it is a green verdict over nothing."""
     runs: list = []
     removed: dict[tuple[str, str], set[str]] = {}
     commit, path, old, header, n, run = "", None, None, False, 0, None
@@ -183,7 +190,9 @@ def parse_log(log_text: str):
             n = int(m.group(1)) if m else 0
         elif header:
             continue
-        elif line.startswith("+") and path:
+        elif line.startswith("+"):
+            if not path:
+                raise ValueError("an added line sits under a diff header whose `b/` path could not be read")
             if run is None:
                 run = (commit, path, [])
                 runs.append(run)
@@ -284,18 +293,23 @@ def report(hits, n_strings: int, n_windows: int, n_runs: int, n: int) -> str:
     """PURE. The verdict text: counts, then `path:line`, the commit and the plan FILE per hit — never the words."""
     head = (f"plan-leak: plan strings {n_strings} · {n}-word windows {n_windows} · "
             f"added runs {n_runs} · hits {len(hits)}")
-    return "\n".join([head] + [f"  HIT {_where(p, ln)} in {c[:10]}  (a run of plan text from {src})"
+    named = {p for p, ln, _, _, _ in hits if not ln}
+    return "\n".join([head] + [f"  HIT {_where(p, ln, named)} in {c[:10]}  (a run of plan text from {src})"
                                for p, ln, c, src, _ in hits])
 
 
-def _where(path: str, ln: int) -> str:
-    """PURE. `path:line`, or the file's NAME when the hit is in the path itself (line 0)."""
-    return f"{path}:{ln}" if ln else f"{path} (its file NAME)"
+def _where(path: str, ln: int, named: set[str]) -> str:
+    """PURE. `path:line`, or `(its file NAME)` when the hit is in the path itself (line 0). ⛔ A path in `named`
+    (one that is itself a hit) is NEVER printed, for its content hits too: the path IS the matched words (r2 F5).
+    It is given by its length; `git show --stat <commit>` or `--show` in a terminal names it."""
+    shown = f"<a path ADDED by this commit that quotes plan text, {len(path)} chars>" if path in named else path
+    return f"{shown}:{ln}" if ln else f"{shown} (its file NAME)"
 
 
 def show_lines(hits) -> str:
-    """PURE. The matched phrase per hit — `--show` ONLY, and `main` writes it only to a terminal."""
-    return "\n".join(f"  {_where(p, ln)} in {c[:10]}: '{phrase}'" for p, ln, c, _, phrase in hits)
+    """PURE. The matched phrase and the real path per hit — `--show` ONLY, and `main` writes it only to a
+    terminal."""
+    return "\n".join(f"  {_where(p, ln, set())} in {c[:10]}: '{phrase}'" for p, ln, c, _, phrase in hits)
 
 
 def parse_updates(stdin_text: str) -> list[tuple[str, str]]:
@@ -318,11 +332,13 @@ def parse_updates(stdin_text: str) -> list[tuple[str, str]]:
 def _git(root: pathlib.Path, *args: str, ok=(0,), data: bytes | None = None) -> bytes:
     """The ONE git runner. Raises RuntimeError on any failure — never returns b'' for one."""
     try:
-        # ⛔ Inherited GIT_* are dropped: a git HOOK exports `GIT_DIR`, which `-C` does not override.
+        # ⛔ Inherited GIT_* are dropped: a git HOOK exports `GIT_DIR`, which `-C` does not override. Then
+        # `refs/replace` is switched OFF (r2 F4): `log`, `ls-tree` and `cat-file` honour it, the push does not.
         r = subprocess.run(["git", "-C", str(root), "-c", "core.quotePath=false", *args],
                            capture_output=True, timeout=GIT_TIMEOUT, input=data,
                            stdin=None if data is not None else subprocess.DEVNULL,
-                           env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
+                           env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                                "GIT_NO_REPLACE_OBJECTS": "1"})
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"git {args[0]} could not run ({type(exc).__name__})") from exc
     if r.returncode not in ok:
@@ -365,8 +381,10 @@ def local_commits(root: pathlib.Path, shas: list[str]) -> list[str]:
 def pushed_log(root: pathlib.Path, heads: list[str], exclude: list[str]) -> str:
     """Every commit in `heads` and not in `exclude`, each diffed against its FIRST parent: `-U0`, `--text`,
     no renames, no external diff or textconv. Decoded with replacement, so binary content is still read."""
+    # ⛔ The prefixes are FORCED (r2 F1): `diff.noprefix`, `diff.srcPrefix` and `diff.dstPrefix` at ANY config
+    # level change the `+++ b/` header `parse_log` reads, and with them every added line was dropped — hits 0.
     out = _git(root, "log", "-p", "--text", "-U0", "--no-color", "--no-ext-diff", "--no-textconv",
-               "--no-renames", "--diff-merges=first-parent", f"--format={COMMIT_TAG}%H",
+               "--src-prefix=a/", "--dst-prefix=b/", "--no-renames", "--diff-merges=first-parent", f"--format={COMMIT_TAG}%H",
                *heads, "--not", *exclude, "--")
     return out.decode("utf-8", "replace")
 
@@ -452,41 +470,58 @@ def scan(root: pathlib.Path, heads: list[str], exclude: list[str], public_tips: 
 
 # ── the hooks path ───────────────────────────────────────────────────────────────────────────────────
 
+def hooks_dir(root: pathlib.Path) -> pathlib.Path:
+    """The ABSOLUTE `.githooks` of this clone's MAIN checkout, the value `core.hooksPath` is set to. ⛔ Absolute,
+    never the relative `.githooks` (r2 F3): git resolves a relative hooks path from the directory a hook runs
+    in, which under `git --git-dir=… push` is the caller's cwd, and in a worktree is THAT checkout — so either
+    pushed unchecked. Every worktree of the clone runs the main checkout's hook; the object store is shared.
+    Raises when the clone has no main checkout (a bare or separate git dir)."""
+    common = pathlib.Path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
+    if common.name != ".git":
+        raise RuntimeError(f"the git dir {common} is not <checkout>/.git, so no main checkout can hold the hook")
+    return common.parent / HOOKS_PATH
+
+
 def hooks_status(root: pathlib.Path) -> tuple[bool, str]:
-    """-> (active, message) for the checkout at `root`. Active iff `core.hooksPath` is `.githooks` AND this
-    checkout holds an executable `.githooks/pre-push`."""
+    """-> (active, message) for the clone at `root`. Active iff `core.hooksPath` is the main checkout's
+    absolute `.githooks` (`hooks_dir`) AND that directory holds an executable `pre-push`."""
     cur = _git(root, "config", "--get", "core.hooksPath", ok=(0, 1)).decode().strip()
-    hook = root / HOOKS_PATH / "pre-push"
-    if cur != HOOKS_PATH:
-        return False, (f"plan-leak hook NOT ACTIVE: core.hooksPath is {cur or 'unset'!r}, not {HOOKS_PATH!r}. "
+    want = hooks_dir(root)
+    hook = want / "pre-push"
+    if cur != str(want):
+        old = " (the RELATIVE form an older install wrote)" if cur == HOOKS_PATH else ""
+        return False, (f"plan-leak hook NOT ACTIVE: core.hooksPath is {cur or 'unset'!r}{old}, not {str(want)!r}. "
                        f"Run scripts/install-git-hooks.sh")
     if not (hook.is_file() and os.access(hook, os.X_OK)):
-        return False, (f"plan-leak hook NOT ACTIVE in this checkout: {HOOKS_PATH}/pre-push is missing or not "
-                       f"executable here (a branch older than the hook) — pushes from here are UNCHECKED")
-    return True, "plan-leak hook ACTIVE — every push from this checkout runs .githooks/pre-push"
+        return False, (f"plan-leak hook NOT ACTIVE: {hook} is missing or not executable (the MAIN checkout is on "
+                       f"a branch older than the hook) — pushes from EVERY checkout of this clone are UNCHECKED")
+    return True, f"plan-leak hook ACTIVE — every push from every checkout of this clone runs {hook}"
 
 
 def install_hooks(root: pathlib.Path) -> tuple[int, str]:
-    """Set `core.hooksPath` to `.githooks`. Idempotent. ⛔ REFUSES a different existing hooks path, and live
-    hooks in the git dir — setting the path would silently switch those off."""
+    """Set `core.hooksPath` to `hooks_dir(root)`. Idempotent; upgrades the relative `.githooks` an older install
+    wrote. ⛔ REFUSES any other existing hooks path, and live hooks in the git dir — setting the path would
+    silently switch those off."""
     cur = _git(root, "config", "--get", "core.hooksPath", ok=(0, 1)).decode().strip()
-    if cur == HOOKS_PATH:
-        return CLEAN, f"already installed: core.hooksPath is {HOOKS_PATH!r}"
-    if cur:
-        return REFUSED, (f"REFUSED: core.hooksPath is already {cur!r}. Setting it to {HOOKS_PATH!r} would switch "
+    want = str(hooks_dir(root))
+    if cur == want:
+        return CLEAN, f"already installed: core.hooksPath is {want!r}"
+    if cur and cur != HOOKS_PATH:
+        return REFUSED, (f"REFUSED: core.hooksPath is already {cur!r}. Setting it to {want!r} would switch "
                          f"those hooks off; merge them by hand, then re-run.")
-    common = pathlib.Path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
-    live = sorted(p.name for p in (common / "hooks").glob("*") if p.is_file() and not p.name.endswith(".sample"))
-    if live:
-        return REFUSED, (f"REFUSED: {common / 'hooks'} holds live hooks ({', '.join(live)}), which "
-                         f"core.hooksPath would switch off. Move them into {HOOKS_PATH}/ first.")
-    _git(root, "config", "core.hooksPath", HOOKS_PATH)
-    return CLEAN, f"installed: core.hooksPath = {HOOKS_PATH!r} (shared by every worktree of this clone)"
+    if not cur:
+        common = pathlib.Path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
+        live = sorted(p.name for p in (common / "hooks").glob("*") if p.is_file() and not p.name.endswith(".sample"))
+        if live:
+            return REFUSED, (f"REFUSED: {common / 'hooks'} holds live hooks ({', '.join(live)}), which "
+                             f"core.hooksPath would switch off. Move them into {want}/ first.")
+    _git(root, "config", "core.hooksPath", want)
+    return CLEAN, f"installed: core.hooksPath = {want!r} (shared by every worktree of this clone)"
 
 
 def session_start(root: pathlib.Path) -> tuple[bool, str]:
     """-> (loud, message) for a Claude Code session starting in `root`. ACTIVE: one quiet line. Not active
-    and `core.hooksPath` UNSET: install (idempotent, local config only). `core.hooksPath` pointing ELSEWHERE,
+    and `core.hooksPath` UNSET, or the relative `.githooks` an older install wrote: install (idempotent, local config only). `core.hooksPath` pointing ELSEWHERE,
     an install refused, or a checkout without the hook file: a LOUD warning that the gate is OFF — never an
     overwrite. Never raises: a session must start."""
     try:
@@ -494,7 +529,7 @@ def session_start(root: pathlib.Path) -> tuple[bool, str]:
         if active:
             return False, msg
         cur = _git(root, "config", "--get", "core.hooksPath", ok=(0, 1)).decode().strip()
-        if not cur:
+        if not cur or cur == HOOKS_PATH:
             rc, imsg = install_hooks(root)
             if rc == CLEAN and hooks_status(root)[0]:
                 return False, f"plan-leak hook was not enabled in this clone; {imsg}"
@@ -623,6 +658,8 @@ def _self_test_body() -> int:
     NEAR = "we calibrate the walrus engine before teatime tomorrow lunch"            # 7 words of STEP
     PLAN = (f"# a plan\n\n<!-- serving: {OBJ} -->\n\n### Task 1\n\n- [ ] **Step 1** — {STEP}\n"
             f"  - **Why:** {SUB}\n  - {UML}\n\nplain prose about seven quiet harbour lanterns glowing late\n")
+    # The plan's DISTINCTIVE words: none of them occurs in anything the checker or git itself prints.
+    PLAN_WORDS = {w for s in (STEP, OBJ, SUB) for w in words(s) if len(w) >= 6}
     src = [("p.md", s) for s in plan_strings(PLAN, SERVING)]
     W8 = windows(src, 8)
     C = "c0ffee"
@@ -707,9 +744,21 @@ def _self_test_body() -> int:
                                                                [(1, "object x"), (2, "tag v1"), (3, ""), (4, "msg")]))
     check("parse_messages of an empty log is no runs", lambda: parse_messages(""), [])
     check("tag_run keeps the tag's own sha", lambda: tag_run("t2", "x")[0], "t2")
-    check("a hit in a path itself is reported as the file NAME, not line 0",
-          lambda: report([("n.md", 0, "abc", "p.md", "x")], 1, 1, 1, 8).splitlines()[1].split(" in ")[0],
-          "  HIT n.md (its file NAME)")
+    named = "docs/" + "-".join(words(SUB)) + ".md"
+    rep_named = report([(named, 0, "abc", "p.md", "x"), (named, 4, "abc", "p.md", "x")], 1, 1, 2, 8)
+    check("⛔ r2 F5: a hit in a path itself is reported as a file NAME by its length — the path IS the words",
+          lambda: rep_named.splitlines()[1].split(" in ")[0],
+          f"  HIT <a path ADDED by this commit that quotes plan text, {len(named)} chars> (its file NAME)")
+    check("⛔ r2 F5: ...and a CONTENT hit in that same file does not print the path either",
+          lambda: (rep_named.splitlines()[2].split(" in ")[0].endswith(f"{len(named)} chars>:4"),
+                   PLAN_WORDS & set(words(rep_named))), (True, set()))
+    check("...but --show (a terminal only) prints the real path",
+          lambda: f"{named}:4 in abc" in show_lines([(named, 4, "abc", "p.md", "x")]), True)
+    check("⛔ r2 F1: an added line under a `+++` header with no `b/` prefix is CANNOT RUN, never skipped",
+          lambda: _raises(lambda: parse_log(log_of("docs/a.md", [STEP], qpath="docs/a.md"))), "ValueError")
+    check("...and the refusal does not quote the unreadable header, which may be plan words",
+          lambda: PLAN_WORDS & set(words(_raises_msg(lambda: parse_log(
+              log_of("x", [STEP], qpath="-".join(words(SUB))))))), set())
     row = "| 7 | the item text | x |"
     marked = "| 7 | the item text ⟦kind: defect⟧ | x |"
     check("⭐ a MARKER-ONLY line (equal to a removed line once its ⟦…⟧ marker is stripped) is not judged",
@@ -882,11 +931,21 @@ def _self_test_body() -> int:
         rc, out = push(w, "push", "origin", "master")
         check("⭐ METADATA: a NEW FILE NAMED with plan words is REFUSED, though its content is clean",
               lambda: (rc != 0, "(its file NAME)" in out), (True, True))
+        check("⛔ r2 F5 REAL PUSH: ...and NO plan word reaches any channel — the HIT line does not print the name",
+              lambda: PLAN_WORDS & set(words(out)), set())
         git(w, "reset", "-q", "--hard", "origin/master")
         commit(w, "-".join(words(OBJ)) + ".md", "")
         rc, out = push(w, "push", "origin", "master")
         check("⭐ METADATA: an EMPTY new file (no hunk at all) NAMED with plan words is REFUSED",
               lambda: (rc != 0, "(its file NAME)" in out), (True, True))
+        git(w, "reset", "-q", "--hard", "origin/master")
+        commit(w, "-".join(words(OBJ)) + "/inner.md", f"{STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        rc_h, o_h, e_h = (lambda o, e: (main(["--base", "origin/master"], root=w, out=o, err=e), o.getvalue(),
+                                        e.getvalue()))(io.StringIO(), io.StringIO())
+        check("⛔ r2 F5: a leak in a file under a DIRECTORY named with plan words is REFUSED, and no plan word is "
+              "printed — by the hook, or by hand",
+              lambda: (rc != 0, rc_h, PLAN_WORDS & set(words(out + o_h + e_h))), (True, HITS, set()))
         git(w, "reset", "-q", "--hard", "origin/master")
         git(w, "tag", "-a", "inner", "-m", "a plain inner tag")
         git(w, "tag", "-a", "outer", "inner", "-m", f"outer: {SUB}")
@@ -905,6 +964,40 @@ def _self_test_body() -> int:
         commit(w, "b.bin", b"\x00\x01binary " + STEP.encode() + b"\n")
         rc, out = push(w, "push", "origin", "master")
         check("⭐ X6 REAL PUSH: plan text in a BINARY file is REFUSED", lambda: (rc != 0, "b.bin:1" in out), (True, True))
+
+        w = world("noprefix")
+        git(w, "config", "diff.noprefix", "true")
+        commit(w, "np.md", f"{STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⛔ r2 F1 REAL PUSH: with diff.noprefix set in the repo, a leak is still REFUSED and named",
+              lambda: (rc != 0, "np.md:1" in out, git(w, "ls-remote", "origin", "refs/heads/master").stdout.split()[0]
+                       == git(w, "rev-parse", "HEAD").stdout.strip()), (True, True, False))
+        w = world("prefixes")
+        git(w, "config", "diff.srcPrefix", "Q/")
+        git(w, "config", "diff.dstPrefix", "Z/")
+        commit(w, "zp.md", f"{STEP}\n")
+        rc, out = push(w, "push", "origin", "master")
+        check("⛔ r2 F1 REAL PUSH: with diff.srcPrefix and diff.dstPrefix set, a leak is still REFUSED and named",
+              lambda: (rc != 0, "zp.md:1" in out), (True, True))
+
+        w = world("replace")
+        git(w, "checkout", "-q", "-b", "rp")
+        commit(w, "r.md", f"{STEP}\n")
+        leak = git(w, "rev-parse", "HEAD").stdout.strip()
+        git(w, "checkout", "-q", "-b", "decoy", "master")
+        commit(w, "r.md", "clean\n")
+        git(w, "replace", leak, git(w, "rev-parse", "HEAD").stdout.strip())
+        git(w, "checkout", "-q", "rp")
+        rc, out = push(w, "push", "origin", "rp")
+        check("⛔ r2 F4 REAL PUSH: a `refs/replace` swap does not hide the leak — the ORIGINAL objects are read",
+              lambda: (rc != 0, "r.md:1" in out, remote_has(w, "refs/heads/rp")), (True, True, False))
+
+        w = world("gitdir")
+        git(w, "checkout", "-q", "-b", "gd")
+        commit(w, "g.md", f"{STEP}\n")
+        rc, out = push(w, f"--git-dir={w / '.git'}", "push", "origin", "gd", cwd=td)
+        check("⛔ r2 F3 REAL PUSH: `git --git-dir=<repo>/.git push` from an UNRELATED directory is still checked",
+              lambda: (rc != 0, "g.md:1" in out, remote_has(w, "refs/heads/gd")), (True, True, False))
 
         w = world("fakebase")
         commit(w, "x.md", f"{STEP}\n")
@@ -946,6 +1039,10 @@ def _self_test_body() -> int:
         rc, out = push(w, "push", "origin", "master")
         check("⭐ a plan held only in ANOTHER worktree is read: the push is REFUSED", lambda: (rc != 0, "m.md:1" in out),
               (True, True))
+        commit(wt, "wt.md", f"{STEP}\n")
+        rc, out = push(wt, "push", "origin", "side")
+        check("⛔ r2 F3: a push from a WORKTREE whose checkout has no `.githooks/` runs the MAIN checkout's hook",
+              lambda: (rc != 0, "wt.md:1" in out, remote_has(w, "refs/heads/side")), (True, True, False))
         # X8 is driven through the hook's own entry point with the stdin git sends, not through `git push`:
         # measured, git PREPENDS its exec-path (which holds a real `git`) to a hook's PATH, so a PATH shim
         # cannot reach the hook's git calls. In-process, the shim is first on PATH for every git it runs.
@@ -1024,7 +1121,15 @@ def _self_test_body() -> int:
         rc, o, e = drive(["--install-hooks"], fresh)
         check("--install-hooks sets core.hooksPath, and --status then says ACTIVE",
               lambda: (rc, git(fresh, "config", "core.hooksPath").stdout.strip(), drive(["--hooks-status"], fresh)[0]),
-              (CLEAN, HOOKS_PATH, CLEAN))
+              (CLEAN, str(hooks_dir(fresh)), CLEAN))
+        check("⛔ r2 F3: the installed hooks path is ABSOLUTE, the main checkout's own `.githooks`",
+              lambda: (os.path.isabs(git(fresh, "config", "core.hooksPath").stdout.strip()),
+                       hooks_dir(fresh) == pathlib.Path(git(fresh, "rev-parse", "--show-toplevel").stdout.strip())
+                       / HOOKS_PATH), (True, True))
+        git(fresh, "config", "core.hooksPath", HOOKS_PATH)
+        rc, o, e = drive(["--install-hooks"], fresh)
+        check("⛔ r2 F3: the RELATIVE `.githooks` an older install wrote is upgraded to the absolute path",
+              lambda: (rc, git(fresh, "config", "core.hooksPath").stdout.strip()), (CLEAN, str(hooks_dir(fresh))))
         (fresh / ".githooks" / "pre-push").unlink()
         rc, o, e = drive(["--hooks-status"], fresh)
         check("--hooks-status: NOT ACTIVE in a checkout without the hook file (an older branch)",
@@ -1048,13 +1153,17 @@ def _self_test_body() -> int:
             shutil.copy2(ROOT / rel, ss / rel)
         check("session_start with core.hooksPath UNSET enables the hook, quietly",
               lambda: (session_start(ss)[0], git(ss, "config", "core.hooksPath").stdout.strip(),
-                       hooks_status(ss)[0]), (False, HOOKS_PATH, True))
+                       hooks_status(ss)[0]), (False, str(hooks_dir(ss)), True))
         check("hooks_status reads the checkout it is GIVEN: the installed plain world is ACTIVE too",
               lambda: hooks_status(td / "plain")[0], True)
         check("session_start reads the checkout it is GIVEN: the installed plain world is quiet",
               lambda: session_start(td / "plain")[0], False)
         check("session_start when already ACTIVE is quiet and says so",
               lambda: (session_start(ss)[0], "ACTIVE" in session_start(ss)[1]), (False, True))
+        git(ss, "config", "core.hooksPath", HOOKS_PATH)
+        check("r2 F3: session_start UPGRADES the relative `.githooks` an older install wrote, quietly",
+              lambda: (session_start(ss)[0], git(ss, "config", "core.hooksPath").stdout.strip()),
+              (False, str(hooks_dir(ss))))
         git(ss, "config", "core.hooksPath", "/dev/null")
         check("⛔ session_start with core.hooksPath ELSEWHERE warns LOUDLY and does NOT overwrite it",
               lambda: (session_start(ss)[0], "OFF" in session_start(ss)[1],
@@ -1068,7 +1177,7 @@ def _self_test_body() -> int:
         r = subprocess.run(["bash", str(ss / ".claude" / "hooks" / "ensure-plan-leak-hook.sh")], cwd=ss,
                            capture_output=True, text=True)
         check("...and the SHIPPED hook enables the gate when the path is unset",
-              lambda: (r.returncode, git(ss, "config", "core.hooksPath").stdout.strip()), (0, HOOKS_PATH))
+              lambda: (r.returncode, git(ss, "config", "core.hooksPath").stdout.strip()), (0, str(hooks_dir(ss))))
         (ss / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n")
         git(ss, "config", "--unset", "core.hooksPath")
         check("session_start warns LOUDLY when the install is refused (live hooks would be switched off)",
@@ -1089,6 +1198,15 @@ def _raises(thunk) -> str:
         thunk()
     except Exception as exc:  # noqa: BLE001
         return type(exc).__name__
+    return "no raise"
+
+
+def _raises_msg(thunk) -> str:
+    """The message of the exception `thunk` raises, or 'no raise'."""
+    try:
+        thunk()
+    except Exception as exc:  # noqa: BLE001
+        return str(exc)
     return "no raise"
 
 

@@ -1745,7 +1745,9 @@ EXPECTED_MUTATIONS = {
     # entry points (one per Codex input X1-X11, the installer and --status), -> 54; then +11 for the
     # security review's folds (commit/tag/path metadata, the SessionStart enable-or-warn), -> 65; then the
     # second pass (added paths from --diff-filter=A, tags peeled): -2 header-path entries, +5, -> 68.
-    "scripts/check-plan-leak.py": 68,
+    # ⟳ PR #443 r2 (SPLIT): +8 for the folds — forced diff prefixes and the unreadable-path refusal (F1),
+    # GIT_NO_REPLACE_OBJECTS (F4), the absolute hooks path and its upgrade (F3), the redacted NAME hit (F5) -> 76.
+    "scripts/check-plan-leak.py": 76,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -6279,7 +6281,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2606)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2614)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
