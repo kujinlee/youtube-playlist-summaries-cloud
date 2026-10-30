@@ -77,7 +77,16 @@ project:
 so the key is `agent_id`, never `agent_type`: a `--agent` main session is still the main session. The docs
 (code.claude.com/docs/en/hooks, *Common input fields*) say the same and add in-process teammates to agent_id.
 ⚠ BOUNDS. An input with no `agent_id` cannot be told from the main session, so it is GATED (the owner's rule:
-fail toward the refusal). Teammates were not measured here; the docs, not this file, put them under `agent_id`.
+fail toward the refusal).
+⚠ TEAMMATES (r3, read from transcripts only; no hook input was captured for one). MEASURED: in the session
+this PR was built in, all 107 senders of a teammate message are `in_process_teammate` in their subagent
+`meta.json`, and every entry of their transcripts carries `agentId`; no transcript on this machine holds a
+cross-session message. INFERRED, not measured: an in-process teammate's hook input carries `agent_id`, like the
+plain subagents measured above (the docs say so too), so its report is allowed. A teammate running as a SEPARATE
+Claude process is that process's own main session, so its hook input probably has NO `agent_id`: at 90% or more
+its report to the lead is DENIED, and needs the owner's override. If an in-process teammate's input lacked
+`agent_id` too, every report in such a session would be denied at REFUSE; that fails toward the refusal, and is
+the first thing to measure if reports stall.
 ⛔ WHAT THIS GATE DOES NOT CLOSE (PR #446 r3 C1, the SPLIT): a SUBAGENT'S message to an idle SIBLING wakes it,
 and is allowed. MEASURED end to end on 2.1.309: `probeB` sent `probeA` a message, `probeA` resumed and ran a
 command, and the captured payload, fed to `--hook wake` at weekly 95% with no override, was ALLOWED (rc 0, empty
