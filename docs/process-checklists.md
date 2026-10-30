@@ -148,6 +148,15 @@ A reused agent's context only grows, and every wake-up after an idle wait re-wri
 
 **Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`; backlog #399 builds the pacing hook that reads it.
 
+## Dispatched work must report in-turn (added 2026-10-30, backlog #410)
+
+**Why, measured.** On 2026-10-30 three pieces of work stalled for hours unseen: PR #442's fold was committed and not pushed for about 10 h, PR #443 had 8 commits unpushed for about 5 h, and PR #440's round-3 review was written at 07:15 and never folded. Each agent's last message promised a report "when my background job finishes"; none came.
+
+1. **An agent never ends its turn waiting on a background job.** It runs long jobs in the FOREGROUND with a bounded timeout, and sends ONE final report when everything is done.
+2. **The coordinator's "Waiting" line comes from `scripts/check-stalled-work.py`, with ages** — never from an agent's promise. The UserPromptSubmit hook `.claude/hooks/stalled-work.sh` adds its STALLED lines to the coordinator's context when there are any.
+
+**What makes it FAIL — the observation:** a "Waiting on …" line for an item the check reports STALLED, with no age quoted. Rule 1 is enforced by nothing; rule 2's check is a script, the quoting is a convention.
+
 ## TDD Policy
 
 ### Is TDD a good fit?

@@ -2195,6 +2195,8 @@ EXPECTED_MUTATIONS = {
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
+    # backlog #410 (2026-10-30): the stalled-work detector joins with 22 entries.
+    "scripts/check-stalled-work.py": 22,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -4455,6 +4457,7 @@ def _self_test_body() -> int:
                                       "scripts/check-selection-card.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
+                                      "scripts/check-stalled-work.py",
                                       "scripts/check-storage-grant-pin.py",
 "scripts/check-storage-independence.py",
                                       "scripts/check-surface-recall.py",
@@ -6262,7 +6265,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2538)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2560)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

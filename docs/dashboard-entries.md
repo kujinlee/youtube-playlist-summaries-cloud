@@ -18304,3 +18304,16 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 - **What is deferred.** The page lists every filed-but-unbuilt item.
 
 It also records a correction: one line had said an item "is filed" before it was.
+
+## 2026-10-30
+Work that has quietly stopped is now shown, with how long it has been stopped. Earlier today three
+pieces of work sat for hours (a fix committed and never pushed, eight commits waiting, a review never
+acted on) while every status line said "waiting". A new check reads git, GitHub and the review files
+directly, so it does not rely on anyone remembering to report, and the coordinator sees its warnings
+at the start of each turn. Agents are now told to finish their long jobs before they stop, and to
+send one report.
+<!--tech-->
+Backlog #410: `scripts/check-stalled-work.py` (commits on no remote past 30 min; a draft PR whose head
+commit is over 3 h old; a review half with no coordinator doc at its round), rc 0/1/2. Wired as a
+UserPromptSubmit hook, `.claude/hooks/stalled-work.sh`, and stated in `docs/process-checklists.md` →
+*Dispatched work must report in-turn*.

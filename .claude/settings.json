@@ -185,6 +185,18 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh stalled-work.sh",
+            "statusMessage": "Checking for stalled work...",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
   "permissions": {

@@ -1,0 +1,288 @@
+[
+  {
+    "name": "the OLDEST unpushed commit stops deciding: the newest does, so a fold sitting under a fresh commit looks young",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    age = int(now - min(times))",
+        "    age = int(now - max(times))"
+      ]
+    ],
+    "expect": [
+      "...its age is the oldest's"
+    ]
+  },
+  {
+    "name": "the unpushed limit becomes inclusive-off-by-everything: any unpushed commit is STALLED at once",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if age > limit_s:\n        return Item(\"STALLED\", \"unpushed\"",
+        "    if True:\n        return Item(\"STALLED\", \"unpushed\""
+      ]
+    ],
+    "expect": [
+      "29 min against 30 is not stalled yet"
+    ]
+  },
+  {
+    "name": "a branch PUSHED to its own remote is counted as unpushed: `--not --remotes` is dropped for the upstream",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"--not\", \"--remotes\")",
+        "\"--not\", \"refs/remotes/origin/master\")"
+      ]
+    ],
+    "expect": [
+      "collect: a branch PUSHED to its own remote counts only the commit on NO remote, though it is two ahead of master"
+    ]
+  },
+  {
+    "name": "a branch with no upstream is read too, outside the declared population",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "watched = [t for t in trees if t[\"branch\"] in upstreams and t[\"head\"] not in remote_shas]",
+        "watched = [t for t in trees if t[\"branch\"] and t[\"head\"] not in remote_shas]"
+      ]
+    ],
+    "expect": [
+      "collect: a branch with NO upstream is not read"
+    ]
+  },
+  {
+    "name": "a READY PR is reported as a stalled draft",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if draft and age > draft_limit_s:",
+        "    if age > draft_limit_s:"
+      ]
+    ],
+    "expect": [
+      "a READY PR is never STALLED-DRAFT, however old"
+    ]
+  },
+  {
+    "name": "the draft limit is ignored: a draft is stalled only past a fixed 3 h",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "age > draft_limit_s:\n        return Item(\"STALLED-DRAFT\"",
+        "age > 3 * 3600:\n        return Item(\"STALLED-DRAFT\""
+      ]
+    ],
+    "expect": [
+      "the draft limit is read: 2 h against 1 h IS stalled"
+    ]
+  },
+  {
+    "name": "the PR's local head commit is ignored and updatedAt always used, so a bot comment makes a stalled draft look fresh",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if commit_ts is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "collect: the draft PR is aged by its LOCAL head commit, not updatedAt"
+    ]
+  },
+  {
+    "name": "a later fold no longer covers an earlier half: only the SAME round counts",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return bool(m) and rounds.get(m[\"subject\"], (-1, \"\"))[0] < int(m[\"n\"])",
+        "    return bool(m) and rounds.get(m[\"subject\"], (-1, \"\"))[0] != int(m[\"n\"])"
+      ]
+    ],
+    "expect": [
+      "an r1 half with an r2 coordinator doc is processed (a LATER fold covers it)"
+    ]
+  },
+  {
+    "name": "coordinator_rounds keeps the LAST round seen instead of the highest",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "            if m and int(m[\"n\"]) > best.get(m[\"subject\"], (-1, \"\"))[0]:",
+        "            if m:"
+      ]
+    ],
+    "expect": [
+      "coordinator_rounds keeps the HIGHEST round per subject, and where it is"
+    ]
+  },
+  {
+    "name": "the review window is dropped, so a renamed subject fires forever",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if not m or now - mtime > max_age_s:",
+        "        if not m:"
+      ]
+    ],
+    "expect": [
+      "a half older than the window is ignored"
+    ]
+  },
+  {
+    "name": "one half in two places is reported from the OLDER copy",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if key not in newest or mtime > newest[key][0]:",
+        "        if key not in newest:"
+      ]
+    ],
+    "expect": [
+      "one half in two places is ONE item, and the NEWEST copy is the one reported"
+    ]
+  },
+  {
+    "name": "the scratchpad's subdirectories are not read, so `r442/<subject>-r1-claude.md` is missed",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    for e in subdirs:\n        out +=",
+        "    for e in subdirs[:0]:\n        out +="
+      ]
+    ],
+    "expect": [
+      "collect: a scratch half one directory down, past the r1 fold, is UNPROCESSED"
+    ]
+  },
+  {
+    "name": "the MAIN checkout's halves are read, though they arrived by pull",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if t[\"path\"] == main_path:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "collect: the MAIN checkout's halves are never read"
+    ]
+  },
+  {
+    "name": "the checkout-artifact filter is dropped, so every half a `worktree add` wrote reads as new",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "                       if m > created + CHECKOUT_SLACK_S]",
+        "                       ]"
+      ]
+    ],
+    "expect": [
+      "collect: a half no newer than the checkout is a checkout artifact, skipped"
+    ]
+  },
+  {
+    "name": "the untouched-directory skip is dropped (cost, and a checkout-artifact class)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "                if d.stat().st_mtime <= created + CHECKOUT_SLACK_S:\n                    continue",
+        "                if False:\n                    continue"
+      ]
+    ],
+    "expect": [
+      "collect: a halves DIRECTORY untouched since the checkout is not read"
+    ]
+  },
+  {
+    "name": "gh failing becomes a silent pass: the CannotRun is swallowed",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    except CannotRun as exc:\n        return CANNOT_RUN,",
+        "    except CannotRun as exc:\n        return CLEAR,"
+      ]
+    ],
+    "expect": [
+      "gh failing is CANNOT RUN (rc 2), never a pass"
+    ]
+  },
+  {
+    "name": "render: something stalled exits 0",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return (STALLED_RC if stalled else CLEAR), lines",
+        "    return CLEAR, lines"
+      ]
+    ],
+    "expect": [
+      "render: anything stalled is rc 1"
+    ]
+  },
+  {
+    "name": "hook_block: CANNOT RUN is swallowed by the hook",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if rc == CANNOT_RUN:\n        return \"stalled-work: \" + \" \".join(lines)",
+        "    if rc == CANNOT_RUN:\n        return None"
+      ]
+    ],
+    "expect": [
+      "hook_block: CANNOT RUN is forwarded, never silent"
+    ]
+  },
+  {
+    "name": "hook_block: the OK lines are forwarded too, so the block is noise",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    keep = [ln for ln in lines if ln.split(\" \", 1)[0] in STALLED_STATES or ln.startswith(\"NOTE\")]",
+        "    keep = list(lines)"
+      ]
+    ],
+    "expect": [
+      "hook_block: the stalled lines are forwarded and the OK line is not"
+    ]
+  },
+  {
+    "name": "hook_block: a clear check still adds a block to every prompt",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if rc != STALLED_RC:\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": [
+      "hook_block: nothing stalled adds NOTHING to context"
+    ]
+  },
+  {
+    "name": "--hook stops deriving the session scratchpad, so review halves are never read from the hook",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if session and tmp and project:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "--hook derives the session scratchpad from the hook JSON and reads it"
+    ]
+  },
+  {
+    "name": "scratch_for drops the slug rule, so the hook looks in a directory that does not exist",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    slug = re.sub(r\"[^A-Za-z0-9]\", \"-\", project_dir)",
+        "    slug = project_dir.replace(\"/\", \"-\")"
+      ]
+    ],
+    "expect": [
+      "scratch_for reproduces the harness path, slug and all"
+    ]
+  }
+]

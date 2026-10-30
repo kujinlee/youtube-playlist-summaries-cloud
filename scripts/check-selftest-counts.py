@@ -93,6 +93,8 @@ POPULATION: frozenset[str] = frozenset({
     "session-state.py",
     # ⟳ 2026-10-28 (backlog #361): pinned in the commit that creates it.
     "compaction-state.py",
+    # ⟳ 2026-10-30 (backlog #410): pinned in the commit that creates it.
+    "check-stalled-work.py",
     # ⟳ 2026-10-26 (backlog #223): pinned in the commit that creates it.
     "check-hook-commands.py",
     # ⟳ 2026-10-27 (backlog #364): pinned in the commit that creates it.
