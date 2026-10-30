@@ -253,7 +253,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </div>
 <div class="wrap ex-body">
 <h1>Dev speed: where the time goes, and a tripwire for new slow steps</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 07:31 · 30234b4c · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 07:41 · 30234b4c · uncommitted changes</time></span></div></div>
 <p class="horizon">as of master <code>c983a114</code> · 2026-10-29 03:40 PDT · data from <code>gh run list</code> (1,000 CI runs, 09-06 → 10-29), <code>gh pr list</code> (400 merged PRs, 07-17 → 10-29), all 318 session transcripts of this project, and local timings taken tonight</p>
 <div class="reading"><b>Reading:</b> dev speed is the wall-clock time from a request to a merged PR. This page is (1) a baseline of what we've measured, (2) where the time goes, (3) remedies, and (4) what to collect so that a new slow step is caught when it lands, not weeks later.</div>
 
@@ -354,6 +354,16 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <li><b>⚠ It is about to hit its ceiling again.</b> Backlog #231's own trip line is "any shard exceeds 1,500 s (25 min)". Recent code PRs ran 24–29 minutes per slowest shard. Its documented lever is more shards (the repository is public, so runners cost nothing), with a floor of about 220 s that sharding cannot remove. The deeper lever is the per-entry cost: slow suites, multiplied by how many entries target them.</li>
 <li><b>This is exactly what the tripwire (backlog #397) is for:</b> each week's step looked small, and nothing flagged the 4.5× growth in per-entry cost.</li>
 </ul>
+<p><b>Q (the owner, 10-30 07:40):</b> why did the per-entry cost increase from 1.3 s to 4.7 s?</p>
+<p><b>A: one guard, not a general slowdown.</b> Each mutation entry re-runs ITS OWN guard's test suite, so "per entry" is an average weighted by how many entries each guard has. Between 10-06 and 10-24 the entries added were:</p>
+<table><tr><th>manifest</th><th>entries 10-06</th><th>entries 10-24</th><th>its suite in CI</th></tr>
+<tr><td><b><code>check-main-drivable</code></b></td><td>0</td><td><b>183</b></td><td><b>48 s</b></td></tr>
+<tr><td><code>check-decision-scheme</code></td><td>0</td><td>125</td><td>small</td></tr>
+<tr><td><code>backfill-work-lines</code></td><td>0</td><td>108</td><td>small</td></tr>
+<tr><td><code>page_chrome</code></td><td>11</td><td>89</td><td>small</td></tr>
+<tr><td>everything else</td><td colspan="2">about 380 more entries</td><td>mostly 2–13 s</td></tr></table>
+<p>183 entries × 48 s ≈ <b>8,800 s</b> of added work: nearly all of the growth from 1,606 s to about 9,300 s. The other new entries mostly belong to fast suites. That one guard is <b>68%</b> of today's mutation work (measured on CI run 40799920596), which is filed as backlog #401: make its suite faster, or trim entries that test the same thing. That would cut the code-PR critical path more than any number of shards.</p>
+<p class="horizon">measured how: entries per manifest at <code>7f7a1577</code> (10-06) and <code>a50ddc36</code> (10-24); suite seconds from the timestamped shard logs of CI run 40799920596, measured on 10-30.</p>
 <p class="horizon">measured how: entry counts from <code>scripts/mutations/*.json</code> at commits <code>7f7a1577</code> (10-06), <code>a50ddc36</code> (10-24) and <code>origin/master</code>; the work and per-shard figures are quoted from the measured comments in <code>.github/workflows/ci.yml</code> (the mutation-sweep job); recent shard times from <code>gh run view --json jobs</code> on the last six green code-PR runs.</p>
 </div>
 <p><b>Cause, read from the job timings:</b> one step drove it all, the <b>mutation sweep</b>.</p>
