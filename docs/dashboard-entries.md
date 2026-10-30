@@ -18297,6 +18297,9 @@ identity (`same_dir_or_inside`, `(st_dev, st_ino)` of every existing ancestor) f
 volume, and the watch covers the reviewed root's `docs/reviews/` even before it exists. Filing stays
 under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
 `docs/reviews/architecture-review-2026-10-29-gap-reader.md`.
+
+## 2026-10-30
+
 **Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
 one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
 a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
