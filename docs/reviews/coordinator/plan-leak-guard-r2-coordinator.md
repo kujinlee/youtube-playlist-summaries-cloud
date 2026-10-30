@@ -54,6 +54,12 @@ findings:
     disposition: filed
     filed_as: "backlog #416"
     fix_induced: false
+  - id: F9
+    severity: Low
+    aim: deliverable
+    disposition: filed
+    filed_as: "backlog #416"
+    fix_induced: false
 ```
 
 Claude reviewed `821929e9`, the pre-push redesign plus the master merge, with real pushes into bare remotes.
@@ -62,6 +68,6 @@ Claude reviewed `821929e9`, the pre-push redesign plus the master merge, with re
 
 **Route: SPLIT.** Round 1 spent the REDESIGN rung.
 - **Fold:** F1, Blocking: `diff.noprefix` drops every added line, giving a silent hits 0. F3 and F5, both caused by the redesign: a relative hooks path resolved from another directory, and a file-name hit printing its phrase. F4, cheap: `GIT_NO_REPLACE_OBJECTS`.
-- **File as backlog #416:** F2, markup and entity normalisation, which is the larger change and is measured against the 97 committed explainers; F6, an abbreviated `--no-verify`, which predates this PR; F7, numbered and table rows in plans; F8, ref names.
+- **File as backlog #416:** F2, markup and entity normalisation, which is the larger change and is measured against the 97 committed explainers; F6, an abbreviated `--no-verify`, which predates this PR; F7, numbered and table rows in plans; F8, ref names; and F9, text that `gh` publishes without a push (PR bodies, comments, `gh api` writes), added after the fold started.
 
 **False-block check, last 40 merged commits: 1 hit.** `82fc68f1`, `docs/memory/push-is-mine-merging-is-theirs.md:60`. The coordinator judged it without printing plan text: the line shares ONE 8-word run with one plan, and that run is a quotation of one of the owner's own chat instructions, which appears in both places. So it is not plan-authored text, and the hit is a false block. It is recorded here as the measured false-block rate: 1 in 40.
