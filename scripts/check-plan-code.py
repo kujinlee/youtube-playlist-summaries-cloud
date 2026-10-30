@@ -1696,7 +1696,21 @@ EXPECTED_MUTATIONS = {
     #     moves `MAX_ID_LEN` so the two cases cannot silently agree with a cap that shifted. TWO
     #     hold M3: the reason returning the WRONG rule, and the reason being computed and dropped,
     #     which is the state the message was in before this fold.
-    "scripts/codex-review.py": 45,
+    # ⟳ 2026-10-29, backlog #121: 45 -> 49 — the head is the REVIEWED tree's, named in the record;
+    #   r1 (PR #439) 49 -> 57 — Codex runs there, under the same git environment, and the --out
+    #   refusal and the watch cover that tree's docs/reviews. r2 57 -> 60 — `--out` is resolved
+    #   through its symlinks before `..` (four added), the lexical-spelling entry retires with the
+    #   comparison it mutated, and two M5 entries are rebound. r3 60 -> 64 — the --out refusal
+    #   also compares by IDENTITY (`same_dir_or_inside`), for a case-folding volume. r4 64 -> 66 —
+    #   the refusal is ONE identity rule over each whole checkout, so the r1 M5 "only the root" and
+    #   r2 X5 "trees unresolved" entries retire with the comparisons they mutated; four added for
+    #   the exclusive-create-and-rename capture (X2, X3) and the device half of identity (X4).
+    #   r6 66 -> 67 — the refusal also compares each checkout's RESOLVED docs/reviews (X1, a
+    #   regression against master when docs/reviews is a symlink out of the checkout).
+    #   r7 67 -> 71 — master's rule is kept VERBATIM beside the identity rule and either refuses
+    #   (X1, a symlink nested in docs/reviews): the OR's master branch, its reviewed-root half, its
+    #   lexical reading, and main asking it before --out is resolved.
+    "scripts/codex-review.py": 71,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -6261,7 +6275,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2606)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2632)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

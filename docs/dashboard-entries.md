@@ -18272,6 +18272,31 @@ dev-speed page answers the owner's two questions about why Opus 5.5 merges more 
 PRs and half is cheaper review rounds.
 
 ## 2026-10-30
+The dev-speed page answers two more of the owner's questions:
+- **Why CI time jumped in week 42.** The mutation sweep's total work grew about 5.8× in under three weeks, faster than sharding could absorb, and on code PRs the slowest shard now sits at 24–29 minutes against a 30-minute limit. PR #445 resizes the sweep.
+- **How much the self-test count check costs.** Agents ran it locally 366 times in 8 days. Backlog #402, at the owner's request, makes the local run cover only changed scripts and leaves the full run to CI.
+
+Backlog #403 records that the review-recorded gate cannot see a final round run by the Claude half.
+
+## 2026-10-29
+The Codex review tool now reviews, and records, the working copy it is run from. Before, a review run
+from a second working copy recorded the commit of wherever the tool happened to live, and the merge
+check then refused with a message that did not say why. The reviewer is also started in that copy,
+and the tool's guard against writing its scratch output into `docs/reviews/` now holds however the
+path is spelled: through a link, with `..`, or in different capital letters on a Mac.
+
+The other half of this pull request, letting the round template's short "this half did not run" form
+count, was taken back out after three review rounds kept finding new holes in it. An architecture
+review explains why, and backlog #182 is open again with the direction it recommends.
+<!--tech-->
+Backlog #121, `scripts/codex-review.py`: `reviewed_root()` (`git rev-parse --show-toplevel` on the cwd,
+never a fallback to `REPO_ROOT`) feeds `reviewed_state`, whose `repo_root` is now required, and the
+verdict's new `tree` field. Codex runs with `cwd=` that root and `env=unredirected()`. `resolve_out()`
+is `realpath` of the JOINED `--out`, resolved once in `main`; the location refusal also compares by
+identity (`same_dir_or_inside`, `(st_dev, st_ino)` of every existing ancestor) for a case-folding
+volume, and the watch covers the reviewed root's `docs/reviews/` even before it exists. Filing stays
+under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
+`docs/reviews/architecture-review-2026-10-29-gap-reader.md`.
 **Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
 one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
 a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
