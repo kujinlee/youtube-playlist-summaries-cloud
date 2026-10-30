@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dev speed monitor</title>
+
+<style>
+code{overflow-wrap:anywhere}
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.answer{border:1px dashed var(--rule);border-radius:6px;padding:.5em .8em;color:var(--fg3);margin:.4em 0 1.2em}
+.live{border-left:4px solid var(--amber);padding-left:.8em;margin:1em 0}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session and the answer gets written into this page, under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code>. It's safe to run twice. A reboot stops it, and that's the one time you'll need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+<div class="wrap ex-body">
+<h1>Dev speed: where the time goes, and a tripwire for new slow steps</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 10:15 · 30234b4c · uncommitted changes</time></span></div></div>
+<p class="horizon">as of master <code>c983a114</code> · 2026-10-29 03:40 PDT · data from <code>gh run list</code> (1,000 CI runs, 09-06 → 10-29), <code>gh pr list</code> (400 merged PRs, 07-17 → 10-29), all 318 session transcripts of this project, and local timings taken tonight</p>
+<div class="reading"><b>Reading:</b> dev speed is the wall-clock time from a request to a merged PR. This page is (1) a baseline of what we've measured, (2) where the time goes, (3) remedies, and (4) what to collect so that a new slow step is caught when it lands, not weeks later.</div>
+
+<div class="toc"><b>Contents</b><ol>
+<li><a href="#reframe">The reframe: speed came from less work per PR, not faster work</a></li>
+<li><a href="#baseline">Baseline: the four numbers to watch</a></li>
+<li><a href="#kinds">The kinds of speed impact</a></li>
+<li><a href="#history">Slowdowns that crept in before</a></li>
+<li><a href="#remedies">Remedies: done and candidate</a></li>
+<li><a href="#tripwire">Proposal: a tripwire so the next one is caught when it lands</a></li>
+<li><a href="#usage">The usage limit: the slowdown that costs a whole day</a></li>
+<li><a href="#blind">Where we're blind today</a></li>
+<li><a href="#mi">What was measured and what was inferred</a></li>
+</ol></div>
+
+<h2 id="reframe">The reframe: speed came from less work per PR, not faster work</h2>
+<p class="lede">The switch from Opus 5 to Opus 5.5 felt like a big speed gain, and the transcripts agree it was, but <b>not because the model writes faster</b>. Per message, the two generate at the same rate. What fell is the <b>number of messages it takes to land a PR</b>.</p>
+<div class="scroll"><table class="num">
+<tr><th>Model</th><th>Messages measured</th><th>Output speed (median, per message)</th><th>Median time per message</th><th>Median output per message</th></tr>
+<tr><td>Opus 5</td><td>17,884</td><td>99 tokens/s</td><td>7.4 s</td><td>903 tokens</td></tr>
+<tr><td>Opus 5.5</td><td>3,816</td><td>97 tokens/s</td><td>6.4 s</td><td>664 tokens</td></tr>
+</table></div>
+<div class="scroll"><table class="num">
+<tr><th>Window</th><th>Model</th><th>Merged PRs per day</th><th>Assistant messages per merged PR</th><th>Output tokens per merged PR</th></tr>
+<tr><td>10-13 → 10-21 (9 days)</td><td>Opus 5</td><td>0.8</td><td>1,098</td><td>1,324,566</td></tr>
+<tr><td>10-23 → 10-24 (2 days, <b>before</b> the sweep and merge-rule changes)</td><td>Opus 5.5</td><td>4.0</td><td>68</td><td>58,706</td></tr>
+<tr><td>10-23 → 10-28 (6 days, includes those changes)</td><td>Opus 5.5</td><td>7.8</td><td>70</td><td>70,412</td></tr>
+</table></div>
+<div class="k warn"><b>This is an ASSOCIATION, not a measured cause.</b> The two windows held different work: the Opus 5 window included long review episodes. The middle row is the cleanest comparison, because it's Opus 5.5 before the 10-25 merge-when-ready rule and the 10-26 local-sweep change, but it covers only 2 days and 8 PRs. What is solid: per-message speed did not change (97 vs 99 tokens/s), so <b>whatever gain there was came from doing less per PR</b>.</div>
+<p><b>Why this matters for monitoring:</b> the lever is <i>work per unit</i>: how many messages, rounds and gate runs a PR needs. Raw speed is a constant we don't control. A tripwire on "seconds per step" alone would miss the biggest effect on this page.</p>
+<p class="horizon">measured how: <code>model_speed.py</code> over every <code>*.jsonl</code> in the project's transcript directory. For each main-thread assistant message with ≥200 output tokens, it takes the gap from the preceding user or tool-result entry, keeps gaps between 0 and 600 s, and reads <code>usage.output_tokens</code>. ⚠ It uses the first entry per message id, so a streamed message may be timed at its first block, not its last.</p>
+
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-29 04:54):</b> how did this become possible? Why can Opus 5.5 merge more PRs than Opus 5 by doing less work? Probably Opus 5.5 is doing much smarter work than Opus 5.</p>
+<p><b>A: partly yes, but the biggest measured change is WHERE the work happens, and it corrects this page.</b> The "messages per PR" figure above counted only the main conversation. Counting subagents too (their transcripts sit in each session's <code>subagents/</code> folder), over the same two windows:</p>
+<table><tr><th></th><th>Opus 5 window (10-13..10-21, 9 days, 7 PRs)</th><th>Opus 5.5 window (10-23..10-28, 6 days, 47 PRs)</th></tr>
+<tr><td>output tokens, main conversation</td><td>9.35 M</td><td>3.36 M</td></tr>
+<tr><td>output tokens, subagents</td><td>0.41 M (4%)</td><td>5.14 M (60%)</td></tr>
+<tr><td><b>total output tokens</b></td><td>9.76 M (1.08 M/day)</td><td>8.50 M (1.42 M/day)</td></tr>
+<tr><td>total output tokens per merged PR</td><td>1.39 M</td><td>0.18 M</td></tr>
+<tr><td>tool calls that returned an error</td><td>217 of 11,477 (1.9%)</td><td>97 of 8,345 (1.2%)</td></tr></table>
+<p>What this says, and what it doesn't:</p>
+<ul>
+<li><b>The total work per DAY barely moved:</b> about 1.1 M against 1.4 M output tokens a day. What moved is how much of it became merged PRs, about 7.7× fewer tokens per PR. So "doing less work" is right per PR, not per day.</li>
+<li><b>Work moved off the main conversation:</b> from 4% to 60% of output in subagents. Subagents run in parallel, each with a small, focused context, and the main conversation stays short enough to coordinate, which is how several slices move at once (this very night: five). That is a working pattern, and the model is only part of why it happens.</li>
+<li><b>Fewer failed tool calls:</b> 1.9% → 1.2%. That is consistent with "smarter", but small.</li>
+<li><b>Not separable from the process changes in the same window:</b> merge-when-ready (10-25) removed the wait on the owner, the local sweep stopped running in full (10-26), and docs-only PRs skip the CI sweep. The 10-23..10-24 sub-window, before both rules, still showed 4 PRs a day. So the model change is likely real, but its share is not measured.</li>
+</ul>
+<p class="horizon">measured how: <code>how.py</code> (scratchpad) over every <code>*.jsonl</code> including <code>*/subagents/*.jsonl</code>, counting each assistant message id once, summing <code>usage.output_tokens</code>, and reading <code>is_error</code> on tool results. The subagents' own model was not checked: some may run on a different model.</p>
+</div>
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-29 04:59):</b> 7.7× fewer tokens per PR is a huge difference. We need to understand correctly how this is achieved.</p>
+<p><b>A: it splits two ways, and both point the same direction: about half is SMALLER PRs, and about half is each unit of work costing less.</b> Same two windows, all output tokens (main conversation plus subagents):</p>
+<table><tr><th></th><th>Opus 5 window (10-13..10-21)</th><th>Opus 5.5 window (10-23..10-28)</th><th>ratio</th></tr>
+<tr><td>merged PRs (docs-only / code)</td><td>7 (3 / 4)</td><td>47 (13 / 34)</td><td></td></tr>
+<tr><td>lines changed per merged PR</td><td>3,009</td><td>1,276</td><td>2.4× smaller</td></tr>
+<tr><td>output tokens per changed line</td><td>463</td><td>142</td><td>3.3× cheaper</td></tr>
+<tr><td>review rounds landed</td><td>34 over 7 subjects</td><td>184 over 34 subjects</td><td></td></tr>
+<tr><td>review rounds per merged PR</td><td>4.9</td><td>3.9</td><td>1.25× fewer</td></tr>
+<tr><td><b>output tokens per review round</b></td><td>287 k</td><td>46 k</td><td><b>6.2× cheaper</b></td></tr></table>
+<p><b>Split 1, by size:</b> 2.4× smaller PRs × 3.3× fewer tokens per changed line ≈ 7.8×. <b>Split 2, by review:</b> 1.25× fewer rounds per PR × 6.2× cheaper rounds ≈ 7.8×. Both multiply back to the observed figure.</p>
+<p><b>The largest single factor is the cost of one review round: 287 k → 46 k output tokens.</b> A round is the repo's unit of correction (review, then fold). What the data shows about where that went:</p>
+<ul>
+<li>In the Opus 5 window, 96% of output was written in top-level sessions and 4% in subagents. In the Opus 5.5 window it was 40% and 60%. Folds and review halves are now handed to fresh subagents with a narrow brief, instead of the coordinator working through them in its own long conversation.</li>
+<li>⚠ "Top-level" includes peer sessions as well as the coordinator, because a peer's transcript is a top-level file too. So this shows the shift toward delegated, narrow-context work, but it cannot apportion it precisely between the coordinator and peers.</li>
+<li>The Opus 5 window held long review episodes: 4 subjects carried 28 of its 34 rounds (two of them 8 rounds each). Long episodes are where a round costs the most, because each fold re-derives context.</li>
+</ul>
+<p><b>What is NOT shown:</b> how much of the cheaper round is the model (better first answers, fewer retries: failed tool calls 1.9% → 1.2%) and how much is the working pattern (delegation, smaller slices, merge-when-ready from 10-25). Both changed in the same week. <b>To separate them, a later window would have to hold one fixed while the other varies.</b> The tripwire log (backlog #397) would make that possible by recording tokens, rounds and lines per PR going forward.</p>
+<p class="horizon">measured how: PRs and their files from <code>gh pr list --json files</code> (docs-only means every changed path under <code>docs/</code>); rounds are review documents added to master per window, from <code>git log --diff-filter=A</code>, counted as (subject, round) pairs; tokens from <code>how.py</code>, as in the answer above.</p>
+</div>
+<h2 id="baseline">Baseline: the four numbers to watch</h2>
+<h3 id="b-ci">1 · CI wall-clock per run</h3>
+<figure class="fig"><svg viewBox="0 0 560 210" role="img" aria-label="CI median minutes per week">
+<g font-size="11" fill="currentColor" style="color:var(--fg3)">
+<line x1="40" y1="180" x2="550" y2="180" stroke="currentColor" stroke-width="0.6"/>
+<text x="4" y="184">0</text><text x="4" y="114">10</text><text x="4" y="44">20</text>
+<line x1="40" y1="110" x2="550" y2="110" stroke="currentColor" stroke-width="0.3" stroke-dasharray="3 3"/>
+<line x1="40" y1="40" x2="550" y2="40" stroke="currentColor" stroke-width="0.3" stroke-dasharray="3 3"/>
+</g>
+<g fill="var(--accent)">
+<rect x="50" y="148.5" width="38" height="31.5"/><rect x="106" y="146.4" width="38" height="33.6"/><rect x="162" y="120.5" width="38" height="59.5"/><rect x="218" y="107.9" width="38" height="72.1"/><rect x="274" y="98.8" width="38" height="81.2"/><rect x="330" y="141.5" width="38" height="38.5"/><rect x="386" y="15.5" width="38" height="164.5"/><rect x="442" y="2.2" width="38" height="177.8"/><rect x="498" y="25.3" width="38" height="154.7"/>
+</g>
+<g font-size="10.5" fill="currentColor" style="color:var(--fg2)" text-anchor="middle">
+<text x="69" y="196">W36</text><text x="125" y="196">W37</text><text x="181" y="196">W38</text><text x="237" y="196">W39</text><text x="293" y="196">W40</text><text x="349" y="196">W41</text><text x="405" y="196">W42</text><text x="461" y="196">W43</text><text x="517" y="196">W44</text>
+<text x="69" y="143">4.5</text><text x="125" y="141">4.8</text><text x="181" y="115">8.5</text><text x="237" y="103">10.3</text><text x="293" y="94">11.6</text><text x="349" y="136">5.5</text><text x="405" y="12">23.5</text><text x="461" y="13">25.4</text><text x="517" y="21">22.1</text>
+</g></svg>
+<figcaption>Median minutes per successful CI run, by ISO week (W36 = early Sept, W44 = this week). Runs per week: 11, 150, 62, 69, 21, 27, 14, 41, 87. W41's low median is a mix: sharding landed that week and its p90 was already 23.8 min.</figcaption></figure>
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-30 06:22):</b> why did CI wall-clock per run increase dramatically from week 42?</p>
+<p><b>A: sharding split the sweep, but the sweep's total work grew about 5.8× in under three weeks, faster than the split could absorb.</b> A mutation sweep re-runs a guard's WHOLE test suite once per mutation entry, so its cost is entries × each guard's suite time. Both factors grew:</p>
+<table><tr><th>date</th><th>mutation entries</th><th>total sweep work</th><th>per entry</th><th>slowest shard</th></tr>
+<tr><td>10-05, when sharding was designed (PR #366)</td><td>1,211</td><td>1,606 s</td><td>≈1.3 s</td><td>353 s ≈ 6 min with 8 shards</td></tr>
+<tr><td>10-24, when it went from 8 to 12 shards (backlog #231)</td><td>2,003</td><td>≈9,336 s</td><td>≈4.7 s</td><td>27.0 min with 8 shards; 19.5 min PREDICTED with 12</td></tr>
+<tr><td>10-28/29, on recent code PRs</td><td>2,512 (master, 10-30)</td><td></td><td></td><td><b>24–29 min</b>, against a 30-minute timeout</td></tr></table>
+<ul>
+<li><b>W42 is when that growth landed on every run.</b> Sharding (10-06) had turned one 15-minute step into parallel shards of about 6 minutes, but each shard also pays a fixed "control" pass over every suite (about 150–220 s), which does not shrink as shards are added. As entries were added and suites grew (each new case lengthens every mutation of that guard), the shards grew from about 6 to over 20 minutes.</li>
+<li><b>Until 10-21 every PR paid it, docs-only ones too.</b> The skip for PRs that change no mutated code landed on 10-21, which is why this week's docs PRs run in 5–7 minutes while code PRs still take about half an hour.</li>
+<li><b>⚠ It is about to hit its ceiling again.</b> Backlog #231's own trip line is "any shard exceeds 1,500 s (25 min)". Recent code PRs ran 24–29 minutes per slowest shard. Its documented lever is more shards (the repository is public, so runners cost nothing), with a floor of about 220 s that sharding cannot remove. The deeper lever is the per-entry cost: slow suites, multiplied by how many entries target them.</li>
+<li><b>This is exactly what the tripwire (backlog #397) is for:</b> each week's step looked small, and nothing flagged the 4.5× growth in per-entry cost.</li>
+</ul>
+<p><b>Q (the owner, 10-30 07:40):</b> why did the per-entry cost increase from 1.3 s to 4.7 s?</p>
+<p><b>A: one guard, not a general slowdown.</b> Each mutation entry re-runs ITS OWN guard's test suite, so "per entry" is an average weighted by how many entries each guard has. Between 10-06 and 10-24 the entries added were:</p>
+<table><tr><th>manifest</th><th>entries 10-06</th><th>entries 10-24</th><th>its suite in CI</th></tr>
+<tr><td><b><code>check-main-drivable</code></b></td><td>0</td><td><b>183</b></td><td><b>48 s</b></td></tr>
+<tr><td><code>check-decision-scheme</code></td><td>0</td><td>125</td><td>small</td></tr>
+<tr><td><code>backfill-work-lines</code></td><td>0</td><td>108</td><td>small</td></tr>
+<tr><td><code>page_chrome</code></td><td>11</td><td>89</td><td>small</td></tr>
+<tr><td>everything else</td><td colspan="2">about 380 more entries</td><td>mostly 2–13 s</td></tr></table>
+<p>183 entries × 48 s ≈ <b>8,800 s</b> of added work: nearly all of the growth from 1,606 s to about 9,300 s. The other new entries mostly belong to fast suites. That one guard is <b>68%</b> of today's mutation work (measured on CI run 40799920596), which is filed as backlog #401: make its suite faster, or trim entries that test the same thing. That would cut the code-PR critical path more than any number of shards.</p>
+<p><b>Q (the owner, 10-30 07:43):</b> can we find the feasibility of these ideas?</p>
+<p><b>A: yes. A fresh, read-only analyst measured all three, and one idea removes most of the cost on its own.</b></p>
+<table><tr><th>idea</th><th>feasibility</th><th>saving (of 12,965 s of sweep work)</th><th>effort</th></tr>
+<tr><td><b>1. Make <code>check-main-drivable</code>'s suite faster</b> by caching four helpers that re-walk the same syntax trees</td><td><b>high</b></td><td>suite <b>68 s → 9 s</b> (7.4×), with all 183 mutants still caught by the cases they name, MEASURED locally. In CI about <b>−7,600 s ≈ 59%</b> (inferred from the measured ratio)</td><td>S</td></tr>
+<tr><td>3b. Stop a mutant's run as soon as its named case fails (SIGINT, so cleanup still runs), with a periodic full sweep to keep soundness</td><td>high</td><td>about 8% more on that guard and 7% on <code>compaction-state</code>, both measured; about 12% elsewhere, NOT measured</td><td>M; helps every guard</td></tr>
+<tr><td>2. Trim duplicate mutation entries</td><td>low</td><td><b>≈ 0 s defensible</b>: the 23 entries that share a killing case and a function each mutate a DIFFERENT clause, so merging them would delete coverage</td><td>—</td></tr>
+<tr><td>3a. Run only the named case</td><td>low</td><td>—</td><td>L: every suite computes its values inline, so each would need restructuring</td></tr></table>
+<p><b>Why idea 1 works:</b> one case is 90% of the suite. It classifies every real guard file and walks the same large syntax trees about 52 million times. The helpers it calls are pure functions of the tree, so remembering their answers changes no result. It only stops recomputing them.</p>
+<p><b>Q (the owner, 10-30 09:31):</b> make <code>check-main-drivable</code>'s suite faster by caching the four helpers that re-walk the same syntax trees.</p>
+<p><b>A: in progress since 08:25.</b> A fresh implementer is adding the caches on a branch from master, with mutation entries for the caches themselves (a cache that returned another node's answer must be caught). It is gated on the full scoped sweep: all 183 of this guard's mutants must still be killed by the case each names, as the study measured. The before and after timings go in its pull request. This page records the result when it merges.</p>
+<p><b>Q (the owner, 10-30 09:33):</b> my question was not specific to the check-main-drivable suite. I asked if the caching technique can be extended to other mutation checks too.</p>
+<p><b>A: I misread your note, and the corrected answer is likely yes, but it is being measured before anything is claimed.</b> The next most expensive suites (CI share of mutation work: <code>compaction-state</code> 8.7%, <code>check-fixture-git-isolation</code> 4.1%, <code>check-fixture-variation</code> 2.6%, <code>gen-backlog-page</code> 2.1%, <code>check-rc-contract</code> 1.5%) include several guards that parse EVERY script's syntax tree, the same shape as idea 1. Two extensions are being studied:</p>
+<ul>
+<li><b>(a) per-guard caching</b>, like idea 1: remember pure, repeated work within one suite run;</li>
+<li><b>(b) a shared, content-addressed parse cache</b> across mutation runs. Each mutant is a new process, but every file except the mutated one is unchanged, so a cache keyed by a hash of the file's CONTENT can be reused safely across all runs, and a mutated file can never hit a stale entry.</li>
+</ul>
+<p><b>Result of the study (10-30, read-only, local ratios converted to CI seconds; the machine was busy, at load 4.7–14):</b> caching extends to <b>four of the nine</b> next-most-expensive guards. Together they save about <b>626 s of 12,965 s (4.8%)</b>.</p>
+<table><tr><th>guard (CI s × entries)</th><th>where its time goes</th><th>saving from caching</th></tr>
+<tr><td><code>gen-backlog-page</code> (13.0 × 21)</td><td>a markup scan called 158,001 times on 6,061 distinct inputs</td><td>suite 15.7 → 2.95 s (−81%), 186/186 pass; <b>≈ −221 s</b></td></tr>
+<tr><td><code>goal-tree</code> (1.9 × 75)</td><td>re-compiles 3 sibling scripts 71 times</td><td>5.31 → 0.71 s (−87%), 165/165; <b>≈ −124 s</b></td></tr>
+<tr><td><code>check-fixture-variation</code> (8.1 × 42)</td><td>parses 120 distinct files 531 times</td><td>11.8 → 5.7–7.0 s (−41 to −52%), 67/67; <b>≈ −139 to −177 s</b></td></tr>
+<tr><td><code>brief-compose</code> (2.9 × 45)</td><td>the same page scan, 1,866 calls on 361 inputs</td><td>3.43 → 1.75 s (−49%); <b>≈ −64 s</b>, free with the gen-backlog change</td></tr>
+<tr><td><code>compaction-state</code> (20.8 × 54)</td><td><b>18.5 of 22.8 s is WAITING</b>: cases that test a real deadline (one waits 11 s)</td><td>0 from caching; a different lever (below)</td></tr>
+<tr><td><code>session-state</code>, <code>check-fixture-git-isolation</code>, <code>check-plan-code</code>, <code>check-rc-contract</code></td><td>waiting on kill timers, mostly distinct work, nested subprocesses</td><td>≈ 0 to −40 s</td></tr></table>
+<p><b>A shared on-disk parse cache is NOT worth building.</b> Parsing is a small share of these suites once the in-process caches exist.</p>
+<p><b>The bigger lever is not caching.</b> The harness could stop a mutant's suite as soon as the case its manifest entry names has gone red, then confirm soundness with a periodic full sweep (idea 3b above). That saves about <b>2,050 s (≈16%)</b> and changes no guard. A further lever: <code>compaction-state</code>'s cost is real waiting, so its deadline cases could run with a shorter, test-only timeout. That is not measured yet.</p>
+<p><b>Q (the owner, 10-30 10:08):</b> explain what the deadline is and why it is waiting for it. How often does this happen (% of the overall process)?</p>
+<p><b>What the deadline is.</b> <code>scripts/compaction-state.py</code> is the compaction guard: the PreCompact hook that snapshots in-flight state before Claude Code compacts the conversation. Claude Code kills a hook that runs past its <code>timeout</code>, which is 15 s in <code>.claude/settings.json</code>. The guard therefore budgets itself:</p>
+<table><tr><th>constant</th><th>value</th><th>what it bounds</th></tr>
+<tr><td><code>HOOK_DEADLINE</code></td><td>13.5 s</td><td>the whole hook from process start (stdin, parse, child, publish), safely under the harness's 15 s</td></tr>
+<tr><td><code>CAPTURE_TIMEOUT</code></td><td>11.0 s</td><td>the child that collects the snapshot (git, gh) is KILLED, with its whole process group, at 11 s</td></tr>
+<tr><td><code>GH_TIMEOUT</code> / <code>GIT_TIMEOUT</code></td><td>8 s / 3 s</td><td>each single call inside that child</td></tr></table>
+<p><b>Why the tests wait for it.</b> The guard's most important promise is "a hung <code>gh</code> or <code>git</code> can never hold up a compaction". The only way to PROVE that is to make a real child hang and watch the guard kill it at the real deadline. So a case such as "a slow git then a hung gh that backgrounds a sleep: killed at the REAL 11 s, and the sleep is GONE" genuinely sits there for 11 s. That is correct, but it is slow: <b>about 18.5 of the suite's 22.8 s is spent waiting on the clock</b>, not computing.</p>
+<p><b>How often, as a share of the whole.</b></p>
+<ul>
+<li><b>One run of its self-test:</b> about 81% waiting, about 20 s per run in CI.</li>
+<li><b>The mutation sweep:</b> the suite re-runs once per mutation entry, 54 times: 20.8 s × 54 ≈ 1,123 s, which is <b>8.7% of all mutation work</b>. Of that, about 81% is waiting, so roughly <b>900 s ≈ 7% of the sweep</b> is just this guard waiting on deadlines. This is inferred: 81% is the local share applied to the CI figure.</li>
+<li><b>The overall process:</b> small and indirect. The sweep runs in parallel shards, so these seconds lengthen one shard of a code PR by a few minutes. They are never on the coordinator's or the owner's own time.</li>
+</ul>
+<p><b>The remedy, and its trade-off.</b> Let the deadline constants be SCALED by a test-only setting (for example ×0.1, so the 11 s kill fires at 1.1 s) in MUTATION runs only, where a mutant just has to be caught. Keep one real-time run of the self-test in CI's ordinary check, so "killed at the REAL 11 s" is still proven once per change. Expected saving: most of that ≈ 900 s. Risk: a scaled deadline could hide a bug that only appears at full scale, which is why the one real-time run stays. Not built and not measured; it will be filed as a backlog row.</p>
+<p><b>Q (the owner, 10-30 10:14):</b> what is not being built now (deferred in the backlog)?</p>
+<p><b>Being built now:</b> the <code>check-main-drivable</code> caching (backlog #401, ≈ 59% of the sweep), and the shard resize to 24 (PR #445).</p>
+<table><tr><th>deferred: filed, not being built</th><th>row</th><th>estimated saving or purpose</th></tr>
+<tr><td>Stop a mutant's suite at its named failing case, plus a periodic full sweep</td><td>#405</td><td>≈ 16% of the sweep</td></tr>
+<tr><td>Caches in four more guards' suites</td><td>#406</td><td>≈ 4.8% (−626 s)</td></tr>
+<tr><td>Scaled deadlines for <code>compaction-state</code> in mutation runs only</td><td>#407</td><td>≈ 7% (not measured)</td></tr>
+<tr><td>Count check: changed scripts locally, full run in CI (you asked for it "when convenient")</td><td>#402</td><td>≈ 366 local runs in 8 days</td></tr>
+<tr><td>Fix the <code>check-run-hook</code> timeout flake</td><td>#388</td><td>a red result that means something again</td></tr>
+<tr><td>The dev-speed tripwire: log CI job times, warn on a 25% week-over-week rise</td><td>#397</td><td>catch the next slow step in the week it lands</td></tr>
+<tr><td>Snapshot taken at restore time (the compaction guard's broken half)</td><td>#396</td><td>a restore that survives a precomputed compaction</td></tr>
+<tr><td>Recorded-round gate cannot see a Claude final round</td><td>#403</td><td>avoids an extra Codex round per PR</td></tr>
+<tr><td>Review wrapper remainder (a parent symlink swapped mid-run, a failed write losing a paid review)</td><td>#400</td><td>safety</td></tr>
+<tr><td>A subagent can wake a sibling past the usage gate</td><td>#404</td><td>usage</td></tr>
+<tr><td>The push hook reads heredoc prose as a push</td><td>#398</td><td>false blocks</td></tr></table>
+<p><b>Decided NOT to build:</b> trimming duplicate mutation entries (each tests a different clause), running only the named case (every suite would need restructuring), and a shared on-disk parse cache (parsing is too small a share).</p>
+<p><b>Order by saving ÷ effort:</b> (1) <code>check-main-drivable</code> caching, in progress, ≈ 59%; (2) stop at the named case, ≈ 16%; (3) the four small caches above, ≈ 5%, a few lines each.</p>
+
+<p><b>What happens now:</b> idea 1 is being built as its own pull request (backlog #401), with mutations for the caches themselves. Idea 3b is filed as backlog #405 (⟳ corrected 10-30 10:15: this line said "is filed" before it was; it was only in my notes). Idea 2 is not pursued.</p>
+<p class="horizon">measured how: entries per manifest at <code>7f7a1577</code> (10-06) and <code>a50ddc36</code> (10-24); suite seconds from the timestamped shard logs of CI run 40799920596, measured on 10-30.</p>
+<p class="horizon">measured how: entry counts from <code>scripts/mutations/*.json</code> at commits <code>7f7a1577</code> (10-06), <code>a50ddc36</code> (10-24) and <code>origin/master</code>; the work and per-shard figures are quoted from the measured comments in <code>.github/workflows/ci.yml</code> (the mutation-sweep job); recent shard times from <code>gh run view --json jobs</code> on the last six green code-PR runs.</p>
+</div>
+<p><b>Cause, read from the job timings:</b> one step drove it all, the <b>mutation sweep</b>.</p>
+<div class="scroll"><table class="num">
+<tr><th>Week</th><th>Where the sweep ran</th><th>Its cost</th></tr>
+<tr><td>W36</td><td>a step of <code>verify</code></td><td>2.9 min of a 4.5 min job</td></tr>
+<tr><td>W37 → W40</td><td>still a step of <code>verify</code></td><td>6.2 → 9.0 → <b>14.7 min</b> (job 17.6 min)</td></tr>
+<tr><td>W41 → W43</td><td>own job, 8 then 12 shards (PR #366, 10-06; 8→12 on 10-24, backlog #231)</td><td>each shard ≈ 17–23 min, in parallel</td></tr>
+<tr><td>W44</td><td>shards skip when no mutated code changed (<code>ee0e461b</code>, 10-21)</td><td>a skipped shard takes 0.4 min</td></tr>
+</table></div>
+<p><b>What a run costs today</b> (87 successful runs since 10-26): <b>docs-only, a median of 6.5 min</b> (36 runs); <b>code, a median of 26.1 min</b> (51 runs). The code median is longer than the slowest predicted shard (~19.5 min, per <code>ci.yml</code>'s own comment). Inferred, not measured: the gap is runner start-up and queueing across 14 parallel jobs.</p>
+<blockquote><p><code>ci.yml</code>, measured 2026-10-05: <i>unsharded <code>--mutate .</code> 1758s (29.3 min)</i>; <i>one pass over all 57 suites 77s (a shard pays this TWICE … and it does NOT divide by N)</i>; <i>the 214s control floor caps the whole speedup at ~24x however large N gets.</i></p></blockquote>
+<p class="horizon">measured how: <code>gh run list --workflow ci.yml --limit 1000</code> (startedAt → updatedAt, successful runs only); per-job and per-step times from <code>gh run view --json jobs</code> for 4 runs per week</p>
+
+<h3 id="b-pr">2 · Merged PRs per week and time from open to merge</h3>
+<div class="scroll"><table class="num">
+<tr><th>Week</th><th>W36</th><th>W37</th><th>W38</th><th>W39</th><th>W40</th><th>W41</th><th>W42</th><th>W43</th><th>W44</th></tr>
+<tr><td>Merged PRs</td><td>50</td><td>62</td><td>26</td><td>30</td><td><b>9</b></td><td><b>6</b></td><td><b>5</b></td><td>18</td><td>40</td></tr>
+<tr><td>Open → merge, median</td><td>0.7 h</td><td>0.3 h</td><td>0.5 h</td><td>1.0 h</td><td>5.5 h</td><td>5.3 h</td><td>0.5 h</td><td>1.3 h</td><td>2.0 h</td></tr>
+<tr><td>Size, median lines</td><td>360</td><td>140</td><td>921</td><td>1,026</td><td>516</td><td>2,910</td><td>548</td><td>1,035</td><td>776</td></tr>
+</table></div>
+<p>The <b>W40–W42 dip to 5–9 PRs a week</b> lines up with the slowest CI (sweep at 14.7 min in one job, then the first shards). It is also when the Opus 5 messages per PR were at their highest. Open → merge measures only the PR's life, not the work before it opened, so it understates the dip.</p>
+<p class="horizon">measured how: <code>gh pr list --state merged --limit 400</code>, createdAt → mergedAt, grouped by merge week</p>
+
+<h3 id="b-rounds">3 · Review rounds per subject</h3>
+<div class="scroll"><table class="num">
+<tr><th>Era (subject's first round)</th><th>Subjects</th><th>Rounds per subject, median</th><th>Mean</th><th>Subjects with ≥5 rounds</th></tr>
+<tr><td>Opus 5, 09-22 → 10-21 (30 days)</td><td>22</td><td>5</td><td>5.4</td><td>13</td></tr>
+<tr><td>Opus 5.5, 10-22 → 10-29 (8 days)</td><td>36</td><td>5</td><td>5.3</td><td>24</td></tr>
+</table></div>
+<p><b>The number of rounds did not change; rounds got cheaper.</b> The median stayed at 5, but subjects started per day went from about 0.7 to about 4.5. A round now costs a fraction of what it did, which matches the messages-per-PR drop above. Five rounds per subject is still the largest fixed cost per PR, and it's the next lever (see <a href="#remedies">remedies</a>).</p>
+<p class="horizon">measured how: every <code>*-rN-{codex,claude,coordinator}.md</code> under <code>docs/reviews/</code>; the highest N per subject; the subject's date is its first round document's add commit (<code>git log --diff-filter=A</code>)</p>
+
+<h3 id="b-local">4 · Local gate cost</h3>
+<div class="k warn"><b>Measured under load:</b> a load average of 18 on 12 cores, with 4 agents running at once. These are what an agent actually waits for tonight, not an idle-machine baseline.</div>
+<div class="scroll"><table class="num">
+<tr><th>Command</th><th>Time</th><th>Who runs it, and how often</th></tr>
+<tr><td><code>check-selftest-counts.py</code></td><td><b>351 s</b> (≈1.7 min in CI)</td><td>it's in <b>every</b> implementer's gate list, at least once per slice and again per fold. No scoping, no parallelism</td></tr>
+<tr><td><code>npm test</code></td><td>48 s</td><td>app-code slices</td></tr>
+<tr><td><code>gen-backlog-page.py --self-test</code></td><td>19 s</td><td>backlog-tooling slices</td></tr>
+<tr><td><code>npx tsc --noEmit</code></td><td>14 s</td><td>app-code slices</td></tr>
+<tr><td>scoped sweep, <code>--mutate . --only scripts/check-docs.py</code></td><td>6.9 s</td><td>every guard slice (the full sweep is CI's only)</td></tr>
+<tr><td><code>check-docs</code>, <code>check-features</code>, <code>check-reference-namespace</code>, <code>check-review-rounds</code></td><td>0.2–1.3 s each</td><td>every docs edit</td></tr>
+<tr><td>plan-leak scan (backlog #393, being built)</td><td>0.4 s on a 10-line push · 3.9 s on 12k lines · 13.7 s on 40k</td><td>once per push, about 5–15 a day</td></tr>
+</table></div>
+<p class="horizon">measured how: wall-clock around each command on master <code>c983a114</code>, in a scratch worktree, 10-29 03:30 PDT; the leak-scan sizes are real master ranges (<code>~1</code>, <code>~10</code>, <code>~40</code>)</p>
+
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-30 07:30):</b> how important is it to have accurate counts? What is the impact of this relatively long step on the overall process delay?</p>
+<p><b>How important:</b> moderately. Every guard's docstring declares how many self-test cases it has, and each suite already compares that number with the cases that actually ran, which catches a test that silently disappears. <code>check-selftest-counts</code> is the OUTSIDE observer of that in-suite check: it catches the comparison itself being deleted (backlog #69). That is real value, but it is a check on a check, and <b>CI runs it on every pull request</b> (about 1.7 min, in parallel with the other jobs).</p>
+<p><b>Its impact on delay, measured from the transcripts since 10-23:</b></p>
+<table><tr><th></th><th>value</th></tr>
+<tr><td>local runs by agents</td><td><b>366 in 8 days</b> (peak 125 on 10-27)</td></tr>
+<tr><td>time per run</td><td>351 s at load average 18, against about 1.7 min in CI</td></tr>
+<tr><td>runs whose result mentioned the flaky <code>check-run-hook</code> (backlog #388)</td><td><b>44</b>: red for a reason unrelated to the change</td></tr></table>
+<ul>
+<li><b>Wall time:</b> at a few minutes each, 366 runs is on the order of 15–20 hours of agent time over 8 days (an estimate: the per-run time varies with load). Every slice and fold waits on it before it can finish.</li>
+<li><b>Contention:</b> it runs about 80 suites one after another, so while it runs, every other agent on the machine is slower.</li>
+<li><b>Noise:</b> the flaky case makes it red often. The agents learned to write "only check-run-hook red", which teaches everyone to read past a red result. That is the expensive part.</li>
+</ul>
+<p><b>Remedy (proposed):</b> run it locally only for the scripts a branch CHANGED (seconds, not minutes), and leave the full run to CI. That is the same split the owner chose for the mutation sweep on 10-25. Fix the flake separately (backlog #388), so that a red result means something again.</p>
+<p class="horizon">measured how: every <code>Bash</code> tool call containing <code>check-selftest-counts</code> (not its own <code>--self-test</code>) in all transcripts and subagent transcripts since 10-23, and whether its result mentioned a <code>check-run-hook</code> failure. The 351 s is the single timed run on this page.</p>
+</div>
+<h2 id="kinds">The kinds of speed impact</h2>
+<p>Each kind is <b>cost per occurrence × how often it occurs</b>. The second factor is what a new slow step quietly multiplies.</p>
+<div class="scroll"><table>
+<tr><th>Kind</th><th>Cost per occurrence</th><th>Frequency</th><th>Biggest example on this page</th></tr>
+<tr><td><b>CI critical path</b></td><td>the slowest required job</td><td>every push to a PR</td><td>the sweep: 2.9 → 14.7 min in one job, now ~20 min per shard</td></tr>
+<tr><td><b>Local gate cost</b></td><td>seconds to minutes</td><td>× every agent × every fold</td><td><code>check-selftest-counts</code> at 351 s, run by every implementer</td></tr>
+<tr><td><b>Review rounds</b></td><td>a review half plus a fold</td><td>median 5 per subject</td><td>unchanged by the model switch; the largest fixed cost per PR</td></tr>
+<tr><td><b>Waiting on the human</b></td><td>hours, overnight</td><td>each HOLD or question</td><td>before 10-25 every merge waited; one 2-line change sat idle 6.5 h on a blocking question (memory)</td></tr>
+<tr><td><b>Contention between parallel agents</b></td><td>inflates every local timing</td><td>whenever more than 1 agent runs</td><td>load 18 on 12 cores tonight; <b>not measured</b> as a factor</td></tr>
+<tr><td><b>Model efficiency</b></td><td>messages and tokens per PR</td><td>every PR</td><td>1,098 → 68 messages per PR across the switch (association)</td></tr>
+</table></div>
+
+<h2 id="history">Slowdowns that crept in before</h2>
+<p>Each one arrived as a reasonable change, cost time for days or weeks, and was caught by a person noticing, never by a machine.</p>
+<ul>
+<li><b>The full sweep on a local run.</b> A local <code>--mutate .</code> co-scoped every manifest. Co-scoping an unchanged 183-entry manifest cost 4 hours (memory: <i>scoped mutation run</i>). <b>Fix:</b> backlog #208 made a local run partial and refusing past 10 minutes (<code>ba4d2c28</code>, 10-26), and kept the full sweep in CI shards.</li>
+<li><b>One guard's suite × its mutations.</b> <code>check-main-drivable.py</code> held 183 entries against a ~30 s self-test, about 87 of the ~90 minutes of PR #360's sweep (<code>ci.yml</code>'s comment). Putting a <code>main([...])</code> call inside a long self-test raised it from 50 s to 209 s, past the 120 s shard timeout (memory: <i>main-drivable cost is per call site</i>).</li>
+<li><b>The ffmpeg install hang.</b> 4 of 14 CI attempts hung on the apt install before backlog #358 cached the packages (PR #407). In the 20 CI failures since, none was the ffmpeg step (tonight's tooling audit).</li>
+<li><b>Sweep on docs-only PRs.</b> Unchanged code was re-mutated on every docs PR until the step-level skip (<code>ee0e461b</code>). Now a docs PR's CI is 6.5 min instead of 26.</li>
+</ul>
+
+<h2 id="remedies">Remedies: done and candidate</h2>
+<div class="scroll"><table>
+<tr><th></th><th>Remedy</th><th>Gain</th></tr>
+<tr><td>✅</td><td>Shard the sweep (PR #366, 8 shards; 12 since 10-24)</td><td><span class="tag m">measured</span> 1,758 s → 346 s per shard at the time it landed</td></tr>
+<tr><td>✅</td><td>Skip the sweep when no mutated code changed (<code>ee0e461b</code>)</td><td><span class="tag m">measured</span> docs-only CI 26.1 → 6.5 min median</td></tr>
+<tr><td>✅</td><td>Partial sweep locally, full in CI (backlog #208)</td><td><span class="tag m">measured</span> a scoped run in 4–7 s instead of minutes to hours</td></tr>
+<tr><td>✅</td><td>Cache the ffmpeg packages (backlog #358)</td><td><span class="tag m">measured</span> 0 of 20 later failures at that step (it was 4 of 14 attempts)</td></tr>
+<tr><td>✅</td><td>Merge when READY (house rule 10-25)</td><td><span class="tag i">inferred</span> removes the overnight wait from every non-HOLD merge</td></tr>
+<tr><td>✅</td><td>Opus 5.5</td><td><span class="tag i">association</span> messages per PR 1,098 → 68</td></tr>
+<tr><td>⬜</td><td><b>Scope or parallelise <code>check-selftest-counts</code>:</b> an <code>--only &lt;changed scripts&gt;</code> for local runs, and a process pool for the full run</td><td><span class="tag i">expected</span> seconds instead of 351 s per local run; 12 cores are idle in the full run</td></tr>
+<tr><td>⬜</td><td><b>Drop the shard's double control pass</b> (control + re-control, 77 s of suites each, ≈153–221 s per shard)</td><td><span class="tag i">expected</span> up to ~2–3 min off every code PR's critical path; needs a soundness argument, since the re-control exists for a reason</td></tr>
+<tr><td>⬜</td><td><b>Fewer rounds per subject:</b> backlog #177's Q0 (choose the review instrument by kind of change)</td><td><span class="tag i">expected</span> the largest remaining fixed cost; unbuilt</td></tr>
+<tr><td>⬜</td><td><b>Run fewer agents at once</b>, or measure the slowdown contention causes</td><td><span class="tag i">unknown</span> until measured</td></tr>
+</table></div>
+
+<h2 id="tripwire">Proposal: a tripwire so the next one is caught when it lands</h2>
+<div class="k warn"><b>A proposal, not built yet: filed as backlog #397</b> (2026-10-29), per the standing rule that a backlog row is filed without asking. Its first slice is the CI log. Whether it ships, and in what order, is still yours to steer: ask on this section.</div>
+<p>Every slowdown above was found by a person weeks after it landed. The pattern that would have caught each one: <b>record the cost of every unit on every merge, and compare this week with last.</b></p>
+<ol>
+<li><b>CI per-job durations, per merged PR, appended to a log.</b> On merge (the hook that already rebuilds every page), read <code>gh run view --json jobs</code> for the PR's final run and append one row per job: PR, job, minutes, and whether it was docs-only. Every number in <a href="#b-ci">§1</a> came from this call, so it is known to work.</li>
+<li><b>An <code>elapsed_s</code> field in every <code>codex-review.py</code> verdict.</b> Today the verdict records model, head and outcome, but <b>not how long the review took</b>, so the costliest instrument in a round is invisible.</li>
+<li><b>A timing wrapper for local gates:</b> one line per gate run (gate, seconds, load average) in a git-ignored log. It would have caught <code>check-selftest-counts</code> at 351 s, and it records contention as a column instead of hiding it.</li>
+<li><b>A budget per CI job:</b> warn, not block, when a job's weekly p50 rises more than 25% over the previous week's. Warn-only follows this repo's measured rule that a blocking gate on a soft signal gets switched off (backlog #56).</li>
+<li><b>Work per PR, from the transcripts:</b> messages and output tokens per merged PR, weekly. This is the metric that moved most across the model switch, and only the transcripts hold it.</li>
+</ol>
+<p>All five feed one page section like <a href="#baseline">the baseline</a> above, regenerated on merge, so a reader sees this week against last without asking.</p>
+
+<h2 id="usage">The usage limit: the slowdown that costs a whole day</h2>
+<p><b>The largest single speed loss is not a slow step; it is a stop.</b> For several weeks the weekly usage limit has halted all work for about a day. On 10-29 at 05:02 it stopped four agents mid-task, and nothing ran again until 10-30 05:02. <b>No work was lost</b>: every commit was intact, both review files were complete, and recovery took about ten minutes from git, the ledger and the agent list. <b>The cost is the idle day.</b> Better recovery cannot buy that back; spending less can.</p>
+<p><b>Where the usage went</b>, over the 24 hours before the halt. Weighted by token type, using API list prices as a proxy because the plan's own weighting is not documented: cache read 0.1×, 1-hour cache write 2×, output 5×.</p>
+<div class="scroll"><table>
+<tr><th>Where</th><th>Weighted share</th><th>What it was made of</th></tr>
+<tr><td>five long-lived, <b>reused</b> teammates</td><td><b>69.5%</b></td><td>mostly cache <b>writes</b>: 65 full-context rebuilds of 100k tokens or more, after an agent idled past its cache lifetime and was woken</td></tr>
+<tr><td>the coordinator</td><td>25.9%</td><td>mostly cheap reads; its 1-hour cache rarely expired (3 rebuilds)</td></tr>
+<tr><td><b>fresh</b> subagents</td><td>4.3%</td><td>about a 65k-token build each, then they finish</td></tr>
+</table></div>
+<p>Unweighted, 99% of the raw tokens are cache reads, which made the coordinator look like the problem. Weighting moved the problem to the reused agents. The owner caught that the first estimate had not weighted cache costs or counted the cost of a reset.</p>
+<p><b>What changed (the owner's decisions, 10-30):</b></p>
+<ul>
+<li><b>A fresh subagent means a NEW one:</b> per slice, per fold and per review round. No agent is parked waiting for a "go". This is now in <code>docs/process-checklists.md</code> → <i>Agent lifetime</i>, with the Phase 3 line of <code>docs/dev-process.md</code> pointing to it.</li>
+<li><b>The coordinator is not reset per PR.</b> Its re-reads are cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts only at a natural pause when the owner is present.</li>
+<li><b>The statusline shows the 5-hour and weekly usage</b> (<code>[5h:22% wk:3%]</code>) and caches it in <code>~/.claude/.rate-limits.json</code>. It is the only documented surface that receives that number; hooks, environment variables and the CLI do not. Its parsing was folded from nine processes to two, so it runs in about 58 ms where it took 115 ms, measured under load.</li>
+<li><b>Backlog #399</b> will read that cache: a warning at 80% weekly, and no new subagent spawns at 90% without an override. It waits on the owner confirming that the cached value matches <code>/usage</code>.</li>
+</ul>
+<p class="horizon">measured how: the same transcript scan as above, over 10-28 05:00 → 10-29 05:05 PDT, summing <code>usage.cache_read_input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>input_tokens</code> and <code>output_tokens</code> per assistant message id. "Reused teammate" means the five named long-lived implementers; a rebuild is a single message whose cache write was 100k tokens or more. ⚠ The weights are a proxy: how the plan counts each token type toward the limit is not documented.</p>
+
+<h2 id="blind">Where we're blind today</h2>
+<ul>
+<li><b>The weekly usage percentage was invisible</b> until 10-30. It is now cached from the statusline; see the section above.</li>
+<li><b>Codex review duration is not recorded.</b> The verdict json has no elapsed field, so the cost of a review half can only be guessed from commit times.</li>
+<li><b>No per-step local timing log.</b> Every local number on this page was taken by hand tonight.</li>
+<li><b>Agent CPU contention is not measured.</b> Tonight's local timings were taken at load 18; how much of the 351 s is contention is unknown.</li>
+<li><b>No queue time.</b> The gap between the slowest shard (~19.5 min) and the run's wall-clock (26.1 min) is unexplained.</li>
+</ul>
+
+<h2 id="mi">What was measured and what was inferred</h2>
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Status</th><th>Source</th></tr>
+<tr><td>Opus 5 99 vs Opus 5.5 97 tokens/s per message</td><td><span class="tag m">measured</span></td><td>transcripts, 17,884 and 3,816 messages; timed at the first streamed entry (⚠ approximation)</td></tr>
+<tr><td>Messages per PR 1,098 → 68; PRs per day 0.8 → 4.0</td><td><span class="tag m">measured</span> numbers, <span class="tag i">inferred</span> cause</td><td>transcripts + <code>gh pr list</code>; different task mix in the two windows</td></tr>
+<tr><td>CI median 4.5 → 25.4 min, caused by the sweep</td><td><span class="tag m">measured</span></td><td><code>gh run list</code> + per-step timings of 4 runs per week</td></tr>
+<tr><td>Docs-only CI 6.5 min, code CI 26.1 min</td><td><span class="tag m">measured</span></td><td>87 runs since 10-26, split at 12 min</td></tr>
+<tr><td>Gap from 19.5 to 26.1 min is queueing and start-up</td><td><span class="tag i">inferred</span></td><td>not measured</td></tr>
+<tr><td>Review rounds median 5 in both eras</td><td><span class="tag m">measured</span></td><td>round documents under <code>docs/reviews/</code></td></tr>
+<tr><td>Local gate timings</td><td><span class="tag m">measured</span>, under load 18</td><td>wall-clock, master <code>c983a114</code></td></tr>
+<tr><td>Merge-when-ready removed the overnight wait</td><td><span class="tag i">inferred</span></td><td>the house rule's date; no wait time was measured</td></tr>
+<tr><td>Expected gains of the candidate remedies</td><td><span class="tag i">expected</span></td><td>arithmetic from the measured costs above, not run</td></tr>
+</table></div>
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

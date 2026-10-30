@@ -92,8 +92,8 @@ must stay in sync — updated proactively, without being asked.
 | 5 | **Final Review + Finish** | PR | full review → commit → push → PR → **merge when READY; a HOLD goes to the human** |
 | 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or on THRASHING: two consecutive rounds whose findings came from the previous round's fix** |
 
-**Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
-subagent per task, folds too. Proceed automatically; do not ask. Exception: [checklists](process-checklists.md) → *Who writes a review fold*.
+**Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a NEW subagent per
+task, fold and review round, never a reused or parked one (⟳ 2026-10-30, measured: [checklists](process-checklists.md) → *Agent lifetime*). Proceed; do not ask. Exception: *Who writes a review fold*.
 
 **Phase 5 — branch + PR is the standard path (set 2026-07-30). The axis is blast radius, not size.**
 A one-line change can be the most dangerous thing in the repo.

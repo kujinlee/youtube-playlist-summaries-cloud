@@ -162,6 +162,24 @@ replaces was invisible for four rounds for exactly that reason.
 
 ---
 
+## Agent lifetime: what spends the usage limit (added 2026-10-30)
+
+**A "fresh" subagent means a NEW one: never send a finished implementer the next slice, fold or review round, and never park an agent waiting for a "go".** Brief a new agent with the files and the decision instead.
+
+**Why, measured.** For several weeks the weekly usage limit has stopped all work for about a day. Over the 24 hours before the 2026-10-29 halt, weighted by token type (cache read 0.1×, 1-hour cache write 2×, output 5×; API list prices as a proxy, because the plan's own weighting is not documented):
+
+| Where | Share of weighted usage | What it was made of |
+|---|---|---|
+| five long-lived, reused teammates | **69.5%** | mostly cache WRITES: 65 full-context rebuilds of 100k tokens or more, after the agent idled past its cache lifetime and was woken |
+| the coordinator | 25.9% | mostly cheap reads; its 1-hour cache rarely expired (3 rebuilds) |
+| fresh subagents | 4.3% | about a 65k-token build each, then they finish |
+
+A reused agent's context only grows, and every wake-up after an idle wait re-writes all of it at the expensive rate. A fresh agent pays one small build. The owner chose this rule on 2026-10-30 (selection card).
+
+**The coordinator** is NOT reset per PR. Re-reading its context is cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts (handoff, then `/clear`) only at a natural pause when the owner is present, such as the start of a day.
+
+**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`; backlog #399 builds the pacing hook that reads it.
+
 ## TDD Policy
 
 ### Is TDD a good fit?

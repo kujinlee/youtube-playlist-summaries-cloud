@@ -18267,3 +18267,55 @@ owner's dangerous-push flag for it.
 `scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
 remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
 the command text; the redesign removes their common cause, and each finding is now a case.
+
+## 2026-10-29
+A new page, the **dev speed monitor** (`/2026-10-29-topic-dev-speed-monitor.html`), measures where development time
+goes. Its headline: Opus 5.5 does not write tokens faster than Opus 5 (about 97 vs 99 tokens/s per message). What
+changed is how much work a PR needs: about 1,100 assistant messages per PR fell to about 70. That is an association,
+since the two windows held different work. CI's median per run grew from 4.5 to 25 minutes over seven weeks, all of it
+the mutation sweep growing inside one job, and nothing flagged it. Backlog #397 proposes a tripwire that would catch
+that kind of drift in the week it happens.
+
+## 2026-10-30
+**Usage limit:** for several weeks the weekly limit has stopped all work for about a day. Measured over the 24 hours
+before the latest halt, and weighted by token type, **reused long-lived agents spent about 70% of the usage**, mostly
+on rebuilding their whole context after idling. Fresh agents spent about 4%. The rule is now in the process checklist:
+a new agent per slice and per review round, no agent parked waiting for a "go", and a coordinator restart only at a
+natural pause. The statusline now shows the 5-hour and weekly usage (and runs twice as fast as before). Backlog #399
+will pace new work from that number, and backlog #398 records a push hook that mistakes heredoc prose for a push. The
+dev-speed page answers the owner's two questions about why Opus 5.5 merges more PRs: about half of it is smaller
+PRs and half is cheaper review rounds.
+
+## 2026-10-30
+The dev-speed page answers two more of the owner's questions:
+- **Why CI time jumped in week 42.** The mutation sweep's total work grew about 5.8× in under three weeks, faster than sharding could absorb, and on code PRs the slowest shard now sits at 24–29 minutes against a 30-minute limit. PR #445 resizes the sweep.
+- **How much the self-test count check costs.** Agents ran it locally 366 times in 8 days. Backlog #402, at the owner's request, makes the local run cover only changed scripts and leaves the full run to CI.
+
+Backlog #403 records that the review-recorded gate cannot see a final round run by the Claude half.
+
+## 2026-10-29
+The Codex review tool now reviews, and records, the working copy it is run from. Before, a review run
+from a second working copy recorded the commit of wherever the tool happened to live, and the merge
+check then refused with a message that did not say why. The reviewer is also started in that copy,
+and the tool's guard against writing its scratch output into `docs/reviews/` now holds however the
+path is spelled: through a link, with `..`, or in different capital letters on a Mac.
+
+The other half of this pull request, letting the round template's short "this half did not run" form
+count, was taken back out after three review rounds kept finding new holes in it. An architecture
+review explains why, and backlog #182 is open again with the direction it recommends.
+<!--tech-->
+Backlog #121, `scripts/codex-review.py`: `reviewed_root()` (`git rev-parse --show-toplevel` on the cwd,
+never a fallback to `REPO_ROOT`) feeds `reviewed_state`, whose `repo_root` is now required, and the
+verdict's new `tree` field. Codex runs with `cwd=` that root and `env=unredirected()`. `resolve_out()`
+is `realpath` of the JOINED `--out`, resolved once in `main`; the location refusal also compares by
+identity (`same_dir_or_inside`, `(st_dev, st_ino)` of every existing ancestor) for a case-folding
+volume, and the watch covers the reviewed root's `docs/reviews/` even before it exists. Filing stays
+under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
+`docs/reviews/architecture-review-2026-10-29-gap-reader.md`.
+
+## 2026-10-30
+The dev-speed page now answers the owner's questions about the mutation sweep:
+- **What is feasible.** Caching one guard's suite (`check-main-drivable`) removes about 59% of the sweep's work, and it is being built. Stopping each mutant at its named failing case would save about 16% (backlog #405). Small caches in four other guards save about 4.8% (backlog #406). The compaction guard's tests mostly wait on real 11-second deadlines, about 7% (backlog #407).
+- **What is deferred.** The page lists every filed-but-unbuilt item.
+
+It also records a correction: one line had said an item "is filed" before it was.
