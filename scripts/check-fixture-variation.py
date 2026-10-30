@@ -582,8 +582,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⚠ `main.root` took one value until THIS guard refused the file ("3x `bad`"), which is
     # the second world existing at all. The key set is DERIVED by calling `analyse()`, not
     # typed from reading the source.
+    # ⟳ 2026-10-30, PR #442 r2: `violations.diff_text` RETIRES with the multi-file diff it parsed —
+    # the exemption now reads the base file per path, so `violations` takes one path's added lines
+    # and a budget, and the fetch is `scan`. Derived by calling `analyse()`; `scan.root`/`scan.base`
+    # are passed by unpacking a world, which the analyser does not examine.
     "check-reference-namespace.py": (
-        'main.argv', 'main.root', 'violations.diff_text', 'violations.scope',
+        'added_lines.one_path_diff', 'exemption_budget.base', 'exemption_budget.head',
+        'main.argv', 'main.root', 'scan.head', 'scan.scope',
+        'violations.added', 'violations.budget', 'violations.path', 'violations.scope',
     ),
     "check-rc-contract.py": (
         'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
