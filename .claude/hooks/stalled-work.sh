@@ -14,5 +14,5 @@
 # session id from it to find the session's scratchpad.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 "$REPO_ROOT/scripts/check-stalled-work.py" --hook --repo "$REPO_ROOT"
+python3 "$REPO_ROOT/scripts/check-stalled-work.py" --hook --repo "$REPO_ROOT" "$@"
 exit 0

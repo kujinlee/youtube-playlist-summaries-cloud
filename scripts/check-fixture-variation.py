@@ -319,7 +319,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "iso_epoch.stamp", "main.argv", "main.now", "main.prs", "main.stdin_text", "parse_refs.text",
         "parse_worktrees.porcelain", "pr_item.commit_ts", "pr_item.draft_limit_s", "pr_item.now",
         "pr_item.pr", "render.counts", "render.items", "render.notes", "review_items.halves",
-        "review_items.max_age_s", "review_items.now", "review_items.rounds", "run.argv", "run.now", "run.prs",
+        "review_items.now", "review_items.rounds", "run.argv", "run.now", "run.prs",
         "run.stdin_text", "scratch_for.project_dir", "scratch_for.session_id", "scratch_for.tmpdir",
         "scratch_for.uid", "unpushed_item.branch", "unpushed_item.limit_s", "unpushed_item.now",
         "unpushed_item.path", "unpushed_item.times", "unpushed_item.where",
