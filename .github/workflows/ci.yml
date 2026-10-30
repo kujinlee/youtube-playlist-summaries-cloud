@@ -1078,10 +1078,13 @@ jobs:
         #   N=20    mean  968s -> slowest ~1201s  1.50x  (exactly on the line; 1.28x at a 1.45 spread)
         #   N=24    mean  851s -> slowest ~1055s  1.71x  (1.46x at the worst 1.45 spread seen) <- chosen
         #   N=28    mean  766s -> slowest  ~950s  1.90x
-        # ⚠ CONCURRENCY, measured not assumed: 35 jobs ran at once on 10-30 13:03 over this repo's
-        # last 60 runs, so the account's limit is at least 35 — one run at N=24 is 26 jobs and fits.
-        # Two OVERLAPPING runs (52) would queue; queue time is latency, not `timeout-minutes`.
-        # The limit itself was not read (the API does not expose this account's plan to the token).
+        # ⚠ CONCURRENCY — MEASURED on this branch's own run 41065653565 (PR #445 r1): the account ran
+        # EXACTLY 20 jobs at once, 13:44Z-14:24Z, with no max-parallel set. (An earlier reading of
+        # "35 at 13:03" counted CANCELLED jobs, 24 of the 35, and was wrong.) So N=24 runs as TWO
+        # WAVES: 18 shards started together, six waited up to 625s, and the sweep took 1,473s end to
+        # end against a 1,032s slowest shard. Queueing is latency, not `timeout-minutes`, so 24 is
+        # kept for its per-shard headroom; whether N=18 (one wave, ~1,300s PREDICTED) is faster end
+        # to end is backlog #415's measurement. The limit is shared by every concurrent PR's jobs.
         # The first CI run of this branch is the measurement — REOPEN #231 if any shard there
         # exceeds 1,500s.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
