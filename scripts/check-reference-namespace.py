@@ -71,9 +71,15 @@ every row's LINE — so 306 bare references ALREADY ON MASTER, across 87 rows, r
 added-lines axis exists so that NOTHING MIGRATES and only new prose is judged; a line whose only
 change is that marker adds no prose. So an added line is NOT judged when, with its kind marker
 removed by the parser's own rule (`gen-backlog-page.kind_mark`, never a second regex), it is
-BYTE-IDENTICAL to a line the same diff removes from the same file. Everything else is judged exactly
-as before: a new line, any change of wording, one changed character. Qualifying the old references by
-evidence is its own row, backlog #395.
+BYTE-IDENTICAL to a line of the SAME PATH AT THE BASE (`git show <base>:<path>`, compared as lines).
+Everything else is judged exactly as before: a new line, any change of wording, one changed character.
+Qualifying the old references by evidence is its own row, backlog #395.
+⛔ PR #442 r2 — NO DIFF TEXT IS READ FOR THE REMOVED SIDE. Rounds 1 and 2 matched the diff's removed
+lines, which meant recognising each file's header by its text; a deleted file whose content is
+`-- a/docs/backlog.md` renders as that header, and credited its row to the backlog. So: a path absent
+at the base (a new file, a rename's target) exempts nothing; each base line exempts as many marked
+copies as the base holds it, less the copies the head still carries unmarked; and added lines come
+from git run ONCE PER PATH, where a line that looks like a header is inside a hunk and so is content.
 
 FAILS IF
 --------
@@ -82,7 +88,7 @@ FAILS IF
   * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
     a pass.
 
-  --self-test  runs 33 cases over diff texts this file builds, including that each failure mode is
+  --self-test  runs 46 cases over lines and repositories this file builds, including that each failure mode is
                DETECTED and that both main() worlds are driven.
 """
 from __future__ import annotations
@@ -90,6 +96,7 @@ import argparse
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -155,26 +162,41 @@ def in_scope(path: str, scope: tuple[str, ...] = SCOPE) -> bool:
     return any(path == s or path.startswith(s) for s in scope if s)
 
 
-def violations(diff_text: str, scope: tuple[str, ...] = SCOPE) -> list[str]:
-    """Findings over a unified diff. PURE — no git, no filesystem.
+def added_lines(one_path_diff: str) -> list[str]:
+    """The lines a ONE-PATH unified diff adds. PURE.
+
+    ⛔ PR #442 r2: everything before the first hunk header is the header and everything after it is
+    content, so an added line whose text LOOKS like a header (`++ b/scripts/x.py` renders as
+    `+++ b/scripts/x.py`) is content of THIS path. A diff spanning several files cannot be split
+    that way — its headers are recognised by their text, which the files' content controls — so the
+    caller runs git once per path. Split on `\\n` only, as git writes it: `splitlines()` would also
+    break a line at a `\\r` or `\\u2028` the base file keeps inside one line."""
+    out: list[str] = []
+    in_hunk = False
+    for line in one_path_diff.split("\n"):
+        if line.startswith("@@"):
+            in_hunk = True
+        elif in_hunk and line.startswith("+"):
+            out.append(line[1:])
+    return out
+
+
+def violations(path: str, added: list[str], budget: Counter[str] | None = None,
+               scope: tuple[str, ...] = SCOPE) -> list[str]:
+    """Findings over the lines `added` to `path`. PURE — no git, no filesystem.
+
+    `budget` is `exemption_budget` for this path; None exempts nothing.
 
     ⭐ THE RULE IS SEPARATED FROM THE FETCH ON PURPOSE. Three ratchets in this repo were
-    untestable for eight days because their only entry point needed Docker; a pure predicate over a
-    diff STRING can be driven by a case that builds its own world.
+    untestable for eight days because their only entry point needed Docker; a pure predicate over
+    lines can be driven by a case that builds its own world.
     """
     out: list[str] = []
-    path: str | None = None
-    removed = removed_lines(diff_text)
-    for line in diff_text.splitlines():
-        if line.startswith("+++ b/"):
-            path = line[6:]
-            continue
-        if not line.startswith("+") or line.startswith("+++") or path is None:
-            continue
-        if not in_scope(path, scope):
-            continue
-        body = line[1:]
-        if marker_only(path, body, removed):
+    if not in_scope(path, scope):
+        return out
+    budget = Counter() if budget is None else budget
+    for body in added:
+        if marker_only(body, budget):
             continue
         for m in BARE.finditer(body):
             if in_inline_code(body, m.start()):
@@ -223,42 +245,78 @@ def without_kind_marker(body: str) -> str | None:
     return "|".join(cells)
 
 
-def marker_only(path: str, body: str, removed: dict[str, set[str]]) -> bool:
-    """True if `body`, an added line of `path`, differs from a line the diff removes from `path`
-    ONLY by its kind marker. PURE apart from loading the parser."""
+def exemption_budget(base: list[str] | None, head: list[str]) -> Counter[str]:
+    """{line: how many marker-only copies of it `head` may add}. PURE.
+
+    ⛔ PR #442 r2: read from the BASE VERSION OF THE SAME PATH, never from removed diff text — two
+    rounds trusted a header recognised by its text, and a deleted file's content can spell one. A
+    path absent at the base (`base` None: a new file, or a rename's target) exempts nothing, so prose
+    moved in from another file is judged. A line counts as many times as the base holds it, LESS the
+    copies `head` still carries unmarked: adding a marked duplicate of a row that is still there is
+    a new copy of its references, not a marker-only edit."""
+    if base is None:
+        return Counter()
+    return Counter(base) - Counter(head)
+
+
+def marker_only(body: str, budget: Counter[str]) -> bool:
+    """True if `body`, an added line, is a base line of the same path with a kind marker added — and
+    the budget still covers it, which this CONSUMES. PURE apart from loading the parser."""
     stripped = without_kind_marker(body) if "⟦" in body else None
-    if stripped is None:
+    if stripped is None or budget[stripped] <= 0:
         return False
-    same_file = removed.get(path, set())
-    return stripped in same_file
+    budget[stripped] -= 1
+    return True
 
 
-def removed_lines(diff_text: str) -> dict[str, set[str]]:
-    """{path: every line the unified diff REMOVES from it}. PURE.
-
-    ⛔ Keyed on the SOURCE header `--- a/<path>`, never on `+++ b/` (PR #442 r1 M1): a deleted file's
-    target is `+++ /dev/null`, so a `+++`-keyed path kept the PREVIOUS file's name and credited the
-    deleted file's lines to it. A new file (`--- /dev/null`) removes nothing; a rename credits its
-    removals to the OLD name, so a moved line never matches the file it moved into."""
-    out: dict[str, set[str]] = {}
-    src: str | None = None
-    for line in diff_text.splitlines():
-        if line.startswith("--- a/"):
-            src = line[6:]
-        elif line.startswith("--- /dev/null"):
-            src = None
-        elif line.startswith("-") and src:
-            out.setdefault(src, set()).add(line[1:])
-    return out
-
-
-def added_diff(base: str, root: Path) -> str:
-    """The unified diff of `base`..worktree. Raises on a git failure — never returns ''."""
-    r = subprocess.run(["git", "-C", str(root), "diff", "--unified=0", base],
-                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
+def _git(root: Path, *args: str) -> str:
+    """git's stdout as UTF-8 (undecodable bytes kept). Raises on a git failure — never returns ''."""
+    r = subprocess.run(["git", "--literal-pathspecs", "-C", str(root), *args],
+                       capture_output=True, stdin=subprocess.DEVNULL)
     if r.returncode != 0:
-        raise RuntimeError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
-    return r.stdout
+        raise RuntimeError(f"git {' '.join(args[:2])} failed: "
+                           f"{r.stderr.decode('utf-8', 'replace').strip()[:200]}")
+    return r.stdout.decode("utf-8", "surrogateescape")
+
+
+def changed_paths(root: Path, base: str, head: str | None = None) -> list[str]:
+    """Every path `base`..`head` (the worktree when None) adds to or changes. A deletion adds nothing,
+    and renames are not followed: a rename's target is a path of its own."""
+    out = _git(root, "diff", "--name-only", "-z", "--no-renames", "--no-color", "--diff-filter=d",
+               base, *([head] if head else []))
+    return [p for p in out.split("\0") if p]
+
+
+def path_diff(root: Path, base: str, path: str, head: str | None = None) -> str:
+    """The unified diff of ONE path, `base`..`head` (the worktree when None)."""
+    return _git(root, "diff", "--unified=0", "--no-renames", "--no-color", "--no-ext-diff",
+                base, *([head] if head else []), "--", path)
+
+
+def file_lines(root: Path, rev: str | None, path: str) -> list[str] | None:
+    """`path`'s lines at `rev` (the worktree when None), or None if it is not a file there."""
+    if rev is None:
+        f = root / path
+        return f.read_bytes().decode("utf-8", "surrogateescape").split("\n") if f.is_file() else None
+    entry = _git(root, "ls-tree", "-z", rev, "--", path).split("\0")[0]
+    meta, _, name = entry.partition("\t")
+    if name != path or meta.split(" ")[1:2] != ["blob"]:
+        return None
+    return _git(root, "cat-file", "blob", meta.split(" ")[2]).split("\n")
+
+
+def scan(root: Path, base: str, head: str | None = None,
+         scope: tuple[str, ...] = SCOPE) -> list[str]:
+    """Every violation `base`..`head` adds, one git diff per path. Raises on a git failure."""
+    out: list[str] = []
+    for path in changed_paths(root, base, head):
+        if not in_scope(path, scope):
+            continue
+        added = added_lines(path_diff(root, base, path, head))
+        budget = (exemption_budget(file_lines(root, base, path), file_lines(root, head, path) or [])
+                  if any("⟦" in a for a in added) else None)
+        out += violations(path, added, budget, scope)
+    return out
 
 
 def main(argv: list[str], root: Path = ROOT) -> int:
@@ -270,11 +328,10 @@ def main(argv: list[str], root: Path = ROOT) -> int:
     if args.self_test:
         return self_test()
     try:
-        diff = added_diff(args.base, root)
+        found = scan(root, args.base)
     except RuntimeError as exc:
         print(f"CANNOT RUN — {exc}. Treat this as NOT RUN, not as a pass.", file=sys.stderr)
         return CANNOT_RUN
-    found = violations(diff)
     if found:
         print(f"⛔ {len(found)} bare reference(s) added in reader-facing prose:\n", file=sys.stderr)
         for f in found:
@@ -288,9 +345,9 @@ def main(argv: list[str], root: Path = ROOT) -> int:
     return OK
 
 
-def _d(path: str, *lines: str) -> str:
-    """Build a one-file unified diff whose added lines are `lines`. PURE."""
-    return f"--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n" + "".join(f"+{l}\n" for l in lines)
+def _v(path: str, *lines: str, scope: tuple[str, ...] = SCOPE) -> list[str]:
+    """The violations of `lines` added to `path`, with nothing exempt. PURE."""
+    return violations(path, list(lines), scope=scope)
 
 
 def self_test() -> int:
@@ -320,34 +377,39 @@ def _self_test_body() -> int:
     SPINE = "docs/dev-process.md"
     # ── the defect this exists for ────────────────────────────────────────────────────────
     case("⭐ a BARE #N added to a spine doc is DETECTED",
-         len(violations(_d(SPINE, "see #291 for the redesign"))), 1)
+         len(_v(SPINE, "see #291 for the redesign")), 1)
     case("...and the finding NAMES the token, so a reader can find it",
-         "#291" in violations(_d(SPINE, "see #291 for the redesign"))[0])
+         "#291" in _v(SPINE, "see #291 for the redesign")[0])
     case("...and it names the FILE",
-         SPINE in violations(_d(SPINE, "see #291 for the redesign"))[0])
+         SPINE in _v(SPINE, "see #291 for the redesign")[0])
 
     # ── every way it must stay SILENT ─────────────────────────────────────────────────────
-    case("a QUALIFIED reference passes", violations(_d(SPINE, "see backlog #291")), [])
-    case("`PR #N` passes", violations(_d(SPINE, "landed in PR #371")), [])
+    case("a QUALIFIED reference passes", _v(SPINE, "see backlog #291"), [])
+    case("`PR #N` passes", _v(SPINE, "landed in PR #371"), [])
     case("an ORDINAL in a title passes — the ~90% of the 2026-08-27 sample",
-         violations(_d(SPINE, "## Phase 6 #1 — the arming condition")), [])
+         _v(SPINE, "## Phase 6 #1 — the arming condition"), [])
     case("⭐ a bare #N inside INLINE CODE passes — a quoted counter-example, the one measured FP",
-         violations(_d(SPINE, "write `backlog #39`, not a bare `#39`")), [])
+         _v(SPINE, "write `backlog #39`, not a bare `#39`"), [])
     case("a qualifier through MARKUP still passes, because emphasis is not a word",
-         violations(_d(SPINE, "see **backlog** #291")), [])
+         _v(SPINE, "see **backlog** #291"), [])
     case("a REMOVED line is not an added line",
-         violations(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -1 +0,0 @@\n-see #291\n"), [])
+         added_lines(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -1 +0,0 @@\n-see #291\n"), [])
     case("the +++ header itself is never scanned as content",
-         violations(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -0,0 +1 @@\n+ok\n"), [])
+         added_lines(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -0,0 +1 @@\n+ok\n"), ["ok"])
+    # PR #442 r2: an added line `++ b/scripts/x.py` renders as `+++ b/scripts/x.py`. Read as a
+    # header it would move the next line out of scope; inside a hunk it is content of this path.
+    case("r2: an added line that LOOKS like a header is content, never a new path",
+         added_lines(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -0,0 +1,2 @@\n+++ b/scripts/x.py\n+see #291\n"),
+         ["++ b/scripts/x.py", "see #291"])
 
     # ── the three things the lookbehind holds, each its own case ──────────────────────────
-    case("a URL fragment is not a reference", violations(_d(SPINE, "see docs/page#3 below")), [])
-    case("a version-ish `v1#2` is not a reference", violations(_d(SPINE, "the v1#2 form")), [])
-    case("a markdown heading `##4` is not a reference", violations(_d(SPINE, "##4 heading")), [])
+    case("a URL fragment is not a reference", _v(SPINE, "see docs/page#3 below"), [])
+    case("a version-ish `v1#2` is not a reference", _v(SPINE, "the v1#2 form"), [])
+    case("a markdown heading `##4` is not a reference", _v(SPINE, "##4 heading"), [])
 
     # ── SCOPE, in both directions, which is the axis the measurement chose ────────────────
     case("⭐ a bare #N in scripts/ is OUT of scope — 87% of firings lived there",
-         violations(_d("scripts/check-docs.py", "# fixes #291")), [])
+         _v("scripts/check-docs.py", "# fixes #291"), [])
     # ⟳ 2026-10-20: THIS CASE IS INVERTED, NOT DELETED. It used to assert that `docs/backlog.md`
     # is out of scope because it "OWNS the namespace". That premise is false — backlog ids run
     # 1..329 and PR numbers 1..380, so being inside the file disambiguates nothing, and 19 bare
@@ -355,23 +417,23 @@ def _self_test_body() -> int:
     # Keeping the case and flipping its expectation is what makes the change falsifiable: revert
     # SCOPE and this reddens.
     case("⭐ a bare #N in docs/backlog.md is IN scope — PR numbers occupy the same integers",
-         len(violations(_d("docs/backlog.md", "| 291 | see #290 |"))), 1)
+         len(_v("docs/backlog.md", "| 291 | see #290 |")), 1)
     case("...and the roadmap too, for the same reason",
-         len(violations(_d("docs/roadmap-to-launch.md", "- [ ] blocked on #290"))), 1)
+         len(_v("docs/roadmap-to-launch.md", "- [ ] blocked on #290")), 1)
     # ⛔ `deliverable` was MISSING from the qualifier vocabulary, so `deliverable #2` — a genuine
     # qualified reference, this project having two deliverables — fired as a violation. That is the
     # failure direction the QUALIFIER comment predicts: an omission fires rather than passing
     # silently. It accounted for 9 of the 89 firings the widening would otherwise have produced.
     case("`deliverable #2` is a QUALIFIED reference, not a bare one",
-         violations(_d("docs/backlog.md", "| 47 | ... deliverable #2 (the reusable harness) |")), [])
+         _v("docs/backlog.md", "| 47 | ... deliverable #2 (the reusable harness) |"), [])
     case("a bare #N in a frozen review is out of scope",
-         violations(_d("docs/reviews/claude/x-r1-claude.md", "see #291")), [])
+         _v("docs/reviews/claude/x-r1-claude.md", "see #291"), [])
     case("a bare #N in a HOOK is IN scope — it prints to a reader at the moment of need",
-         len(violations(_d(".claude/hooks/enforce-handoff-path.sh", "# see #291"))), 1)
+         len(_v(".claude/hooks/enforce-handoff-path.sh", "# see #291")), 1)
     case("a bare #N in a SKILL is IN scope",
-         len(violations(_d(".agents/skills/handoff/SKILL.md", "see #291"))), 1)
+         len(_v(".agents/skills/handoff/SKILL.md", "see #291")), 1)
     case("⚠ `scope` is a PARAMETER, so a caller can narrow it — driven at a SECOND value",
-         violations(_d(SPINE, "see #291"), scope=("docs/other.md",)), [])
+         _v(SPINE, "see #291", scope=("docs/other.md",)), [])
 
     # ── ADR-0014: drive main() over worlds THIS CASE BUILT, in both directions ────────────
     import tempfile
@@ -433,33 +495,93 @@ def _self_test_body() -> int:
     OLD = "| 31 | **Gate** see #17 and #18 | x | S | (tooling) | open |"
     NEW = "| 31 | **Gate** see #17 and #18 ⟦kind: task⟧ | x | S | (tooling) | open |"
 
-    def _swap(old: str, new: str | None) -> str:
-        return (f"--- a/{BL}\n+++ b/{BL}\n@@ -1 +1 @@\n-{old}\n" + (f"+{new}\n" if new is not None else ""))
-    case("#394: a MARKER-ONLY change to an existing row is exempt", violations(_swap(OLD, NEW)), [])
-    case("#394: a marker plus ONE changed word is judged",
-         len(violations(_swap(OLD, NEW.replace("see #17", "per #17")))), 2)
-    case("#394: a NEW row carrying a marker and a bare #N is judged",
-         len(violations(_d(BL, "| 395 | **New** see #17 ⟦kind: task⟧ | x | S | (tooling) | open |"))), 1)
-    case("#394: a removed line with no matching added line changes nothing",
-         violations(_swap(OLD, "| 32 | **Other** see #19 | x | S | (tooling) | open |")), [
-             f"{BL}: bare `#19` with no namespace — write `backlog #19`, `PR #19`, `task #19` or whichever it is\n"
-             f"    | 32 | **Other** see #19 | x | S | (tooling) | open |"])
-    def _judged(diff: str):
+    def _swap(base: list[str] | None, *added: str) -> int:
+        # `base` is the path's lines at the base; the head holds only what was added.
         try:
-            return len(violations(diff))
+            return len(violations(BL, list(added), exemption_budget(base, list(added))))
         except Exception as exc:                   # noqa: BLE001 - a crash is a wrong answer here
             return f"raised {type(exc).__name__}"
+    case("#394: a MARKER-ONLY change to an existing row is exempt", _swap([OLD], NEW), 0)
+    case("#394: a marker plus ONE changed word is judged",
+         _swap([OLD], NEW.replace("see #17", "per #17")), 2)
+    case("#394: a NEW row carrying a marker and a bare #N is judged",
+         _swap([], "| 395 | **New** see #17 ⟦kind: task⟧ | x | S | (tooling) | open |"), 1)
+    case("#394: an UNMARKED added line is judged even when the base holds it verbatim",
+         len(violations(BL, [OLD], exemption_budget([OLD, OLD], [OLD]))), 2)
     case("#394: an INVALID marker on a changed line is still judged, never exempt and never a crash",
-         _judged(_swap(OLD, OLD.replace(" | x |", " ⟦kind: decision⟧ | x |", 1))), 2)
-    # PR #442 r1 M1: a DELETED file's header is `+++ /dev/null`, so a path taken from `+++ b/` kept the
-    # PREVIOUS file's name and credited the deleted file's lines to it. `git diff` orders
-    # docs/backlog.md before docs/backlog.old.md, which is exactly that shape.
-    case("#394: a line removed by DELETING another file never exempts a marked line (PR #442 r1 M1)",
-         len(violations(f"--- a/{BL}\n+++ b/{BL}\n@@ -1,0 +2 @@\n+{NEW}\n"
-                        f"--- a/docs/backlog.old.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-{OLD}\n")), 2)
-    case("#394: the marker must match a line removed from the SAME file",
-         len(violations(f"--- a/docs/plugins.md\n+++ b/docs/plugins.md\n@@ -1 +0,0 @@\n-{OLD}\n"
-                        f"--- a/{BL}\n+++ b/{BL}\n@@ -1 +1 @@\n-| 7 | unrelated |\n+{NEW}\n")), 2)
+         _swap([OLD], OLD.replace(" | x |", " ⟦kind: decision⟧ | x |", 1)), 2)
+    # PR #442 r2: the base is read per path. A path absent at the base exempts nothing at all.
+    case("r2: a path ABSENT at the base exempts nothing, even a line it would match",
+         _swap(None, NEW), 2)
+    case("r2: a DUPLICATED marker-only row is exempt ONCE — the copy is new prose",
+         _swap([OLD], NEW, NEW), 2)
+    case("r2: a base row that STAYS unmarked does not also exempt a marked copy of it",
+         len(violations(BL, [NEW], exemption_budget([OLD], [OLD, NEW]))), 2)
+    case("r2: a row the base holds TWICE may be marked twice",
+         _swap([OLD, OLD], NEW, NEW), 0)
+
+    # ── PR #442 r2: the exemption reads the BASE FILE, never removed diff text ──────────────────
+    # Each world is a real repository: diff text is what the input controls, so a diff STRING
+    # built by hand cannot show what git renders from a file's content.
+    def _world(name: str, base: dict[str, str], head: dict[str, str | None]) -> tuple[Path, str]:
+        root = Path(td2) / name
+        subprocess.run(["git", "init", "-q", str(root)], check=True, env=fixture_git.env())
+        for p, text in base.items():
+            (root / p).parent.mkdir(parents=True, exist_ok=True)
+            (root / p).write_text(text)
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True,
+                       env=fixture_git.env())
+        subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", "base"], check=True, capture_output=True, env=fixture_git.env())
+        sha = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
+                             text=True, env=fixture_git.env()).stdout.strip()
+        for p, text in head.items():
+            if text is None:
+                (root / p).unlink()
+            else:
+                (root / p).parent.mkdir(parents=True, exist_ok=True)
+                (root / p).write_text(text)
+        # STAGED, so a new file is in `git diff <base>` at all — unstaged, a rename's target is
+        # untracked and nothing is judged, which passes X4 for an ambient reason.
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True,
+                       env=fixture_git.env())
+        return root, sha
+
+    def _rc(root: Path, sha: str) -> int:
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            return main(["--base", sha], root=root)
+
+    FILLER = "".join(f"| {n} | filler row {n} | x | S | (t) | open |\n" for n in range(40, 60))
+    with tempfile.TemporaryDirectory() as td2:
+        # The control: a marker-only edit of a row the base holds is exempt through real git.
+        ok = _world("ok", {BL: f"{FILLER}{OLD}\n"}, {BL: f"{FILLER}{NEW}\n"})
+        case("r2: through REAL git, a marker-only edit of a base row is exempt", _rc(*ok), OK)
+        # X1: a deleted file whose CONTENT is `-- a/docs/backlog.md` renders as a `--- a/` header.
+        x1 = _world("x1", {"docs/backlog.old.md": f"-- a/{BL}\n{OLD}\n", BL: "| 7 | unrelated |\n"},
+                    {"docs/backlog.old.md": None, BL: f"| 7 | unrelated |\n{NEW}\n"})
+        case("r2 X1: a DELETED file's content cannot impersonate a header and exempt a moved row",
+             _rc(*x1), VIOLATION)
+        case("r2 X1: ...both of the moved row's references are judged", len(scan(*x1)), 2)
+        # X4: a rename from backlog.old.md to backlog.md, the moved row changed only by its marker.
+        x4 = _world("x4", {"docs/backlog.old.md": f"{FILLER}{OLD}\n"},
+                    {"docs/backlog.old.md": None, BL: f"{FILLER}{NEW}\n"})
+        case("r2 X4: a RENAME's target exempts nothing — prose moved into the backlog is judged",
+             _rc(*x4), VIOLATION)
+        case("r2 X4: ...both of the moved row's references are judged", len(scan(*x4)), 2)
+        dup = _world("dup", {BL: f"{FILLER}{OLD}\n"}, {BL: f"{FILLER}{NEW}\n{NEW}\n"})
+        case("r2: through REAL git, a marked row added TWICE is exempt once", len(scan(*dup)), 2)
+        hdr = _world("hdr", {SPINE: "a line\n"}, {SPINE: "a line\n++ b/scripts/x.py\nsee #291\n"})
+        case("r2: through REAL git, a line that renders as `+++ b/scripts/…` keeps the next one in scope",
+             len(scan(*hdr)), 1)
+        case("`scan(scope=…)` narrowed past the file judges nothing — driven at a SECOND value",
+             scan(*hdr, scope=("docs/other.md",)), [])
+        # `head` names a COMMIT, the leak scan's form: the same X4 world, committed, reads the same.
+        subprocess.run(["git", "-C", str(x4[0]), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", "head"], check=True, capture_output=True, env=fixture_git.env())
+        case("r2 X4: `scan(head=<commit>)` reads the committed rename the same way", len(scan(*x4, head="HEAD")), 2)
+        subprocess.run(["git", "-C", str(ok[0]), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", "head"], check=True, capture_output=True, env=fixture_git.env())
+        case("...and a committed marker-only edit is exempt there too", scan(*ok, head="HEAD"), [])
 
     print(f"{cases - failed}/{cases} passed")
     return OK if failed == 0 else VIOLATION
