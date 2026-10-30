@@ -466,8 +466,8 @@
   "file": "scripts/check-plan-leak.py",
   "edits": [
    [
-    "\"--no-renames\", \"--diff-merges=first-parent\",",
-    "\"--no-renames\", \"--no-walk\", \"--diff-merges=first-parent\","
+    "f\"--format={COMMIT_TAG}%H\",",
+    "f\"--format={COMMIT_TAG}%H\", \"-1\","
    ]
   ],
   "expect": "⭐ X1: a leak committed and then removed is still REFUSED — history is pushed, not the tree"

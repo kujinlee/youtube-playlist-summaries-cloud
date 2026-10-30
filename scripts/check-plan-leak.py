@@ -1015,10 +1015,12 @@ def _self_test_body() -> int:
         check("--install-hooks is idempotent", lambda: (rc, "already" in o), (CLEAN, True))
         fresh = td / "fresh"
         subprocess.run(["git", "init", "-q", str(fresh)], check=True)
-        rc, o, e = drive(["--hooks-status"], fresh)
-        check("--hooks-status: NOT ACTIVE before installing", lambda: (rc, "NOT ACTIVE" in o), (HITS, True))
+        # The hook FILE is present first, so this case can only pass on the hooks-path check itself (the
+        # sweep measured it passing on the missing-file check instead, with the hooks-path check deleted).
         (fresh / ".githooks").mkdir()
         shutil.copy2(ROOT / ".githooks" / "pre-push", fresh / ".githooks" / "pre-push")
+        rc, o, e = drive(["--hooks-status"], fresh)
+        check("--hooks-status: NOT ACTIVE before installing", lambda: (rc, "core.hooksPath is" in o), (HITS, True))
         rc, o, e = drive(["--install-hooks"], fresh)
         check("--install-hooks sets core.hooksPath, and --status then says ACTIVE",
               lambda: (rc, git(fresh, "config", "core.hooksPath").stdout.strip(), drive(["--hooks-status"], fresh)[0]),
