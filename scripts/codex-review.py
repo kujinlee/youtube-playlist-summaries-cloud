@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 211 cases
+  scripts/codex-review.py --self-test  # 213 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -2959,6 +2959,27 @@ def _self_test_body() -> int:
         _rx7 = _drive4("wt-r11-codex", os.path.join(_scr, "plain6.md"), _h)
         chk("#121 r6 X1 …and an ordinary scratch --out is still accepted beside that symlink",
             (_rx7.returncode, os.path.isfile(os.path.join(_scr, "plain6.md"))), (0, True))
+        # The same layout reached through an ALIAS of the checkout (`<tmp>/alias6 -> B`). On Linux
+        # the case above is ALSO refused by master's lexical rule, because the --out is spelled
+        # through the checkout's real path — so dropping the r6 clause left it green there (CI,
+        # shard 7), and only macOS's `/var` vs `/private/var` let it die. Here the route is lexically
+        # outside both checkouts and resolves outside both, on ANY OS: only the r6 clause refuses.
+        _al6 = os.path.join(os.path.realpath(td3), "alias6")
+        os.symlink(os.path.realpath(_h), _al6)
+        _out6a = os.path.join(_al6, "docs", "reviews", "claude", "victim-r1-claude.md")
+        chk("#121 r6 X1 …and master's lexical rule ALONE accepts that --out through an alias, for "
+            "both checkouts, so only the r6 clause can refuse it",
+            (master_out_refusal(_out6a), master_out_refusal(_out6a, reviewed_root(_h))),
+            (None, None))
+        with open(_v6, "w", encoding="utf-8") as f:  # its own victim, whatever the case above did
+            f.write(_victim_text)
+        _rx6a = _drive4("wt-r13-codex", _out6a, _h, "--allow-overwrite")
+        with open(_v6, encoding="utf-8") as f:
+            _v6at = f.read()
+        chk("⭐ #121 r6 X1 an --out through an ALIAS of the checkout, into a docs/reviews SYMLINKED "
+            "out of it, is refused by the real CLI, and the filed review is untouched",
+            (_rx6a.returncode, "inside the artifact tree" in _rx6a.stderr, _v6at),
+            (2, True, _victim_text))
         # ── r7 X1 (Codex), the reviewer's input: a symlink NESTED inside docs/reviews ────────────
         # `N/docs/reviews/nested -> <tmp>/external7`. Resolving --out first erased its ROUTE through
         # docs/reviews, and r6's resolved review root protects only the top level: rc 0, the victim

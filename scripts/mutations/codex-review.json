@@ -792,7 +792,7 @@
         "\n"
       ]
     ],
-    "expect": "⭐ #121 r6 X1 an --out through a docs/reviews SYMLINKED out of the checkout is refused by the real CLI, and the filed review is untouched"
+    "expect": "⭐ #121 r6 X1 an --out through an ALIAS of the checkout, into a docs/reviews SYMLINKED out of it, is refused by the real CLI, and the filed review is untouched"
   },
   {
     "name": "#121 r7 X1 the combined rule drops master's branch of the OR, leaving identity alone",
