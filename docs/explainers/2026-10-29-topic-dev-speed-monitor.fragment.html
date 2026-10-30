@@ -234,6 +234,89 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <text x="69" y="143">4.5</text><text x="125" y="141">4.8</text><text x="181" y="115">8.5</text><text x="237" y="103">10.3</text><text x="293" y="94">11.6</text><text x="349" y="136">5.5</text><text x="405" y="12">23.5</text><text x="461" y="13">25.4</text><text x="517" y="21">22.1</text>
 </g></svg>
 <figcaption>Median minutes per successful CI run, by ISO week (W36 = early Sept, W44 = this week). Runs per week: 11, 150, 62, 69, 21, 27, 14, 41, 87. W41's low median is a mix: sharding landed that week and its p90 was already 23.8 min.</figcaption></figure>
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-30 06:22):</b> why did CI wall-clock per run increase dramatically from week 42?</p>
+<p><b>A: sharding split the sweep, but the sweep's total work grew about 5.8× in under three weeks, faster than the split could absorb.</b> A mutation sweep re-runs a guard's WHOLE test suite once per mutation entry, so its cost is entries × each guard's suite time. Both factors grew:</p>
+<table><tr><th>date</th><th>mutation entries</th><th>total sweep work</th><th>per entry</th><th>slowest shard</th></tr>
+<tr><td>10-05, when sharding was designed (PR #366)</td><td>1,211</td><td>1,606 s</td><td>≈1.3 s</td><td>353 s ≈ 6 min with 8 shards</td></tr>
+<tr><td>10-24, when it went from 8 to 12 shards (backlog #231)</td><td>2,003</td><td>≈9,336 s</td><td>≈4.7 s</td><td>27.0 min with 8 shards; 19.5 min PREDICTED with 12</td></tr>
+<tr><td>10-28/29, on recent code PRs</td><td>2,512 (master, 10-30)</td><td></td><td></td><td><b>24–29 min</b>, against a 30-minute timeout</td></tr></table>
+<ul>
+<li><b>W42 is when that growth landed on every run.</b> Sharding (10-06) had turned one 15-minute step into parallel shards of about 6 minutes, but each shard also pays a fixed "control" pass over every suite (about 150–220 s), which does not shrink as shards are added. As entries were added and suites grew (each new case lengthens every mutation of that guard), the shards grew from about 6 to over 20 minutes.</li>
+<li><b>Until 10-21 every PR paid it, docs-only ones too.</b> The skip for PRs that change no mutated code landed on 10-21, which is why this week's docs PRs run in 5–7 minutes while code PRs still take about half an hour.</li>
+<li><b>⚠ It is about to hit its ceiling again.</b> Backlog #231's own trip line is "any shard exceeds 1,500 s (25 min)". Recent code PRs ran 24–29 minutes per slowest shard. Its documented lever is more shards (the repository is public, so runners cost nothing), with a floor of about 220 s that sharding cannot remove. The deeper lever is the per-entry cost: slow suites, multiplied by how many entries target them.</li>
+<li><b>This is exactly what the tripwire (backlog #397) is for:</b> each week's step looked small, and nothing flagged the 4.5× growth in per-entry cost.</li>
+</ul>
+<p><b>Q (the owner, 10-30 07:40):</b> why did the per-entry cost increase from 1.3 s to 4.7 s?</p>
+<p><b>A: one guard, not a general slowdown.</b> Each mutation entry re-runs ITS OWN guard's test suite, so "per entry" is an average weighted by how many entries each guard has. Between 10-06 and 10-24 the entries added were:</p>
+<table><tr><th>manifest</th><th>entries 10-06</th><th>entries 10-24</th><th>its suite in CI</th></tr>
+<tr><td><b><code>check-main-drivable</code></b></td><td>0</td><td><b>183</b></td><td><b>48 s</b></td></tr>
+<tr><td><code>check-decision-scheme</code></td><td>0</td><td>125</td><td>small</td></tr>
+<tr><td><code>backfill-work-lines</code></td><td>0</td><td>108</td><td>small</td></tr>
+<tr><td><code>page_chrome</code></td><td>11</td><td>89</td><td>small</td></tr>
+<tr><td>everything else</td><td colspan="2">about 380 more entries</td><td>mostly 2–13 s</td></tr></table>
+<p>183 entries × 48 s ≈ <b>8,800 s</b> of added work: nearly all of the growth from 1,606 s to about 9,300 s. The other new entries mostly belong to fast suites. That one guard is <b>68%</b> of today's mutation work (measured on CI run 40799920596), which is filed as backlog #401: make its suite faster, or trim entries that test the same thing. That would cut the code-PR critical path more than any number of shards.</p>
+<p><b>Q (the owner, 10-30 07:43):</b> can we find the feasibility of these ideas?</p>
+<p><b>A: yes. A fresh, read-only analyst measured all three, and one idea removes most of the cost on its own.</b></p>
+<table><tr><th>idea</th><th>feasibility</th><th>saving (of 12,965 s of sweep work)</th><th>effort</th></tr>
+<tr><td><b>1. Make <code>check-main-drivable</code>'s suite faster</b> by caching four helpers that re-walk the same syntax trees</td><td><b>high</b></td><td>suite <b>68 s → 9 s</b> (7.4×), with all 183 mutants still caught by the cases they name, MEASURED locally. In CI about <b>−7,600 s ≈ 59%</b> (inferred from the measured ratio)</td><td>S</td></tr>
+<tr><td>3b. Stop a mutant's run as soon as its named case fails (SIGINT, so cleanup still runs), with a periodic full sweep to keep soundness</td><td>high</td><td>about 8% more on that guard and 7% on <code>compaction-state</code>, both measured; about 12% elsewhere, NOT measured</td><td>M; helps every guard</td></tr>
+<tr><td>2. Trim duplicate mutation entries</td><td>low</td><td><b>≈ 0 s defensible</b>: the 23 entries that share a killing case and a function each mutate a DIFFERENT clause, so merging them would delete coverage</td><td>—</td></tr>
+<tr><td>3a. Run only the named case</td><td>low</td><td>—</td><td>L: every suite computes its values inline, so each would need restructuring</td></tr></table>
+<p><b>Why idea 1 works:</b> one case is 90% of the suite. It classifies every real guard file and walks the same large syntax trees about 52 million times. The helpers it calls are pure functions of the tree, so remembering their answers changes no result. It only stops recomputing them.</p>
+<p><b>Q (the owner, 10-30 09:31):</b> make <code>check-main-drivable</code>'s suite faster by caching the four helpers that re-walk the same syntax trees.</p>
+<p><b>A: in progress since 08:25.</b> A fresh implementer is adding the caches on a branch from master, with mutation entries for the caches themselves (a cache that returned another node's answer must be caught). It is gated on the full scoped sweep: all 183 of this guard's mutants must still be killed by the case each names, as the study measured. The before and after timings go in its pull request. This page records the result when it merges.</p>
+<p><b>Q (the owner, 10-30 09:33):</b> my question was not specific to the check-main-drivable suite. I asked if the caching technique can be extended to other mutation checks too.</p>
+<p><b>A: I misread your note, and the corrected answer is likely yes, but it is being measured before anything is claimed.</b> The next most expensive suites (CI share of mutation work: <code>compaction-state</code> 8.7%, <code>check-fixture-git-isolation</code> 4.1%, <code>check-fixture-variation</code> 2.6%, <code>gen-backlog-page</code> 2.1%, <code>check-rc-contract</code> 1.5%) include several guards that parse EVERY script's syntax tree, the same shape as idea 1. Two extensions are being studied:</p>
+<ul>
+<li><b>(a) per-guard caching</b>, like idea 1: remember pure, repeated work within one suite run;</li>
+<li><b>(b) a shared, content-addressed parse cache</b> across mutation runs. Each mutant is a new process, but every file except the mutated one is unchanged, so a cache keyed by a hash of the file's CONTENT can be reused safely across all runs, and a mutated file can never hit a stale entry.</li>
+</ul>
+<p><b>Result of the study (10-30, read-only, local ratios converted to CI seconds; the machine was busy, at load 4.7–14):</b> caching extends to <b>four of the nine</b> next-most-expensive guards. Together they save about <b>626 s of 12,965 s (4.8%)</b>.</p>
+<table><tr><th>guard (CI s × entries)</th><th>where its time goes</th><th>saving from caching</th></tr>
+<tr><td><code>gen-backlog-page</code> (13.0 × 21)</td><td>a markup scan called 158,001 times on 6,061 distinct inputs</td><td>suite 15.7 → 2.95 s (−81%), 186/186 pass; <b>≈ −221 s</b></td></tr>
+<tr><td><code>goal-tree</code> (1.9 × 75)</td><td>re-compiles 3 sibling scripts 71 times</td><td>5.31 → 0.71 s (−87%), 165/165; <b>≈ −124 s</b></td></tr>
+<tr><td><code>check-fixture-variation</code> (8.1 × 42)</td><td>parses 120 distinct files 531 times</td><td>11.8 → 5.7–7.0 s (−41 to −52%), 67/67; <b>≈ −139 to −177 s</b></td></tr>
+<tr><td><code>brief-compose</code> (2.9 × 45)</td><td>the same page scan, 1,866 calls on 361 inputs</td><td>3.43 → 1.75 s (−49%); <b>≈ −64 s</b>, free with the gen-backlog change</td></tr>
+<tr><td><code>compaction-state</code> (20.8 × 54)</td><td><b>18.5 of 22.8 s is WAITING</b>: cases that test a real deadline (one waits 11 s)</td><td>0 from caching; a different lever (below)</td></tr>
+<tr><td><code>session-state</code>, <code>check-fixture-git-isolation</code>, <code>check-plan-code</code>, <code>check-rc-contract</code></td><td>waiting on kill timers, mostly distinct work, nested subprocesses</td><td>≈ 0 to −40 s</td></tr></table>
+<p><b>A shared on-disk parse cache is NOT worth building.</b> Parsing is a small share of these suites once the in-process caches exist.</p>
+<p><b>The bigger lever is not caching.</b> The harness could stop a mutant's suite as soon as the case its manifest entry names has gone red, then confirm soundness with a periodic full sweep (idea 3b above). That saves about <b>2,050 s (≈16%)</b> and changes no guard. A further lever: <code>compaction-state</code>'s cost is real waiting, so its deadline cases could run with a shorter, test-only timeout. That is not measured yet.</p>
+<p><b>Q (the owner, 10-30 10:08):</b> explain what the deadline is and why it is waiting for it. How often does this happen (% of the overall process)?</p>
+<p><b>What the deadline is.</b> <code>scripts/compaction-state.py</code> is the compaction guard: the PreCompact hook that snapshots in-flight state before Claude Code compacts the conversation. Claude Code kills a hook that runs past its <code>timeout</code>, which is 15 s in <code>.claude/settings.json</code>. The guard therefore budgets itself:</p>
+<table><tr><th>constant</th><th>value</th><th>what it bounds</th></tr>
+<tr><td><code>HOOK_DEADLINE</code></td><td>13.5 s</td><td>the whole hook from process start (stdin, parse, child, publish), safely under the harness's 15 s</td></tr>
+<tr><td><code>CAPTURE_TIMEOUT</code></td><td>11.0 s</td><td>the child that collects the snapshot (git, gh) is KILLED, with its whole process group, at 11 s</td></tr>
+<tr><td><code>GH_TIMEOUT</code> / <code>GIT_TIMEOUT</code></td><td>8 s / 3 s</td><td>each single call inside that child</td></tr></table>
+<p><b>Why the tests wait for it.</b> The guard's most important promise is "a hung <code>gh</code> or <code>git</code> can never hold up a compaction". The only way to PROVE that is to make a real child hang and watch the guard kill it at the real deadline. So a case such as "a slow git then a hung gh that backgrounds a sleep: killed at the REAL 11 s, and the sleep is GONE" genuinely sits there for 11 s. That is correct, but it is slow: <b>about 18.5 of the suite's 22.8 s is spent waiting on the clock</b>, not computing.</p>
+<p><b>How often, as a share of the whole.</b></p>
+<ul>
+<li><b>One run of its self-test:</b> about 81% waiting, about 20 s per run in CI.</li>
+<li><b>The mutation sweep:</b> the suite re-runs once per mutation entry, 54 times: 20.8 s × 54 ≈ 1,123 s, which is <b>8.7% of all mutation work</b>. Of that, about 81% is waiting, so roughly <b>900 s ≈ 7% of the sweep</b> is just this guard waiting on deadlines. This is inferred: 81% is the local share applied to the CI figure.</li>
+<li><b>The overall process:</b> small and indirect. The sweep runs in parallel shards, so these seconds lengthen one shard of a code PR by a few minutes. They are never on the coordinator's or the owner's own time.</li>
+</ul>
+<p><b>The remedy, and its trade-off.</b> Let the deadline constants be SCALED by a test-only setting (for example ×0.1, so the 11 s kill fires at 1.1 s) in MUTATION runs only, where a mutant just has to be caught. Keep one real-time run of the self-test in CI's ordinary check, so "killed at the REAL 11 s" is still proven once per change. Expected saving: most of that ≈ 900 s. Risk: a scaled deadline could hide a bug that only appears at full scale, which is why the one real-time run stays. Not built and not measured; it will be filed as a backlog row.</p>
+<p><b>Q (the owner, 10-30 10:14):</b> what is not being built now (deferred in the backlog)?</p>
+<p><b>Being built now:</b> the <code>check-main-drivable</code> caching (backlog #401, ≈ 59% of the sweep), and the shard resize to 24 (PR #445).</p>
+<table><tr><th>deferred: filed, not being built</th><th>row</th><th>estimated saving or purpose</th></tr>
+<tr><td>Stop a mutant's suite at its named failing case, plus a periodic full sweep</td><td>#405</td><td>≈ 16% of the sweep</td></tr>
+<tr><td>Caches in four more guards' suites</td><td>#406</td><td>≈ 4.8% (−626 s)</td></tr>
+<tr><td>Scaled deadlines for <code>compaction-state</code> in mutation runs only</td><td>#407</td><td>≈ 7% (not measured)</td></tr>
+<tr><td>Count check: changed scripts locally, full run in CI (you asked for it "when convenient")</td><td>#402</td><td>≈ 366 local runs in 8 days</td></tr>
+<tr><td>Fix the <code>check-run-hook</code> timeout flake</td><td>#388</td><td>a red result that means something again</td></tr>
+<tr><td>The dev-speed tripwire: log CI job times, warn on a 25% week-over-week rise</td><td>#397</td><td>catch the next slow step in the week it lands</td></tr>
+<tr><td>Snapshot taken at restore time (the compaction guard's broken half)</td><td>#396</td><td>a restore that survives a precomputed compaction</td></tr>
+<tr><td>Recorded-round gate cannot see a Claude final round</td><td>#403</td><td>avoids an extra Codex round per PR</td></tr>
+<tr><td>Review wrapper remainder (a parent symlink swapped mid-run, a failed write losing a paid review)</td><td>#400</td><td>safety</td></tr>
+<tr><td>A subagent can wake a sibling past the usage gate</td><td>#404</td><td>usage</td></tr>
+<tr><td>The push hook reads heredoc prose as a push</td><td>#398</td><td>false blocks</td></tr></table>
+<p><b>Decided NOT to build:</b> trimming duplicate mutation entries (each tests a different clause), running only the named case (every suite would need restructuring), and a shared on-disk parse cache (parsing is too small a share).</p>
+<p><b>Order by saving ÷ effort:</b> (1) <code>check-main-drivable</code> caching, in progress, ≈ 59%; (2) stop at the named case, ≈ 16%; (3) the four small caches above, ≈ 5%, a few lines each.</p>
+
+<p><b>What happens now:</b> idea 1 is being built as its own pull request (backlog #401), with mutations for the caches themselves. Idea 3b is filed as backlog #405 (⟳ corrected 10-30 10:15: this line said "is filed" before it was; it was only in my notes). Idea 2 is not pursued.</p>
+<p class="horizon">measured how: entries per manifest at <code>7f7a1577</code> (10-06) and <code>a50ddc36</code> (10-24); suite seconds from the timestamped shard logs of CI run 40799920596, measured on 10-30.</p>
+<p class="horizon">measured how: entry counts from <code>scripts/mutations/*.json</code> at commits <code>7f7a1577</code> (10-06), <code>a50ddc36</code> (10-24) and <code>origin/master</code>; the work and per-shard figures are quoted from the measured comments in <code>.github/workflows/ci.yml</code> (the mutation-sweep job); recent shard times from <code>gh run view --json jobs</code> on the last six green code-PR runs.</p>
+</div>
 <p><b>Cause, read from the job timings:</b> one step drove it all, the <b>mutation sweep</b>.</p>
 <div class="scroll"><table class="num">
 <tr><th>Week</th><th>Where the sweep ran</th><th>Its cost</th></tr>
@@ -279,6 +362,22 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </table></div>
 <p class="horizon">measured how: wall-clock around each command on master <code>c983a114</code>, in a scratch worktree, 10-29 03:30 PDT; the leak-scan sizes are real master ranges (<code>~1</code>, <code>~10</code>, <code>~40</code>)</p>
 
+<div class="qa" style="border-left:3px solid var(--em,#8ab4f8);padding:.6em 1em;margin:1.2em 0;background:rgba(127,127,127,.08)">
+<p><b>Q (the owner, 10-30 07:30):</b> how important is it to have accurate counts? What is the impact of this relatively long step on the overall process delay?</p>
+<p><b>How important:</b> moderately. Every guard's docstring declares how many self-test cases it has, and each suite already compares that number with the cases that actually ran, which catches a test that silently disappears. <code>check-selftest-counts</code> is the OUTSIDE observer of that in-suite check: it catches the comparison itself being deleted (backlog #69). That is real value, but it is a check on a check, and <b>CI runs it on every pull request</b> (about 1.7 min, in parallel with the other jobs).</p>
+<p><b>Its impact on delay, measured from the transcripts since 10-23:</b></p>
+<table><tr><th></th><th>value</th></tr>
+<tr><td>local runs by agents</td><td><b>366 in 8 days</b> (peak 125 on 10-27)</td></tr>
+<tr><td>time per run</td><td>351 s at load average 18, against about 1.7 min in CI</td></tr>
+<tr><td>runs whose result mentioned the flaky <code>check-run-hook</code> (backlog #388)</td><td><b>44</b>: red for a reason unrelated to the change</td></tr></table>
+<ul>
+<li><b>Wall time:</b> at a few minutes each, 366 runs is on the order of 15–20 hours of agent time over 8 days (an estimate: the per-run time varies with load). Every slice and fold waits on it before it can finish.</li>
+<li><b>Contention:</b> it runs about 80 suites one after another, so while it runs, every other agent on the machine is slower.</li>
+<li><b>Noise:</b> the flaky case makes it red often. The agents learned to write "only check-run-hook red", which teaches everyone to read past a red result. That is the expensive part.</li>
+</ul>
+<p><b>Remedy (proposed):</b> run it locally only for the scripts a branch CHANGED (seconds, not minutes), and leave the full run to CI. That is the same split the owner chose for the mutation sweep on 10-25. Fix the flake separately (backlog #388), so that a red result means something again.</p>
+<p class="horizon">measured how: every <code>Bash</code> tool call containing <code>check-selftest-counts</code> (not its own <code>--self-test</code>) in all transcripts and subagent transcripts since 10-23, and whether its result mentioned a <code>check-run-hook</code> failure. The 351 s is the single timed run on this page.</p>
+</div>
 <h2 id="kinds">The kinds of speed impact</h2>
 <p>Each kind is <b>cost per occurrence × how often it occurs</b>. The second factor is what a new slow step quietly multiplies.</p>
 <div class="scroll"><table>

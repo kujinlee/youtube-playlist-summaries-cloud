@@ -169,7 +169,7 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 # at docs/reviews/<writer>/<id>.md and stamps that name into the verdict CI joins on, and it refuses
 # an existing one without --allow-overwrite. --verdict is RETIRED (rc=2) — it never reached the join
 # key. `# then promote` is no longer a step you do. → process-rationale.md, *The testimony that…*
-# ⛔ --review-id is ONE PATH SEGMENT, --out must be OUTSIDE docs/reviews/ — both REFUSED (#176 r1).
+# ⛔ --review-id is ONE PATH SEGMENT, --out must be OUTSIDE the repository — both REFUSED (backlog #176 r1; backlog #121 r4: any --out inside a checkout, by identity).
 python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md"
 #   0 = review written AND FILED   1 = gate did NOT run → fall back   2 = CANNOT RUN → fall back
 #   3 = THE GATE RAN, THE REVIEW IS NOT FILED → ⛔ DO NOT FALL BACK, see below

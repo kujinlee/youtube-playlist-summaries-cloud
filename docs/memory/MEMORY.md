@@ -102,6 +102,7 @@
 - [⛔ "Nothing needs you" must read the DASHBOARD first](nothing-needs-you-must-read-the-dashboard.md) — 10-27: I said none all day; `/dashboard` held 37 unresolved asks (29 unreadable). Regenerate and quote its count
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⛔ About to REUSE a teammate or PARK an agent?](usage-is-cache-rewrites-of-parked-agents.md) — reused teammates were ~70% of weighted usage (cache RE-WRITES after idling); fresh agent per slice+round, coordinator /clear only at natural pauses (owner 10-30)
+- [⛔ About to make the owner approve/run a COMMAND?](no-command-approval-ceremony.md) — never; it's ceremony. Sandbox off only for network/docker; dry-run first; a backup ref/.bak before anything destructive (owner 10-30)
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
 - [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
 - [⛔ Parallel threads need a GOAL TREE](parallel-threads-need-a-thread-map.md) — root = user request; each thread tagged fix/blocker/bookkeeping/side, named by backlog row (never reused T1/T2); one-line banner carries the tag
