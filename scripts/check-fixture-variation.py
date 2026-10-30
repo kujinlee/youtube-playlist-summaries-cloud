@@ -322,7 +322,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "review_items.max_age_s", "review_items.now", "review_items.rounds", "run.argv", "run.now", "run.prs",
         "run.stdin_text", "scratch_for.project_dir", "scratch_for.session_id", "scratch_for.tmpdir",
         "scratch_for.uid", "unpushed_item.branch", "unpushed_item.limit_s", "unpushed_item.now",
-        "unpushed_item.path", "unpushed_item.times", "unpushed_item.where",),
+        "unpushed_item.path", "unpushed_item.times", "unpushed_item.where",
+        "own_prs.rows", "safe_ref.name",),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
         "binary_paths.diff_text",
