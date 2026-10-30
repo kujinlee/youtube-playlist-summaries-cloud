@@ -319,10 +319,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         # from the MAIN checkout; the spawn and wake gates share gate_output), so their keys go with them.
         "addressed_home.payload", "count.x", "evaluate.missing", "evaluate.now", "evaluate.text",
         "gate_output.message", "gate_output.override", "gate_output.verdict", "local_time.t",
-        "locate_override.env", "locate_override.now", "locate_override.root", "main.argv", "main.env",
-        "main.payload", "override_path.root", "override_rule.now", "override_rule.reason", "override_rule.text",
+        "evaluate.path", "locate_override.env", "locate_override.now", "locate_override.root",
+        "main.argv", "main.env", "main.payload", "main_checkout.root", "override_path.root", "override_rule.now", "override_rule.reason", "override_rule.text",
         "pct.p", "prompt_output.message", "prompt_output.override", "prompt_output.verdict",
-        "read_regular.limit", "read_regular.path", "safe_time.t",
+        "read_regular.limit", "read_regular.path", "safe_time.t", "session_of.payload",
+        "told_this_session.payload", "told_this_session.root",
     ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (

@@ -37,6 +37,14 @@ THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`:
     usage-pace-prompt.sh   UserPromptSubmit: on WARN, REFUSE-SPAWN or CANNOT RUN, one line of
                            additionalContext. Silent on OK. WARN and REFUSE-SPAWN also go to the OWNER as
                            a `systemMessage` (r1 m4: additionalContext reaches only the model).
+                           An ABSENT cache is said ONCE PER SESSION: a clone with no statusline would
+                           otherwise hear it on every prompt, a gate red from birth (backlog #56). The
+                           payload's `session_id` (stdin, read only then) is kept in the MAIN checkout's
+                           gitignored `.claude/usage-pace-notice`; a STALE or malformed cache still warns
+                           every time, and no session_id, no main checkout or an unwritable state file is
+                           LOUD every time. ⚠ BOUND: the state is touched only while the cache is absent
+                           (so the common path runs no git), so a cache that appears and is then deleted
+                           again within ONE session is not announced a second time.
     usage-pace-spawn.sh    PreToolUse on Agent: at REFUSE-SPAWN, deny, unless overridden. Otherwise allow,
                            silently.
     usage-pace-wake.sh     PreToolUse on SendMessage (r1 M1, the OWNER's option A, 2026-10-30): at
@@ -82,7 +90,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 192 cases
+    python3 scripts/check-usage-pace.py --self-test  # 213 cases
 """
 from __future__ import annotations
 
@@ -122,6 +130,9 @@ OVERRIDE_DEFAULT_S = 2 * 3600
 # A SendMessage to one of these is a subagent reporting to the coordinator, so it is never refused.
 HOME_RECIPIENTS = ("main", "team-lead")
 ACTIVE_NOTE = " (The override is ACTIVE, so spawns and wake-ups are allowed.)"
+# The session that was last told the cache is ABSENT, so a clone with no statusline hears it once per session.
+NOTICE_STATE_FILE = os.path.join(".claude", "usage-pace-notice")
+STATUSLINE = "the statusline writes it on every refresh (here, ~/.claude/statusline.sh)"
 
 
 class Malformed(Exception):
@@ -178,16 +189,17 @@ def cannot(reason: str) -> tuple[str, str]:
                         f"NOT RUN, never as fine. Spawns are not blocked.")
 
 
-def evaluate(text: str | None, now: float, missing: str = "the cache is missing") -> tuple[str, str]:
+def evaluate(text: str | None, now: float, missing: str = "the cache is missing",
+             path: str = DEFAULT_CACHE) -> tuple[str, str]:
     """The RULE: (verdict, one-line message) from the cache's text (None = no file) at `now`. No I/O, and
     TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3)."""
     try:
-        return _evaluate(text, now, missing)
+        return _evaluate(text, now, missing, path)
     except Malformed as e:
         return cannot(f"the cache is malformed: {e}")
 
 
-def _evaluate(text: str | None, now: float, missing: str) -> tuple[str, str]:
+def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[str, str]:
     if text is None:
         return cannot(missing)
     try:
@@ -201,8 +213,8 @@ def _evaluate(text: str | None, now: float, missing: str) -> tuple[str, str]:
         return cannot(f"the cache's 'at' is {at!r}, not an epoch")
     age = now - at
     if age > MAX_AGE_S:
-        return cannot(f"the cache is {count(age // 60)} min old (stale past {MAX_AGE_S // 60} min); "
-                      f"the statusline has not refreshed it")
+        return cannot(f"the cache at {path} is {count(age // 60)} min old (stale past {MAX_AGE_S // 60} min); "
+                      f"{STATUSLINE}, so check that the statusline is running")
     if age < -FUTURE_SLACK_S:
         return cannot(f"the cache was written {count(-age)} s in the future")
     rl = doc.get("rate_limits")
@@ -268,9 +280,9 @@ def read_regular(path: str, limit: int) -> tuple[str | None, str]:
         os.close(fd)
 
 
-def override_path(root: str) -> tuple[str | None, str]:
-    """The override file of the MAIN checkout, from `root`'s common git dir; (None, why) when it has none.
-    Only the variables that relocate the repository are dropped, so a caller's `GIT_DIR` cannot redirect it."""
+def main_checkout(root: str) -> tuple[str | None, str]:
+    """The MAIN checkout of `root`, from its common git dir; (None, why) when it has none. Only the variables
+    that relocate the repository are dropped, so a caller's `GIT_DIR` cannot redirect it."""
     import subprocess
     env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")}
     try:
@@ -283,7 +295,50 @@ def override_path(root: str) -> tuple[str | None, str]:
         return None, f"{root} is not a git checkout"
     if os.path.basename(common) != ".git":
         return None, f"its git dir {common} is not a checkout's .git (a submodule?)"
-    return os.path.join(os.path.dirname(common), OVERRIDE_FILE), ""
+    return os.path.dirname(common), ""
+
+
+def override_path(root: str) -> tuple[str | None, str]:
+    """The override file of the MAIN checkout, so one file applies from every worktree."""
+    main, why = main_checkout(root)
+    return (os.path.join(main, OVERRIDE_FILE), "") if main else (None, why)
+
+
+def session_of(payload: str) -> str | None:
+    """The hook payload's session_id, or None when there is no usable one."""
+    try:
+        doc = json.loads(payload)
+    except ValueError:
+        return None
+    sid = doc.get("session_id") if isinstance(doc, dict) else None
+    if not isinstance(sid, str) or not sid.strip() or len(sid) > 200 or "\n" in sid:
+        return None
+    return sid.strip()
+
+
+def told_this_session(payload: str, root: str) -> bool:
+    """True when the absent-cache notice was ALREADY given in this session, so the prompt stays silent; else
+    records this session and returns False. Any doubt (no session_id, no main checkout, an unwritable state
+    file) returns False, so the notice is LOUD rather than lost."""
+    sid = session_of(payload)
+    if sid is None:
+        return False
+    main, _ = main_checkout(root)
+    if main is None:
+        return False
+    state = os.path.join(main, NOTICE_STATE_FILE)
+    text, _ = read_regular(state, 4096)
+    if text is not None and text.strip() == sid:
+        return True
+    try:
+        os.makedirs(os.path.dirname(state), exist_ok=True)
+        tmp = f"{state}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(sid + "\n")
+        os.replace(tmp, state)
+    except OSError:
+        pass
+    return False
 
 
 def safe_time(t: float) -> str:
@@ -409,9 +464,10 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
     now = time.time() if args.now is None else args.now
     cache_path = os.path.expanduser(args.cache)
     text, reason = read_regular(cache_path, CACHE_MAX_BYTES)
-    if text is None and not reason:
-        reason = f"no cache at {cache_path} (the statusline writes it)"
-    verdict, message = evaluate(text, now, reason)
+    absent = text is None and not reason
+    if absent:
+        reason = f"no cache at {cache_path}; {STATUSLINE}"
+    verdict, message = evaluate(text, now, reason, cache_path)
     if args.hook is None:
         print(f"{verdict}: {message}" if message else f"{verdict}: weekly usage is below {pct(WARN_AT)}")
         return RC[verdict]
@@ -419,6 +475,13 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
     override = locate_override(env, args.root, now) if verdict == REFUSE else (False, "")
     if args.hook == "prompt":
         out = prompt_output(verdict, message, override)
+        # An ABSENT cache is said once per session (a clone with no statusline would hear it on every prompt);
+        # a stale or malformed one still warns every time. stdin and git are touched only on this path.
+        if verdict == CANNOT_RUN and absent:
+            if payload is None:
+                payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode("utf-8", errors="replace")
+            if told_this_session(payload, args.root):
+                out = None
     else:
         if args.hook == "wake" and verdict == REFUSE and not override[0]:
             if payload is None:
@@ -535,6 +598,12 @@ def _self_test_body() -> int:
         check("a missing cache is CANNOT RUN", kind(None), CANNOT_RUN)
         m = evaluate(None, NOW, "no cache at /x")[1]
         check("CANNOT RUN carries the fetch's reason", "no cache at /x" in m, True)
+        stale = evaluate(cache(85, age=MAX_AGE_S + 60), NOW, "m", "/p/rl.json")[1]
+        check("the stale message names the cache path", "the cache at /p/rl.json is 16 min old" in stale, True)
+        check("the stale message says the statusline writes it, and where",
+              "statusline writes it on every refresh (here, ~/.claude/statusline.sh)" in stale, True)
+        check("the stale message defaults to the live cache's path",
+              f"the cache at {DEFAULT_CACHE} is" in ev(cache(85, age=MAX_AGE_S + 60))[1], True)
         check("CANNOT RUN says NOT RUN, never fine", "NOT RUN" in m and "never as fine" in m, True)
         check("unparseable JSON is CANNOT RUN", kind("{not json"), CANNOT_RUN)
         check("an empty file is CANNOT RUN", kind(""), CANNOT_RUN)
@@ -578,7 +647,7 @@ def _self_test_body() -> int:
               ev(cache(95, week_reset=-1e300))[1], True)
         for label, a in (("1e300", 1e300), ("-1e300", -1e300)):
             v, msg = ev(cache(95, at=a))
-            check(f"an 'at' of {label} is CANNOT RUN, in a SHORT message", (v, len(msg) < 300), (CANNOT_RUN, True))
+            check(f"an 'at' of {label} is CANNOT RUN, in a SHORT message", (v, len(msg) < 400), (CANNOT_RUN, True))
 
         # ── the five-hour window: WARN only, and never able to disable the weekly verdict ──────────
         check("five-hour 89.9 adds nothing", kind(cache(10, five=89.9)), OK)
@@ -695,6 +764,9 @@ def _self_test_body() -> int:
                   (os.path.realpath(got_main[0] or ""), got_main[1]), (main_override, ""))
             check("override_path: from a WORKTREE it is the MAIN checkout's file",
                   (os.path.realpath(got_wt[0] or ""), got_wt[1]), (main_override, ""))
+            check("main_checkout: from a worktree it is the main checkout; outside one it is None",
+                  (os.path.realpath(main_checkout(wt)[0] or ""), main_checkout(tmp)[0]),
+                  (os.path.realpath(main_co), None))
             check("override_path: outside any checkout is None, with a reason",
                   (override_path(tmp)[0], "not a git checkout" in override_path(tmp)[1]), (None, True))
             sep_co = os.path.join(tmp, "sep")
@@ -780,7 +852,7 @@ def _self_test_body() -> int:
             # ── main(), over a world this case built ────────────────────────────────────────────────
             cpath = os.path.join(tmp, "rl.json")
 
-            def drive(text: str | None, *extra: str, env: dict | None = None, payload: str | None = None,
+            def drive(text: str | None, *extra: str, env: dict | None = None, payload: str = "",
                       root: str = tmp) -> tuple[int, str]:
                 if text is None:
                     if os.path.exists(cpath):
@@ -846,6 +918,54 @@ def _self_test_body() -> int:
                 rc = main(["--hook", "wake", "--cache", os.path.join(tmp, "absent.json"), "--root", wt],
                           env={OVERRIDE_ENV: "0"}, payload="{")
             check("main: wake hook with a missing cache (and no --now) allows, silently", (rc, buf.getvalue()), (0, ""))
+
+            # ── the absent-cache notice: once per session (coordinator, round 1) ──────────────────
+            def sess(sid: object) -> str:
+                return json.dumps({"session_id": sid, "hook_event_name": "UserPromptSubmit", "prompt": "hi"})
+
+            check("session_of: a session_id", session_of(sess("s-1")), "s-1")
+            check("session_of: none, empty, not a string, a newline inside, too long, unparseable",
+                  [session_of(x) for x in ('{}', sess(""), sess(7), sess("a\nb"), sess("x" * 201), "{", "[]")],
+                  [None] * 7)
+            state = os.path.join(main_co, NOTICE_STATE_FILE)
+
+            def fresh() -> None:
+                if os.path.exists(state):
+                    os.remove(state)
+
+            fresh()
+            check("told_this_session: the first time is not told", told_this_session(sess("s-1"), wt), False)
+            check("told_this_session: the state lives in the MAIN checkout, written from a worktree",
+                  (os.path.isfile(state), os.path.exists(os.path.join(wt, NOTICE_STATE_FILE))), (True, False))
+            check("told_this_session: the second time in that session IS told", told_this_session(sess("s-1"), wt),
+                  True)
+            check("told_this_session: another session is not", told_this_session(sess("s-2"), main_co), False)
+            check("told_this_session: no session_id is never told, and writes nothing new",
+                  (told_this_session("{}", wt), (read_regular(state, 4096)[0] or "").strip()), (False, "s-2"))
+            check("told_this_session: outside a checkout is never told", told_this_session(sess("s-2"), tmp), False)
+
+            fresh()
+            loud = [bool(drive(None, "--hook", "prompt", root=wt, payload=sess("s-1"))[1]) for _ in range(3)]
+            check("main: an ABSENT cache is LOUD on the first prompt of a session, then silent", loud,
+                  [True, False, False])
+            check("main: the 2nd absent-cache prompt in a session is silent",
+                  drive(None, "--hook", "prompt", root=wt, payload=sess("s-1")), (0, ""))
+            check("main: a NEW session is told again",
+                  "CANNOT RUN" in drive(None, "--hook", "prompt", root=wt, payload=sess("s-2"))[1], True)
+            first = drive(None, "--hook", "prompt", root=wt, payload=sess("s-3"))[1]
+            check("main: the absent-cache notice names the path and says the statusline writes it",
+                  all(s in first for s in (cpath, "statusline writes it on every refresh")), True)
+            check("main: a payload with no session_id is LOUD every time",
+                  [bool(drive(None, "--hook", "prompt", root=wt, payload="{}")[1]) for _ in range(2)], [True, True])
+            check("main: a STALE cache warns on every prompt of a session",
+                  [bool(drive(cache(85, age=3600), "--hook", "prompt", root=wt, payload=sess("s-3"))[1])
+                   for _ in range(2)], [True, True])
+            check("main: the stale notice names the --cache path",
+                  cpath in drive(cache(85, age=3600), "--hook", "prompt", root=wt, payload=sess("s-3"))[1], True)
+            check("main: a MALFORMED cache warns on every prompt of a session",
+                  [bool(drive("{", "--hook", "prompt", root=wt, payload=sess("s-3"))[1]) for _ in range(2)],
+                  [True, True])
+            fresh()
 
             # ── the shipped hooks, launched exactly as settings.json launches them ─────────────────
             here = os.path.dirname(os.path.abspath(__file__))
@@ -917,6 +1037,10 @@ def _self_test_body() -> int:
                   (rc, "85%" in hso(out).get("hookSpecificOutput", {}).get("additionalContext", "")), (0, True))
             check("run-hook: the prompt hook tells the owner at WARN", "85%" in hso(out).get("systemMessage", ""), True)
             check("run-hook: the prompt hook is silent at 50%", hook("usage-pace-prompt.sh", 50), (0, ""))
+            fresh()
+            check("run-hook: the prompt hook says an absent cache ONCE per session (stdin reaches it)",
+                  [bool(hook("usage-pace-prompt.sh", None, stdin=sess("s-9"))[1]) for _ in range(2)], [True, False])
+            fresh()
             rc, out = hook("usage-pace-prompt.sh", None)
             check("run-hook: the prompt hook is LOUD on a missing cache", (rc, "CANNOT RUN" in out), (0, True))
             with open(os.path.join(wt, "scripts", "check-usage-pace.py"), "w") as fh:

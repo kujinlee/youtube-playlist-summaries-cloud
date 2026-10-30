@@ -18277,10 +18277,11 @@ one-line warning with the reset time (and its time zone) reaches you and the con
 a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
 report back, and work already running carries on. To let them through anyway, the refusal shows you a one-line
 command that allows them for two hours, or launch with `ALLOW_SPAWN_OVER_LIMIT=1`. The agent itself is not told how.
-If the cached number is missing or more than 15 minutes old, every prompt says so loudly, but nothing is blocked, so
-a statusline hiccup cannot stop work.
+If the cached number is more than 15 minutes old, every prompt says so loudly and names the file to check; if it is
+missing altogether (a clone with no such statusline), that is said once per session. Nothing is blocked either way,
+so a statusline hiccup cannot stop work.
 <!--tech-->
-Backlog #399, PR #446. `scripts/check-usage-pace.py` (rules separate from the file read, 192 self-test cases, 63
+Backlog #399, PR #446. `scripts/check-usage-pace.py` (rules separate from the file read, 213 self-test cases, 74
 mutations all killed by their named case); hooks `.claude/hooks/usage-pace-prompt.sh` (UserPromptSubmit),
 `.claude/hooks/usage-pace-spawn.sh` (PreToolUse on Agent) and `.claude/hooks/usage-pace-wake.sh` (PreToolUse on
 SendMessage, added by the owner's round-1 decision), all through `run-hook.sh`. The deny travels as JSON at

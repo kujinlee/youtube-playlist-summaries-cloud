@@ -95,8 +95,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if age > MAX_AGE_S:\n        return cannot(f\"the cache is",
-        "    if False:\n        return cannot(f\"the cache is"
+        "    if age > MAX_AGE_S:\n        return cannot(f\"the cache at",
+        "    if False:\n        return cannot(f\"the cache at"
       ]
     ],
     "expect": [
@@ -368,8 +368,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return _evaluate(text, now, missing)\n    except Malformed as e:",
-        "        return _evaluate(text, now, missing)\n    except ZeroDivisionError as e:"
+        "        return _evaluate(text, now, missing, path)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path)\n    except ZeroDivisionError as e:"
       ]
     ],
     "expect": [
@@ -550,8 +550,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    return os.path.join(os.path.dirname(common), OVERRIDE_FILE), \"\"",
-        "    return os.path.join(root, OVERRIDE_FILE), \"\""
+        "    return os.path.dirname(common), \"\"",
+        "    return root, \"\""
       ]
     ],
     "expect": [
@@ -816,6 +816,149 @@
     ],
     "expect": [
       "count: an astronomical one is short"
+    ]
+  },
+  {
+    "name": "an absent cache is said on every prompt again (the session is never recognised)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if text is not None and text.strip() == sid:\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "main: the 2nd absent-cache prompt in a session is silent"
+    ]
+  },
+  {
+    "name": "the session is never recorded",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        os.replace(tmp, state)",
+        "        os.remove(tmp)"
+      ]
+    ],
+    "expect": [
+      "main: the 2nd absent-cache prompt in a session is silent"
+    ]
+  },
+  {
+    "name": "any recorded session silences every later one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "text.strip() == sid:",
+        "text.strip() != \"\":"
+      ]
+    ],
+    "expect": [
+      "main: a NEW session is told again"
+    ]
+  },
+  {
+    "name": "a STALE cache is silenced like an absent one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if verdict == CANNOT_RUN and absent:",
+        "        if verdict == CANNOT_RUN:"
+      ]
+    ],
+    "expect": [
+      "main: a STALE cache warns on every prompt of a session"
+    ]
+  },
+  {
+    "name": "a payload with no session_id counts as already told",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if sid is None:\n        return False\n    main, _ = main_checkout(root)",
+        "    if sid is None:\n        return True\n    main, _ = main_checkout(root)"
+      ]
+    ],
+    "expect": [
+      "main: a payload with no session_id is LOUD every time"
+    ]
+  },
+  {
+    "name": "the notice state lives in the session's checkout, not the main one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    state = os.path.join(main, NOTICE_STATE_FILE)",
+        "    state = os.path.join(root, NOTICE_STATE_FILE)"
+      ]
+    ],
+    "expect": [
+      "told_this_session: the state lives in the MAIN checkout, written from a worktree"
+    ]
+  },
+  {
+    "name": "a session_id with a newline inside is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or \"\\n\" in sid:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "session_of: none, empty, not a string, a newline inside, too long, unparseable"
+    ]
+  },
+  {
+    "name": "the stale message drops the cache path",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "the cache at {path} is {count(age // 60)} min old",
+        "the cache is {count(age // 60)} min old"
+      ]
+    ],
+    "expect": [
+      "the stale message names the cache path"
+    ]
+  },
+  {
+    "name": "the stale message drops how the cache is written",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{STATUSLINE}, so check that the statusline is running\")",
+        "f\"check the statusline\")"
+      ]
+    ],
+    "expect": [
+      "the stale message says the statusline writes it, and where"
+    ]
+  },
+  {
+    "name": "main does not pass the cache path to the stale message",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "evaluate(text, now, reason, cache_path)",
+        "evaluate(text, now, reason)"
+      ]
+    ],
+    "expect": [
+      "main: the stale notice names the --cache path"
+    ]
+  },
+  {
+    "name": "the absent-cache notice drops how the cache is written",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "reason = f\"no cache at {cache_path}; {STATUSLINE}\"",
+        "reason = f\"no cache at {cache_path}\""
+      ]
+    ],
+    "expect": [
+      "main: the absent-cache notice names the path and says the statusline writes it"
     ]
   }
 ]
