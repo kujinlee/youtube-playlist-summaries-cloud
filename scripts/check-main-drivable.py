@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 445 cases
+    python3 scripts/check-main-drivable.py --self-test   # 447 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -4561,6 +4561,36 @@ def _self_test_body() -> int:                                      # noqa: C901 
          (_old_ref() is None, _kept_ref() is not None,
           len(note_globals_imports.memo) <= _MEMO_MAX),
          (True, True, True))
+    # ⛔ A FRESH MEMO, NOT `note_globals_imports`' (r2 Codex Minor): the case above shares that
+    # helper's memo with every earlier case, so ONE unrelated prior entry let a cap that evicted the
+    # SECOND entry rather than the oldest survive 445/445. Every tree is held, so every key stays
+    # unique, and the answer is WHICH entry went — not how many are left.
+    def _held_by(memo, trees) -> list[bool]:
+        return [any(args[0] is t for args, _ in memo.values()) for t in trees]
+    _lru = _memo_by_node(lambda t: len(t.body))
+    _lru_trees = [ast.parse("x = 1\n") for _ in range(_MEMO_MAX + 1)]
+    for _t in _lru_trees:
+        _lru(_t)
+    case("⛔ in a FRESH memo, the insertion past `_MEMO_MAX` evicts exactly the OLDEST entry — not "
+         "the second, and not two (r2 Codex Minor — `list(memo)[1]` survived 445/445)",
+         _held_by(_lru.memo, _lru_trees), [False] + [True] * _MEMO_MAX)
+    # ⚠ THE BOUNDARY ITSELF (r2 Codex Minor — `>=` for `>` survived 445/445): `_MEMO_MAX` trees
+    # are ALL kept and asked again without one rebuild; only the next one evicts, and only one.
+    _edge_built: list[ast.AST] = []
+    _edge = _memo_by_node(lambda t: _edge_built.append(t) or len(t.body))
+    _edge_trees = [ast.parse("x = 1\n") for _ in range(_MEMO_MAX + 1)]
+    for _t in _edge_trees[:_MEMO_MAX]:
+        _edge(_t)
+    _edge_full = len(_edge.memo)
+    for _t in _edge_trees[:_MEMO_MAX]:
+        _edge(_t)
+    _edge_rebuilt = len(_edge_built)
+    _edge(_edge_trees[_MEMO_MAX])
+    case("...and `_MEMO_MAX` entries are a FULL memo, not an overflowing one: all kept, all hits on "
+         "a second pass, and the next insertion evicts exactly one",
+         (_edge_full, _edge_rebuilt, len(_edge.memo), _held_by(_edge.memo, _edge_trees)),
+         (_MEMO_MAX, _MEMO_MAX, _MEMO_MAX, [False] + [True] * _MEMO_MAX))
+    del _lru_trees, _edge_trees, _edge_built
 
     def _refuses(op) -> bool:
         try:

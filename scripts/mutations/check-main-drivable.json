@@ -2521,5 +2521,31 @@
    "\u26d4 a memo ENTRY keeps alive the node its key names, so that id cannot be reused while the entry exists \u2014 asserted on the node, not on what the allocator does (backlog #401)"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a capped memo that evicts the SECOND entry rather than the oldest, masked by any prior entry in a shared memo (backlog #401, r2 Codex Minor)",
+  "edits": [
+   [
+    "                del memo[next(iter(memo))]            # the least recently used, its arguments with it\n",
+    "                del memo[list(memo)[1]]            # the least recently used, its arguments with it\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 in a FRESH memo, the insertion past `_MEMO_MAX` evicts exactly the OLDEST entry \u2014 not the second, and not two (r2 Codex Minor \u2014 `list(memo)[1]` survived 445/445)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo capped at `>=` rather than `>` holds one entry fewer than `_MEMO_MAX` and rebuilds the oldest (backlog #401, r2 Codex Minor)",
+  "edits": [
+   [
+    "len(memo) > _MEMO_MAX:",
+    "len(memo) >= _MEMO_MAX:"
+   ]
+  ],
+  "expect": [
+   "...and `_MEMO_MAX` entries are a FULL memo, not an overflowing one: all kept, all hits on a second pass, and the next insertion evicts exactly one"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]

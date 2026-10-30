@@ -2184,7 +2184,9 @@ EXPECTED_MUTATIONS = {
     # that never reuses, the case-folded key, the cap that never evicts, eviction by insertion
     # rather than use, and the entry that drops its arguments (asserted on the node, not the
     # allocator).
-    "scripts/check-main-drivable.py": 194,
+    # ⟳ 2026-10-30, PR #449 round 2's fold: 194 -> 196, declared sum 2549 -> 2551 (read with
+    # `ast`). Two entries, no retargets — the cap that evicts the SECOND entry, and `>=` for `>`.
+    "scripts/check-main-drivable.py": 196,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
@@ -6270,7 +6272,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2549)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2551)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
