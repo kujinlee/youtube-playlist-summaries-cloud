@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 205 cases
+  scripts/codex-review.py --self-test  # 211 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -97,6 +97,7 @@ import subprocess
 import importlib.util
 import sys
 import tempfile
+import unicodedata
 from importlib import import_module
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -624,10 +625,55 @@ def write_capture(path: str, text: str) -> None:
         raise
 
 
+def master_out_refusal(out_path: str, root: "str | None" = None) -> "str | None":
+    """origin/master's `out_location_refusal`, VERBATIM, over `root` (default `REPO_ROOT`), or None.
+
+    ⛔ backlog #121 r7 X1 (PR #439): KEPT, NOT RE-DERIVED. Two consecutive folds re-derived this
+    rule from a different resolution, and each dropped a route master covered — a top-level
+    symlinked `docs/reviews` (r6), then a symlink NESTED inside it (r7), both accepted here and
+    refused by master. So master's lexical rule runs as it was, on the path AS TYPED, and
+    `out_location_refusal` refuses whenever it does: this branch can refuse more than master,
+    never less, whatever the path shape. The one change is `root`, so it covers the reviewed
+    checkout too (r1 C2); with `root` omitted it is master's function exactly.
+
+    PURE — no filesystem, no `realpath`. ⚠ LEXICAL, ON `abspath`: the path is judged by its
+    ROUTE, which is what a resolved path loses. The identity rule beside it covers what a
+    spelling cannot (`alias/..`, case and NFD variants, the checkout outside `docs/reviews`).
+    """
+    tree = os.path.join(REPO_ROOT if root is None else root, REVIEW_ROOT)
+    here = os.path.dirname(os.path.abspath(out_path)) or "."
+    if here != tree and not here.startswith(tree + os.sep):
+        return None
+    return (f"CANNOT RUN — --out is inside the artifact tree: {out_path}\n"
+            f"  --out is a SCRATCH path and the documented shape puts it outside the repository "
+            f"(`--out \"$(mktemp -d)/r.md\"`).\n"
+            f"  Its directory becomes a WATCHED root, so on the failure path quarantine() would "
+            f"move a concurrent\n"
+            f"  review half out of the repository — measured, backlog #92 — and on the success "
+            f"path the wrapper\n"
+            f"  accuses itself of its own promotion. The durable copy is what --review-id names; "
+            f"--out never needs\n"
+            f"  to be in {REVIEW_ROOT}. TREAT THIS AS NOT RUN.")
+
+
 def out_location_refusal(out_path: str, reviewed: "str | None" = None,
                          stat=os.stat) -> "str | None":
-    """Refuse an `--out` inside either artifact tree, or None. Reads the filesystem (`realpath`,
-    and `stat` for identity — backlog #121 r3).
+    """Refuse an `--out` that master refuses OR the identity rule refuses; the first refusal, or
+    None. Takes `--out` AS TYPED — master's rule reads its route, the identity rule resolves it.
+
+    ⛔ backlog #121 r7 X1 (PR #439): PARITY BY CONSTRUCTION. `master_out_refusal` is origin/master's
+    rule kept verbatim and applied to both checkouts; `identity_out_refusal` is this branch's. A
+    case runs a table of path shapes through both and asserts every refusal by master is one here.
+    """
+    refusals = [master_out_refusal(out_path, r) for r in (REPO_ROOT, reviewed) if r]
+    refusals.append(identity_out_refusal(out_path, reviewed, stat))
+    return next((r for r in refusals if r), None)
+
+
+def identity_out_refusal(out_path: str, reviewed: "str | None" = None,
+                         stat=os.stat) -> "str | None":
+    """Refuse an `--out` inside either checkout by identity, or None. Reads the filesystem
+    (`realpath`, and `stat` for identity — backlog #121 r3).
 
     ⛔ **r1 M5: THE SAFETY ARGUMENT WAS TRUE ONLY UNDER A CONDITION NOTHING ENFORCED.** Three texts
     assert that `quarantine()` cannot reach a promoted half because `dir_snapshot` is
@@ -1340,12 +1386,15 @@ def main() -> int:
     # ⟳ backlog #121: the tree the CALLER stands in, resolved to its top level — taken HERE, before
     # the `--out` refusal, because that refusal and the watch must cover its artifacts too (r1 C2).
     tree_at_dispatch = reviewed_root()
-    # ⟳ r2 X3: resolved ONCE, here; every check below and every write reads this answer.
-    args.out = resolve_out(args.out)
+    # ⛔ r7 X1: the refusal is asked BEFORE --out is resolved, because master's rule judges the
+    # ROUTE as typed and a resolved path has lost it (a symlink nested in docs/reviews); the
+    # identity rule resolves for itself.
     out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)
     if out_refusal:
         print("[codex-review] " + out_refusal.replace("\n", "\n[codex-review] "), file=sys.stderr)
         return 2
+    # ⟳ r2 X3: resolved ONCE, here; every check below and every write reads this answer.
+    args.out = resolve_out(args.out)
     prompt = args.prompt
     if args.prompt_file:
         with open(args.prompt_file, encoding="utf-8") as f:
@@ -2196,6 +2245,11 @@ def _self_test_body() -> int:
             for t in ("CANNOT RUN", "mktemp -d")), True)
     chk("the documented shape — a scratch path outside the repository — is NOT refused",
         out_location_refusal(os.path.join(tempfile.gettempdir(), "codexrev", "r.md")), None)
+    # ⟳ backlog #121 r7: master's rule, kept verbatim. With no root it IS master's function.
+    chk("#121 r7 master's rule with no root is master's exactly: REPO_ROOT's tree is refused",
+        bool(master_out_refusal(os.path.join(_art, "codex", "r.md"))), True)
+    chk("…and handed another root it answers about THAT root, not REPO_ROOT",
+        master_out_refusal(os.path.join(_art, "codex", "r.md"), root=tempfile.gettempdir()), None)
     # ⚠ THE PREFIX NEAR-MISS, which a bare `startswith` gets wrong. ⟳ backlog #121 r4: the rule is
     # now the whole CHECKOUT by identity, so `docs/reviews-archive/` is refused with it; the
     # near-miss that must still pass is a sibling of the checkout whose name starts with its own.
@@ -2905,6 +2959,87 @@ def _self_test_body() -> int:
         _rx7 = _drive4("wt-r11-codex", os.path.join(_scr, "plain6.md"), _h)
         chk("#121 r6 X1 …and an ordinary scratch --out is still accepted beside that symlink",
             (_rx7.returncode, os.path.isfile(os.path.join(_scr, "plain6.md"))), (0, True))
+        # ── r7 X1 (Codex), the reviewer's input: a symlink NESTED inside docs/reviews ────────────
+        # `N/docs/reviews/nested -> <tmp>/external7`. Resolving --out first erased its ROUTE through
+        # docs/reviews, and r6's resolved review root protects only the top level: rc 0, the victim
+        # overwritten. master refuses it, lexically, on the path as typed.
+        # ⚠ Spelled as the reviewed root is (`realpath`): master's rule is lexical, so a checkout
+        # named through an alias (`/var` for `/private/var`) is outside it — for `REPO_ROOT` on
+        # master too, so that is a bound shared with master, not a regression against it.
+        _n = os.path.join(os.path.realpath(td3), "n")
+        os.makedirs(os.path.join(_n, "docs", "reviews"))
+        _git3(_n, "init", "-q", ".")
+        with open(os.path.join(_n, "docs", "README"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        _git3(_n, "add", "-A")
+        _git3(_n, "commit", "-q", "--no-verify", "-m", "n")
+        _ext7 = os.path.join(td3, "external7")
+        os.makedirs(_ext7)
+        _v7 = os.path.join(_ext7, "victim.md")
+        with open(_v7, "w", encoding="utf-8") as f:
+            f.write(_victim_text)
+        os.symlink(_ext7, os.path.join(_n, "docs", "reviews", "nested"))
+        _rx8 = _drive4("wt-r12-codex", os.path.join(_n, "docs", "reviews", "nested", "victim.md"),
+                       _n, "--allow-overwrite")
+        with open(_v7, encoding="utf-8") as f:
+            _v7t = f.read()
+        chk("⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real "
+            "CLI, and the victim is untouched",
+            (_rx8.returncode, "inside the artifact tree" in _rx8.stderr, _v7t),
+            (2, True, _victim_text))
+        # ── r7: THE PARITY TABLE. Every --out shape r1–r7 drove, plus ordinary scratch paths, run
+        # through master's rule and the combined one. Each row names its own checkout, since the
+        # inputs need different ones. The claim is one-way: master refuses ⇒ this branch refuses.
+        _q = os.path.realpath(td3)
+        _pt = os.path.join(_q, "pt")
+        os.makedirs(os.path.join(_pt, "docs", "reviews", "claude", "sub"))
+        os.makedirs(os.path.join(_pt, "scratch"))
+        os.symlink(os.path.join(_pt, "docs", "reviews", "claude", "sub"),
+                   os.path.join(_pt, "scratch", "alias"))
+        _pin = os.path.join(_q, "pin")  # docs/reviews symlinked to a store INSIDE the checkout
+        os.makedirs(os.path.join(_pin, "store", "reviews", "claude"))
+        os.makedirs(os.path.join(_pin, "docs"))
+        os.symlink(os.path.join(_pin, "store", "reviews"), os.path.join(_pin, "docs", "reviews"))
+        _nfc = os.path.join(_q, "café")
+        os.makedirs(os.path.join(_nfc, "docs", "reviews", "claude"))
+        _pd = os.path.join(_q, "pd")  # a checkout with no docs/reviews yet
+        os.makedirs(_pd)
+        _hard = os.path.join(_q, "scr7", "hard.md")
+        os.makedirs(os.path.dirname(_hard))
+        os.link(_v6, _hard)
+        _rows = [
+            ("plain writer dir", _pt, os.path.join(_pt, "docs", "reviews", "claude", "x.md")),
+            ("artifact root", _pt, os.path.join(_pt, "docs", "reviews", "r.md")),
+            ("case variant", _pt, os.path.join(_pt, "Docs", "Reviews", "claude", "x.md")),
+            ("NFD checkout", _nfc, unicodedata.normalize("NFD", os.path.join(
+                _nfc, "docs", "reviews", "claude", "x.md"))),
+            ("hard link to a filed review", _pt, _hard),
+            ("docs/reviews symlinked inside", _pin, os.path.join(_pin, "docs", "reviews",
+                                                                 "claude", "x.md")),
+            ("docs/reviews symlinked outside", _h, os.path.join(_h, "docs", "reviews", "claude",
+                                                                 "victim-r1-claude.md")),
+            ("its resolved target", _h, os.path.join(_ext, "claude", "victim-r1-claude.md")),
+            ("nested symlink", _n, os.path.join(_n, "docs", "reviews", "nested", "victim.md")),
+            ("alias/..", _pt, os.path.join(_pt, "scratch", "alias", "..", "victim.md")),
+            ("not-yet-existing tree", _pd, os.path.join(_pd, "docs", "reviews", "claude", "x.md")),
+            ("not-yet-existing, capitals", _pd, os.path.join(_pd, "DOCS", "REVIEWS", "x.md")),
+            ("reviews-archive near-miss", _pt, os.path.join(_pt, "docs", "reviews-archive", "r.md")),
+            ("checkout root", _pt, os.path.join(_pt, "r.md")),
+            ("scratch beside the checkouts", _pt, os.path.join(_q, "scr7", "r.md")),
+            ("scratch, a -sibling name", _pt, os.path.join(_q, "pt-sibling", "r.md")),
+            ("scratch in the temp dir", _pt, os.path.join(tempfile.gettempdir(), "codexrev",
+                                                          "r.md")),
+        ]
+        _table = [(lbl, bool(master_out_refusal(p, root)),
+                   bool(out_location_refusal(p, reviewed=root))) for lbl, root, p in _rows]
+        chk("#121 r7 parity table: master refuses exactly the rows it should, so the table is not "
+            "vacuous", [lbl for lbl, m, _c in _table if m],
+            ["plain writer dir", "artifact root", "docs/reviews symlinked inside",
+             "docs/reviews symlinked outside", "nested symlink", "not-yet-existing tree"])
+        chk("⭐ #121 r7 parity: every --out master refuses is refused by the combined rule",
+            [lbl for lbl, m, c in _table if m and not c], [])
+        chk("#121 r7 parity: ordinary scratch paths are accepted by both",
+            [(m, c) for lbl, m, c in _table if lbl.startswith("scratch")], [(False, False)] * 3)
         # r4 X4 (Codex): DEVICE identity. Tree (dev=1, ino=42) and a scratch ancestor
         # (dev=2, ino=42) are different directories; an inode-only comparison called them one.
         from types import SimpleNamespace as _NS

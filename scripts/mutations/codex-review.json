@@ -440,15 +440,11 @@
       ]
     ],
     "expect": [
-      "an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
-      "…and so is one at the artifact root itself",
-      "…and the refusal says CANNOT RUN and names the documented scratch shape",
       "the documented shape — a scratch path outside the repository — is NOT refused",
       "…nor is a sibling whose name merely STARTS with the artifact tree's",
       "…nor anything outside the repository at all",
       "…and still files its OWN testimony, so a refusal is on the record rather than silent",
-      "…marked `refused`, which is what stops the consumer accusing the review it spared",
-      "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
+      "…marked `refused`, which is what stops the consumer accusing the review it spared"
     ]
   },
   {
@@ -625,7 +621,7 @@
         "    roots = [r for r in (REPO_ROOT,) if r]"
       ]
     ],
-    "expect": "#121 r1 C2 an --out inside the REVIEWED tree's docs/reviews is refused"
+    "expect": "#121 r4 X1 …and so is ANY --out inside the reviewed checkout, however spelled"
   },
   {
     "name": "#121 r1 C2 main does not hand the reviewed tree to the --out refusal",
@@ -797,5 +793,58 @@
       ]
     ],
     "expect": "⭐ #121 r6 X1 an --out through a docs/reviews SYMLINKED out of the checkout is refused by the real CLI, and the filed review is untouched"
+  },
+  {
+    "name": "#121 r7 X1 the combined rule drops master's branch of the OR, leaving identity alone",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    refusals = [master_out_refusal(out_path, r) for r in (REPO_ROOT, reviewed) if r]\n",
+        "    refusals = []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched",
+      "⭐ #121 r7 parity: every --out master refuses is refused by the combined rule"
+    ]
+  },
+  {
+    "name": "#121 r7 X1 master's rule covers only this file's checkout, not the reviewed one",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "master_out_refusal(out_path, r) for r in (REPO_ROOT, reviewed) if r]",
+        "master_out_refusal(out_path, r) for r in (REPO_ROOT,) if r]"
+      ]
+    ],
+    "expect": [
+      "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched",
+      "⭐ #121 r7 parity: every --out master refuses is refused by the combined rule"
+    ]
+  },
+  {
+    "name": "#121 r7 X1 master's rule resolves --out first, erasing its route through docs/reviews",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    here = os.path.dirname(os.path.abspath(out_path)) or \".\"\n",
+        "    here = os.path.dirname(os.path.realpath(out_path)) or \".\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched",
+      "#121 r7 parity table: master refuses exactly the rows it should, so the table is not vacuous"
+    ]
+  },
+  {
+    "name": "#121 r7 X1 main resolves --out BEFORE asking the refusal, so a nested symlink is followed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)\n",
+        "    args.out = resolve_out(args.out)\n    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)\n"
+      ]
+    ],
+    "expect": "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched"
   }
 ]
