@@ -2190,7 +2190,9 @@ EXPECTED_MUTATIONS = {
     # recipient's name, so "a name CONTAINING main" and "a [ref] suffix" have nothing to mutate) and 13
     # new: the caller's agent_id (5), integers parsed as floats and the parser's RecursionError (3), the
     # read's deadline (3), and stripping every GIT_* variable (2).
-    "scripts/check-usage-pace.py": 85,
+    # ⟳ PR #446 r3 fold: 85 -> 94, none retired. The reader thread as a DAEMON, killed only by a case that
+    # runs the checker as a child process (1), and the control messages allowed at REFUSE (8).
+    "scripts/check-usage-pace.py": 94,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -6259,7 +6261,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2597)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2606)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

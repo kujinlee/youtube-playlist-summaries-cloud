@@ -710,8 +710,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "            if len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload):",
-        "            if False:"
+        "(sent_by_subagent(payload) or is_control_message",
+        "(False or is_control_message"
       ]
     ],
     "expect": [
@@ -724,8 +724,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload)",
-        "sent_by_subagent(payload)"
+        "len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent",
+        "(sent_by_subagent"
       ]
     ],
     "expect": [
@@ -998,8 +998,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "PAYLOAD_MAX_BYTES and sent_by_subagent(payload):",
-        "PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or '\"to\": \"main' in payload):"
+        "or is_control_message(payload)):",
+        "or is_control_message(payload) or '\"to\": \"main' in payload):"
       ]
     ],
     "expect": [
@@ -1118,6 +1118,127 @@
     "expect": [
       "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
       "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the reader thread is not a daemon, so the process outlives the deadline (r3 C2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "worker = threading.Thread(target=work, daemon=True)",
+        "worker = threading.Thread(target=work, daemon=False)"
+      ]
+    ],
+    "expect": [
+      "a CHILD whose cache read stalls 10 s EXITS within the 1 s deadline + 1.5 s (the process, r3 C2)"
+    ]
+  },
+  {
+    "name": "the wake gate ignores control messages (r3 C4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(sent_by_subagent(payload) or is_control_message(payload))",
+        "sent_by_subagent(payload)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% ALLOWS the main session's shutdown_request (r3 C4)",
+      "main: wake hook at 95% ALLOWS the main session's plan approval (r3 C4)",
+      "run-hook: the wake hook allows the main session's shutdown_request at 95%"
+    ]
+  },
+  {
+    "name": "a control message escapes the payload bound",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or is_control_message(payload))",
+        "(len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload)) or is_control_message(payload)"
+      ]
+    ],
+    "expect": [
+      "main: a control message over the payload bound is DENIED"
+    ]
+  },
+  {
+    "name": "a control message may lack a required key",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not required <= set(msg) <= allowed:",
+        "if not set(msg) <= allowed:"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a plan approval with no request_id, or approve missing, is not"
+    ]
+  },
+  {
+    "name": "a control message may carry an extra key",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "required <= set(msg) <= allowed",
+        "required <= set(msg)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a shutdown_request with an extra key is not",
+      "is_control_message: a plan approval with an extra key is not",
+      "main: wake hook at 95% still DENIES the main session's shutdown_request with an extra key (r3 C4)"
+    ]
+  },
+  {
+    "name": "a blank request_id passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(rid, str) and rid.strip() != \"\"",
+        "isinstance(rid, str)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a blank or non-string request_id is not"
+    ]
+  },
+  {
+    "name": "a non-boolean approve passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " and isinstance(msg.get(\"approve\", False), bool))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a non-boolean approve is not"
+    ]
+  },
+  {
+    "name": "a non-string reason or feedback passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "all(isinstance(msg.get(k, \"\"), str) for k in (\"reason\", \"feedback\"))",
+        "True"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a non-string reason or feedback is not"
+    ]
+  },
+  {
+    "name": "a control message is read from outside tool_input",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "msg = ti.get(\"message\") if isinstance(ti, dict) else None",
+        "msg = (doc.get(\"message\") if isinstance(doc, dict) and \"message\" in doc else ti.get(\"message\") if isinstance(ti, dict) else None)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a control message OUTSIDE tool_input is not"
     ]
   }
 ]

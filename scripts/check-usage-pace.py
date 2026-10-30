@@ -17,8 +17,9 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
-    REFUSE-SPAWN  weekly 90% or more — a NEW subagent spawn, and a message that WAKES an agent, are
-                  denied; work in flight continues
+    REFUSE-SPAWN  weekly 90% or more — a NEW subagent spawn, and a message from the MAIN SESSION that
+                  WAKES an agent, are denied; work in flight continues, and so does a control message that
+                  ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
     CANNOT RUN    the cache is missing, not a regular file, not read within 1 s, over 64 KiB, unparseable
                   (nesting too deep included), has no seven_day
                   window, is older than 15 min, was written more than 5 s in the future, its seven_day
@@ -61,7 +62,8 @@ THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`:
                            long-lived teammates at 69.5% of weighted usage against 4.3% for fresh
                            subagents, so gating only `Agent` refused the cheap path and steered work onto
                            the dear one. A wake of a RUNNING agent (a course correction) cannot be told
-                           apart by its payload, and is denied too.
+                           apart by its payload, and is denied too. A STRUCTURED control message that
+                           ends or unblocks work is allowed (r3 C4, below).
 
 THE WAKE GATE DECIDES BY WHO IS SENDING, NEVER BY THE RECIPIENT'S NAME (PR #446 r2 X1). r1 exempted a message
 whose `to` looked like `main`; a worker registered as `main [abcdef]` was woken through it, because the harness
@@ -75,9 +77,26 @@ project:
 so the key is `agent_id`, never `agent_type`: a `--agent` main session is still the main session. The docs
 (code.claude.com/docs/en/hooks, *Common input fields*) say the same and add in-process teammates to agent_id.
 ⚠ BOUNDS. An input with no `agent_id` cannot be told from the main session, so it is GATED (the owner's rule:
-fail toward the refusal). A subagent's message to a SIBLING is allowed too: the caller is a subagent, and
-telling an upward report from a sideways wake would mean reading the recipient's name again. Teammates were
-not measured here; the docs, not this file, put them under `agent_id`.
+fail toward the refusal). Teammates were not measured here; the docs, not this file, put them under `agent_id`.
+⛔ WHAT THIS GATE DOES NOT CLOSE (PR #446 r3 C1, the SPLIT): a SUBAGENT'S message to an idle SIBLING wakes it,
+and is allowed. MEASURED end to end on 2.1.309: `probeB` sent `probeA` a message, `probeA` resumed and ran a
+command, and the captured payload, fed to `--hook wake` at weekly 95% with no override, was ALLOWED (rc 0, empty
+stdout). Telling an upward report from a sideways wake would mean reading the recipient's NAME, the hazard r2
+X1 refuted. So this file gates what the MAIN SESSION spends — new spawns, and its own wake-ups, the measured
+expensive case — and the sibling path is backlog #404.
+
+THE CONTROL MESSAGES (r3 C4). At REFUSE the main session must still be able to END work and UNBLOCK work in
+flight: shutting a parked agent down SAVES usage, and a teammate waiting on a plan approval is stalled work.
+So a SendMessage whose `tool_input.message` is EXACTLY one of these shapes is allowed, whoever sends it:
+    {"type": "shutdown_request"[, "reason": str]}
+    {"type": "plan_approval_response", "request_id": non-empty str, "approve": bool[, "feedback": str]}
+The shapes are SendMessage's own input schema as recorded in a 2.1.309 session transcript (each object has
+`additionalProperties: false`), so an extra key is not that shape and is gated. ⚠ NOT OBSERVED IN USE: no
+transcript on this machine holds a SendMessage call with a structured message, so the hook payload is taken to
+carry the model's input unchanged in `tool_input`, as it does for every call that WAS captured. Everything else
+is gated: free text, a `shutdown_response`, a message-less `notify_when_idle` subscription. ⚠ BOUND: a rejected
+plan's `feedback` is free text, and the gate cannot see whether `request_id` names a pending request; what the
+harness does with a reply to no request was not measured.
 
 THE DENIAL HAS TWO READERS (r1 M2). `permissionDecisionReason` goes to the MODEL — the agent the gate
 constrains — and states only the %, the rule and the reset. How to override goes to the OWNER, in the
@@ -98,8 +117,9 @@ The hook verdict travels as JSON on stdout at exit 0. A crash is any other exit,
 as non-blocking, and the hooks map every non-zero exit to 1 so that even an argparse error (exit 2) can
 never block a prompt.
 
-FAILS IF (backlog #399's falsifier): with the cache at 90% or more, a new subagent spawns, or an agent is
-woken, without an override; or a missing cache reads as fine.
+FAILS IF (backlog #399's falsifier): with the cache at 90% or more, a new subagent spawns, or the MAIN SESSION
+wakes an agent with anything but a control message above, without an override; or a missing cache reads as fine.
+(A subagent waking a sibling is backlog #404's falsifier, not this one.)
 
 ⚠ BOUNDS. It reads what the statusline last wrote, so its freshness is the statusline's: a session whose
 statusline has not refreshed for 15 minutes is CANNOT RUN until it does. The rules are this file's; the
@@ -112,7 +132,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 247 cases
+    python3 scripts/check-usage-pace.py --self-test  # 271 cases
 """
 from __future__ import annotations
 
@@ -287,12 +307,23 @@ def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[st
 
 def read_regular(path: str, limit: int, deadline: float = READ_DEADLINE_S) -> tuple[str | None, str]:
     """The FETCH: (text, reason-if-None); (None, "") means NO FILE. Kept apart so every rule above is reachable
-    without a file. The read runs in a WORKER THREAD joined with a timeout, so it returns within `deadline`
-    whatever the filesystem does (r2 X3: a delayed `os.read` held the prompt 2.4 s; a stuck one, the 30 s hook
-    timeout). A thread, not `signal.alarm`: a signal interrupts only a syscall that returns EINTR, and a read
-    from a regular file on a stalled disk does not, so the alarm would fire and the read would go on. The
-    abandoned thread is a daemon and dies with the process. ⟳ scripts/bounded_read.py (PR #440, not yet merged)
-    should replace `_read_now` once it lands."""
+    without a file. The read runs in a WORKER THREAD joined with a timeout, so THIS FUNCTION returns within
+    `deadline` whatever the read does (r2 X3: a delayed `os.read` held the prompt 2.4 s; a stuck one, the 30 s
+    hook timeout).
+
+    The HOOK PROCESS exits then too only because the thread is a DAEMON: the interpreter does not wait for one
+    at exit (r3 C2/C3). MEASURED on macOS, a 30 s stall injected into `_read_now`: `main()` returned at 1.01 s
+    and the process exited at 1.06-1.08 s; with `daemon=False` the same process lived 30.09 s, holding the
+    harness to its hook timeout. Re-measured with a 10 s stall: 1.08 s against 10.07 s. The child-process case in the suite reddens on that mutant.
+
+    ⚠ BOUND, and it is the case the old text cited. That holds for an INTERRUPTIBLE stall: a sleep, a pipe or
+    socket read, a network filesystem that answers signals. A read in UNINTERRUPTIBLE sleep (a disk wait, `D`
+    on Linux) can hold the process at exit on some platforms, daemon or not: the thread shares the fd table, so
+    the stdout pipe stays open and the harness waits to its 30 s timeout. `signal.alarm` would not help there
+    either, since such a read does not return EINTR, so the thread is not WORSE than the alarm; it bounds the
+    function always and the process for interruptible stalls. NOT REPRODUCED: macOS offers no such read
+    without FUSE. ⟳ scripts/bounded_read.py (PR #440, not yet merged) should replace `_read_now` once it
+    lands."""
     box: list = []
 
     def work() -> None:
@@ -463,6 +494,34 @@ def sent_by_subagent(payload: str) -> bool:
     return isinstance(aid, str) and aid.strip() != ""
 
 
+# SendMessage's structured messages that END or UNBLOCK work, as (required keys, allowed keys). The schema's
+# `additionalProperties: false` is why an extra key is not the shape (r3 C4; the docstring has the source).
+CONTROL_MESSAGES = {
+    "shutdown_request": ({"type"}, {"type", "reason"}),
+    "plan_approval_response": ({"type", "request_id", "approve"}, {"type", "request_id", "approve", "feedback"}),
+}
+
+
+def is_control_message(payload: str) -> bool:
+    """True when the call's `tool_input.message` is EXACTLY a control message that ends or unblocks work: a
+    `shutdown_request`, or a `plan_approval_response`. Free text, any other type, a missing or extra key or a
+    wrongly typed value is False, so the gate applies."""
+    try:
+        doc = parse_json(payload)
+    except ValueError:
+        return False
+    ti = doc.get("tool_input") if isinstance(doc, dict) else None
+    msg = ti.get("message") if isinstance(ti, dict) else None
+    if not isinstance(msg, dict) or msg.get("type") not in CONTROL_MESSAGES:
+        return False
+    required, allowed = CONTROL_MESSAGES[msg["type"]]
+    if not required <= set(msg) <= allowed:
+        return False
+    rid = msg.get("request_id", "x")
+    return (all(isinstance(msg.get(k, ""), str) for k in ("reason", "feedback"))
+            and isinstance(rid, str) and rid.strip() != "" and isinstance(msg.get("approve", False), bool))
+
+
 def prompt_output(verdict: str, message: str, override: tuple[bool, str] = (False, "")) -> str | None:
     if verdict == OK:
         return None
@@ -549,7 +608,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
         if args.hook == "wake" and verdict == REFUSE and not override[0]:
             if payload is None:
                 payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode("utf-8", errors="replace")
-            if len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload):
+            if len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or is_control_message(payload)):
                 verdict = OK
         out = gate_output(verdict, message, override)
     if out:
@@ -856,6 +915,27 @@ def _self_test_body() -> int:
             check("main: a stalled cache read is a loud CANNOT RUN within the 1 s deadline",
                   (rc_slow, "CANNOT RUN" in buf.getvalue() and "not read within 1 s" in buf.getvalue(),
                    took_main < 2.5), (2, True, True))
+            # The PROCESS, not the function (r3 C2): in-process, only `main()` returning is visible, and a
+            # non-daemon reader returned at 1.01 s while its process lived 30 s. So a CHILD patches `_read_now`
+            # to stall 10 s and runs `main()`; its wall time must be the deadline plus a margin.
+            child = (
+                "import importlib.util, sys, time\n"
+                "spec = importlib.util.spec_from_file_location('pace', sys.argv[1])\n"
+                "m = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(m)\n"
+                "m._read_now = lambda path, limit: (time.sleep(10), (None, ''))[1]\n"
+                "sys.exit(m.main(['--cache', sys.argv[2], '--now', sys.argv[3], '--root', sys.argv[4]],"
+                " env={}, payload=''))\n")
+            t0 = time.monotonic()
+            try:
+                p = subprocess.run([sys.executable, "-I", "-c", child, os.path.abspath(__file__), reg, str(NOW), tmp],
+                                   capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+                got_child: object = (p.returncode, "not read within 1 s" in p.stdout)
+            except subprocess.TimeoutExpired:
+                got_child = ("hung past 20 s", False)
+            took_child = time.monotonic() - t0
+            check("a CHILD whose cache read stalls 10 s EXITS within the 1 s deadline + 1.5 s (the process, r3 C2)",
+                  (got_child, took_child < READ_DEADLINE_S + 1.5), ((2, True), True))
             got_bad = read_regular(None, 10)  # type: ignore[arg-type]
             check("read_regular: a reader that raises is (None, why), never a bare exception or an empty box",
                   (got_bad[0], got_bad[1].startswith("None could not be read (TypeError")), (None, True))
@@ -1034,6 +1114,50 @@ def _self_test_body() -> int:
                   [sent_by_subagent(s) for s in (sm("x", agent_id=""), sm("x", agent_id="  "), sm("x", agent_id=7),
                                                  sm("x", agent_id=None), "{", "[]", '"a1"')], [False] * 7)
 
+            # ── the control messages that end or unblock work (r3 C4), in SendMessage's schema shapes ──
+            def smc(message: object, **top: object) -> str:
+                return json.dumps({"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "SendMessage",
+                                   "tool_input": {"to": "b2-implementer", "message": message}, **top})
+
+            shut = smc({"type": "shutdown_request"})
+            plan_yes = smc({"type": "plan_approval_response", "request_id": "r1", "approve": True})
+            plan_no = smc({"type": "plan_approval_response", "request_id": "r1", "approve": False,
+                           "feedback": "revise step 2"})
+            check("is_control_message: a bare shutdown_request", is_control_message(shut), True)
+            check("is_control_message: a shutdown_request with a reason",
+                  is_control_message(smc({"type": "shutdown_request", "reason": "done"})), True)
+            check("is_control_message: a plan approval", is_control_message(plan_yes), True)
+            check("is_control_message: a plan rejection with feedback", is_control_message(plan_no), True)
+            check("is_control_message: free text, the measured shape, is not", is_control_message(sm("x")), False)
+            check("is_control_message: free text that SAYS shutdown_request is not",
+                  is_control_message(sm('{"type": "shutdown_request"}')), False)
+            check("is_control_message: a shutdown_response is not (it is not in the allowed set)",
+                  is_control_message(smc({"type": "shutdown_response", "request_id": "r1", "approve": True})), False)
+            check("is_control_message: a shutdown_request with an extra key is not",
+                  is_control_message(smc({"type": "shutdown_request", "reason": "x", "then": "run step 3"})), False)
+            check("is_control_message: a plan approval with an extra key is not",
+                  is_control_message(smc({"type": "plan_approval_response", "request_id": "r1", "approve": True,
+                                          "reason": "and also run X"})), False)
+            check("is_control_message: a plan approval with no request_id, or approve missing, is not",
+                  [is_control_message(smc(m)) for m in ({"type": "plan_approval_response", "approve": True},
+                                                        {"type": "plan_approval_response", "request_id": "r1"})],
+                  [False, False])
+            check("is_control_message: a blank or non-string request_id is not",
+                  [is_control_message(smc({"type": "plan_approval_response", "request_id": r, "approve": True}))
+                   for r in ("", "  ", 7)], [False] * 3)
+            check("is_control_message: a non-boolean approve is not", is_control_message(
+                smc({"type": "plan_approval_response", "request_id": "r1", "approve": "yes"})), False)
+            check("is_control_message: a non-string reason or feedback is not",
+                  [is_control_message(smc(m)) for m in ({"type": "shutdown_request", "reason": 1},
+                                                        {"type": "plan_approval_response", "request_id": "r1",
+                                                         "approve": False, "feedback": ["x"]})], [False, False])
+            check("is_control_message: a message-less subscription, an unparseable payload or a non-object is not",
+                  [is_control_message(s) for s in (json.dumps({"tool_input": {"to": "x", "notify_when_idle": True}}),
+                                                   "{", "[]", '"x"', json.dumps({"tool_input": "m"}))], [False] * 5)
+            check("is_control_message: a control message OUTSIDE tool_input is not",
+                  is_control_message(json.dumps({"message": {"type": "shutdown_request"}, "tool_input": {"to": "x"}})),
+                  False)
+
             # ── main(), over a world this case built ────────────────────────────────────────────────
             cpath = os.path.join(tmp, "rl.json")
 
@@ -1109,6 +1233,21 @@ def _self_test_body() -> int:
                   .get("permissionDecision"), "deny")
             check("main: wake hook at 95% DENIES a payload over the bound, even a subagent's",
                   hso(drive(cache(95), "--hook", "wake", payload=to_main + " " * PAYLOAD_MAX_BYTES)[1])
+                  .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
+            for label, payload in (("shutdown_request", shut), ("plan approval", plan_yes),
+                                   ("plan rejection with feedback", plan_no)):
+                check(f"main: wake hook at 95% ALLOWS the main session's {label} (r3 C4)",
+                      drive(cache(95), "--hook", "wake", payload=payload), (0, ""))
+            for label, payload in (("free text", sm("b2-implementer")),
+                                   ("shutdown_request with an extra key",
+                                    smc({"type": "shutdown_request", "then": "run step 3"})),
+                                   ("shutdown_response", smc({"type": "shutdown_response", "request_id": "r1",
+                                                                "approve": True}))):
+                check(f"main: wake hook at 95% still DENIES the main session's {label} (r3 C4)",
+                      hso(drive(cache(95), "--hook", "wake", payload=payload)[1]).get("hookSpecificOutput", {})
+                      .get("permissionDecision"), "deny")
+            check("main: a control message over the payload bound is DENIED",
+                  hso(drive(cache(95), "--hook", "wake", payload=shut + " " * PAYLOAD_MAX_BYTES)[1])
                   .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
             check("main: wake hook at 95% with env =1 allows",
                   drive(cache(95), "--hook", "wake", env={OVERRIDE_ENV: "1"}, payload=to_agent), (0, ""))
@@ -1238,6 +1377,8 @@ def _self_test_body() -> int:
                   hook("usage-pace-wake.sh", 95, stdin=to_main), (0, ""))
             check("run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 95%",
                   decision(hook("usage-pace-wake.sh", 95, stdin=sm("main [abcdef]"))[1]), "deny")
+            check("run-hook: the wake hook allows the main session's shutdown_request at 95%",
+                  hook("usage-pace-wake.sh", 95, stdin=shut), (0, ""))
             check("run-hook: the wake hook allows at 50%", hook("usage-pace-wake.sh", 50, stdin=to_agent), (0, ""))
             rc, out = hook("usage-pace-prompt.sh", 85)
             check("run-hook: the prompt hook adds the WARN to context",
