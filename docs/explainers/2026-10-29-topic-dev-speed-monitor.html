@@ -253,7 +253,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </div>
 <div class="wrap ex-body">
 <h1>Dev speed: where the time goes, and a tripwire for new slow steps</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-29 05:01 · 30234b4c · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 06:04 · 30234b4c · uncommitted changes</time></span></div></div>
 <p class="horizon">as of master <code>c983a114</code> · 2026-10-29 03:40 PDT · data from <code>gh run list</code> (1,000 CI runs, 09-06 → 10-29), <code>gh pr list</code> (400 merged PRs, 07-17 → 10-29), all 318 session transcripts of this project, and local timings taken tonight</p>
 <div class="reading"><b>Reading:</b> dev speed is the wall-clock time from a request to a merged PR. This page is (1) a baseline of what we've measured, (2) where the time goes, (3) remedies, and (4) what to collect so that a new slow step is caught when it lands, not weeks later.</div>
 
@@ -264,6 +264,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <li><a href="#history">Slowdowns that crept in before</a></li>
 <li><a href="#remedies">Remedies: done and candidate</a></li>
 <li><a href="#tripwire">Proposal: a tripwire so the next one is caught when it lands</a></li>
+<li><a href="#usage">The usage limit: the slowdown that costs a whole day</a></li>
 <li><a href="#blind">Where we're blind today</a></li>
 <li><a href="#mi">What was measured and what was inferred</a></li>
 </ol></div>
@@ -433,8 +434,28 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </ol>
 <p>All five feed one page section like <a href="#baseline">the baseline</a> above, regenerated on merge, so a reader sees this week against last without asking.</p>
 
+<h2 id="usage">The usage limit: the slowdown that costs a whole day</h2>
+<p><b>The largest single speed loss is not a slow step; it is a stop.</b> For several weeks the weekly usage limit has halted all work for about a day. On 10-29 at 05:02 it stopped four agents mid-task, and nothing ran again until 10-30 05:02. <b>No work was lost</b>: every commit was intact, both review files were complete, and recovery took about ten minutes from git, the ledger and the agent list. <b>The cost is the idle day.</b> Better recovery cannot buy that back; spending less can.</p>
+<p><b>Where the usage went</b>, over the 24 hours before the halt. Weighted by token type, using API list prices as a proxy because the plan's own weighting is not documented: cache read 0.1×, 1-hour cache write 2×, output 5×.</p>
+<div class="scroll"><table>
+<tr><th>Where</th><th>Weighted share</th><th>What it was made of</th></tr>
+<tr><td>five long-lived, <b>reused</b> teammates</td><td><b>69.5%</b></td><td>mostly cache <b>writes</b>: 65 full-context rebuilds of 100k tokens or more, after an agent idled past its cache lifetime and was woken</td></tr>
+<tr><td>the coordinator</td><td>25.9%</td><td>mostly cheap reads; its 1-hour cache rarely expired (3 rebuilds)</td></tr>
+<tr><td><b>fresh</b> subagents</td><td>4.3%</td><td>about a 65k-token build each, then they finish</td></tr>
+</table></div>
+<p>Unweighted, 99% of the raw tokens are cache reads, which made the coordinator look like the problem. Weighting moved the problem to the reused agents. The owner caught that the first estimate had not weighted cache costs or counted the cost of a reset.</p>
+<p><b>What changed (the owner's decisions, 10-30):</b></p>
+<ul>
+<li><b>A fresh subagent means a NEW one:</b> per slice, per fold and per review round. No agent is parked waiting for a "go". This is now in <code>docs/process-checklists.md</code> → <i>Agent lifetime</i>, with the Phase 3 line of <code>docs/dev-process.md</code> pointing to it.</li>
+<li><b>The coordinator is not reset per PR.</b> Its re-reads are cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts only at a natural pause when the owner is present.</li>
+<li><b>The statusline shows the 5-hour and weekly usage</b> (<code>[5h:22% wk:3%]</code>) and caches it in <code>~/.claude/.rate-limits.json</code>. It is the only documented surface that receives that number; hooks, environment variables and the CLI do not. Its parsing was folded from nine processes to two, so it runs in about 58 ms where it took 115 ms, measured under load.</li>
+<li><b>Backlog #399</b> will read that cache: a warning at 80% weekly, and no new subagent spawns at 90% without an override. It waits on the owner confirming that the cached value matches <code>/usage</code>.</li>
+</ul>
+<p class="horizon">measured how: the same transcript scan as above, over 10-28 05:00 → 10-29 05:05 PDT, summing <code>usage.cache_read_input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>input_tokens</code> and <code>output_tokens</code> per assistant message id. "Reused teammate" means the five named long-lived implementers; a rebuild is a single message whose cache write was 100k tokens or more. ⚠ The weights are a proxy: how the plan counts each token type toward the limit is not documented.</p>
+
 <h2 id="blind">Where we're blind today</h2>
 <ul>
+<li><b>The weekly usage percentage was invisible</b> until 10-30. It is now cached from the statusline; see the section above.</li>
 <li><b>Codex review duration is not recorded.</b> The verdict json has no elapsed field, so the cost of a review half can only be guessed from commit times.</li>
 <li><b>No per-step local timing log.</b> Every local number on this page was taken by hand tonight.</li>
 <li><b>Agent CPU contention is not measured.</b> Tonight's local timings were taken at load 18; how much of the 351 s is contention is unknown.</li>
