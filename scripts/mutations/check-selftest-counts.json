@@ -92,5 +92,175 @@
       ]
     ],
     "expect": ["unparseable source is not a declaration"]
+  },
+  {
+    "name": "#402: docstrings count as references",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "                docs.add(id(body[0].value))",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a docstring or a comment naming a file is NOT a reference"
+    ]
+  },
+  {
+    "name": "#402: an import reaches any suffix, not only a .py",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    if p.suffix == \".py\" and p.stem in imports:",
+        "    if p.stem in imports:"
+      ]
+    ],
+    "expect": [
+      "an import matches a .py only — `import backlog` does not reach docs/backlog.md"
+    ]
+  },
+  {
+    "name": "#402: a string constant is never a reference",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return any(p.name in s for s in strings)",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "a string constant holding the basename IS a reference",
+      "a string reference is ONE hop; an import is closed to a fixpoint"
+    ]
+  },
+  {
+    "name": "#402: string references are closed transitively too",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "            if key not in reach and imports & stems:",
+        "            if key not in reach and (imports & stems or any(depends_on(refs[name], p) for p in reach)):"
+      ]
+    ],
+    "expect": [
+      "a string reference is ONE hop; an import is closed to a fixpoint"
+    ]
+  },
+  {
+    "name": "#402: the import fixpoint never runs",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    grew = True\n    while grew:",
+        "    grew = False\n    while grew:"
+      ]
+    ],
+    "expect": [
+      "a string reference is ONE hop; an import is closed to a fixpoint"
+    ]
+  },
+  {
+    "name": "#402: two-dot diff, so the base's own later commits are in scope",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "f\"{base}...HEAD\"",
+        "f\"{base}..HEAD\""
+      ]
+    ],
+    "expect": [
+      "--changed reaches a script committed since the base"
+    ]
+  },
+  {
+    "name": "#402: uncommitted edits are out of scope",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "            | set(git_lines(root, \"diff\", \"--name-only\", \"HEAD\"))\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an UNCOMMITTED edit is in scope, with its importer"
+    ]
+  },
+  {
+    "name": "#402: untracked files are out of scope",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "\n            | set(git_lines(root, \"ls-files\", \"--others\", \"--exclude-standard\")))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "an UNTRACKED script is in scope"
+    ]
+  },
+  {
+    "name": "#402: a git failure is an empty scope",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    if proc.returncode != 0:\n        raise CannotScope",
+        "    if False:\n        raise CannotScope"
+      ]
+    ],
+    "expect": [
+      "an unknown base is CANNOT RUN, never an empty scope"
+    ]
+  },
+  {
+    "name": "#402: an unknown --only name is skipped",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    if unknown:\n        raise CannotScope",
+        "    if False:\n        raise CannotScope"
+      ]
+    ],
+    "expect": [
+      "--only with a name outside POPULATION is an ERROR, never a skip"
+    ]
+  },
+  {
+    "name": "#402: a scripts/ prefix is not stripped",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    picked = {n[len(\"scripts/\"):] if n.startswith(\"scripts/\") else n for n in names}",
+        "    picked = set(names)"
+      ]
+    ],
+    "expect": [
+      "--only accepts a bare name or a scripts/ path"
+    ]
+  },
+  {
+    "name": "#402: audit ignores `only`",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "        for name in sorted(pinned & found if only is None else pinned & found & only):",
+        "        for name in sorted(pinned & found):"
+      ]
+    ],
+    "expect": [
+      "scoped to the green one, the red suite does not run"
+    ]
+  },
+  {
+    "name": "#402: the population ratchet is scoped too",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    problems.extend(population_errors(found, pinned))",
+        "    problems.extend(population_errors(found if only is None else found & only, pinned if only is None else pinned & only))"
+      ]
+    ],
+    "expect": [
+      "…but the population ratchet is never scoped"
+    ]
   }
 ]

@@ -18304,3 +18304,21 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 - **What is deferred.** The page lists every filed-but-unbuilt item.
 
 It also records a correction: one line had said an item "is filed" before it was.
+
+## 2026-10-30
+The check that every test suite's declared case count is true can now run only on what a branch
+changed. Agents ran the full check 366 times in eight days, at about six minutes each under load,
+while CI runs it on every pull request anyway. The local step in the process checklist is now the
+scoped form; CI still runs the full check.
+
+The test that kept going red for no reason is fixed, and the cause was not what anyone guessed. One
+of its cases runs a hook from a folder path longer than 1,024 characters. On a Mac that makes the
+shell work out its own location by reading every folder above it, and this machine's temporary
+folder holds about 349,000 leftover folders, so that one step took 80 to 93 seconds against a
+60-second limit. The test now builds its folders somewhere uncrowded. The leftover folders are still
+there, and what leaves them behind has not been found.
+<!--tech-->
+Backlog #402: `scripts/check-selftest-counts.py --only <script>…` / `--changed [--base origin/master]`
+(`changed_paths`, `reached`, `changed_scope`, `only_names`; `audit(..., only)`). Backlog #388:
+`scripts/check-run-hook.py` `world_base` / `crowded_dirs` (`CROWDED = 10_000`), and `launch` returns
+`TIMED_OUT` instead of raising. Manifests 8 → 21 and 12 → 18; `EXPECTED_MUTATIONS` sum 2557.
