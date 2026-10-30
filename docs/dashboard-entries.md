@@ -18261,6 +18261,16 @@ since the two windows held different work. CI's median per run grew from 4.5 to 
 the mutation sweep growing inside one job, and nothing flagged it. Backlog #397 proposes a tripwire that would catch
 that kind of drift in the week it happens.
 
+## 2026-10-30
+**Usage limit:** for several weeks the weekly limit has stopped all work for about a day. Measured over the 24 hours
+before the latest halt, and weighted by token type, **reused long-lived agents spent about 70% of the usage**, mostly
+on rebuilding their whole context after idling. Fresh agents spent about 4%. The rule is now in the process checklist:
+a new agent per slice and per review round, no agent parked waiting for a "go", and a coordinator restart only at a
+natural pause. The statusline now shows the 5-hour and weekly usage (and runs twice as fast as before). Backlog #399
+will pace new work from that number, and backlog #398 records a push hook that mistakes heredoc prose for a push. The
+dev-speed page answers the owner's two questions about why Opus 5.5 merges more PRs: about half of it is smaller
+PRs and half is cheaper review rounds.
+
 ## 2026-10-29
 The Codex review tool now reviews, and records, the working copy it is run from. Before, a review run
 from a second working copy recorded the commit of wherever the tool happened to live, and the merge
