@@ -18270,3 +18270,15 @@ natural pause. The statusline now shows the 5-hour and weekly usage (and runs tw
 will pace new work from that number, and backlog #398 records a push hook that mistakes heredoc prose for a push. The
 dev-speed page answers the owner's two questions about why Opus 5.5 merges more PRs: about half of it is smaller
 PRs and half is cheaper review rounds.
+
+## 2026-10-30
+The mutation-testing check in CI was nearly running out of time again: its slowest piece took 29
+of its 30 allowed minutes. It is now split into 24 pieces instead of 12, which should bring the
+slowest one to about 18 minutes. That figure is a prediction until this branch's own CI run
+measures it. Most of the time goes to one check. It is filed as its own item, because adding more
+pieces does not fix it.
+<!--tech-->
+`mutation-sweep` matrix 12 -> 24 (backlog #231 reopened: its 1,500 s trigger fired again). Measured
+on run 40799920596 (`fea33073`): slowest shard 1758 s, 1.02x inside `timeout-minutes: 30`. Per-target
+cost re-derived from CI log timestamps: 12,965 s of mutation work, 309 s control floor per shard;
+`check-main-drivable.py` is 68% of the work (backlog #401). Predicted at N=24: slowest ~1,055 s, 1.71x.
