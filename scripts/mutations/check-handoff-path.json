@@ -78,16 +78,29 @@
     ]
   },
   {
-    "name": "backlog #357(3): an undecodable SKILL.md raises a traceback again",
+    "name": "backlog #357(3): an undecodable SKILL.md raises a traceback again ⟳ PR #440 r2: retargeted onto the bounded reader",
     "file": "scripts/check-handoff-path.py",
     "edits": [
       [
-        "    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(3)",
-        "    except OSError as exc:   # backlog #357(3)"
+        "    text, why = bounded_read.read_text(path)",
+        "    text, why = path.read_text(encoding=\"utf-8\"), \"\""
       ]
     ],
     "expect": [
       "⭐ backlog #357(3): an undecodable SKILL.md is CANNOT RUN, never a traceback"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X4's class: the vendored SKILL.md is read without the bounded reader — a FIFO there hangs the hook",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "bounded_read.read_text(path)",
+        "(open(path, encoding=\"utf-8\", errors=\"replace\").read(), \"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang"
     ]
   }
 ]

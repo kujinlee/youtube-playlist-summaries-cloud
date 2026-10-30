@@ -36,6 +36,8 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bounded_read  # noqa: E402  — the ONE reader of untrusted input (PR #440 r2)
 SKILL_REL = ".agents/skills/handoff/SKILL.md"
 
 # The path this guard enforces, and the ONE place the mechanism behind it is described:
@@ -93,10 +95,11 @@ def check_file(path: Path) -> tuple[int, list[str]]:
     """Return (exit_code, messages). Missing/unreadable is CANNOT RUN, never a pass."""
     if not path.exists():
         return 2, [f"CANNOT RUN — {path} does not exist. Treat this as NOT RUN, not as a pass."]
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(3): an undecodable byte raised out as a traceback
-        return 2, [f"CANNOT RUN — cannot read {path}: {exc}. Treat this as NOT RUN."]
+    # backlog #357(3): an undecodable byte raised out as a traceback. PR #440 r2: and a FIFO here would block the
+    # PreToolUse hook — so the vendored file is read by `bounded_read`: a REGULAR file, bounded, strict UTF-8.
+    text, why = bounded_read.read_text(path)
+    if text is None:
+        return 2, [f"CANNOT RUN — cannot read {path}: {why}. Treat this as NOT RUN."]
     if not text.strip():
         return 2, [f"CANNOT RUN — {path} is empty. Treat this as NOT RUN."]
 
@@ -141,7 +144,7 @@ def _self_test_body() -> int:
     #   'pristine upstream — the reversion this exists to catch: expected 1, got 0'
     # after:
     #   'pristine upstream — the reversion this exists to catch'
-    print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 5 file cases)")
+    print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 6 file cases)")
     for name, text, expected in CASES:
         got = 1 if check_text(text) else 0
         ok = got == expected
@@ -180,6 +183,7 @@ def _self_test_body() -> int:
         (cli_root / SKILL_REL).parent.mkdir(parents=True)
         (cli_root / SKILL_REL).write_bytes(GOOD.encode("utf-8") + b"\xff\n")
         (cli_root / "scripts" / Path(__file__).name).write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+        (cli_root / "scripts" / "bounded_read.py").write_bytes((Path(__file__).resolve().parent / "bounded_read.py").read_bytes())
         import subprocess as _sp357
         cli = _sp357.run([sys.executable, str(cli_root / "scripts" / Path(__file__).name)], capture_output=True,
                          text=True, timeout=60, stdin=_sp357.DEVNULL)
@@ -187,6 +191,22 @@ def _self_test_body() -> int:
         ok = got == (2, False, True)
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] ⭐ backlog #357(3): ...and through the plain CLI it exits 2, CANNOT RUN: "
+              f"got {got} want (2, False, True)")
+
+        # ⛔ PR #440 r2 X4's class: a FIFO with no writer where SKILL.md should be. A blocking read hangs the
+        # PreToolUse hook until its external timeout; `bounded_read` refuses a non-regular file at once.
+        import os as _os440
+        (cli_root / SKILL_REL).unlink()
+        _os440.mkfifo(cli_root / SKILL_REL)
+        try:
+            cli = _sp357.run([sys.executable, str(cli_root / "scripts" / Path(__file__).name)], capture_output=True,
+                             text=True, timeout=20, stdin=_sp357.DEVNULL)
+            got = (cli.returncode, "Traceback" in cli.stderr, "CANNOT RUN" in cli.stderr)
+        except _sp357.TimeoutExpired:
+            got = "HUNG"
+        ok = got == (2, False, True)
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang: "
               f"got {got} want (2, False, True)")
 
         good = tmp / "good.md"
@@ -226,6 +246,7 @@ def _self_test_body() -> int:
             shutil.copy(REPO_ROOT / ".claude/hooks/enforce-handoff-path.sh", root / ".claude/hooks")
             (root / "scripts").mkdir()
             shutil.copy(Path(__file__), root / "scripts/check-handoff-path.py")
+            shutil.copy(Path(__file__).resolve().parent / "bounded_read.py", root / "scripts/bounded_read.py")
             if checker_edit is not None:
                 cp = root / "scripts/check-handoff-path.py"; cp.write_text(checker_edit(cp.read_text()))
             (root / SKILL_REL).parent.mkdir(parents=True)
@@ -293,7 +314,7 @@ def _self_test_body() -> int:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
     failures += hook_failures
 
-    total = len(CASES) + 5 + 11     # 5 file cases and 11 hook cases follow the text cases
+    total = len(CASES) + 6 + 11     # 6 file cases and 11 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 

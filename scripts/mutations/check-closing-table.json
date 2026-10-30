@@ -541,29 +541,29 @@
     ]
   },
   {
-    "name": "backlog #357(1): an undecodable transcript raises out of the closing-table guard again ⟳ PR #440 r1: retargeted — the read is borrowed, so the defence HERE is honouring its None",
+    "name": "PR #440 r1 m1 ⟳ r2: the hook's stdin is read as TEXT, unbounded, again — an undecodable payload raises before any handler",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "        records = None if lines is None else banner._parse_records(lines)",
-        "        records = banner._parse_records(lines)"
+        "        raw, why = bounded_read.read_stream(sys.stdin)     # bounded in bytes and time (PR #440 r2)",
+        "        raw, why = sys.stdin.read(), \"\"     # bounded in bytes and time (PR #440 r2)"
       ]
     ],
     "expect": [
-      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
     ]
   },
   {
-    "name": "PR #440 r1 m1: the hook's stdin is read as TEXT again, so an undecodable payload raises before any handler",
+    "name": "backlog #357(1) ⟳ PR #440 r2: the borrowed reader's refusal is not honoured — a corrupt, deep or FIFO transcript reads as no turn, QUIET",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "        sys.exit(run_decide(sys.stdin.buffer.read()))",
-        "        sys.exit(run_decide(sys.stdin.read()))"
+        "        data, records, why = banner.transcript_records(payload)\n",
+        "        data, records, why = banner.transcript_records(payload)\n        records = records or []\n"
       ]
     ],
     "expect": [
-      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
     ]
   }
 ]

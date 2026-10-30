@@ -313,6 +313,19 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # PR #440 r2: the shared bounded reader, pinned in the commit that creates it.
+    "bounded_read.py": (
+        "hostile_payloads.d",
+        "parse_json.data",
+        "parse_jsonl.data",
+        "read_file.cap",
+        "read_file.path",
+        "read_stream.cap",
+        "read_stream.stream",
+        "read_stream.wait",
+        "read_text.path",
+        "stop_transcript.payload",
+    ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
         "binary_paths.diff_text",
@@ -1181,6 +1194,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # PR #440 r2: the shared hostile-payload fixture's scratch directory.
+    "bounded_read.py:hostile_payloads.d": "a scratch directory the fixture writes its transcript files and FIFO into; the payloads' CONTENT is the variation, and any directory is equivalent",
     # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
     # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
     "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",

@@ -18266,8 +18266,10 @@ Five tooling checks no longer fail silently, or crash, on input they cannot read
 reference numbers in a finished turn used to say nothing at all when the session transcript was corrupt — the same
 silence as "nothing to warn about"; it now says it could not run. All five — that one, the step-banner check, the
 closing-table check, the CI-watch check and the handoff-path check — could crash on an unreadable byte, a malformed
-hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. One thing
-a session can see changes: if the handoff skill's file cannot be decoded, `/handoff` is now BLOCKED under a headline
+hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. They now
+share one reader for that input, so none of them can hang on a named pipe or crash on a deeply nested message, and a
+transcript damaged in the middle is reported as unreadable instead of being quietly read around. One thing a session
+can see changes: if the handoff skill's file cannot be decoded, `/handoff` is now BLOCKED under a headline
 saying the path could not be checked, where it used to only warn.
 <!--tech-->
 Branch `guards-cannot-run`, PR #440: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
@@ -18278,9 +18280,18 @@ too); `check-ci-watched` refuses a checks answer that is not a list of objects a
 Every input exits 2 with a CANNOT RUN message and no traceback. 12 new cases, 9 new mutations plus one retargeted,
 each killed by the case it names. Round 1 (both halves NOT CONVERGED) widened each fix to its class: one payload check,
 `check-banner-armed.transcript_lines`, now serves all three Stop-hook guards (raw stdin bytes; null, true, 1 and a string
-as well as a list; a number or a NUL byte as `transcript_path`), and an undecodable LINE is skipped rather than blinding
-the transcript. `check-ci-watched` refuses an object row with no string `status`/`state` and a mixed list. The handoff
+as well as a list; a number or a NUL byte as `transcript_path`), and an undecodable LINE was skipped rather than blinding
+the transcript (reverted in round 2). `check-ci-watched` refuses an object row with no string `status`/`state` and a mixed list. The handoff
 hook gives receipt 2 its own headline. 16 more cases and 12 more mutations, with one entry retired with its subject
 (the reference guard's own dict check, now the borrowed one's). The hook's own mutant was run by hand and killed by the
 case it names, because a manifest can only target `scripts/<stem>.py`. Round 1 m3 and m4 are filed as backlog #331 (e) and (f).
-`EXPECTED_MUTATIONS` 2532.
+Round 2 (Codex NOT CONVERGED: an undecodable mid-transcript record passing QUIET because of round 1's skip, a
+200,000-deep payload's `RecursionError`, an empty check status read as "CI running", a FIFO `transcript_path` hanging the
+Stop hook) moved the route to a redesign: ONE bounded reader, the new `scripts/bounded_read.py`, used by all five guards.
+It reads only a regular file (`O_NONBLOCK`, then `S_ISREG` on the descriptor) or stdin, under a byte bound (256 MiB for a
+file; 1 MiB and 2 s for stdin), maps every parse exception to CANNOT RUN at one deliberate broad catch, and tolerates
+only a torn FINAL record — so round 1's line skip is reverted, and backlog #331 (e) partial corruption and (f) the
+`splitlines()` split are fixed with it. `check-ci-watched` requires a non-empty status from a known set. The per-guard
+copies it replaces are deleted. One list of hostile payloads, `bounded_read.hostile_payloads`, drives each transcript
+guard's real `--decide`. The FIFO class was live in `check-handoff-path` too (its CLI hung on a FIFO SKILL.md) and is
+fixed there. Verdicts over 50 real transcripts are unchanged against master. `EXPECTED_MUTATIONS` 2552.

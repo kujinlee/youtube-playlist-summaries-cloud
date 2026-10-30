@@ -877,8 +877,15 @@ EXPECTED_MUTATIONS = {
     # leading-slug arrow). Four are new: an arrow in prose is not a destination (r3 F7, two
     # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
     # the warning (F6). Net +4.
-    # ⟳ 94 -> 96 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-banner-armed.py": 100,
+    # ⟳ 94 -> 100 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
+    # non-object input. ⟳ 100 -> 97 (PR #440 r2): the payload and transcript READ moved to `bounded_read.py`, so
+    # six entries on `transcript_lines` and the stdin read retire with their subject (re-entered in that file's
+    # manifest) and three are new — the bounded stdin read, the reader's refusal dropped at the turn rule, and the
+    # turn filter's own refusal.
+    "scripts/check-banner-armed.py": 97,
+    # ⟳ PR #440 r2: THE ONE bounded reader for the five guards' untrusted input, pinned in the commit that creates
+    # it. Two of its entries moved here from `check-ci-watched` with the stdin read; the rest are the r1/r2 classes.
+    "scripts/bounded_read.py": 22,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -930,7 +937,8 @@ EXPECTED_MUTATIONS = {
     # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
     # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
     # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
-    # ⟳ 49 -> 50 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    # ⟳ 49 -> 51 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
+    # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
     "scripts/check-closing-table.py": 51,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
@@ -1203,8 +1211,11 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
-    # ⟳ 42 -> 44 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-ci-watched.py": 50,
+    # ⟳ 42 -> 50 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
+    # non-object input. ⟳ 50 -> 52 (PR #440 r2): +7 for a NON-EMPTY KNOWN status (X3) and the parse through
+    # `bounded_read` (X2); -5 because the stdin read (closed, TTY, deadline, collect) and the hand-kept exception
+    # union moved to `bounded_read.py`, whose manifest carries them now.
+    "scripts/check-ci-watched.py": 52,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -1971,7 +1982,8 @@ EXPECTED_MUTATIONS = {
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 10,
     # ⟳ 6 -> 7 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-handoff-path.py": 7,
+    # ⟳ 7 -> 8 (PR #440 r2): the SKILL.md is read by `bounded_read`, so a FIFO there cannot hang the hook.
+    "scripts/check-handoff-path.py": 8,
     "scripts/check-diff-coverage.py": 37,
     # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
     # refusal of a non-path answer, and the fallback said aloud.
@@ -2117,8 +2129,11 @@ EXPECTED_MUTATIONS = {
     # injected reader each have a case that names them.
     "scripts/check-doc-citations.py": 37,
     "scripts/check-reference-namespace.py": 9,
-    # ⟳ 6 -> 9 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-transcript-references.py": 9,
+    # ⟳ 6 -> 9 (backlog #331(a) / #357, PR #440 r1). ⟳ 9 -> 7 (PR #440 r2): #331(a)'s `if not records` moved to
+    # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
+    # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names
+    # that case too.
+    "scripts/check-transcript-references.py": 7,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
@@ -4386,6 +4401,8 @@ def _self_test_body() -> int:
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/backfill-work-lines.py",
                                       "scripts/begin-plan.py",
+                                      # ⟳ PR #440 r2: the bounded reader, a LIBRARY, added with its manifest.
+                                      "scripts/bounded_read.py",
                                       "scripts/brief-compose.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
@@ -6253,7 +6270,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2532)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2552)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -35,10 +35,11 @@ is this repository's most-measured defect (17 instances):
   * the REFERENCE rule — `BARE`, `QUALIFIER`, and the inline-code quotation exemption — from
     `check-reference-namespace.py`. If that file's vocabulary grows a word, this guard grows it too,
     in the same commit, with no action.
-  * the TRANSCRIPT reader — `_parse_records`, `windows`, `judged_window`, `texts_of` — from
-    `check-banner-armed.py`, which already reads this exact file from this exact hook and has paid
-    for the subtleties: one turn of latency (the live turn's final assistant message is not flushed
-    when a Stop hook fires), and judging the last NON-LIVE window rather than stepping back N.
+  * the TRANSCRIPT reader — `transcript_records`, `windows`, `judged_window`, `texts_of` — from
+    `check-banner-armed.py` (whose READ is `bounded_read.py`'s since PR #440 r2), which already reads
+    this exact file from this exact hook and has paid for the subtleties: one turn of latency (the live
+    turn's final assistant message is not flushed when a Stop hook fires), and judging the last
+    NON-LIVE window rather than stepping back N.
 
 WARN-ONLY, AND THE CHANNEL QUESTION ANSWERED RATHER THAN ASSUMED
 -----------------------------------------------------------------
@@ -124,16 +125,12 @@ def bare_references(text: str) -> list[tuple[str, str]]:
 def judge(payload: "str | bytes") -> tuple[int, str, list[tuple[str, str]]]:
     """-> (rc, message, findings). rc 0 quiet | 1 fired (warn-only) | 2 CANNOT RUN."""
     cba = _owner("check-banner-armed")
-    # ⛔ backlog #357(1)(2), PR #440 r1 X1/m1: the payload's shape is checked ONCE, by the turn rule's owner.
-    _data, lines, why = cba.transcript_lines(payload)
-    if lines is None:
+    # ⛔ backlog #357(1)(2), #331(a), PR #440 r1 X1/m1, r2: the payload and transcript are read ONCE, by the turn
+    # rule's owner, whose reader is `bounded_read`'s. A transcript with no record, or a corrupt record anywhere but
+    # a torn last line, is CANNOT RUN there — never the quiet pass it was here (backlog #331(a), (e)).
+    _data, records, why = cba.transcript_records(payload)
+    if records is None:
         return 2, f"CANNOT RUN — {why}", []
-    records = cba._parse_records(lines)
-    if not records:
-        # ⛔ backlog #331(a): the permissive parser drops every malformed record, and the selector then finds no
-        # completed turn — rc 0, identical to a quiet first turn. NOTHING PARSED is blindness, not quiet: CANNOT RUN,
-        # the way `check-banner-armed` and `check-closing-table` already treat it.
-        return 2, "CANNOT RUN — no record in the transcript parses, so there is no turn this guard could read", []
     try:
         window = cba.judged_window(cba.windows(records))
     except Exception as exc:
@@ -217,9 +214,7 @@ def _self_test_body() -> int:
     def _tr_rule_raises():
         class _B:
             @staticmethod
-            def transcript_lines(payload): return {}, ['{"type": "user"}'], ""
-            @staticmethod
-            def _parse_records(lines): return [{"type": "user"}]
+            def transcript_records(payload): return {}, [{"type": "user"}], ""
             @staticmethod
             def windows(recs): raise AttributeError("'str' object has no attribute 'get'")
             @staticmethod
@@ -252,21 +247,20 @@ def _self_test_body() -> int:
          bare_references("answers #321 now")[0][1], "answers #321 now")
 
 
-    def _cli(script: str, stdin: bytes) -> tuple:
-        """The REAL `--decide` entry point as the Stop hook runs it: raw stdin BYTES, a subprocess. -> (rc, traceback?)."""
-        import os as _os, subprocess as _sp
-        # PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C locale Python reads stdin with surrogateescape,
-        # which would hide an undecodable payload from this case on one machine and not another (r1 m1).
-        p = _sp.run([sys.executable, str(pathlib.Path(__file__).resolve().parent / script), "--decide"], input=stdin,
-                    capture_output=True, timeout=60, env={**_os.environ, "PYTHONIOENCODING": "utf-8"})
-        return p.returncode, b"Traceback" in p.stderr
-    _bad_payloads = [b'{"transcript_path": "x\\u0000y"}', b'{"transcript_path": 123}', b'{"transcript_path": "/x\xff"}',
-                     b"null", b"true", b"1", b'"s"']
-
-    case("⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide",
-         [_cli("check-transcript-references.py", b) for b in _bad_payloads[:3]], [(2, False)] * 3)
-    case("⭐ r1 M2: null, true, 1 and \"s\" — every non-object payload, not only a list — are CANNOT RUN through --decide",
-         [_cli("check-transcript-references.py", b) for b in _bad_payloads[3:]], [(2, False)] * 4)
+    # ⛔ PR #440 r1 + r2: EVERY hostile input any round found, through the REAL `--decide` as the hook runs it.
+    # The list is `bounded_read.hostile_payloads`'s, shared by the three transcript guards.
+    def _hostile_cli():
+        br = _owner("bounded_read")
+        with tempfile.TemporaryDirectory() as d:
+            me = [str(pathlib.Path(__file__).resolve())]
+            return [br.run_cli(me + ["--decide"], b) for _, b in br.hostile_payloads(pathlib.Path(d))]
+    try:
+        _hostile = _hostile_cli()
+    except Exception as exc:                       # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+        _hostile = f"RAISED {type(exc).__name__}"
+    case("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
+         "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
+         isinstance(_hostile, list) and len(_hostile) >= 14 and set(_hostile) == {(2, False)})
     # ── payload handling: CANNOT RUN is distinct from QUIET ──
     case("no transcript_path is CANNOT RUN", judge("{}")[0], 2)
     case("a non-JSON payload is CANNOT RUN", judge("not json")[0], 2)
@@ -313,6 +307,25 @@ def _self_test_body() -> int:
             undecodable_rc = f"RAISED {type(exc).__name__}"
         case("⭐ backlog #357(1): a transcript NO line of which decodes is CANNOT RUN (2), never a traceback",
              undecodable_rc, 2)
+        # ⛔ PR #440 r2 X1 (Codex measured warn 1 -> 0 under r1 m2): the JUDGED record truncated, with whole records
+        # after it, is corruption, not a torn write — and backlog #331(e)'s second input, one good record then three
+        # that are not JSON, was QUIET. Both CANNOT RUN now.
+        firing_path = pathlib.Path(json.loads(transcript([user("go"), assistant("see #291")],
+                                                         [user("again"), assistant("x")]))["transcript_path"])
+        recs = firing_path.read_bytes().rstrip(b"\n").split(b"\n")
+        cut = pathlib.Path(td) / "cut-judged.jsonl"
+        cut.write_bytes(b"\n".join([recs[0], recs[1][:-3]] + recs[2:]) + b"\n")
+        partial = pathlib.Path(td) / "partial.jsonl"
+        partial.write_bytes(recs[0] + b"\nnot json\nnot json\nnot json\n")
+        try:
+            corrupt_rc = [judge(json.dumps({"transcript_path": str(firing_path)}))[0],
+                          judge(json.dumps({"transcript_path": str(cut)}))[0],
+                          judge(json.dumps({"transcript_path": str(partial)}))[0]]
+        except Exception as exc:                   # noqa: BLE001
+            corrupt_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ r2 X1 / backlog #331(e): the judged record truncated mid-transcript, and a good record followed by "
+             "three non-JSON lines, are CANNOT RUN — the control without the cut WARNS",
+             corrupt_rc, [1, 2, 2])
         # ⛔ PR #440 r1 m2: a torn last record cut MID-CHARACTER is skipped like one cut on ASCII, never a blinding.
         firing = transcript([user("go"), assistant("see #291")], [user("again"), assistant("x")])
         torn = pathlib.Path(td) / "torn.jsonl"
@@ -384,8 +397,12 @@ def main(argv: list[str], *, stdin=None, log: pathlib.Path | None = None) -> int
     if args.self_test:
         return self_test()
     if args.decide:
-        stream = stdin or sys.stdin             # the hook's stdin is read RAW: decoding is the payload check's job
-        return run_decide(stream.buffer.read() if hasattr(stream, "buffer") else stream.read(), log=log)
+        # the hook's stdin is read RAW, bounded in bytes and time: decoding is the payload check's job (PR #440 r2)
+        raw, why = _owner("bounded_read").read_stream(stdin or sys.stdin)
+        if raw is None:
+            print(f"[transcript-references] CANNOT RUN — the stop-hook payload: {why}", file=sys.stderr)
+            return 2
+        return run_decide(raw, log=log)
     ap.print_help()
     return 2
 

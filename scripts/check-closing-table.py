@@ -132,6 +132,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observer_log  # noqa: E402  — the ONE owner of the record grammar (#166, #170)
+import bounded_read  # noqa: E402  — the ONE reader of untrusted input (PR #440 r2)
 WARN_LOG = ROOT / ".claude/closing-table-warnings.log"
 
 QUIET = 0
@@ -571,7 +572,7 @@ def _load_banner_guard():
         raise ImportError("cannot load scripts/check-banner-armed.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    for name in ("transcript_lines", "_parse_records", "windows", "judged_window", "texts_of", "TurnWindow"):
+    for name in ("transcript_records", "windows", "judged_window", "texts_of", "TurnWindow"):
         if not hasattr(mod, name):
             raise ImportError(
                 f"scripts/check-banner-armed.py no longer defines {name} — this guard borrows the "
@@ -890,7 +891,8 @@ def run_decide(payload: "str | bytes") -> int:
     # ⟳ r1 Codex, Medium: LOADED ONCE. The second `_load_banner_guard()` call sat outside this
     # try, so an import or semantic failure there escaped as a traceback and exit 1 — not the
     # documented CANNOT RUN (2). A guard with two failure sites documents one of them.
-    # ⛔ backlog #357(1), PR #440 r1 X1/m1: the payload's shape is the banner guard's ONE check, borrowed.
+    # ⛔ backlog #357(1), PR #440 r1 X1/m1, r2: the payload and transcript are read by the banner guard's ONE
+    # reader, which is `bounded_read`'s — borrowed with the turn rule, never re-derived here.
     banner = None
     records: list[dict] | None = None
     session_id = ""
@@ -899,13 +901,12 @@ def run_decide(payload: "str | bytes") -> int:
     except (OSError, ImportError) as exc:
         print(f"CANNOT RUN: {exc}", file=sys.stderr)
     if banner is not None:
-        data, lines, why = banner.transcript_lines(payload)
+        data, records, why = banner.transcript_records(payload)
         session_id = str(data.get("session_id", "") or "")
-        records = None if lines is None else banner._parse_records(lines)
-        if why:
+        if records is None:
             print(f"CANNOT RUN: {why}", file=sys.stderr)
 
-    if banner is None or not records:
+    if banner is None or records is None:
         print("CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
               "not look for a closing table. TREAT THIS AS NOT RUN — do not read the absence of a "
               "warning as 'no table was owed'.", file=sys.stderr)
@@ -1483,8 +1484,7 @@ def _self_test_body() -> int:
         "class TurnWindow(NamedTuple):",
         "    opener: dict | None",
         "    body: list",
-        "def transcript_lines(payload): return {}, None, 'fake'",
-        "def _parse_records(lines): return []",
+        "def transcript_records(payload): return {}, None, 'fake'",
         "def windows(records): return [TurnWindow(None, list(records))]",
         "def judged_window(wins): return wins[-1]   # DRIFTED: live turn, not the previous one",
         "def texts_of(records): return []",
@@ -1516,9 +1516,7 @@ def _self_test_body() -> int:
         class _B:
             TurnWindow = tuple
             @staticmethod
-            def transcript_lines(payload): return {}, ['{"type": "user"}'], ""
-            @staticmethod
-            def _parse_records(lines): return [{"type": "user"}]
+            def transcript_records(payload): return {}, [{"type": "user"}], ""
             @staticmethod
             def windows(records): raise AttributeError("'int' object has no attribute 'get'")
         with tempfile.TemporaryDirectory() as d:
@@ -1532,21 +1530,16 @@ def _self_test_body() -> int:
     check("⭐ the turn rule RAISING is CANNOT RUN, never the warning code (backlog #152)",
           _safe(_turn_rule_raises), CANNOT_RUN)
 
-    def _cli(script: str, stdin: bytes) -> tuple:
-        """The REAL `--decide` entry point as the Stop hook runs it: raw stdin BYTES, a subprocess. -> (rc, traceback?)."""
-        import os as _os, subprocess as _sp
-        # PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C locale Python reads stdin with surrogateescape,
-        # which would hide an undecodable payload from this case on one machine and not another (r1 m1).
-        p = _sp.run([sys.executable, str(Path(__file__).resolve().parent / script), "--decide"], input=stdin,
-                    capture_output=True, timeout=60, env={**_os.environ, "PYTHONIOENCODING": "utf-8"})
-        return p.returncode, b"Traceback" in p.stderr
-    _bad_payloads = [b'{"transcript_path": "x\\u0000y"}', b'{"transcript_path": 123}', b'{"transcript_path": "/x\xff"}',
-                     b"null", b"true", b"1", b'"s"']
-
-    check("⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide",
-          [_cli("check-closing-table.py", b) for b in _bad_payloads[:3]], [(2, False)] * 3)
-    check("⭐ r1 M2: null, true, 1 and \"s\" — every non-object payload — are CANNOT RUN through --decide",
-          [_cli("check-closing-table.py", b) for b in _bad_payloads[3:]], [(2, False)] * 4)
+    # ⛔ PR #440 r1 + r2: EVERY hostile input any round found, through the REAL `--decide` as the hook runs it.
+    # The list is `bounded_read.hostile_payloads`'s, shared by the three transcript guards.
+    def _hostile_cli() -> list:
+        with tempfile.TemporaryDirectory() as d:
+            me = [str(Path(__file__).resolve())]
+            return [bounded_read.run_cli(me + ["--decide"], b) for _, b in bounded_read.hostile_payloads(Path(d))]
+    _hostile = _safe(_hostile_cli)
+    check("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
+          "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
+          isinstance(_hostile, list) and len(_hostile) >= 14 and set(_hostile) == {(2, False)}, True)
     check("run: empty payload -> CANNOT RUN", _safe(lambda: run_decide("")), CANNOT_RUN)
     check("run: malformed json -> CANNOT RUN", _safe(lambda: run_decide("{not json")), CANNOT_RUN)
     check("run: payload is a list -> CANNOT RUN", _safe(lambda: run_decide("[]")), CANNOT_RUN)
@@ -1678,6 +1671,12 @@ def _self_test_body() -> int:
             ])  # notification mid-turn; the merged turn is judged and closes with prose
             check("run: a split turn closing with prose still warns",
                   _safe(lambda: run_decide(json.dumps({"transcript_path": str(split_prose)}))), WARN)
+            # ⛔ PR #440 r2 X1, reverting r1 m2: the same turn with an undecodable record in its MIDDLE is corruption.
+            corrupt = tmp / "corrupt-mid.jsonl"
+            whole = split_prose.read_bytes().rstrip(b"\n").split(b"\n")
+            corrupt.write_bytes(b"\n".join(whole[:1] + [b"\xff"] + whole[1:]) + b"\n")
+            check("⭐ r2 X1: an undecodable record in the MIDDLE of a warning turn is CANNOT RUN, never skipped",
+                  _safe(lambda: run_decide(json.dumps({"transcript_path": str(corrupt)}))), CANNOT_RUN)
             # ⛔ PR #440 r1 m2: the same turn with a torn last record cut MID-CHARACTER still warns — never CANNOT RUN.
             torn = tmp / "torn.jsonl"
             torn.write_bytes(split_prose.read_bytes() + b"\n" + b'{"type": "assistant", "message": {"content": "ab\xe2\x9b')
@@ -1731,6 +1730,10 @@ if __name__ == "__main__":
     if a.self_test:
         sys.exit(_self_test())
     if a.decide:
-        sys.exit(run_decide(sys.stdin.buffer.read()))
+        raw, why = bounded_read.read_stream(sys.stdin)     # bounded in bytes and time (PR #440 r2)
+        if raw is None:
+            print(f"CANNOT RUN: the stop-hook payload: {why}. TREAT THIS AS NOT RUN.", file=sys.stderr)
+            sys.exit(CANNOT_RUN)
+        sys.exit(run_decide(raw))
     ap.print_help()
     sys.exit(CANNOT_RUN)
