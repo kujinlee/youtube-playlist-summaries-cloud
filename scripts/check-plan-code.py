@@ -3306,12 +3306,13 @@ def early_stop_line(muts: list, full_sweep: bool) -> str:
     verdict, so the tally must not read differently; this line is how a reader tells the sweep
     that ran from the one that was asked for.
     """
-    if full_sweep:
-        return (f"full sweep: all {len(muts)} mutant suite(s) ran to the end "
-                f"(--full-sweep, backlog #405)")
+    # COUNTED from what ran, never echoed from the flag: a line that repeated `--full-sweep`
+    # would read the same over a sweep that ignored it.
     n = sum(1 for m in muts if m.get("stopped_early") is True)
     return (f"early stop: {n} of {len(muts)} mutant suite(s) stopped at their named case(s); "
-            f"the rest ran to the end (backlog #405)")
+            f"the rest ran to the end"
+            + (" — --full-sweep was asked for, so that count must be 0" if full_sweep else "")
+            + " (backlog #405)")
 
 
 def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=None) -> str:
@@ -3473,7 +3474,7 @@ def _budget_wiring(root: pathlib.Path) -> dict:
 
 
 def _full_sweep_wiring(root: pathlib.Path) -> tuple:
-    """`main()` over ROOT with and without --full-sweep: (rc, full-sweep?, rc, full-sweep?).
+    """`main()` over ROOT with and without --full-sweep: (rc, stopped count, rc, stopped count).
 
     A small function for the reason `_budget_wiring` is one: `check-main-drivable` prices each
     `main()` call site by its enclosing function, and inside `_self_test` that price is the suite's.
@@ -3483,7 +3484,7 @@ def _full_sweep_wiring(root: pathlib.Path) -> tuple:
         err = io.StringIO()
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             rc = main(["--mutate", str(root), "--allow-long-local", *extra])
-        out += [rc, "full sweep:" in err.getvalue()]
+        out += [rc, re.search(r"early stop: (\d+) of", err.getvalue())[1]]
     return tuple(out)
 
 
@@ -6792,8 +6793,11 @@ def _self_test_body() -> int:
             (_d / "es.py").write_text(_es_suite(
                 '    (D / "pid").write_text(str(os.getpid()))\n'
                 '    kid = subprocess.Popen([sys.executable, "-c", "import signal, time; '
-                'signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(20)"])\n'
+                'signal.signal(signal.SIGINT, signal.SIG_IGN); open(\\"ready\\", \\"w\\").close(); '
+                'time.sleep(20)"], cwd=D)\n'
                 '    (D / "kid").write_text(str(kid.pid))\n'
+                '    while not (D / "ready").exists():\n'
+                '        time.sleep(0.02)\n'
                 '    (D / "scratch").write_text("taken")\n'
                 '    try:\n'
                 '        if f() != 1:\n'
@@ -6906,7 +6910,7 @@ def _self_test_body() -> int:
             case("#405: ...and with full_sweep every suite runs to its end",
                  [m.get("stopped_early") for m in getattr(_evF, "mutations", [])], [False])
             case("#405: ...and main() hands --full-sweep through to the sweep",
-                 _full_sweep_wiring(_r), (0, True, 0, False))
+                 _full_sweep_wiring(_r), (0, "0", 0, "1"))
     finally:
         EXPECTED_MUTATIONS.clear()
         EXPECTED_MUTATIONS.update(_saved)
