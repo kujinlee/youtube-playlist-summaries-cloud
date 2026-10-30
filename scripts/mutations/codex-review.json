@@ -435,8 +435,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if not any(same_dir_or_inside(here, root, stat) for root in (REPO_ROOT, reviewed) if root):",
-        "    if any(same_dir_or_inside(here, root, stat) for root in (REPO_ROOT, reviewed) if root):"
+        "    if not any(same_dir_or_inside(here, root, stat) for root in roots):",
+        "    if any(same_dir_or_inside(here, root, stat) for root in roots):"
       ]
     ],
     "expect": [
@@ -621,8 +621,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "for root in (REPO_ROOT, reviewed) if root",
-        "for root in (REPO_ROOT,) if root"
+        "    roots = [r for r in (REPO_ROOT, reviewed) if r]",
+        "    roots = [r for r in (REPO_ROOT,) if r]"
       ]
     ],
     "expect": "#121 r1 C2 an --out inside the REVIEWED tree's docs/reviews is refused"
@@ -786,5 +786,16 @@
       ]
     ],
     "expect": "#121 r4 X4 the same inode on ANOTHER device is not the tree"
+  },
+  {
+    "name": "#121 r6 X1 the checkouts' RESOLVED docs/reviews are not compared, so a symlink out of the checkout passes",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    roots += [os.path.realpath(os.path.join(r, REVIEW_ROOT)) for r in roots]\n",
+        "\n"
+      ]
+    ],
+    "expect": "⭐ #121 r6 X1 an --out through a docs/reviews SYMLINKED out of the checkout is refused by the real CLI, and the filed review is untouched"
   }
 ]

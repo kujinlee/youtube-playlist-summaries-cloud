@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 203 cases
+  scripts/codex-review.py --self-test  # 205 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -666,8 +666,15 @@ def out_location_refusal(out_path: str, reviewed: "str | None" = None,
     # `same_dir_or_inside` already skips the components that do not exist yet, so the nearest
     # existing ancestor is the first one it compares.
     # Grepped first: no caller or document passes an in-repo --out outside `docs/reviews`.
+    # ⛔ backlog #121 r6 X1 (PR #439): AND EACH CHECKOUT'S RESOLVED `docs/reviews`. A checkout whose
+    # `docs/reviews` is already a symlink OUT of it resolves an --out through that link to a path
+    # inside neither checkout, so the identity rule alone passed it: rc 0, a filed review
+    # overwritten, no intrusion. master refused it by comparing against the resolved tree, and r4
+    # dropped that comparison. Where `docs/reviews` does not exist it has no identity and adds nothing.
     here = os.path.dirname(resolve_out(out_path))
-    if not any(same_dir_or_inside(here, root, stat) for root in (REPO_ROOT, reviewed) if root):
+    roots = [r for r in (REPO_ROOT, reviewed) if r]
+    roots += [os.path.realpath(os.path.join(r, REVIEW_ROOT)) for r in roots]
+    if not any(same_dir_or_inside(here, root, stat) for root in roots):
         return None
     return (f"CANNOT RUN — --out is inside the artifact tree or a checkout that holds one: "
             f"{out_path}\n"
@@ -2870,6 +2877,34 @@ def _self_test_body() -> int:
         _rx5 = _drive4("wt-r9-codex", os.path.join(_scr, "kept.md"), _wb)
         chk("#121 r4 …and without --allow-overwrite a pre-existing --out is still refused",
             _rx5.returncode, 2)
+        # ── r6 X1 (Codex), the reviewer's input: docs/reviews is ALREADY a symlink out of B ──────
+        # `B/docs/reviews -> <tmp>/external/reviews`. The resolved --out is outside both checkouts,
+        # so the identity rule alone passed it: rc 0, the filed review overwritten, no intrusion.
+        # master and c9dcc13c refused it, so this was a regression of PR #439's own making.
+        _h = os.path.join(td3, "h")
+        os.makedirs(os.path.join(_h, "docs"))
+        _git3(_h, "init", "-q", ".")
+        with open(os.path.join(_h, "docs", "README"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        _git3(_h, "add", "-A")
+        _git3(_h, "commit", "-q", "--no-verify", "-m", "h")
+        _ext = os.path.join(td3, "external", "reviews")
+        os.makedirs(os.path.join(_ext, "claude"))
+        _v6 = os.path.join(_ext, "claude", "victim-r1-claude.md")
+        with open(_v6, "w", encoding="utf-8") as f:
+            f.write(_victim_text)
+        os.symlink(_ext, os.path.join(_h, "docs", "reviews"))
+        _rx6 = _drive4("wt-r10-codex", os.path.join(_h, "docs", "reviews", "claude",
+                                                    "victim-r1-claude.md"), _h, "--allow-overwrite")
+        with open(_v6, encoding="utf-8") as f:
+            _v6t = f.read()
+        chk("⭐ #121 r6 X1 an --out through a docs/reviews SYMLINKED out of the checkout is refused "
+            "by the real CLI, and the filed review is untouched",
+            (_rx6.returncode, "inside the artifact tree" in _rx6.stderr, _v6t),
+            (2, True, _victim_text))
+        _rx7 = _drive4("wt-r11-codex", os.path.join(_scr, "plain6.md"), _h)
+        chk("#121 r6 X1 …and an ordinary scratch --out is still accepted beside that symlink",
+            (_rx7.returncode, os.path.isfile(os.path.join(_scr, "plain6.md"))), (0, True))
         # r4 X4 (Codex): DEVICE identity. Tree (dev=1, ino=42) and a scratch ancestor
         # (dev=2, ino=42) are different directories; an inode-only comparison called them one.
         from types import SimpleNamespace as _NS

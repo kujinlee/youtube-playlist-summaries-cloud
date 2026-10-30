@@ -1705,7 +1705,9 @@ EXPECTED_MUTATIONS = {
     #   the refusal is ONE identity rule over each whole checkout, so the r1 M5 "only the root" and
     #   r2 X5 "trees unresolved" entries retire with the comparisons they mutated; four added for
     #   the exclusive-create-and-rename capture (X2, X3) and the device half of identity (X4).
-    "scripts/codex-review.py": 66,
+    #   r6 66 -> 67 — the refusal also compares each checkout's RESOLVED docs/reviews (X1, a
+    #   regression against master when docs/reviews is a symlink out of the checkout).
+    "scripts/codex-review.py": 67,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -6257,7 +6259,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2533)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2534)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
