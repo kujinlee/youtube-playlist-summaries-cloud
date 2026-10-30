@@ -2,7 +2,7 @@
 """Did the turn just completed show the reader a bare `#N`?
 
     python3 scripts/check-transcript-references.py --decide   # reads a Stop-hook payload on stdin
-    python3 scripts/check-transcript-references.py --self-test # 22 cases
+    python3 scripts/check-transcript-references.py --self-test # 25 cases
 
 WHY THIS EXISTS (owner's decision, 2026-10-20)
 ----------------------------------------------
@@ -121,24 +121,13 @@ def bare_references(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def judge(payload: str) -> tuple[int, str, list[tuple[str, str]]]:
+def judge(payload: "str | bytes") -> tuple[int, str, list[tuple[str, str]]]:
     """-> (rc, message, findings). rc 0 quiet | 1 fired (warn-only) | 2 CANNOT RUN."""
-    try:
-        data = json.loads(payload) if payload.strip() else {}
-    except json.JSONDecodeError as exc:
-        return 2, f"CANNOT RUN — the hook payload is not JSON: {exc}", []
-    if not isinstance(data, dict):     # backlog #357(2): `[]` is JSON, and `.get` on it raised out as exit 1
-        return 2, f"CANNOT RUN — the hook payload is JSON but not an object ({type(data).__name__})", []
-    raw = data.get("transcript_path")
-    if not raw:
-        return 2, "CANNOT RUN — the hook payload carries no `transcript_path`", []
-    path = pathlib.Path(raw)
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(1): an undecodable byte raised out as exit 1
-        return 2, f"CANNOT RUN — the transcript could not be read: {exc}", []
-
     cba = _owner("check-banner-armed")
+    # ⛔ backlog #357(1)(2), PR #440 r1 X1/m1: the payload's shape is checked ONCE, by the turn rule's owner.
+    _data, lines, why = cba.transcript_lines(payload)
+    if lines is None:
+        return 2, f"CANNOT RUN — {why}", []
     records = cba._parse_records(lines)
     if not records:
         # ⛔ backlog #331(a): the permissive parser drops every malformed record, and the selector then finds no
@@ -162,7 +151,7 @@ def judge(payload: str) -> tuple[int, str, list[tuple[str, str]]]:
                f"a number alone does not say WHICH namespace"), findings
 
 
-def run_decide(payload: str, log: pathlib.Path | None = None) -> int:
+def run_decide(payload: "str | bytes", log: pathlib.Path | None = None) -> int:
     """⛔ `log` IS A DEFAULTED PARAMETER so a case can drive this without appending to the real
     log. An instrument that edits the repository it measures is backlog #326, and a self-test that
     writes a firing into the evidence file would corrupt the very rate this guard exists to make
@@ -228,6 +217,8 @@ def _self_test_body() -> int:
     def _tr_rule_raises():
         class _B:
             @staticmethod
+            def transcript_lines(payload): return {}, ['{"type": "user"}'], ""
+            @staticmethod
             def _parse_records(lines): return [{"type": "user"}]
             @staticmethod
             def windows(recs): raise AttributeError("'str' object has no attribute 'get'")
@@ -260,6 +251,22 @@ def _self_test_body() -> int:
     case("the finding carries the LINE, so the reader can see the context",
          bare_references("answers #321 now")[0][1], "answers #321 now")
 
+
+    def _cli(script: str, stdin: bytes) -> tuple:
+        """The REAL `--decide` entry point as the Stop hook runs it: raw stdin BYTES, a subprocess. -> (rc, traceback?)."""
+        import os as _os, subprocess as _sp
+        # PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C locale Python reads stdin with surrogateescape,
+        # which would hide an undecodable payload from this case on one machine and not another (r1 m1).
+        p = _sp.run([sys.executable, str(pathlib.Path(__file__).resolve().parent / script), "--decide"], input=stdin,
+                    capture_output=True, timeout=60, env={**_os.environ, "PYTHONIOENCODING": "utf-8"})
+        return p.returncode, b"Traceback" in p.stderr
+    _bad_payloads = [b'{"transcript_path": "x\\u0000y"}', b'{"transcript_path": 123}', b'{"transcript_path": "/x\xff"}',
+                     b"null", b"true", b"1", b'"s"']
+
+    case("⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide",
+         [_cli("check-transcript-references.py", b) for b in _bad_payloads[:3]], [(2, False)] * 3)
+    case("⭐ r1 M2: null, true, 1 and \"s\" — every non-object payload, not only a list — are CANNOT RUN through --decide",
+         [_cli("check-transcript-references.py", b) for b in _bad_payloads[3:]], [(2, False)] * 4)
     # ── payload handling: CANNOT RUN is distinct from QUIET ──
     case("no transcript_path is CANNOT RUN", judge("{}")[0], 2)
     case("a non-JSON payload is CANNOT RUN", judge("not json")[0], 2)
@@ -299,13 +306,24 @@ def _self_test_body() -> int:
         case("⭐ backlog #331(a): a transcript NO record of which parses is CANNOT RUN (2), never a quiet pass",
              judge(json.dumps({"transcript_path": str(corrupt)}))[0], 2)
         undecodable = pathlib.Path(td) / "undecodable.jsonl"
-        undecodable.write_bytes(b'{"type": "user"}\n\xff\n')
+        undecodable.write_bytes(b'\xff{"type": "user"}\n\xfe\n')
         try:
             undecodable_rc = judge(json.dumps({"transcript_path": str(undecodable)}))[0]
         except Exception as exc:                   # noqa: BLE001 — a crash is a NAMED red, not a dead suite
             undecodable_rc = f"RAISED {type(exc).__name__}"
-        case("⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN (2), never a traceback",
+        case("⭐ backlog #357(1): a transcript NO line of which decodes is CANNOT RUN (2), never a traceback",
              undecodable_rc, 2)
+        # ⛔ PR #440 r1 m2: a torn last record cut MID-CHARACTER is skipped like one cut on ASCII, never a blinding.
+        firing = transcript([user("go"), assistant("see #291")], [user("again"), assistant("x")])
+        torn = pathlib.Path(td) / "torn.jsonl"
+        torn.write_bytes(pathlib.Path(json.loads(firing)["transcript_path"]).read_bytes()
+                         + b'{"type": "assistant", "message": {"content": "ab\xe2\x9b')
+        try:
+            torn_rc = [judge(firing)[0], judge(json.dumps({"transcript_path": str(torn)}))[0]]
+        except Exception as exc:                   # noqa: BLE001
+            torn_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ PR #440 r1 m2: a torn last record cut mid-character is SKIPPED — the verdict without it, never CANNOT RUN",
+             torn_rc, [1, 1])
         try:
             list_rc = judge("[]")[0]
         except Exception as exc:                   # noqa: BLE001
@@ -366,7 +384,8 @@ def main(argv: list[str], *, stdin=None, log: pathlib.Path | None = None) -> int
     if args.self_test:
         return self_test()
     if args.decide:
-        return run_decide((stdin or sys.stdin).read(), log=log)
+        stream = stdin or sys.stdin             # the hook's stdin is read RAW: decoding is the payload check's job
+        return run_decide(stream.buffer.read() if hasattr(stream, "buffer") else stream.read(), log=log)
     ap.print_help()
     return 2
 

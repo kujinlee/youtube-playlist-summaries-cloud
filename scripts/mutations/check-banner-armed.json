@@ -1241,29 +1241,81 @@
     ]
   },
   {
-    "name": "backlog #357(2): a non-object payload raises out of the banner guard again",
+    "name": "backlog #357(2): a non-object payload raises out of the banner guard again ⟳ PR #440 r1 M2: retargeted onto `transcript_lines`, and narrowed to the reviewer's list-only mutant",
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "    if not isinstance(data, dict):\n        # ⛔ backlog #357(2)",
-        "    if False:\n        # ⛔ backlog #357(2)"
+        "    if not isinstance(data, dict):\n        return {}, None, f\"the hook payload is JSON but not an object",
+        "    if isinstance(data, list):\n        return {}, None, f\"the hook payload is JSON but not an object"
       ]
     ],
     "expect": [
-      "⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN, never a traceback"
+      "⭐ r1 M2: null, true, 1 and \"s\" — every non-object payload, not only a list — are CANNOT RUN through --decide"
     ]
   },
   {
-    "name": "backlog #357(1): an undecodable transcript raises out of the banner guard again",
+    "name": "backlog #357(1): an undecodable transcript raises out of the banner guard again ⟳ PR #440 r1: retargeted onto `transcript_lines`' per-line decode",
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "        except (OSError, UnicodeDecodeError):     # backlog #357(1)",
-        "        except OSError:     # backlog #357(1)"
+        "        except UnicodeDecodeError:\n            continue",
+        "        except UnicodeTranslateError:\n            continue"
       ]
     ],
     "expect": [
-      "⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN, never a traceback"
+      "⭐ backlog #357(1): a transcript NO line of which decodes is CANNOT RUN, never a traceback"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X1: a number as transcript_path reaches Path() again and raises TypeError",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if not isinstance(path, str) or not path:",
+        "    if not path:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X1: a NUL byte in transcript_path raises ValueError out of the read again",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    except (OSError, ValueError) as exc:     # ValueError: a NUL byte",
+        "    except OSError as exc:     # ValueError: a NUL byte"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
+    ]
+  },
+  {
+    "name": "PR #440 r1 m1: the hook's stdin is read as TEXT again, so an undecodable payload raises before any handler",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        sys.exit(run_decide(sys.stdin.buffer.read()))",
+        "        sys.exit(run_decide(sys.stdin.read()))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
+    ]
+  },
+  {
+    "name": "PR #440 r1 m2: one undecodable LINE blinds the whole transcript again",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            continue\n    return data, lines, \"\"",
+        "            return data, None, \"a line is not UTF-8\"\n    return data, lines, \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ PR #440 r1 m2: an undecodable LINE is skipped and its neighbours kept — one byte never blinds the transcript"
     ]
   }
 ]

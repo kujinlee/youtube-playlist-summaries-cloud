@@ -403,8 +403,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    status = r.get(\"status\")\n    if status is not None:",
-        "    status = r.get(\"status\")\n    if status is None:"
+        "    status = r.get(\"status\")\n    if status is not None:\n        # A CheckRun.",
+        "    status = r.get(\"status\")\n    if status is None:\n        # A CheckRun."
       ]
     ],
     "expect": [
@@ -541,7 +541,7 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "            rows = parsed if isinstance(parsed, list) and all(isinstance(r, dict) for r in parsed) else None",
+        "            rows = parsed if isinstance(parsed, list) and all(row_is_readable(r) for r in parsed) else None",
         "            rows = parsed if isinstance(parsed, list) else []"
       ]
     ],
@@ -560,6 +560,84 @@
     ],
     "expect": [
       "⭐ backlog #357(4): an arm directory that cannot be LISTED (permission denied) is CANNOT RUN, never a traceback before any verdict"
+    ]
+  },
+  {
+    "name": "PR #440 r1 M1: one readable row is enough again (`all` -> `any`), so a mixed list reaches decide",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "and all(row_is_readable(r) for r in parsed)",
+        "and any(row_is_readable(r) for r in parsed)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 M1: a valid row beside a non-object ([row, 5]) is CANNOT RUN — every row must be an object, not one"
+    ]
+  },
+  {
+    "name": "PR #440 r1: a non-list checks answer is iterated as if it were rows again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "rows = parsed if isinstance(parsed, list) and all(",
+        "rows = parsed if all("
+      ]
+    ],
+    "expect": [
+      "⭐ r1: true, 1 and \"s\" — every non-list checks answer, not only an object — are CANNOT RUN"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X2: a non-string status reads as a status again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        return isinstance(status, str)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X2: an object row with no string status or state ([{}], [{\"state\": []}], [{\"status\": 1}]) is CANNOT RUN, never 'CI is running'"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X2: a row with no string state reads as a StatusContext again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return isinstance(r.get(\"state\"), str)",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X2: an object row with no string status or state ([{}], [{\"state\": []}], [{\"status\": 1}]) is CANNOT RUN, never 'CI is running'"
+    ]
+  },
+  {
+    "name": "PR #440 r1 M1: a non-object row reaches `.get` in row_is_readable again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if not isinstance(r, dict):\n        return False\n    status = r.get(\"status\")",
+        "    status = r.get(\"status\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(5): a check row that is not an object ([123]) is CANNOT RUN, never an AttributeError"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X3: an unreadable checks answer reads as 'no checks' again — killed only now that HEAD is pinned",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if raw is None:\n        rows = None",
+        "    if raw is None:\n        rows = []"
+      ]
+    ],
+    "expect": [
+      "...and NOT quiet on the same shaped input with no_pr FALSE — an unreadable PR is CANNOT RUN, so the verdict tracks the flag rather than being QUIET either way"
     ]
   }
 ]

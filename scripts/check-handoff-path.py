@@ -217,6 +217,9 @@ def _self_test_body() -> int:
     hook_failures = 0
 
     def _hook_rc(payload: bytes, skill_text: str, python3: str | None, checker_edit=None) -> int:
+        return _hook_run(payload, skill_text, python3, checker_edit).returncode
+
+    def _hook_run(payload: bytes, skill_text: "str | bytes", python3: str | None, checker_edit=None):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / ".claude/hooks").mkdir(parents=True)
@@ -226,14 +229,23 @@ def _self_test_body() -> int:
             if checker_edit is not None:
                 cp = root / "scripts/check-handoff-path.py"; cp.write_text(checker_edit(cp.read_text()))
             (root / SKILL_REL).parent.mkdir(parents=True)
-            (root / SKILL_REL).write_text(skill_text, encoding="utf-8")
+            if isinstance(skill_text, bytes):
+                (root / SKILL_REL).write_bytes(skill_text)
+            else:
+                (root / SKILL_REL).write_text(skill_text, encoding="utf-8")
             env = dict(os.environ)
             if python3 is not None:
                 shim = root / "shim"; shim.mkdir()
                 (shim / "python3").write_text(python3); (shim / "python3").chmod(0o755)
                 env["PATH"] = str(shim) + os.pathsep + env.get("PATH", "")
             return subprocess.run(["bash", str(root / ".claude/hooks/enforce-handoff-path.sh")],
-                                  input=payload, capture_output=True, env=env).returncode
+                                  input=payload, capture_output=True, env=env)
+
+    def _hook_headline(skill_bytes: bytes) -> tuple:
+        """-> (rc, says CANNOT RUN?, says 'would write where nothing reads'?) for the REAL hook over this SKILL.md."""
+        p = _hook_run(_HANDOFF, skill_bytes, None)
+        err = p.stderr.decode("utf-8", "replace")
+        return p.returncode, "COULD NOT BE CHECKED" in err, "would write where nothing reads" in err
 
     _HANDOFF = b'{"tool_name": "Skill", "tool_input": {"skill": "handoff"}}'
     _OTHER = b'{"tool_name": "Skill", "tool_input": {"skill": "brief"}}'
@@ -270,13 +282,18 @@ def _self_test_body() -> int:
          _hook_rc(_HANDOFF, UPSTREAM, None, _REWORDED), 2),
         ("⭐ hook: a wrapper exiting 0 WITHOUT running the checker warns — no receipt, no pass (backlog #111 r2)",
          _hook_rc(_HANDOFF, UPSTREAM, _CHECKER_FAKES_OK), 1),
+        # ⛔ PR #440 r1 m5: receipt 2 BLOCKS, as a missing or empty SKILL.md always did — but under its own headline.
+        # It used to print "would write where nothing reads" over a file that DOES name the path and merely failed
+        # to decode, which is a false claim about the file.
+        ("⭐ r1 m5: an UNDECODABLE SKILL.md blocks under a CANNOT RUN headline, never 'would write where nothing reads'",
+         _hook_headline(GOOD.encode("utf-8") + b"\xff"), (2, True, False)),
     ):
         ok = got == want
         hook_failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
     failures += hook_failures
 
-    total = len(CASES) + 5 + 10     # 5 file cases and 10 hook cases follow the text cases
+    total = len(CASES) + 5 + 11     # 5 file cases and 11 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 

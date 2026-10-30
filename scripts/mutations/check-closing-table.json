@@ -541,16 +541,29 @@
     ]
   },
   {
-    "name": "backlog #357(1): an undecodable transcript raises out of the closing-table guard again",
+    "name": "backlog #357(1): an undecodable transcript raises out of the closing-table guard again ⟳ PR #440 r1: retargeted — the read is borrowed, so the defence HERE is honouring its None",
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "        except (OSError, ImportError, UnicodeDecodeError) as exc:",
-        "        except (OSError, ImportError) as exc:"
+        "        records = None if lines is None else banner._parse_records(lines)",
+        "        records = banner._parse_records(lines)"
       ]
     ],
     "expect": [
-      "⭐ backlog #357(1): an undecodable byte in the transcript -> CANNOT RUN, never a traceback"
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
+    ]
+  },
+  {
+    "name": "PR #440 r1 m1: the hook's stdin is read as TEXT again, so an undecodable payload raises before any handler",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        sys.exit(run_decide(sys.stdin.buffer.read()))",
+        "        sys.exit(run_decide(sys.stdin.read()))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
     ]
   }
 ]

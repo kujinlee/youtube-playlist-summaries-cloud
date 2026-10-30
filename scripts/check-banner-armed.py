@@ -189,7 +189,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 241 cases
+    python3 scripts/check-banner-armed.py --self-test  # 246 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD WITH NO PLAN FILE, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -298,6 +298,48 @@ def _parse_records(lines: list[str]) -> list[dict]:
         if isinstance(obj, dict) and isinstance(obj.get("message", {}), dict):
             records.append(obj)
     return records
+
+
+def transcript_lines(payload: "str | bytes") -> tuple[dict, "list[str] | None", str]:
+    """-> (payload object, transcript lines or None, why not). The ONE entry-point read of a Stop payload.
+
+    ⛔ PR #440 round 1 (X1, m1): each of the three Stop-hook transcript guards validated its payload a
+    little differently, and each was right where its case looked and wrong one step beside it — a NUL byte
+    in `transcript_path` raised ValueError out of `read_text`, a number raised TypeError, and an
+    undecodable PAYLOAD raised UnicodeDecodeError out of `sys.stdin.read()` before any handler. All three
+    left as exit 1, the code a real WARNING uses. So the shape is checked ONCE, here, and `None` means
+    CANNOT RUN with `why` saying which step failed. `payload` may be BYTES: the hook's stdin is read raw.
+
+    ⛔ AND ONE BAD BYTE NO LONGER BLINDS THE WHOLE TRANSCRIPT (round 1 m2). The file is split on `\n` and
+    each line decoded on its own; an undecodable line is skipped exactly as `_parse_records` skips a line
+    that is not JSON. Each decoded piece is then split by `splitlines()` as before — that reader's own
+    defect (it breaks records on U+2028) is filed with backlog #331's open remainder, not changed here.
+    """
+    if isinstance(payload, bytes):
+        try:
+            payload = payload.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            return {}, None, f"the hook payload is not UTF-8 ({exc})"
+    try:
+        data = json.loads(payload) if payload.strip() else {}
+    except (ValueError, TypeError) as exc:
+        return {}, None, f"the hook payload is not JSON ({exc})"
+    if not isinstance(data, dict):
+        return {}, None, f"the hook payload is JSON but not an object ({type(data).__name__})"
+    path = data.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return data, None, "the hook payload names no transcript_path string"
+    try:
+        raw = Path(path).read_bytes()
+    except (OSError, ValueError) as exc:     # ValueError: a NUL byte in the path ("embedded null byte")
+        return data, None, f"the transcript could not be read ({exc})"
+    lines: list[str] = []
+    for piece in raw.split(b"\n"):
+        try:
+            lines.extend(piece.decode("utf-8").splitlines())
+        except UnicodeDecodeError:
+            continue
+    return data, lines, ""
 
 
 def windows(records: list[dict]) -> list[TurnWindow]:
@@ -1293,31 +1335,17 @@ def _log_flush(session: str, late: tuple) -> bool:
     return observer_log.append(FLUSH_LOG, flush_line(late[0], late[1], observer_log.now(), session))
 
 
-def run_decide(payload: str) -> int:
-    try:
-        data = json.loads(payload) if payload.strip() else {}
-    except (ValueError, TypeError):
-        data = {}
-    if not isinstance(data, dict):
-        # ⛔ backlog #357(2): `[]` is valid JSON, and `.get` on it raised out of the Stop hook as exit 1 — the code
-        # a real WARNING uses. A payload this guard cannot read is CANNOT RUN, said in so many words.
-        print(f"CANNOT RUN: the stop-hook payload is JSON but not an object ({type(data).__name__}), so this check "
-              "could not look for a step banner. TREAT THIS AS NOT RUN.", file=sys.stderr)
-        return CANNOT_RUN
-
+def run_decide(payload: "str | bytes") -> int:
+    # ⛔ backlog #357(1)(2), PR #440 r1 X1/m1: the payload's shape is checked ONCE, in `transcript_lines`.
+    data, lines, why = transcript_lines(payload)
     session_id = str(data.get("session_id", "") or "")
 
     # ── 1. select the judged turn ─────────────────────────────────────────────────────────────
-    all_records: list[dict] | None = None
-    path = data.get("transcript_path")
-    if isinstance(path, str) and path:
-        try:
-            all_records = _parse_records(Path(path).read_text(encoding="utf-8").splitlines())
-        except (OSError, UnicodeDecodeError):     # backlog #357(1): an undecodable byte raised out as exit 1
-            all_records = None
+    all_records = None if lines is None else _parse_records(lines)
 
     if not all_records:
-        print("CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
+        print(f"CANNOT RUN: {why or 'no record in the transcript parses'}. "
+              "The stop-hook payload named no readable transcript, so this check could "
               "not look for a step banner. TREAT THIS AS NOT RUN — do not read the absence of a "
               "warning as 'nothing was announced'.", file=sys.stderr)
         return CANNOT_RUN
@@ -1669,13 +1697,43 @@ def _self_test_body() -> int:
     def _banner_bad_input(payload_of) -> int:
         import contextlib as _cl, io as _io, tempfile as _tf
         with _tf.TemporaryDirectory() as d:
-            tp = Path(d) / "t.jsonl"; tp.write_bytes(b'{"type": "user"}\n\xff\n')
+            tp = Path(d) / "t.jsonl"; tp.write_bytes(b'\xff{"type": "user"}\n\xfe\n')
             with _cl.redirect_stderr(_io.StringIO()):
                 return run_decide(payload_of(tp))
-    case("⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN, never a traceback",
+    case("⭐ backlog #357(1): a transcript NO line of which decodes is CANNOT RUN, never a traceback",
          _safe_rc(lambda: _banner_bad_input(lambda tp: json.dumps({"transcript_path": str(tp), "session_id": "s"}))) == CANNOT_RUN)
+    def _torn_lines():
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"
+            tp.write_bytes(b'{"type": "user"}\n{"type": "assistant", "x": "ab\xe2\x9b\n\xff\n{"type": "user", "n": 2}')
+            return transcript_lines(json.dumps({"transcript_path": str(tp)}))[1]
+    case("⭐ PR #440 r1 m2: an undecodable LINE is skipped and its neighbours kept — one byte never blinds the transcript",
+         safe(lambda: _torn_lines() == ['{"type": "user"}', '{"type": "user", "n": 2}']))
+    case("transcript_lines: undecodable payload BYTES are refused by name, before any JSON is attempted",
+         safe(lambda: transcript_lines(b'{"transcript_path": "\xff"}')[1:] == (None, "the hook payload is not UTF-8 "
+              "('utf-8' codec can't decode byte 0xff in position 21: invalid start byte)")))
+    case("transcript_lines: a number as transcript_path is refused by name, and the payload object is still returned",
+         safe(lambda: transcript_lines('{"transcript_path": 5, "session_id": "s"}')
+              == ({"transcript_path": 5, "session_id": "s"}, None, "the hook payload names no transcript_path string")))
     case("⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN, never a traceback",
          _safe_rc(lambda: _banner_bad_input(lambda tp: "[]")) == CANNOT_RUN)
+
+    def _cli(script: str, stdin: bytes) -> tuple:
+        """The REAL `--decide` entry point as the Stop hook runs it: raw stdin BYTES, a subprocess. -> (rc, traceback?)."""
+        import subprocess as _sp
+        # PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C locale Python reads stdin with surrogateescape,
+        # which would hide an undecodable payload from this case on one machine and not another (r1 m1).
+        p = _sp.run([sys.executable, str(Path(__file__).resolve().parent / script), "--decide"], input=stdin,
+                    capture_output=True, timeout=60, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        return p.returncode, b"Traceback" in p.stderr
+    _bad_payloads = [b'{"transcript_path": "x\\u0000y"}', b'{"transcript_path": 123}', b'{"transcript_path": "/x\xff"}',
+                     b"null", b"true", b"1", b'"s"']
+
+    case("⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide",
+         [_cli("check-banner-armed.py", b) for b in _bad_payloads[:3]] == [(2, False)] * 3)
+    case("⭐ r1 M2: null, true, 1 and \"s\" — every non-object payload, not only a list — are CANNOT RUN through --decide",
+         [_cli("check-banner-armed.py", b) for b in _bad_payloads[3:]] == [(2, False)] * 4)
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
     # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE
@@ -3416,6 +3474,6 @@ if __name__ == "__main__":
     if a.self_test:
         sys.exit(_self_test())
     if a.decide:
-        sys.exit(run_decide(sys.stdin.read()))
+        sys.exit(run_decide(sys.stdin.buffer.read()))
     ap.print_help()
     sys.exit(CANNOT_RUN)

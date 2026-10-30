@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 156 cases
+    python3 scripts/check-closing-table.py --self-test   # 159 cases
 """
 from __future__ import annotations
 
@@ -571,7 +571,7 @@ def _load_banner_guard():
         raise ImportError("cannot load scripts/check-banner-armed.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    for name in ("_parse_records", "windows", "judged_window", "texts_of", "TurnWindow"):
+    for name in ("transcript_lines", "_parse_records", "windows", "judged_window", "texts_of", "TurnWindow"):
         if not hasattr(mod, name):
             raise ImportError(
                 f"scripts/check-banner-armed.py no longer defines {name} — this guard borrows the "
@@ -886,28 +886,24 @@ def final_text_of(texts: list[str]) -> str | None:
     return None
 
 
-def run_decide(payload: str) -> int:
-    try:
-        data = json.loads(payload) if payload.strip() else {}
-    except (ValueError, TypeError):
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    session_id = str(data.get("session_id", "") or "")
-
+def run_decide(payload: "str | bytes") -> int:
     # ⟳ r1 Codex, Medium: LOADED ONCE. The second `_load_banner_guard()` call sat outside this
     # try, so an import or semantic failure there escaped as a traceback and exit 1 — not the
     # documented CANNOT RUN (2). A guard with two failure sites documents one of them.
-    path = data.get("transcript_path")
+    # ⛔ backlog #357(1), PR #440 r1 X1/m1: the payload's shape is the banner guard's ONE check, borrowed.
     banner = None
     records: list[dict] | None = None
-    if isinstance(path, str) and path:
-        try:
-            banner = _load_banner_guard()
-            records = banner._parse_records(Path(path).read_text(encoding="utf-8").splitlines())
-        except (OSError, ImportError, UnicodeDecodeError) as exc:   # backlog #357(1): an undecodable byte raised as exit 1
-            print(f"CANNOT RUN: {exc}", file=sys.stderr)
-            banner, records = None, None
+    session_id = ""
+    try:
+        banner = _load_banner_guard()
+    except (OSError, ImportError) as exc:
+        print(f"CANNOT RUN: {exc}", file=sys.stderr)
+    if banner is not None:
+        data, lines, why = banner.transcript_lines(payload)
+        session_id = str(data.get("session_id", "") or "")
+        records = None if lines is None else banner._parse_records(lines)
+        if why:
+            print(f"CANNOT RUN: {why}", file=sys.stderr)
 
     if banner is None or not records:
         print("CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
@@ -1487,6 +1483,7 @@ def _self_test_body() -> int:
         "class TurnWindow(NamedTuple):",
         "    opener: dict | None",
         "    body: list",
+        "def transcript_lines(payload): return {}, None, 'fake'",
         "def _parse_records(lines): return []",
         "def windows(records): return [TurnWindow(None, list(records))]",
         "def judged_window(wins): return wins[-1]   # DRIFTED: live turn, not the previous one",
@@ -1519,6 +1516,8 @@ def _self_test_body() -> int:
         class _B:
             TurnWindow = tuple
             @staticmethod
+            def transcript_lines(payload): return {}, ['{"type": "user"}'], ""
+            @staticmethod
             def _parse_records(lines): return [{"type": "user"}]
             @staticmethod
             def windows(records): raise AttributeError("'int' object has no attribute 'get'")
@@ -1532,24 +1531,40 @@ def _self_test_body() -> int:
                 globals()["_load_banner_guard"] = real
     check("⭐ the turn rule RAISING is CANNOT RUN, never the warning code (backlog #152)",
           _safe(_turn_rule_raises), CANNOT_RUN)
-    check("run: empty payload -> CANNOT RUN", run_decide(""), CANNOT_RUN)
-    check("run: malformed json -> CANNOT RUN", run_decide("{not json"), CANNOT_RUN)
-    check("run: payload is a list -> CANNOT RUN", run_decide("[]"), CANNOT_RUN)
-    check("run: no transcript_path -> CANNOT RUN", run_decide('{"session_id":"s"}'), CANNOT_RUN)
+
+    def _cli(script: str, stdin: bytes) -> tuple:
+        """The REAL `--decide` entry point as the Stop hook runs it: raw stdin BYTES, a subprocess. -> (rc, traceback?)."""
+        import os as _os, subprocess as _sp
+        # PYTHONIOENCODING pins STRICT UTF-8 stdin: under the C locale Python reads stdin with surrogateescape,
+        # which would hide an undecodable payload from this case on one machine and not another (r1 m1).
+        p = _sp.run([sys.executable, str(Path(__file__).resolve().parent / script), "--decide"], input=stdin,
+                    capture_output=True, timeout=60, env={**_os.environ, "PYTHONIOENCODING": "utf-8"})
+        return p.returncode, b"Traceback" in p.stderr
+    _bad_payloads = [b'{"transcript_path": "x\\u0000y"}', b'{"transcript_path": 123}', b'{"transcript_path": "/x\xff"}',
+                     b"null", b"true", b"1", b'"s"']
+
+    check("⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide",
+          [_cli("check-closing-table.py", b) for b in _bad_payloads[:3]], [(2, False)] * 3)
+    check("⭐ r1 M2: null, true, 1 and \"s\" — every non-object payload — are CANNOT RUN through --decide",
+          [_cli("check-closing-table.py", b) for b in _bad_payloads[3:]], [(2, False)] * 4)
+    check("run: empty payload -> CANNOT RUN", _safe(lambda: run_decide("")), CANNOT_RUN)
+    check("run: malformed json -> CANNOT RUN", _safe(lambda: run_decide("{not json")), CANNOT_RUN)
+    check("run: payload is a list -> CANNOT RUN", _safe(lambda: run_decide("[]")), CANNOT_RUN)
+    check("run: no transcript_path -> CANNOT RUN", _safe(lambda: run_decide('{"session_id":"s"}')), CANNOT_RUN)
     check("run: unreadable transcript -> CANNOT RUN",
-          run_decide('{"transcript_path":"/nonexistent/x.jsonl"}'), CANNOT_RUN)
+          _safe(lambda: run_decide('{"transcript_path":"/nonexistent/x.jsonl"}')), CANNOT_RUN)
 
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         empty = tmp / "empty.jsonl"
         empty.write_text("")
         check("run: transcript with zero records -> CANNOT RUN",
-              run_decide(json.dumps({"transcript_path": str(empty)})), CANNOT_RUN)
+              _safe(lambda: run_decide(json.dumps({"transcript_path": str(empty)}))), CANNOT_RUN)
         undecodable = tmp / "undecodable.jsonl"
-        undecodable.write_bytes(b'{"type": "user"}\n\xff\n')
+        undecodable.write_bytes(b'\xff{"type": "user"}\n\xfe\n')
         import contextlib as _cl357, io as _io357
         with _cl357.redirect_stderr(_io357.StringIO()):
-            check("⭐ backlog #357(1): an undecodable byte in the transcript -> CANNOT RUN, never a traceback",
+            check("⭐ backlog #357(1): a transcript NO line of which decodes -> CANNOT RUN, never a traceback",
                   _safe(lambda: run_decide(json.dumps({"transcript_path": str(undecodable)}))), CANNOT_RUN)
 
         # A real two-turn transcript: turn 1 pushes and closes with prose, turn 2 is live.
@@ -1663,6 +1678,11 @@ def _self_test_body() -> int:
             ])  # notification mid-turn; the merged turn is judged and closes with prose
             check("run: a split turn closing with prose still warns",
                   _safe(lambda: run_decide(json.dumps({"transcript_path": str(split_prose)}))), WARN)
+            # ⛔ PR #440 r1 m2: the same turn with a torn last record cut MID-CHARACTER still warns — never CANNOT RUN.
+            torn = tmp / "torn.jsonl"
+            torn.write_bytes(split_prose.read_bytes() + b"\n" + b'{"type": "assistant", "message": {"content": "ab\xe2\x9b')
+            check("⭐ PR #440 r1 m2: a torn last record cut mid-character is skipped, and the turn still warns",
+                  _safe(lambda: run_decide(json.dumps({"transcript_path": str(torn)}))), WARN)
 
             # ⛔ THE LIVE TURN IS NEVER JUDGED — one turn of latency is the point, not a bug.
             live_only = write("live.jsonl", [user("do it"), bash("git push"), say("All done.")])
@@ -1711,6 +1731,6 @@ if __name__ == "__main__":
     if a.self_test:
         sys.exit(_self_test())
     if a.decide:
-        sys.exit(run_decide(sys.stdin.read()))
+        sys.exit(run_decide(sys.stdin.buffer.read()))
     ap.print_help()
     sys.exit(CANNOT_RUN)

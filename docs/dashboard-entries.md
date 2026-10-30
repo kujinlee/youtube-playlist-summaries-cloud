@@ -18258,8 +18258,9 @@ Five tooling checks no longer fail silently, or crash, on input they cannot read
 reference numbers in a finished turn used to say nothing at all when the session transcript was corrupt — the same
 silence as "nothing to warn about"; it now says it could not run. All five — that one, the step-banner check, the
 closing-table check, the CI-watch check and the handoff-path check — could crash on an unreadable byte, a malformed
-hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. Nothing a working session sends them
-changes.
+hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. One thing
+a session can see changes: if the handoff skill's file cannot be decoded, `/handoff` is now BLOCKED under a headline
+saying the path could not be checked, where it used to only warn.
 <!--tech-->
 Branch `guards-cannot-run`, PR #440: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
 (d) stay open. `check-transcript-references` returns rc 2 when no transcript record parses, and refuses a non-object
@@ -18267,4 +18268,11 @@ payload; `check-banner-armed`, `check-closing-table` and `check-transcript-refer
 inside an `(OSError, UnicodeDecodeError)` handler; `check-handoff-path` catches `UnicodeDecodeError` (through the CLI
 too); `check-ci-watched` refuses a checks answer that is not a list of objects and an arm directory it cannot list.
 Every input exits 2 with a CANNOT RUN message and no traceback. 12 new cases, 9 new mutations plus one retargeted,
-each killed by the case it names; `EXPECTED_MUTATIONS` 2521.
+each killed by the case it names. Round 1 (both halves NOT CONVERGED) widened each fix to its class: one payload check,
+`check-banner-armed.transcript_lines`, now serves all three Stop-hook guards (raw stdin bytes; null, true, 1 and a string
+as well as a list; a number or a NUL byte as `transcript_path`), and an undecodable LINE is skipped rather than blinding
+the transcript. `check-ci-watched` refuses an object row with no string `status`/`state` and a mixed list. The handoff
+hook gives receipt 2 its own headline. 16 more cases and 12 more mutations, with one entry retired with its subject
+(the reference guard's own dict check, now the borrowed one's). The hook's own mutant was run by hand and killed by the
+case it names, because a manifest can only target `scripts/<stem>.py`. Round 1 m3 and m4 are filed as backlog #331 (e) and (f).
+`EXPECTED_MUTATIONS` 2532.

@@ -878,7 +878,7 @@ EXPECTED_MUTATIONS = {
     # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
     # the warning (F6). Net +4.
     # ⟳ 94 -> 96 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-banner-armed.py": 96,
+    "scripts/check-banner-armed.py": 100,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -931,7 +931,7 @@ EXPECTED_MUTATIONS = {
     # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
     # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
     # ⟳ 49 -> 50 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-closing-table.py": 50,
+    "scripts/check-closing-table.py": 51,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -1204,7 +1204,7 @@ EXPECTED_MUTATIONS = {
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
     # ⟳ 42 -> 44 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
-    "scripts/check-ci-watched.py": 44,
+    "scripts/check-ci-watched.py": 50,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -6253,7 +6253,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2521)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2532)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

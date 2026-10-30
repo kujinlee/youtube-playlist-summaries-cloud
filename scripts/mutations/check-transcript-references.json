@@ -39,12 +39,12 @@
     ]
   },
   {
-    "name": "a payload with no transcript_path reads as QUIET instead of CANNOT RUN, so a hook that stopped supplying it would look like a clean turn for ever",
+    "name": "a payload with no transcript_path reads as QUIET instead of CANNOT RUN, so a hook that stopped supplying it would look like a clean turn for ever ⟳ PR #440 r1: retargeted onto the borrowed payload check's verdict, which `judge` now maps",
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "    if not raw:\n        return 2, \"CANNOT RUN — the hook payload carries no `transcript_path`\", []",
-        "    if not raw:\n        return 0, \"no transcript\", []"
+        "    if lines is None:\n        return 2, f\"CANNOT RUN — {why}\", []",
+        "    if lines is None:\n        return 0, \"no transcript\", []"
       ]
     ],
     "expect": [
@@ -91,29 +91,29 @@
     ]
   },
   {
-    "name": "backlog #357(1): an undecodable transcript raises out of the guard again",
+    "name": "PR #440 r1 X1: the borrowed payload check's None is not mapped to CANNOT RUN, so a NUL byte, a number or a non-object payload raises here (retargeted from backlog #357(1), whose whole-file case is now the #331(a) entry's)",
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "    except (OSError, UnicodeDecodeError) as exc:   # backlog #357(1)",
-        "    except OSError as exc:   # backlog #357(1)"
+        "    if lines is None:\n        return 2",
+        "    if lines is None and False:\n        return 2"
       ]
     ],
     "expect": [
-      "⭐ backlog #357(1): an undecodable byte in the transcript is CANNOT RUN (2), never a traceback"
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
     ]
   },
   {
-    "name": "backlog #357(2): a non-object payload raises out of the guard again",
+    "name": "PR #440 r1 m1: the hook's stdin is read as TEXT again, so an undecodable payload raises before any handler",
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "    if not isinstance(data, dict):     # backlog #357(2)",
-        "    if False:     # backlog #357(2)"
+        "return run_decide(stream.buffer.read() if hasattr(stream, \"buffer\") else stream.read(), log=log)",
+        "return run_decide(stream.read(), log=log)"
       ]
     ],
     "expect": [
-      "⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN (2), never a traceback"
+      "⭐ r1 X1/m1: a NUL byte or a number as transcript_path, and an undecodable payload, are CANNOT RUN through --decide"
     ]
   }
 ]

@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 92 cases
+    python3 scripts/check-ci-watched.py --self-test  # 96 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -54,6 +54,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types              # self-test only: a stub arm directory for `_decide_with`
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -220,6 +221,23 @@ def row_is_resolved(r: dict) -> bool:
         s = str(state).upper()
         return s not in UNRESOLVED and s in RESOLVED_STATES
     return False
+
+
+def row_is_readable(r: object) -> bool:
+    """-> does this row carry a status this guard can judge? PURE.
+
+    ⛔ PR #440 round 1 X2: checking only that each row is an OBJECT let `[{}]` and `[{"state": []}]` through, and
+    `row_is_resolved`'s fail-closed fallback then read them as UNRESOLVED — "CI is running" — over a shape that
+    says nothing. Fail-closed is right for an unknown STATUS VALUE; it is wrong for a row with no status at all,
+    which is blindness. Same precedence as `row_is_resolved`: a non-null `status` decides, else `state`. MEASURED
+    2026-10-30 on PR #440: 16 of 16 rows were CheckRuns with a string `status` and a null `state`.
+    """
+    if not isinstance(r, dict):
+        return False
+    status = r.get("status")
+    if status is not None:
+        return isinstance(status, str)
+    return isinstance(r.get("state"), str)
 
 
 def unresolved_checks(rows: list[dict]) -> list[str]:
@@ -534,8 +552,9 @@ def run_decide(payload: str = "") -> int:
         try:
             parsed = json.loads(raw)
             # ⛔ backlog #357(5): a row that is not an object (`[123]`) raised AttributeError in `decide`, and a
-            # non-list answer read as "no checks". Neither is a shape this guard can judge: CANNOT RUN.
-            rows = parsed if isinstance(parsed, list) and all(isinstance(r, dict) for r in parsed) else None
+            # non-list answer read as "no checks". Neither is a shape this guard can judge: CANNOT RUN. ⛔ PR #440
+            # r1 X2: nor is an object with no readable status — `row_is_readable`.
+            rows = parsed if isinstance(parsed, list) and all(row_is_readable(r) for r in parsed) else None
         except ValueError:
             rows = None
 
@@ -833,15 +852,20 @@ def _self_test_body() -> int:
     # a sweep measures the manifest, not the code.
     def _decide_with(raw, no_pr, skip=None):
         """Drive `run_decide` end to end with the network boundary and the skip check stubbed."""
+        # ⛔ PR #440 r1 X3: HEAD and the arm directory are PINNED. Unpinned, a tree without git metadata gave an
+        # unreadable HEAD, and that CANNOT RUN masked the checks refusal the second case names — measured, the
+        # mutant `rows = []` for an unreadable answer survived 92/92.
         g = globals()
-        real_raw, real_skip = g["_pr_checks_raw"], g["_skip_reason"]
+        keep = {k: g[k] for k in ("_pr_checks_raw", "_skip_reason", "_run", "_sentinel")}
         g["_pr_checks_raw"] = lambda: (raw, no_pr)
         g["_skip_reason"] = lambda: skip
+        g["_run"] = lambda *a, **k: "cafef00dcafef00d"
+        g["_sentinel"] = lambda: types.SimpleNamespace(is_dir=lambda: False)
         try:
             with contextlib.redirect_stderr(io.StringIO()):
                 return run_decide()
         finally:
-            g["_pr_checks_raw"], g["_skip_reason"] = real_raw, real_skip
+            g.update(keep)
     case("run_decide is QUIET when there is no PR — the branch is pushed, so there is no CI to be "
          "unwatched, and this is the every-stop CANNOT RUN the change exists to remove",
          _decide_with(None, True) == QUIET)
@@ -885,6 +909,19 @@ def _self_test_body() -> int:
          _decide_on("[123]") == CANNOT_RUN)
     case("...and a checks answer that is JSON but not a list ({}) is CANNOT RUN too, never read as 'no checks'",
          _decide_on("{}") == CANNOT_RUN)
+    # ⛔ PR #440 r1 M1: a ONE-element list cannot tell `all` from `any` — a valid row BESIDE a non-object must refuse.
+    case("⭐ r1 M1: a valid row beside a non-object ([row, 5]) is CANNOT RUN — every row must be an object, not one",
+         _decide_on(json.dumps([{"name": "v", "state": "PENDING"}, 5]), _NoDir()) == CANNOT_RUN)
+    # ⛔ PR #440 r1 M2-class: `{}` alone pinned only the dict member of "not a list".
+    case("⭐ r1: true, 1 and \"s\" — every non-list checks answer, not only an object — are CANNOT RUN",
+         [_decide_on(r, _NoDir()) for r in ("true", "1", '"s"')] == [CANNOT_RUN] * 3)
+    # ⛔ PR #440 r1 X2: an OBJECT carrying no readable status (`{}`, `{"state": []}`) read as "CI is running".
+    case("⭐ r1 X2: an object row with no string status or state ([{}], [{\"state\": []}], [{\"status\": 1}]) is "
+         "CANNOT RUN, never 'CI is running'",
+         [_decide_on(r, _NoDir()) for r in ("[{}]", '[{"state": []}]', '[{"status": 1}]')] == [CANNOT_RUN] * 3)
+    case("...while a COMPLETED CheckRun with a null state, the shape gh returns, is still READ (QUIET, nothing pending)",
+         _decide_on(json.dumps([{"name": "v", "status": "COMPLETED", "state": None, "conclusion": "SUCCESS"}]),
+                    _NoDir()) == QUIET)
     case("...while a real pending row still WARNS, so the refusal is about the SHAPE, not every row",
          _decide_on(json.dumps([{"name": "verify", "state": "PENDING"}]), _NoDir()) == WARN)
     case("⭐ backlog #357(4): an arm directory that cannot be LISTED (permission denied) is CANNOT RUN, never a "
