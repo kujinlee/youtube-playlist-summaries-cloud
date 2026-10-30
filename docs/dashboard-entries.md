@@ -18297,3 +18297,17 @@ identity (`same_dir_or_inside`, `(st_dev, st_ino)` of every existing ancestor) f
 volume, and the watch covers the reviewed root's `docs/reviews/` even before it exists. Filing stays
 under `REPO_ROOT`. Backlog #182 is reopened, its code restored to master:
 `docs/reviews/architecture-review-2026-10-29-gap-reader.md`.
+
+## 2026-10-30
+The slowest check in the repository got about seven times faster. The test suite of the guard that
+checks every script's `main()` can be driven from its own tests used to take about 68 seconds on a
+laptop. That one suite was two thirds of all the work in CI's mutation sweep, because the sweep runs
+it once for every one of its mutations. It now takes about 8 seconds and gives the same answers.
+<!--tech-->
+Backlog #401. `scripts/check-main-drivable.py` gains `_memo_by_node`, a cache keyed on the
+identity of a helper's AST arguments. Each entry holds those nodes, so no id can be reused while it
+exists, and the answer it hands back is frozen. It wraps `_all_functions`, `note_globals_imports`,
+`_own_scope`, `_bound_values`, `_defs_in_scope` and a new per-tree `_class_methods` behind
+`_resolve_callee`. `_parents` already had its own cache. There are three new cases and the suite
+now has 441. Six new mutation entries take `EXPECTED_MUTATIONS` from 183 to 189 and the declared
+sum from 2538 to 2544. One anchor moved: the r9 nested-class entry now points into `_class_methods`.

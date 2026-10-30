@@ -2045,8 +2045,8 @@
   "name": "a NESTED class's methods become invisible to the callee owner, so `C.Inner().nested()` hands main the global (r9 Claude Medium)",
   "edits": [
    [
-    "        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)",
-    "        named = [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
+    "    return [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)",
+    "    return [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
    ]
   ],
   "expect": [
@@ -2376,6 +2376,84 @@
   ],
   "expect": [
    "...and a helper in the ENCLOSING scope resolves for a call one scope deeper \u2014 the middle of the chain, which neither the call's own scope nor the module supplies"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the memo keys a node by its TYPE rather than its identity, so every function after the first is answered from the first one's entry \u2014 the resolver's three binding forms collapse to one answer (backlog #401)",
+  "edits": [
+   [
+    "        key = tuple(id(a) if",
+    "        key = tuple(type(a).__name__ if"
+   ]
+  ],
+  "expect": [
+   "the resolver reads `with \u2026 as`, `for \u2026 in` and `=` alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo entry stops holding the nodes it is keyed on, so a freed tree's id is reused by the next one and the cache hands back the previous tree's answer (backlog #401)",
+  "edits": [
+   [
+    "            hit = memo[key] = (args, out)",
+    "            hit = memo[key] = (None, out)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a memoised helper answers for THIS tree, though every tree before it is gone and its address is reused (backlog #401)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the memo key drops every argument that is not a node, so `_bound_values(\"p\", fn)` answers with what it found for `td` (backlog #401)",
+  "edits": [
+   [
+    "else a for a in args)",
+    "else None for a in args)"
+   ]
+  ],
+  "expect": [
+   "...and for THIS name: one function, two names, two answers"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memoised LIST is handed out mutable, so one caller's append changes the answer every later caller gets for that node (backlog #401)",
+  "edits": [
+   [
+    "                out = tuple(out)\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memoised SET is handed out mutable, so one caller's add changes the answer every later caller gets for that tree (backlog #401)",
+  "edits": [
+   [
+    "                out = frozenset(out)\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memoised DICT is handed out mutable, so one caller's assignment changes the answer every later caller gets for that tree (backlog #401)",
+  "edits": [
+   [
+    "                out = types.MappingProxyType(out)\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
   ],
   "file": "scripts/check-main-drivable.py"
  }

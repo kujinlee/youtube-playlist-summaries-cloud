@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 438 cases
+    python3 scripts/check-main-drivable.py --self-test   # 441 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -108,6 +108,7 @@ import functools
 import io
 import re
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -310,6 +311,39 @@ class Verdict:
 # data. The only thing that touches disk is `main`, which is also the only thing that needs a root.
 
 
+def _memo_by_node(build):
+    """Cache a PURE helper on the IDENTITY of its AST arguments, and freeze what it hands back.
+
+    It is here for one measured reason (backlog #401): the case that reconciles the committed
+    `MAIN_DEBT` runs `assess()` over every real guard, and the same few helpers re-walked the same
+    large trees ~52M `ast.walk` steps per suite run — 68% of the whole mutation sweep's work.
+    ⚠ `id` KEYS ARE SAFE ONLY BECAUSE THE NODES ARE ALIVE: each entry holds its own arguments, so
+    no node it names can be collected and have its id reused while the entry exists — the reason
+    `_parents` gives for keeping its cache and its `id` keys in one function.
+    ⚠ ONE ANSWER IS SHARED BY EVERY CALLER, so it is frozen — a list becomes a tuple, a set a
+    frozenset, a dict a read-only view. A caller that mutates fails loudly instead of corrupting
+    every later answer for that node. No caller mutates today; this is what keeps it so.
+    ⚠ POSITIONAL ARGUMENTS ONLY, on purpose: a keyword call raises rather than missing the cache.
+    """
+    memo: dict[tuple, tuple[tuple, object]] = {}
+
+    @functools.wraps(build)
+    def cached(*args):
+        key = tuple(id(a) if isinstance(a, ast.AST) else a for a in args)
+        hit = memo.get(key)
+        if hit is None:
+            out = build(*args)
+            if isinstance(out, list):
+                out = tuple(out)
+            elif isinstance(out, set):
+                out = frozenset(out)
+            elif isinstance(out, dict):
+                out = types.MappingProxyType(out)
+            hit = memo[key] = (args, out)
+        return hit[1]
+    return cached
+
+
 def module_globals(tree: ast.Module) -> set[str]:
     """Every name bound at module level — assignments, imports, and defs. PURE.
 
@@ -415,6 +449,7 @@ def argv_forwarders(tree: ast.Module) -> dict[str, int]:
 SUITE_ENTRY_NAMES = ("_self_test", "self_test")   # measured on disk: 67 and 25 occurrences
 
 
+@_memo_by_node
 def _all_functions(tree: ast.Module) -> dict[str, ast.AST]:
     """Every function DEFINED anywhere in the module, nested ones included, by name.
 
@@ -664,6 +699,7 @@ def suite_main_calls(tree: ast.Module) -> list[tuple[ast.Call, ast.AST | None, s
     return found
 
 
+@_memo_by_node
 def note_globals_imports(tree: ast.Module) -> set[str]:
     """Names this module imported FOR `globals` — `from builtins import globals as gl`. PURE."""
     out: set[str] = set()
@@ -1388,6 +1424,7 @@ def _passes_extra_world(call: ast.Call, main_fn: ast.AST, fn: ast.AST | None = N
                for kw in call.keywords)
 
 
+@_memo_by_node
 def _own_scope(fn: ast.AST | None) -> list[ast.AST]:
     """Every node of this function EXCEPT the bodies of functions and classes nested inside it.
 
@@ -1420,6 +1457,7 @@ def _own_scope(fn: ast.AST | None) -> list[ast.AST]:
     return out
 
 
+@_memo_by_node
 def _bound_values(name: str, fn: ast.AST | None) -> list[tuple[int, ast.AST | None]]:
     """Every value this case binds to `name`, in source order. PURE.
 
@@ -1615,6 +1653,7 @@ def callee_returns_live(expr: ast.Call, tree: ast.Module | None, world: frozense
     return _definition_returns_live(_resolve_callee(expr.func, tree, fn), tree, world, depth, expr)
 
 
+@_memo_by_node
 def _defs_in_scope(scope: ast.AST) -> list[ast.AST]:
     """The function definitions BOUND IN this scope — not those bound in scopes beneath it. PURE.
 
@@ -1692,17 +1731,25 @@ def _visible_def(name: str, fn: ast.AST | None, tree: ast.Module) -> "ast.AST | 
     return None
 
 
+@_memo_by_node
+def _class_methods(tree: ast.Module) -> list[ast.AST]:
+    """Every function defined directly in a class body, nested classes included. PURE.
+
+    Once per tree: `_resolve_callee` asks for it on every `Attribute` callee it meets.
+    """
+    # ⚠ `ast.walk`, not `tree.body`: a NESTED class is still a class (round 9, Claude M2).
+    return [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+            for f in cls.body
+            if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+
 def _resolve_callee(func: ast.AST, tree: ast.Module,
                     fn: ast.AST | None = None) -> "ast.AST | None":
     """The definition this callee names, or None when it cannot be resolved UNAMBIGUOUSLY."""
     if isinstance(func, ast.Name):
         return _visible_def(func.id, fn, tree)
     if isinstance(func, ast.Attribute):
-        # ⚠ `ast.walk`, not `tree.body`: a NESTED class is still a class (round 9, Claude M2).
-        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
-                 for f in cls.body
-                 if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
-                 and f.name == func.attr]
+        named = [f for f in _class_methods(tree) if f.name == func.attr]
         # ⛔ ROUND 10, CLAUDE M3, AND IT IS A MASKING PAIR INSIDE THE EXTRACTION WRITTEN TO END
         # THEM. An `if len(named) == 1: return named[0]` stood above this, plus a ternary
         # `return named if len({id(f) for f in named}) > 1 else named[0]`. `named` holds distinct
@@ -4430,6 +4477,39 @@ def _self_test_body() -> int:                                      # noqa: C901 
              "def f():\n    with first() as td:\n        pass\n"
              "    td = second()\n    for td in third():\n        pass\n").body[0])],
          [2, 4, 5])
+    # ⛔ THE CACHE ANSWERS FOR THIS NODE AND THIS NAME, NEVER A PREVIOUS ONE (backlog #401). Each
+    # tree here is dropped as soon as its call returns — the answer is strings, so nothing of the
+    # tree outlives it — and CPython hands the next, same-shaped tree the freed addresses. Measured
+    # with the entry NOT holding its arguments: 9 to 58 of 64 answers were a previous tree's, on
+    # 3.14 and 3.12. A key coarser than identity answers the first tree's `g0` every time.
+    # ⚠ `_bound_values` CANNOT witness this: `_own_scope`'s answer contains `fn` itself, which keeps
+    # the node alive and its id unique whatever the entry holds — measured, 0 of 64 wrong.
+    case("⛔ a memoised helper answers for THIS tree, though every tree before it is gone and its "
+         "address is reused (backlog #401)",
+         [sorted(note_globals_imports(ast.parse(f"from builtins import globals as g{i}\n")))
+          for i in range(256)],
+         [[f"g{i}"] for i in range(256)])
+    _two = ast.parse("def f():\n    td = first()\n    p = second()\n").body[0]
+    case("...and for THIS name: one function, two names, two answers",
+         ([ast.unparse(v) for _, v in _bound_values("td", _two)],
+          [ast.unparse(v) for _, v in _bound_values("p", _two)]),
+         (["first()"], ["second()"]))
+
+    def _refuses(op) -> bool:
+        try:
+            op()
+        except (AttributeError, TypeError):
+            return True
+        return False
+    _fz = ast.parse("from builtins import globals as gl\ndef f():\n    td = 1\n")
+    case("...and the ONE answer every caller shares refuses to be mutated, so a caller cannot "
+         "corrupt it for the next — list, set and dict alike",
+         (_refuses(lambda: _own_scope(_fz.body[-1]).append(None)),
+          _refuses(lambda: note_globals_imports(_fz).add("x")),
+          _refuses(lambda: _all_functions(_fz).__setitem__("g", None)),
+          len(_own_scope(_fz.body[-1])) > 0, set(note_globals_imports(_fz)),
+          set(_all_functions(_fz))),
+         (True, True, True, True, {"gl"}, {"f"}))
     # ⚠ FIVE PRECONDITIONS, EACH GUARDING A CRASH NO CASE HAD REACHED. Severing any of them left
     # the suite GREEN — so the rule the ratchet would want at each line was unmutatable, and a
     # real guard of that shape would have raised out of the gate rather than reported.

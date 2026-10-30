@@ -2176,7 +2176,11 @@ EXPECTED_MUTATIONS = {
     # fail — a branched binding answered by `_is_restore_value` before the rule under test, and a
     # callee-scope substitution no input distinguished. Every `expect` below was derived by
     # RUNNING its mutation against a green control, never written from the finding.
-    "scripts/check-main-drivable.py": 183,
+    # ⟳ 2026-10-30, backlog #401: 183 -> 189. Six entries for the node-identity memo that took
+    # the suite from ~68s to ~8s — a key coarser than identity, an entry that stops holding its
+    # nodes, a key that drops the name, and each of the three freezes — plus ONE RETARGET: the r9
+    # nested-class anchor moved, unchanged, into `_class_methods`.
+    "scripts/check-main-drivable.py": 189,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
@@ -6262,7 +6266,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2538)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2544)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
