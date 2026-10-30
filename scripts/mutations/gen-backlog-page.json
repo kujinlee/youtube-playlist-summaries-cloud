@@ -229,5 +229,161 @@
       ]
     ],
     "expect": "an EMPTY group is MALFORMED, and the cell's other tags survive it"
+  },
+  {
+    "name": "#394: an unknown kind is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if kind not in KINDS:\n        raise ShapeError(f\"row {num}: unknown kind",
+        "    if False:\n        raise ShapeError(f\"row {num}: unknown kind"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: an UNKNOWN kind is refused, naming the row"
+    ]
+  },
+  {
+    "name": "#394: a marker need not start with kind:",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if not head.startswith(\"kind:\"):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a marker that does not START with kind: is refused, and says so"
+    ]
+  },
+  {
+    "name": "#394: a bare `part of: #N` is accepted as a parent",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "PARENT_FIELD = re.compile(r\"part of: backlog #(\\d+)|",
+        "PARENT_FIELD = re.compile(r\"part of: (?:backlog )?#(\\d+)|"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent field in any other shape is refused (a bare #N, a tag)"
+    ]
+  },
+  {
+    "name": "#394: a ⟦…⟧ that does not end the cell is read as no marker",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if \"⟦\" in item or \"⟧\" in item:\n            raise ShapeError(f\"row {num}: a ⟦…⟧ marker must END",
+        "        if False:\n            raise ShapeError(f\"row {num}: a ⟦…⟧ marker must END"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a ⟦…⟧ that does not END the cell, or a second one, is refused"
+    ]
+  },
+  {
+    "name": "#394: a second ⟦…⟧ marker in the cell is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if \"⟦\" in rest or \"⟧\" in rest:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a ⟦…⟧ that does not END the cell, or a second one, is refused"
+    ]
+  },
+  {
+    "name": "#394: a row with no kind is not reported",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "f\"Item cell\" for r in rows if r.get(\"kind\") is None]",
+        "f\"Item cell\" for r in rows if False]"
+      ]
+    ],
+    "expect": [
+      "#394: a row with NO kind is REPORTED, never guessed"
+    ]
+  },
+  {
+    "name": "#394: a self-parent is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if k == \"backlog\" and v == r[\"num\"]:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row, the row itself or an unregistered anchor is refused"
+    ]
+  },
+  {
+    "name": "#394: a parent naming a missing row is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            elif k == \"backlog\" and v not in nums:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row, the row itself or an unregistered anchor is refused"
+    ]
+  },
+  {
+    "name": "#394: an epic naming an unregistered anchor is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            elif k == \"epic\" and v not in anchors:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row, the row itself or an unregistered anchor is refused"
+    ]
+  },
+  {
+    "name": "#394: the marker stays in the item's text",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return rest.rstrip(), kind, parents",
+        "    return item, kind, parents"
+      ]
+    ],
+    "expect": [
+      "#394: the marker is not part of the item's text — title and body never show it"
+    ]
+  },
+  {
+    "name": "#394: the card does not carry the row's kind",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "data-kind=\"{html.escape(r.get('kind') or 'none')}\"",
+        "data-kind=\"none\""
+      ]
+    ],
+    "expect": [
+      "#394: the card SHOWS the kind and LINKS each parent"
+    ]
+  },
+  {
+    "name": "#394: parse never reads the marker",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        item, kind, parents = kind_mark(item, num)\n",
+        "        kind, parents = None, []\n"
+      ]
+    ],
+    "expect": [
+      "#394: the kind and the parents are READ from the marker"
+    ]
   }
 ]
