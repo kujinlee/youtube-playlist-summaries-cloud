@@ -19,7 +19,8 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
     REFUSE-SPAWN  weekly 90% or more — a NEW subagent spawn, and a message that WAKES an agent, are
                   denied; work in flight continues
-    CANNOT RUN    the cache is missing, not a regular file, over 64 KiB, unparseable, has no seven_day
+    CANNOT RUN    the cache is missing, not a regular file, not read within 1 s, over 64 KiB, unparseable
+                  (nesting too deep included), has no seven_day
                   window, is older than 15 min, was written more than 5 s in the future, its seven_day
                   reset has passed, or that reset is not a representable time in seconds (more than 7 days
                   + 1 h ahead — a millisecond or nanosecond epoch — or one this platform cannot format).
@@ -31,6 +32,11 @@ valid weekly 95% beside a five-hour `resets_at` of 1e300 let a spawn through —
 the five-hour window is dropped, the notice says it is unreadable (NOT RUN), and the weekly verdict stands:
 REFUSE at 95%, and at least WARN otherwise, so the gap is never silent. CANNOT RUN means the WEEKLY value is
 unknown, which here it is not.
+
+⟳ PR #446 r2 X2: an integer too large for a float (`10**400`) RAISED in `math.isfinite`, so all three hooks
+exited 1 with no verdict and a valid weekly 95% let a spawn through. Every JSON integer is now read AS A FLOAT
+(`parse_json`), so the huge one is `inf`, which no window accepts: that window is NOT RUN and the weekly
+verdict stands. The rule is one place, the parse, so nothing downstream ever sees a Python int.
 
 THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`:
 
@@ -48,14 +54,30 @@ THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`:
     usage-pace-spawn.sh    PreToolUse on Agent: at REFUSE-SPAWN, deny, unless overridden. Otherwise allow,
                            silently.
     usage-pace-wake.sh     PreToolUse on SendMessage (r1 M1, the OWNER's option A, 2026-10-30): at
-                           REFUSE-SPAWN, deny, unless overridden — EXCEPT a message addressed to `main` or
-                           `team-lead`, which is a subagent reporting home: finishing work in flight, not
-                           waking parked work, and denying it would strand a finished result. WAKING AN
-                           IDLE AGENT IS THE MEASURED EXPENSIVE CASE: `docs/process-checklists.md` →
-                           *Agent lifetime* puts woken long-lived teammates at 69.5% of weighted usage
-                           against 4.3% for fresh subagents, so gating only `Agent` refused the cheap path
-                           and steered work onto the dear one. A wake of a RUNNING agent (a course
-                           correction) cannot be told apart by its payload, and is denied too.
+                           REFUSE-SPAWN, deny a message SENT BY THE MAIN SESSION, unless overridden. A
+                           message sent BY A SUBAGENT is a report upward — finishing work in flight, not
+                           waking parked work — and is allowed. WAKING AN IDLE AGENT IS THE MEASURED
+                           EXPENSIVE CASE: `docs/process-checklists.md` → *Agent lifetime* puts woken
+                           long-lived teammates at 69.5% of weighted usage against 4.3% for fresh
+                           subagents, so gating only `Agent` refused the cheap path and steered work onto
+                           the dear one. A wake of a RUNNING agent (a course correction) cannot be told
+                           apart by its payload, and is denied too.
+
+THE WAKE GATE DECIDES BY WHO IS SENDING, NEVER BY THE RECIPIENT'S NAME (PR #446 r2 X1). r1 exempted a message
+whose `to` looked like `main`; a worker registered as `main [abcdef]` was woken through it, because the harness
+resolves an exact registered name first. The recipient string is never read now. The caller is the hook
+input's top-level `agent_id`, which the HARNESS sets and the model cannot write (`tool_input` is the model's).
+MEASURED on Claude Code 2.1.309, 2026-10-30, with a marker hook dumping its stdin in a throwaway `claude -p`
+project:
+    main session            no `agent_id`, no `agent_type`        (Bash, Agent, SendMessage alike)
+    a spawned subagent      `agent_id` (e.g. "a222d14edab0eb5b8") and `agent_type` ("general-purpose")
+    main under `--agent X`  `agent_type` only, NO `agent_id`
+so the key is `agent_id`, never `agent_type`: a `--agent` main session is still the main session. The docs
+(code.claude.com/docs/en/hooks, *Common input fields*) say the same and add in-process teammates to agent_id.
+⚠ BOUNDS. An input with no `agent_id` cannot be told from the main session, so it is GATED (the owner's rule:
+fail toward the refusal). A subagent's message to a SIBLING is allowed too: the caller is a subagent, and
+telling an upward report from a sideways wake would mean reading the recipient's name again. Teammates were
+not measured here; the docs, not this file, put them under `agent_id`.
 
 THE DENIAL HAS TWO READERS (r1 M2). `permissionDecisionReason` goes to the MODEL — the agent the gate
 constrains — and states only the %, the rule and the reset. How to override goes to the OWNER, in the
@@ -90,7 +112,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 213 cases
+    python3 scripts/check-usage-pace.py --self-test  # 247 cases
 """
 from __future__ import annotations
 
@@ -99,6 +121,7 @@ import math
 import os
 import stat
 import sys
+import threading
 import time
 import types
 
@@ -118,6 +141,9 @@ HORIZON_SLACK_S = 3600
 # The bounded reads. ⟳ Replace read_regular with scripts/bounded_read.py (PR #440) once it merges.
 CACHE_MAX_BYTES = 64 * 1024
 PAYLOAD_MAX_BYTES = 1024 * 1024
+# Every file read finishes within this or is CANNOT RUN (r2 X3). Well under the 30 s hook timeout, and far over
+# a local read of 64 KiB.
+READ_DEADLINE_S = 1.0
 
 OK, WARN, REFUSE, CANNOT_RUN = "OK", "WARN", "REFUSE-SPAWN", "CANNOT RUN"
 RC = {OK: 0, WARN: 1, CANNOT_RUN: 2, REFUSE: 3}
@@ -127,8 +153,6 @@ OVERRIDE_ENV = "ALLOW_SPAWN_OVER_LIMIT"
 OVERRIDE_FILE = os.path.join(".claude", "allow-spawn-over-limit")
 OVERRIDE_MAX_S = 7 * 86400
 OVERRIDE_DEFAULT_S = 2 * 3600
-# A SendMessage to one of these is a subagent reporting to the coordinator, so it is never refused.
-HOME_RECIPIENTS = ("main", "team-lead")
 ACTIVE_NOTE = " (The override is ACTIVE, so spawns and wake-ups are allowed.)"
 # The session that was last told the cache is ABSENT, so a clone with no statusline hears it once per session.
 NOTICE_STATE_FILE = os.path.join(".claude", "usage-pace-notice")
@@ -161,6 +185,17 @@ def pct(p: float) -> str:
 def count(x: float) -> str:
     """A count for a message, kept short when a hostile epoch makes it astronomical."""
     return f"{x:.0f}" if abs(x) < 1e7 else f"{x:.3g}"
+
+
+def parse_json(text: str) -> object:
+    """JSON with every integer read as a FLOAT, so no number can raise after the parse (r2 X2): `10**400` is
+    `inf`, which `is_number` refuses, where a Python int made `math.isfinite` raise OverflowError. `float` has
+    no digit limit, unlike `int`. Nesting too deep for this Python's parser (3.12 raises RecursionError on a
+    60 KB `[[[…]]]`, 3.14 does not) is a ValueError like any other malformed text."""
+    try:
+        return json.loads(text, parse_int=float)
+    except RecursionError:
+        raise ValueError("it is nested too deeply to parse") from None
 
 
 def is_number(x: object) -> bool:
@@ -203,7 +238,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[st
     if text is None:
         return cannot(missing)
     try:
-        doc = json.loads(text)
+        doc = parse_json(text)
     except ValueError as e:
         return cannot(f"the cache is not valid JSON ({e})")
     if not isinstance(doc, dict):
@@ -240,7 +275,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[st
     if weekly >= REFUSE_AT:
         return REFUSE, (f"⛔ usage pace: weekly usage is {pct(weekly)} — new subagent spawns, and messages that "
                         f"wake an agent, are REFUSED (at {pct(REFUSE_AT)}); work in flight continues, and a "
-                        f"report to main is allowed. Resets {local_time(resets)}.{five_note}")
+                        f"subagent's report is allowed. Resets {local_time(resets)}.{five_note}")
     if weekly >= WARN_AT:
         return WARN, (f"⚠ usage pace: weekly usage is {pct(weekly)} (WARN at {pct(WARN_AT)}; at "
                       f"{pct(REFUSE_AT)} new spawns and agent wake-ups are refused). "
@@ -250,11 +285,34 @@ def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[st
     return OK, ""
 
 
-def read_regular(path: str, limit: int) -> tuple[str | None, str]:
+def read_regular(path: str, limit: int, deadline: float = READ_DEADLINE_S) -> tuple[str | None, str]:
     """The FETCH: (text, reason-if-None); (None, "") means NO FILE. Kept apart so every rule above is reachable
-    without a file. Only a REGULAR file is read, opened non-blocking and read under `limit` bytes, so a FIFO, a
+    without a file. The read runs in a WORKER THREAD joined with a timeout, so it returns within `deadline`
+    whatever the filesystem does (r2 X3: a delayed `os.read` held the prompt 2.4 s; a stuck one, the 30 s hook
+    timeout). A thread, not `signal.alarm`: a signal interrupts only a syscall that returns EINTR, and a read
+    from a regular file on a stalled disk does not, so the alarm would fire and the read would go on. The
+    abandoned thread is a daemon and dies with the process. ⟳ scripts/bounded_read.py (PR #440, not yet merged)
+    should replace `_read_now` once it lands."""
+    box: list = []
+
+    def work() -> None:
+        try:
+            box.append(_read_now(path, limit))
+        except Exception as e:  # noqa: BLE001 — a reader bug is a reason, never a silent empty box
+            box.append((None, f"{path} could not be read ({type(e).__name__}: {e})"))
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    worker.join(deadline)
+    if worker.is_alive():
+        return None, f"{path} was not read within {deadline:g} s (a stalled filesystem?)"
+    return box[0]
+
+
+def _read_now(path: str, limit: int) -> tuple[str | None, str]:
+    """The read itself. Only a REGULAR file, opened non-blocking and read under `limit` bytes, so a FIFO, a
     directory or a device costs one `fstat`, never a stall (r1 X2: a FIFO held every prompt for the 30 s hook
-    timeout). ⟳ scripts/bounded_read.py (PR #440, not yet merged) should replace this once it lands."""
+    timeout)."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
     except FileNotFoundError:
@@ -281,10 +339,13 @@ def read_regular(path: str, limit: int) -> tuple[str | None, str]:
 
 
 def main_checkout(root: str) -> tuple[str | None, str]:
-    """The MAIN checkout of `root`, from its common git dir; (None, why) when it has none. Only the variables
-    that relocate the repository are dropped, so a caller's `GIT_DIR` cannot redirect it."""
+    """The MAIN checkout of `root`, from its common git dir; (None, why) when it has none. EVERY `GIT_*`
+    variable is dropped, so nothing the caller exported can relocate the answer (r2 X4). A list of the
+    relocating ones was the r1 shape and it was incomplete: measured, `GIT_DIR` and `GIT_COMMON_DIR` redirect
+    it, and `GIT_CEILING_DIRECTORIES` and `GIT_OBJECT_DIRECTORY` make it fail; `GIT_WORK_TREE` alone moves
+    nothing, which is why removing it from the old list survived."""
     import subprocess
-    env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     try:
         p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root, env=env,
                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
@@ -307,7 +368,7 @@ def override_path(root: str) -> tuple[str | None, str]:
 def session_of(payload: str) -> str | None:
     """The hook payload's session_id, or None when there is no usable one."""
     try:
-        doc = json.loads(payload)
+        doc = parse_json(payload)
     except ValueError:
         return None
     sid = doc.get("session_id") if isinstance(doc, dict) else None
@@ -389,15 +450,17 @@ def owner_text(override: tuple[bool, str]) -> str:
     return override[1]
 
 
-def addressed_home(payload: str) -> bool:
-    """True when a SendMessage payload is addressed to the coordinator; anything unparseable is not."""
+def sent_by_subagent(payload: str) -> bool:
+    """True when the hook input says a SUBAGENT made the call: a non-empty top-level `agent_id`, which the
+    harness sets and the model cannot (r2 X1). The recipient is never read. Anything else — no `agent_id`,
+    `agent_type` alone (a `--agent` main session), an `agent_id` inside `tool_input`, an unparseable payload —
+    is the main session or cannot be told from it, so it is False and the gate applies."""
     try:
-        doc = json.loads(payload)
+        doc = parse_json(payload)
     except ValueError:
         return False
-    ti = doc.get("tool_input") if isinstance(doc, dict) else None
-    to = ti.get("to") if isinstance(ti, dict) else None
-    return isinstance(to, str) and to.split(" [", 1)[0].strip() in HOME_RECIPIENTS
+    aid = doc.get("agent_id") if isinstance(doc, dict) else None
+    return isinstance(aid, str) and aid.strip() != ""
 
 
 def prompt_output(verdict: str, message: str, override: tuple[bool, str] = (False, "")) -> str | None:
@@ -486,7 +549,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
         if args.hook == "wake" and verdict == REFUSE and not override[0]:
             if payload is None:
                 payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode("utf-8", errors="replace")
-            if len(payload) <= PAYLOAD_MAX_BYTES and addressed_home(payload):
+            if len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload):
                 verdict = OK
         out = gate_output(verdict, message, override)
     if out:
@@ -564,7 +627,7 @@ def _self_test_body() -> int:
               "refused). Resets Mon 01-18 00:00 PST.")
         check("REFUSE, the whole message (fixed string; it names no override)", ev(cache(92.5))[1],
               "⛔ usage pace: weekly usage is 92.5% — new subagent spawns, and messages that wake an agent, are "
-              "REFUSED (at 90%); work in flight continues, and a report to main is allowed. "
+              "REFUSED (at 90%); work in flight continues, and a subagent's report is allowed. "
               "Resets Mon 01-18 00:00 PST.")
         check("WARN at 89.9999 shows 89.9%, never 90%", ev(cache(89.9999))[1].startswith(
             "⚠ usage pace: weekly usage is 89.9% (WARN"), True)
@@ -680,6 +743,61 @@ def _self_test_body() -> int:
                   if ev(cache(95, five=95, week_reset=a, five_reset=b))[0].startswith("raised")]
         check("evaluate is TOTAL over hostile seven-day x five-hour resets", raised, [])
 
+        # ── no integer can raise; a bad window is that window's NOT RUN (r2 X2/X4) ──────────────────
+        # Raw JSON text, because `json.dumps` itself refuses an int past 4,300 digits.
+        def raw(week_p: str = "95", week_r: str = str(int(WEEK_RESET)), five_p: str | None = None,
+                five_r: str = str(int(FIVE_RESET)), at: str = str(int(NOW))) -> str:
+            five = "" if five_p is None else f', "five_hour": {{"used_percentage": {five_p}, "resets_at": {five_r}}}'
+            return (f'{{"at": {at}, "rate_limits": {{"seven_day": {{"used_percentage": {week_p}, '
+                    f'"resets_at": {week_r}}}{five}}}}}')
+
+        def val(f: object, *a: object) -> object:
+            """f(*a), with an exception turned into a value, so a crash reddens ITS case and not the suite."""
+            try:
+                return f(*a)  # type: ignore[operator]
+            except Exception as e:  # noqa: BLE001 — the point is to name it
+                return f"raised {type(e).__name__}"
+
+        huge, vast = "1" + "0" * 400, "9" * 5000
+        check("parse_json: every integer is a float", type(val(parse_json, "7")).__name__, "float")
+        check("parse_json: strings, floats and nesting are untouched",
+              (parse_json('{"a": "b"}'), parse_json('[1.5, {"c": null}]')), ({"a": "b"}, [1.5, {"c": None}]))
+        check("parse_json: 10**400 is inf, not an int", val(parse_json, huge), math.inf)
+        check("parse_json: a 5,000-digit integer (past int's digit limit) is inf", val(parse_json, vast), math.inf)
+        check("the r2 input: weekly 95 with a five-hour used_percentage of 10**400 still REFUSES",
+              kind(raw(five_p=huge, five_r=str(int(FIVE_RESET)))), REFUSE)
+        check("... and the five-hour window is said to be NOT RUN", "NOT RUN" in ev(raw(five_p=huge))[1], True)
+        check("weekly 95 with a five-hour resets_at of 10**400 still REFUSES", kind(raw(five_p="50", five_r=huge)),
+              REFUSE)
+        check("weekly 95 with a five-hour resets_at of -10**400 still REFUSES",
+              kind(raw(five_p="50", five_r="-" + huge)), REFUSE)
+        check("a weekly used_percentage of 10**400 is CANNOT RUN, never a crash", kind(raw(week_p=huge)), CANNOT_RUN)
+        check("a weekly resets_at of 10**400 is CANNOT RUN", kind(raw(week_r=huge)), CANNOT_RUN)
+        check("an 'at' of 10**400 is CANNOT RUN", kind(raw(at=huge)), CANNOT_RUN)
+        check("an 'at' of 5,000 digits is CANNOT RUN", kind(raw(at=vast)), CANNOT_RUN)
+        deep = "[" * 30000 + "]" * 30000
+        check("a 60 KB nested cache is CANNOT RUN, on every Python", kind(deep), CANNOT_RUN)
+        real_loads = json.loads
+
+        def recurse(*_a: object, **_k: object) -> object:
+            raise RecursionError("maximum recursion depth exceeded")
+
+        json.loads = recurse  # the 3.12 parser's behaviour on `deep`, injected so every Python witnesses it
+        try:
+            injected = (kind(cache(95)), val(session_of, json.dumps({"session_id": "s"})),
+                        val(sent_by_subagent, json.dumps({"agent_id": "a1"})))
+        finally:
+            json.loads = real_loads
+        check("a parser RecursionError is CANNOT RUN for the cache, None for a session, and gated for a wake",
+              injected, (CANNOT_RUN, None, False))
+        five_hostile = ("1e300", "-1e300", "1.8e18", "NaN", "Infinity", "-Infinity", "-1", '"x"', "null", "true",
+                        "[]", "{}", huge, "-" + huge, vast)
+        not_refused = [(a[:12], b[:12]) for a in five_hostile for b in five_hostile
+                       if ev(raw(five_p=a, five_r=b))[0] != REFUSE]
+        check("a VALID weekly 95 REFUSES across every hostile five-hour used x reset", not_refused, [])
+        check("... the cross-product is really reaching the five-hour window (a valid one there WARNs at 10%)",
+              kind(raw(week_p="10", five_p="95")), WARN)
+
         # ── the bounded, regular-file-only read (r1 X2) ─────────────────────────────────────────────
         tmp = tempfile.mkdtemp(prefix="usage-pace-")
         try:
@@ -712,6 +830,35 @@ def _self_test_body() -> int:
             except subprocess.TimeoutExpired:
                 got = ("hung past 5 s", False)
             check("a FIFO cache is CANNOT RUN within 5 s, and says why", got, (2, True))
+
+            # ── the read's deadline (r2 X3): a slow read is injected, not a slow disk ─────────────────
+            real_read = _read_now
+
+            def slow(path: str, limit: int) -> tuple[str | None, str]:
+                time.sleep(3)
+                return real_read(path, limit)
+
+            g = globals()
+            g["_read_now"] = slow
+            try:
+                t0 = time.monotonic()
+                got_slow = read_regular(reg, CACHE_MAX_BYTES, 0.3)
+                took = time.monotonic() - t0
+                t0 = time.monotonic()
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc_slow = main(["--cache", reg, "--now", str(NOW), "--root", tmp], env={}, payload="")
+                took_main = time.monotonic() - t0
+            finally:
+                g["_read_now"] = real_read
+            check("read_regular: a read slower than its deadline is (None, why) within the deadline",
+                  (got_slow[0], "not read within 0.3 s" in got_slow[1], took < 1.5), (None, True, True))
+            check("main: a stalled cache read is a loud CANNOT RUN within the 1 s deadline",
+                  (rc_slow, "CANNOT RUN" in buf.getvalue() and "not read within 1 s" in buf.getvalue(),
+                   took_main < 2.5), (2, True, True))
+            got_bad = read_regular(None, 10)  # type: ignore[arg-type]
+            check("read_regular: a reader that raises is (None, why), never a bare exception or an empty box",
+                  (got_bad[0], got_bad[1].startswith("None could not be read (TypeError")), (None, True))
 
             # ── the override rule (r1 M2) ───────────────────────────────────────────────────────────
             def orule(text: str | None, reason: str, now: float) -> tuple[object, str]:
@@ -778,6 +925,36 @@ def _self_test_body() -> int:
                 check("override_path: an exported GIT_DIR does not redirect it", override_path(tmp)[0], None)
             finally:
                 del os.environ["GIT_DIR"]
+            # Each relocating variable, with its CONTROL: a raw git call under it gives a different answer, so a
+            # pass is the strip working and not a variable that does nothing (r2 X4).
+            other = os.path.join(tmp, "other")
+            git("init", "-q", other, cwd=tmp)
+            sub = os.path.join(main_co, "sub")
+            os.makedirs(sub)
+
+            def raw_common(cwd: str, **extra: str) -> str:
+                env = {**os.environ, **extra}
+                p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=cwd,
+                                   env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                return os.path.realpath(p.stdout.strip()) if p.returncode == 0 else "fails"
+
+            want = os.path.realpath(main_co)
+            for var, value, cwd in (("GIT_DIR", os.path.join(other, ".git"), main_co),
+                                    ("GIT_COMMON_DIR", os.path.join(other, ".git"), main_co),
+                                    ("GIT_CEILING_DIRECTORIES", os.path.realpath(main_co), sub),
+                                    ("GIT_OBJECT_DIRECTORY", os.path.join(tmp, "no-such-objects"), main_co)):
+                control = raw_common(cwd, **{var: value}) != raw_common(cwd)
+                old = os.environ.get(var)
+                os.environ[var] = value
+                try:
+                    got_main_co = main_checkout(cwd)[0]
+                finally:
+                    if old is None:
+                        del os.environ[var]
+                    else:
+                        os.environ[var] = old
+                check(f"main_checkout: an exported {var} moves raw git, and does not move it",
+                      (control, os.path.realpath(got_main_co or "")), (True, want))
 
             os.makedirs(os.path.join(main_co, ".claude"))
             os.makedirs(os.path.join(wt, ".claude"))
@@ -837,23 +1014,31 @@ def _self_test_body() -> int:
             check("the REFUSE message (the model's) names no override", any(
                 s in r95 for s in (OVERRIDE_ENV, "allow-spawn-over-limit", "date +%s", "touch")), False)
 
-            check("addressed_home: to main", addressed_home('{"tool_input": {"to": "main", "message": "x"}}'), True)
-            check("addressed_home: to team-lead", addressed_home('{"tool_input": {"to": "team-lead"}}'), True)
-            check("addressed_home: to main with a [ref]", addressed_home('{"tool_input": {"to": "main [3fa9c1]"}}'),
-                  True)
-            check("addressed_home: to an agent is not", addressed_home('{"tool_input": {"to": "b2-implementer"}}'),
-                  False)
-            check("addressed_home: a name that merely CONTAINS main is not",
-                  addressed_home('{"tool_input": {"to": "main-fold"}}'), False)
-            check("addressed_home: unparseable, no tool_input, or a non-string to is not",
-                  [addressed_home(s) for s in ("{", "[]", '{"to": "main"}', '{"tool_input": {"to": 1}}',
-                                               '{"tool_input": "main"}')], [False] * 5)
+            # The shapes MEASURED on Claude Code 2.1.309 (see the docstring), trimmed to the fields that matter.
+            def sm(to: str, **top: object) -> str:
+                return json.dumps({"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "SendMessage",
+                                   "tool_input": {"to": to, "message": "m"}, **top})
+
+            from_sub = sm("main", agent_id="a222d14edab0eb5b8", agent_type="general-purpose")
+            check("sent_by_subagent: a subagent's call (agent_id + agent_type)", sent_by_subagent(from_sub), True)
+            check("sent_by_subagent: a subagent, whatever it names", sent_by_subagent(
+                sm("b2-implementer", agent_id="a1")), True)
+            check("sent_by_subagent: the main session (no agent_id) is not", sent_by_subagent(sm("probe")), False)
+            check("sent_by_subagent: the r2 input, `main [abcdef]` from the main session, is not",
+                  sent_by_subagent(sm("main [abcdef]")), False)
+            check("sent_by_subagent: a --agent main session (agent_type, no agent_id) is not",
+                  sent_by_subagent(sm("main", agent_type="general-purpose")), False)
+            check("sent_by_subagent: an agent_id the MODEL wrote into tool_input is not",
+                  sent_by_subagent(json.dumps({"tool_input": {"to": "main", "agent_id": "a1"}})), False)
+            check("sent_by_subagent: an empty, blank, non-string agent_id, unparseable or a non-object is not",
+                  [sent_by_subagent(s) for s in (sm("x", agent_id=""), sm("x", agent_id="  "), sm("x", agent_id=7),
+                                                 sm("x", agent_id=None), "{", "[]", '"a1"')], [False] * 7)
 
             # ── main(), over a world this case built ────────────────────────────────────────────────
             cpath = os.path.join(tmp, "rl.json")
 
             def drive(text: str | None, *extra: str, env: dict | None = None, payload: str = "",
-                      root: str = tmp) -> tuple[int, str]:
+                      root: str = tmp) -> tuple[object, str]:
                 if text is None:
                     if os.path.exists(cpath):
                         os.remove(cpath)
@@ -862,8 +1047,11 @@ def _self_test_body() -> int:
                         fh.write(text)
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-                    rc = main(["--cache", cpath, "--now", str(NOW), "--root", root, *extra],
-                              env={} if env is None else env, payload=payload)
+                    try:
+                        rc: object = main(["--cache", cpath, "--now", str(NOW), "--root", root, *extra],
+                                          env={} if env is None else env, payload=payload)
+                    except Exception as e:  # noqa: BLE001 — a crash reddens ITS case, not the suite
+                        rc = f"raised {type(e).__name__}"
                 return rc, buf.getvalue().strip()
 
             def hso(out: str) -> dict:
@@ -892,17 +1080,34 @@ def _self_test_body() -> int:
                   "date +%s" not in hso(out).get("hookSpecificOutput", {}).get("additionalContext", "x"), True)
             rc, out = drive(cache(85), "--hook", "prompt")
             check("main: prompt hook at WARN tells the owner", "85%" in hso(out).get("systemMessage", ""), True)
-            to_agent = '{"tool_name": "SendMessage", "tool_input": {"to": "b2-implementer", "message": "go"}}'
-            to_main = '{"tool_name": "SendMessage", "tool_input": {"to": "main", "message": "done"}}'
+            to_agent = sm("b2-implementer")
+            to_main = from_sub
             rc, out = drive(cache(95), "--hook", "wake", payload=to_agent)
             check("main: wake hook at 95% DENIES a message to an agent",
                   (rc, hso(out).get("hookSpecificOutput", {}).get("permissionDecision")), (0, "deny"))
-            check("main: wake hook at 95% allows a report to main", drive(cache(95), "--hook", "wake",
-                                                                          payload=to_main), (0, ""))
+            check("main: wake hook at 95% allows a subagent's report", drive(cache(95), "--hook", "wake",
+                                                                             payload=to_main), (0, ""))
+            for to in ("main", "main [abcdef]", "team-lead", "*"):
+                check(f"main: wake hook at 95% DENIES the MAIN SESSION's message to {to!r} (r2 X1)",
+                      hso(drive(cache(95), "--hook", "wake", payload=sm(to))[1]).get("hookSpecificOutput", {})
+                      .get("permissionDecision"), "deny")
+            check("main: wake hook at 95% DENIES a --agent main session's message",
+                  hso(drive(cache(95), "--hook", "wake", payload=sm("probe", agent_type="Explore"))[1])
+                  .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
+            for label, text in (("five-hour used 10**400", raw(five_p=huge)), ("at 10**400", raw(at=huge))):
+                outs = [drive(text, "--hook", h, payload=sm("x"))[0] for h in ("prompt", "spawn", "wake")]
+                check(f"main: a cache with {label} exits 0 from all three hooks (r2 X2: they exited 1)", outs,
+                      [0, 0, 0])
+            check("main: weekly 95 beside a five-hour used 10**400 DENIES a spawn",
+                  hso(drive(raw(five_p=huge), "--hook", "spawn")[1]).get("hookSpecificOutput", {})
+                  .get("permissionDecision"), "deny")
+            check("main: weekly 95 beside a five-hour used 10**400 DENIES a wake",
+                  hso(drive(raw(five_p=huge), "--hook", "wake", payload=sm("x"))[1]).get("hookSpecificOutput", {})
+                  .get("permissionDecision"), "deny")
             check("main: wake hook at 95% DENIES an unparseable payload",
                   hso(drive(cache(95), "--hook", "wake", payload="{")[1]).get("hookSpecificOutput", {})
                   .get("permissionDecision"), "deny")
-            check("main: wake hook at 95% DENIES a payload over the bound, even to main",
+            check("main: wake hook at 95% DENIES a payload over the bound, even a subagent's",
                   hso(drive(cache(95), "--hook", "wake", payload=to_main + " " * PAYLOAD_MAX_BYTES)[1])
                   .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
             check("main: wake hook at 95% with env =1 allows",
@@ -1029,8 +1234,10 @@ def _self_test_body() -> int:
             check("run-hook: the spawn hook allows on a missing cache", hook("usage-pace-spawn.sh", None), (0, ""))
             check("run-hook: the wake hook DENIES a message to an agent at 95%",
                   decision(hook("usage-pace-wake.sh", 95, stdin=to_agent)[1]), "deny")
-            check("run-hook: the wake hook allows a report to main at 95%",
+            check("run-hook: the wake hook allows a subagent's report at 95%",
                   hook("usage-pace-wake.sh", 95, stdin=to_main), (0, ""))
+            check("run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 95%",
+                  decision(hook("usage-pace-wake.sh", 95, stdin=sm("main [abcdef]"))[1]), "deny")
             check("run-hook: the wake hook allows at 50%", hook("usage-pace-wake.sh", 50, stdin=to_agent), (0, ""))
             rc, out = hook("usage-pace-prompt.sh", 85)
             check("run-hook: the prompt hook adds the WARN to context",

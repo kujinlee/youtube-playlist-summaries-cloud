@@ -317,7 +317,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "check-usage-pace.py": (
         # ⟳ PR #446 r1 fold: override_active and spawn_output are gone (the override now expires and is read
         # from the MAIN checkout; the spawn and wake gates share gate_output), so their keys go with them.
-        "addressed_home.payload", "count.x", "evaluate.missing", "evaluate.now", "evaluate.text",
+        # ⟳ PR #446 r2 fold: addressed_home is gone (the wake gate reads the caller's agent_id, never the
+        # recipient), so its key goes with it; sent_by_subagent, parse_json and the read's deadline are new.
+        "sent_by_subagent.payload", "parse_json.text", "read_regular.deadline", "count.x", "evaluate.missing", "evaluate.now", "evaluate.text",
         "gate_output.message", "gate_output.override", "gate_output.verdict", "local_time.t",
         "evaluate.path", "locate_override.env", "locate_override.now", "locate_override.root",
         "main.argv", "main.env", "main.payload", "main_checkout.root", "override_path.root", "override_rule.now", "override_rule.reason", "override_rule.text",
