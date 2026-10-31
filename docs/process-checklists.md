@@ -81,6 +81,40 @@ guard. **Commit the fix before mutating** (`git checkout` also reverts an uncomm
 member behind a cast, so behavioural tests are the only net there.
 *(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
 
+**The plan-leak push gate (backlog #393, 2026-10-29).** Plans under `.claude/plans/` stay private and
+the repo is public (backlog #194), so git's own pre-push hook (`.githooks/pre-push` →
+`scripts/check-plan-leak.py --pre-push`) refuses a push when any commit it sends adds eight consecutive words
+of a checkout's plan objective or list item, consecutive added lines joined, unless those eight words are
+already on the remote. It reads what git says is sent (every ref, every commit in the range), so the
+command's form does not matter. CI has no plans (a zero over nothing), so CI runs only its `--self-test`.
+- **Commit messages, annotated tags (peeled, a tag of a tag included) and ADDED file names (empty files too)
+  are pushed text**, and are scanned the same way.
+- **Enabled per clone** by `scripts/install-git-hooks.sh` (sets `core.hooksPath` to the MAIN checkout's
+  `.githooks` as an ABSOLUTE path, so every worktree and `git --git-dir=… push` from any directory runs the
+  same hook — a relative path resolved from the caller's directory and pushed unchecked, PR #443 r2; refuses
+  to replace another hooks path), which the SessionStart hook `.claude/hooks/ensure-plan-leak-hook.sh` runs
+  when the path is unset or relative — and when it points ELSEWHERE, warns LOUDLY that the gate is OFF and
+  changes nothing. `--status` says whether it is active — a MAIN checkout on a branch older than
+  `.githooks/pre-push` leaves the whole clone unchecked, and a moved clone's stale path reads as ELSEWHERE.
+- **The agent push hook refuses the off-switches** it can see: a push command whose raw text mentions
+  `hookspath` or `ALLOW_PLAN_LEAK` anywhere (casefolded, quotes and backslashes deleted — deliberately not a
+  parser) is denied without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence in
+  depth only; the pre-push hook owns the decision. Its filter is `if: Bash(*push*)` (a `git push*` filter
+  cannot match `git -c … push`); verified empirically on Claude Code 2.1.309 to fire on every push form
+  tried and not on `ls`/`pwd`, so a non-push Bash call costs **0 ms**. A command containing `push` pays the
+  hook's own run: median **31 ms** (50 runs through `run-hook.sh`, p90 39 ms, on a loaded machine). Known, OUT-OF-SCOPE evasions (a fourth security pass, declined deliberately): shell expansions (`$'…'`, `${…}`), config includes (`include.path`, `includeIf`) and `GIT_CONFIG_*` set outside the command reach `core.hooksPath` without the word appearing; they are deliberate, never accidental, and the pre-push hook plus the SessionStart status check own the decision.
+- ⛔ **The gate prevents ACCIDENTAL publication. It is not a boundary against a determined agent:** anything
+  with a shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
+- **hits → the push is refused**, naming `path:line`, the commit and the plan FILE, never the words, in every
+  channel. The owner sees the words with `python3 scripts/check-plan-leak.py --show` in a terminal (it
+  refuses a non-terminal stdout). Reword the commit; a judged coincidence is pushed with
+  `ALLOW_PLAN_LEAK=1 git push …` (the environment, not the command text).
+- **no plan files (a fresh clone) → allowed, with a NOT RUN warning. Any other CANNOT RUN (git, the remote
+  or plan discovery failed) or a crashed checker → refused.**
+- Bounds: ⛔ **a plan fragment shorter than 8 consecutive words is not caught** (the owner's window,
+  2026-10-29); a plan's headings and paragraphs are not plan text. By hand:
+  `python3 scripts/check-plan-leak.py --base B --head H` (exit 0/1/2/3).
+
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
 
 ---

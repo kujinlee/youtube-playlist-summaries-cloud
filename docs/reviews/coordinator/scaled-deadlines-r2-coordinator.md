@@ -57,7 +57,8 @@ self-test line under `strategy.matrix.include` passed while the job's only step 
 - The `compaction-state` manifest is a union by name: master's 75 plus this branch's 14, which is 89. One base entry
   that this branch retargeted keeps the branch's version.
 - `EXPECTED_MUTATIONS` pins `compaction-state` at 89.
-- The declared sum is computed with `ast` as 2815, which equals the manifests' total. Its sum case was updated.
+- The declared sum is computed with `ast` and equals the manifests' total. Its sum case was updated: 2815 after the
+  first merge, and 2896 after a second merge of `origin/master`, which brought in PR #443 (the plan-leak guard).
 - `compaction-state` declares 125 cases, the merged suite's measured count. The marker run is 123.
 - Dashboard entries are kept under their own dates.
 

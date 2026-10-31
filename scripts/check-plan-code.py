@@ -281,6 +281,11 @@ HARNESS_TREE = (
     # ("a scripts-only tree gave each a red control") happening for a fifth subject.
     # ⚠ `.agents/skills`, not `.agents`: only the skills are a subject here.
     ".agents/skills",
+    # ⟳ 2026-10-29, backlog #393 (PR #443 r1): `check-plan-leak.py`'s suite copies the SHIPPED
+    # `.githooks/pre-push` into bare-remote worlds and drives real `git push` through it. Without this
+    # entry its control raises FileNotFoundError on that copy — measured on the first sweep — and every
+    # mutation is NOT MEASURED. One file.
+    ".githooks",
 )
 
 # ── Which changed paths can move a mutation verdict? (backlog #173; FIXED 2026-10-21, r4) ───────
@@ -1619,7 +1624,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 (claude) 1 High + 5 Medium + 3 Low: 56 -> 61. FIVE entries — the `review_added`
     # DIRECTORY clause (High 1: dropping `p.startswith(REVIEW_DIR)` left the suite green, so
     # ANY added `.md` would have recorded a review round), the retired extension-less rule
-    # (Medium 3), the bare-`docs` skip (Medium 2), the 2616 path bound (Medium 4), and the
+    # (Medium 3), the bare-`docs` skip (Medium 2), the 2807 path bound (Medium 4), and the
     # anti-drift ORDER — which needed `antidrift_verdict` extracted out of `main` first,
     # because the call site was unfalsifiable and the entry written for it SURVIVED
     # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
@@ -1774,6 +1779,16 @@ EXPECTED_MUTATIONS = {
     # the skip ends at the closing fence), because a rule derived from a measurement is only as
     # durable as the case that re-takes it.
     "scripts/check-plan-file-tags.py": 18,
+    # ⟳ 2026-10-29, backlog #393: the plan-leak push gate joins at 32, declared sum 2512 -> 2544,
+    # pinned in the commit that creates it. Each entry is killed by the case it names.
+    # ⟳ same day, the owner's 8-word window and the LOCAL-only phrase: +6 for the phrase channel, -> 38.
+    # ⟳ PR #443 r1, the REDESIGN onto git's pre-push hook: the entries are rebuilt over the new rule and
+    # entry points (one per Codex input X1-X11, the installer and --status), -> 54; then +11 for the
+    # security review's folds (commit/tag/path metadata, the SessionStart enable-or-warn), -> 65; then the
+    # second pass (added paths from --diff-filter=A, tags peeled): -2 header-path entries, +5, -> 68.
+    # ⟳ PR #443 r2 (SPLIT): +8 for the folds — forced diff prefixes and the unreadable-path refusal (F1),
+    # GIT_NO_REPLACE_OBJECTS (F4), the absolute hooks path and its upgrade (F3), the redacted NAME hit (F5) -> 76.
+    "scripts/check-plan-leak.py": 76,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -2276,7 +2291,12 @@ EXPECTED_MUTATIONS = {
     # allocator).
     # ⟳ 2026-10-30, PR #449 round 2's fold: 194 -> 196, declared sum 2549 -> 2551 (read with
     # `ast`). Two entries, no retargets — the cap that evicts the SECOND entry, and `>=` for `>`.
-    "scripts/check-main-drivable.py": 196,
+    # ⟳ 2026-10-31, PR #443 shard 8: 196 -> 197, declared sum 2807 -> 2808 (read with `ast`). One
+    # entry, no retargets — the live reconcile's wall-clock deadline never armed.
+    # ⟳ 2026-10-31, PR #443 round 7's fold: 197 -> 201, declared sum 2808 -> 2812 (read with `ast`).
+    # Four entries, no retargets — the call site's deadline (passed huge; reverted to an undeadlined
+    # assess), the alarm escaping the disarm, and the handler never restored.
+    "scripts/check-main-drivable.py": 201,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
@@ -3203,7 +3223,7 @@ def progress_line(done: int, total: int, label: str) -> str:
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
     RATE: one line per mutation plus one per control and re-control, so the total is derived
-    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO 2616 IS QUOTED —
+    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO 2807 IS QUOTED —
     the first version of this sentence gave one and it was the PREVIOUS manifest's number
     on the day it was written. A gap much longer than `SUITE_TIMEOUT` is the signal.
 
@@ -4362,7 +4382,7 @@ def _self_test_body() -> int:
                 case("a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)",
                      _no_tally(_mutate_output(_rA)), (True, False, False))
 
-            # PATH 3 — 2616 SHORTFALL. Every declared mutation's anchor is absent, so
+            # PATH 3 — 2807 SHORTFALL. Every declared mutation's anchor is absent, so
             # `run_mutations` skips all of them: `declared > 0` while `ev["mutations"]` is empty.
             # The counts are not merely incomplete, they are ZERO — and "0 of 2 produced a verdict"
             # must not render as a clean "0 survivor(s)".
@@ -4388,7 +4408,7 @@ def _self_test_body() -> int:
                      "entries (backlog #252)",
                      ("'anchor absent one'" in _outB_pre, "'anchor absent two'" in _outB_pre,
                       "before any tree is staged" in _outB_pre), (True, True, True))
-                case("a 2616 SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
+                case("a 2807 SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
                      _no_tally(_outB), (True, False, False))
                 case("...and it names the arithmetic, so dropped entries are not invisible",
                      "0 of 2" in _outB, True)
@@ -4555,6 +4575,7 @@ def _self_test_body() -> int:
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
                                       # fence. A LIVE inventory entry, added with the guard.
                                       "scripts/check-plan-file-tags.py",
+                                      "scripts/check-plan-leak.py",
                                       "scripts/check-plan-progress.py",
                                       "scripts/check-plan-task-order.py",
                                       "scripts/check-producer-enumeration.py",
@@ -5372,7 +5393,7 @@ def _self_test_body() -> int:
     # ⚠ The digit run's LENGTH, not its alphabet — round 7 L1. `int()` refuses beyond 4300 digits,
     # so an unbounded `[0-9]*` matched a string the conversion then raised on.
     # ⚠ BOTH SIDES. The bound appears twice in the pattern, so a mutation may remove only one —
-    # asserting a long INDEX alone would leave a long 2616 unguarded, which is the "two distinct
+    # asserting a long INDEX alone would leave a long 2807 unguarded, which is the "two distinct
     # inputs" rule applied to one expression.
     # ⛔ AND IT MUST OBSERVE A RAISE RATHER THAN SUFFER ONE. The first draft asserted the RETURN
     # VALUE, so removing the bound made `parse_shard` raise and the suite died BEFORE printing any
@@ -6340,7 +6361,10 @@ def _self_test_body() -> int:
     case("SWEEP_RELEVANT_ROOTS is HARNESS_TREE minus `docs`, written out independently",
          SWEEP_RELEVANT_ROOTS,
          ("scripts/", "supabase/", "node_modules/typescript/", ".claude/hooks/",
-          ".github/workflows/", ".agents/skills/"))
+          ".github/workflows/", ".agents/skills/",
+          # ⟳ 2026-10-29, backlog #393: decided — a change to the git pre-push hook can move
+          # `check-plan-leak.py`'s verdicts, whose suite runs the shipped hook.
+          ".githooks/"))
     case("⛔ `docs/` is EXCLUDED — backlog #173's pinned decision, and the whole saving",
          "docs/" in SWEEP_RELEVANT_ROOTS, False)
     # ── r5 CLAUDE M1: the SKIP log must DISCRIMINATE, so the hole is reportable ───────────────
@@ -6401,7 +6425,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2815)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2896)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

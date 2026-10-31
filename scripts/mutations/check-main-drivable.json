@@ -2547,5 +2547,70 @@
    "...and `_MEMO_MAX` entries are a FULL memo, not an overflowing one: all kept, all hits on a second pass, and the next insertion evicts exactly one"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the live reconcile's deadline is never armed, so a stalled `assess` runs to the harness's timeout instead of yielding a red case (PR #443 shard 8)",
+  "edits": [
+   [
+    "    signal.setitimer(signal.ITIMER_REAL, seconds)\n",
+    "    signal.setitimer(signal.ITIMER_REAL, 0)\n"
+   ]
+  ],
+  "expect": [
+   "a stalled reconcile hits its deadline and reports a problem, in well under the stall"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the live call passes a huge deadline instead of the default, so a runaway reconcile outlives the harness timeout again (PR #443 r7 M1)",
+  "edits": [
+   [
+    "live_reconcile(live, MAIN_DEBT)\n",
+    "live_reconcile(live, MAIN_DEBT, 100000)\n"
+   ]
+  ],
+  "expect": [
+   "...and the deadline the live call ARMED is LIVE_DEADLINE_S, not another and not a stale one"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the live call reverts to an undeadlined assess, so no deadline is armed at the one place it matters (PR #443 r7 M1)",
+  "edits": [
+   [
+    "    live_problems, live_verdicts, _live_timed_out = live_reconcile(live, MAIN_DEBT)\n",
+    "    _assessed = _caught(lambda: assess(live, MAIN_DEBT))\n    live_problems, live_verdicts = (_assessed if isinstance(_assessed, tuple) else ([_assessed], {}))\n    _live_timed_out = False\n"
+   ]
+  ],
+  "expect": [
+   "...and the deadline the live call ARMED is LIVE_DEADLINE_S, not another and not a stale one"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an alarm landing inside the disarm escapes live_reconcile as a BaseException instead of being a timeout (PR #443 r7 L1)",
+  "edits": [
+   [
+    "    except DeadlineExceeded:                        # an alarm landing inside the disarm: still a timeout, never an escape\n        return [f\"DEADLINE {deadline}s\"], {}, True\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "a deadline landing during the disarm is a timeout, never an escape (r7 L1)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the SIGALRM handler is never restored, so the deadline's handler outlives the call (PR #443 r7 L2)",
+  "edits": [
+   [
+    "        signal.signal(signal.SIGALRM, previous)\n",
+    "        pass\n"
+   ]
+  ],
+  "expect": [
+   "...and SIGALRM's handler is restored after a normal, a timed-out and a late-alarm reconcile (r7 L2)"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]
