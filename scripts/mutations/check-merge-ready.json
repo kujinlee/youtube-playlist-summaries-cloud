@@ -204,19 +204,6 @@
   ]
  },
  {
-  "name": "a falling mutation total is ignored",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "if ot and nt and nt[0] < ot[0]:",
-    "if ot and nt and nt[0] > ot[0]:"
-   ]
-  ],
-  "expect": [
-   "a declared mutation total that drops 2021 -> 2017 is a loosening"
-  ]
- },
- {
   "name": "a falling self-test count is ignored",
   "file": "scripts/check-merge-ready.py",
   "edits": [

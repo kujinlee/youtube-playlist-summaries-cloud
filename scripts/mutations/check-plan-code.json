@@ -1734,5 +1734,27 @@
     "expect": [
       "⭐ ...and STRIPS a marker it inherits, so a borrower run inside a mutation run counts in full (backlog #407)"
     ]
+  },
+  {
+    "name": "the mutation total is typed again instead of derived from the pins (backlog #359)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return sum(EXPECTED_MUTATIONS[target] for target in EXPECTED_MUTATIONS)",
+        "    return 2980"
+      ]
+    ],
+    "expect": "the declared total is the sum of the per-file pins, whatever they are"
+  },
+  {
+    "name": "a manifest is dropped from the derived total (backlog #359)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "for target in EXPECTED_MUTATIONS)",
+        "for target in sorted(EXPECTED_MUTATIONS)[1:])"
+      ]
+    ],
+    "expect": "a drifted pin reports the DERIVED total, so a merge never types one"
   }
 ]

@@ -18472,3 +18472,21 @@ locally, 3 runs each: idle 22.1–22.8 s → 8.3–9.5 s in a mutation run, with
 The ordinary run under that load is 58–62 s and its real CR1 is still red: a load flake from before this change, out
 of scope. `EXPECTED_MUTATIONS` 2738; `compaction-state` 58 of 58 killed, `fixture_git` 13 of 13; `check-plan-code`'s
 two new mutants were run by hand, and its full run is left to CI.
+
+## 2026-10-31
+Two open pull requests that each add a mutation no longer collide on the same line. The mutation harness counted its
+coverage twice: once per file, and once more as a typed grand total that every such pull request had to edit. Any two
+open at once conflicted on that total, and each later merge paid for a re-merge and three or four extra review rounds.
+The total is now worked out from the per-file counts, and the quick self-test checks every file's count against the
+manifests on disk, which is stricter than the total was. Two pull requests still conflict when they change the same
+file's count, because that conflict is real.
+<!--tech-->
+Branch `derived-mutation-total`, backlog #359 (closed here). `check-plan-code`: the literal case is deleted;
+`declared_total()` sums `EXPECTED_MUTATIONS`; the drift rule moves out of `mutate_delivered` into `pin_drift` plus
+`manifest_counts`, unchanged, and gains a last line stating both derived totals when anything drifts. The on-disk case
+now compares `pin_drift(manifest_counts(live))` with `[]` instead of comparing two totals. A source scan refuses a
+typed total coming back. `check-merge-ready`'s `PIN_TOTAL` proxy, its two cases and its one mutation entry are retired
+with their subject (pin 85 → 84, cases 211 → 209). A falling per-file pin is still held by `PIN_LINE`, so expect this
+pull request itself to HOLD on that fall. Two new mutants (a typed total, a manifest dropped from the sum) take
+`check-plan-code` 140 → 142. Measured from 2026-10-17: 41 of 43 merged commits to `check-plan-code.py` edited the
+literal.
