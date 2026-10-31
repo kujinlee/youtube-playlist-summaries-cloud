@@ -18482,7 +18482,8 @@ coverage twice: once per file, and once more as a typed grand total that every s
 open at once conflicted on that total, and each later merge paid for a re-merge and three or four extra review rounds.
 The total is now worked out from the per-file counts, and the quick self-test checks every file's count against the
 manifests on disk, which is stricter than the total was. Two pull requests still conflict when they change the same
-file's count, because that conflict is real.
+file's count, because that conflict is real, and also when they change two files whose counts sit on neighbouring
+lines (14 of 81 pairs today), which is backlog #432.
 <!--tech-->
 Branch `derived-mutation-total`, backlog #359 (closed here). `check-plan-code`: the literal case is deleted;
 `declared_total()` sums `EXPECTED_MUTATIONS`; the drift rule moves out of `mutate_delivered` into `pin_drift` plus
