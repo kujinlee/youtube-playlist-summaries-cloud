@@ -1998,7 +1998,12 @@ EXPECTED_MUTATIONS = {
     # ⟳ 40 -> 46 (context floor): the compact block (off, path, owner entry, titles, one-line PR) and collect()'s call.
     # ⟳ 46 -> 56 (context floor r1): the wider owner matcher (text, bare token, card, OWNER), sort by `at`, hidden ids, the
     # absolute ledger path (render and collect), and the marker normalised by --add (two).
-    "scripts/session-state.py": 56,
+    # ⟳ 56 -> 73 (context floor r2, the REDESIGN): owner relevance is a DECLARED `kind`. Four entries RETIRE with their
+    # subject (the text matcher the compact block used: approval text, bare token, OWNER prefix, the title-width cap) and
+    # are re-bound on the fallback and on `_line`; the rest are new: the fallback's four readings, the declared kind
+    # governing, `--add`'s kind (stored, validated, defaulted), the full shape, and the migration (propose, keep, override,
+    # backup, no second apply, bad override).
+    "scripts/session-state.py": 73,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -2038,7 +2043,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 54 -> 58 (context floor): the print's digest (whole snapshot, path, owner section, NOT CAPTURED line).
     # ⟳ 58 -> 63 (context floor r1): the owner's words kept whole, the title block, a cut that keeps NOT CAPTURED, a
     # heading level that must not end the section, and the other sections' bodies left in the file.
-    "scripts/compaction-state.py": 63,
+    # ⟳ 63 -> 73 (context floor r2): the snapshot selects by the declared kind, owner text is never cut (decisions, what,
+    # on_done, /compact instructions, title block), the cap makes room for it, the digest puts it first, and the in-flight
+    # block says where the owner entries went.
+    "scripts/compaction-state.py": 73,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6284,7 +6292,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2590)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2617)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

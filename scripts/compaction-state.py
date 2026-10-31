@@ -38,7 +38,7 @@ THE TWO HOOK MODES:
                deletes the session's previous snapshot, then captures in the child: the open PRs and the in-flight
                ledger (`session-state.fetch`/`render`, the ledger read from the MAIN checkout, asked for ONCE); `git
                worktree list` with each worktree's branch, tip and clean/dirty state; pending OWNER decisions (ledger
-               entries marked `WAITS-ON-OWNER:`, `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the
+               entries whose DECLARED `kind` is owner-wait or owner-instruction, printed whole; `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the
                newest AskUserQuestion ANSWERS that fit, from `transcript_path`. Under SNAPSHOT_CAP. If the child does
                not finish, the snapshot is `CANNOT RUN — capture timed out after N s and was killed`.
   --print      SessionStart, `compact` source (a matcher). Headed "NEWEST CAPTURE for this session, taken at T (N s
@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 103 cases
+    python3 scripts/compaction-state.py --self-test  # 110 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -116,6 +116,7 @@ SESSIONS_REL = ".remember/compaction"          # r2 REDESIGN (B): <SESSIONS_REL>
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 DIGEST_WHOLE = ("## Pending OWNER decisions", "## The owner's recent words")   # sections whose body the print shows whole
 DIGEST_HEAD = re.compile(r"#{1,3} ")
+WHOLE = 10**9          # the width of a value that is never cut (an owner decision, the /compact instructions)
 SNAPSHOT_CAP = 8000     # under PRINT_CAP with the print's heading lines
 PRINT_CAP = 9800        # the harness replaces SessionStart output over 10,000 characters with a file path
 STALE_AFTER = 30 * 60   # seconds: a receipt this old or older is not shown (r4 X4-5: age < 0 is refused too)
@@ -481,7 +482,7 @@ def pending_asks(root: Path) -> tuple[int | None, list[dict], str | None]:
 
 def decision_section(count, asks, err, waits: list[dict], ledger_complete: bool) -> str:
     L = ["## Pending OWNER decisions"]
-    L += [f"  ledger [{clean(e.get('id'), 60)}] {clean(e.get('what'), 160)} — when done: {clean(e.get('on_done'), 120)}"
+    L += [f"  ledger [{clean(e.get('id'), 60)}] {clean(e.get('what'), WHOLE)} — when done: {clean(e.get('on_done'), WHOLE)}"
           for e in waits]
     if not ledger_complete:
         L.append(f"  in-flight ledger: {NC} — it was not read completely (see the in-flight block above), so owner "
@@ -666,10 +667,17 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
             wts, wt_err = f_wts.result()
         except Exception as exc:  # noqa: BLE001
             wts, wt_err = None, f"{exc.__class__.__name__}: {clean(exc, 120)}"
+    # r2 REDESIGN: an entry's owner relevance is its DECLARED `kind` (session-state.is_owner), never a reading of its text.
+    # Owner entries are printed WHOLE in the decisions section below, so the in-flight block lists only the rest.
+    waits = [e for e in ledger if ss.is_owner(e)] if ss else []
+    shown = [dict(e, what=str(e.get("what") or "").removeprefix(ss.OWNER_MARKER).strip()) for e in waits]   # the marker is not news
+    if ss:
+        ledger = [e for e in ledger if not ss.is_owner(e)]
     stamp_now = time.strftime("%m-%d %H:%M %Z", time.localtime(now))
     if ss:
         # NC is placed by `render` itself on each line whose state was NOT READ — never by searching the text (r4 C4-F3).
-        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f" — {NC}")
+        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f" — {NC}",
+                             owner_elsewhere=len(waits))
     else:
         inflight = f"OPEN PRS and IN-FLIGHT LEDGER: {NC} — CANNOT RUN, {ss_err}"
     count, recent, ask_err = asks(root)
@@ -677,8 +685,6 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     # failed main-checkout lookup and its fallback — marks the owner waits NOT CAPTURED, while the entries that WERE
     # read are still shown.
     ledger_complete = ss is not None and main_err is None and not problems
-    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []
-    shown = [dict(e, what=e["what"][len(ss.OWNER_MARKER):].strip()) for e in waits]   # the marker is not news
     if payload_err:
         records, t_err, nbytes = None, f"the hook payload was unreadable ({payload_err})", 0
     else:
@@ -690,7 +696,7 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     if payload_err:
         head += f"\n⚠ hook payload: {NC} — UNREADABLE, {clean(payload_err)}"
     if custom:
-        head += f"\n/compact instructions: {clean(custom, 300)}"
+        head += f"\n/compact instructions: {clean(custom, WHOLE)}"   # the owner's own words: never cut
     LEDGER = getattr(ss, "LEDGER_REL", ".claude/inflight.jsonl")
     if main_err:
         where = (f"⚠ {NC} — ledger read from THIS checkout, {root}/{LEDGER}: the main checkout could not be found "
@@ -699,11 +705,14 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         where = f"ledger read from the MAIN checkout, {main}/{LEDGER} — this hook ran in the worktree {root}"
     else:
         where = f"ledger: {main}/{LEDGER}"
+    # The owner's words are WHOLE: the decisions section is never `fit`, and the /compact instructions are never cut. The cap
+    # that bounds everything else is raised by exactly that protected text, so the trailing sections give way first.
+    # ⚠ STATED BOUND: the PRINT still has the harness's 10,000-character limit (PRINT_CAP), so the print puts these first.
+    decisions = decision_section(count, recent, ask_err, shown, ledger_complete)
     parts = [head,
              "## In flight BEFORE compaction (session-state.py)\n" + clean(where, 400) + "\n"
              + fit(inflight, 2600, "`python3 scripts/session-state.py`"),
-             fit(decision_section(count, recent, ask_err, shown, ledger_complete), 1200,
-                 "`python3 scripts/session-state.py` and the dashboard"),
+             decisions,
              worktree_section(wts, wt_err, 1500)]
 
     # The keys line carries only what the print matches on; the audit that read the rest is deferred (r4 DEFER).
@@ -711,10 +720,11 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
             "session": clean(session_id, 100) if session_id else None}
     keyline = KEYS_OPEN + json.dumps(keys, ensure_ascii=True) + KEYS_CLOSE
     body = "\n\n".join(parts)
-    room = SNAPSHOT_CAP - len(body) - len(keyline) - 4
+    protected = max(0, len(decisions) - 1200) + max(0, len(head) - 600)
+    room = SNAPSHOT_CAP + protected - len(body) - len(keyline) - 4
     window = f"the last {nbytes / 1e6:.1f} MB of the transcript" if nbytes else "the window read"
     parts.append(owner_section(prompts, answers, text_turns, t_err, max(room, 400), window))
-    text = fit("\n\n".join(parts), SNAPSHOT_CAP - len(keyline) - 2, "the transcript itself")
+    text = fit("\n\n".join(parts), SNAPSHOT_CAP + protected - len(keyline) - 2, "the transcript itself")
     return text + "\n" + keyline + "\n"
 
 
@@ -774,23 +784,23 @@ def _clean_keep_nc(line: str, width: int) -> str:
 
 def digest(snap_text: str, path: str) -> str:
     """What the print shows of a snapshot every turn (the coordinator re-sends it): the title block (the /compact
-    instructions are the owner's words), every heading, each line that says something was NOT CAPTURED, and the whole
-    body of the sections that hold the owner's words and decisions (DIGEST_WHOLE; capped in the snapshot already). The
-    rest stays in the file, and the path is printed so nothing is lost."""
-    out, mode = [], "title"
+    instructions are the owner's words), the whole body of the sections that hold the owner's words and decisions
+    (DIGEST_WHOLE), then every other heading and each line that says something was NOT CAPTURED. Nothing in the
+    owner's sections is cut by this reader; they come FIRST, so the print's own character limit gives way to the
+    routine headings, never to a decision. The rest stays in the file, and the path is printed."""
+    title, whole, other, mode = [], [], [], "title"
     for line in _strip_keys(snap_text).strip().splitlines():
         if DIGEST_HEAD.match(line):
             if line.startswith("## "):
                 mode = "whole" if line.startswith(DIGEST_WHOLE) else "other"
-            out.append(_clean_keep_nc(line, 200))
+            (whole if mode == "whole" else other).append(clean(line, WHOLE) if mode == "whole" else _clean_keep_nc(line, 200))
         elif mode == "title":
-            out.append(_clean_keep_nc(line, 300))
+            title.append(clean(line, WHOLE))
         elif mode == "whole":
-            out.append(clean(line, 10**6))
+            whole.append(clean(line, WHOLE))
         elif NC in line:
-            out.append("  " + _clean_keep_nc(line, 200))
-    out.append(f"full: {path} (every section, whole)")
-    return "\n".join(out)
+            other.append("  " + _clean_keep_nc(line, 200))
+    return "\n".join([*title, f"full: {path} (every section, whole)", *whole, *other])
 
 
 def render_print(snap_text, snap_err, now: float, receipt: dict | None = None, receipt_err: str | None = None,
@@ -1194,13 +1204,71 @@ def _self_test_body() -> int:
         (busy / ".claude").mkdir(parents=True)
         (busy / ".git").mkdir()
         (busy / ".claude" / "inflight.jsonl").write_text("".join(
-            json.dumps({"id": f"owner-wait-{i:02d}" + "x" * 110, "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold",
-                        "at": "T"}) + "\n" for i in range(60)))
+            json.dumps({"id": f"routine-{i:02d}" + "x" * 110, "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold",
+                        "at": "T", "kind": "routine"}) + "\n" for i in range(60)))
         many_wts = "".join(f"worktree /r/wt-{i}\nHEAD {'4' * 40}\nbranch refs/heads/feature-{i:02d}\n\n" for i in range(60))
         snap_big = snapshot(payload, None, busy, fake_run(json.dumps(many_prs), wt_out=many_wts), 1000.0,
                             lambda p: (big, None, 9_000_000), asks_ok, nonce="N1")
-        case("⭐ the size cap holds with 100 PRs, 60 long owner waits and 200 huge prompts, and the keys line survives",
+        case("⭐ the size cap holds with 100 PRs, 60 long routine entries and 200 huge prompts, and the keys line survives",
              (len(snap_big) <= SNAPSHOT_CAP + 1, _keys(snap_big) is not None, "TRUNCATED" in snap_big), (True, True, True))
+        # r2 R2-3: the cap bounds everything EXCEPT the owner's decisions, which are whole; the other sections give way first
+        ownerful = root / "ownerful"
+        (ownerful / ".claude").mkdir(parents=True)
+        (ownerful / ".git").mkdir()
+        (ownerful / ".claude" / "inflight.jsonl").write_text("".join(
+            json.dumps({"id": f"own-{i:02d}", "what": f"decide {i} " + "x" * 300 + f" TAIL{i}", "on_done": "y" * 150 + f" DONE{i}",
+                        "at": "T", "kind": "owner-instruction"}) + "\n" for i in range(15)))
+        snap_own = snapshot(dict(payload, custom_instructions="c" * 400 + " CUSTOM-END"), None, ownerful,
+                            fake_run(json.dumps(many_prs), wt_out=many_wts), 1000.0, lambda p: (big, None, 9_000_000), asks_ok, nonce="N1")
+        dsec = snap_own.split("## Pending OWNER")[1].split("\n\n## Worktrees")[0]
+        case("⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact "
+             "instructions (400+ characters); the keys line survives and the OTHER sections give way",
+             (all(f"TAIL{i}" in snap_own and f"DONE{i}" in snap_own for i in range(15)), "CUSTOM-END" in snap_own,
+              _keys(snap_own) is not None, len(snap_own) <= SNAPSHOT_CAP + len(dsec) + 700),
+             (True, True, True, True))
+        out_own = render_print(snap_own, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        declared = root / "declared"
+        (declared / ".claude").mkdir(parents=True)
+        (declared / ".git").mkdir()
+        (declared / ".claude" / "inflight.jsonl").write_text("".join(json.dumps(e) + "\n" for e in (
+            {"id": "prose-only", "what": "Ship the thing " + "p" * 480 + " PROSE-END", "on_done": "d", "at": "T", "kind": "owner-instruction"},
+            {"id": "says-owner", "what": "WAITS-ON-OWNER: owner approval needed for a routine tidy", "on_done": "OWNER says yes", "at": "T",
+             "kind": "routine"},
+            {"id": "note-card", "what": "NOTE: (card when back) choose A", "on_done": "d", "at": "T"},
+            {"id": "plain", "what": "plain routine job", "on_done": "d", "at": "T", "kind": "routine"})))
+        snap_dec = snapshot(payload, None, declared, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
+        pend = snap_dec.split("## Pending OWNER")[1].split("\n\n## Worktrees")[0]
+        allown = root / "allown"
+        (allown / ".claude").mkdir(parents=True)
+        (allown / ".git").mkdir()
+        (allown / ".claude" / "inflight.jsonl").write_text(json.dumps(
+            {"id": "only-owner", "what": "do it", "on_done": "d", "at": "T", "kind": "owner-instruction"}) + "\n")
+        snap_allown = snapshot(payload, None, allown, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
+        case("⭐ r2: when every entry is an owner entry the in-flight block says so — it never claims 'none RECORDED'",
+             ("none RECORDED" in snap_allown, "1 owner entry listed whole under 'Pending OWNER decisions'" in snap_allown,
+              "2 owner entries listed whole under 'Pending OWNER decisions'" in snap_dec), (False, True, True))
+        out_dec = render_print(snap_dec, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        case("⭐ r2 R2-2: the snapshot's decisions are the DECLARED kinds: prose-only owner-instruction (whole, 480 characters) and "
+             "an undeclared `NOTE: (card …)` (the fallback) are in; a kind=routine entry that says 'owner' is not",
+             ("[prose-only]" in pend, "PROSE-END" in pend, "[note-card]" in pend, "[says-owner]" in pend, "[plain]" in pend,
+              "[prose-only]" in snap_dec.split("## Pending OWNER")[0]),
+             (True, True, True, False, False, False))
+        case("⭐ r2 R2-2: ...and the DIGEST (the print) shows the same whole decisions, and the routine entry is in the in-flight block only",
+             ("PROSE-END" in out_dec, "[note-card]" in out_dec, "[says-owner]" in snap_dec.split("## Pending OWNER")[0]), (True, True, True))
+        huge = snap_own.replace("TAIL0", "TAIL0" + "z" * 12000)
+        out_huge = render_print(huge, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        case("⭐ r2: past the harness's 10,000-character limit the print SAYS it is cut and names the file; routine headings go first",
+             ("TRUNCATED" in out_huge, "snapshot file" in out_huge, len(out_huge) <= PRINT_CAP,
+              "full: .remember/compaction/" in out_huge), (True, True, True, True))
+        crowded = snap_own.replace("## Worktrees (git worktree list)\n", "## Worktrees (git worktree list)\n"
+                                   + "".join(f"  line {i} {NC} " + "w" * 180 + "\n" for i in range(80)))
+        out_crowded = render_print(crowded, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        case("⭐ r2: when routine NOT CAPTURED lines crowd the print past its limit, the OWNER decisions are what stays (they come first)",
+             (all(f"TAIL{i}" in out_crowded for i in range(15)), "TRUNCATED" in out_crowded, len(out_crowded) <= PRINT_CAP),
+             (True, True, True))
+        case("⭐ r2 R2-2/R2-3: the PRINT shows the owner entries and the /compact instructions whole (decisions first), and stays under PRINT_CAP",
+             (all(f"TAIL{i}" in out_own for i in range(15)), "CUSTOM-END" in out_own, len(out_own) <= PRINT_CAP,
+              "full: " in out_own), (True, True, True, True))
         broken = snapshot(None, "payload is not JSON (x)", root, fake_run((4, "gh: auth required")), 1000.0,
                           transcript_ok, lambda r: (None, [], "FileNotFoundError: no store"), nonce="N1")
         case("⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript",
