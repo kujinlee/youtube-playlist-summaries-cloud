@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 234 cases
+    python3 scripts/check-merge-ready.py --self-test # 237 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -461,8 +461,39 @@ GATE_ESCAPE = {"dashboard entry": "NO-ENTRY:", "review recorded": "NO-REVIEW:"}
 ESCAPE_LOOKALIKE = re.compile(r"(?i)\bno[-_ ]?(?:entry|review)\b")
 
 
-@functools.lru_cache(maxsize=1)
-def _dashboard_gate():
+class SiblingUnusable(Exception):
+    """A working-tree sibling this script runs IN-PROCESS could not be imported, or misbehaved."""
+
+
+def _import_sibling(src: Path, name: str, error=SiblingUnusable):
+    """Import the working-tree sibling `src` as module `name`, FAILING CLOSED — ONE rule, BOTH importers.
+
+    ⛔ Importing EXECUTES the working-tree file, so whatever its module body raises is caught here —
+    `SystemExit` included, which `main()`'s `except Exception` would let through as rc 0 with no
+    verdict (r4 Codex F2, at the pins reader; r5 Claude F1, the same class at the dashboard gate) —
+    and is raised again as `error`, which `main()` reports as CANNOT RUN. A missing sibling is the
+    same. Only `KeyboardInterrupt` is let through: the operator stopping the run is not an answer.
+    ⚠ BOUND: code that ends the process WITHOUT raising (`os._exit`, an `atexit`/thread/signal hook),
+    or that rebinds this script's globals, is not caught — nor is a side effect that survives a caught
+    raise. That is the same trust this script extends to its own source, which the same PR can edit."""
+    try:
+        spec = importlib.util.spec_from_file_location(name, src)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod                     # `dataclasses` looks the module up by name
+        spec.loader.exec_module(mod)
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        raise error(f"{src.name} could not be imported ({exc.__class__.__name__}: {exc})") from None
+    return mod
+
+
+# The sibling that owns the escape grammar. A module global so a case can point it at a copy.
+DASHBOARD_GATE = Path(__file__).with_name("check-dashboard-entry.py")
+
+
+@functools.lru_cache(maxsize=4)
+def _dashboard_gate(src: Path):
     """The gate that OWNS the escape grammar, imported rather than re-implemented.
 
     ⛔ `exemption_reason(body, marker)` is parameterised by marker and is declared
@@ -470,11 +501,7 @@ def _dashboard_gate():
     be a second implementation of it, and this repo has recorded that shape drifting
     seventeen times — a weaker stand-in passes what the real one refuses.
     """
-    src = Path(__file__).with_name("check-dashboard-entry.py")
-    spec = importlib.util.spec_from_file_location("_cde_for_merge_ready", src)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _import_sibling(src, "_cde_for_merge_ready")
 
 
 # ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) ──────────────────────────────────────────────────
@@ -847,8 +874,10 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
 # ⛔ A falling pin is read from the `EXPECTED_MUTATIONS` DISPLAY at the merge base and at HEAD, as
 # DATA, by `check-plan-code.pin_display` — imported, so "find the display" has ONE owner. Neither
 # REVISION is executed; the WORKING-TREE checker is, to obtain the reader, and anything its import or
-# its reader raises is CANNOT RUN (`_pins_reader`; r4 Codex F2 measured a module-level `SystemExit`
-# leaving this script at rc 0 with no verdict). Reading the display is sound because the harness
+# its reader raises is CANNOT RUN (`_import_sibling`; r4 Codex F2 measured a module-level `SystemExit`
+# leaving this script at rc 0 with no verdict). Code that ends the process WITHOUT raising (`os._exit`,
+# an `atexit`/thread/signal hook) or rebinds this script's globals is not caught (r5 Claude F2): the
+# same trust this script extends to its own source, which the same PR can edit. Reading the display is sound because the harness
 # asserts, in the process that USES the pins, that they START as the display (`--mutate` before any
 # mutation, `--self-test` at its top): a duplicate key, `-= 4`, a default argument, a decorator, a
 # shadowed `dict`, or a write gated on argv or the environment is refused THERE. A display that
@@ -877,24 +906,10 @@ PINS_READER = Path(__file__).with_name("check-plan-code.py")
 def _pins_reader(src: Path):
     """`check-plan-code`, imported for its ONE display reader — never a second copy of the rule.
 
-    ⛔ FAILS CLOSED (r4 Codex F2). Importing it EXECUTES the working-tree file, so whatever its module
-    body raises is caught here — `SystemExit` included, which `main()`'s `except Exception` would let
-    through as rc 0 with no verdict — and becomes `PinsUnreadable`, i.e. CANNOT RUN. A missing
-    sibling, and one without `pin_display`, are the same. Only `KeyboardInterrupt` is let through:
-    the operator stopping the run is not an answer about the pins."""
-    try:
-        spec = importlib.util.spec_from_file_location("_cpc_for_merge_ready", src)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = mod                # `dataclasses` looks the module up by name
-        spec.loader.exec_module(mod)
-        mod.pin_display                             # the one name `pins_at` uses
-    except KeyboardInterrupt:
-        raise
-    except BaseException as exc:
-        sys.modules.pop("_cpc_for_merge_ready", None)
-        raise PinsUnreadable(f"{src.name} could not be imported for its display reader "
-                             f"({exc.__class__.__name__}: {exc})") from None
-    return mod
+    ⛔ FAILS CLOSED through `_import_sibling` (r4 Codex F2): whatever the import raises is
+    `PinsUnreadable`, i.e. CANNOT RUN. A sibling without `pin_display` is caught at the call, by
+    `pins_at`."""
+    return _import_sibling(src, "_cpc_for_merge_ready", PinsUnreadable)
 
 
 def pins_at(run, rev: str) -> dict:
@@ -1000,9 +1015,18 @@ def final_verdict(code: int, line: str, holds: list[str]) -> tuple[int, str]:
 
 
 def granted_escapes(pr_body: str) -> dict[str, str | None]:
-    """{marker: reason or None}, decided by the gate's own matcher. NOT pure — it imports."""
-    er = _dashboard_gate().exemption_reason
-    return {m: er(pr_body, m) for m in sorted(set(GATE_ESCAPE.values()))}
+    """{marker: reason or None}, decided by the gate's own matcher. NOT pure — it imports.
+
+    The CALL fails closed like the import (r5 Claude F1): whatever the matcher raises, `SystemExit`
+    included, is `SiblingUnusable`, which `main()` reports as CANNOT RUN."""
+    gate = _dashboard_gate(DASHBOARD_GATE)
+    try:
+        return {m: gate.exemption_reason(pr_body, m) for m in sorted(set(GATE_ESCAPE.values()))}
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:                    # a matcher that misbehaves
+        raise SiblingUnusable(f"{DASHBOARD_GATE.name}: exemption_reason: "
+                              f"{exc.__class__.__name__}: {exc}") from None
 
 
 def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
@@ -2130,6 +2154,32 @@ def _self_test_body() -> int:
         shutil.rmtree(_f2, ignore_errors=True)
     check("⭐ main() is CANNOT RUN, rc=2, when importing the reader raises SystemExit (Codex r4 F2)",
           (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
+    # ⛔ r5 Claude F1: the SAME class at the other in-process importer. Codex's r4 input appended to
+    # the dashboard gate left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
+    _real_cde = (_here / "check-dashboard-entry.py").read_text(encoding="utf-8")
+    def _gate_main(body, pr):
+        """`main()` over a falling pin, with `DASHBOARD_GATE` pointed at a copy holding `body`."""
+        d = Path(tempfile.mkdtemp())
+        (d / "check-dashboard-entry.py").write_text(body, encoding="utf-8")
+        saved = globals()["DASHBOARD_GATE"]
+        globals()["DASHBOARD_GATE"] = d / "check-dashboard-entry.py"
+        try:
+            return _main(["scripts/check-plan-code.py"], pr,
+                         pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+        except BaseException as exc:      # SystemExit escaping main() is exactly the defect
+            return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
+        finally:
+            globals()["DASHBOARD_GATE"] = saved
+            shutil.rmtree(d, ignore_errors=True)
+    _rc, _o = _gate_main(_real_cde + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n', "16")
+    check("⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    _rc, _o = _gate_main(_real_cde + "\ndef exemption_reason(body, marker):\n    raise SystemExit(0)\n", "17")
+    check("⭐ ...and when the gate's exemption_reason itself raises SystemExit",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    _rc, _o = _gate_main(_real_cde, "18")
+    check("...while a well-behaved COPY of the dashboard gate still HOLDS the fall, rc=3 (the adjacent negative)",
+          (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.
     _rc, _o = _main(["docs/g.yml"], "21", status="R100\0.github/workflows/g.yml\0docs/g.yml\0")

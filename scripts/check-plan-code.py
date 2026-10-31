@@ -2209,7 +2209,7 @@ EXPECTED_MUTATIONS = {
     # `git ls-tree` read as an answer. Three entries are REBOUND to the renamed cases.
     # ⟳ r4 (Codex F2): 87 -> 89 — importing THIS file for its reader fails CLOSED: the import's catch
     # and the reader call's catch, each narrowed to `Exception`, let a `SystemExit` out as rc 0.
-    "scripts/check-merge-ready.py": 89,
+    "scripts/check-merge-ready.py": 91,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2854,7 +2854,9 @@ def pin_drift(counts: dict) -> list[str]:
 # ⛔ ONE READER for "the pins a tree declares": the single module-level `EXPECTED_MUTATIONS = {...}`
 # display, read as DATA. `check-merge-ready.py` imports it and applies it to the merge base's text
 # and the head's, so a falling pin is HELD without executing either REVISION (importing this working-
-# tree file to get the reader does execute it; anything that import raises is CANNOT RUN there). That
+# tree file to get the reader does execute it; anything that import raises is CANNOT RUN there, but
+# code that ends the process WITHOUT raising — `os._exit`, an `atexit`/thread/signal hook — or that
+# rebinds merge-ready's globals is not caught: the trust merge-ready extends to its own source). That
 # reading is only sound if the dict this harness USES is that display — so `--mutate` (before any
 # mutation) and `--self-test` (at its top) each assert `pin_display_problems(...) == []` in their own
 # process, and refuse with rc 2 otherwise. A write the display does not show — a duplicate key,

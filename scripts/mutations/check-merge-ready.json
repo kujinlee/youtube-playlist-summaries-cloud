@@ -1128,15 +1128,18 @@
   ]
  },
  {
-  "name": "the reader's import catches only Exception, so a module-level SystemExit escapes main() as rc 0 with no verdict (r4 Codex F2)",
+  "name": "the shared sibling import catches only Exception, so a module-level SystemExit in EITHER sibling escapes main() as rc 0 with no verdict (r4 Codex F2, r5 Claude F1)",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    except BaseException as exc:\n        sys.modules.pop(",
-    "    except Exception as exc:\n        sys.modules.pop("
+    "    except BaseException as exc:\n        raise error(",
+    "    except Exception as exc:\n        raise error("
    ]
   ],
-  "expect": "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN"
+  "expect": [
+   "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
+   "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
+  ]
  },
  {
   "name": "the reader's CALL catches only Exception, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2)",
@@ -1148,5 +1151,27 @@
    ]
   ],
   "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
+ },
+ {
+  "name": "the dashboard gate imports its sibling RAW, bypassing the fail-closed helper, so a module-level SystemExit there escapes main() as rc 0 (r5 Claude F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return _import_sibling(src, \"_cde_for_merge_ready\")\n",
+    "    spec = importlib.util.spec_from_file_location(\"_cde_for_merge_ready\", src)\n    mod = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(mod)\n    return mod\n"
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
+ },
+ {
+  "name": "the dashboard gate's exemption_reason CALL catches only Exception, so a matcher that raises SystemExit escapes main() as rc 0 (r5 Claude F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:                    # a matcher that misbehaves",
+    "    except Exception as exc:                    # a matcher that misbehaves"
+   ]
+  ],
+  "expect": "⭐ ...and when the gate's exemption_reason itself raises SystemExit"
  }
 ]
