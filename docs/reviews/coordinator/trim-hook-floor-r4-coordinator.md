@@ -26,5 +26,5 @@ re-add, so only a hand-edited ledger holds two; R4-2 `ledger_add` refuses only a
 a `]`, so it holds by convention and not by enforcement; R4-3 `check_summary` maps every GitHub conclusion and state value
 except `STALE`, and GitHub's values are a fixed enum.
 
-**Deferred** to backlog 419 (tooling, with a `FAILS IF`). The decision log scores the r3 split bet `continued` and closes the
+**Deferred** to backlog 420 (tooling, with a `FAILS IF`). The decision log scores the r3 split bet `continued` and closes the
 unit with a `defer` row at four rounds.
