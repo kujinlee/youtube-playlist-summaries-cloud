@@ -977,19 +977,18 @@ def real_time_cases(env) -> bool:
     """Run the cases that wait on the hook's REAL deadlines (11 s, 2 s)? Yes, unless the mutation harness set
     MUTATION_RUN_ENV (backlog #407): every case a mutant names runs on a short or event-ordered deadline instead.
 
-    WHY THE SKIP LOSES NO MUTANT (r1 refuted the first version of this claim — `wait=40.0` and `GH_TIMEOUT = 1` both
-    survived it). What the two real-time cases killed, and the case that kills it in every run now:
-      - the stdin read's bound and its wiring in `main` — `main reads a stdin held OPEN for only what is LEFT`;
+    WHAT THE SWEEP PROVES UNDER THE MARKER (r1-r3 each refuted a universal "no mutant is lost" claim with new mutants;
+    enumeration cannot close such a claim, so this states what is MEASURED). Exactly that each manifest entry is killed
+    by its named case. Cases added to make the skip cheaper, and the case each runs under:
       - the capture's group kill of a call in flight — the event-ordered CR1 case;
       - a call still made after a git that timed out, and gh's own 8 s — `after a git that TIMED OUT`;
-      - the timeouts the CHILD's adapter hands session-state's `_run` (git 3 s, gh 8 s, the group kept) — r2 refuted
-        the line above as complete, since it injects its runner past that adapter — `through the CHILD's adapter`;
+      - the timeouts the CHILD's adapter hands session-state's `_run` — `through the CHILD's adapter`;
       - the capture's 11 s and the print's 10 s reaching the child — the spy case, with the marker SET;
       - the parent's return within its kill + 1 s — `the WHOLE PreCompact hook ends within its capture deadline`.
-    ⚠ BOUND: what no every-mode case covers is the bash hook file and the `__main__` entry's own process start — the
-    real-time cases see them, no manifest entry mutates either, and CI's ordinary check runs them
-    (`ci_runs_real_time`) — and two parts of `run_capture`'s kill that NO case kills in either mode: SIGTERM in
-    place of SIGKILL, and the reap after the timeout kill (backlog #423). Those two are gaps the skip did not open."""
+    The skipped real-time cases still run on EVERY PR in CI's ordinary step, which `ci_runs_real_time` pins. Mutants
+    that only the real-time cases kill are NOT measured by the sweep; the known ones are listed in backlog #424
+    (a capture killed before its deadline, the stdin read's bound, and others), with the structural fix: an injectable
+    clock or scaled deadlines, so the skip can be removed. Backlog #423's two kill details are killed in neither mode."""
     return env.get(MUTATION_RUN_ENV) != "1"
 
 
@@ -1010,7 +1009,7 @@ def _block(lines: list[str], i: int) -> int:
 
 
 def ci_runs_real_time(ci_text: str) -> str | None:
-    """None when CI's REQUIRED job runs this self-test, unconditionally, with MUTATION_RUN_ENV unset; otherwise why
+    """None when CI's REQUIRED job has a step running this self-test, with MUTATION_RUN_ENV unset; otherwise why
     not. Backlog #407's FAILS IF: the real-time run is dropped from CI, or kept where it cannot fail a PR.
 
     Read by LINE STRUCTURE (the project is stdlib-only, so no YAML parser): the `jobs:` key, the job REQUIRED_JOB at
@@ -1020,7 +1019,9 @@ def ci_runs_real_time(ci_text: str) -> str | None:
     than `steps:` (a list at the key's own indent is refused). Flow-style steps (`- {run: …}`),
     anchors and aliases, a folded `run: >`, and an `if:` whose expression is always true are not modelled — any
     `if:` is refused, and `continue-on-error:` is refused unless literally `false`. The marker is caught only by its
-    NAME anywhere in the file, so one assembled from `vars` or `fromJSON` is not seen."""
+    NAME anywhere in the file, so one assembled from `vars` or `fromJSON` is not seen. Also NOT seen (r3, F2): a
+    `needs:` on a job that is skipped (GitHub then skips `verify` too), a step-level `shell:`, and a job-level
+    `defaults.run.shell`, any of which can make the step not run the script."""
     lines = ci_text.splitlines()
     try:
         top = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
