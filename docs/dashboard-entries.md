@@ -18408,3 +18408,25 @@ only a torn FINAL record — so round 1's line skip is reverted, and backlog #33
 copies it replaces are deleted. One list of hostile payloads, `bounded_read.hostile_payloads`, drives each transcript
 guard's real `--decide`. The FIFO class was live in `check-handoff-path` too (its CLI hung on a FIFO SKILL.md) and is
 fixed there. Verdicts over 50 real transcripts are unchanged against master. `EXPECTED_MUTATIONS` 2552.
+
+## 2026-10-31
+The mutation sweep spends less time waiting on one slow test suite. The test suite for the compaction snapshot hook
+proves that the hook gives up on time by actually waiting, about 11 seconds per run, and the sweep re-ran it once for
+each of its 58 mutants. Inside the sweep, the two cases that wait in real time are now skipped. A quicker case proves
+the same thing by waiting only until the event it tests has happened. The ordinary CI check still runs the real-time
+cases on every change, and a test fails if that step is ever removed. Locally the suite now takes about 8.5 seconds
+inside the sweep, against about 22 before. Under heavy load it also stops failing there, which it did on every run
+before.
+<!--tech-->
+Branch `scaled-deadlines`, PR #454, backlog #407. `check-plan-code.mutation_env` (only `run_suite_parts`) sets
+`PLAN_CODE_MUTATION_RUN=1`; `fixture_git.PROCESS_PASSED` keeps it; `compaction-state.real_time_cases` reads it in the
+self-test only. Skipped there: r3 CR1 (the real 11 s) and the held-open stdin. Added: an event-ordered CR1 (deadline
+0.5 s doubling until gh's straggler pid is written), the same doubling for the grandchild case, and 1.0 s → 0.3 s
+test deadlines. Pinned: `ci_runs_real_time` (CI's step present, marker unnamed) and a spy showing hook modes keep
+11 s / 10 s with the marker set. The marker is kept off `child_env` on purpose: `check-selftest-counts` borrows it and
+counted 100 of 102. This deviates from the row's ×0.1 scale: cases are skipped, and no deadline is scaled. Measured
+locally, 3 runs each: idle 22.1–22.8 s → 8.3–9.5 s in a mutation run, with the ordinary run unchanged at about
+22 s; under 24 CPU burners, master is 42–43 s with CR1 red 3 of 3, and the mutation run is 17.5–40 s, green 3 of 3.
+The ordinary run under that load is 58–62 s and its real CR1 is still red: a load flake from before this change, out
+of scope. `EXPECTED_MUTATIONS` 2738; `compaction-state` 58 of 58 killed, `fixture_git` 13 of 13; `check-plan-code`'s
+two new mutants were run by hand, and its full run is left to CI.
