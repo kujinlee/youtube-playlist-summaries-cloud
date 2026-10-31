@@ -18329,6 +18329,52 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 It also records a correction: one line had said an item "is filed" before it was.
 
 ## 2026-10-30
+The slowest check in the repository got about seven times faster. The test suite of the guard that
+checks every script's `main()` can be driven from its own tests used to take about 68 seconds on a
+laptop. That one suite was two thirds of all the work in CI's mutation sweep, because the sweep runs
+it once for every one of its mutations. It now takes about 8 seconds and gives the same answers.
+<!--tech-->
+Backlog #401. `scripts/check-main-drivable.py` gains `_memo_by_node`, a cache keyed on the
+identity of a helper's AST arguments. Each entry holds those nodes, so no id can be reused while it
+exists, and the answer it hands back is frozen. It wraps `_all_functions`, `note_globals_imports`,
+`_own_scope`, `_bound_values`, `_defs_in_scope` and a new per-tree `_class_methods` behind
+`_resolve_callee`. `_parents` already had its own cache. The memo is capped at `_MEMO_MAX` (64)
+entries per helper, least recently used first out, because `check-fixture-git-isolation.py` calls
+`suite_entries` directly and never reaches `assess()`. Asking about 20,000 discarded trees used to
+keep about 30 MB; it now keeps 0.1 MB. A tree must not be edited once a memoised helper has seen it.
+There are seven new cases and the suite now has 445. Eleven new mutation entries take
+`EXPECTED_MUTATIONS` from 183 to 194 and the declared sum from 2538 to 2549. One anchor moved: the
+r9 nested-class entry now points into `_class_methods`.
+
+## 2026-10-30
+The mutation-testing check in CI was nearly running out of time again: its slowest piece took 29
+of its 30 allowed minutes. It is now split into 24 pieces instead of 12, which should bring the
+slowest one to about 18 minutes. That figure is a prediction until this branch's own CI run
+measures it. Most of the time goes to one check. It is filed as its own item, because adding more
+pieces does not fix it.
+<!--tech-->
+`mutation-sweep` matrix 12 -> 24 (backlog #231 reopened: its 1,500 s trigger fired again). Measured
+on run 40799920596 (`fea33073`): slowest shard 1758 s, 1.02x inside `timeout-minutes: 30`. Per-target
+cost re-derived from CI log timestamps: 12,965 s of mutation work, 309 s control floor per shard;
+`check-main-drivable.py` is 68% of the work (backlog #401). Predicted at N=24: slowest ~1,055 s, 1.71x.
+
+## 2026-10-30
+**Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
+one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
+a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
+report back, and work already running carries on. To let them through anyway, the refusal shows you a one-line
+command that allows them for two hours, or launch with `ALLOW_SPAWN_OVER_LIMIT=1`. The agent itself is not told how.
+If the cached number is more than 15 minutes old, every prompt says so loudly and names the file to check; if it is
+missing altogether (a clone with no such statusline), that is said once per session. Nothing is blocked either way,
+so a statusline hiccup cannot stop work.
+<!--tech-->
+Backlog #399, PR #446. `scripts/check-usage-pace.py` (rules separate from the file read, 213 self-test cases, 74
+mutations all killed by their named case); hooks `.claude/hooks/usage-pace-prompt.sh` (UserPromptSubmit),
+`.claude/hooks/usage-pace-spawn.sh` (PreToolUse on Agent) and `.claude/hooks/usage-pace-wake.sh` (PreToolUse on
+SendMessage, added by the owner's round-1 decision), all through `run-hook.sh`. The deny travels as JSON at
+exit 0, and every non-zero exit is mapped to 1, so a broken checker can never block a prompt.
+
+## 2026-10-30
 Five tooling checks no longer fail silently, or crash, on input they cannot read. The check that warns about bare
 reference numbers in a finished turn used to say nothing at all when the session transcript was corrupt — the same
 silence as "nothing to warn about"; it now says it could not run. All five — that one, the step-banner check, the
