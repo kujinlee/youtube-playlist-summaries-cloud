@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 249 cases
+    python3 scripts/check-plan-code.py --self-test          # 253 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -769,6 +769,11 @@ def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
 #
 # ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
 # entries it counts gets edited in the same breath as deleting one, which is no guard at all.
+#
+# ⛔ backlog #359: THERE IS NO TYPED TOTAL. `declared_total()` derives it from these pins, so a
+# change records the PER-FILE move and its reason, never a "declared sum A -> B" — the sum
+# transitions in the comments below are history from when a literal pinned it, and every pair of
+# open PRs that added a mutation collided on that one line.
 EXPECTED_MUTATIONS = {
     # ⟳ 2026-08-30, backlog #71: gen-dashboard 61 -> 49. TWELVE entries did not disappear, they
     # MOVED to scripts/page_markup.py with the code they guard. The sum below is unchanged at 73,
@@ -1458,7 +1463,9 @@ EXPECTED_MUTATIONS = {
     #   ⟳ r2 fold: 131 -> 133 — a failed control is reported before, and priced out of, a budget refusal.
     # ⟳ 2026-10-31, backlog #407: 137 -> 139 — the harness's own suite runs carry the mutation-run marker
     # (`mutation_env`), and the BORROWED `child_env` does not. ⟳ r1 fold: 139 -> 140 — `child_env` STRIPS an inherited one.
-    "scripts/check-plan-code.py": 140,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-10-31, backlog #359: 140 -> 142 — the TOTAL is derived (`declared_total`), and the two
+    # entries are the two ways it stops being: a typed literal again, and a manifest dropped from the sum.
+    "scripts/check-plan-code.py": 142,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2173,7 +2180,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-25 r9 (two HONEST-SYNTACTIC false READYs): 71 -> 73 — moves keep indentation, and any
     #   non-zero int, `raise` and `assert` are failure statements; six anchors rebound, two added.
     # ⟳ 2026-10-25 r10: 73 -> 75 — sys.exit with any non-zero argument; main() fails closed on ANY error.
-    "scripts/check-merge-ready.py": 85,
+    # ⟳ 2026-10-31, backlog #359: 85 -> 84, RETIRED WITH ITS SUBJECT — the entry flipped the proxy for a
+    # falling typed mutation TOTAL, and there is no typed total any more; the proxy and its two cases
+    # are deleted with it. A falling per-file pin is still held, by `PIN_LINE`, under its own entry.
+    "scripts/check-merge-ready.py": 84,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2302,7 +2312,7 @@ EXPECTED_MUTATIONS = {
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
     # ⟳ 2026-10-20: check-review-decision and the new check-decision-scheme join. ⚠ No
     # delta is quoted here either — see the note at EXPECTED_MUTATIONS for why a recited
-    # tally drifts. The pinned sum below is the only statement of the total.
+    # tally drifts. ⟳ backlog #359: the total is no longer stated at all — `declared_total()`.
     # readable subjects where the counts TIE, chosen by the alphabet, and had no caller outside
     # its own self-test.
     # facts/render REDESIGN (22 -> 28, 1567 -> 1573) —
@@ -2770,6 +2780,49 @@ def anchor_problems(muts: list[dict], read) -> list[str]:
     return out
 
 
+def manifest_counts(muts: list) -> dict:
+    """PURE. How many entries each target file has across the loaded manifests."""
+    counts: dict = {}
+    for m in muts:
+        counts[m["file"]] = counts.get(m["file"], 0) + 1
+    return counts
+
+
+def declared_total() -> int:
+    """The mutation total — DERIVED from the per-file pins, never typed (backlog #359).
+
+    A typed total was edited by 41 of 43 merged commits to this file from 2026-10-17, so every
+    pair of open PRs that added a mutation anywhere conflicted on it. The sum can only move when
+    a pin moves, so it carries nothing the pins do not.
+    """
+    return sum(EXPECTED_MUTATIONS[target] for target in EXPECTED_MUTATIONS)
+
+
+def pin_drift(counts: dict) -> list[str]:
+    """PURE over `EXPECTED_MUTATIONS`. Every manifest whose entry count differs from its pin, and
+    every manifest with no pin — the ONE rule, read by the sweep and by the cheap self-test alike.
+
+    Per file, in both directions: a TOTAL cannot see one manifest gain what another loses. When
+    anything drifts, the totals follow as the last line, both derived, so a merge never types one.
+    """
+    drift = []
+    for target, want in sorted(EXPECTED_MUTATIONS.items()):
+        got = counts.get(target, 0)
+        if got != want:
+            drift.append(f"{target}: manifest holds {got} mutation(s), expected {want}. "
+                         f"Coverage cannot change silently — if this is deliberate, change "
+                         f"EXPECTED_MUTATIONS in check-plan-code.py in the SAME commit and "
+                         f"say why in the message")
+    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
+        drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
+                     f"to EXPECTED_MUTATIONS so its coverage cannot shrink unnoticed")
+    if drift:
+        drift.append(f"in all: the manifests hold {sum(counts.values())} mutation(s) and the pins "
+                     f"declare {declared_total()} — the total is derived from the per-file pins, "
+                     f"so change a pin, never a total")
+    return drift
+
+
 def mutate_delivered(root: pathlib.Path,
                      progress=None,
                      shard: "tuple[int, int] | None" = None,
@@ -2812,20 +2865,8 @@ def mutate_delivered(root: pathlib.Path,
     ev_files: dict = {}
     if problems:
         return False, problems, NotMeasured.from_counts([], None, ev_files)
-    counts = {}
-    for m in muts:
-        counts[m["file"]] = counts.get(m["file"], 0) + 1
-    drift = []
-    for target, want in sorted(EXPECTED_MUTATIONS.items()):
-        got = counts.get(target, 0)
-        if got != want:
-            drift.append(f"{target}: manifest holds {got} mutation(s), expected {want}. "
-                         f"Coverage cannot change silently — if this is deliberate, change "
-                         f"EXPECTED_MUTATIONS in check-plan-code.py in the SAME commit and "
-                         f"say why in the message")
-    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
-        drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
-                     f"to EXPECTED_MUTATIONS so its coverage cannot shrink unnoticed")
+    counts = manifest_counts(muts)
+    drift = pin_drift(counts)
     # A target that resolves the home directory by a route `$HOME` does not govern would
     # make `child_env`'s guarantee false without changing anything `child_env` can see.
     for target in sorted(counts):
@@ -4203,8 +4244,8 @@ def _self_test_body() -> int:
         # ⟳ 2026-09-09, round 1 F3. THE OTHER DIRECTION, and it was unguarded. `:382-384` states
         # the rule as "EXACT, not a floor: adding a mutation should also be a visible act", but the
         # only case pinned SHRINKAGE, so `!=` -> `<` survived at 78/78 and a manifest could GROW
-        # silently. ⚠ The obvious backstops do not backstop it: `the declared counts are the real
-        # ones` compares EXPECTED_MUTATIONS against a literal and `sorted(EXPECTED_MUTATIONS)` pins
+        # silently. ⚠ The obvious backstops did not backstop it: the retired total literal (backlog
+        # #359) compared EXPECTED_MUTATIONS against a typed number and `sorted(EXPECTED_MUTATIONS)` pins
         # the key list — in this scenario EXPECTED_MUTATIONS is UNTOUCHED, so both still match.
         EXPECTED_MUTATIONS.clear()
         EXPECTED_MUTATIONS["scripts/thing.py"] = 1
@@ -6450,7 +6491,38 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2980)
+    # ─── THE TOTAL IS DERIVED, NEVER TYPED (backlog #359) ─────────────────────────────────
+    # ⛔ A literal total stood here, and 41 of the 43 merged commits that touched this file from
+    # 2026-10-17 edited it — so any two open PRs that added a mutation anywhere collided on ONE
+    # line, and each later merge cost a re-merge and 3–4 extra review rounds. The sum moves only
+    # when a pin moves, and the pins fail in both directions (`pin_drift`, and the on-disk case
+    # below). What the literal alone caught was a pin LOWERED together with its entries — and
+    # `check-merge-ready.py` HOLDS a falling pin (`PIN_LINE`), so that fall still reaches the owner
+    # with its reason. A same-manifest conflict is REAL and stays; one on a derived number was cost.
+    _own_src = pathlib.Path(__file__).read_text(encoding="utf-8")
+    case("⛔ no typed mutation total is pinned anywhere in this file",
+         re.findall(r"(?:EXPECTED_MUTATIONS\.values\(\)\)|declared_total\(\))\s*,\s*\d+\s*\)",
+                    _own_src), [])
+    _saved_t = dict(EXPECTED_MUTATIONS)
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS.update({"scripts/a.py": 3, "scripts/b.py": 4})
+        case("the declared total is the sum of the per-file pins, whatever they are",
+             declared_total() == 7, True)
+        case("a drifted pin reports the DERIVED total, so a merge never types one",
+             [d for d in pin_drift({"scripts/a.py": 3, "scripts/b.py": 5})
+              if d.startswith("in all:")],
+             ["in all: the manifests hold 8 mutation(s) and the pins declare 7 — the total is "
+              "derived from the per-file pins, so change a pin, never a total"])
+        # The defect a TOTAL cannot see: one manifest gains what another loses.
+        case("a +1/-1 swap between two manifests is refused though the total is unchanged",
+             sorted(d.split(":")[0] for d in pin_drift({"scripts/a.py": 4, "scripts/b.py": 3})
+                    if not d.startswith("in all:")),
+             ["scripts/a.py", "scripts/b.py"])
+        case("pins that match their manifests report nothing, not even a total",
+             pin_drift({"scripts/a.py": 3, "scripts/b.py": 4}), [])
+    finally:
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_t)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -6468,6 +6540,7 @@ def _self_test_body() -> int:
     # claim were checked and the thing the claim is ABOUT — the files on disk — was checked by
     # nothing until the 8-minute sweep. r3 B1: four entries repeated an earlier anchor tuple, the
     # loader refused them, `--mutate .` returned NOT MEASURED, and this suite stayed green.
+    # ⟳ backlog #359: the declared-count literal is retired; the history below still names it.
     # ⭐ The comment above the declared-count case calls that literal "the outside observer of the
     # sum". It observes the DICT. These two observe the MANIFESTS, which is the other operand, and
     # they are the pair that makes the sentence true.
@@ -6488,8 +6561,11 @@ def _self_test_body() -> int:
     # loud so nobody reads the missing entry as an oversight.
     _live_entries, _live_problems = load_manifests(_repo)
     case("the manifests ON DISK load with no refusal", _live_problems, [])
-    case("...and the entry count they yield is the pinned sum, not a typed literal",
-         len(_live_entries), sum(EXPECTED_MUTATIONS.values()))
+    # ⟳ backlog #359: this compared the TOTAL, which a +1 in one manifest and a -1 in another
+    # leave unchanged. It now compares every manifest with its own pin, in both directions —
+    # the rule the sweep applies, imported rather than restated, at a cost of well under a second.
+    case("...and every manifest ON DISK matches its own pin, and every pin has a manifest",
+         pin_drift(manifest_counts(_live_entries)), [])
 
     # ─── A PRE-FLIGHT FOR THE FAILURE-LINE CONTRACT WAS ATTEMPTED HERE, AND ABANDONED ────
     # ⛔ THE PROBLEM IS REAL AND HAS COST A GROWING LIST OF FILES — see the derivation below,

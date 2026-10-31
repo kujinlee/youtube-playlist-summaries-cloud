@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 211 cases
+    python3 scripts/check-merge-ready.py --self-test # 209 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -497,7 +497,6 @@ def _dashboard_gate():
 HOLD_RC = 3
 BASELINE_FILE = re.compile(r"^docs/reviews/.*baseline\.json$")
 PIN_LINE = re.compile(r'^\s*"(?P<path>scripts/[^"]+)":\s*(?P<n>\d+),')
-PIN_TOTAL = re.compile(r"sum\(EXPECTED_MUTATIONS\.values\(\)\),\s*(?P<n>\d+)\)")
 CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
 # A line on a failure path: the FAIL word, a fails/failures tally, a non-zero exit, or a hook's
 # `deny` — r1 CLAUDE H3: the hooks block with `deny "…"` and `exit 2`, and the first pattern saw neither.
@@ -866,10 +865,9 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
             out.append(f"loosens a gate: the mutation pin for {path} drops {old[path]} -> {new[path]}")
         elif path not in new:                       # r1 CLAUDE M2: deleted or renamed away
             out.append(f"loosens a gate: the mutation pin for {path} ({old[path]}) is removed")
-    ot = [int(m["n"]) for m in map(PIN_TOTAL.search, removed) if m]
-    nt = [int(m["n"]) for m in map(PIN_TOTAL.search, added) if m]
-    if ot and nt and nt[0] < ot[0]:
-        out.append(f"loosens a gate: the declared mutation total drops {ot[0]} -> {nt[0]}")
+    # ⟳ backlog #359: a proxy for a falling mutation TOTAL stood here. The total is no longer typed —
+    # `check-plan-code.declared_total` derives it from the per-file pins — so it can only fall when a
+    # pin falls, and a falling pin is held above. The proxy was retired with its subject.
     for path, (rm, ad) in sorted(per.items()):
         oc = [int(m["n"]) for m in map(CASE_COUNT.search, rm) if m]
         nc = [int(m["n"]) for m in map(CASE_COUNT.search, ad) if m]
@@ -1403,10 +1401,6 @@ def _self_test_body() -> int:
         check(f"a mutation pin that DROPS {o} -> {n} is a loosening",
               has(H([PC], DF(PC, f'-    "scripts/a.py": {o},', f'+    "scripts/a.py": {n},')), f"{o} -> {n}"), True)
     check("...but a pin that RISES is not", H([PC], DF(PC, '-    "scripts/a.py": 125,', '+    "scripts/a.py": 129,')), [])
-    for o, n in ((2021, 2017), (900, 10)):
-        check(f"a declared mutation total that drops {o} -> {n} is a loosening",
-              has(H([PC], DF(PC, f"-    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {o})",
-                               f"+    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {n})")), "total drops"), True)
     for o, n in ((274, 271), (9, 1)):
         check(f"a declared self-test count that drops {o} -> {n} is a loosening",
               has(H(["scripts/z.py"], DF("scripts/z.py", f"-    python3 scripts/z.py --self-test  # {o} cases",
