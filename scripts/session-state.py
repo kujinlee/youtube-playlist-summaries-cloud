@@ -50,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 73 cases
+    python3 scripts/session-state.py --self-test  # 81 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -63,6 +63,7 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -85,6 +86,14 @@ DRAIN = 1.0       # seconds a killed call's pipes are drained before they are cl
 # matching "owner" anywhere counted 4 of 6 real entries ("PAUSED by owner", "TEST … on the first compaction"),
 # of which 2 waited on a decision (measured 2026-10-28). `compaction-state.py` reads it through `waits_on_owner`.
 OWNER_MARKER = "WAITS-ON-OWNER:"
+OWNER_BARE = OWNER_MARKER.rstrip(":")   # the compact block also honours the marker written without its colon
+# What the compact block never trims is "what the owner decided or is waiting to decide", so it reads wider than the
+# snapshot's marker: the bare token, a `(card` wait, an entry that starts `OWNER` (a recorded instruction), and text
+# naming the owner's approval or answer in `what` or `on_done`. Measured on the real ledger: 3 of its 5 owner waits were
+# written `WAITS-ON-OWNER (card …)`, which the strict prefix does not match.
+OWNER_TEXT = re.compile(r"\bowner(?:'s)?\s+(?:approv\w*|says?|decision|go-ahead|answer|call|ok)\b"
+                        r"|\b(?:approv\w*|awaiting|pending|waits?|waiting)\s+(?:(?:from|on|for)\s+)?(?:the\s+)?owner\b",
+                        re.IGNORECASE)
 
 
 def clean(value, width: int = 220) -> str:
@@ -298,9 +307,18 @@ def _write(path: Path, entries: list[dict], raw: list[bytes]) -> None:
     os.replace(tmp, path)
 
 
+def normalise_what(what: str) -> str:
+    """`WAITS-ON-OWNER (card…)` or `WAITS-ON-OWNER foo` becomes `WAITS-ON-OWNER: (card…)`: the snapshot's strict reader
+    and goal-tree slice by the colon form, so a bare marker would be a wait only the compact block could see."""
+    if what.startswith(OWNER_BARE) and not what.startswith(OWNER_MARKER):
+        return f"{OWNER_MARKER} {what[len(OWNER_BARE):].lstrip()}".rstrip()
+    return what
+
+
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str) -> None:
     if not id_.strip():
         raise ValueError("an empty id could never be shown or removed")
+    what = normalise_what(what)
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
@@ -323,7 +341,7 @@ def ledger_done(path: Path, id_: str) -> bool:
 # ─── the block ─────────────────────────────────────────────────────────────────────────────────
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
-           now: str, truncated: bool = False, mark: str = "", compact: bool = False) -> str:
+           now: str, truncated: bool = False, mark: str = "", compact: bool = False, ledger_path: str = "") -> str:
     """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
     reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
     ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default.
@@ -364,17 +382,18 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
         L.append(f"IN-FLIGHT LEDGER ({LEDGER_REL}): none RECORDED — it is written by hand (`--add`), "
                  "so empty is not proof that nothing is running.")
     if compact and ledger:
-        owner = [e for e in ledger if waits_on_owner(e)]
-        rest = [e for e in ledger if not waits_on_owner(e)]
+        owner = [e for e in ledger if keep_whole(e)]
+        rest = sorted((e for e in ledger if not keep_whole(e)), key=lambda e: str(e.get("at") or ""))   # newest = by `at`
         shown = rest[-TITLES_SHOWN:]
+        hidden = [clean(e.get("id"), 40) for e in rest[:-TITLES_SHOWN]] if len(rest) > TITLES_SHOWN else []
         for e in owner:
             L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'), 10**6)} — when done: "
                      f"{clean(e.get('on_done'), 10**6)} (since {clean(e.get('at'), 20)})")
         for e in shown:
             L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'), TITLE_WIDTH)}")
-        L.append(f"  {len(owner)} waiting on the OWNER (shown whole); {len(shown)} of {len(rest)} other entries titled, "
-                 f"newest last; the rest, and each entry's what / on_done / since: full: {LEDGER_REL} "
-                 "(main checkout)")
+        L.append(f"  {len(owner)} owner decision(s) shown whole; {len(shown)} of {len(rest)} other entries titled, "
+                 f"newest by `at` last; hidden ids: {', '.join(hidden) or 'none'}; each entry's what / on_done / since: "
+                 f"full: {ledger_path or LEDGER_REL} (main checkout)")
         ledger = []
     for e in ledger:
         L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'))} — when done: {clean(e.get('on_done'))} "
@@ -397,6 +416,18 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
     if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
         return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
     return Path(common).parent, None
+
+
+def keep_whole(entry: dict) -> bool:
+    """Does the compact block print this entry whole? Anything the owner decided, or is waiting to decide — see
+    OWNER_TEXT. Wider than `waits_on_owner` on purpose: a miss here hides an owner decision on every turn."""
+    if not isinstance(entry, dict):
+        return False
+    what, on_done = entry.get("what"), entry.get("on_done")
+    what = what if isinstance(what, str) else ""
+    on_done = on_done if isinstance(on_done, str) else ""
+    return (waits_on_owner(entry) or what.startswith(OWNER_BARE) or what.startswith("OWNER")
+            or "(card" in what.lower() or bool(OWNER_TEXT.search(what)) or bool(OWNER_TEXT.search(on_done)))
 
 
 def waits_on_owner(entry: dict) -> bool:
@@ -433,8 +464,10 @@ def fetch(root: Path, run=_run, main: tuple[Path, str | None] | None = None
 
 def collect(root: Path, run=_run, now: str | None = None) -> str:
     now = now or time.strftime("%Y-%m-%d %H:%M %Z")
-    prs, pr_error, ledger, problems, truncated = fetch(root, run)
-    return render(prs, pr_error, ledger, problems, now, truncated=truncated, compact=True)
+    main = main_checkout(root, run)
+    prs, pr_error, ledger, problems, truncated = fetch(root, run, main)
+    return render(prs, pr_error, ledger, problems, now, truncated=truncated, compact=True,
+                  ledger_path=str(main[0] / LEDGER_REL))
 
 
 def self_test() -> int:
@@ -480,6 +513,47 @@ def _self_test_body() -> int:
          (sum(ln.startswith("  PR #") for ln in small.splitlines()), small.count("\n      "),
           max(len(ln) for ln in small.splitlines() if ln.startswith("  [job-")) <= TITLE_WIDTH + 12,
           sum(ln.startswith("  [job-") for ln in small.splitlines())), (12, 0, True, TITLES_SHOWN))
+    # r1 fold: the reviewers' inputs. Nothing the owner decided, or is waiting to decide, is ever trimmed.
+    routine = [{"id": f"r{n}", "what": f"routine {n} " + "x" * 300, "on_done": "d", "at": f"10-30 0{n}:00"} for n in range(1, 6)]
+    unmarked = {"id": "approval", "what": "Blocked pending owner approval to merge #453", "on_done": "Only merge after owner says yes",
+                "at": "10-30 03:30"}
+    out = render(None, "x", [unmarked, *routine], [], "now", compact=True)
+    case("⭐ r1 F1: an owner wait with NO marker (approval named in what / on_done) is shown whole, and counted",
+         ("Blocked pending owner approval to merge #453 — when done: Only merge after owner says yes" in out,
+          "1 owner decision(s) shown whole" in out), (True, True))
+    real = [{"id": "card-451", "what": "WAITS-ON-OWNER (card when back): close PR #451 " + "e" * 400, "on_done": "d", "at": "10-30 13:00"},
+            {"id": "bare", "what": "WAITS-ON-OWNER decide it", "on_done": "d", "at": "10-30 13:01"},
+            {"id": "stand", "what": "OWNER 18:50: token-usage features FIRST " + "s" * 300, "on_done": "d", "at": "10-30 13:02"},
+            {"id": "cardonly", "what": "(card when back) low priority " + "c" * 300, "on_done": "d", "at": "10-30 13:03"}]
+    out = render(None, "x", [*routine, *real], [], "now", compact=True)
+    case("⭐ r1 F1: the real forms — `WAITS-ON-OWNER (card …)`, the bare token, an `OWNER hh:mm` instruction, `(card` — print whole",
+         ("e" * 400 in out, "decide it" in out, "s" * 300 in out, "c" * 300 in out, "4 owner decision(s) shown whole" in out),
+         (True,) * 5)
+    case("⭐ r1 F1: a line that only MENTIONS the owner, or is paused by them, is still a title, not a decision",
+         [keep_whole({"what": "PAUSED 04:03 by owner: resume later"}), keep_whole({"what": "TEST the first compaction"}),
+          keep_whole({"what": "x", "on_done": "fold"}), keep_whole({"what": None}), keep_whole("junk")], [False] * 5)
+    out = render(None, "x", [{"id": "gone-2", "what": "older", "on_done": "d", "at": "10-28 00:00"},
+                             {"id": "gone-1", "what": "old", "on_done": "d", "at": "10-29 00:00"}, *routine], [], "now", compact=True)
+    case("⭐ r1 F1: every hidden entry is named by id on the count line, and the shown ones are not",
+         ("hidden ids: gone-2, gone-1" in out, "hidden ids: none" in render(None, "x", routine, [], "now", compact=True)),
+         (True, True))
+    newest_first = [{"id": "latest", "what": "late", "on_done": "d", "at": "10-30 23:00"}, *routine]
+    out = render(None, "x", newest_first, [], "now", compact=True)
+    case("⭐ r1 F3: 'newest' is by `at`, not file order — a latest entry on the FIRST line is still shown",
+         ("[latest] late" in out, out.find("[latest]") > out.find("[r5]"), "hidden ids: r1" in out), (True, True, True))
+    out = render(None, "x", routine, [], "now", compact=True, ledger_path="/abs/main/.claude/inflight.jsonl")
+    case("⭐ r1 F4: the printed `full:` path is the one the ledger was read from, absolute",
+         "full: /abs/main/.claude/inflight.jsonl (main checkout)" in out, True)
+    nrm = Path(tempfile.mkdtemp(prefix="ss-norm-")) / "inflight.jsonl"
+    try:
+        for i_, w_ in (("a", "WAITS-ON-OWNER (card when back): x"), ("b", "WAITS-ON-OWNER decide"), ("c", f"{OWNER_MARKER} ok"),
+                       ("d", "plain")):
+            ledger_add(nrm, i_, w_, "d", "T")
+        wrote = [e["what"] for e in read_ledger(nrm)[0]]
+    finally:
+        shutil.rmtree(nrm.parent, ignore_errors=True)
+    case("⭐ r1 F1: --add normalises a bare marker to the colon form the snapshot and goal-tree slice by, and leaves the rest",
+         wrote, [f"{OWNER_MARKER} (card when back): x", f"{OWNER_MARKER} decide", f"{OWNER_MARKER} ok", "plain"])
     case("a status-context entry (state, no conclusion) is read", check_summary([{"state": "SUCCESS"}]), "1 pass")
     case("a malformed rollup member is COUNTED as unreadable, not dropped", check_summary([None]), "1 unreadable")
     case("failing checks are NAMED, check runs and status contexts alike",
@@ -661,10 +735,11 @@ def _self_test_body() -> int:
         case("...and without one it asks git itself, and says the main checkout could not be found",
              (asked_git, any("main checkout could not be found" in p for p in got[3])), (["gh", "git"], True))
         case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
-             (len([c for c, _ in seen if c[0] == "gh"]), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
+             (len([c for c, _ in seen if c[0] == "gh"]), [c for c, _ in seen if c[0] == "gh"][0], all(t <= TIMEOUT for _, t in seen),
+              "PR #7 " in out, "[job1]" in out),
              (1, ["gh", "pr", "list"], True, True, True))
         case("⭐ floor: collect() — the hook's own entry — prints the COMPACT block, naming the file with every entry",
-             f"full: {LEDGER_REL}" in out, True)
+             f"full: {root / LEDGER_REL}" in out, True)
         bare = root / "no-ledger-here"
         bare.mkdir()
         out = collect(bare, run=lambda cmd, cwd, timeout=TIMEOUT: (124, "timed out after 30s"), now="21:20 PDT")
@@ -773,6 +848,8 @@ def _self_test_body() -> int:
         out = collect(wt, run=gh_only, now="T")
         case("⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'",
              ("[main-job] Codex r2 on PR #7" in out, "none RECORDED" in out), (True, False))
+        case("⭐ r1 F4: ...and the compact block's `full:` path is the MAIN checkout's, absolute, not the worktree's",
+             (f"full: {repo.resolve() / LEDGER_REL}" in out, f"full: {wt / LEDGER_REL}" in out), (True, False))
         case("collect() where git cannot name the main checkout SAYS the real ledger may not have been read",
              "in a linked worktree the real one was NOT READ" in collect(bare, run=NO_GIT, now="T"), True)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -792,7 +869,7 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--add", nargs=3, metavar=("ID", "WHAT", "ON_DONE"),
                     help=f"record a background job (re-adding an ID replaces it). Start WHAT with '{OWNER_MARKER} ' when "
-                         "the job waits on an OWNER decision: only that marker puts it under the compaction snapshot's "
+                         "the job waits on an OWNER decision (written without the colon, it is normalised): only that marker puts it under the compaction snapshot's "
                          "'Pending OWNER decisions' — mentioning the owner does not")
     ap.add_argument("--done", metavar="ID")
     args = ap.parse_args(argv)

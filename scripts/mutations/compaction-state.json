@@ -732,8 +732,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        elif in_owner:\n            out.append(clean(line, 10**6))\n",
-        "        elif in_owner:\n            pass\n"
+        "        elif mode == \"whole\":\n            out.append(clean(line, 10**6))\n",
+        "        elif mode == \"whole\":\n            pass\n"
       ]
     ],
     "expect": [
@@ -750,7 +750,72 @@
       ]
     ],
     "expect": [
-      "⭐ floor: a line of the snapshot saying NOT CAPTURED still reaches the print"
+      "⭐ floor: a line of the snapshot saying NOT CAPTURED still reaches the print, and the path given is the one printed"
+    ]
+  },
+  {
+    "name": "floor r1: the owner's recent words are left out of the print again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "\"## Pending OWNER decisions\", \"## The owner's recent words\")   # sections",
+        "\"## Pending OWNER decisions\",)   # sections"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and prompts are what the summary garbles)"
+    ]
+  },
+  {
+    "name": "floor r1: the title block (the /compact instructions) is left out of the print",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        elif mode == \"title\":\n",
+        "        elif mode == \"title\" and False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F3: the /compact instructions line of the title block reaches the print, and the path given is the one printed"
+    ]
+  },
+  {
+    "name": "floor r1: a cut NOT CAPTURED line loses its marker again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if NC not in line or NC in out:\n        return out\n",
+        "    return out\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F5: a NOT CAPTURED line cut for width keeps its marker and what follows it, in a section body and a heading"
+    ]
+  },
+  {
+    "name": "floor r1: every heading level ends the owner's section (its ### subsections drop out)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if line.startswith(\"## \"):",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and prompts are what the summary garbles)"
+    ]
+  },
+  {
+    "name": "floor r1: every section's body is shown whole",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "mode = \"whole\" if line.startswith(DIGEST_WHOLE) else \"other\"",
+        "mode = \"whole\""
+      ]
+    ],
+    "expect": [
+      "⭐ floor: a body line of a section that is not the owner's is still left in the file"
     ]
   }
 ]

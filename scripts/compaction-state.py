@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 100 cases
+    python3 scripts/compaction-state.py --self-test  # 103 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -114,7 +114,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STARTED = time.monotonic()   # r4 X4-1: HOOK_DEADLINE is measured from here, the process's start
 SESSIONS_REL = ".remember/compaction"          # r2 REDESIGN (B): <SESSIONS_REL>/<session_id>/{receipt.json,snapshot.md}
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
-DIGEST_OWNER_HEAD = "## Pending OWNER decisions"   # the one section whose body the print shows whole (needs-you, uncapped)
+DIGEST_WHOLE = ("## Pending OWNER decisions", "## The owner's recent words")   # sections whose body the print shows whole
+DIGEST_HEAD = re.compile(r"#{1,3} ")
 SNAPSHOT_CAP = 8000     # under PRINT_CAP with the print's heading lines
 PRINT_CAP = 9800        # the harness replaces SessionStart output over 10,000 characters with a file path
 STALE_AFTER = 30 * 60   # seconds: a receipt this old or older is not shown (r4 X4-5: age < 0 is refused too)
@@ -762,19 +763,32 @@ SESSION_NOT_COMPACTION = ("session identity is not compaction identity: a delaye
                           "session, or an earlier one whose successor's PreCompact did not run, can be shown here.")
 
 
+def _clean_keep_nc(line: str, width: int) -> str:
+    """clean(line, width), except a cut never takes the NOT CAPTURED words with it: the marker and what follows it are
+    kept, the front is cut instead."""
+    out = clean(line, width)
+    if NC not in line or NC in out:
+        return out
+    return clean(line[:width // 3], width // 3) + " … " + clean(line[line.index(NC):], width - width // 3 - 3)
+
+
 def digest(snap_text: str, path: str) -> str:
-    """What the print shows of a snapshot every turn (the coordinator re-sends it): the title, every heading, each line
-    that says something was NOT CAPTURED, and the whole body of the OWNER-decisions section. The rest stays in the file,
-    and the path is printed so nothing is lost."""
-    out, in_owner = [], False
+    """What the print shows of a snapshot every turn (the coordinator re-sends it): the title block (the /compact
+    instructions are the owner's words), every heading, each line that says something was NOT CAPTURED, and the whole
+    body of the sections that hold the owner's words and decisions (DIGEST_WHOLE; capped in the snapshot already). The
+    rest stays in the file, and the path is printed so nothing is lost."""
+    out, mode = [], "title"
     for line in _strip_keys(snap_text).strip().splitlines():
-        if line.startswith("#"):
-            in_owner = line.strip() == DIGEST_OWNER_HEAD
-            out.append(clean(line, 200))
-        elif in_owner:
+        if DIGEST_HEAD.match(line):
+            if line.startswith("## "):
+                mode = "whole" if line.startswith(DIGEST_WHOLE) else "other"
+            out.append(_clean_keep_nc(line, 200))
+        elif mode == "title":
+            out.append(_clean_keep_nc(line, 300))
+        elif mode == "whole":
             out.append(clean(line, 10**6))
         elif NC in line:
-            out.append("  " + clean(line, 200))
+            out.append("  " + _clean_keep_nc(line, 200))
     out.append(f"full: {path} (every section, whole)")
     return "\n".join(out)
 
@@ -1231,14 +1245,27 @@ def _self_test_body() -> int:
         # ─── the print is a DIGEST (context floor): headings, NOT CAPTURED lines, the owner section, and the path ───
         out = render_print(snap, None, 1200.0, R, None, "sess-1")
         big_len = len(_strip_keys(snap_big).strip())
-        case("⭐ floor: the print is at most 40% of a full-size snapshot's own text, headings kept",
-             (len(render_print(snap_big, None, 1200.0, R, None, "sess-1")) * 100 <= 40 * big_len,
+        case("⭐ floor: the print is at most 75% of a full-size snapshot's own text, headings kept",
+             (len(render_print(snap_big, None, 1200.0, R, None, "sess-1")) * 100 <= 75 * big_len,
               "## Worktrees" in out and "## Pending OWNER decisions" in out), (True, True))
         case("⭐ floor: the print names the snapshot FILE that holds the whole text",
              "full: .remember/compaction/sess-1/snapshot.md" in out, True)
-        case("⭐ floor: the OWNER-decisions section is shown whole, and a body line of another section is not",
+        case("⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and "
+             "prompts are what the summary garbles)",
              ("ledger [walk-361]" in out, "36 unresolved ask(s)" in out, "pause and finish the guards" in out),
-             (True, True, False))
+             (True, True, True))
+        some_other = "\n".join(["# PRE-COMPACTION SNAPSHOT — t", "## Worktrees (git worktree list)", "  wt-a /x branch routine-body-line"])
+        case("⭐ floor: a body line of a section that is not the owner's is still left in the file",
+             "routine-body-line" in digest(some_other, "p"), False)
+        inst = "/compact instructions: keep PR #451 OPEN, do not merge it"
+        titled = digest("# PRE-COMPACTION SNAPSHOT — t\n" + inst + "\n\n## Worktrees\n  x", "q1/snapshot.md")
+        case("⭐ r1 F3: the /compact instructions line of the title block reaches the print, and the path given is the one printed",
+             (inst in titled, "full: q1/snapshot.md (every section, whole)" in titled), (True, True))
+        long_nc = "x" * 210 + f" {NC} — status unavailable"
+        cut = digest(f"# T\n\n## In flight\n{long_nc}\n## Worktrees\n  {long_nc}", "p")
+        case("⭐ r1 F5: a NOT CAPTURED line cut for width keeps its marker and what follows it, in a section body and a heading",
+             (cut.count(f"{NC} — status unavailable"), digest(f"# T\n## {long_nc}", "p").count(f"{NC} — status unavailable")),
+             (2, 1))
         nc_lines = [ln for ln in _strip_keys(snap_big).splitlines() if NC in ln and not ln.startswith("#")]
         out_big = render_print(snap_big, None, 1200.0, R, None, "sess-1")
         case("⭐ floor: a line of the snapshot saying NOT CAPTURED still reaches the print",

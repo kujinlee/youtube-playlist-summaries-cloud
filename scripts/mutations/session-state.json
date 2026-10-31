@@ -537,8 +537,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "the rest, and each entry's what / on_done / since: full: {LEDGER_REL} \"",
-        "the rest, and each entry's what / on_done / since: see {LEDGER_REL} \""
+        "f\"full: {ledger_path or LEDGER_REL} (main checkout)\")",
+        "f\"see {ledger_path or LEDGER_REL} (main checkout)\")"
       ]
     ],
     "expect": [
@@ -589,12 +589,142 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "now, truncated=truncated, compact=True)",
-        "now, truncated=truncated)"
+        "now, truncated=truncated, compact=True,",
+        "now, truncated=truncated,"
       ]
     ],
     "expect": [
       "⭐ floor: collect() — the hook's own entry — prints the COMPACT block, naming the file with every entry"
+    ]
+  },
+  {
+    "name": "floor r1: an owner wait is no longer recognised by the approval text in what / on_done",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        " or bool(OWNER_TEXT.search(what)) or bool(OWNER_TEXT.search(on_done)))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: an owner wait with NO marker (approval named in what / on_done) is shown whole, and counted"
+    ]
+  },
+  {
+    "name": "floor r1: the bare WAITS-ON-OWNER token (no colon) is no longer an owner wait",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "what.startswith(OWNER_BARE) or what.startswith(\"OWNER\")",
+        "what.startswith(\"OWNER\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: the real forms — `WAITS-ON-OWNER (card …)`, the bare token, an `OWNER hh:mm` instruction, `(card` — print whole"
+    ]
+  },
+  {
+    "name": "floor r1: a `(card` wait is no longer an owner wait",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        " or \"(card\" in what.lower()",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: the real forms — `WAITS-ON-OWNER (card …)`, the bare token, an `OWNER hh:mm` instruction, `(card` — print whole"
+    ]
+  },
+  {
+    "name": "floor r1: an entry starting OWNER (a recorded instruction) is no longer kept whole",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        " or what.startswith(\"OWNER\")",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: the real forms — `WAITS-ON-OWNER (card …)`, the bare token, an `OWNER hh:mm` instruction, `(card` — print whole"
+    ]
+  },
+  {
+    "name": "floor r1: 'newest' goes back to file order",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "key=lambda e: str(e.get(\"at\") or \"\"))",
+        "key=lambda e: 0)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F3: 'newest' is by `at`, not file order — a latest entry on the FIRST line is still shown"
+    ]
+  },
+  {
+    "name": "floor r1: the hidden entries are no longer named on the count line",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "hidden = [clean(e.get(\"id\"), 40) for e in rest[:-TITLES_SHOWN]] if len(rest) > TITLES_SHOWN else []",
+        "hidden = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: every hidden entry is named by id on the count line, and the shown ones are not"
+    ]
+  },
+  {
+    "name": "floor r1: render ignores the ledger path it is given",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "full: {ledger_path or LEDGER_REL} (main",
+        "full: {LEDGER_REL} (main"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F4: the printed `full:` path is the one the ledger was read from, absolute"
+    ]
+  },
+  {
+    "name": "floor r1: collect() stops passing the main checkout's ledger path",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "ledger_path=str(main[0] / LEDGER_REL))",
+        "ledger_path=\"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F4: ...and the compact block's `full:` path is the MAIN checkout's, absolute, not the worktree's"
+    ]
+  },
+  {
+    "name": "floor r1: --add stops normalising the marker",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    what = normalise_what(what)\n",
+        "    what = what\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: --add normalises a bare marker to the colon form the snapshot and goal-tree slice by, and leaves the rest"
+    ]
+  },
+  {
+    "name": "floor r1: normalise_what does nothing",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if what.startswith(OWNER_BARE) and not what.startswith(OWNER_MARKER):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: --add normalises a bare marker to the colon form the snapshot and goal-tree slice by, and leaves the rest"
     ]
   }
 ]
