@@ -160,8 +160,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    keep = [ln for ln in lines if ln.split(\" \", 1)[0] in STALLED_STATES or ln.startswith(\"NOTE\")]",
-        "    keep = list(lines)"
+        "    shown = [ln for ln, st in zip(lines, status) if st in HOOK_TIER]",
+        "    shown = list(lines)"
       ]
     ],
     "expect": [
@@ -697,8 +697,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        " or ln.startswith(\"NOTE\")]",
-        "]"
+        "    notes = [ln for ln in lines if ln.startswith(\"NOTE\")]",
+        "    notes = []"
       ]
     ],
     "expect": [
@@ -755,6 +755,279 @@
     ],
     "expect": [
       "F10: the summary's unfolded count is taken AFTER the filters"
+    ]
+  },
+  {
+    "name": "the hook cap rises to 9, so the block grows past the 8 it promises",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "HOOK_MAX_LINES = 8",
+        "HOOK_MAX_LINES = 9"
+      ]
+    ],
+    "expect": [
+      "cap: at most 8 item lines — drafts and tips first, oldest first, then the OLDEST unfolded halves"
+    ]
+  },
+  {
+    "name": "the hook block stops sorting by tier: the 66 old halves crowd out every unpushed tip",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    shown.sort(key=lambda ln: HOOK_TIER.get(ln.split(\" \", 1)[0], len(HOOK_TIERS)))",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "cap: at most 8 item lines — drafts and tips first, oldest first, then the OLDEST unfolded halves"
+    ]
+  },
+  {
+    "name": "MERGED cleanup is ranked above the unfolded halves",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "(\"UNPROCESSED\",), (\"MERGED\",))",
+        "(\"MERGED\",), (\"UNPROCESSED\",))"
+      ]
+    ],
+    "expect": [
+      "cap: under the cap, MERGED cleanup comes LAST though it is the oldest, and no scratchpad means no --scratch"
+    ]
+  },
+  {
+    "name": "the summary counts only the lines it shows, so the 58 it hid vanish from the total",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "for st in tier if st in status)",
+        "for st in tier if st in status[:HOOK_MAX_LINES])"
+      ]
+    ],
+    "expect": [
+      "cap: the notes, then ONE summary line with the total per status and the command that lists them all"
+    ]
+  },
+  {
+    "name": "the summary's command drops the scratchpad, so the halves there are not listed by it",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "f\"Every line: {list_command(scratch)}\"",
+        "f\"Every line: python3 scripts/check-stalled-work.py\""
+      ]
+    ],
+    "expect": [
+      "cap: the notes, then ONE summary line with the total per status and the command that lists them all"
+    ]
+  },
+  {
+    "name": "the command quotes a scratchpad path whatever characters it holds",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if scratch is not None and shape(str(scratch), \"path\", 400) == str(scratch):",
+        "    if scratch is not None:"
+      ]
+    ],
+    "expect": [
+      "cap: the command names no scratchpad whose path is unsafe to quote"
+    ]
+  },
+  {
+    "name": "the hook block keeps every line: the cap slice is dropped",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "shown[:HOOK_MAX_LINES] + notes + [summary]",
+        "shown + notes + [summary]"
+      ]
+    ],
+    "expect": [
+      "main --hook: the block holds 8 of the 10, the OLDEST, then the summary naming all 10"
+    ]
+  },
+  {
+    "name": "the CLI is capped like the hook, so `every line` no longer lists every line",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    print(\"\\n\".join(lines))\n    print(f\"(took",
+        "    print(\"\\n\".join(lines[:HOOK_MAX_LINES] + lines[-1:]))\n    print(f\"(took"
+      ]
+    ],
+    "expect": [
+      "main without --hook prints EVERY line: all 10 unfolded halves, uncapped"
+    ]
+  },
+  {
+    "name": "a fresh measurement carries no age line",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return with_age(block, 0)",
+        "    return block"
+      ]
+    ],
+    "expect": [
+      "main --hook: a fresh measurement says it is 0m old"
+    ]
+  },
+  {
+    "name": "the cache is never read: every prompt pays the full git and gh run",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if hit is not None:\n        return with_age(",
+        "    if False:\n        return with_age("
+      ]
+    ],
+    "expect": [
+      "cache: a hit within 10 min makes ZERO subprocess or gh calls"
+    ]
+  },
+  {
+    "name": "a cache hit claims to be 0m old, however old it is",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "return with_age(hit[\"block\"], now - hit[\"at\"])",
+        "return with_age(hit[\"block\"], 0)"
+      ]
+    ],
+    "expect": [
+      "cache: the cached block says how old it is"
+    ]
+  },
+  {
+    "name": "the cache never expires",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if now - at >= CACHE_TTL_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "cache: past 10 min it is EXPIRED — a run, and the cache rewritten at the new time"
+    ]
+  },
+  {
+    "name": "a cache dated in the future is trusted",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if now < at:  # from the future: a clock moved back",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "cache: one from the FUTURE (the clock moved back) is a miss"
+    ]
+  },
+  {
+    "name": "another key's cache is served",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if not isinstance(data, dict) or data.get(\"key\") != key:",
+        "    if not isinstance(data, dict):"
+      ]
+    ],
+    "expect": [
+      "cache: a malformed or foreign cache forces a run (another key's)"
+    ]
+  },
+  {
+    "name": "a cache whose time is not a number is trusted, and the hook crashes on it",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if not isinstance(at, (int, float)) or isinstance(at, bool) or not (block is None or isinstance(block, str)):",
+        "    if not (block is None or isinstance(block, str)):"
+      ]
+    ],
+    "expect": [
+      "cache: a malformed or foreign cache forces a run (a time that is no number)"
+    ]
+  },
+  {
+    "name": "the cache is written in place, so a failed write truncates the last good answer",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    fd, tmp = tempfile.mkstemp(prefix=\".tmp-\", dir=path.parent)\n    try:\n        with os.fdopen(fd, \"w\") as fh:\n            json.dump(payload, fh)\n        os.replace(tmp, path)",
+        "    tmp = path.with_suffix(\".unused\")\n    try:\n        with open(path, \"w\") as fh:\n            json.dump(payload, fh)"
+      ]
+    ],
+    "expect": [
+      "write_cache is ATOMIC: a write that fails part-way leaves the old file whole and no temp file"
+    ]
+  },
+  {
+    "name": "a failed cache write leaves its temp file behind",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        Path(tmp).unlink(missing_ok=True)\n        raise",
+        "        raise"
+      ]
+    ],
+    "expect": [
+      "write_cache is ATOMIC: a write that fails part-way leaves the old file whole and no temp file"
+    ]
+  },
+  {
+    "name": "the measured answer is never cached",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "            write_cache(path, {\"key\": key, \"at\": now, \"block\": block})",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "the cache is written under the main checkout's .claude/, keyed by the repo and the scratchpad"
+    ]
+  },
+  {
+    "name": "a CANNOT RUN is cached, so a recovered gh stays unread for 10 min",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if rc != CANNOT_RUN:\n        try:\n            write_cache",
+        "    if True:\n        try:\n            write_cache"
+      ]
+    ],
+    "expect": [
+      "cache: a CANNOT RUN is not cached — the next prompt tries again"
+    ]
+  },
+  {
+    "name": "a linked worktree's cache goes in the worktree, not the main checkout",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "            return gitdir.parent.parent.parent",
+        "            return Path(repo)"
+      ]
+    ],
+    "expect": [
+      "main_checkout: a LINKED worktree's cache lives in the MAIN checkout"
+    ]
+  },
+  {
+    "name": "the cache key drops the scratchpad, so two sessions share one answer",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return f\"{Path(repo).resolve()}\\0{scratch if scratch is not None else ''}\"",
+        "    return f\"{Path(repo).resolve()}\""
+      ]
+    ],
+    "expect": [
+      "the cache is written under the main checkout's .claude/, keyed by the repo and the scratchpad"
     ]
   }
 ]
