@@ -846,8 +846,7 @@
       ]
     ],
     "expect": [
-      "R2-3: on_mainline: one commit whose VERBATIM patch-id is not on the mainline is NOT merged, though cherry said '-'",
-      "R2-3: `return 2` OUTSIDE the if on the branch, INSIDE it on master (2 vs 1) is STALLED, never MERGED"
+      "R2-3: on_mainline: one commit whose VERBATIM patch-id is not on the mainline is NOT merged, though cherry said '-'"
     ]
   },
   {
@@ -1056,7 +1055,7 @@
       ]
     ],
     "expect": [
-      "r4 F1: own_prs REFUSES an own-repo PR with no isDraft"
+      "r4 F1: own_prs REFUSES an own-repo PR with no isDraft (was read as non-draft)"
     ]
   },
   {
