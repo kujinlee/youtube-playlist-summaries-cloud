@@ -18429,6 +18429,22 @@ guard's real `--decide`. The FIFO class was live in `check-handoff-path` too (it
 fixed there. Verdicts over 50 real transcripts are unchanged against master. `EXPECTED_MUTATIONS` 2552.
 
 ## 2026-10-30
+Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). It is
+git's own pre-push hook, so it sees exactly what a push sends: every branch and tag, and every commit in it, not
+just the latest state. A commit that adds eight words in a row from any plan is refused, naming the file, line and
+commit, unless those words are already on the remote. The matched words are never printed by the hook; you can
+see them by running the checker with `--show` in your own terminal. A fragment shorter than eight words is not
+caught. Commit messages, tag messages and new file names are checked too. Each session switches the gate on if it
+is off, or warns loudly if something else has taken over git's hook setting. A fresh clone with no plans can still
+push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through; an agent also needs the
+owner's dangerous-push flag for it.
+<!--tech-->
+`scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
+remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
+the command text; the redesign removes their common cause, and each finding is now a case.
+CI shard 8 also needed a fix that rides here: `check-main-drivable`'s live reconcile now has a 45 s deadline, because an old mutant made `world_class` recurse exponentially only on this PR's tree (`check-plan-leak.py`), so the shard hit the 120 s limit and reported NOT MEASURED; backlog #405's early stop would be the structural fix. `EXPECTED_MUTATIONS` 2807 -> 2808.
+
+## 2026-10-30
 Every message the coordinator sends re-sends a fixed block of context, and about 16,000 tokens of it was text our own start-up hooks print. The in-flight block now shows each open PR on one line, every item the owner decided or is waiting to decide in full (whatever way it was written down), and a one-line title for only the five newest of the other ledger entries, with the hidden ones listed by name; the snapshot printed after a compaction shows its headings, the owner's recorded words, the owner-decision section and any line marked "not captured". Both print the file that holds the whole text, and nothing is deleted. Measured on this repository, the in-flight block fell from 11,716 to 8,550 characters and the compaction snapshot from 7,527 to 3,638. That is less than first hoped: the review found the first cut hid owner decisions, and keeping them costs size.
 
 What this does not reach: the last handoff and the REMEMBER block are printed by the remember plugin, not by this repository, so they are unchanged here.

@@ -325,6 +325,19 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "scratch_for.uid", "unpushed_item.branch", "unpushed_item.limit_s", "unpushed_item.now",
         "unpushed_item.count", "unpushed_item.oldest", "unpushed_item.path", "unpushed_item.where",
         "own_prs.rows", "safe_ref.name",),
+    # backlog #393 (2026-10-29): the plan-leak push gate, pinned in the commit that creates it. DERIVED by
+    # running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ PR #443 r1: re-derived after the redesign onto git's pre-push hook.
+    "check-plan-leak.py": (
+        'candidate_windows.n', 'candidate_windows.removed', 'candidate_windows.runs', 'candidate_windows.win',
+        'hooks_status.root', 'judged_text.body', 'judged_text.key', 'judged_text.removed', 'leak_hits.n',
+        'leak_hits.public', 'leak_hits.removed', 'leak_hits.runs', 'leak_hits.win', 'main.argv', 'main.err',
+        'main.out', 'main.root', 'main.stdin', 'main.tty', 'parse_added_paths.text', 'parse_log.log_text',
+        'parse_messages.text', 'parse_updates.stdin_text', 'plan_strings.serving', 'plan_strings.text',
+        'public_in.cands', 'public_in.texts', 'report.hits', 'report.n', 'report.n_runs', 'report.n_strings',
+        'report.n_windows', 'session_start.root', 'show_lines.hits', 'tag_run.sha', 'tag_run.tag_text',
+        'tag_target.tag_text', 'unquote_path.raw', 'windows.n', 'windows.sources', 'words.s',
+    ),
     # PR #440 r2: the shared bounded reader, pinned in the commit that creates it.
     "bounded_read.py": (
         "hostile_payloads.d",
