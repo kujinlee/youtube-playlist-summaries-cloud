@@ -39,7 +39,7 @@ Codex showed two mutants of that lambda surviving under the marker, 106/106: gh 
   in `run_capture`. Codex reported both surviving with and without the marker, so the skip did not open them.
 - **The coverage list in `real_time_cases` is corrected.** It names the adapter case. Its BOUND now names exactly what
   no every-mode case covers: the bash hook file and the `__main__` process start, which the real-time cases see, and
-  #423's two kill details, which no case sees.
+  backlog #423's two kill details, which no case sees.
 
 **C2 — the CI guard took matrix data for a step.** `ci_runs_real_time` searched the whole `verify` job, so the
 self-test line under `strategy.matrix.include` passed while the job's only step ran `echo`.
