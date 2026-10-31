@@ -75,6 +75,16 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-prompt.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh stalled-work.sh",
+            "statusMessage": "Checking for stalled work...",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -212,18 +222,6 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
             "timeout": 15,
             "statusMessage": "Saving a snapshot of in-flight state before compaction..."
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh stalled-work.sh",
-            "statusMessage": "Checking for stalled work...",
-            "timeout": 30
           }
         ]
       }
