@@ -56,7 +56,7 @@ real repo, 66 of them old unfolded halves, and 3.4-3.6 s warm / 6.6 s cold — o
       report one at most 10 min late and cannot hide it.
 
     python3 scripts/check-stalled-work.py --scratch <dir>
-    python3 scripts/check-stalled-work.py --self-test  # 154 cases
+    python3 scripts/check-stalled-work.py --self-test  # 159 cases
 
 EXIT CODES (repo convention): 0 = nothing stalled · 1 = something stalled · 2 = CANNOT RUN (git or
 gh failed; never a pass). `--hook` always exits 0 — it is advice, and its block says CANNOT RUN.
@@ -1022,7 +1022,7 @@ def _self_test_body() -> int:
             + [Item("UNPROCESSED", "review", h * 3600, f"half{h}", "fold") for h in range(20, 26)]
             + [Item("MERGED", "unpushed", 99 * 3600, f"done{i}", "remove") for i in (1, 2)]
             + [Item("OK", "pr", 50 * 3600, "fine", "nothing")])
-    HM = hook_block(*render(MANY, {}, ["a note"]), Path("/s/p"))
+    HM = hook_block(*render(MANY, {}, ["a note"]), scratch=Path("/s/p"))
     HML = HM.split("\n")[1:]
     check("cap: at most 8 item lines — drafts and tips first, oldest first, then the OLDEST unfolded halves",
           lambda: [ln.split()[2] for ln in HML[:-2]],
@@ -1038,6 +1038,9 @@ def _self_test_body() -> int:
           ["STALLED", "UNPROCESSED", "MERGED", "stalled-work:"])
     check("cap: the command names no scratchpad whose path is unsafe to quote",
           lambda: list_command(Path("/s/a b")), "python3 scripts/check-stalled-work.py")
+    check("cap: the command names a scratchpad whose path is safe to quote, and no scratchpad names none",
+          lambda: (list_command(Path("/s/p")), list_command(None)),
+          ("python3 scripts/check-stalled-work.py --scratch /s/p", "python3 scripts/check-stalled-work.py"))
     check("render (the CLI's lines) is NEVER capped: all 13 items and the summary",
           lambda: len(render(MANY, {}, [])[1]), 14)
     check("with_age: the age goes on the line after the header", lambda: with_age("H\nbody", 240).split("\n"),
@@ -1273,11 +1276,15 @@ def _self_test_body() -> int:
         try:
             RCH, LH = run(["--repo", str(QUIET), "--hook"], stdin_text='{"session_id": "sess-1"}',
                           prs=lambda repo: [], now=NOW)
+            HO = hook_output(["--repo", str(QUIET), "--hook"], '{"session_id": "sess-1"}', lambda repo: [], NOW)
         finally:
             os.environ.clear()
             os.environ.update(saved)
         check("--hook derives the session scratchpad from the hook JSON and reads it",
               lambda: any("zz r1 (codex)" in ln for ln in LH), True)
+        check("hook_output derives the scratchpad from the hook JSON: it reads it, names it, and caches under it",
+              lambda: ("zz r1 (codex)" in HO, HO.endswith(f"--scratch {hs}"), cache_path(str(QUIET), hs).is_file()),
+              (True, True, True))
         MH = _drive_main(["--repo", str(QUIET), "--scratch", str(scratch), "--hook"], "{}", fake, NOW)
         check("main --hook: something stalled prints ONE UserPromptSubmit JSON block and exits 0",
               lambda: (MH[0], json.loads(MH[1])["hookSpecificOutput"]["hookEventName"],
@@ -1306,6 +1313,11 @@ def _self_test_body() -> int:
         check("main --hook: a fresh measurement says it is 0m old", lambda: MKB[1].startswith("(as of 0m ago;"), True)
         check("main_checkout: a LINKED worktree's cache lives in the MAIN checkout",
               lambda: (main_checkout(str(wt)) == main_.resolve(), main_checkout(str(QUIET)) == QUIET), (True, True))
+        check("cache_path: a linked worktree's cache file is in the MAIN checkout's .claude/, named by its own key",
+              lambda: (cache_path(str(wt), many).parent == main_.resolve() / CACHE_DIR,
+                       cache_path(str(wt), many).name != cache_path(str(main_), many).name), (True, True))
+        check("cache_key: a different repo or a different scratchpad is a different key",
+              lambda: len({cache_key("/r1", None), cache_key("/r2", None), cache_key("/r1", Path("/s"))}), 3)
         HARGS = ["--repo", str(QUIET), "--scratch", str(many), "--hook"]
         CP = cache_path(str(QUIET), many)
         check("the cache is written under the main checkout's .claude/, keyed by the repo and the scratchpad",
@@ -1357,6 +1369,11 @@ def _self_test_body() -> int:
         check("write_cache: a second, different payload replaces the first whole",
               lambda: (write_cache(CP, {"key": "k2", "at": 7, "block": "b"}), json.loads(CP.read_text()))[1],
               {"key": "k2", "at": 7, "block": "b"})
+        OTHER = tmp / "other-cache" / "c.json"
+        check("write_cache and read_cache use the path and key they are GIVEN: another pair round-trips, a third key misses",
+              lambda: (write_cache(OTHER, {"key": "k3", "at": NOW, "block": "b3"}),
+                       read_cache(OTHER, "k3", NOW + 1), read_cache(OTHER, "k2", NOW + 1), json.loads(CP.read_text())["key"])[1:],
+              ({"at": NOW, "block": "b3"}, None, "k2"))
         check("cache: a CANNOT RUN is not cached — the next prompt tries again",
               lambda: (hook_output(["--repo", str(QUIET), "--scratch", str(many / "x"), "--hook"], "{}",
                                    gh_down, NOW).startswith("STALLED WORK CHECK — CANNOT RUN"),
