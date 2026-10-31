@@ -2227,7 +2227,12 @@ EXPECTED_MUTATIONS = {
     # survives (measured, 233/233 green) because `git merge-tree` refuses the whitespace case on its own.
     # 8 entered: the merge-tree requirement and its conflict rule, the orphan merge base, the cache's
     # tip-moved check and its packed-refs read, the hook's catch-all, the bounded drain, a list `kind`.
-    "scripts/check-stalled-work.py": 112,
+    # ⟳ SPLIT (r3 decision): 112 → 80. The cache left this file whole (it is preserved on the branch
+    # `stalled-work-cache` and filed as its own backlog row), and 32 entries were RETIRED WITH THEIR
+    # SUBJECT: the cache's read, expiry, key, atomic write and schema (21), the age line, `_clip`, the
+    # candidate window, ages-from-measurement, the tip-moved check, its packed-refs read and the list
+    # `kind` (11). Nothing was retargeted; every one that remains is run against the suite below.
+    "scripts/check-stalled-work.py": 80,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -6296,7 +6301,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2677)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2645)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

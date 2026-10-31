@@ -102,10 +102,6 @@ playwright/.auth/
 # plan's situations change. Ignored for the same reason as the plan it is keyed to.
 .claude/recall-cache/
 
-# The stalled-work hook's answer, reused for 10 minutes (scripts/check-stalled-work.py, backlog
-# #410). Derived from this machine's git, gh and scratchpad: per-machine, never shared.
-.claude/stalled-work-cache/
-
 # Warn-only firings of scripts/check-banner-armed.py — one tab-separated line per turn that
 # announced `## ▶ STEP i of N` with nothing armed. Per-machine evidence, not a shared record: it
 # exists so the decision to promote that check from warning to blocking rests on a COUNT rather
