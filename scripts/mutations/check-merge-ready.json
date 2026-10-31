@@ -96,7 +96,7 @@
     "        if key not in ACCOUNTED_MENTIONS:\n"
    ]
   ],
-  "expect": "a SECOND copy of an approved line is unaccounted \u2014 the allowance is a count"
+  "expect": "a SECOND copy of an approved line is unaccounted — the allowance is a count"
  },
  {
   "name": "commented-out mentions stop being skipped, so prose about a gate reads as one",
@@ -194,26 +194,13 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "if path in new and new[path] < old[path]:",
-    "if path in new and new[path] > old[path]:"
+    "        elif new[path] < old[path]:",
+    "        elif new[path] > old[path]:"
    ]
   ],
   "expect": [
-   "a mutation pin that DROPS 128 -> 125 is a loosening",
-   "a mutation pin that DROPS 30 -> 2 is a loosening"
-  ]
- },
- {
-  "name": "a falling mutation total is ignored",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "if ot and nt and nt[0] < ot[0]:",
-    "if ot and nt and nt[0] > ot[0]:"
-   ]
-  ],
-  "expect": [
-   "a declared mutation total that drops 2021 -> 2017 is a loosening"
+   "a pin LOWERED in the display is HELD",
+   "a mutation pin that DROPS 128 -> 125 is a loosening"
   ]
  },
  {
@@ -489,13 +476,13 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        elif path not in new:",
-    "        elif False:"
+    "            out.append(f\"loosens a gate: the mutation pin for {path} ({old[path]}) is removed\")",
+    "            pass"
    ]
   ],
   "expect": [
-   "a mutation pin DELETED is a loosening",
-   "...and so is one renamed to another key"
+   "a pin REMOVED from the display is HELD",
+   "a mutation pin DELETED is a loosening"
   ]
  },
  {
@@ -651,8 +638,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "head, args.app_tests_passed, bool(nr), fs=fs)",
-    "head, args.app_tests_passed, bool(nr), fs=None)"
+    "head, args.app_tests_passed, bool(nr), fs=fs, pins=pins)",
+    "head, args.app_tests_passed, bool(nr), fs=None, pins=pins)"
    ]
   ],
   "expect": [
@@ -1100,5 +1087,161 @@
   "expect": [
    "...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)"
   ]
+ },
+ {
+  "name": "main() never reads the pins, so no fall is ever held (backlog #359 r2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        pins = pin_pair(_run, BASE_REF)\n",
+    "        pins = ({}, {})\n"
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR whose head's pin falls, rc=3"
+  ]
+ },
+ {
+  "name": "a display check-plan-code refuses reads as pinning nothing, so a duplicate key or a computed pin fails OPEN (backlog #359 r3) ⟳ r7: re-bound to `pins_at`'s `_cross` call — the per-call catch is gone",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,",
+    "    try:\n        return reader.pin_display(shown.stdout)\n    except Exception:\n        return {}\n    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,"
+   ]
+  ],
+  "expect": [
+   "⛔ a head with no single literal display is CANNOT RUN, never a pass"
+  ]
+ },
+ {
+  "name": "a failing `git ls-tree` is read as an answer, so an unread side can pin anything (backlog #359 r3)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if ls.returncode != 0:\n        raise PinsUnreadable",
+    "    if False:\n        raise PinsUnreadable"
+   ]
+  ],
+  "expect": [
+   "⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}"
+  ]
+ },
+ {
+  "name": "the shared sibling import catches only Exception, so a module-level SystemExit in EITHER sibling escapes main() as rc 0 with no verdict (r4 Codex F2, r5 Claude F1) ⟳ r7: the anchor now binds `_cross`, the ONE catch every sibling import and call crosses",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:\n        raise error(",
+    "    except Exception as exc:\n        raise error("
+   ]
+  ],
+  "expect": [
+   "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
+   "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
+  ]
+ },
+ {
+  "name": "pins_at bypasses `_cross` with its own `except Exception`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,\n                  error=lambda d: PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {d}\"))",
+    "    try:\n        return _exact_pins(reader.pin_display(shown.stdout))\n    except Exception as exc:\n        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {_describe(exc)}\") from None"
+   ]
+  ],
+  "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
+ },
+ {
+  "name": "the dashboard gate imports its sibling RAW, bypassing the fail-closed helper, so a module-level SystemExit there escapes main() as rc 0 (r5 Claude F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return _import_sibling(src, \"_cde_for_merge_ready\")\n",
+    "    spec = importlib.util.spec_from_file_location(\"_cde_for_merge_ready\", src)\n    mod = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(mod)\n    return mod\n"
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
+ },
+ {
+  "name": "granted_escapes calls exemption_reason RAW, bypassing `_cross`, so a matcher that raises SystemExit escapes as no verdict (r5 Claude F1; ⟳ r7: re-bound like the reader's)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,",
+    "    return {m: _exact_reason(gate.exemption_reason(pr_body, m)) for m in sorted(set(GATE_ESCAPE.values()))}\n    return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,"
+   ]
+  ],
+  "expect": "⭐ ...and when the gate's exemption_reason itself raises SystemExit"
+ },
+ {
+  "name": "_describe calls str(exc) UNGUARDED, so a sibling exception whose __str__ exits escapes main() as rc 0 while the error text is built (r6 Codex F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException:\n        msg = \"<unprintable>\"",
+    "    except ZeroDivisionError:\n        msg = \"<unprintable>\""
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when the dashboard gate's import raises an exception whose __str__ exits (r6 Codex F1)"
+ },
+ {
+  "name": "_exact_pins checks with isinstance, so a bool — an int subclass — passes as a pin and a fall is hidden as READY (r7 Claude F2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if type(got) is not dict:",
+    "    if not isinstance(got, dict):"
+   ],
+   [
+    "        if type(k) is not str or type(v) is not int:",
+    "        if not isinstance(k, str) or not isinstance(v, int):"
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
+ },
+ {
+  "name": "_exact_pins checks the dict but not its keys and values, so a bool pin passes as 1 and a fall is hidden as READY (r7 Claude F2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if type(k) is not str or type(v) is not int:\n            raise TypeError(",
+    "        if False:\n            raise TypeError("
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
+ },
+ {
+  "name": "_exact_reason accepts any value unchecked, so a value whose __bool__ exits is truth-tested in escape_diagnosis and a refusal becomes rc 0 (r7 Claude F3)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if type(got) is not str:\n        raise TypeError(\"exemption_reason returned neither None nor an exact str\")\n    return str.__str__(got)",
+    "    return got"
+   ]
+  ],
+  "expect": "⭐ a REFUSING gate is CANNOT RUN, rc=2, never rc 0, when exemption_reason returns a value whose __bool__ exits (r7 P11)"
+ },
+ {
+  "name": "_describe leaves the class NAME uncoerced, so a str-subclass __name__ whose __format__ exits runs in the f-string and leaves rc 0 (r7 Claude F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        name = str.__str__(type.__dict__[\"__name__\"].__get__(type(exc)))",
+    "        name = type.__dict__[\"__name__\"].__get__(type(exc))"
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when the gate's import raises a class whose __name__ is a str subclass (r7 P12)"
+ },
+ {
+  "name": "_exact_pins no longer refuses an EMPTY pin map, so a reader returning {} turns base and head into {} and a falling pin into READY (r8 Codex F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not out:\n        # r8 Codex F1",
+    "    if False:\n        # r8 Codex F1"
+   ]
+  ],
+  "expect": "⭐ r8 F1: main() is CANNOT RUN, rc=2, when pin_display returns {} for a present file"
  }
 ]

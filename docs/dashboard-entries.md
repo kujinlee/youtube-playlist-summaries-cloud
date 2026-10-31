@@ -18475,3 +18475,29 @@ two new mutants were run by hand, and its full run is left to CI.
 
 ## 2026-10-31
 Seven pieces of queued follow-up work are now written down as backlog items, so none depends on anyone remembering them: the stale generated pages after a merge, the early-exit CI waiter, the extra review round a merge of master forces, a flaky mutant, a gap in the push-blocking hook, the unset local hook path, and a mangled word in one guard. Agents are also now told to send their final report as a message, because plain output never reaches the coordinator.
+
+## 2026-10-31
+Two open pull requests that each add a mutation no longer collide on the same line. The mutation harness counted its
+coverage twice: once per file, and once more as a typed grand total that every such pull request had to edit. Any two
+open at once conflicted on that total, and each later merge paid for a re-merge and three or four extra review rounds.
+The total is now worked out from the per-file counts, and the quick self-test checks every file's count against the
+manifests on disk, which is stricter than the total was. Two pull requests still conflict when they change the same
+file's count, because that conflict is real, and also when they change two files whose counts sit on neighbouring
+lines (14 of 81 pairs today), which is backlog #432.
+<!--tech-->
+Branch `derived-mutation-total`, backlog #359 (closed here). `check-plan-code`: the literal case is deleted;
+`declared_total()` sums `EXPECTED_MUTATIONS`; the drift rule moves out of `mutate_delivered` into `pin_drift` plus
+`manifest_counts`, unchanged, and gains a last line stating both derived totals when anything drifts. The on-disk case
+now compares `pin_drift(manifest_counts(live))` with `[]` instead of comparing two totals. A source scan refuses a
+typed total coming back. `check-merge-ready`'s `PIN_TOTAL` proxy, its two cases and its one mutation entry are retired
+with their subject. Measured from 2026-10-17: 41 of 43 merged commits to `check-plan-code.py` edited the literal.
+⟳ r2 REDESIGN (thrashing armed): a falling per-file pin is now HELD by its EFFECTIVE value, not by text.
+`check-plan-code.py --print-pins` prints `EXPECTED_MUTATIONS` as JSON after import; `check-merge-ready`'s
+`pin_pair` archives `scripts/` at the merge base and at HEAD, runs it in each, and HOLDs a key that falls or is
+removed (CANNOT RUN when a side cannot answer). `PIN_LINE` and r1's `pin_shape_problems` are deleted.
+⟳ r3 (Claude F1): a write gated on the invocation (`if "--print-pins" not in sys.argv:`, or on `CI=true`) made
+`--print-pins` report 87 while the harness held 82, so the HOLD now reads each side's `EXPECTED_MUTATIONS` DISPLAY as
+data (`check-plan-code.pin_display`, imported; a duplicate key is refused), executing neither tree, and the harness
+asserts in its OWN process (`--mutate` before any mutation, `--self-test` at its top) that the pins it uses ARE that
+display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-only fallback are deleted. Pins:
+merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.

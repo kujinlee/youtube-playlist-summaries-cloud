@@ -1734,5 +1734,104 @@
     "expect": [
       "⭐ ...and STRIPS a marker it inherits, so a borrower run inside a mutation run counts in full (backlog #407)"
     ]
+  },
+  {
+    "name": "the mutation total is typed again instead of derived from the pins (backlog #359)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return sum(EXPECTED_MUTATIONS[target] for target in EXPECTED_MUTATIONS)",
+        "    return 2980"
+      ]
+    ],
+    "expect": "the declared total is the sum of the per-file pins, whatever they are"
+  },
+  {
+    "name": "a manifest is dropped from the derived total (backlog #359)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "for target in EXPECTED_MUTATIONS)",
+        "for target in sorted(EXPECTED_MUTATIONS)[1:])"
+      ]
+    ],
+    "expect": "a drifted pin reports the DERIVED total, so a merge never types one"
+  },
+  {
+    "name": "a typed total in a comparison outside any call is no longer found (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            asserting = (isinstance(up, (ast.Compare, ast.Assert))",
+        "            asserting = (isinstance(up, ast.Assert)"
+      ]
+    ],
+    "expect": "...a typed total compared OUTSIDE any call is found"
+  },
+  {
+    "name": "pins that match their manifests report a total line anyway (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if drift:\n        drift.append(f\"in all:",
+        "    if True:\n        drift.append(f\"in all:"
+      ]
+    ],
+    "expect": "pins that match their manifests report nothing, not even a total"
+  },
+  {
+    "name": "the typed-total scan stops asking whether the total is MENTIONED, so `timeout(N)` is a false hit again (backlog #359 r2)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if asserting and about_total(up):",
+        "            if asserting or isinstance(up, ast.Call):"
+      ]
+    ],
+    "expect": "...nor the same number in a call or comparison that never mentions the total"
+  },
+  {
+    "name": "--mutate no longer asserts that the pins it uses are its display, so a write gated on argv is measured (backlog #359 r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if _held:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "⛔ r3 F1: a write gated on argv is REFUSED by --mutate, rc=2"
+  },
+  {
+    "name": "--self-test no longer refuses when the pins it uses are not its display (backlog #359 r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if _disp:\n        print(PINS_REFUSAL",
+        "    if False:\n        print(PINS_REFUSAL"
+      ]
+    ],
+    "expect": "⛔ r3 F1: ...and by --self-test, rc=2"
+  },
+  {
+    "name": "a DUPLICATE key in the display resolves to the last value instead of being refused (backlog #359 r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if k.value in pins:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "⛔ a DUPLICATE key in the display is REFUSED, not resolved to the last value"
+  },
+  {
+    "name": "the display-versus-held comparison is inverted to refuse only a RISE, so a pin lowered at runtime passes (backlog #359 r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if display.get(k) != effective.get(k)]",
+        "            if (display.get(k) or 0) < (effective.get(k) or 0)]"
+      ]
+    ],
+    "expect": "⛔ r1 (Claude S2): a later `-= 4` write outside the display is REFUSED, naming the key"
   }
 ]
