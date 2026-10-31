@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 452 cases
+    python3 scripts/check-main-drivable.py --self-test   # 455 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -2544,13 +2544,15 @@ def with_deadline(thunk, seconds: float):
         raise DeadlineExceeded()
 
     previous = signal.signal(signal.SIGALRM, _expire)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
-    try:
-        return thunk(), False
-    except DeadlineExceeded:
-        return None, True
+    try:                                            # the restore is OUTER: an alarm landing inside the disarm cannot skip it
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            return thunk(), False
+        except DeadlineExceeded:
+            return None, True
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
 
 
@@ -2558,11 +2560,14 @@ def live_reconcile(live: dict[str, str], debt: frozenset[str], deadline: float =
                    assess_fn=None):
     """`(problems, verdicts, timed_out)` for the live population; a raise or an expiry is a PROBLEM."""
     assess_fn = assess_fn or assess
+    live_reconcile.applied = deadline               # read by the case that pins the deadline the LIVE call armed
     try:
         got, timed_out = with_deadline(lambda: assess_fn(live, debt), deadline)
         if timed_out:
             return [f"DEADLINE {deadline}s"], {}, True
         return got[0], got[1], False
+    except DeadlineExceeded:                        # an alarm landing inside the disarm: still a timeout, never an escape
+        return [f"DEADLINE {deadline}s"], {}, True
     except Exception as exc:                        # noqa: BLE001 — reporting IS the point
         return [f"RAISED {type(exc).__name__}"], {}, False
 
@@ -5340,6 +5345,34 @@ def _self_test_body() -> int:                                      # noqa: C901 
     import signal as _signal
     case("...and the alarm is disarmed once it returns", _signal.getitimer(_signal.ITIMER_REAL)[0], 0.0)
 
+    # ⛔ r7 L1/L2: the alarm landing AFTER the thunk returned (inside the disarm) must be a TIMEOUT, not
+    # an escape, and the handler must be the one that was there before — in every outcome. The late alarm
+    # is made deterministic by raising from the disarm call itself, the exact point the race lands on.
+    _before_handler = _signal.getsignal(_signal.SIGALRM)
+    _real_setitimer = _signal.setitimer
+
+    def _late_alarm(which, seconds, *rest):
+        _real_setitimer(which, seconds, *rest)
+        if seconds == 0:
+            raise DeadlineExceeded()
+
+    _signal.setitimer = _late_alarm
+    try:
+        _late = live_reconcile({}, frozenset(), 5, assess_fn=lambda t, d: ([], {}))
+    except DeadlineExceeded:                        # the escape itself must be a FAIL line, not a dead suite
+        _late = "ESCAPED"
+        _signal.signal(_signal.SIGALRM, _before_handler)
+    finally:
+        _signal.setitimer = _real_setitimer
+    case("a deadline landing during the disarm is a timeout, never an escape (r7 L1)",
+         (_late[2], len(_late[0])) if isinstance(_late, tuple) else _late, (True, 1))
+    live_reconcile({}, frozenset(), 5, assess_fn=lambda t, d: ([], {}))
+    _handler_ok = _signal.getsignal(_signal.SIGALRM) is _before_handler
+    live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: _time.sleep(3))
+    _handler_to = _signal.getsignal(_signal.SIGALRM) is _before_handler
+    case("...and SIGALRM's handler is restored after a normal, a timed-out and a late-alarm reconcile (r7 L2)",
+         (_handler_ok, _handler_to, _signal.getsignal(_signal.SIGALRM) is _before_handler), (True, True, True))
+
     discovered = sorted(live_root.glob(GUARD_GLOB))
     case("the live population is non-empty", len(discovered) > 0, True)
     live = {str(p.relative_to(live_root)): p.read_text() for p in discovered}
@@ -5348,6 +5381,10 @@ def _self_test_body() -> int:                                      # noqa: C901 
     # population — took the suite down at 289 with nothing attributable.
     live_problems, live_verdicts, _live_timed_out = live_reconcile(live, MAIN_DEBT)
     case("the live reconcile finished within 45 s", (_live_timed_out, LIVE_DEADLINE_S), (False, 45))
+    # ⛔ r7 M1: the case above compares the CONSTANT, so a call passing 100000, or no longer calling
+    # `live_reconcile` at all, stayed green. The deadline the call ARMED is recorded and pinned.
+    case("...and the deadline the live call ARMED is LIVE_DEADLINE_S, not another and not a stale one",
+         getattr(live_reconcile, "applied", None), LIVE_DEADLINE_S)
     case("...and the committed MAIN_DEBT reconciles against it with no findings",
          live_problems, [])
     case("...every pinned name is in the population",
