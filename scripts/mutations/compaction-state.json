@@ -732,8 +732,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    if not re.search(r\"^\\s*run:\\s*python3 scripts/compaction-state\\.py --self-test\\s*$\", ci_text, re.M):\n",
-        "    if \"python3 scripts/compaction-state.py --self-test\" not in ci_text:\n"
+        "                if re.fullmatch(rf\"\\s*(?:- )?run:\\s*{re.escape(SELF_TEST_RUN)}\\s*\", lines[i])), None)\n",
+        "                if SELF_TEST_RUN in lines[i]), None)\n"
       ]
     ],
     "expect": [
@@ -751,6 +751,84 @@
     ],
     "expect": [
       "⭐ #407: the marker never reaches a hook mode — with it SET, the capture child gets the REAL 11 s and the print child 10 s"
+    ]
+  },
+  {
+    "name": "#407 r1: main reads stdin for a fixed 40 s, not what is LEFT of the hook's deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        payload, err = read_payload(stdin_text, wait=left(STDIN_WAIT))\n",
+        "        payload, err = read_payload(stdin_text, wait=40.0)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: `main` reads a stdin held OPEN for only what is LEFT of the hook's deadline — fd 0, in-process"
+    ]
+  },
+  {
+    "name": "#407 r1: gh's per-call deadline shrinks to 1 s, so a slow gh dies before the capture's kill",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "GH_TIMEOUT = 8          # per call, inside the child\n",
+        "GH_TIMEOUT = 1          # per call, inside the child\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: after a git that TIMED OUT the capture still asks gh, and gh is given its own 8 s, not less"
+    ]
+  },
+  {
+    "name": "#407 r1: an `if:` or `continue-on-error` on the self-test STEP is not looked at",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                        (\"the step\", [l for l in step_lines if len(l) - len(l.lstrip()) == dash + 2])):\n",
+        "                        (\"the step\", [])):\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: ...and refuses a self-test STEP that may not run or may not fail (`if:`, `continue-on-error`)"
+    ]
+  },
+  {
+    "name": "#407 r1: an `if:` or `continue-on-error` on the required JOB is not looked at",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    for where, keys in ((f\"the `{REQUIRED_JOB}` job\", job_keys),\n",
+        "    for where, keys in ((f\"the `{REQUIRED_JOB}` job\", []),\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: ...and a self-test JOB that may not run or may not fail"
+    ]
+  },
+  {
+    "name": "#407 r1: the self-test step is searched for past the end of the required job",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    run = next((i for i in range(job, job_end)\n",
+        "    run = next((i for i in range(job, len(lines))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: ...and a self-test step in a job OTHER than the required one"
+    ]
+  },
+  {
+    "name": "#407 r1: a child mode reads the marker",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    payload, err = read_payload(Path(args.payload_file).read_text(encoding=\"utf-8\"))\n",
+        "    payload, err = read_payload(Path(args.payload_file).read_text(encoding=\"utf-8\"),\n                                cap=MAX_STDIN // 2 if os.environ.get(MUTATION_RUN_ENV) else MAX_STDIN)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: no hook mode can read the marker — only the self-test's two predicates and the suite name it"
     ]
   }
 ]

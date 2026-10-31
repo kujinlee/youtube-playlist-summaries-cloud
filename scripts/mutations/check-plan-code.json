@@ -139,7 +139,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "timeout=SUITE_TIMEOUT,\n                           env=child_env(d))",
+        "timeout=SUITE_TIMEOUT,\n                           env=mutation_env(d))",
         "timeout=SUITE_TIMEOUT)"
       ]
     ],
@@ -1720,6 +1720,19 @@
     ],
     "expect": [
       "...but `child_env` alone does NOT mark a mutation run — it is borrowed outside one (backlog #407)"
+    ]
+  },
+  {
+    "name": "#407 r1: child_env keeps a marker it inherits, so a borrower inside a mutation run counts short",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    env.pop(MUTATION_RUN_ENV, None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ ...and STRIPS a marker it inherits, so a borrower run inside a mutation run counts in full (backlog #407)"
     ]
   }
 ]

@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 102 cases
+    python3 scripts/compaction-state.py --self-test  # 108 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -911,15 +911,75 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, stdin_text: str 
 
 def real_time_cases(env) -> bool:
     """Run the cases that wait on the hook's REAL deadlines (11 s, 2 s)? Yes, unless the mutation harness set
-    MUTATION_RUN_ENV (backlog #407): every case a mutant names runs on a short or event-ordered deadline instead."""
+    MUTATION_RUN_ENV (backlog #407): every case a mutant names runs on a short or event-ordered deadline instead.
+
+    WHY THE SKIP LOSES NO MUTANT (r1 refuted the first version of this claim — `wait=40.0` and `GH_TIMEOUT = 1` both
+    survived it). What the two real-time cases killed, and the case that kills it in every run now:
+      - the stdin read's bound and its wiring in `main` — `main reads a stdin held OPEN for only what is LEFT`;
+      - the capture's group kill of a call in flight — the event-ordered CR1 case;
+      - a call still made after a git that timed out, and gh's own 8 s — `after a git that TIMED OUT`;
+      - the capture's 11 s and the print's 10 s reaching the child — the spy case, with the marker SET;
+      - the parent's return within its kill + 1 s — `the WHOLE PreCompact hook ends within its capture deadline`.
+    ⚠ BOUND: what only the real-time cases still see is the bash hook file and the `__main__` entry's own process
+    start. No manifest entry mutates either, and CI's ordinary check runs them (`ci_runs_real_time`)."""
     return env.get(MUTATION_RUN_ENV) != "1"
 
 
+REQUIRED_JOB = "verify"   # THE required check (dev-process.md: renaming or splitting it leaves every PR pending)
+SELF_TEST_RUN = "python3 scripts/compaction-state.py --self-test"
+
+
+def _block(lines: list[str], i: int) -> int:
+    """The end (exclusive) of the YAML block opened at `lines[i]`: the next content line indented no deeper."""
+    ind = len(lines[i]) - len(lines[i].lstrip())
+    j = i + 1
+    while j < len(lines):
+        s = lines[j].strip()
+        if s and not s.startswith("#") and len(lines[j]) - len(lines[j].lstrip()) <= ind:
+            break
+        j += 1
+    return j
+
+
 def ci_runs_real_time(ci_text: str) -> str | None:
-    """None when CI's ordinary check runs this self-test with MUTATION_RUN_ENV unset; otherwise why not. Backlog #407's
-    FAILS IF: the real-time run is dropped from CI."""
-    if not re.search(r"^\s*run:\s*python3 scripts/compaction-state\.py --self-test\s*$", ci_text, re.M):
-        return "no `run: python3 scripts/compaction-state.py --self-test` step"
+    """None when CI's REQUIRED job runs this self-test, unconditionally, with MUTATION_RUN_ENV unset; otherwise why
+    not. Backlog #407's FAILS IF: the real-time run is dropped from CI, or kept where it cannot fail a PR.
+
+    Read by LINE STRUCTURE (the project is stdlib-only, so no YAML parser): the `jobs:` key, the job REQUIRED_JOB at
+    the next indent, the step whose `run:` is SELF_TEST_RUN, and an `if:` or `continue-on-error:` on that job or step.
+    ⚠ BOUND, stated rather than hidden: block-style YAML as `ci.yml` is written. Flow-style steps (`- {run: …}`),
+    anchors and aliases, a folded `run: >`, and an `if:` whose expression is always true are not modelled — any
+    `if:` is refused, and `continue-on-error:` is refused unless literally `false`. The marker is caught only by its
+    NAME anywhere in the file, so one assembled from `vars` or `fromJSON` is not seen."""
+    lines = ci_text.splitlines()
+    try:
+        top = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
+    except StopIteration:
+        return "no top-level `jobs:` in the workflow"
+    end = _block(lines, top)
+    job = next((i for i in range(top + 1, end) if re.fullmatch(rf"  {REQUIRED_JOB}:\s*", lines[i])), None)
+    if job is None:
+        return f"no `{REQUIRED_JOB}` job, the required check"
+    job_end = _block(lines, job)
+    run = next((i for i in range(job, job_end)
+                if re.fullmatch(rf"\s*(?:- )?run:\s*{re.escape(SELF_TEST_RUN)}\s*", lines[i])), None)
+    if run is None:
+        return f"no `run: {SELF_TEST_RUN}` step in the `{REQUIRED_JOB}` job"
+    run_ind = len(lines[run]) - len(lines[run].lstrip())
+    step = run if lines[run].lstrip().startswith("- ") else next(
+        (i for i in range(run - 1, job, -1)
+         if lines[i].lstrip().startswith("- ") and len(lines[i]) - len(lines[i].lstrip()) == run_ind - 2), None)
+    if step is None:
+        return f"the `{SELF_TEST_RUN}` line is not inside a step"
+    dash = len(lines[step]) - len(lines[step].lstrip())
+    step_lines = [lines[step][:dash] + "  " + lines[step][dash + 2:]] + lines[step + 1:_block(lines, step)]
+    job_keys = [l for l in lines[job + 1:job_end] if re.match(r"    [A-Za-z_-]+:", l)]
+    for where, keys in ((f"the `{REQUIRED_JOB}` job", job_keys),
+                        ("the step", [l for l in step_lines if len(l) - len(l.lstrip()) == dash + 2])):
+        for k in keys:
+            m = re.match(r"\s*(if|continue-on-error):\s*(.*?)\s*$", k)
+            if m and (m.group(1) == "if" or m.group(2) != "false"):
+                return f"{where} carries `{m.group(1)}: {m.group(2)}`, so the real-time run may not run or not fail"
     if MUTATION_RUN_ENV in ci_text:
         return f"{MUTATION_RUN_ENV} is named in the workflow, so the real-time cases may be skipped there"
     return None
@@ -1271,12 +1331,14 @@ def _self_test_body() -> int:
         gpid = root / "grandchild.pid"
         # #407: EVENT-ordered, not a fixed 1 s — the deadline starts at 0.3 s and doubles while the grandchild had not
         # yet written its pid when the kill came (a slow start under load), so only a run where it WAS holding on counts.
+        # The child sleeps 6 s, just past the longest deadline (4.8 s): a mutant that disables the kill waits that out once per
+        # attempt, and 30 s there cost +19 s per such mutant (r1 L1).
         for grand_t in (0.3, 0.6, 1.2, 2.4, 4.8):
             gpid.unlink(missing_ok=True)
             t0 = time.monotonic()
             rc_grand, _ = run_capture([sys.executable, "-c",
                                        "import subprocess, sys, time; g = subprocess.Popen(['sleep', '30']); "
-                                       f"open({str(gpid)!r}, 'w').write(str(g.pid)); time.sleep(30)"], grand_t)
+                                       f"open({str(gpid)!r}, 'w').write(str(g.pid)); time.sleep(6)"], grand_t)
             took_grand = time.monotonic() - t0
             if (_read(gpid)[0] or "").strip():   # its pid WRITTEN, not merely the file created when the kill came
                 break
@@ -1424,6 +1486,36 @@ def _self_test_body() -> int:
             case(held, (r.returncode, time.monotonic() - t0 < STDIN_WAIT + 30), (0, True))
         else:
             skip(held)
+        # #407 r1 (M1): the HOOK's wiring of its stdin deadline, in EVERY run. `main` reads fd 0 for `left(STDIN_WAIT)`
+        # and no longer, so with its start set 0.6 s before HOOK_DEADLINE it must give up within ~0.1 s. The writer is
+        # closed at 3 s, so a `main` that waits on any other bound (2 s, 40 s) is red within 3 s, never hung.
+        import threading
+        rfd, wfd = os.pipe()
+        saved_fd0, wfd_open = os.dup(0), [True]
+
+        def close_writer():
+            os.close(wfd)
+            wfd_open[0] = False
+        closer = threading.Timer(3.0, close_writer)
+        try:
+            os.dup2(rfd, 0)
+            closer.start()
+            t0 = time.monotonic()
+            with redirect_stdout(io.StringIO()) as held_out:
+                main(["--snapshot"], root=root / "held", now=7100.0,
+                     started=time.monotonic() - HOOK_DEADLINE + PUBLISH_MARGIN + 0.1)
+            took_held = time.monotonic() - t0
+        finally:
+            closer.cancel()
+            if closer.is_alive():
+                closer.join()
+            if wfd_open[0]:
+                os.close(wfd)
+            os.dup2(saved_fd0, 0)
+            os.close(saved_fd0)
+            os.close(rfd)
+        case("⭐ #407: `main` reads a stdin held OPEN for only what is LEFT of the hook's deadline — fd 0, in-process",
+             (took_held < 1.0, "no payload on stdin" in held_out.getvalue()), (True, True))
         (hooks_root / "scripts" / "session-state.py").unlink()
         rc = subprocess.run([sys.executable, str(hooks_root / "scripts" / "compaction-state.py"), "--snapshot"],
                             input=b'{"session_id": "S-nostate"}', capture_output=True, timeout=60, cwd=hooks_root).returncode
@@ -1740,6 +1832,22 @@ def _self_test_body() -> int:
         snapshot(payload, None, root, counting, 1000.0, transcript_ok, asks_ok, nonce="N1")
         case("⭐ r4 C4-F5: ONE capture asks git for the main checkout ONCE, and that answer heads and reads the ledger",
              asked.count("git rev-parse --path-format=absolute"), 1)
+        # #407 r1 (M2): what the real CR1 pinned only through the 11 s clock — a git that TIMES OUT does not end the
+        # capture, the gh after it is still made, and gh gets its own per-call deadline. The 8 is a LITERAL on purpose:
+        # CR1's gh had to be still in flight at the 11 s kill after a 3-5 s git, and a case comparing to GH_TIMEOUT
+        # itself could not see that constant shrink (r1: `GH_TIMEOUT = 1` survived under the marker, 100/100).
+        recorded = []
+
+        def recording(cmd, cwd, timeout=GIT_TIMEOUT):
+            recorded.append((" ".join(cmd[:3]), timeout))
+            if cmd[:2] == ["git", "rev-parse"]:
+                return 124, f"timed out after {timeout:.0f}s"
+            return fake_run()(cmd, cwd, timeout)
+        (root / "rec").mkdir()
+        snap_rec = snapshot(payload, None, root / "rec", recording, 1000.0, transcript_ok, asks_ok, nonce="N1")
+        case("⭐ #407: after a git that TIMED OUT the capture still asks gh, and gh is given its own 8 s, not less",
+             ([n for n, _ in recorded][:1], [t for n, t in recorded if n.startswith("gh ")], _keys(snap_rec) is not None),
+             (["git rev-parse --path-format=absolute"], [8], True))
         case("⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged",
              [l.strip()[:20] for l in snap_w.splitlines() if ("codex-r2" in l or "fix-TRUNCATED" in l) and NC in l], [])
         case("a missing or corrupt receipt is (None, why) — the print then says CANNOT RUN, never shows a file",
@@ -1776,14 +1884,38 @@ def _self_test_body() -> int:
                            real_time_cases({M: ""}))), (True, False, True, True))
         ci_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
         ci = safe(ci_path.read_text)
-        step = "      - name: compaction-state self-test\n        run: python3 scripts/compaction-state.py --self-test\n"
+
+        def wf(step_extra="", job_extra="", where=REQUIRED_JOB):
+            """A block-style workflow: the self-test step in job `where`, a step after it with its OWN `if:` (an
+            adjacent negative — only the self-test's step and job are judged), and a second job."""
+            return ("on: push\njobs:\n"
+                    f"  {where}:\n    runs-on: ubuntu-latest\n{job_extra}    steps:\n"
+                    "      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n"
+                    f"      - name: compaction-state self-test\n{step_extra}        run: {SELF_TEST_RUN}\n"
+                    "      - name: after\n        if: always()\n        continue-on-error: true\n        run: true\n"
+                    "  zz-other:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n")
         case("⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere",
              safe(lambda: (ci_runs_real_time(ci), ci_runs_real_time(ci.replace("run: python3 scripts/compaction-state.py "
                                                                                 "--self-test", "run: true")) is not None,
                            ci_runs_real_time(ci.replace("run: python3 scripts/compaction-state.py --self-test",
                                                         "# run: python3 scripts/compaction-state.py --self-test")) is not None,
-                           ci_runs_real_time(step + f"        env: {{{M}: '1'}}\n") is not None,
-                           ci_runs_real_time(step))), (None, True, True, True, None))
+                           ci_runs_real_time(wf(f"        env: {{{M}: '1'}}\n")) is not None,
+                           ci_runs_real_time(wf()))), (None, True, True, True, None))
+        case("⭐ #407 r1: ...and refuses a self-test STEP that may not run or may not fail (`if:`, `continue-on-error`)",
+             safe(lambda: [ci_runs_real_time(wf(x)) is None for x in
+                           ("        if: false\n", "        if: ${{ always() }}\n", "        continue-on-error: true\n",
+                            "        continue-on-error: false\n")]), [False, False, False, True])
+        case("⭐ #407 r1: ...and a self-test JOB that may not run or may not fail",
+             safe(lambda: [ci_runs_real_time(wf(job_extra=x)) is None for x in
+                           ("    if: false\n", "    continue-on-error: true\n", "    timeout-minutes: 30\n")]),
+             [False, False, True])
+        case("⭐ #407 r1: ...and a self-test step in a job OTHER than the required one",
+             safe(lambda: (ci_runs_real_time(wf(where="mutation-sweep")) is None,
+                           ci_runs_real_time("on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n"
+                                             "      - run: true\n" + wf(where="mutation-sweep").split("jobs:\n", 1)[1])
+                           is None,
+                           ci_runs_real_time(wf().replace("  zz-other:", "  verify-extra:")) is None)),
+             (False, False, True))
         seen = []
         marker_before = os.environ.get(M)
         real_capture = globals()["run_capture"]
@@ -1815,6 +1947,24 @@ def _self_test_body() -> int:
             return cpc.MUTATION_RUN_ENV, M in fixture_git.PROCESS_PASSED
         case("#407: the marker is the one the harness sets (`check-plan-code.MUTATION_RUN_ENV`) and "
              "`fixture_git.isolated()` passes through", safe(names_agree), (M, True))
+
+        # #407 r1 (L2): the spy above sees only what the PARENT hands `run_capture`; it never spawns a child mode, so a
+        # read of the marker in `_child` or `snapshot` is invisible to it. This makes "only the self-test reads it"
+        # mechanical: every function that names MUTATION_RUN_ENV, and every bare string spelling it.
+        # ⚠ BOUND: a name assembled at run time (`"PLAN_CODE_" + …`) or read through another module is not seen.
+        def marker_readers():
+            import ast
+            tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+            readers = set()
+            for top in tree.body:
+                where = top.name if isinstance(top, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<module>"
+                for n in ast.walk(top):
+                    if isinstance(n, ast.Name) and n.id == "MUTATION_RUN_ENV" and not isinstance(n.ctx, ast.Store):
+                        readers.add(where)
+            spelled = sum(isinstance(n, ast.Constant) and n.value == M for n in ast.walk(tree))
+            return sorted(readers), spelled
+        case("⭐ #407 r1: no hook mode can read the marker — only the self-test's two predicates and the suite name it",
+             safe(marker_readers), (["_self_test_body", "ci_runs_real_time", "real_time_cases"], 1))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0
