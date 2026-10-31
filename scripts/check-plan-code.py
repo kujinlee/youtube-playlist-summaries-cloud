@@ -2211,7 +2211,10 @@ EXPECTED_MUTATIONS = {
     # and the reader call's catch, each narrowed to `Exception`, let a `SystemExit` out as rc 0.
     # ⟳ r6 (Codex F1): 91 -> 92 — the error text built from a sibling's exception is sibling code too:
     # `_describe` guards `str(exc)`, and an unguarded one lets a `__str__` that exits leave rc 0.
-    "scripts/check-merge-ready.py": 92,
+    # ⟳ r7 (Claude F1-F3): 92 -> 96 — what a sibling RETURNS or RAISES is reduced to exact builtins in
+    # `_cross` before it leaves: isinstance in `_exact_pins`, returning the original object, an unchecked
+    # exemption value, and an uncoerced class name each go red. Three entries are RE-BOUND to `_cross`.
+    "scripts/check-merge-ready.py": 96,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2858,7 +2861,10 @@ def pin_drift(counts: dict) -> list[str]:
 # and the head's, so a falling pin is HELD without executing either REVISION (importing this working-
 # tree file to get the reader does execute it; anything that import raises is CANNOT RUN there, but
 # code that ends the process WITHOUT raising — `os._exit`, an `atexit`/thread/signal hook — or that
-# rebinds merge-ready's globals is not caught: the trust merge-ready extends to its own source). That
+# rebinds merge-ready's globals is not caught: the trust merge-ready extends to its own source. What
+# the reader RETURNS is reduced there to an exact `{str: int}` (merge-ready's `_cross`, r7); a WRONG but
+# well-typed answer is still trusted, as master trusts it, and a forged `KeyboardInterrupt` escapes at
+# rc 130, which fails closed). That
 # reading is only sound if the dict this harness USES is that display — so `--mutate` (before any
 # mutation) and `--self-test` (at its top) each assert `pin_display_problems(...) == []` in their own
 # process, and refuse with rc 2 otherwise. A write the display does not show — a duplicate key,

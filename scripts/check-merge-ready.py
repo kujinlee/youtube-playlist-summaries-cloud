@@ -473,9 +473,12 @@ def _describe(exc: BaseException, text: bool = True) -> str:
     at rc 0 with no verdict (r6 Codex F1: the formatting of a caught error is the same class as the
     error). The name is read from `type`'s own descriptor — a metaclass `__name__` property is skipped
     — and the message is guarded; whatever fails prints as `<unprintable>`. Only `KeyboardInterrupt`
-    passes through."""
+    passes through.
+    ⟳ r7 Claude F1: `type.__name__`'s setter stores a str SUBCLASS as-is, and its `__format__` ran in
+    the f-string below and in every caller's. Both texts are reduced to an EXACT str (`str.__str__`
+    copies a subclass and calls none of its code) inside their `try`, so what leaves is a builtin."""
     try:
-        name = type.__dict__["__name__"].__get__(type(exc))
+        name = str.__str__(type.__dict__["__name__"].__get__(type(exc)))
     except KeyboardInterrupt:
         raise
     except BaseException:
@@ -491,6 +494,59 @@ def _describe(exc: BaseException, text: bool = True) -> str:
     return f"{name}: {msg}"
 
 
+def _cross(call, *args, reduce, error):
+    """`reduce(call(*args))`, FAILING CLOSED — THE ONE BOUNDARY every in-process sibling call crosses.
+
+    ⛔ THE RULE (r7 Claude F1-F3, a REDESIGN after three rounds of patches): nothing a sibling returns
+    or raises leaves this `try` until it has been reduced to EXACT builtins. Guarding the CALL was not
+    enough — r7 measured a returned dict subclass's `__iter__`, an int subclass's `__lt__`/`__format__`,
+    a `__bool__` and a str-subclass `__name__` each run LATER, outside any `try`, and leave `main()` at
+    rc 0 with no verdict. So `reduce` runs HERE: it checks with `type(x) is …`, never `isinstance` (a
+    subclass is the channel), and returns a FRESH builtin copy. Whatever is raised — by the sibling or by
+    `reduce` refusing its answer — becomes `error(text)`, `text` built by `_describe`: an exact str.
+    Only `KeyboardInterrupt` passes through.
+    ⚠ BOUND, stated rather than hidden: (F4) a sibling returning a WRONG but well-typed answer — plain
+    ints that hide a fall — is trusted, exactly as master trusts it: that is the trust this script
+    extends to its own source, which the same PR can edit. (F5) a forged `KeyboardInterrupt` escapes
+    at rc 130, which fails CLOSED — not READY, not 0. Code that ends the process without raising, and
+    rebinding of this script's globals, are `_import_sibling`'s bound."""
+    try:
+        return reduce(call(*args))
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        raise error(_describe(exc)) from None
+
+
+def _exact_pins(got) -> dict:
+    """`pin_display`'s answer as a FRESH `{str: int}` — an exact dict, str keys, int values (a bool refused)."""
+    if type(got) is not dict:
+        raise TypeError("pin_display did not return an exact dict")
+    out = {}
+    for k, v in dict.items(got):
+        if type(k) is not str or type(v) is not int:
+            raise TypeError("pin_display returned a key that is not an exact str or a value that is not an exact int")
+        out[str.__str__(k)] = int.__int__(v)
+    return out
+
+
+def _exact_reason(got) -> "str | None":
+    """`exemption_reason`'s answer as `None` or a FRESH exact str — never a value whose `__bool__` is sibling code."""
+    if got is None:
+        return None
+    if type(got) is not str:
+        raise TypeError("exemption_reason returned neither None nor an exact str")
+    return str.__str__(got)
+
+
+def _load(src: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, src)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod                         # `dataclasses` looks the module up by name
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _import_sibling(src: Path, name: str, error=SiblingUnusable):
     """Import the working-tree sibling `src` as module `name`, FAILING CLOSED — ONE rule, BOTH importers.
 
@@ -501,17 +557,13 @@ def _import_sibling(src: Path, name: str, error=SiblingUnusable):
     same. Only `KeyboardInterrupt` is let through: the operator stopping the run is not an answer.
     ⚠ BOUND: code that ends the process WITHOUT raising (`os._exit`, an `atexit`/thread/signal hook),
     or that rebinds this script's globals, is not caught — nor is a side effect that survives a caught
-    raise. That is the same trust this script extends to its own source, which the same PR can edit."""
-    try:
-        spec = importlib.util.spec_from_file_location(name, src)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[name] = mod                     # `dataclasses` looks the module up by name
-        spec.loader.exec_module(mod)
-    except KeyboardInterrupt:
-        raise
-    except BaseException as exc:
-        raise error(f"{src.name} could not be imported ({_describe(exc)})") from None
-    return mod
+    raise. That is the same trust this script extends to its own source, which the same PR can edit.
+    ⟳ r7: through `_cross`, like every sibling call — see its bound (F4, F5)."""
+    where = str.__str__(src.name)
+    # A module cannot be a builtin, so it passes as is: every attribute read on it (`pin_display`,
+    # `exemption_reason`) happens inside a later `_cross` call, never outside one.
+    return _cross(_load, src, name, reduce=lambda mod: mod,
+                  error=lambda d: error(f"{where} could not be imported ({d})"))
 
 
 # The sibling that owns the escape grammar. A module global so a case can point it at a copy.
@@ -903,7 +955,10 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
 # its reader raises is CANNOT RUN (`_import_sibling`; r4 Codex F2 measured a module-level `SystemExit`
 # leaving this script at rc 0 with no verdict). Code that ends the process WITHOUT raising (`os._exit`,
 # an `atexit`/thread/signal hook) or rebinds this script's globals is not caught (r5 Claude F2): the
-# same trust this script extends to its own source, which the same PR can edit. Reading the display is sound because the harness
+# same trust this script extends to its own source, which the same PR can edit. ⟳ r7: what the reader
+# RETURNS is reduced to an exact `{str: int}` inside `_cross`, so no sibling dunder runs in `pin_falls`.
+# Still trusted (r7 F4): a reader returning WRONG but well-typed ints, exactly as master trusts it; and
+# a forged `KeyboardInterrupt` escapes at rc 130 (r7 F5), which fails closed. Reading the display is sound because the harness
 # asserts, in the process that USES the pins, that they START as the display (`--mutate` before any
 # mutation, `--self-test` at its top): a duplicate key, `-= 4`, a default argument, a decorator, a
 # shadowed `dict`, or a write gated on argv or the environment is refused THERE. A display that
@@ -952,12 +1007,9 @@ def pins_at(run, rev: str) -> dict:
     if shown.returncode != 0:
         raise PinsUnreadable(f"{rev}: `git show` exited {shown.returncode}")
     reader = _pins_reader(PINS_READER)
-    try:
-        return reader.pin_display(shown.stdout)
-    except KeyboardInterrupt:
-        raise
-    except BaseException as exc:                    # a refused display, or a reader that misbehaves
-        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {_describe(exc)}") from None
+    # A refused display, a reader that misbehaves, or an answer that is not an exact {str: int} (r7 F2).
+    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,
+                  error=lambda d: PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {d}"))
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
@@ -1044,14 +1096,13 @@ def granted_escapes(pr_body: str) -> dict[str, str | None]:
     """{marker: reason or None}, decided by the gate's own matcher. NOT pure — it imports.
 
     The CALL fails closed like the import (r5 Claude F1): whatever the matcher raises, `SystemExit`
-    included, is `SiblingUnusable`, which `main()` reports as CANNOT RUN."""
+    included, is `SiblingUnusable`, which `main()` reports as CANNOT RUN. ⟳ r7 Claude F3: so does an
+    answer that is neither `None` nor an exact str — `escape_diagnosis` truth-tests it, outside any `try`."""
     gate = _dashboard_gate(DASHBOARD_GATE)
-    try:
-        return {m: gate.exemption_reason(pr_body, m) for m in sorted(set(GATE_ESCAPE.values()))}
-    except KeyboardInterrupt:
-        raise
-    except BaseException as exc:                    # a matcher that misbehaves
-        raise SiblingUnusable(f"{DASHBOARD_GATE.name}: exemption_reason: {_describe(exc)}") from None
+    where = str.__str__(DASHBOARD_GATE.name)
+    return {m: _cross(lambda m=m: gate.exemption_reason(pr_body, m), reduce=_exact_reason,
+                      error=lambda d: SiblingUnusable(f"{where}: exemption_reason: {d}"))
+            for m in sorted(set(GATE_ESCAPE.values()))}
 
 
 def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
@@ -2100,7 +2151,7 @@ def _self_test_body() -> int:
     import contextlib, io
     _real_run = globals()["_run"]
     _tmp = Path(tempfile.mkdtemp()) / "body.md"
-    def _fake(files, diff, body="", status=None, tree="", pins_head=None):
+    def _fake(files, diff, body="", status=None, tree="", pins_head=None, refuse=()):
         # The machine list defaults to one `M` per file; `diff` is every file's patch (no hunks
         # unless a case gives some), since each file's patch is asked for separately.
         if status is None:
@@ -2131,10 +2182,12 @@ def _self_test_body() -> int:
                 return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:
                 return cp(diff)
+            if cmd[0] == "python3" and cmd[1] in refuse:
+                return cp("refused\n", 1)          # a gate that REFUSES, so the escape cross-check runs
             return cp("ok\n")                       # the three gate scripts
         return run
-    def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None):
-        globals()["_run"] = _fake(files, diff, body, status, tree, pins_head)
+    def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None, refuse=()):
+        globals()["_run"] = _fake(files, diff, body, status, tree, pins_head, refuse)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
@@ -2182,14 +2235,14 @@ def _self_test_body() -> int:
     # ⛔ r5 Claude F1: the SAME class at the other in-process importer. Codex's r4 input appended to
     # the dashboard gate left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
     _real_cde = (_here / "check-dashboard-entry.py").read_text(encoding="utf-8")
-    def _gate_main(body, pr):
+    def _gate_main(body, pr, refuse=()):
         """`main()` over a falling pin, with `DASHBOARD_GATE` pointed at a copy holding `body`."""
         d = Path(tempfile.mkdtemp())
         (d / "check-dashboard-entry.py").write_text(body, encoding="utf-8")
         saved = globals()["DASHBOARD_GATE"]
         globals()["DASHBOARD_GATE"] = d / "check-dashboard-entry.py"
         try:
-            return _main(["scripts/check-plan-code.py"], pr,
+            return _main(["scripts/check-plan-code.py"], pr, refuse=refuse,
                          pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
         except BaseException as exc:      # SystemExit escaping main() is exactly the defect
             return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
@@ -2242,6 +2295,67 @@ def _self_test_body() -> int:
         _dsc = f"ESCAPED {type(exc).__name__}"
     check("_describe never calls sibling code: a metaclass __name__, a __class__ and a __str__ that each exit",
           _dsc, ("Evil: <unprintable>", "Evil"))
+    # ⛔ r7 Claude F1-F3: the SAME class on what a sibling HANDS BACK. Each value below left the `try`
+    # and had a dunder called later — by `pin_falls`, by `escape_diagnosis`'s truth test, by the error
+    # text's `format()` — and each left `main()` at rc 0 with no verdict on a pin falling 5 -> 4. The
+    # rule (`_cross`): nothing a sibling returns or raises leaves the boundary until it is EXACT builtins.
+    def _reader_main(extra, pr, **kw):
+        """`main()` over a falling pin, with `PINS_READER` pointed at the real reader plus `extra`."""
+        d = Path(tempfile.mkdtemp())
+        (d / "check-plan-code.py").write_text(_real_src + "\n_real_pd = pin_display\n" + extra,
+                                              encoding="utf-8")
+        saved = globals()["PINS_READER"]
+        globals()["PINS_READER"] = d / "check-plan-code.py"
+        try:
+            return _main(["scripts/check-plan-code.py"], pr, **kw,
+                         pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+        except BaseException as exc:      # an escape from main() is exactly the defect
+            return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
+        finally:
+            globals()["PINS_READER"] = saved
+            shutil.rmtree(d, ignore_errors=True)
+    _exit = "(_ for _ in ()).throw(SystemExit(0))"
+    for _pr, _why, _extra in [
+        ("25", "a dict subclass whose __iter__ exits (r7 P1)",
+         f"class _D(dict):\n    __iter__ = lambda s: {_exit}\n"
+         "def pin_display(src):\n    return _D(_real_pd(src))\n"),
+        ("26", "a dict subclass whose __contains__ exits (r7 P8)",
+         f"class _D(dict):\n    __contains__ = lambda s, k: {_exit}\n"
+         "def pin_display(src):\n    return _D(_real_pd(src))\n"),
+        ("27", "int-subclass values whose __lt__ exits (r7 P2)",
+         f"class _I(int):\n    __lt__ = lambda s, o: {_exit}\n"
+         "def pin_display(src):\n    return {k: _I(v) for k, v in _real_pd(src).items()}\n"),
+        ("28", "int-subclass values whose __format__ exits (r7 P4)",
+         f"class _I(int):\n    __format__ = lambda s, f: {_exit}\n"
+         "def pin_display(src):\n    return {k: _I(v) for k, v in _real_pd(src).items()}\n"),
+        ("29", "None, an ordinary edit (r7 P5)", "def pin_display(src):\n    return None\n"),
+        ("30", "a list of pairs, an ordinary edit (r7 P6)",
+         "def pin_display(src):\n    return sorted(_real_pd(src).items())\n"),
+        ("31", "bool values, which are not ints here",
+         "def pin_display(src):\n    return {k: True for k in _real_pd(src)}\n"),
+    ]:
+        _rc, _o = _reader_main(_extra, _pr)
+        check(f"⭐ main() is CANNOT RUN, rc=2, when pin_display returns {_why}",
+              (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
+    _rc, _o = _reader_main("def pin_display(src):\n    return dict(_real_pd(src))\n", "32")
+    check("...while a reader returning a PLAIN dict still HOLDS the fall, rc=3 (the adjacent negative)",
+          (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
+    _falsy = f"class _B:\n    __bool__ = lambda s: {_exit}\n"
+    _rc, _o = _gate_main(_real_cde + "\n" + _falsy + "def exemption_reason(body, marker):\n    return _B()\n",
+                         "33", refuse=("scripts/check-dashboard-entry.py",))
+    check("⭐ a REFUSING gate is CANNOT RUN, rc=2, never rc 0, when exemption_reason returns a value whose __bool__ exits (r7 P11)",
+          (_rc, "escape cross-check NOT RUN" in _o, "NO-REVIEW matcher failed" in _o), (2, True, True))
+    _sname = ("\nclass _S(str):\n    __format__ = lambda s, f: " + _exit + "\n"
+              "class Broken(Exception):\n    pass\nBroken.__name__ = _S('Broken')\n")
+    _rc, _o = _gate_main(_real_cde + _sname + 'if __name__ != "__main__":\n    raise Broken("x")\n', "34")
+    check("⭐ main() is CANNOT RUN, rc=2, when the gate's import raises a class whose __name__ is a str subclass (r7 P12)",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    _rc, _o = _gate_main(_real_cde + _sname + "def exemption_reason(body, marker):\n    raise Broken('x')\n",
+                         "35", refuse=("scripts/check-dashboard-entry.py",))
+    check("⭐ ...and when exemption_reason raises it under a refusing gate, the text=False site (r7 P13)",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    _rc, _o = _gate_main(_real_cde, "36", refuse=("scripts/check-dashboard-entry.py",))
+    check("...while a well-behaved gate under a refusal is NOT READY, rc=1 (the adjacent negative)", _rc, 1)
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.
     _rc, _o = _main(["docs/g.yml"], "21", status="R100\0.github/workflows/g.yml\0docs/g.yml\0")
