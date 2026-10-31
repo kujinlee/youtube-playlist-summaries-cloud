@@ -1106,7 +1106,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {exc}\")",
+    "        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {exc.__class__.__name__}: {exc}\") from None",
     "        return {}"
    ]
   ],
@@ -1126,5 +1126,27 @@
   "expect": [
    "⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}"
   ]
+ },
+ {
+  "name": "the reader's import catches only Exception, so a module-level SystemExit escapes main() as rc 0 with no verdict (r4 Codex F2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:\n        sys.modules.pop(",
+    "    except Exception as exc:\n        sys.modules.pop("
+   ]
+  ],
+  "expect": "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN"
+ },
+ {
+  "name": "the reader's CALL catches only Exception, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:                    # a refused display",
+    "    except Exception as exc:                    # a refused display"
+   ]
+  ],
+  "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
  }
 ]

@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 227 cases
+    python3 scripts/check-merge-ready.py --self-test # 234 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -845,11 +845,18 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
 
 # ── THE MUTATION PINS, BY THEIR DISPLAY (backlog #359 r3) ───────────────────────────────────────
 # ⛔ A falling pin is read from the `EXPECTED_MUTATIONS` DISPLAY at the merge base and at HEAD, as
-# DATA, by `check-plan-code.pin_display` — imported, so "find the display" has ONE owner. Neither tree
-# is executed. That is sound because the harness proves, in the process that USES the pins, that they
-# ARE the display (`--mutate` before any mutation, `--self-test` at its top): any write the display
-# does not show — a duplicate key, `-= 4`, a default argument, a decorator, a shadowed `dict`, or one
-# gated on argv or the environment — is refused THERE. A display that cannot be read is CANNOT RUN.
+# DATA, by `check-plan-code.pin_display` — imported, so "find the display" has ONE owner. Neither
+# REVISION is executed; the WORKING-TREE checker is, to obtain the reader, and anything its import or
+# its reader raises is CANNOT RUN (`_pins_reader`; r4 Codex F2 measured a module-level `SystemExit`
+# leaving this script at rc 0 with no verdict). Reading the display is sound because the harness
+# asserts, in the process that USES the pins, that they START as the display (`--mutate` before any
+# mutation, `--self-test` at its top): a duplicate key, `-= 4`, a default argument, a decorator, a
+# shadowed `dict`, or a write gated on argv or the environment is refused THERE. A display that
+# cannot be read is CANNOT RUN.
+# ⚠ THE BOUND (r4 Codex F1, DEFERRED to backlog #431): the assertion fixes the INITIAL value. A
+# later write in the harness's own code paths — a manifest loader, the mutate loop — is not seen
+# by it or by this HOLD. Measured: origin/master was green on that exact edit too, so this loses
+# nothing master had; the witness at the point of CONSUMPTION is its own subject.
 # ⟳ r2 ran `--print-pins` in each tree instead, and r3 (Claude F1) beat it with a write gated on that
 # invocation: it printed 87 while the harness held 82. The subprocess, the tar, the timeout and the
 # base-only import fallback are deleted with it.
@@ -862,14 +869,31 @@ class PinsUnreadable(Exception):
     """One side's mutation pins could not be read. `main()` reports CANNOT RUN."""
 
 
-@functools.lru_cache(maxsize=1)
-def _pins_reader():
-    """`check-plan-code`, imported for its ONE display reader — never a second copy of the rule."""
-    src = Path(__file__).with_name("check-plan-code.py")
-    spec = importlib.util.spec_from_file_location("_cpc_for_merge_ready", src)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod                    # `dataclasses` looks the module up by name
-    spec.loader.exec_module(mod)
+# The sibling whose `pin_display` reads both sides. A module global so a case can point it at a copy.
+PINS_READER = Path(__file__).with_name("check-plan-code.py")
+
+
+@functools.lru_cache(maxsize=4)
+def _pins_reader(src: Path):
+    """`check-plan-code`, imported for its ONE display reader — never a second copy of the rule.
+
+    ⛔ FAILS CLOSED (r4 Codex F2). Importing it EXECUTES the working-tree file, so whatever its module
+    body raises is caught here — `SystemExit` included, which `main()`'s `except Exception` would let
+    through as rc 0 with no verdict — and becomes `PinsUnreadable`, i.e. CANNOT RUN. A missing
+    sibling, and one without `pin_display`, are the same. Only `KeyboardInterrupt` is let through:
+    the operator stopping the run is not an answer about the pins."""
+    try:
+        spec = importlib.util.spec_from_file_location("_cpc_for_merge_ready", src)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod                # `dataclasses` looks the module up by name
+        spec.loader.exec_module(mod)
+        mod.pin_display                             # the one name `pins_at` uses
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        sys.modules.pop("_cpc_for_merge_ready", None)
+        raise PinsUnreadable(f"{src.name} could not be imported for its display reader "
+                             f"({exc.__class__.__name__}: {exc})") from None
     return mod
 
 
@@ -886,11 +910,13 @@ def pins_at(run, rev: str) -> dict:
     shown = run(["git", "show", f"{rev}:{PINS_SCRIPT}"], text=True, encoding="utf-8")
     if shown.returncode != 0:
         raise PinsUnreadable(f"{rev}: `git show` exited {shown.returncode}")
-    reader = _pins_reader()
+    reader = _pins_reader(PINS_READER)
     try:
         return reader.pin_display(shown.stdout)
-    except reader.PinDisplayError as exc:
-        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {exc}")
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:                    # a refused display, or a reader that misbehaves
+        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {exc.__class__.__name__}: {exc}") from None
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
@@ -1934,7 +1960,7 @@ def _self_test_body() -> int:
     _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _k = "scripts/check-vocabulary-collisions.py"
     try:
-        _base_pins = _pins_reader().pin_display(_real_src)
+        _base_pins = _pins_reader(PINS_READER).pin_display(_real_src)
         _hit = _real_src.replace(f'    "{_k}": {_base_pins[_k]},', f'    "{_k}": 0,', 1)
         _rp = pin_pair(_prun({"base": {PCP: _real_src}, "HEAD": {PCP: _hit}}), "m")
         _rerr = None
@@ -1943,6 +1969,37 @@ def _self_test_body() -> int:
     check("⭐ the REAL check-plan-code.py's display is read on both sides", (_rerr, len(_rp[0]) > 10), (None, True))
     check("⭐ ...and a pin lowered in it is HELD at the value it shows",
           [r for r in pin_falls(*_rp) if _k in r], [f"loosens a gate: the mutation pin for {_k} drops {_rp[0].get(_k)} -> 0"])
+    # ⛔ r4 Codex F2: importing the WORKING-TREE reader executes it. Every way that import or the reader
+    # can misbehave is CANNOT RUN, never an answer — and never an escape past `main()`'s handler.
+    _rd = Path(tempfile.mkdtemp())
+    def _reader_says(body, name):
+        """`PH` over a fall, with `PINS_READER` pointed at `body` (None = no such file)."""
+        src = _rd / name
+        if body is not None:
+            src.write_text(body, encoding="utf-8")
+        saved = globals()["PINS_READER"]
+        globals()["PINS_READER"] = src
+        try:
+            return PHs(_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+        except BaseException as exc:          # an escape is a RED case, never a dead suite
+            return f"ESCAPED {exc.__class__.__name__}"
+        finally:
+            globals()["PINS_READER"] = saved
+    _codex_f2 = _real_src + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n'
+    check("⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
+          _reader_says(_codex_f2, "exit.py")[:11], "CANNOT RUN:")
+    check("⛔ ...and so is one whose module body raises an ordinary error",
+          _reader_says(_real_src + "\nraise ValueError('boom')\n", "err.py")[:11], "CANNOT RUN:")
+    check("⛔ ...and a MISSING reader",
+          _reader_says(None, "absent.py")[:11], "CANNOT RUN:")
+    check("⛔ ...and a reader with no pin_display",
+          _reader_says("X = 1\n", "nodisplay.py")[:11], "CANNOT RUN:")
+    check("⛔ ...and a reader whose pin_display itself raises SystemExit",
+          _reader_says(_real_src + "\ndef pin_display(src):\n    raise SystemExit(0)\n", "callexit.py")[:11],
+          "CANNOT RUN:")
+    check("...while a well-behaved COPY of the real reader still HOLDS the fall (the adjacent negative)",
+          _reader_says(_real_src, "ok.py"), str([f"loosens a gate: {_drop}"]))
+    shutil.rmtree(_rd, ignore_errors=True)
     # A REAL repository, so the `git` commands themselves are measured, not only the fake's answers.
     _pg = Path(tempfile.mkdtemp())
     def _pgrun(cmd, **kw):
@@ -2057,6 +2114,22 @@ def _self_test_body() -> int:
         _rc, _o = None, exc.__class__.__name__
     check("⭐ main() is CANNOT RUN, rc=2, when the head's pins cannot be read",
           (_rc, "mutation pins" in _o), (2, True))
+    # ⛔ r4 Codex F2, through the REAL `main()`: Codex's exact input (a module-level `SystemExit(0)`
+    # appended to the reader) left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
+    _f2 = Path(tempfile.mkdtemp())
+    (_f2 / "check-plan-code.py").write_text(_codex_f2, encoding="utf-8")
+    _saved_reader = globals()["PINS_READER"]
+    globals()["PINS_READER"] = _f2 / "check-plan-code.py"
+    try:
+        _rc, _o = _main(["scripts/check-plan-code.py"], "15",
+                        pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+    except BaseException as exc:          # SystemExit escaping main() is exactly the defect
+        _rc, _o = f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
+    finally:
+        globals()["PINS_READER"] = _saved_reader
+        shutil.rmtree(_f2, ignore_errors=True)
+    check("⭐ main() is CANNOT RUN, rc=2, when importing the reader raises SystemExit (Codex r4 F2)",
+          (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.
     _rc, _o = _main(["docs/g.yml"], "21", status="R100\0.github/workflows/g.yml\0docs/g.yml\0")

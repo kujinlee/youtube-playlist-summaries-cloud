@@ -2207,7 +2207,9 @@ EXPECTED_MUTATIONS = {
     # open, and the base-only import fallback answering for the head); two added, both fail-open
     # directions of the new read: a display `pin_display` refuses read as `{}`, and a failing
     # `git ls-tree` read as an answer. Three entries are REBOUND to the renamed cases.
-    "scripts/check-merge-ready.py": 87,
+    # ⟳ r4 (Codex F2): 87 -> 89 — importing THIS file for its reader fails CLOSED: the import's catch
+    # and the reader call's catch, each narrowed to `Exception`, let a `SystemExit` out as rc 0.
+    "scripts/check-merge-ready.py": 89,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2851,15 +2853,19 @@ def pin_drift(counts: dict) -> list[str]:
 # ── THE PINS ARE THEIR DISPLAY (backlog #359 r3) ─────────────────────────────────────────────
 # ⛔ ONE READER for "the pins a tree declares": the single module-level `EXPECTED_MUTATIONS = {...}`
 # display, read as DATA. `check-merge-ready.py` imports it and applies it to the merge base's text
-# and the head's, so a falling pin is HELD without executing either tree. That reading is only sound
-# if the dict this harness USES is that display — so `--mutate` (before any mutation) and
-# `--self-test` (at its top) each assert `pin_display_problems(...) == []` in their own process, and
-# refuse with rc 2 otherwise. A write the display does not show — a duplicate key, `-= 4`, a default
-# argument, a decorator, a shadowed `dict`, or one gated on argv or the environment (r3, Claude F1)
-# — is then refused where the pins are consumed, under whatever invocation it was gated on.
-# ⚠ BOUND, stated: a write made inside the harness's own functions AFTER that assertion (in
-# `mutate_delivered`, say) is not seen. That is an edit to the checker, the class master's typed
-# total had too: beating it meant rewriting the cases that observed it.
+# and the head's, so a falling pin is HELD without executing either REVISION (importing this working-
+# tree file to get the reader does execute it; anything that import raises is CANNOT RUN there). That
+# reading is only sound if the dict this harness USES is that display — so `--mutate` (before any
+# mutation) and `--self-test` (at its top) each assert `pin_display_problems(...) == []` in their own
+# process, and refuse with rc 2 otherwise. A write the display does not show — a duplicate key,
+# `-= 4`, a default argument, a decorator, a shadowed `dict`, or one gated on argv or the environment
+# (r3, Claude F1) — is then refused at entry, under whatever invocation it was gated on.
+# ⚠ BOUND, stated (r4 Codex F1, DEFERRED to backlog #431): the assertion fixes the INITIAL value, not
+# the value later CONSUMED. A write in the harness's own code paths after it — a manifest loader
+# setting `EXPECTED_MUTATIONS[target] = len(entries)`, the mutate loop — is seen by neither the
+# assertion nor check-merge-ready's HOLD. Measured on that exact edit, with the last entry of
+# `mutations/check-vocabulary-collisions.json` deleted: origin/master was GREEN too (`--self-test`
+# 249/249, `--mutate . --only` 4/4 killed), so this loses nothing master had.
 PINS_NAME = "EXPECTED_MUTATIONS"
 PINS_REFUSAL = ("CANNOT RUN — the pins this process holds are not its EXPECTED_MUTATIONS display, "
                 "so check-merge-ready, which reads the display, would compare the wrong numbers")
