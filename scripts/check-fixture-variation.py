@@ -313,6 +313,20 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # PR #440 r2: the shared bounded reader, pinned in the commit that creates it.
+    "bounded_read.py": (
+        "hostile_payloads.d",
+        "non_regular_payloads.d",
+        "parse_json.data",
+        "parse_jsonl.data",
+        "read_file.cap",
+        "read_file.path",
+        "read_stream.cap",
+        "read_stream.stream",
+        "read_stream.wait",
+        "read_text.path",
+        "stop_transcript.payload",
+    ),
     # backlog #399 (2026-10-30): every parameter varied by a case; none exempt.
     "check-usage-pace.py": (
         # ⟳ PR #446 r1 fold: override_active and spawn_output are gone (the override now expires and is read
@@ -1201,6 +1215,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # PR #440 r2: the shared hostile-payload fixture's scratch directory.
+    "bounded_read.py:hostile_payloads.d": "a scratch directory the fixture writes its transcript files and FIFO into; the payloads' CONTENT is the variation, and any directory is equivalent",
+    # PR #440 r3 C4: the same fixture, filtered to its non-regular members — the same scratch directory.
+    "bounded_read.py:non_regular_payloads.d": "the scratch directory it hands to `hostile_payloads`, whose members it filters; the payloads' CONTENT is the variation, and any directory is equivalent",
     # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
     # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
     "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",

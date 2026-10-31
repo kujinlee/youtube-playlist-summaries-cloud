@@ -1,0 +1,384 @@
+[
+  {
+    "name": "the S_ISREG check is dropped — a FIFO is read as data",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if not stat.S_ISREG(st.st_mode):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X4: a FIFO with no writer is refused at once, never a blocking read"
+    ]
+  },
+  {
+    "name": "the open BLOCKS again (O_NONBLOCK dropped) — a FIFO with no writer hangs the hook",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "        fd = os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X4: a FIFO with no writer is refused at once, never a blocking read"
+    ]
+  },
+  {
+    "name": "the byte bound is dropped — a file over `cap` is read whole",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "                if total > cap:\n                    return None, f\"{path} is over",
+        "                if False:\n                    return None, f\"{path} is over"
+      ]
+    ],
+    "expect": [
+      "⭐ read_file: one byte over `cap` is CANNOT RUN, never truncated"
+    ]
+  },
+  {
+    "name": "the bound is off by one — a file of exactly `cap` bytes is refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "                if total > cap:\n",
+        "                if total >= cap:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ read_file: a file of exactly `cap` bytes is read"
+    ]
+  },
+  {
+    "name": "read_file's catch narrows to OSError — a NUL byte in the path raises ValueError (r1 X1)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "    except Exception as exc:          # deliberate: see \"EVERY EXCEPTION\" in the module docstring\n        return None, _failed(f\"{path!r} could not be read\", exc)",
+        "    except OSError as exc:          # deliberate: see \"EVERY EXCEPTION\" in the module docstring\n        return None, _failed(f\"{path!r} could not be read\", exc)"
+      ]
+    ],
+    "expect": [
+      "read_file: a NUL byte in the path is CANNOT RUN, never ValueError"
+    ]
+  },
+  {
+    "name": "read_text decodes with `replace` — an undecodable SKILL.md is guessed at, never refused (#357(3))",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        return data.decode(\"utf-8\"), \"\"",
+        "        return data.decode(\"utf-8\", \"replace\"), \"\""
+      ]
+    ],
+    "expect": [
+      "read_text: an undecodable byte is CANNOT RUN, never a guess"
+    ]
+  },
+  {
+    "name": "parse_json's catch narrows to ValueError — 200,000 deep raises RecursionError (r2 X2)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "    except Exception as exc:          # deliberate: RecursionError, MemoryError, UnicodeDecodeError, ValueError",
+        "    except ValueError as exc:          # deliberate: RecursionError, MemoryError, UnicodeDecodeError, ValueError"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X2: a 200,000-deep array is CANNOT RUN, never RecursionError"
+    ]
+  },
+  {
+    "name": "EVERY bad record is skipped, not only a torn last one — r1 m2's breadth, the thing r2 X1 reverts",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "                if i == last:\n                    break",
+        "                if True:\n                    continue"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X1: an undecodable record in the MIDDLE is CANNOT RUN, never skipped",
+      "⭐ r2 X1: a non-JSON record in the middle is CANNOT RUN (backlog #331(e))"
+    ]
+  },
+  {
+    "name": "a torn final record is no longer tolerated — a write in progress blinds the guard (r1 m2)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "                    break                         # a torn final record",
+        "                    return None, \"torn\"            # a torn final record"
+      ]
+    ],
+    "expect": [
+      "⭐ a torn FINAL record cut mid-character is dropped, its predecessors kept",
+      "⭐ a torn FINAL record cut on ASCII is dropped too — one class, one verdict (r1 m2)"
+    ]
+  },
+  {
+    "name": "the torn-record test forgets the trailing newline — a complete corrupt last record passes as torn",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        last = len(pieces) - 1",
+        "        last = len(pieces) - 2"
+      ]
+    ],
+    "expect": [
+      "...and an undecodable LAST record that a newline FOLLOWS is complete, so it is corrupt: CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a record that is not an OBJECT is kept — `5` reaches the turn rule (#152)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if not isinstance(obj, dict):\n                return None, f\"record",
+        "            if False:\n                return None, f\"record"
+      ]
+    ],
+    "expect": [
+      "a final record that PARSES to a non-object is not torn: CANNOT RUN",
+      "a record that is a JSON number, mid-stream, is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "records are split with splitlines() — U+2028 inside a string breaks a record in two (backlog #331(f))",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        pieces = bytes(data).split(b\"\\n\")",
+        "        pieces = [q.encode(\"utf-8\", \"surrogateescape\") for q in bytes(data).decode(\"utf-8\", \"surrogateescape\").splitlines()] + [b\"\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ records split on \\n ALONE — a U+2028 inside a string keeps its record whole (backlog #331(f))"
+    ]
+  },
+  {
+    "name": "a payload that is JSON but not an object is accepted — `null`, `true`, `1`, `\"s\"` raise downstream (#357(2), r1 M2)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        if not isinstance(data, dict):\n            return {}, None, f\"the hook payload is JSON but not an object",
+        "        if isinstance(data, list):\n            return {}, None, f\"the hook payload is JSON but not an object"
+      ]
+    ],
+    "expect": [
+      "a non-object payload is refused BY NAME, at two distinct types — not by the broad catch's fallback"
+    ]
+  },
+  {
+    "name": "a transcript with no record passes again — nothing read reads as quiet (backlog #331(a))",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        if not records:\n            return data, None, \"no record",
+        "        if False:\n            return data, None, \"no record"
+      ]
+    ],
+    "expect": [
+      "⭐ a transcript with NO record is CANNOT RUN — nothing read is not quiet (backlog #331(a))"
+    ]
+  },
+  {
+    "name": "the payload object is dropped on a failed read — the session id is lost with the transcript",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        if records is None:\n            return data, None, f\"the transcript: {why}\"",
+        "        if records is None:\n            return {}, None, f\"the transcript: {why}\""
+      ]
+    ],
+    "expect": [
+      "the payload object survives a failed transcript read — missing, corrupt or empty — so the session id is not lost"
+    ]
+  },
+  {
+    "name": "read_stream reads a TERMINAL — an interactive --decide waits on a human",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        if stream.isatty():",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_stream: a TERMINAL is CANNOT RUN — reading would wait on a human"
+    ]
+  },
+  {
+    "name": "read_stream's select is dropped — a pipe that never closes blocks forever (r1 Low 6)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            ready, _, _ = select.select([fd], [], [], left)",
+        "            ready = [fd]"
+      ]
+    ],
+    "expect": [
+      "⭐ read_stream: a pipe that NEVER closes is CANNOT RUN after `wait`, never a hang"
+    ]
+  },
+  {
+    "name": "read_stream gives up without collecting — the same as not reading stdin at all (moved from check-ci-watched)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "                return b\"\".join(chunks), \"\"          # EOF",
+        "                return b\"\", \"\"          # EOF"
+      ]
+    ],
+    "expect": [
+      "read_stream: a pipe that closes is read to EOF"
+    ]
+  },
+  {
+    "name": "read_stream's pipe byte bound is dropped",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            total += len(block)\n            if total > cap:",
+        "            total += len(block)\n            if False:"
+      ]
+    ],
+    "expect": [
+      "read_stream: a PIPE over the byte bound is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "read_stream's descriptor-less byte bound is dropped",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if len(data) > cap:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "read_stream: a stream with no descriptor over the byte bound is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a stream with no descriptor is refused instead of read — the fallback's union is emptied (moved from check-ci-watched)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        except (OSError, ValueError, AttributeError, io.UnsupportedOperation):\n            fd = None",
+        "        except ():\n            fd = None"
+      ]
+    ],
+    "expect": [
+      "read_stream: a StringIO is read directly"
+    ]
+  },
+  {
+    "name": "the stdin deadline is zeroed — a payload that DID arrive is dropped (moved from check-ci-watched)",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "        deadline = time.monotonic() + (STDIN_WAIT if wait is None else wait)",
+        "        deadline = time.monotonic()"
+      ]
+    ],
+    "expect": [
+      "read_stream: a pipe that closes is read to EOF"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(a): MAX_STDIN shrunk to 4 KiB — every real payload over it would be CANNOT RUN",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "MAX_STDIN = 1024 * 1024 ",
+        "MAX_STDIN = 4 * 1024 "
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: the stdin bound is 1 MiB"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(b): STDIN_WAIT cut to 0.05 s — a payload that is merely slow is refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "STDIN_WAIT = 2.0 ",
+        "STDIN_WAIT = 0.05 "
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: the stdin wait is 2 s",
+      "⭐ r3 C3: a payload that arrives 0.5 s late is read under the DEFAULT wait"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(c): read_stream's pipe bound off by one — a payload of exactly `cap` bytes is refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if total > cap:\n                return None, f\"stdin carries",
+        "            if total >= cap:\n                return None, f\"stdin carries"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: read_stream: a PIPE of exactly `cap` bytes is read"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C3(c): read_stream's descriptor-less bound off by one — exactly `cap` bytes refused",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "            if len(data) > cap:\n                return None",
+        "            if len(data) >= cap:\n                return None"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C3: read_stream: a descriptor-less stream of exactly `cap` bytes is read"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the non-regular refusal stops naming itself — a FIFO refusal is indistinguishable from an empty read",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "return None, f\"{path} {NOT_REGULAR} — NOT READ",
+        "return None, f\"{path} — NOT READ"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: each non-regular transcript_path — a FIFO, a directory, /dev/zero — is refused AS not regular, never read and refused for something else"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C5: --stdin reads the hook's stdin UNBOUNDED — `$(cat)` again, a held-open pipe hangs the Stop hook",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "    data, why = read_stream(sys.stdin)\n",
+        "    data, why = sys.stdin.buffer.read(), \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C5: the REAL hook with stdin held OPEN finishes on the bound — CANNOT RUN, exit 1 — never the unbounded `$(cat)` that waited for the pipe to close",
+      "⭐ r3 C5: the REAL hook refuses a payload over MAX_STDIN — exit 1, the bound named — and passes nothing on"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C5: --stdin's refusal exits 0 — the hook's lost payload becomes a SILENT stop",
+    "file": "scripts/bounded_read.py",
+    "edits": [
+      [
+        "as NOT RUN.\", file=sys.stderr)\n        return 2\n",
+        "as NOT RUN.\", file=sys.stderr)\n        return 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C5: the REAL hook with stdin held OPEN finishes on the bound — CANNOT RUN, exit 1 — never the unbounded `$(cat)` that waited for the pipe to close"
+    ]
+  }
+]

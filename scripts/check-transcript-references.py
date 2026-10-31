@@ -2,7 +2,7 @@
 """Did the turn just completed show the reader a bare `#N`?
 
     python3 scripts/check-transcript-references.py --decide   # reads a Stop-hook payload on stdin
-    python3 scripts/check-transcript-references.py --self-test # 19 cases
+    python3 scripts/check-transcript-references.py --self-test # 26 cases
 
 WHY THIS EXISTS (owner's decision, 2026-10-20)
 ----------------------------------------------
@@ -35,10 +35,11 @@ is this repository's most-measured defect (17 instances):
   * the REFERENCE rule — `BARE`, `QUALIFIER`, and the inline-code quotation exemption — from
     `check-reference-namespace.py`. If that file's vocabulary grows a word, this guard grows it too,
     in the same commit, with no action.
-  * the TRANSCRIPT reader — `_parse_records`, `windows`, `judged_window`, `texts_of` — from
-    `check-banner-armed.py`, which already reads this exact file from this exact hook and has paid
-    for the subtleties: one turn of latency (the live turn's final assistant message is not flushed
-    when a Stop hook fires), and judging the last NON-LIVE window rather than stepping back N.
+  * the TRANSCRIPT reader — `transcript_records`, `windows`, `judged_window`, `texts_of` — from
+    `check-banner-armed.py` (whose READ is `bounded_read.py`'s since PR #440 r2), which already reads
+    this exact file from this exact hook and has paid for the subtleties: one turn of latency (the live
+    turn's final assistant message is not flushed when a Stop hook fires), and judging the last
+    NON-LIVE window rather than stepping back N.
 
 WARN-ONLY, AND THE CHANNEL QUESTION ANSWERED RATHER THAN ASSUMED
 -----------------------------------------------------------------
@@ -121,24 +122,17 @@ def bare_references(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def judge(payload: str) -> tuple[int, str, list[tuple[str, str]]]:
+def judge(payload: "str | bytes") -> tuple[int, str, list[tuple[str, str]]]:
     """-> (rc, message, findings). rc 0 quiet | 1 fired (warn-only) | 2 CANNOT RUN."""
-    try:
-        data = json.loads(payload) if payload.strip() else {}
-    except json.JSONDecodeError as exc:
-        return 2, f"CANNOT RUN — the hook payload is not JSON: {exc}", []
-    raw = data.get("transcript_path")
-    if not raw:
-        return 2, "CANNOT RUN — the hook payload carries no `transcript_path`", []
-    path = pathlib.Path(raw)
-    try:
-        lines = path.read_text().splitlines()
-    except OSError as exc:
-        return 2, f"CANNOT RUN — the transcript could not be read: {exc}", []
-
     cba = _owner("check-banner-armed")
+    # ⛔ backlog #357(1)(2), #331(a), PR #440 r1 X1/m1, r2: the payload and transcript are read ONCE, by the turn
+    # rule's owner, whose reader is `bounded_read`'s. A transcript with no record, or a corrupt record anywhere but
+    # a torn last line, is CANNOT RUN there — never the quiet pass it was here (backlog #331(a), (e)).
+    _data, records, why = cba.transcript_records(payload)
+    if records is None:
+        return 2, f"CANNOT RUN — {why}", []
     try:
-        window = cba.judged_window(cba.windows(cba._parse_records(lines)))
+        window = cba.judged_window(cba.windows(records))
     except Exception as exc:
         # ⛔ backlog #152 r1: unguarded, anything the borrowed turn rule raised left as exit 1 — the warning code.
         return 2, f"CANNOT RUN — the turn rule raised {type(exc).__name__}: {exc}", []
@@ -154,7 +148,7 @@ def judge(payload: str) -> tuple[int, str, list[tuple[str, str]]]:
                f"a number alone does not say WHICH namespace"), findings
 
 
-def run_decide(payload: str, log: pathlib.Path | None = None) -> int:
+def run_decide(payload: "str | bytes", log: pathlib.Path | None = None) -> int:
     """⛔ `log` IS A DEFAULTED PARAMETER so a case can drive this without appending to the real
     log. An instrument that edits the repository it measures is backlog #326, and a self-test that
     writes a firing into the evidence file would corrupt the very rate this guard exists to make
@@ -220,7 +214,7 @@ def _self_test_body() -> int:
     def _tr_rule_raises():
         class _B:
             @staticmethod
-            def _parse_records(lines): return [{"type": "user"}]
+            def transcript_records(payload): return {}, [{"type": "user"}], ""
             @staticmethod
             def windows(recs): raise AttributeError("'str' object has no attribute 'get'")
             @staticmethod
@@ -252,6 +246,34 @@ def _self_test_body() -> int:
     case("the finding carries the LINE, so the reader can see the context",
          bare_references("answers #321 now")[0][1], "answers #321 now")
 
+
+    # ⛔ PR #440 r1 + r2: EVERY hostile input any round found, through the REAL `--decide` as the hook runs it.
+    # The list is `bounded_read.hostile_payloads`'s, shared by the three transcript guards.
+    def _hostile_cli():
+        br = _owner("bounded_read")
+        with tempfile.TemporaryDirectory() as d:
+            me = [str(pathlib.Path(__file__).resolve())]
+            return [br.run_cli(me + ["--decide"], b) for _, b in br.hostile_payloads(pathlib.Path(d))]
+    try:
+        _hostile = _hostile_cli()
+    except Exception as exc:                       # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+        _hostile = f"RAISED {type(exc).__name__}"
+    case("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
+         "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
+         isinstance(_hostile, list) and len(_hostile) >= 14 and set(_hostile) == {(2, False)})
+    # ⛔ PR #440 r3 C4: rc 2 above is also what a DROPPED S_ISREG check gives (a writer-less FIFO reads as empty),
+    # so the case above passes for an ambient reason on these three. This one asserts the refusal's REASON.
+    def _non_regular_cli():
+        br = _owner("bounded_read")
+        with tempfile.TemporaryDirectory() as d:
+            me = [str(pathlib.Path(__file__).resolve()), "--decide"]
+            return [br.run_cli_naming(me, b, br.NOT_REGULAR) for _, b in br.non_regular_payloads(pathlib.Path(d))]
+    try:
+        _non_regular = _non_regular_cli()
+    except Exception as exc:                       # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+        _non_regular = f"RAISED {type(exc).__name__}"
+    case("⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else",
+         isinstance(_non_regular, list) and len(_non_regular) == 3 and set(_non_regular) == {(2, False, True)})
     # ── payload handling: CANNOT RUN is distinct from QUIET ──
     case("no transcript_path is CANNOT RUN", judge("{}")[0], 2)
     case("a non-JSON payload is CANNOT RUN", judge("not json")[0], 2)
@@ -286,6 +308,54 @@ def _self_test_body() -> int:
                            [user("again"), assistant("x")])
         case("a turn that qualified everything is QUIET", judge(clean)[0], 0)
 
+        corrupt = pathlib.Path(td) / "corrupt.jsonl"
+        corrupt.write_text("not json\n")
+        case("⭐ backlog #331(a): a transcript NO record of which parses is CANNOT RUN (2), never a quiet pass",
+             judge(json.dumps({"transcript_path": str(corrupt)}))[0], 2)
+        undecodable = pathlib.Path(td) / "undecodable.jsonl"
+        undecodable.write_bytes(b'\xff{"type": "user"}\n\xfe\n')
+        try:
+            undecodable_rc = judge(json.dumps({"transcript_path": str(undecodable)}))[0]
+        except Exception as exc:                   # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+            undecodable_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ backlog #357(1): a transcript NO line of which decodes is CANNOT RUN (2), never a traceback",
+             undecodable_rc, 2)
+        # ⛔ PR #440 r2 X1 (Codex measured warn 1 -> 0 under r1 m2): the JUDGED record truncated, with whole records
+        # after it, is corruption, not a torn write — and backlog #331(e)'s second input, one good record then three
+        # that are not JSON, was QUIET. Both CANNOT RUN now.
+        firing_path = pathlib.Path(json.loads(transcript([user("go"), assistant("see #291")],
+                                                         [user("again"), assistant("x")]))["transcript_path"])
+        recs = firing_path.read_bytes().rstrip(b"\n").split(b"\n")
+        cut = pathlib.Path(td) / "cut-judged.jsonl"
+        cut.write_bytes(b"\n".join([recs[0], recs[1][:-3]] + recs[2:]) + b"\n")
+        partial = pathlib.Path(td) / "partial.jsonl"
+        partial.write_bytes(recs[0] + b"\nnot json\nnot json\nnot json\n")
+        try:
+            corrupt_rc = [judge(json.dumps({"transcript_path": str(firing_path)}))[0],
+                          judge(json.dumps({"transcript_path": str(cut)}))[0],
+                          judge(json.dumps({"transcript_path": str(partial)}))[0]]
+        except Exception as exc:                   # noqa: BLE001
+            corrupt_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ r2 X1 / backlog #331(e): the judged record truncated mid-transcript, and a good record followed by "
+             "three non-JSON lines, are CANNOT RUN — the control without the cut WARNS",
+             corrupt_rc, [1, 2, 2])
+        # ⛔ PR #440 r1 m2: a torn last record cut MID-CHARACTER is skipped like one cut on ASCII, never a blinding.
+        firing = transcript([user("go"), assistant("see #291")], [user("again"), assistant("x")])
+        torn = pathlib.Path(td) / "torn.jsonl"
+        torn.write_bytes(pathlib.Path(json.loads(firing)["transcript_path"]).read_bytes()
+                         + b'{"type": "assistant", "message": {"content": "ab\xe2\x9b')
+        try:
+            torn_rc = [judge(firing)[0], judge(json.dumps({"transcript_path": str(torn)}))[0]]
+        except Exception as exc:                   # noqa: BLE001
+            torn_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ PR #440 r1 m2: a torn last record cut mid-character is SKIPPED — the verdict without it, never CANNOT RUN",
+             torn_rc, [1, 1])
+        try:
+            list_rc = judge("[]")[0]
+        except Exception as exc:                   # noqa: BLE001
+            list_rc = f"RAISED {type(exc).__name__}"
+        case("⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN (2), never a traceback",
+             list_rc, 2)
         single = transcript([user("go"), assistant("see #291")])
         case("a session with only a live turn has NO SUBJECT, which is quiet not CANNOT RUN",
              judge(single)[0], 0)
@@ -340,7 +410,12 @@ def main(argv: list[str], *, stdin=None, log: pathlib.Path | None = None) -> int
     if args.self_test:
         return self_test()
     if args.decide:
-        return run_decide((stdin or sys.stdin).read(), log=log)
+        # the hook's stdin is read RAW, bounded in bytes and time: decoding is the payload check's job (PR #440 r2)
+        raw, why = _owner("bounded_read").read_stream(stdin or sys.stdin)
+        if raw is None:
+            print(f"[transcript-references] CANNOT RUN — the stop-hook payload: {why}", file=sys.stderr)
+            return 2
+        return run_decide(raw, log=log)
     ap.print_help()
     return 2
 
