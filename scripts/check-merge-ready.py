@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 253 cases
+    python3 scripts/check-merge-ready.py --self-test # 256 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -519,7 +519,8 @@ def _cross(call, *args, reduce, error):
 
 
 def _exact_pins(got) -> dict:
-    """`pin_display`'s answer as a FRESH `{str: int}` — an exact dict, str keys, int values (a bool refused).
+    """`pin_display`'s answer as a FRESH `{str: int}` — an exact dict, str keys, int values (a bool refused),
+    and NOT EMPTY: a present file with no pins is unreadable, never "nothing to lose" (r8 F1).
 
     ⚠ The type checks carry the rule; once they pass, the copy changes nothing a verdict can show
     (measured: returning `got` instead survives every case), so it is kept as the rule's shape, not
@@ -531,6 +532,10 @@ def _exact_pins(got) -> dict:
         if type(k) is not str or type(v) is not int:
             raise TypeError("pin_display returned a key that is not an exact str or a value that is not an exact int")
         out[str.__str__(k)] = int.__int__(v)
+    if not out:
+        # r8 Codex F1: a reader returning {} for BOTH revisions turned a falling pin into READY. The
+        # caller reaches here only when the file EXISTS at the revision (an absent file is `{}` in `pins_at`).
+        raise ValueError("a present check-plan-code.py with no pins is unreadable")
     return out
 
 
@@ -2064,7 +2069,8 @@ def _self_test_body() -> int:
     _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _k = "scripts/check-vocabulary-collisions.py"
     try:
-        _base_pins = _pins_reader(PINS_READER).pin_display(_real_src)
+        _rdr = _pins_reader(PINS_READER)
+        _base_pins = _cross(lambda: _rdr.pin_display(_real_src), reduce=_exact_pins, error=PinsUnreadable)
         _hit = _real_src.replace(f'    "{_k}": {_base_pins[_k]},', f'    "{_k}": 0,', 1)
         _rp = pin_pair(_prun({"base": {PCP: _real_src}, "HEAD": {PCP: _hit}}), "m")
         _rerr = None
@@ -2236,6 +2242,41 @@ def _self_test_body() -> int:
         shutil.rmtree(_f2, ignore_errors=True)
     check("⭐ main() is CANNOT RUN, rc=2, when importing the reader raises SystemExit (Codex r4 F2)",
           (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
+    # ⛔ r8 Codex F1: an ORDINARY edit — `pin_display` returning `{}` — turned base and head into `{}` and a
+    # pin falling 5 -> 4 into READY, rc 0. A present file with no pins is unreadable.
+    def _reader_main(body, pr):
+        """`main()` over a falling pin, with `PINS_READER` pointed at a copy holding `body`."""
+        d = Path(tempfile.mkdtemp())
+        (d / "check-plan-code.py").write_text(body, encoding="utf-8")
+        saved = globals()["PINS_READER"]
+        globals()["PINS_READER"] = d / "check-plan-code.py"
+        try:
+            return _main(["scripts/check-plan-code.py"], pr,
+                         pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+        except BaseException as exc:
+            return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
+        finally:
+            globals()["PINS_READER"] = saved
+            shutil.rmtree(d, ignore_errors=True)
+    _rc, _o = _reader_main(_real_src + "\ndef pin_display(src):\n    return {}\n", "17")
+    check("⭐ r8 F1: main() is CANNOT RUN, rc=2, when pin_display returns {} for a present file",
+          (_rc, "CANNOT RUN" in _o, "no pins" in _o), (2, True, True))
+    _rc, _o = _reader_main(_real_src, "18")
+    check("...and the same fall through the REAL reader is still HELD, rc=3 (the adjacent negative)",
+          (_rc, "loosens a gate" in _o), (HOLD_RC, True))
+    def _absent_run(cmd, **kw):
+        """`_fake`'s answers, except that NEITHER revision has check-plan-code.py at all."""
+        if cmd[:3] == ["git", "ls-tree", "--name-only"] and cmd[-1] == PCP:
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return _fake(["docs/x.md"], "")(cmd, **kw)
+    globals()["_run"] = _absent_run
+    try:
+        with contextlib.redirect_stdout(io.StringIO()) as _ab, contextlib.redirect_stderr(io.StringIO()):
+            _rc = main(["--pr", "19"])
+    finally:
+        globals()["_run"] = _real_run
+    check("...and an ABSENT check-plan-code.py at both revisions still pins {}: READY, rc=0 (kept)",
+          _rc, 0)
     # ⛔ r5 Claude F1: the SAME class at the other in-process importer. Codex's r4 input appended to
     # the dashboard gate left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
     _real_cde = (_here / "check-dashboard-entry.py").read_text(encoding="utf-8")

@@ -1232,5 +1232,16 @@
    ]
   ],
   "expect": "⭐ main() is CANNOT RUN, rc=2, when the gate's import raises a class whose __name__ is a str subclass (r7 P12)"
+ },
+ {
+  "name": "_exact_pins no longer refuses an EMPTY pin map, so a reader returning {} turns base and head into {} and a falling pin into READY (r8 Codex F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not out:\n        # r8 Codex F1",
+    "    if False:\n        # r8 Codex F1"
+   ]
+  ],
+  "expect": "⭐ r8 F1: main() is CANNOT RUN, rc=2, when pin_display returns {} for a present file"
  }
 ]

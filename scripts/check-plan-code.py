@@ -2216,7 +2216,7 @@ EXPECTED_MUTATIONS = {
     # exemption value, and an uncoerced class name each go red. Three entries are RE-BOUND to `_cross`.
     # ⚠ Returning the original object instead of the copy is an EQUIVALENT mutant (measured: the exact-
     # type checks already refuse every subclass), so it is not pinned.
-    "scripts/check-merge-ready.py": 96,
+    "scripts/check-merge-ready.py": 97,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
