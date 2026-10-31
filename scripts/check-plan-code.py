@@ -877,7 +877,18 @@ EXPECTED_MUTATIONS = {
     # leading-slug arrow). Four are new: an arrow in prose is not a destination (r3 F7, two
     # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
     # the warning (F6). Net +4.
-    "scripts/check-banner-armed.py": 94,
+    # ⟳ 94 -> 100 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
+    # non-object input. ⟳ 100 -> 97 (PR #440 r2): the payload and transcript READ moved to `bounded_read.py`, so
+    # six entries on `transcript_lines` and the stdin read retire with their subject (re-entered in that file's
+    # manifest) and three are new — the bounded stdin read, the reader's refusal dropped at the turn rule, and the
+    # turn filter's own refusal.
+    # ⟳ 97 -> 98 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
+    "scripts/check-banner-armed.py": 98,
+    # ⟳ PR #440 r2: THE ONE bounded reader for the five guards' untrusted input, pinned in the commit that creates
+    # it. Two of its entries moved here from `check-ci-watched` with the stdin read; the rest are the r1/r2 classes.
+    # ⟳ 22 -> 29 (PR #440 r3): the stdin bound's VALUES and exact-cap edge (C3, four), the non-regular refusal's
+    # NAME (C4), and the `--stdin` mode the registered Stop hook now reads its payload through (C5, two).
+    "scripts/bounded_read.py": 29,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -929,7 +940,10 @@ EXPECTED_MUTATIONS = {
     # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
     # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
     # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
-    "scripts/check-closing-table.py": 49,
+    # ⟳ 49 -> 51 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
+    # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
+    # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
+    "scripts/check-closing-table.py": 52,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -1205,7 +1219,11 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     # ⟳ backlog #382 r2: 41 -> 42, the sentinel resolved on first use, not at import.
-    "scripts/check-ci-watched.py": 42,
+    # ⟳ 42 -> 50 (backlog #331(a) / #357, PR #440 r1): the CANNOT RUN refusals for a corrupt, undecodable or
+    # non-object input. ⟳ 50 -> 52 (PR #440 r2): +7 for a NON-EMPTY KNOWN status (X3) and the parse through
+    # `bounded_read` (X2); -5 because the stdin read (closed, TTY, deadline, collect) and the hand-kept exception
+    # union moved to `bounded_read.py`, whose manifest carries them now.
+    "scripts/check-ci-watched.py": 52,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -1582,7 +1600,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 (claude) 1 High + 5 Medium + 3 Low: 56 -> 61. FIVE entries — the `review_added`
     # DIRECTORY clause (High 1: dropping `p.startswith(REVIEW_DIR)` left the suite green, so
     # ANY added `.md` would have recorded a review round), the retired extension-less rule
-    # (Medium 3), the bare-`docs` skip (Medium 2), the TOTAL path bound (Medium 4), and the
+    # (Medium 3), the bare-`docs` skip (Medium 2), the 2616 path bound (Medium 4), and the
     # anti-drift ORDER — which needed `antidrift_verdict` extracted out of `main` first,
     # because the call site was unfalsifiable and the entry written for it SURVIVED
     # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
@@ -1986,7 +2004,10 @@ EXPECTED_MUTATIONS = {
     # BEFORE these were registered, which is the order the loop requires and I got wrong once.
     "scripts/check-function-revokes.py": 6,
     "scripts/check-guard-coverage.py": 10,
-    "scripts/check-handoff-path.py": 6,
+    # ⟳ 6 -> 7 (backlog #331(a) / #357): the CANNOT RUN refusals for a corrupt, undecodable or non-object input.
+    # ⟳ 7 -> 8 (PR #440 r2): the SKILL.md is read by `bounded_read`, so a FIFO there cannot hang the hook.
+    # ⟳ 8 -> 9 (PR #440 r3 C4): the SKILL.md refusal must carry the reader's reason, so a FIFO is not "empty".
+    "scripts/check-handoff-path.py": 9,
     "scripts/check-diff-coverage.py": 37,
     # ⟳ 25 -> 29 (backlog #361's PR): the ledger read AND written in the MAIN checkout through `main_checkout`, its
     # refusal of a non-path answer, and the fallback said aloud.
@@ -2163,7 +2184,12 @@ EXPECTED_MUTATIONS = {
     # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
     # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
     "scripts/check-reference-namespace.py": 22,
-    "scripts/check-transcript-references.py": 6,
+    # ⟳ 6 -> 9 (backlog #331(a) / #357, PR #440 r1). ⟳ 9 -> 7 (PR #440 r2): #331(a)'s `if not records` moved to
+    # `bounded_read.stop_transcript`, and the None-mapping entry is now masked by `judge`'s try, so both retire;
+    # r2 X1 / #331(e)'s mutant — the reader's refusal answered QUIET — is the no-transcript entry's, which names
+    # that case too.
+    # ⟳ 7 -> 8 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
+    "scripts/check-transcript-references.py": 8,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
@@ -2212,7 +2238,17 @@ EXPECTED_MUTATIONS = {
     # fail — a branched binding answered by `_is_restore_value` before the rule under test, and a
     # callee-scope substitution no input distinguished. Every `expect` below was derived by
     # RUNNING its mutation against a green control, never written from the finding.
-    "scripts/check-main-drivable.py": 183,
+    # ⟳ 2026-10-30, backlog #401: 183 -> 189. Six entries for the node-identity memo that took
+    # the suite from ~68s to ~8s — a key coarser than identity, an entry that stops holding its
+    # nodes, a key that drops the name, and each of the three freezes — plus ONE RETARGET: the r9
+    # nested-class anchor moved, unchanged, into `_class_methods`.
+    # ⟳ 2026-10-30, PR #449 round 1's fold: 189 -> 194. Five entries, no retargets — the memo
+    # that never reuses, the case-folded key, the cap that never evicts, eviction by insertion
+    # rather than use, and the entry that drops its arguments (asserted on the node, not the
+    # allocator).
+    # ⟳ 2026-10-30, PR #449 round 2's fold: 194 -> 196, declared sum 2549 -> 2551 (read with
+    # `ast`). Two entries, no retargets — the cap that evicts the SECOND entry, and `>=` for `>`.
+    "scripts/check-main-drivable.py": 196,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
@@ -2231,6 +2267,21 @@ EXPECTED_MUTATIONS = {
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
+    # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
+    # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
+    # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
+    # regular-file read, the expiring main-checkout override, the two readers, and the SendMessage gate.
+    # Then 63 -> 74: the absent-cache notice said once per session, and the stale message's path.
+    # ⟳ PR #446 r2 fold: 74 -> 85. Two retired with their subject (the wake gate no longer reads the
+    # recipient's name, so "a name CONTAINING main" and "a [ref] suffix" have nothing to mutate) and 13
+    # new: the caller's agent_id (5), integers parsed as floats and the parser's RecursionError (3), the
+    # read's deadline (3), and stripping every GIT_* variable (2).
+    # ⟳ PR #446 r3 fold: 85 -> 94, none retired. The reader thread as a DAEMON, killed only by a case that
+    # runs the checker as a child process (1), and the control messages allowed at REFUSE (8).
+    # ⟳ PR #446 r4 fold: 94 -> 102, none retired. The stdin read's deadline at both call sites, as a daemon,
+    # failing toward the gate (4), its byte bound through real stdin (2), the control type as a string (1), and
+    # the missing-cache case's precondition (1).
+    "scripts/check-usage-pace.py": 102,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2379,7 +2430,7 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON IS STALE, BUT THE SAVING IS STILL A LATENCY ONE.
     backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
     sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
-    `needs: null` and `matrix: {shard: [1..N]}` (N=12 since 2026-10-24, backlog #231).
+    `needs: null` and `matrix: {shard: [1..N]}` (N=24 since 2026-10-30, backlog #231; 12 from 2026-10-24).
 
     ⛔⛔ AND HERE IS A CLAIM I WROTE AND r5 CODEX REFUTED BY MEASUREMENT — recorded because the
     error is more instructive than the number. I wrote that the sweep therefore costs *"~48 runner-
@@ -3124,7 +3175,7 @@ def progress_line(done: int, total: int, label: str) -> str:
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
     RATE: one line per mutation plus one per control and re-control, so the total is derived
-    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO TOTAL IS QUOTED —
+    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO 2616 IS QUOTED —
     the first version of this sentence gave one and it was the PREVIOUS manifest's number
     on the day it was written. A gap much longer than `SUITE_TIMEOUT` is the signal.
 
@@ -4283,7 +4334,7 @@ def _self_test_body() -> int:
                 case("a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)",
                      _no_tally(_mutate_output(_rA)), (True, False, False))
 
-            # PATH 3 — TOTAL SHORTFALL. Every declared mutation's anchor is absent, so
+            # PATH 3 — 2616 SHORTFALL. Every declared mutation's anchor is absent, so
             # `run_mutations` skips all of them: `declared > 0` while `ev["mutations"]` is empty.
             # The counts are not merely incomplete, they are ZERO — and "0 of 2 produced a verdict"
             # must not render as a clean "0 survivor(s)".
@@ -4309,7 +4360,7 @@ def _self_test_body() -> int:
                      "entries (backlog #252)",
                      ("'anchor absent one'" in _outB_pre, "'anchor absent two'" in _outB_pre,
                       "before any tree is staged" in _outB_pre), (True, True, True))
-                case("a TOTAL SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
+                case("a 2616 SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
                      _no_tally(_outB), (True, False, False))
                 case("...and it names the arithmetic, so dropped entries are not invisible",
                      "0 of 2" in _outB, True)
@@ -4431,6 +4482,8 @@ def _self_test_body() -> int:
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/backfill-work-lines.py",
                                       "scripts/begin-plan.py",
+                                      # ⟳ PR #440 r2: the bounded reader, a LIBRARY, added with its manifest.
+                                      "scripts/bounded_read.py",
                                       "scripts/brief-compose.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
@@ -4497,6 +4550,7 @@ def _self_test_body() -> int:
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-transcript-references.py",
+                                      "scripts/check-usage-pace.py",
                                       "scripts/check-vocabulary-collisions.py",
                                       # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
                                       # manifest — and it is NOT a `check-*` guard, so this list is
@@ -5269,7 +5323,7 @@ def _self_test_body() -> int:
     # ⚠ The digit run's LENGTH, not its alphabet — round 7 L1. `int()` refuses beyond 4300 digits,
     # so an unbounded `[0-9]*` matched a string the conversion then raised on.
     # ⚠ BOTH SIDES. The bound appears twice in the pattern, so a mutation may remove only one —
-    # asserting a long INDEX alone would leave a long TOTAL unguarded, which is the "two distinct
+    # asserting a long INDEX alone would leave a long 2616 unguarded, which is the "two distinct
     # inputs" rule applied to one expression.
     # ⛔ AND IT MUST OBSERVE A RAISE RATHER THAN SUFFER ONE. The first draft asserted the RETURN
     # VALUE, so removing the bound made `parse_shard` raise and the suite died BEFORE printing any
@@ -6298,7 +6352,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2631)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2797)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

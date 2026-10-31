@@ -46,8 +46,16 @@
 # block — i.e. only while blocking is producing work. A hook that can trap a session gets disabled,
 # and a disabled hook protects nothing.
 
-INPUT=$(cat)
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# ⛔ PR #440 r3 C5: THE PAYLOAD IS READ ONCE, BOUNDED IN BYTES AND IN TIME, BEFORE ANY GUARD RUNS. This was
+# `INPUT=$(cat)`, which has neither bound: a harness that held stdin open kept this hook running until the pipe
+# closed (measured: still running at 12 s), so the guards' own bounded readers never got a say — each of them
+# reads a `printf` pipe that always closes. `bounded_read.py --stdin` applies the SAME `read_stream` and copies
+# the bytes through, or prints CANNOT RUN and leaves INPUT empty. Empty, every transcript guard is CANNOT RUN
+# too; the blocking check below does not read stdin and still runs; and INPUT_RC reaches the exit arithmetic,
+# so a lost payload is `exit 1`, never silent. `head -c` with a timeout was not used: macOS has no `timeout`.
+INPUT=$(python3 "$REPO_ROOT/scripts/bounded_read.py" --stdin)
+INPUT_RC=$?
 
 STOP_HOOK_ACTIVE=$(printf '%s' "$INPUT" | python3 -c "
 import json, sys
@@ -206,7 +214,7 @@ CI_RC=$?
 if [[ "$BANNER_RC" == "4" ]]; then
     exit 2
 fi
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0"|| "$TABLE_RC" != "0" || "$TRANSCRIPT_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
+if [[ "$INPUT_RC" != "0" || "$BANNER_RC" != "0" || "$CI_RC" != "0"|| "$TABLE_RC" != "0" || "$TRANSCRIPT_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0

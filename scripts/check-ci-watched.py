@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 88 cases
+    python3 scripts/check-ci-watched.py --self-test  # 101 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -54,11 +54,13 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types              # self-test only: a stub arm directory for `_decide_with`
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observer_log  # noqa: E402  — the ONE owner of the record grammar (backlog #166, #170)
+import bounded_read  # noqa: E402  — the ONE reader of untrusted input (PR #440 r2)
 
 def sentinel_for(common_dir: str | None, root: Path) -> Path:
     """-> where the armed-watcher record belongs, given `git rev-parse --git-common-dir`. PURE.
@@ -157,13 +159,21 @@ QUIET, WARN, CANNOT_RUN = 0, 1, 2
 # States GitHub reports for a check that has not reached a verdict. Enumerated from the API's
 # documented values rather than from the two this repo happened to emit — a state we do not
 # recognise must not be silently read as "finished".
-UNRESOLVED = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "ACTION_REQUIRED"}
+UNRESOLVED = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "ACTION_REQUIRED", "EXPECTED"}
 
 
 # ── Pure core ─────────────────────────────────────────────────────────────────────────────────
 
 RESOLVED_STATES = {"SUCCESS", "FAILURE", "CANCELLED", "SKIPPED", "NEUTRAL", "TIMED_OUT",
                    "STALE", "ERROR"}
+
+
+# The values `row_is_readable` accepts. GitHub's GraphQL enums: CheckRun.status is CheckStatusState (REQUESTED,
+# QUEUED, IN_PROGRESS, COMPLETED, WAITING, PENDING); StatusContext.state is StatusState (EXPECTED, ERROR, FAILURE,
+# PENDING, SUCCESS). The state set is the WIDER union this file already resolves, so no value it reads today is
+# refused.
+KNOWN_STATUSES = {"COMPLETED"} | UNRESOLVED
+KNOWN_STATES = UNRESOLVED | RESOLVED_STATES
 
 
 def row_is_resolved(r: dict) -> bool:
@@ -220,6 +230,31 @@ def row_is_resolved(r: dict) -> bool:
         s = str(state).upper()
         return s not in UNRESOLVED and s in RESOLVED_STATES
     return False
+
+
+def row_is_readable(r: object) -> bool:
+    """-> does this row carry a status this guard can judge? PURE.
+
+    ⛔ PR #440 round 1 X2: checking only that each row is an OBJECT let `[{}]` and `[{"state": []}]` through, and
+    `row_is_resolved`'s fail-closed fallback then read them as UNRESOLVED — "CI is running" — over a shape that
+    says nothing. Fail-closed is right for an unknown STATUS VALUE; it is wrong for a row with no status at all,
+    which is blindness. Same precedence as `row_is_resolved`: a non-null `status` decides, else `state`. MEASURED
+    2026-10-30 on PR #440: 16 of 16 rows were CheckRuns with a string `status` and a null `state`.
+
+    ⛔ r2 X3: a STRING is not enough — `[{"status": ""}]` passed the type check, and the empty status then read as
+    "CI is running" through the real CLI. The status must be NON-EMPTY and KNOWN (`KNOWN_STATUSES` for a CheckRun's
+    `status`, `KNOWN_STATES` for a StatusContext's `state`, case-folded as `row_is_resolved` folds). ⚠ THIS MOVES
+    ONE DOCUMENTED BEHAVIOUR: an unknown non-empty value used to reach `row_is_resolved`'s fail-closed fallback and
+    WARN; it is CANNOT RUN now. That function's fallback is unchanged and still covered; `run_decide` simply no
+    longer hands it a value nobody enumerated — a guard reading a vocabulary it does not know has not read the row.
+    """
+    if not isinstance(r, dict):
+        return False
+    status = r.get("status")
+    if status is not None:
+        return isinstance(status, str) and status.upper() in KNOWN_STATUSES
+    state = r.get("state")
+    return isinstance(state, str) and state.upper() in KNOWN_STATES
 
 
 def unresolved_checks(rows: list[dict]) -> list[str]:
@@ -412,67 +447,13 @@ def payload_from(stream, wait: "float | None" = None) -> str:
       * a non-tty stream that never closes — a wrapper or harness holding the pipe open. `read()`
         blocks until EOF, so `--decide`, documented at the top as a bare command, hangs (r1 Low 6).
         The hook's `printf … | python3` closes, which is why this never fired in production.
+    ⟳ PR #440 r2: each of the three is now a refusal of `bounded_read.read_stream`, which also bounds the BYTES.
     """
-    if stream is None:
-        return ""
-    try:
-        if stream.isatty():
-            return ""
-    except (OSError, ValueError, AttributeError):
-        return ""
-    try:
-        fd = stream.fileno()
-    except (OSError, ValueError, AttributeError):
-        fd = None
-    if fd is None:
-        # No file descriptor — a StringIO or a stub. `read()` cannot block on those.
-        try:
-            return stream.read()
-        except (OSError, ValueError, AttributeError):
-            return ""
-    # ⛔ BOUNDED, BECAUSE `read()` BLOCKS UNTIL EOF AND THAT IS NOT HYPOTHETICAL (r1 Low 6, and it
-    # was still live after the r1 fold claimed otherwise). The hook's `printf … | python3` closes
-    # its pipe, so production never hit it — but `--decide` is documented at the top as a bare
-    # command, and under ANY non-tty stdin that stays open it hangs forever. MEASURED: run from a
-    # tool harness whose stdin is a live pipe with `isatty() == False`, it was still alive after
-    # four seconds and returned the instant the pipe closed. It cost this session a two-minute
-    # timeout, on the guard whose entire subject is guards that fail unhelpfully.
-    # ⚠ THE FAILURE DIRECTION IS DELIBERATE: a payload that does not arrive within the window costs
-    # the session COLUMN and nothing else, which is the same rule the parse below follows. Losing a
-    # column is a worse log; hanging is a dead Stop hook.
-    # ⚠ WHAT IS *NOT* MANIFESTED HERE, stated rather than implied: no single edit falsifies the
-    # BOUND without producing a HANG, and a hang is attributed as CANNOT RUN rather than as a
-    # named red case — the harness cannot tell it from a timeout. What the two entries below do
-    # cover is the read's PRODUCT: a zeroed deadline loses the payload, and a dropped `append`
-    # returns empty. The bound's own falsifier is the two-minute stall that produced this comment.
-    import select
-    import time
-    deadline = time.monotonic() + (PAYLOAD_WAIT if wait is None else wait)
-    chunks: list[bytes] = []
-    while True:
-        left = deadline - time.monotonic()
-        if left <= 0:
-            # ⚠ AN EQUIVALENT MUTANT, AND IT IS DECLARED RATHER THAN MANIFESTED. Removing this
-            # guard changes nothing observable: `select` with a NEGATIVE timeout returns
-            # not-ready immediately, so the loop exits on the next line anyway (measured). It
-            # stays because relying on that is relying on a platform detail, and because a
-            # future reader adding work above this line would otherwise have no bound at all.
-            # No manifest entry names it — a mutation that cannot be seen is not coverage.
-            break
-        try:
-            ready, _, _ = select.select([fd], [], [], left)
-        except (OSError, ValueError):
-            break
-        if not ready:
-            break
-        try:
-            block = os.read(fd, 65536)
-        except (OSError, ValueError):
-            break
-        if not block:
-            break                      # EOF — the whole payload is in hand
-        chunks.append(block)
-    return b"".join(chunks).decode("utf-8", "replace")
+    # ⛔ PR #440 r2: THE READ ITSELF IS `bounded_read.read_stream`'s — bounded in BYTES as well as time, the same
+    # reader the three transcript guards use for this payload. What stays here is this guard's rule for what an
+    # unreadable payload costs: the session COLUMN, never the verdict.
+    data, _why = bounded_read.read_stream(stream, wait=PAYLOAD_WAIT if wait is None else wait)
+    return "" if data is None else data.decode("utf-8", "replace")
 
 
 def arms_newest_first(sentinel: pathlib.Path) -> list[pathlib.Path]:
@@ -504,17 +485,12 @@ def run_decide(payload: str = "") -> int:
     attributable to a session someone can go back and read.
     ⚠ DEFAULTS TO EMPTY so every existing caller, and the self-test, keep working without stdin.
     """
-    try:
-        session = str(json.loads(payload).get("session_id", "")) if payload.strip() else ""
-    except (ValueError, TypeError, AttributeError, RecursionError):
-        # ⚠ `RecursionError` IS IN THIS UNION BECAUSE IT ESCAPED IT (r1 Medium 3). Measured:
-        # `"[" * 200000 + "]" * 200000` through `--decide` exited 1 with a stack overflow — it cost
-        # the VERDICT, which is precisely what the comment below promises it cannot. The one
-        # defending case used "not json at all", landing in the ValueError member; this file
-        # already records that lesson eighty lines up — *"TWO DISTINCT EXCEPTIONS, because the
-        # handler catches a UNION and one member is enough to satisfy a single-input case while the
-        # other is silently dropped"* — and this commit reproduced it in new code beneath it.
-        session = ""          # an unreadable payload costs the column, never the verdict
+    # ⛔ PR #440 r2 X2: parsed by `bounded_read.parse_json`, whose every exception is a refusal. The hand-kept union
+    # this replaces had already lost one member once — r1 Medium 3 measured `"[" * 200000 + "]" * 200000` exiting 1
+    # with RecursionError — and a list of exceptions is a list someone must remember to extend.
+    obj, why = bounded_read.parse_json(payload) if payload.strip() else ({}, "")
+    # an unreadable payload costs the column, never the verdict
+    session = str(obj.get("session_id", "")) if not why and isinstance(obj, dict) else ""
     reason = _skip_reason()
     if reason is not None:
         return QUIET
@@ -531,17 +507,26 @@ def run_decide(payload: str = "") -> int:
     elif raw in ("", "null"):
         rows = []          # an open PR with no checks, or no PR — nothing to watch either way
     else:
-        try:
-            parsed = json.loads(raw)
-            rows = parsed if isinstance(parsed, list) else []
-        except ValueError:
-            rows = None
+        # ⛔ PR #440 r2 X2: `bounded_read.parse_json` — a 200,000-deep answer raised RecursionError past the old
+        # `except ValueError`. A failed parse is None, which is not a list, so it is CANNOT RUN below.
+        parsed, _why = bounded_read.parse_json(raw)
+        # ⛔ backlog #357(5): a row that is not an object (`[123]`) raised AttributeError in `decide`, and a
+        # non-list answer read as "no checks". Neither is a shape this guard can judge: CANNOT RUN. ⛔ PR #440
+        # r1 X2, r2 X3: nor is an object with no KNOWN status — `row_is_readable`.
+        rows = parsed if isinstance(parsed, list) and all(row_is_readable(r) for r in parsed) else None
 
     watching = None
     sentinel = _sentinel()
-    if sentinel.is_dir():
-        # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
-        watching = relevant_arm([q.name for q in arms_newest_first(sentinel)], head)
+    try:
+        if sentinel.is_dir():
+            # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
+            watching = relevant_arm([q.name for q in arms_newest_first(sentinel)], head)
+    except OSError as exc:
+        # ⛔ backlog #357(4): an arm directory that cannot be listed (permission denied) raised out of the Stop hook
+        # before any verdict. Whether something is watching is then UNKNOWN — CANNOT RUN, never "nothing watches".
+        print(f"CANNOT RUN: the CI-watch arm directory could not be read ({exc}), so this check could not tell "
+              "whether CI is being watched. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return CANNOT_RUN
 
     code, message = decide(head, watching, rows)
     if code == WARN:
@@ -824,15 +809,20 @@ def _self_test_body() -> int:
     # a sweep measures the manifest, not the code.
     def _decide_with(raw, no_pr, skip=None):
         """Drive `run_decide` end to end with the network boundary and the skip check stubbed."""
+        # ⛔ PR #440 r1 X3: HEAD and the arm directory are PINNED. Unpinned, a tree without git metadata gave an
+        # unreadable HEAD, and that CANNOT RUN masked the checks refusal the second case names — measured, the
+        # mutant `rows = []` for an unreadable answer survived 92/92.
         g = globals()
-        real_raw, real_skip = g["_pr_checks_raw"], g["_skip_reason"]
+        keep = {k: g[k] for k in ("_pr_checks_raw", "_skip_reason", "_run", "_sentinel")}
         g["_pr_checks_raw"] = lambda: (raw, no_pr)
         g["_skip_reason"] = lambda: skip
+        g["_run"] = lambda *a, **k: "cafef00dcafef00d"
+        g["_sentinel"] = lambda: types.SimpleNamespace(is_dir=lambda: False)
         try:
             with contextlib.redirect_stderr(io.StringIO()):
                 return run_decide()
         finally:
-            g["_pr_checks_raw"], g["_skip_reason"] = real_raw, real_skip
+            g.update(keep)
     case("run_decide is QUIET when there is no PR — the branch is pushed, so there is no CI to be "
          "unwatched, and this is the every-stop CANNOT RUN the change exists to remove",
          _decide_with(None, True) == QUIET)
@@ -842,6 +832,98 @@ def _self_test_body() -> int:
     case("...and NOT quiet on the same shaped input with no_pr FALSE — an unreadable PR is "
          "CANNOT RUN, so the verdict tracks the flag rather than being QUIET either way",
          _decide_with(None, False) == CANNOT_RUN)
+
+    # ── backlog #357(4)(5): a malformed check row, or an unreadable arm directory, is CANNOT RUN ─────────────
+    def _decide_on(raw, sentinel=None):
+        """Drive `run_decide` with HEAD, the checks and (optionally) the arm directory stubbed. A crash is a VALUE."""
+        g = globals()
+        keep = {k: g[k] for k in ("_pr_checks_raw", "_skip_reason", "_run", "_sentinel")}
+        g["_pr_checks_raw"] = lambda: (raw, False)
+        g["_skip_reason"] = lambda: None
+        g["_run"] = lambda *a, **k: "cafef00dcafef00d"
+        if sentinel is not None:
+            g["_sentinel"] = lambda: sentinel
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                return run_decide()
+        except Exception as exc:                       # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+            return f"RAISED {type(exc).__name__}"
+        finally:
+            g.update(keep)
+
+    class _DeniedDir:
+        """An arm directory that exists and cannot be listed — `iterdir()` raises PermissionError."""
+        def is_dir(self):
+            return True
+
+        def iterdir(self):
+            raise PermissionError(13, "Permission denied", "ci-watching.d")
+    class _NoDir:
+        """No arm directory at all — nothing is watching."""
+        def is_dir(self):
+            return False
+    case("⭐ backlog #357(5): a check row that is not an object ([123]) is CANNOT RUN, never an AttributeError",
+         _decide_on("[123]") == CANNOT_RUN)
+    case("...and a checks answer that is JSON but not a list ({}) is CANNOT RUN too, never read as 'no checks'",
+         _decide_on("{}") == CANNOT_RUN)
+    # ⛔ PR #440 r1 M1: a ONE-element list cannot tell `all` from `any` — a valid row BESIDE a non-object must refuse.
+    case("⭐ r1 M1: a valid row beside a non-object ([row, 5]) is CANNOT RUN — every row must be an object, not one",
+         _decide_on(json.dumps([{"name": "v", "state": "PENDING"}, 5]), _NoDir()) == CANNOT_RUN)
+    # ⛔ PR #440 r1 M2-class: `{}` alone pinned only the dict member of "not a list".
+    case("⭐ r1: true, 1 and \"s\" — every non-list checks answer, not only an object — are CANNOT RUN",
+         [_decide_on(r, _NoDir()) for r in ("true", "1", '"s"')] == [CANNOT_RUN] * 3)
+    # ⛔ PR #440 r1 X2: an OBJECT carrying no readable status (`{}`, `{"state": []}`) read as "CI is running".
+    case("⭐ r1 X2: an object row with no string status or state ([{}], [{\"state\": []}], [{\"status\": 1}]) is "
+         "CANNOT RUN, never 'CI is running'",
+         [_decide_on(r, _NoDir()) for r in ("[{}]", '[{"state": []}]', '[{"status": 1}]')] == [CANNOT_RUN] * 3)
+    # ⛔ PR #440 r2 X3: a STRING status is not a readable one. `""` passed the type check and read as "CI is running".
+    case("⭐ r2 X3: an EMPTY status or state ([{\"status\": \"\"}], [{\"state\": \"\"}]) is CANNOT RUN, never 'CI is running'",
+         [_decide_on(r, _NoDir()) for r in ('[{"name": "v", "status": ""}]', '[{"name": "v", "state": ""}]')]
+         == [CANNOT_RUN] * 2)
+    case("...and so is an UNKNOWN non-empty value, in either field — a vocabulary nobody enumerated is not read",
+         [_decide_on(r, _NoDir()) for r in ('[{"name": "v", "status": "BOGUS"}]', '[{"name": "v", "state": "BOGUS"}]')]
+         == [CANNOT_RUN] * 2)
+    case("...while a KNOWN value in either field, in lower case, is still read — pending WARNS, done is QUIET",
+         [_decide_on(r, _NoDir()) for r in ('[{"name": "v", "status": "in_progress"}]', '[{"name": "v", "state": "success"}]',
+                                            '[{"name": "v", "state": "EXPECTED"}]')]
+         == [WARN, QUIET, WARN])
+    # ⛔ PR #440 r2 X2: the checks answer through `bounded_read.parse_json` — 200,000 deep raised RecursionError.
+    case("⭐ r2 X2: a 200,000-deep checks answer is CANNOT RUN, never a RecursionError traceback",
+         _decide_on("[" * 200000 + "]" * 200000, _NoDir()) == CANNOT_RUN)
+
+    def _ci_cli(answer: bytes) -> tuple:
+        """The REAL `--decide` through the CLI, git and gh SHIMMED on PATH, in a COPIED root — so a regression that
+        WARNS appends to a scratch log, never this repository's (backlog #326). -> (rc, traceback?)."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "scripts").mkdir()
+            for name in (Path(__file__).name, "observer_log.py", "bounded_read.py"):
+                (root / "scripts" / name).write_bytes((Path(__file__).resolve().parent / name).read_bytes())
+            shim = root / "shim"
+            shim.mkdir()
+            (shim / "git").write_text('#!/bin/sh\ncase "$*" in\n *"branch --show-current"*) echo feat;;\n'
+                                      ' *"symbolic-ref"*) echo origin/master;;\n *"@{upstream}"*) echo origin/feat;;\n'
+                                      ' *"rev-parse HEAD"*) echo cafef00dcafef00d;;\n *) exit 1;;\nesac\n')
+            (shim / "gh").write_text(f'#!/bin/sh\ncat "{root / "answer.json"}"\n')
+            for f in ("git", "gh"):
+                (shim / f).chmod(0o755)
+            (root / "answer.json").write_bytes(answer)
+            p = subprocess.run([sys.executable, str(root / "scripts" / Path(__file__).name), "--decide"], input=b"{}",
+                               capture_output=True, timeout=60, env={**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ.get('PATH', '')}"})
+            return p.returncode, b"Traceback" in p.stderr
+    case("⭐ r2 X2/X3 through the REAL CLI, git and gh shimmed: an empty status and a 200,000-deep answer are CANNOT "
+         "RUN (rc 2, no traceback); the control, a real IN_PROGRESS CheckRun, WARNS",
+         safe(lambda: [_ci_cli(b'[{"name": "v", "status": ""}]'), _ci_cli(b"[" * 200000 + b"]" * 200000),
+                       _ci_cli(b'[{"name": "verify", "status": "IN_PROGRESS", "state": null}]')]
+              == [(2, False), (2, False), (1, False)]))
+    case("...while a COMPLETED CheckRun with a null state, the shape gh returns, is still READ (QUIET, nothing pending)",
+         _decide_on(json.dumps([{"name": "v", "status": "COMPLETED", "state": None, "conclusion": "SUCCESS"}]),
+                    _NoDir()) == QUIET)
+    case("...while a real pending row still WARNS, so the refusal is about the SHAPE, not every row",
+         _decide_on(json.dumps([{"name": "verify", "state": "PENDING"}]), _NoDir()) == WARN)
+    case("⭐ backlog #357(4): an arm directory that cannot be LISTED (permission denied) is CANNOT RUN, never a "
+         "traceback before any verdict",
+         _decide_on(json.dumps([{"name": "verify", "state": "PENDING"}]), _DeniedDir()) == CANNOT_RUN)
 
     # ── the WARN LOG (2026-09-22) ─────────────────────────────────────────────────────────
     # ⛔ WHY THIS EXISTS: this guard warned on a Stop hook and kept nothing, so when a PR was
@@ -929,10 +1011,14 @@ def _self_test_body() -> int:
     # through 8 named cases, ci died through a traceback. A kill nobody can attribute is not a kill.
     case("the SESSION column comes from the Stop payload the hook has always piped in",
          _rcp == WARN and len(_linesp) == 1 and _linesp[0].split("\t")[2] == "sess-xyz")
-    _rcb, _linesb, _ = _drive_log(_PENDING, None, payload="not json at all")
+    # ⛔ INSIDE `safe` (PR #440 r2): the drive was bare, so a mutant re-introducing a bare `json.loads` crashed
+    # the suite HERE, before the case that names it, and the kill could not be attributed.
+    def _unreadable_costs_only_the_column() -> bool:
+        rc, lines, _ = _drive_log(_PENDING, None, payload="not json at all")
+        return rc == WARN and len(lines) == 1 and lines[0].split("\t")[2] == "-"
     case("...and an UNREADABLE payload costs the column, never the verdict — still WARN, "
          "still logged, session renders as `-`",
-         _rcb == WARN and len(_linesb) == 1 and _linesb[0].split("\t")[2] == "-")
+         safe(_unreadable_costs_only_the_column))
     # ⛔ THE FAILURE PATH. The log IS the justification for warn-only mode, so losing it must ride
     # in the warning rather than vanish — the sibling makes the same choice.
     with tempfile.TemporaryDirectory() as _td:
@@ -952,7 +1038,7 @@ def _self_test_body() -> int:
             self._tty, self._data, self._boom = tty, data, boom
         def isatty(self):
             return self._tty
-        def read(self):
+        def read(self, n=-1):
             if self._boom:
                 raise self._boom
             return self._data

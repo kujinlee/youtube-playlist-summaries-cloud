@@ -36,6 +36,8 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bounded_read  # noqa: E402  — the ONE reader of untrusted input (PR #440 r2)
 SKILL_REL = ".agents/skills/handoff/SKILL.md"
 
 # The path this guard enforces, and the ONE place the mechanism behind it is described:
@@ -93,10 +95,11 @@ def check_file(path: Path) -> tuple[int, list[str]]:
     """Return (exit_code, messages). Missing/unreadable is CANNOT RUN, never a pass."""
     if not path.exists():
         return 2, [f"CANNOT RUN — {path} does not exist. Treat this as NOT RUN, not as a pass."]
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return 2, [f"CANNOT RUN — cannot read {path}: {exc}. Treat this as NOT RUN."]
+    # backlog #357(3): an undecodable byte raised out as a traceback. PR #440 r2: and a FIFO here would block the
+    # PreToolUse hook — so the vendored file is read by `bounded_read`: a REGULAR file, bounded, strict UTF-8.
+    text, why = bounded_read.read_text(path)
+    if text is None:
+        return 2, [f"CANNOT RUN — cannot read {path}: {why}. Treat this as NOT RUN."]
     if not text.strip():
         return 2, [f"CANNOT RUN — {path} is empty. Treat this as NOT RUN."]
 
@@ -141,7 +144,7 @@ def _self_test_body() -> int:
     #   'pristine upstream — the reversion this exists to catch: expected 1, got 0'
     # after:
     #   'pristine upstream — the reversion this exists to catch'
-    print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 3 file cases)")
+    print(f"check-handoff-path --self-test  ({len(CASES)} text cases + 6 file cases)")
     for name, text, expected in CASES:
         got = 1 if check_text(text) else 0
         ok = got == expected
@@ -163,6 +166,51 @@ def _self_test_body() -> int:
         ok = code == 2
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] empty file is CANNOT RUN: got {code} want 2")
+
+        undecodable = tmp / "undecodable.md"
+        undecodable.write_bytes(GOOD.encode("utf-8") + b"\xff\n")
+        try:
+            code, _ = check_file(undecodable)
+        except Exception as exc:                   # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+            code = f"RAISED {type(exc).__name__}"
+        ok = code == 2
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ backlog #357(3): an undecodable SKILL.md is CANNOT RUN, never a traceback: "
+              f"got {code} want 2")
+
+        cli_root = tmp / "cli"
+        (cli_root / "scripts").mkdir(parents=True)
+        (cli_root / SKILL_REL).parent.mkdir(parents=True)
+        (cli_root / SKILL_REL).write_bytes(GOOD.encode("utf-8") + b"\xff\n")
+        (cli_root / "scripts" / Path(__file__).name).write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+        (cli_root / "scripts" / "bounded_read.py").write_bytes((Path(__file__).resolve().parent / "bounded_read.py").read_bytes())
+        import subprocess as _sp357
+        cli = _sp357.run([sys.executable, str(cli_root / "scripts" / Path(__file__).name)], capture_output=True,
+                         text=True, timeout=60, stdin=_sp357.DEVNULL)
+        got = (cli.returncode, "Traceback" in cli.stderr, "CANNOT RUN" in cli.stderr)
+        ok = got == (2, False, True)
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ backlog #357(3): ...and through the plain CLI it exits 2, CANNOT RUN: "
+              f"got {got} want (2, False, True)")
+
+        # ⛔ PR #440 r2 X4's class: a FIFO with no writer where SKILL.md should be. A blocking read hangs the
+        # PreToolUse hook until its external timeout; `bounded_read` refuses a non-regular file at once.
+        import os as _os440
+        (cli_root / SKILL_REL).unlink()
+        _os440.mkfifo(cli_root / SKILL_REL)
+        try:
+            cli = _sp357.run([sys.executable, str(cli_root / "scripts" / Path(__file__).name)], capture_output=True,
+                             text=True, timeout=20, stdin=_sp357.DEVNULL)
+            # ⛔ PR #440 r3 C4: and it must be refused AS a non-regular file. With the S_ISREG check dropped, a
+            # writer-less FIFO reads as EMPTY and is refused as "SKILL.md is empty" — rc 2 for an ambient reason.
+            got = (cli.returncode, "Traceback" in cli.stderr, "CANNOT RUN" in cli.stderr,
+                   bounded_read.NOT_REGULAR in cli.stderr)
+        except _sp357.TimeoutExpired:
+            got = "HUNG"
+        ok = got == (2, False, True, True)
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] ⭐ r2 X4: a FIFO SKILL.md is CANNOT RUN through the plain CLI, never a hang, "
+              f"and refused AS not a regular file: got {got} want (2, False, True, True)")
 
         good = tmp / "good.md"
         good.write_text(GOOD, encoding="utf-8")
@@ -192,23 +240,36 @@ def _self_test_body() -> int:
     hook_failures = 0
 
     def _hook_rc(payload: bytes, skill_text: str, python3: str | None, checker_edit=None) -> int:
+        return _hook_run(payload, skill_text, python3, checker_edit).returncode
+
+    def _hook_run(payload: bytes, skill_text: "str | bytes", python3: str | None, checker_edit=None):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / ".claude/hooks").mkdir(parents=True)
             shutil.copy(REPO_ROOT / ".claude/hooks/enforce-handoff-path.sh", root / ".claude/hooks")
             (root / "scripts").mkdir()
             shutil.copy(Path(__file__), root / "scripts/check-handoff-path.py")
+            shutil.copy(Path(__file__).resolve().parent / "bounded_read.py", root / "scripts/bounded_read.py")
             if checker_edit is not None:
                 cp = root / "scripts/check-handoff-path.py"; cp.write_text(checker_edit(cp.read_text()))
             (root / SKILL_REL).parent.mkdir(parents=True)
-            (root / SKILL_REL).write_text(skill_text, encoding="utf-8")
+            if isinstance(skill_text, bytes):
+                (root / SKILL_REL).write_bytes(skill_text)
+            else:
+                (root / SKILL_REL).write_text(skill_text, encoding="utf-8")
             env = dict(os.environ)
             if python3 is not None:
                 shim = root / "shim"; shim.mkdir()
                 (shim / "python3").write_text(python3); (shim / "python3").chmod(0o755)
                 env["PATH"] = str(shim) + os.pathsep + env.get("PATH", "")
             return subprocess.run(["bash", str(root / ".claude/hooks/enforce-handoff-path.sh")],
-                                  input=payload, capture_output=True, env=env).returncode
+                                  input=payload, capture_output=True, env=env)
+
+    def _hook_headline(skill_bytes: bytes) -> tuple:
+        """-> (rc, says CANNOT RUN?, says 'would write where nothing reads'?) for the REAL hook over this SKILL.md."""
+        p = _hook_run(_HANDOFF, skill_bytes, None)
+        err = p.stderr.decode("utf-8", "replace")
+        return p.returncode, "COULD NOT BE CHECKED" in err, "would write where nothing reads" in err
 
     _HANDOFF = b'{"tool_name": "Skill", "tool_input": {"skill": "handoff"}}'
     _OTHER = b'{"tool_name": "Skill", "tool_input": {"skill": "brief"}}'
@@ -245,13 +306,18 @@ def _self_test_body() -> int:
          _hook_rc(_HANDOFF, UPSTREAM, None, _REWORDED), 2),
         ("⭐ hook: a wrapper exiting 0 WITHOUT running the checker warns — no receipt, no pass (backlog #111 r2)",
          _hook_rc(_HANDOFF, UPSTREAM, _CHECKER_FAKES_OK), 1),
+        # ⛔ PR #440 r1 m5: receipt 2 BLOCKS, as a missing or empty SKILL.md always did — but under its own headline.
+        # It used to print "would write where nothing reads" over a file that DOES name the path and merely failed
+        # to decode, which is a false claim about the file.
+        ("⭐ r1 m5: an UNDECODABLE SKILL.md blocks under a CANNOT RUN headline, never 'would write where nothing reads'",
+         _hook_headline(GOOD.encode("utf-8") + b"\xff"), (2, True, False)),
     ):
         ok = got == want
         hook_failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
     failures += hook_failures
 
-    total = len(CASES) + 3 + 10     # 3 file cases and 10 hook cases follow the text cases
+    total = len(CASES) + 6 + 11     # 6 file cases and 11 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 

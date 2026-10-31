@@ -77,7 +77,24 @@ VERDICT="$(tr -d '[:space:]' < "$RECEIPT" 2>/dev/null)"
 
 case "$VERDICT" in
   0)   exit 0 ;;
-  1|2) ;;
+  1)   ;;
+  # ⛔ PR #440 r1 m5: CANNOT RUN (2) BLOCKS, as a missing or empty SKILL.md always did, but under its OWN
+  # headline. It used to fall through to "would write where nothing reads" — false over a file that names the
+  # right path and merely could not be decoded.
+  2)   cat >&2 <<EOF
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║  ⛔ BLOCKED — the handoff path COULD NOT BE CHECKED                       ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+$VERDICT_OUT
+
+check-handoff-path.py could not read the vendored skill, so where /handoff would
+write is UNKNOWN. Repair the file, then re-run:
+  \$EDITOR .agents/skills/handoff/SKILL.md      # see docs/plugins.md -> Session Handoff
+  python3 scripts/check-handoff-path.py         # must exit 0
+EOF
+       exit 2 ;;
   *)   echo "⚠ enforce-handoff-path.sh: check-handoff-path.py reached no verdict (no receipt). The handoff path" >&2
        echo "  is NOT CHECKED — treat this /handoff as unverified, never as compliant." >&2
        [[ -n "$VERDICT_OUT" ]] && printf '%s\n' "$VERDICT_OUT" >&2

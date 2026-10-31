@@ -539,5 +539,44 @@
     "expect": [
       "⭐ the turn rule RAISING is CANNOT RUN, never the warning code (backlog #152)"
     ]
+  },
+  {
+    "name": "PR #440 r1 m1 ⟳ r2: the hook's stdin is read as TEXT, unbounded, again — an undecodable payload raises before any handler",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        raw, why = bounded_read.read_stream(sys.stdin)     # bounded in bytes and time (PR #440 r2)",
+        "        raw, why = sys.stdin.read(), \"\"     # bounded in bytes and time (PR #440 r2)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
+    ]
+  },
+  {
+    "name": "backlog #357(1) ⟳ PR #440 r2: the borrowed reader's refusal is not honoured — a corrupt, deep or FIFO transcript reads as no turn, QUIET",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "        data, records, why = banner.transcript_records(payload)\n",
+        "        data, records, why = banner.transcript_records(payload)\n        records = records or []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the CANNOT RUN message drops the reader's reason — a FIFO refusal reads like any other",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "            print(f\"CANNOT RUN: {why}\", file=sys.stderr)",
+        "            print(\"CANNOT RUN\", file=sys.stderr)"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else"
+    ]
   }
 ]

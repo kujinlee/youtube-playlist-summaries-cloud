@@ -30,8 +30,8 @@
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "        window = cba.judged_window(cba.windows(cba._parse_records(lines)))",
-        "        _wins = cba.windows(cba._parse_records(lines))\n        window = _wins[-1] if _wins else None"
+        "        window = cba.judged_window(cba.windows(records))",
+        "        _wins = cba.windows(records)\n        window = _wins[-1] if _wins else None"
       ]
     ],
     "expect": [
@@ -39,16 +39,17 @@
     ]
   },
   {
-    "name": "a payload with no transcript_path reads as QUIET instead of CANNOT RUN, so a hook that stopped supplying it would look like a clean turn for ever",
+    "name": "a payload with no transcript_path reads as QUIET instead of CANNOT RUN, so a hook that stopped supplying it would look like a clean turn for ever ⟳ PR #440 r1: retargeted onto the borrowed payload check's verdict, which `judge` now maps ⟳ PR #440 r2: retargeted onto the bounded reader's `records is None`; it is also r2 X1 / #331(e)'s mutant, a corrupt record answered QUIET",
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "    if not raw:\n        return 2, \"CANNOT RUN — the hook payload carries no `transcript_path`\", []",
-        "    if not raw:\n        return 0, \"no transcript\", []"
+        "    if records is None:\n        return 2, f\"CANNOT RUN — {why}\", []",
+        "    if records is None:\n        return 0, \"no transcript\", []"
       ]
     ],
     "expect": [
-      "no transcript_path is CANNOT RUN"
+      "no transcript_path is CANNOT RUN",
+      "⭐ r2 X1 / backlog #331(e): the judged record truncated mid-transcript, and a good record followed by three non-JSON lines, are CANNOT RUN — the control without the cut WARNS"
     ]
   },
   {
@@ -75,6 +76,32 @@
     ],
     "expect": [
       "⭐ a raising turn rule is CANNOT RUN (2), never the warning code (backlog #152 r1)"
+    ]
+  },
+  {
+    "name": "PR #440 r1 m1 ⟳ r2: the hook's stdin is read as TEXT, unbounded, again — an undecodable payload raises before any handler",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "        raw, why = _owner(\"bounded_read\").read_stream(stdin or sys.stdin)",
+        "        raw, why = (stdin or sys.stdin).read(), \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the CANNOT RUN message drops the reader's reason — a FIFO refusal reads like any other",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "return 2, f\"CANNOT RUN — {why}\", []",
+        "return 2, \"CANNOT RUN\", []"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else"
     ]
   }
 ]

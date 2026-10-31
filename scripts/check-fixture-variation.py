@@ -313,6 +313,34 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # PR #440 r2: the shared bounded reader, pinned in the commit that creates it.
+    "bounded_read.py": (
+        "hostile_payloads.d",
+        "non_regular_payloads.d",
+        "parse_json.data",
+        "parse_jsonl.data",
+        "read_file.cap",
+        "read_file.path",
+        "read_stream.cap",
+        "read_stream.stream",
+        "read_stream.wait",
+        "read_text.path",
+        "stop_transcript.payload",
+    ),
+    # backlog #399 (2026-10-30): every parameter varied by a case; none exempt.
+    "check-usage-pace.py": (
+        # ⟳ PR #446 r1 fold: override_active and spawn_output are gone (the override now expires and is read
+        # from the MAIN checkout; the spawn and wake gates share gate_output), so their keys go with them.
+        # ⟳ PR #446 r2 fold: addressed_home is gone (the wake gate reads the caller's agent_id, never the
+        # recipient), so its key goes with it; sent_by_subagent, parse_json and the read's deadline are new.
+        "sent_by_subagent.payload", "parse_json.text", "read_regular.deadline", "count.x", "evaluate.missing", "evaluate.now", "evaluate.text",
+        "gate_output.message", "gate_output.override", "gate_output.verdict", "local_time.t",
+        "evaluate.path", "locate_override.env", "locate_override.now", "locate_override.root",
+        "main.argv", "main.env", "main.payload", "main_checkout.root", "override_path.root", "override_rule.now", "override_rule.reason", "override_rule.text",
+        "pct.p", "prompt_output.message", "prompt_output.override", "prompt_output.verdict",
+        "read_regular.limit", "read_regular.path", "safe_time.t", "session_of.payload",
+        "told_this_session.payload", "told_this_session.root",
+    ),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (
         "binary_paths.diff_text",
@@ -1187,6 +1215,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # PR #440 r2: the shared hostile-payload fixture's scratch directory.
+    "bounded_read.py:hostile_payloads.d": "a scratch directory the fixture writes its transcript files and FIFO into; the payloads' CONTENT is the variation, and any directory is equivalent",
+    # PR #440 r3 C4: the same fixture, filtered to its non-regular members — the same scratch directory.
+    "bounded_read.py:non_regular_payloads.d": "the scratch directory it hands to `hostile_payloads`, whose members it filters; the payloads' CONTENT is the variation, and any directory is equivalent",
     # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
     # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
     "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",

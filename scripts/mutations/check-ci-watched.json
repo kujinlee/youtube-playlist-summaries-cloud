@@ -239,8 +239,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "        session = str(json.loads(payload).get(\"session_id\", \"\")) if payload.strip() else \"\"",
-        "        session = \"\""
+        "    session = str(obj.get(\"session_id\", \"\")) if not why and isinstance(obj, dict) else \"\"",
+        "    session = \"\""
       ]
     ],
     "expect": [
@@ -258,45 +258,6 @@
     ],
     "expect": [
       "`main --decide` feeds the STREAM to the log, at two distinct sessions — the dispatch line, which survived every mutation while it lived under `if __name__`"
-    ]
-  },
-  {
-    "name": "payload_from reads a TTY, so an interactive --decide blocks on a human",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "        if stream.isatty():\n            return \"\"",
-        "        if False:\n            return \"\""
-      ]
-    ],
-    "expect": [
-      "...and returns EMPTY for a TTY, so an interactive --decide cannot block on a human"
-    ]
-  },
-  {
-    "name": "a closed or unreadable stdin raises instead of costing only the column",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "    except (OSError, ValueError, AttributeError):\n        fd = None",
-        "    except ():\n        fd = None"
-      ]
-    ],
-    "expect": [
-      "...and for a stream that RAISES on read, at two distinct exception types"
-    ]
-  },
-  {
-    "name": "RecursionError leaves the payload union again, so an overflowing payload costs the VERDICT",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "    except (ValueError, TypeError, AttributeError, RecursionError):",
-        "    except (ValueError, TypeError, AttributeError):"
-      ]
-    ],
-    "expect": [
-      "a payload that overflows the JSON decoder costs the COLUMN, never the verdict — the second distinct member of the union the handler catches"
     ]
   },
   {
@@ -323,32 +284,6 @@
     ],
     "expect": [
       "warn_reason reads both operands — a watcher armed for the SAME sha is not `stale`"
-    ]
-  },
-  {
-    "name": "the payload deadline is zeroed, so a payload that DID arrive is dropped and the session column is `-`",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "    deadline = time.monotonic() + (PAYLOAD_WAIT if wait is None else wait)",
-        "    deadline = time.monotonic()"
-      ]
-    ],
-    "expect": [
-      "...and still returns the full payload when the writer closes, through a REAL fd rather than a stub"
-    ]
-  },
-  {
-    "name": "the bounded read gives up without collecting, which is the same as not reading stdin at all",
-    "file": "scripts/check-ci-watched.py",
-    "edits": [
-      [
-        "        if not block:\n            break                      # EOF — the whole payload is in hand\n        chunks.append(block)",
-        "        if not block:\n            break                      # EOF — the whole payload is in hand\n        pass"
-      ]
-    ],
-    "expect": [
-      "...and still returns the full payload when the writer closes, through a REAL fd rather than a stub"
     ]
   },
   {
@@ -403,8 +338,8 @@
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "    status = r.get(\"status\")\n    if status is not None:",
-        "    status = r.get(\"status\")\n    if status is None:"
+        "    status = r.get(\"status\")\n    if status is not None:\n        # A CheckRun.",
+        "    status = r.get(\"status\")\n    if status is None:\n        # A CheckRun."
       ]
     ],
     "expect": [
@@ -535,5 +470,205 @@
       ]
     ],
     "expect": "SENTINEL is not resolved at import (it is still None when the suite starts)"
+  },
+  {
+    "name": "backlog #357(5): a check row that is not an object reaches decide again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        rows = parsed if isinstance(parsed, list) and all(row_is_readable(r) for r in parsed) else None",
+        "        rows = parsed if isinstance(parsed, list) else []"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(5): a check row that is not an object ([123]) is CANNOT RUN, never an AttributeError"
+    ]
+  },
+  {
+    "name": "backlog #357(4): an unlistable arm directory raises out of the Stop hook again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    except OSError as exc:\n        # ⛔ backlog #357(4)",
+        "    except FileNotFoundError as exc:\n        # ⛔ backlog #357(4)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(4): an arm directory that cannot be LISTED (permission denied) is CANNOT RUN, never a traceback before any verdict"
+    ]
+  },
+  {
+    "name": "PR #440 r1 M1: one readable row is enough again (`all` -> `any`), so a mixed list reaches decide",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "and all(row_is_readable(r) for r in parsed)",
+        "and any(row_is_readable(r) for r in parsed)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 M1: a valid row beside a non-object ([row, 5]) is CANNOT RUN — every row must be an object, not one"
+    ]
+  },
+  {
+    "name": "PR #440 r1: a non-list checks answer is iterated as if it were rows again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "rows = parsed if isinstance(parsed, list) and all(",
+        "rows = parsed if all("
+      ]
+    ],
+    "expect": [
+      "⭐ r1: true, 1 and \"s\" — every non-list checks answer, not only an object — are CANNOT RUN"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X2: a non-string status reads as a status again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        return isinstance(status, str) and status.upper() in KNOWN_STATUSES",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X2: an object row with no string status or state ([{}], [{\"state\": []}], [{\"status\": 1}]) is CANNOT RUN, never 'CI is running'"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X2: a row with no string state reads as a StatusContext again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return isinstance(state, str) and state.upper() in KNOWN_STATES",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X2: an object row with no string status or state ([{}], [{\"state\": []}], [{\"status\": 1}]) is CANNOT RUN, never 'CI is running'"
+    ]
+  },
+  {
+    "name": "PR #440 r1 M1: a non-object row reaches `.get` in row_is_readable again",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if not isinstance(r, dict):\n        return False\n    status = r.get(\"status\")",
+        "    status = r.get(\"status\")"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #357(5): a check row that is not an object ([123]) is CANNOT RUN, never an AttributeError"
+    ]
+  },
+  {
+    "name": "PR #440 r1 X3: an unreadable checks answer reads as 'no checks' again — killed only now that HEAD is pinned",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if raw is None:\n        rows = None",
+        "    if raw is None:\n        rows = []"
+      ]
+    ],
+    "expect": [
+      "...and NOT quiet on the same shaped input with no_pr FALSE — an unreadable PR is CANNOT RUN, so the verdict tracks the flag rather than being QUIET either way"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X3: any STRING status is readable again — an empty one reads as 'CI is running'",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        " and status.upper() in KNOWN_STATUSES",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X3: an EMPTY status or state ([{\"status\": \"\"}], [{\"state\": \"\"}]) is CANNOT RUN, never 'CI is running'",
+      "...and so is an UNKNOWN non-empty value, in either field — a vocabulary nobody enumerated is not read",
+      "⭐ r2 X2/X3 through the REAL CLI, git and gh shimmed: an empty status and a 200,000-deep answer are CANNOT RUN (rc 2, no traceback); the control, a real IN_PROGRESS CheckRun, WARNS"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X3: any STRING state is readable again — an empty one reads as 'CI is running'",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        " and state.upper() in KNOWN_STATES",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X3: an EMPTY status or state ([{\"status\": \"\"}], [{\"state\": \"\"}]) is CANNOT RUN, never 'CI is running'",
+      "...and so is an UNKNOWN non-empty value, in either field — a vocabulary nobody enumerated is not read"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X3: the known-status test stops case-folding, so a lower-case status GitHub sends is refused",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "status.upper() in KNOWN_STATUSES",
+        "status in KNOWN_STATUSES"
+      ]
+    ],
+    "expect": [
+      "...while a KNOWN value in either field, in lower case, is still read — pending WARNS, done is QUIET"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X3: EXPECTED, a StatusContext state GitHub documents, leaves the vocabulary and is refused",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        ", \"ACTION_REQUIRED\", \"EXPECTED\"}",
+        ", \"ACTION_REQUIRED\"}"
+      ]
+    ],
+    "expect": [
+      "...while a KNOWN value in either field, in lower case, is still read — pending WARNS, done is QUIET"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X2: the checks answer is parsed by bare json.loads again — 200,000 deep raises RecursionError",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        parsed, _why = bounded_read.parse_json(raw)",
+        "        parsed = json.loads(raw)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X2: a 200,000-deep checks answer is CANNOT RUN, never a RecursionError traceback",
+      "⭐ r2 X2/X3 through the REAL CLI, git and gh shimmed: an empty status and a 200,000-deep answer are CANNOT RUN (rc 2, no traceback); the control, a real IN_PROGRESS CheckRun, WARNS"
+    ]
+  },
+  {
+    "name": "PR #440 r2 X2: the Stop payload is parsed by bare json.loads again — 200,000 deep costs the VERDICT",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    obj, why = bounded_read.parse_json(payload) if payload.strip() else ({}, \"\")",
+        "    obj, why = (json.loads(payload), \"\") if payload.strip() else ({}, \"\")"
+      ]
+    ],
+    "expect": [
+      "a payload that overflows the JSON decoder costs the COLUMN, never the verdict — the second distinct member of the union the handler catches",
+      "...and an UNREADABLE payload costs the column, never the verdict — still WARN, still logged, session renders as `-`"
+    ]
+  },
+  {
+    "name": "PR #440 r2: payload_from discards what the bounded reader read, so the session column is `-` forever",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    return \"\" if data is None else data.decode(\"utf-8\", \"replace\")",
+        "    return \"\""
+      ]
+    ],
+    "expect": [
+      "payload_from reads a PIPED stream and returns what it carried, at two distinct inputs"
+    ]
   }
 ]
