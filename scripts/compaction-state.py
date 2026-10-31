@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 96 cases
+    python3 scripts/compaction-state.py --self-test  # 102 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -127,6 +127,10 @@ ARTIFACT_CAP = 1024 * 1024   # an artifact over this is not read (r3 XR1)
 NC = "NOT CAPTURED"     # r3 Cr7: the ONE word every line about something not captured carries (CLAUDE.md names it)
 GH_TIMEOUT = 8          # per call, inside the child
 GIT_TIMEOUT = 3
+# backlog #407: set by the mutation harness (`check-plan-code.mutation_env`) and passed through `fixture_git.isolated()`
+# (`PROCESS_PASSED`). ONLY the self-test reads it, and only to leave out the cases that wait on a REAL deadline (CI's
+# ordinary check runs them, `ci_runs_real_time`); no hook mode reads it, so it cannot move a deadline a hook uses.
+MUTATION_RUN_ENV = "PLAN_CODE_MUTATION_RUN"
 N_PROMPTS = 12
 RECENT_ASKS = 5
 ITEM_WIDTH = 400
@@ -905,6 +909,22 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, stdin_text: str 
     return 0
 
 
+def real_time_cases(env) -> bool:
+    """Run the cases that wait on the hook's REAL deadlines (11 s, 2 s)? Yes, unless the mutation harness set
+    MUTATION_RUN_ENV (backlog #407): every case a mutant names runs on a short or event-ordered deadline instead."""
+    return env.get(MUTATION_RUN_ENV) != "1"
+
+
+def ci_runs_real_time(ci_text: str) -> str | None:
+    """None when CI's ordinary check runs this self-test with MUTATION_RUN_ENV unset; otherwise why not. Backlog #407's
+    FAILS IF: the real-time run is dropped from CI."""
+    if not re.search(r"^\s*run:\s*python3 scripts/compaction-state\.py --self-test\s*$", ci_text, re.M):
+        return "no `run: python3 scripts/compaction-state.py --self-test` step"
+    if MUTATION_RUN_ENV in ci_text:
+        return f"{MUTATION_RUN_ENV} is named in the workflow, so the real-time cases may be skipped there"
+    return None
+
+
 def self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
     import fixture_git
@@ -929,6 +949,10 @@ def _self_test_body() -> int:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got!r} want {want!r}")
 
     print("compaction-state --self-test")
+    real_time = real_time_cases(os.environ)
+
+    def skip(name):
+        print(f"  [skip] {name} — waits on a REAL deadline; CI's ordinary check runs it (backlog #407)")
 
     def safe(f):
         try:
@@ -1244,12 +1268,18 @@ def _self_test_body() -> int:
         took_slow = time.monotonic() - t0
         case("⭐ a capture child that sleeps past the deadline is KILLED: the parent returns within deadline + 1 s",
              (rc_slow, why_slow, took_slow < 1.5), (None, "timed out after 0.5 s and was killed", True))
-        t0 = time.monotonic()
         gpid = root / "grandchild.pid"
-        rc_grand, _ = run_capture([sys.executable, "-c",
-                                   "import subprocess, sys, time; g = subprocess.Popen(['sleep', '30']); "
-                                   f"open({str(gpid)!r}, 'w').write(str(g.pid)); time.sleep(4)"], 1.0)
-        took_grand = time.monotonic() - t0
+        # #407: EVENT-ordered, not a fixed 1 s — the deadline starts at 0.3 s and doubles while the grandchild had not
+        # yet written its pid when the kill came (a slow start under load), so only a run where it WAS holding on counts.
+        for grand_t in (0.3, 0.6, 1.2, 2.4, 4.8):
+            gpid.unlink(missing_ok=True)
+            t0 = time.monotonic()
+            rc_grand, _ = run_capture([sys.executable, "-c",
+                                       "import subprocess, sys, time; g = subprocess.Popen(['sleep', '30']); "
+                                       f"open({str(gpid)!r}, 'w').write(str(g.pid)); time.sleep(30)"], grand_t)
+            took_grand = time.monotonic() - t0
+            if (_read(gpid)[0] or "").strip():   # its pid WRITTEN, not merely the file created when the kill came
+                break
         gone = False
         try:
             pid = int(gpid.read_text())
@@ -1265,7 +1295,7 @@ def _self_test_body() -> int:
         except (OSError, ValueError):
             pass
         case("...and a GRANDCHILD holding on (a stuck gh or git) dies with it: the group is killed, nothing is waited on",
-             (rc_grand, took_grand < 2.0, gone), (None, True, True))
+             (rc_grand, took_grand < grand_t + 1.0, gone), (None, True, True))
         left = root / "straggler.pid"
         rc_ok, _ = run_capture([sys.executable, "-c",
                                 "import subprocess; g = subprocess.Popen(['sleep', '30']); "
@@ -1300,12 +1330,12 @@ def _self_test_body() -> int:
         t0 = time.monotonic()
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "killed", stdin_text=json.dumps({"session_id": "S-kill"}), now=7000.0,
-                 capture_timeout=1.0, child=[sys.executable, "-c", "import time; time.sleep(4)"])
+                 capture_timeout=0.3, child=[sys.executable, "-c", "import time; time.sleep(4)"])
         took_hook = time.monotonic() - t0
         killed = _read(session_dir(root / "killed", "S-kill") / "snapshot.md")[0] or ""
         rk = read_receipt(session_dir(root / "killed", "S-kill"))[0] or {}
         case("⭐ the WHOLE PreCompact hook ends within its capture deadline + 1 s and writes THIS session's CANNOT RUN",
-             (took_hook < 2.0, "CANNOT RUN, capture timed out after 1 s" in killed, (_keys(killed) or {}).get("nonce") == rk.get("nonce"),
+             (took_hook < 0.3 + 1.0, "CANNOT RUN, capture timed out after 0.3 s" in killed, (_keys(killed) or {}).get("nonce") == rk.get("nonce"),
               "## In flight" in killed), (True, True, True, False))
 
         # main(), end to end in a temp root, and the hooks themselves.
@@ -1381,16 +1411,19 @@ def _self_test_body() -> int:
         case("read_payload refuses a payload over its cap BEFORE parsing it, from a pipe or a string",
              (read_payload('{"session_id": "' + "x" * 64 + '"}', cap=32), read_payload('{"a": 1}', cap=32)),
              ((None, "the payload is over 32 bytes — NOT READ"), ({"a": 1}, None)))
-        rfd, wfd = os.pipe()
-        t0 = time.monotonic()
-        try:
-            r = subprocess.run(["bash", str(hooks_root / ".claude" / "hooks" / "precompact-snapshot.sh")], stdin=rfd,
-                               capture_output=True, timeout=60, cwd=hooks_root)
-        finally:
-            os.close(rfd)
-            os.close(wfd)
-        case("⭐ a stdin held OPEN does not hang the PreCompact hook (read with a deadline)",
-             (r.returncode, time.monotonic() - t0 < STDIN_WAIT + 30), (0, True))
+        held = "⭐ a stdin held OPEN does not hang the PreCompact hook (read with a deadline)"
+        if real_time:   # the hook's REAL STDIN_WAIT; `read_payload on a held-open pipe` proves the read on 0.2 s
+            rfd, wfd = os.pipe()
+            t0 = time.monotonic()
+            try:
+                r = subprocess.run(["bash", str(hooks_root / ".claude" / "hooks" / "precompact-snapshot.sh")], stdin=rfd,
+                                   capture_output=True, timeout=60, cwd=hooks_root)
+            finally:
+                os.close(rfd)
+                os.close(wfd)
+            case(held, (r.returncode, time.monotonic() - t0 < STDIN_WAIT + 30), (0, True))
+        else:
+            skip(held)
         (hooks_root / "scripts" / "session-state.py").unlink()
         rc = subprocess.run([sys.executable, str(hooks_root / "scripts" / "compaction-state.py"), "--snapshot"],
                             input=b'{"session_id": "S-nostate"}', capture_output=True, timeout=60, cwd=hooks_root).returncode
@@ -1476,7 +1509,7 @@ def _self_test_body() -> int:
               "trigger manual · session A" in pa.getvalue(), "session B" in pa.getvalue()), (True, False, True, False))
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "late", stdin_text=json.dumps({"session_id": "S-late"}), now=5003.0,
-                 capture_timeout=1.0, child=[sys.executable, "-c", "import time; time.sleep(4)"])
+                 capture_timeout=0.3, child=[sys.executable, "-c", "import time; time.sleep(4)"])
         case("⭐ the receipt is written FIRST and the old snapshot DELETED: a capture that then dies leaves only CANNOT RUN",
              ((read_receipt(late)[0] or {}).get("epoch"), "CANNOT RUN, capture timed out" in (_read(late / "snapshot.md")[0] or ""),
               "trigger unknown" in (_read(late / "snapshot.md")[0] or "")), (5003.0, True, False))
@@ -1542,9 +1575,9 @@ def _self_test_body() -> int:
         t0 = time.monotonic()
         with redirect_stdout(buf):
             main(["--print"], root=root / "slowaux", stdin_text=json.dumps({"session_id": "S-aux"}), now=8302.0,
-                 child=sleeper, aux_timeout=30.0, started=time.monotonic() - HOOK_DEADLINE + 1.0)
+                 child=sleeper, aux_timeout=30.0, started=time.monotonic() - HOOK_DEADLINE + 0.3)
         case("⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up",
-             (time.monotonic() - t0 < 2.0, "the print timed out" in buf.getvalue()), (True, True))
+             (time.monotonic() - t0 < 0.3 + 1.0, "the print timed out" in buf.getvalue()), (True, True))
         # ─── r3 XR4: a symlink anywhere in .remember/compaction/<sid> is refused, and nothing is written outside ──
         outside = root / "outside"
         outside.mkdir()
@@ -1572,21 +1605,16 @@ def _self_test_body() -> int:
             os.chmod(fake / f, 0o755)
         (root / "cr1").mkdir()
         saved_path = os.environ["PATH"]
-        os.environ["PATH"] = f"{fake}:{saved_path}"
-        try:
-            t0 = time.monotonic()
-            with redirect_stdout(io.StringIO()):
-                main(["--snapshot"], root=root / "cr1", stdin_text=json.dumps({"session_id": "S-cr1"}), now=8200.0)
-            took_cr1 = time.monotonic() - t0
-        finally:
-            os.environ["PATH"] = saved_path
 
-        def gone_pid(pid_file: Path) -> bool:
+        def gone_pid(pid_file: Path, within: float = 5.0) -> bool:
+            """Is the pid in `pid_file` gone within `within` s? Polled, so it returns the moment the process is gone: a
+            killed orphan is reaped by init, which lags under load (#407), and only a case that FAILS pays the wait."""
             try:
                 pid = int(pid_file.read_text())
             except (OSError, ValueError):
                 return False
-            for _ in range(30):
+            end = time.monotonic() + within
+            while time.monotonic() < end:
                 try:
                     os.kill(pid, 0)
                 except ProcessLookupError:
@@ -1594,10 +1622,61 @@ def _self_test_body() -> int:
                 time.sleep(0.05)
             os.kill(pid, signal.SIGKILL)   # never leave it running past the case
             return False
-        cr1_gone = gone_pid(straggler)
-        case("⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE",
-             (took_cr1 < CAPTURE_TIMEOUT + 1.5, "CANNOT RUN, capture timed out after 11 s"
-              in (_read(session_dir(root / "cr1", "S-cr1") / "snapshot.md")[0] or ""), cr1_gone), (True, True, True))
+        cr1 = "⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE"
+        if real_time:
+            os.environ["PATH"] = f"{fake}:{saved_path}"
+            try:
+                t0 = time.monotonic()
+                with redirect_stdout(io.StringIO()):
+                    main(["--snapshot"], root=root / "cr1", stdin_text=json.dumps({"session_id": "S-cr1"}), now=8200.0)
+                took_cr1 = time.monotonic() - t0
+            finally:
+                os.environ["PATH"] = saved_path
+            cr1_gone = gone_pid(straggler)
+            case(cr1, (took_cr1 < CAPTURE_TIMEOUT + 1.5, "CANNOT RUN, capture timed out after 11 s"
+                       in (_read(session_dir(root / "cr1", "S-cr1") / "snapshot.md")[0] or ""), cr1_gone), (True, True, True))
+        else:
+            skip(cr1)
+
+        # ─── #407: the same kill on an EVENT-ordered deadline, in every run ────────────────────────────────────────
+        # The property is that a call IN FLIGHT at the kill dies with the capture's group. The deadline starts at 0.5 s and
+        # DOUBLES while the event has not happened — gh had not yet written its straggler's pid when the kill came, as
+        # under heavy load — so the case asserts only on a run where the call WAS in flight, and never needs the 11 s.
+        ev_bin = root / "evbin"
+        ev_bin.mkdir()
+        ev_gh, ev_straggler = root / "ev-gh.pid", root / "ev-straggler.pid"
+        (ev_bin / "git").write_text("#!/bin/sh\nexit 128\n")
+        (ev_bin / "gh").write_text(f"#!/bin/sh\necho $$ > {ev_gh}\nsleep 60 >/dev/null 2>&1 &\n"
+                                   f"echo $! > {ev_straggler}\nsleep 60\n")
+        for f in ("git", "gh"):
+            os.chmod(ev_bin / f, 0o755)
+        ev_at, ev_root = None, None
+        os.environ["PATH"] = f"{ev_bin}:{saved_path}"
+        try:
+            for i, t in enumerate((0.5, 1.0, 2.0, 4.0, 8.0)):
+                for f in (ev_gh, ev_straggler):
+                    f.unlink(missing_ok=True)
+                ev_root = root / f"ev-{i}"
+                ev_root.mkdir()
+                with redirect_stdout(io.StringIO()):
+                    main(["--snapshot"], root=ev_root, stdin_text=json.dumps({"session_id": "S-ev"}), now=8210.0,
+                         capture_timeout=t)
+                try:
+                    int(ev_straggler.read_text())
+                except (OSError, ValueError):
+                    continue   # the event had not happened by the deadline: a longer one, never a verdict
+                ev_at = t
+                break
+        finally:
+            os.environ["PATH"] = saved_path
+        ev_gone = gone_pid(ev_straggler) if ev_at else False
+        try:
+            os.kill(int(ev_gh.read_text()), signal.SIGKILL)   # cleanup: under a mutant the gh itself outlives the kill
+        except (OSError, ValueError):
+            pass
+        case("⭐ r3 CR1 (#407, event-ordered): a gh IN FLIGHT at the capture's kill — its backgrounded sleep dies with the group",
+             (ev_at is not None, ev_at is not None and f"CANNOT RUN, capture timed out after {ev_at:g} s"
+              in (_read(session_dir(ev_root, "S-ev") / "snapshot.md")[0] or ""), ev_gone), (True, True, True))
         esc_bin = root / "escbin"
         esc_bin.mkdir()
         escaped = root / "setpgid.pid"
@@ -1689,6 +1768,53 @@ def _self_test_body() -> int:
              (count, [a["id"] for a in recent], err), (1, ["2026-10-28/1"], None))
         case("a missing dashboard store is CANNOT RUN for the asks, with the reason",
              (pending_asks(root / "nowhere")[0], "cannot be opened" in (pending_asks(root / "nowhere")[2] or "")), (None, True))
+
+        # ─── backlog #407: which cases wait on a REAL deadline, and where those still run ─────────────────────────
+        M = MUTATION_RUN_ENV
+        case("⭐ #407: the mutation-run marker leaves out the real-time cases ONLY when it is \"1\"",
+             safe(lambda: (real_time_cases({}), real_time_cases({M: "1"}), real_time_cases({M: "0"}),
+                           real_time_cases({M: ""}))), (True, False, True, True))
+        ci_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+        ci = safe(ci_path.read_text)
+        step = "      - name: compaction-state self-test\n        run: python3 scripts/compaction-state.py --self-test\n"
+        case("⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere",
+             safe(lambda: (ci_runs_real_time(ci), ci_runs_real_time(ci.replace("run: python3 scripts/compaction-state.py "
+                                                                                "--self-test", "run: true")) is not None,
+                           ci_runs_real_time(ci.replace("run: python3 scripts/compaction-state.py --self-test",
+                                                        "# run: python3 scripts/compaction-state.py --self-test")) is not None,
+                           ci_runs_real_time(step + f"        env: {{{M}: '1'}}\n") is not None,
+                           ci_runs_real_time(step))), (None, True, True, True, None))
+        seen = []
+        marker_before = os.environ.get(M)
+        real_capture = globals()["run_capture"]
+        globals()["run_capture"] = lambda cmd, timeout: (seen.append(timeout), (None, "spied"))[1]
+        (root / "spy").mkdir()
+        os.environ[M] = "1"
+        try:
+            with redirect_stdout(io.StringIO()):
+                main(["--snapshot"], root=root / "spy", stdin_text=json.dumps({"session_id": "S-spy"}), now=9000.0)
+                main(["--print"], root=root / "spy", stdin_text=json.dumps({"session_id": "S-spy"}), now=9001.0)
+        finally:
+            globals()["run_capture"] = real_capture
+            if marker_before is None:
+                os.environ.pop(M, None)
+            else:
+                os.environ[M] = marker_before
+        case("⭐ #407: the marker never reaches a hook mode — with it SET, the capture child gets the REAL 11 s and the "
+             "print child 10 s", seen, [11.0, 10.0])
+        case("...and the spy leaves the marker as it found it, so the cases after it still run as the harness asked",
+             os.environ.get(M), marker_before)
+
+        def names_agree():
+            import importlib.util
+            import fixture_git
+            spec = importlib.util.spec_from_file_location("check_plan_code", Path(__file__).resolve().parent / "check-plan-code.py")
+            cpc = importlib.util.module_from_spec(spec)
+            sys.modules["check_plan_code"] = cpc   # its @dataclasses resolve through sys.modules (backlog #91)
+            spec.loader.exec_module(cpc)
+            return cpc.MUTATION_RUN_ENV, M in fixture_git.PROCESS_PASSED
+        case("#407: the marker is the one the harness sets (`check-plan-code.MUTATION_RUN_ENV`) and "
+             "`fixture_git.isolated()` passes through", safe(names_agree), (M, True))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0

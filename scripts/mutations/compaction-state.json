@@ -607,7 +607,7 @@
       ]
     ],
     "expect": [
-      "⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE"
+      "⭐ r3 CR1 (#407, event-ordered): a gh IN FLIGHT at the capture's kill — its backgrounded sleep dies with the group"
     ]
   },
   {
@@ -699,6 +699,58 @@
     ],
     "expect": [
       "⭐ r4 DEFER: the print mentions NO audit, and shows the snapshot without its keys line"
+    ]
+  },
+  {
+    "name": "#407: the marker is ignored, so a mutation run still waits on every REAL deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return env.get(MUTATION_RUN_ENV) != \"1\"\n",
+        "    return True\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: the mutation-run marker leaves out the real-time cases ONLY when it is \"1\""
+    ]
+  },
+  {
+    "name": "#407: a workflow that sets the marker still reads as CI's real-time run",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if MUTATION_RUN_ENV in ci_text:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere"
+    ]
+  },
+  {
+    "name": "#407: a missing or commented-out step still reads as CI's real-time run",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if not re.search(r\"^\\s*run:\\s*python3 scripts/compaction-state\\.py --self-test\\s*$\", ci_text, re.M):\n",
+        "    if \"python3 scripts/compaction-state.py --self-test\" not in ci_text:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere"
+    ]
+  },
+  {
+    "name": "#407: the capture child is given the print child's deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "run_child(\"--capture\", payload, root, left(capture_timeout),",
+        "run_child(\"--capture\", payload, root, left(aux_timeout),"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: the marker never reaches a hook mode — with it SET, the capture child gets the REAL 11 s and the print child 10 s"
     ]
   }
 ]

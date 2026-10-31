@@ -1330,10 +1330,6 @@ EXEMPT: dict[str, str] = {
                          "citation has drifted'. ⟳ REPLACES the dead `main.fetch_file_diff` row: "
                          "#291 deleted that parameter with the diff parsing it served, and this "
                          "guard refused the stale exemption, which is its own rule working",
-    "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
-                         "between its call sites is `name`, which is the parameter that "
-                         "selects the suite. A second directory would test the tempfile "
-                         "module, not this function",
 }
 
 

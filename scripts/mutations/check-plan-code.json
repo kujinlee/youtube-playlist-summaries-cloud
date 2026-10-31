@@ -1695,5 +1695,31 @@
     "expect": [
       "...and `--only` naming ANOTHER target still refuses it — the pre-check is whole-manifest (r1 L1)"
     ]
+  },
+  {
+    "name": "#407: the harness runs its suites under the borrowed child_env, so no suite knows it is a mutation run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                           env=mutation_env(d))\n",
+        "                           env=child_env(d))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and every suite the harness itself spawns IS told it is a mutation run (backlog #407)"
+    ]
+  },
+  {
+    "name": "#407: the marker rides on child_env, so the count check borrowing it runs suites short",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    env[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    return env\n",
+        "    env[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n    env[\"PLAN_CODE_MUTATION_RUN\"] = \"1\"\n    return env\n"
+      ]
+    ],
+    "expect": [
+      "...but `child_env` alone does NOT mark a mutation run — it is borrowed outside one (backlog #407)"
+    ]
   }
 ]
