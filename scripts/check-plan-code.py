@@ -1102,7 +1102,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27, backlog #381 r4 — 18 -> 20: the block-header check dropped, and any non-`#`
     # header accepted as a legend (Codex X1, a `| No |` table whose row master's gate saw).
     # ⟳ 2026-10-27, backlog #381 DEFER probes — 20 -> 21: an empty tag group dropped in silence.
-    "scripts/gen-backlog-page.py": 21,
+    # ⟳ 2026-10-28, backlog #394 (one kind per row, explicit parents): 21 -> 33 — the marker's grammar
+    # (unknown kind, `kind:` first, parent shape, must END the cell, one marker), missing kinds
+    # reported, the three parent refusals, the marker stripped from the text, the card's kind, and
+    # parse reading it.
+    "scripts/gen-backlog-page.py": 33,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1583,7 +1587,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 (claude) 1 High + 5 Medium + 3 Low: 56 -> 61. FIVE entries — the `review_added`
     # DIRECTORY clause (High 1: dropping `p.startswith(REVIEW_DIR)` left the suite green, so
     # ANY added `.md` would have recorded a review round), the retired extension-less rule
-    # (Medium 3), the bare-`docs` skip (Medium 2), the TOTAL path bound (Medium 4), and the
+    # (Medium 3), the bare-`docs` skip (Medium 2), the 2641 path bound (Medium 4), and the
     # anti-drift ORDER — which needed `antidrift_verdict` extracted out of `main` first,
     # because the call site was unfalsifiable and the entry written for it SURVIVED
     # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
@@ -1989,7 +1993,8 @@ EXPECTED_MUTATIONS = {
     # 27 -> 28: an unreadable backlog treated as an empty one, burying its cause under 22 stale lines.
     # ⟳ 2026-10-27, backlog #381 r3 — 28 -> 30: the parser's unread lines ignored, and `unread=` no
     # longer handed to it (Codex X1 = Claude C1, a decorated row number dropped from the gate).
-    "scripts/check-features.py": 30,
+    # ⟳ 2026-10-28, backlog #394: 30 -> 32 — a bad parent fails the gate; a missing kind is warned.
+    "scripts/check-features.py": 32,
     # ⟳ 2026-09-07. Second of PR #247's four. Its `--self-test` printed `❌ {label}` — no
     # `[FAIL] ` prefix and no `: got ` — so all six mutations first reported CRASH with zero
     # parseable failure lines, indistinguishable from no coverage. Contract (1) was fixed
@@ -2141,7 +2146,18 @@ EXPECTED_MUTATIONS = {
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
     "scripts/check-doc-citations.py": 37,
-    "scripts/check-reference-namespace.py": 9,
+    # ⟳ 2026-10-29, backlog #394: 9 -> 14 — the marker-only exemption: applied, byte-identical, not for a
+    # new row, not for an unmarked line, and only against the SAME file's removed lines.
+    # ⟳ 2026-10-29, PR #442 r1: 14 -> 15 — an invalid marker is judged, never raised; 15 -> 16 — removed
+    # lines are keyed on `--- a/`, so a deleted file's lines are never credited to another (M1).
+    # ⟳ 2026-10-30, PR #442 r2: 16 -> 20 — the exemption reads the BASE FILE of the same path, never
+    # removed diff text. Two retired with their subject (the removed-lines dict and its `--- a/` key);
+    # six added: every path read, the head read as the base, an absent path holding its own lines, an
+    # unconsumed budget, the head's unmarked copies not subtracted, and added lines read outside a hunk.
+    # ⟳ 2026-10-30, PR #442 r3: 20 -> 22 — both sides now come from the one-path diff. Three anchors
+    # rebound (every path's diff, the sides swapped, the hunk sign), none retired; two added: the head
+    # read as raw worktree bytes under `eol=crlf` (F2), and `splitlines()` for `split("\n")` (F3).
+    "scripts/check-reference-namespace.py": 22,
     "scripts/check-transcript-references.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -3103,7 +3119,7 @@ def progress_line(done: int, total: int, label: str) -> str:
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
     RATE: one line per mutation plus one per control and re-control, so the total is derived
-    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO TOTAL IS QUOTED —
+    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO 2641 IS QUOTED —
     the first version of this sentence gave one and it was the PREVIOUS manifest's number
     on the day it was written. A gap much longer than `SUITE_TIMEOUT` is the signal.
 
@@ -4262,7 +4278,7 @@ def _self_test_body() -> int:
                 case("a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)",
                      _no_tally(_mutate_output(_rA)), (True, False, False))
 
-            # PATH 3 — TOTAL SHORTFALL. Every declared mutation's anchor is absent, so
+            # PATH 3 — 2641 SHORTFALL. Every declared mutation's anchor is absent, so
             # `run_mutations` skips all of them: `declared > 0` while `ev["mutations"]` is empty.
             # The counts are not merely incomplete, they are ZERO — and "0 of 2 produced a verdict"
             # must not render as a clean "0 survivor(s)".
@@ -4288,7 +4304,7 @@ def _self_test_body() -> int:
                      "entries (backlog #252)",
                      ("'anchor absent one'" in _outB_pre, "'anchor absent two'" in _outB_pre,
                       "before any tree is staged" in _outB_pre), (True, True, True))
-                case("a TOTAL SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
+                case("a 2641 SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
                      _no_tally(_outB), (True, False, False))
                 case("...and it names the arithmetic, so dropped entries are not invisible",
                      "0 of 2" in _outB, True)
@@ -5249,7 +5265,7 @@ def _self_test_body() -> int:
     # ⚠ The digit run's LENGTH, not its alphabet — round 7 L1. `int()` refuses beyond 4300 digits,
     # so an unbounded `[0-9]*` matched a string the conversion then raised on.
     # ⚠ BOTH SIDES. The bound appears twice in the pattern, so a mutation may remove only one —
-    # asserting a long INDEX alone would leave a long TOTAL unguarded, which is the "two distinct
+    # asserting a long INDEX alone would leave a long 2641 unguarded, which is the "two distinct
     # inputs" rule applied to one expression.
     # ⛔ AND IT MUST OBSERVE A RAISE RATHER THAN SUFFER ONE. The first draft asserted the RETURN
     # VALUE, so removing the bound made `parse_shard` raise and the suite died BEFORE printing any
@@ -6281,7 +6297,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2614)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2641)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -18254,27 +18254,35 @@ current. What actually got the session back on track was the IN FLIGHT block, wh
 ledger when the session restarts. Backlog #396 moves the snapshot onto that same path.
 
 ## 2026-10-29
-Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). It is
-git's own pre-push hook, so it sees exactly what a push sends: every branch and tag, and every commit in it, not
-just the latest state. A commit that adds eight words in a row from any plan is refused, naming the file, line and
-commit, unless those words are already on the remote. The matched words are never printed by the hook; you can
-see them by running the checker with `--show` in your own terminal. A fragment shorter than eight words is not
-caught. Commit messages, tag messages and new file names are checked too. Each session switches the gate on if it
-is off, or warns loudly if something else has taken over git's hook setting. A fresh clone with no plans can still
-push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through; an agent also needs the
-owner's dangerous-push flag for it.
-<!--tech-->
-`scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
-remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
-the command text; the redesign removes their common cause, and each finding is now a case.
-
-## 2026-10-29
 A new page, the **dev speed monitor** (`/2026-10-29-topic-dev-speed-monitor.html`), measures where development time
 goes. Its headline: Opus 5.5 does not write tokens faster than Opus 5 (about 97 vs 99 tokens/s per message). What
 changed is how much work a PR needs: about 1,100 assistant messages per PR fell to about 70. That is an association,
 since the two windows held different work. CI's median per run grew from 4.5 to 25 minutes over seven weeks, all of it
 the mutation sweep growing inside one job, and nothing flagged it. Backlog #397 proposes a tripwire that would catch
 that kind of drift in the week it happens.
+
+## 2026-10-29
+Every backlog item now says what kind of work it is — a story, a task or a defect — as you decided
+on the roles review page. Where an item is part of a bigger one, it says so, and the backlog page
+links to that parent. Nothing is guessed: an item with no kind is reported, and a kind the page
+doesn't know, or a link to an item or goal that doesn't exist, stops the page from being built.
+
+All 348 items are labelled. A decision is a task that is waiting on you; adding missing tests is a
+task, unless something was claimed to be true and wasn't. This also answers your old question in
+backlog #90 about splitting stories from tasks.
+<!--tech-->
+Backlog #394. The kind and the parents are a marker at the END of the Item cell —
+`⟦kind: task · part of: backlog #17 · epic: <anchor>⟧` — read by `gen-backlog-page.kind_mark` inside
+the one parser. Unknown kind or malformed marker → `ShapeError` (refused by the page and by
+`check-features`); a parent naming a missing row or an unregistered anchor → refused by both
+(`parent_errors`); no kind → reported (`missing_kind_notes`, a page drift note and a check-features
+warning). The Bundle (tag) cell is untouched, so a kind is never an area. Retagged from the first-pass
+proposal; #210 and #251 moved defect → task by ruling 3; parent links #64 → #59 and #372 → #369 not
+written (absorption and provenance, not parentage).
+`check-reference-namespace.py` gains ONE exemption, approved by the owner on 2026-10-29: an added line
+that is byte-identical to a removed line once its kind marker is removed by `kind_mark` is not judged.
+The 306 old bare references that the retag resurfaced are queued as backlog #395, to be qualified by
+evidence.
 
 ## 2026-10-30
 **Usage limit:** for several weeks the weekly limit has stopped all work for about a day. Measured over the 24 hours
@@ -18319,3 +18327,18 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 - **What is deferred.** The page lists every filed-but-unbuilt item.
 
 It also records a correction: one line had said an item "is filed" before it was.
+
+## 2026-10-30
+Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). It is
+git's own pre-push hook, so it sees exactly what a push sends: every branch and tag, and every commit in it, not
+just the latest state. A commit that adds eight words in a row from any plan is refused, naming the file, line and
+commit, unless those words are already on the remote. The matched words are never printed by the hook; you can
+see them by running the checker with `--show` in your own terminal. A fragment shorter than eight words is not
+caught. Commit messages, tag messages and new file names are checked too. Each session switches the gate on if it
+is off, or warns loudly if something else has taken over git's hook setting. A fresh clone with no plans can still
+push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through; an agent also needs the
+owner's dangerous-push flag for it.
+<!--tech-->
+`scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
+remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
+the command text; the redesign removes their common cause, and each finding is now a case.
