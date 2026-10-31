@@ -489,12 +489,12 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        os.killpg(p.pid, signal.SIGKILL)",
-        "        p.kill()"
+        "            for kill in (lambda: os.killpg(p.pid, signal.SIGKILL), p.kill):",
+        "            for kill in (p.kill,):"
       ]
     ],
     "expect": [
-      "F4: with gh hung, the hook returns INSIDE its timeout with a framed CANNOT RUN naming gh"
+      "Budget: at the deadline the WHOLE process group is killed — the grandchild too, not only the child"
     ]
   },
   {
@@ -997,8 +997,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        schema = FACT_SCHEMA.get(f.get(\"kind\")) if isinstance(f, dict) else None",
-        "        schema = FACT_SCHEMA.get(f.get(\"kind\"), FACT_SCHEMA[\"tip\"]) if isinstance(f, dict) else None"
+        "        schema = FACT_SCHEMA.get(kind) if isinstance(kind, str) else None",
+        "        schema = FACT_SCHEMA.get(kind, FACT_SCHEMA[\"tip\"]) if isinstance(kind, str) else None"
       ]
     ],
     "expect": [
@@ -1214,23 +1214,6 @@
     ]
   },
   {
-    "name": "R2-3: patch-ids are whitespace-blind again (--stable on both sides)",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "    mine = patch_ids(git(b, repo, \"patch-id\", \"--verbatim\",",
-        "    mine = patch_ids(git(b, repo, \"patch-id\", \"--stable\","
-      ],
-      [
-        "    mainline = set(patch_ids(git(b, repo, \"patch-id\", \"--verbatim\",",
-        "    mainline = set(patch_ids(git(b, repo, \"patch-id\", \"--stable\","
-      ]
-    ],
-    "expect": [
-      "R2-3: `return 2` OUTSIDE the if on the branch, INSIDE it on master (2 vs 1) is STALLED, never MERGED"
-    ]
-  },
-  {
     "name": "R2-3: git cherry's whitespace-blind '-' alone declares MERGED",
     "file": "scripts/check-stalled-work.py",
     "edits": [
@@ -1372,6 +1355,111 @@
     ],
     "expect": [
       "tip_fact: a name over the cache's 400-character bound is stored as a marker `shape` withholds"
+    ]
+  },
+  {
+    "name": "F1: the merge-tree requirement is dropped, so an evil merge and a reverted copy are MERGED again",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if not merge_changes_nothing(rc, out, trunk.tree()):\n        return False\n",
+        "    if False:\n        return False\n"
+      ]
+    ],
+    "expect": [
+      "F1: an EVIL merge — both parents' patches on master, z.txt only in the merge commit — is STALLED, never MERGED",
+      "F5: a commit whose copy on master was later REVERTED is STALLED, never MERGED"
+    ]
+  },
+  {
+    "name": "F1: a merge-tree CONFLICT counts as changing nothing",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return rc == 0 and out.split(\"\\n\", 1)[0].strip() == mainline_tree",
+        "    return out.split(\"\\n\", 1)[0].strip() == mainline_tree or rc == 1"
+      ]
+    ],
+    "expect": [
+      "F1 bound: a rebase-merged tip whose lines master LATER changed is STALLED (the merge conflicts), though its exact patch-id is on master"
+    ]
+  },
+  {
+    "name": "F2: an orphan's merge-base exit 1 is a CANNOT RUN for the whole check again",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if rc == 1 and not out.strip():\n        return False  # r3 F2",
+        "    if False:\n        return False  # r3 F2"
+      ]
+    ],
+    "expect": [
+      "F2: an ORPHAN branch (no common ancestor with origin/master) is STALLED, and the check still runs"
+    ]
+  },
+  {
+    "name": "F3: a cache hit no longer checks that its tips are where they were",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if snap is not None and not tips_unmoved(a.repo, snap[\"facts\"]):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "F3: a tip that MOVED under its cached MERGED fact is re-measured, and is STALLED — never MERGED with a removal command"
+    ]
+  },
+  {
+    "name": "F3: packed-refs is not read, so every hit after a `git gc` is a miss",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        with open(common / \"packed-refs\") as fh:",
+        "        with open(common / \"packed-refs.none\") as fh:"
+      ]
+    ],
+    "expect": [
+      "F3: with every branch PACKED, an unmoved tip is still a cache hit (packed-refs is read)"
+    ]
+  },
+  {
+    "name": "F4: the hook's catch-all catches only CannotRun, so any other exception is a silent exit",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        except Exception as exc:  # noqa: BLE001 - r3 F4",
+        "        except CannotRun as exc:  # noqa: BLE001 - r3 F4"
+      ]
+    ],
+    "expect": [
+      "F4: an UNEXPECTED exception in the hook is a framed CANNOT RUN naming its type, never a silent exit"
+    ]
+  },
+  {
+    "name": "F4: the drain after the kill waits without a bound on a pipe an escaped grandchild holds",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "                p.communicate(timeout=1)\n",
+        "                p.communicate()\n"
+      ]
+    ],
+    "expect": [
+      "F4: a child that exits at once while a grandchild in its OWN session holds the pipe is a CANNOT RUN at the deadline, inside a bound (macOS: killpg on a zombie-only group raises PermissionError)"
+    ]
+  },
+  {
+    "name": "F4: an unhashable fact kind reaches the schema lookup",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if isinstance(kind, str) else None  # r3 F4",
+        "if kind is not None else None  # r3 F4"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses F4: a fact kind that is a LIST, which no dict lookup can hash"
     ]
   }
 ]
