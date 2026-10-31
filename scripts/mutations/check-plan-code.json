@@ -1756,5 +1756,60 @@
       ]
     ],
     "expect": "a drifted pin reports the DERIVED total, so a merge never types one"
+  },
+  {
+    "name": "a pin keyed twice is no longer refused, so a duplicate key lowers it unseen (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if k.value in seen:",
+        "        if False and k.value in seen:"
+      ]
+    ],
+    "expect": "⛔ a duplicate key that LOWERS a pin is refused (Claude S1)"
+  },
+  {
+    "name": "a write to the pins outside their display is no longer refused (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                and not _pin_read_only(node, parents):",
+        "                and False:"
+      ]
+    ],
+    "expect": "⛔ a module-level `EXPECTED_MUTATIONS[k] -= 4` is refused (Claude S2)"
+  },
+  {
+    "name": "a pin line PIN_LINE cannot read is no longer refused (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not (m and m[\"path\"] == k.value and int(m[\"n\"]) == v.value):",
+        "        if False:"
+      ]
+    ],
+    "expect": "⛔ a pin split over lines is refused, because PIN_LINE cannot read it"
+  },
+  {
+    "name": "a typed total in a comparison outside any call is no longer found (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                if isinstance(up, (ast.Compare, ast.Call)):",
+        "                if isinstance(up, ast.Call):"
+      ]
+    ],
+    "expect": "...a typed total compared OUTSIDE any call is found"
+  },
+  {
+    "name": "pins that match their manifests report a total line anyway (backlog #359 r1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if drift:\n        drift.append(f\"in all:",
+        "    if True:\n        drift.append(f\"in all:"
+      ]
+    ],
+    "expect": "pins that match their manifests report nothing, not even a total"
   }
 ]
