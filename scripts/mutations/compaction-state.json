@@ -693,12 +693,64 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        L.append(_strip_keys(snap_text).strip())",
+        "        L.append(digest(snap_text, f\"{SESSIONS_REL}/{session_id}/snapshot.md\"))",
         "        pass"
       ]
     ],
     "expect": [
       "⭐ r4 DEFER: the print mentions NO audit, and shows the snapshot without its keys line"
+    ]
+  },
+  {
+    "name": "floor: the print shows the whole snapshot again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "L.append(digest(snap_text, f\"{SESSIONS_REL}/{session_id}/snapshot.md\"))",
+        "L.append(_strip_keys(snap_text).strip())"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the print is at most 40% of a full-size snapshot's own text, headings kept"
+    ]
+  },
+  {
+    "name": "floor: the digest stops printing the snapshot's file path",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "out.append(f\"full: {path} (every section, whole)\")",
+        "out.append(f\"({path})\")"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the print names the snapshot FILE that holds the whole text"
+    ]
+  },
+  {
+    "name": "floor: the digest drops the OWNER-decisions body",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        elif in_owner:\n            out.append(clean(line, 10**6))\n",
+        "        elif in_owner:\n            pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the OWNER-decisions section is shown whole, and a body line of another section is not"
+    ]
+  },
+  {
+    "name": "floor: the digest drops a NOT CAPTURED line",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        elif NC in line:\n            out.append(",
+        "        elif NC in line and False:\n            out.append("
+      ]
+    ],
+    "expect": [
+      "⭐ floor: a line of the snapshot saying NOT CAPTURED still reaches the print"
     ]
   }
 ]

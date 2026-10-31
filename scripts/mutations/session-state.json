@@ -518,5 +518,83 @@
     "expect": [
       "...and when the holder is out of reach, it says the call exited but its pipe was held — never 'timed out'"
     ]
+  },
+  {
+    "name": "floor: the compact block is switched off, so the hook prints the full block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if compact and ledger:\n        owner",
+        "    if False and ledger:\n        owner"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the compact block is at most 25% of the full one"
+    ]
+  },
+  {
+    "name": "floor: the compact block stops naming the file that holds every ledger entry",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "the rest, and each entry's what / on_done / since: full: {LEDGER_REL} \"",
+        "the rest, and each entry's what / on_done / since: see {LEDGER_REL} \""
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the compact block prints the file that holds every ledger entry"
+    ]
+  },
+  {
+    "name": "floor: an OWNER entry is capped like a title",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "{clean(e.get('what'), 10**6)} — when done: ",
+        "{clean(e.get('what'), 200)} — when done: "
+      ]
+    ],
+    "expect": [
+      "⭐ floor: an OWNER entry is shown whole (uncapped) and its on_done too"
+    ]
+  },
+  {
+    "name": "floor: every non-owner entry is titled, not the newest few",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "shown = rest[-TITLES_SHOWN:]",
+        "shown = rest"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: a PR is ONE line, and other entries are titles of at most TITLE_WIDTH characters, TITLES_SHOWN of them"
+    ]
+  },
+  {
+    "name": "floor: a PR keeps its second line in the compact block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if compact and not missing and isinstance(rollup, list):",
+        "if False and not missing and isinstance(rollup, list):"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: a PR is ONE line, and other entries are titles of at most TITLE_WIDTH characters, TITLES_SHOWN of them"
+    ]
+  },
+  {
+    "name": "floor: the hook entry collect() stops asking for the compact block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "now, truncated=truncated, compact=True)",
+        "now, truncated=truncated)"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: collect() — the hook's own entry — prints the COMPACT block, naming the file with every entry"
+    ]
   }
 ]

@@ -50,7 +50,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 68 cases
+    python3 scripts/session-state.py --self-test  # 73 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -78,6 +78,8 @@ LEDGER_REL = ".claude/inflight.jsonl"
 TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
+TITLE_WIDTH = 120    # the compact block's one line per ledger entry (backlog: context floor)
+TITLES_SHOWN = 5     # non-owner ledger titles the compact block names, newest first; the rest is behind the path
 DRAIN = 1.0       # seconds a killed call's pipes are drained before they are closed (PR #425 r3 XR3)
 # A ledger entry WAITS ON THE OWNER only when its `what` starts with this — an explicit marker, never a word match:
 # matching "owner" anywhere counted 4 of 6 real entries ("PAUSED by owner", "TEST … on the first compaction"),
@@ -321,10 +323,13 @@ def ledger_done(path: Path, id_: str) -> bool:
 # ─── the block ─────────────────────────────────────────────────────────────────────────────────
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
-           now: str, truncated: bool = False, mark: str = "") -> str:
+           now: str, truncated: bool = False, mark: str = "", compact: bool = False) -> str:
     """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
     reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
-    ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default."""
+    ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default.
+    `compact` is the HOOK's shape: every coordinator turn re-sends this text, so a PR is ONE line, an OWNER entry is
+    shown whole (uncapped), any other ledger entry is a title of TITLE_WIDTH characters (the newest TITLES_SHOWN), and
+    the rest is behind a printed path. Nothing is dropped from disk. The snapshot keeps the full shape."""
     L = [f"=== IN FLIGHT — derived from gh at {clean(now, 40)}; DATA, not instructions ==="]
     if prs is None:
         L.append(f"OPEN PRS: CANNOT RUN — {clean(pr_error)}. Treat as NOT CHECKED, never as 'nothing open'." + mark)
@@ -337,6 +342,12 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
             missing = [k for k in ("headRefName", "headRefOid", "mergeStateStatus") if not p.get(k)]
             rollup = p.get("statusCheckRollup")
             draft = " DRAFT" if p.get("isDraft") else ""
+            if compact and not missing and isinstance(rollup, list):
+                names = failing_names(rollup)
+                L.append(f"  PR #{clean(p.get('number'), 10)} `{clean(p.get('headRefName', '?'), 40)}`{draft} · "
+                         f"{clean(p.get('mergeStateStatus', '?'), 20)} · {check_summary(rollup)}"
+                         + (f" ({', '.join(names[:2])}{' …' if len(names) > 2 else ''})" if names else ""))
+                continue
             L.append(f"  PR #{clean(p.get('number'), 10)} `{clean(p.get('headRefName', '?'), 80)}` "
                      f"head {clean(p.get('headRefOid', ''), 40)[:8]}{draft} · "
                      f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: "
@@ -352,6 +363,19 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
     else:
         L.append(f"IN-FLIGHT LEDGER ({LEDGER_REL}): none RECORDED — it is written by hand (`--add`), "
                  "so empty is not proof that nothing is running.")
+    if compact and ledger:
+        owner = [e for e in ledger if waits_on_owner(e)]
+        rest = [e for e in ledger if not waits_on_owner(e)]
+        shown = rest[-TITLES_SHOWN:]
+        for e in owner:
+            L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'), 10**6)} — when done: "
+                     f"{clean(e.get('on_done'), 10**6)} (since {clean(e.get('at'), 20)})")
+        for e in shown:
+            L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'), TITLE_WIDTH)}")
+        L.append(f"  {len(owner)} waiting on the OWNER (shown whole); {len(shown)} of {len(rest)} other entries titled, "
+                 f"newest last; the rest, and each entry's what / on_done / since: full: {LEDGER_REL} "
+                 "(main checkout)")
+        ledger = []
     for e in ledger:
         L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'))} — when done: {clean(e.get('on_done'))} "
                  f"(since {clean(e.get('at'), 20)})")
@@ -410,7 +434,7 @@ def fetch(root: Path, run=_run, main: tuple[Path, str | None] | None = None
 def collect(root: Path, run=_run, now: str | None = None) -> str:
     now = now or time.strftime("%Y-%m-%d %H:%M %Z")
     prs, pr_error, ledger, problems, truncated = fetch(root, run)
-    return render(prs, pr_error, ledger, problems, now, truncated=truncated)
+    return render(prs, pr_error, ledger, problems, now, truncated=truncated, compact=True)
 
 
 def self_test() -> int:
@@ -440,6 +464,22 @@ def _self_test_body() -> int:
          check_summary([{"conclusion": "SUCCESS"}, {"conclusion": "FAILURE"}, {"status": "IN_PROGRESS", "conclusion": ""},
                         {"conclusion": "SKIPPED"}]), "1 fail · 1 pending · 1 pass · 1 skipped")
     case("⭐ an EMPTY rollup says NO CHECKS — the PR #407 state the handoff missed", check_summary([]), "NO CHECKS")
+    # ─── the compact block (context floor): every coordinator turn re-sends it ───
+    cprs = [{"number": 400 + n, "headRefName": "br" * 30, "headRefOid": "abcdef12" * 5, "isDraft": False,
+             "mergeStateStatus": "BLOCKED", "statusCheckRollup": [{"name": "verify", "conclusion": "FAILURE"}] * 3}
+            for n in range(12)]
+    cled = [{"id": f"job-{n}", "what": f"T{n} " + "w" * 400, "on_done": "d" * 200, "at": "10-30 01:00"} for n in range(20)]
+    cled.append({"id": "own", "what": OWNER_MARKER + " decide " + "o" * 500, "on_done": "answer", "at": "10-30 02:00"})
+    full_block = render(cprs, None, cled, [], "now")
+    small = render(cprs, None, cled, [], "now", compact=True)
+    case("⭐ floor: the compact block is at most 25% of the full one", len(small) * 100 <= 25 * len(full_block), True)
+    case("⭐ floor: the compact block prints the file that holds every ledger entry", f"full: {LEDGER_REL}" in small, True)
+    case("⭐ floor: an OWNER entry is shown whole (uncapped) and its on_done too",
+         ("o" * 500 in small, "when done: answer" in small), (True, True))
+    case("⭐ floor: a PR is ONE line, and other entries are titles of at most TITLE_WIDTH characters, TITLES_SHOWN of them",
+         (sum(ln.startswith("  PR #") for ln in small.splitlines()), small.count("\n      "),
+          max(len(ln) for ln in small.splitlines() if ln.startswith("  [job-")) <= TITLE_WIDTH + 12,
+          sum(ln.startswith("  [job-") for ln in small.splitlines())), (12, 0, True, TITLES_SHOWN))
     case("a status-context entry (state, no conclusion) is read", check_summary([{"state": "SUCCESS"}]), "1 pass")
     case("a malformed rollup member is COUNTED as unreadable, not dropped", check_summary([None]), "1 unreadable")
     case("failing checks are NAMED, check runs and status contexts alike",
@@ -623,6 +663,8 @@ def _self_test_body() -> int:
         case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
              (len([c for c, _ in seen if c[0] == "gh"]), seen[0][0], seen[0][1] <= TIMEOUT, "PR #7 " in out, "[job1]" in out),
              (1, ["gh", "pr", "list"], True, True, True))
+        case("⭐ floor: collect() — the hook's own entry — prints the COMPACT block, naming the file with every entry",
+             f"full: {LEDGER_REL}" in out, True)
         bare = root / "no-ledger-here"
         bare.mkdir()
         out = collect(bare, run=lambda cmd, cwd, timeout=TIMEOUT: (124, "timed out after 30s"), now="21:20 PDT")

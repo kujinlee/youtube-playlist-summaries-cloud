@@ -1995,7 +1995,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ 32 -> 34 (r3): the bounded post-kill drain (XR3), and `own_group=False` honoured (CR1).
     # ⟳ 34 -> 40 (r4): the `mark` on three failure lines, `fetch` taking the caller's main checkout, and an exited call
     # reported as exited (twice); four anchors retargeted onto the rewritten `render` and `_run` lines.
-    "scripts/session-state.py": 40,
+    # ⟳ 40 -> 46 (context floor): the compact block (off, path, owner entry, titles, one-line PR) and collect()'s call.
+    "scripts/session-state.py": 46,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -2032,7 +2033,8 @@ EXPECTED_MUTATIONS = {
     # boundary (age < 0, age >= 30 min), the print child's kill onto the deadline, five expects renamed.
     # 55 -> 54: the snapshot's final `fit` retires as an EQUIVALENT mutant — with the keys line now four fixed fields,
     # every section is capped and the owner section takes only the room left, so no input reaches the backstop.
-    "scripts/compaction-state.py": 54,
+    # ⟳ 54 -> 58 (context floor): the print's digest (whole snapshot, path, owner section, NOT CAPTURED line).
+    "scripts/compaction-state.py": 58,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6278,7 +6280,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2565)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2575)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -18327,3 +18327,10 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 - **What is deferred.** The page lists every filed-but-unbuilt item.
 
 It also records a correction: one line had said an item "is filed" before it was.
+
+## 2026-10-30
+Every message the coordinator sends re-sends a fixed block of context, and about 16,000 tokens of it was text our own start-up hooks print. The in-flight block now shows each open PR on one line, every item that waits on the owner in full, and a one-line title for only the five newest of the other ledger entries; the snapshot printed after a compaction shows its headings, the owner-decision section and any line marked "not captured". Both print the file that holds the whole text, and nothing is deleted. Measured on this repository, the in-flight block fell from 10,921 to about 2,600 characters and the compaction snapshot from 7,527 to 1,746.
+
+What this does not reach: the last handoff and the REMEMBER block are printed by the remember plugin, not by this repository, so they are unchanged here.
+<!--tech-->
+Backlog: none filed. `scripts/session-state.py`: `render(..., compact=True)` (the hook's `collect()` passes it; the compaction snapshot still takes the full shape), `TITLE_WIDTH`=120, `TITLES_SHOWN`=5. `scripts/compaction-state.py`: `digest()` replaces the whole-snapshot append in `render_print`, `DIGEST_OWNER_HEAD`. 5 new self-test cases (session-state 73, compaction-state 100); 10 new mutations (EXPECTED_MUTATIONS 2565 -> 2575); the `DEFER` mutation was re-anchored onto the digest line.
