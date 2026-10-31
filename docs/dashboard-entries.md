@@ -18472,3 +18472,6 @@ locally, 3 runs each: idle 22.1–22.8 s → 8.3–9.5 s in a mutation run, with
 The ordinary run under that load is 58–62 s and its real CR1 is still red: a load flake from before this change, out
 of scope. `EXPECTED_MUTATIONS` 2738; `compaction-state` 58 of 58 killed, `fixture_git` 13 of 13; `check-plan-code`'s
 two new mutants were run by hand, and its full run is left to CI.
+
+## 2026-10-31
+Seven pieces of queued follow-up work are now written down as backlog items, so none depends on anyone remembering them: the stale generated pages after a merge, the early-exit CI waiter, the extra review round a merge of master forces, a flaky mutant, a gap in the push-blocking hook, the unset local hook path, and a mangled word in one guard. Agents are also now told to send their final report as a message, because plain output never reaches the coordinator.
