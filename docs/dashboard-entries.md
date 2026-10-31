@@ -18357,3 +18357,19 @@ pieces does not fix it.
 on run 40799920596 (`fea33073`): slowest shard 1758 s, 1.02x inside `timeout-minutes: 30`. Per-target
 cost re-derived from CI log timestamps: 12,965 s of mutation work, 309 s control floor per shard;
 `check-main-drivable.py` is 68% of the work (backlog #401). Predicted at N=24: slowest ~1,055 s, 1.71x.
+
+## 2026-10-30
+**Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
+one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
+a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
+report back, and work already running carries on. To let them through anyway, the refusal shows you a one-line
+command that allows them for two hours, or launch with `ALLOW_SPAWN_OVER_LIMIT=1`. The agent itself is not told how.
+If the cached number is more than 15 minutes old, every prompt says so loudly and names the file to check; if it is
+missing altogether (a clone with no such statusline), that is said once per session. Nothing is blocked either way,
+so a statusline hiccup cannot stop work.
+<!--tech-->
+Backlog #399, PR #446. `scripts/check-usage-pace.py` (rules separate from the file read, 213 self-test cases, 74
+mutations all killed by their named case); hooks `.claude/hooks/usage-pace-prompt.sh` (UserPromptSubmit),
+`.claude/hooks/usage-pace-spawn.sh` (PreToolUse on Agent) and `.claude/hooks/usage-pace-wake.sh` (PreToolUse on
+SendMessage, added by the owner's round-1 decision), all through `run-hook.sh`. The deny travels as JSON at
+exit 0, and every non-zero exit is mapped to 1, so a broken checker can never block a prompt.

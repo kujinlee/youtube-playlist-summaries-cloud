@@ -266,6 +266,7 @@ POPULATION: frozenset[str] = frozenset({
     "check-sentinel-meanings.py",
     "check-storage-grant-pin.py",
     "check-vocabulary-collisions.py",
+    "check-usage-pace.py",           # backlog #399 — pinned in the commit that creates it.
 })
 
 # The denominator is the total. Scripts differ on the words around it, so the line is matched on
