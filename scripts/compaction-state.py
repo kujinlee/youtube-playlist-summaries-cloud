@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 108 cases
+    python3 scripts/compaction-state.py --self-test  # 110 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -918,10 +918,14 @@ def real_time_cases(env) -> bool:
       - the stdin read's bound and its wiring in `main` — `main reads a stdin held OPEN for only what is LEFT`;
       - the capture's group kill of a call in flight — the event-ordered CR1 case;
       - a call still made after a git that timed out, and gh's own 8 s — `after a git that TIMED OUT`;
+      - the timeouts the CHILD's adapter hands session-state's `_run` (git 3 s, gh 8 s, the group kept) — r2 refuted
+        the line above as complete, since it injects its runner past that adapter — `through the CHILD's adapter`;
       - the capture's 11 s and the print's 10 s reaching the child — the spy case, with the marker SET;
       - the parent's return within its kill + 1 s — `the WHOLE PreCompact hook ends within its capture deadline`.
-    ⚠ BOUND: what only the real-time cases still see is the bash hook file and the `__main__` entry's own process
-    start. No manifest entry mutates either, and CI's ordinary check runs them (`ci_runs_real_time`)."""
+    ⚠ BOUND: what no every-mode case covers is the bash hook file and the `__main__` entry's own process start — the
+    real-time cases see them, no manifest entry mutates either, and CI's ordinary check runs them
+    (`ci_runs_real_time`) — and two parts of `run_capture`'s kill that NO case kills in either mode: SIGTERM in
+    place of SIGKILL, and the reap after the timeout kill (backlog #423). Those two are gaps the skip did not open."""
     return env.get(MUTATION_RUN_ENV) != "1"
 
 
@@ -946,8 +950,10 @@ def ci_runs_real_time(ci_text: str) -> str | None:
     not. Backlog #407's FAILS IF: the real-time run is dropped from CI, or kept where it cannot fail a PR.
 
     Read by LINE STRUCTURE (the project is stdlib-only, so no YAML parser): the `jobs:` key, the job REQUIRED_JOB at
-    the next indent, the step whose `run:` is SELF_TEST_RUN, and an `if:` or `continue-on-error:` on that job or step.
-    ⚠ BOUND, stated rather than hidden: block-style YAML as `ci.yml` is written. Flow-style steps (`- {run: …}`),
+    the next indent, its `steps:` key, the list item directly under that key whose `run:` is SELF_TEST_RUN, and an
+    `if:` or `continue-on-error:` on that job or step.
+    ⚠ BOUND, stated rather than hidden: block-style YAML as `ci.yml` is written, with the step list indented deeper
+    than `steps:` (a list at the key's own indent is refused). Flow-style steps (`- {run: …}`),
     anchors and aliases, a folded `run: >`, and an `if:` whose expression is always true are not modelled — any
     `if:` is refused, and `continue-on-error:` is refused unless literally `false`. The marker is caught only by its
     NAME anywhere in the file, so one assembled from `vars` or `fromJSON` is not seen."""
@@ -961,16 +967,24 @@ def ci_runs_real_time(ci_text: str) -> str | None:
     if job is None:
         return f"no `{REQUIRED_JOB}` job, the required check"
     job_end = _block(lines, job)
-    run = next((i for i in range(job, job_end)
+    # r2 (Codex M2): a step is a list item DIRECTLY under the job's own `steps:` key — the same text under
+    # `strategy.matrix` is data GitHub never runs.
+    key = next((i for i in range(job + 1, job_end) if re.fullmatch(r"    steps:\s*", lines[i])), None)
+    if key is None:
+        return f"no `steps:` key in the `{REQUIRED_JOB}` job"
+    steps_end = _block(lines, key)
+    item = next((len(l) - len(l.lstrip()) for l in lines[key + 1:steps_end]
+                 if l.strip() and not l.strip().startswith("#")), None)
+    run = next((i for i in range(key + 1, steps_end)
                 if re.fullmatch(rf"\s*(?:- )?run:\s*{re.escape(SELF_TEST_RUN)}\s*", lines[i])), None)
     if run is None:
         return f"no `run: {SELF_TEST_RUN}` step in the `{REQUIRED_JOB}` job"
     run_ind = len(lines[run]) - len(lines[run].lstrip())
     step = run if lines[run].lstrip().startswith("- ") else next(
-        (i for i in range(run - 1, job, -1)
+        (i for i in range(run - 1, key, -1)
          if lines[i].lstrip().startswith("- ") and len(lines[i]) - len(lines[i].lstrip()) == run_ind - 2), None)
-    if step is None:
-        return f"the `{SELF_TEST_RUN}` line is not inside a step"
+    if step is None or len(lines[step]) - len(lines[step].lstrip()) != item:
+        return f"the `{SELF_TEST_RUN}` line is not a step directly under the `{REQUIRED_JOB}` job's `steps:`"
     dash = len(lines[step]) - len(lines[step].lstrip())
     step_lines = [lines[step][:dash] + "  " + lines[step][dash + 2:]] + lines[step + 1:_block(lines, step)]
     job_keys = [l for l in lines[job + 1:job_end] if re.match(r"    [A-Za-z_-]+:", l)]
@@ -1848,6 +1862,30 @@ def _self_test_body() -> int:
         case("⭐ #407: after a git that TIMED OUT the capture still asks gh, and gh is given its own 8 s, not less",
              ([n for n, _ in recorded][:1], [t for n, t in recorded if n.startswith("gh ")], _keys(snap_rec) is not None),
              (["git rev-parse --path-format=absolute"], [8], True))
+        # #407 r2 (Codex M1): the case above injects its runner into `snapshot()`, so it never passes through the CHILD's
+        # adapter onto session-state's `_run` — where a cap on gh's or git's timeout survived the marker, 106/106. This
+        # drives the real `--capture` child mode in-process, records what `ss._run` itself is handed, and asserts LITERALS:
+        # git's 3 s (session-state's own 10 s for its rev-parse), gh's 8 s after that git timed out, and the group kept.
+        ss_mod, adapter = _session_state(), []
+
+        def at_run(cmd, cwd, timeout=None, own_group=True):
+            adapter.append((" ".join(cmd[:3]), timeout, own_group))
+            if cmd[:2] == ["git", "rev-parse"]:
+                return 124, f"timed out after {timeout:.0f}s"
+            return fake_run()(cmd, cwd, timeout)
+        (root / "adapter").mkdir()
+        (root / "adapter-payload.json").write_text(json.dumps({"session_id": "S-adapter"}))
+        real_ss_run = ss_mod._run
+        ss_mod._run = at_run
+        try:
+            main(["--capture", "--payload-file", str(root / "adapter-payload.json"), "--out", str(root / "adapter-out.txt"),
+                  "--now", "1000.0", "--root", str(root / "adapter"), "--nonce", "N1"])
+        finally:
+            ss_mod._run = real_ss_run
+        case("⭐ #407 r2: through the CHILD's adapter, session-state's `_run` gets git 3 s (its rev-parse 10 s) and gh 8 s, in the group",
+             (sorted(set(adapter)), _keys(_read(root / "adapter-out.txt")[0] or "") is not None),
+             ([("gh pr list", 8, False), ("git rev-parse --path-format=absolute", 10, False),
+               ("git status --porcelain", 3, False), ("git worktree list", 3, False)], True))
         case("⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged",
              [l.strip()[:20] for l in snap_w.splitlines() if ("codex-r2" in l or "fix-TRUNCATED" in l) and NC in l], [])
         case("a missing or corrupt receipt is (None, why) — the print then says CANNOT RUN, never shows a file",
@@ -1916,6 +1954,18 @@ def _self_test_body() -> int:
                            is None,
                            ci_runs_real_time(wf().replace("  zz-other:", "  verify-extra:")) is None)),
              (False, False, True))
+        matrix = ("on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        include:\n"
+                  f"          - name: compaction-state self-test\n            run: {SELF_TEST_RUN}\n"
+                  "    steps:\n      - run: echo no self-test\n")
+        case("⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs",
+             safe(lambda: (ci_runs_real_time(matrix) is None,
+                           ci_runs_real_time(matrix + f"      - name: compaction-state self-test\n        run: {SELF_TEST_RUN}\n")
+                           is None,
+                           ci_runs_real_time(matrix + f"      - name: nested\n        with:\n          run: {SELF_TEST_RUN}\n")
+                           is None,
+                           ci_runs_real_time(matrix + f"      - name: nested\n        with:\n          - run: {SELF_TEST_RUN}\n")
+                           is None)),
+             (False, True, False, False))
         seen = []
         marker_before = os.environ.get(M)
         real_capture = globals()["run_capture"]

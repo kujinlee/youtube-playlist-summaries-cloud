@@ -810,8 +810,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    run = next((i for i in range(job, job_end)\n",
-        "    run = next((i for i in range(job, len(lines))\n"
+        "    run = next((i for i in range(key + 1, steps_end)\n",
+        "    run = next((i for i in range(key + 1, len(lines))\n"
       ]
     ],
     "expect": [
@@ -829,6 +829,58 @@
     ],
     "expect": [
       "⭐ #407 r1: no hook mode can read the marker — only the self-test's two predicates and the suite name it"
+    ]
+  },
+  {
+    "name": "#407 r2 (Codex A): the child's adapter caps gh's timeout at 1 s",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            run = lambda c, w, timeout=GIT_TIMEOUT: ss._run(c, w, timeout, own_group=False)  # noqa: E731 — r3 CR1\n",
+        "            run = lambda c, w, timeout=GIT_TIMEOUT: ss._run(c, w, min(timeout, 1) if c[0] == \"gh\" else timeout, own_group=False)  # noqa: E731 — r3 CR1\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: through the CHILD's adapter, session-state's `_run` gets git 3 s (its rev-parse 10 s) and gh 8 s, in the group"
+    ]
+  },
+  {
+    "name": "#407 r2 (Codex B): the child's adapter caps git's timeout at 0.1 s",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            run = lambda c, w, timeout=GIT_TIMEOUT: ss._run(c, w, timeout, own_group=False)  # noqa: E731 — r3 CR1\n",
+        "            run = lambda c, w, timeout=GIT_TIMEOUT: ss._run(c, w, min(timeout, 0.1) if c[0] == \"git\" else timeout, own_group=False)  # noqa: E731 — r3 CR1\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: through the CHILD's adapter, session-state's `_run` gets git 3 s (its rev-parse 10 s) and gh 8 s, in the group"
+    ]
+  },
+  {
+    "name": "#407 r2: the self-test step is searched for anywhere in the required job, matrix data included",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    run = next((i for i in range(key + 1, steps_end)\n",
+        "    run = next((i for i in range(job, job_end)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs"
+    ]
+  },
+  {
+    "name": "#407 r2: a list item nested inside a step is taken for a step",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if step is None or len(lines[step]) - len(lines[step].lstrip()) != item:\n",
+        "    if step is None:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs"
     ]
   }
 ]
