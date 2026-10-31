@@ -68,3 +68,10 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · PR #430 · the memory-index budget warning runs when the index is edited (the owner's L3)
 - fix · PR #431 · the memory index is trimmed and sixteen unbacked memory files are committed (the owner's L2)
 - bookkeeping · PR #426 · backlog #388, backlog #389 and backlog #390 filed
+
+## GOAL token-usage-first
+> 2026-10-30 18:50 "For now, let's enhance token usage features first. As when we hit the limit, other optimization doesn't matter."
+> 2026-10-31 04:38 "yes. measure it to confirm our assumptions"
+- fix · PR #453 · hook output trimmed and ledger entries carry an explicit kind, so each turn re-reads less context
+- side · backlog #407, PR #454 · mutation runs skip compaction-state's real-deadline cases, so the CI sweep is faster
+- fix · backlog #359, PR #455 · the mutation total is derived from the per-file pins, so open PRs stop colliding on one line
