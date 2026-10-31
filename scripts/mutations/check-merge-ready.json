@@ -96,7 +96,7 @@
     "        if key not in ACCOUNTED_MENTIONS:\n"
    ]
   ],
-  "expect": "a SECOND copy of an approved line is unaccounted \u2014 the allowance is a count"
+  "expect": "a SECOND copy of an approved line is unaccounted — the allowance is a count"
  },
  {
   "name": "commented-out mentions stop being skipped, so prose about a gate reads as one",
@@ -194,13 +194,13 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "if path in new and new[path] < old[path]:",
-    "if path in new and new[path] > old[path]:"
+    "        elif new[path] < old[path]:",
+    "        elif new[path] > old[path]:"
    ]
   ],
   "expect": [
-   "a mutation pin that DROPS 128 -> 125 is a loosening",
-   "a mutation pin that DROPS 30 -> 2 is a loosening"
+   "⛔ Codex r2 H1: a pin lowered in a DEFAULT ARGUMENT at definition time is HELD",
+   "a mutation pin that DROPS 128 -> 125 is a loosening"
   ]
  },
  {
@@ -476,13 +476,13 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        elif path not in new:",
-    "        elif False:"
+    "            out.append(f\"loosens a gate: the mutation pin for {path} ({old[path]}) is removed\")",
+    "            pass"
    ]
   ],
   "expect": [
-   "a mutation pin DELETED is a loosening",
-   "...and so is one renamed to another key"
+   "a pin REMOVED from the effective dict is HELD",
+   "a mutation pin DELETED is a loosening"
   ]
  },
  {
@@ -638,8 +638,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "head, args.app_tests_passed, bool(nr), fs=fs)",
-    "head, args.app_tests_passed, bool(nr), fs=None)"
+    "head, args.app_tests_passed, bool(nr), fs=fs, pins=pins)",
+    "head, args.app_tests_passed, bool(nr), fs=None, pins=pins)"
    ]
   ],
   "expect": [
@@ -1086,6 +1086,45 @@
   ],
   "expect": [
    "...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)"
+  ]
+ },
+ {
+  "name": "a side that prints non-JSON reads as pinning nothing, so the gate fails OPEN on a broken base (backlog #359 r2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        raise PinsUnreadable(f\"{side}: {PINS_FLAG} printed non-JSON: {out.strip()[:80]!r}\")",
+    "        return {}"
+   ]
+  ],
+  "expect": [
+   "⛔ a head that prints NON-JSON is CANNOT RUN, never a pass"
+  ]
+ },
+ {
+  "name": "the base-only import fallback answers for the HEAD too, so the side under review need not run --print-pins (backlog #359 r2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if r.returncode != 0 and legacy_ok and",
+    "        if r.returncode != 0 and"
+   ]
+  ],
+  "expect": [
+   "⛔ ...but a HEAD without --print-pins is CANNOT RUN — the side under review must answer"
+  ]
+ },
+ {
+  "name": "main() never reads the effective pins, so no fall is ever held (backlog #359 r2)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        pins = pin_pair(_run, BASE_REF)\n",
+    "        pins = ({}, {})\n"
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR whose head's EFFECTIVE pin falls, rc=3"
   ]
  }
 ]

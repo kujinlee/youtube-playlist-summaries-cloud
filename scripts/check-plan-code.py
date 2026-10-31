@@ -3,7 +3,8 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 267 cases
+    python3 scripts/check-plan-code.py --print-pins         # EXPECTED_MUTATIONS as JSON, as evaluated
+    python3 scripts/check-plan-code.py --self-test          # 265 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1470,6 +1471,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ r1 fold: 142 -> 147 — three for the pins' SHAPE that makes PIN_LINE complete (a duplicate key,
     # a write outside the display, a pin line PIN_LINE cannot read), one for the AST total scan, and
     # one for a total line printed over pins that match.
+    # ⟳ r2 REDESIGN: 147 -> 147 — the three SHAPE entries are RETIRED WITH THEIR SUBJECT
+    # (`pin_shape_problems` is deleted: it proved a runtime value from source text, and Codex r2 walked
+    # around it three ways). Three added: `--print-pins` printing a constant, `--print-pins` beside
+    # `--mutate` accepted, and the total scan no longer asking whether the total is mentioned. The
+    # AST-scan entry is REBOUND to the new comparison test.
     "scripts/check-plan-code.py": 147,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
@@ -2187,8 +2193,12 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-25 r10: 73 -> 75 — sys.exit with any non-zero argument; main() fails closed on ANY error.
     # ⟳ 2026-10-31, backlog #359: 85 -> 84, RETIRED WITH ITS SUBJECT — the entry flipped the proxy for a
     # falling typed mutation TOTAL, and there is no typed total any more; the proxy and its two cases
-    # are deleted with it. A falling per-file pin is still held, by `PIN_LINE`, under its own entry.
-    "scripts/check-merge-ready.py": 84,
+    # are deleted with it. A falling per-file pin is still held, under its own entry.
+    # ⟳ r2 REDESIGN: 84 -> 87 — a falling pin is read from the EFFECTIVE dicts (`pin_pair`), not from
+    # `PIN_LINE` over the diff, which is deleted. Its two entries are REBOUND to `pin_falls`; three
+    # added: a non-JSON side failing open, the base-only import fallback answering for the head, and
+    # main() never reading the pins.
+    "scripts/check-merge-ready.py": 87,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -2829,121 +2839,47 @@ def pin_drift(counts: dict) -> list[str]:
     return drift
 
 
-# The pin's own name. The one scope allowed to write the dict is the self-test, which restores it.
-PINS_NAME = "EXPECTED_MUTATIONS"
-PIN_WRITER_SCOPE = "_self_test_body"
-# Uses of the dict that cannot change it: a call that copies or counts it, a method that reads it.
-PIN_READ_CALLS = frozenset({"set", "sorted", "len", "dict", "list", "tuple", "iter", "sum"})
-PIN_READ_METHODS = frozenset({"items", "keys", "values", "get"})
-
-
-def pin_shape_problems(src: str, pin_line) -> list[str]:
-    """PURE over a module's source. Why `check-merge-ready`'s `pin_line` could MISS a falling pin.
-
-    ⟳ backlog #359 r1 (Codex High, Claude M1). With the typed total retired, a fall in coverage is
-    seen only as a `-`/`+` pair of lines `pin_line` matches. That holds only if the dict is ONE
-    display with one literal pin per line and nothing else ever writes it. Otherwise a duplicate key
-    (Python keeps the LAST value), a pin split over lines, or `EXPECTED_MUTATIONS[k] -= 4` lowers a
-    pin with no line `pin_line` can see. Each of those is refused here, so the diff rule is complete
-    over this file.
-    ⚠ BOUNDS: the self-test (`PIN_WRITER_SCOPE`) may write it; it runs only under `--self-test` and
-    restores the dict. Dynamic access (`globals()`, `setattr` on the module, another module
-    importing this one) is not seen.
-    """
-    try:
-        tree = ast.parse(src)
-    except SyntaxError as exc:
-        return [f"CANNOT RUN — the source does not parse ({exc})"]
-    out: list[str] = []
-    lines = src.split("\n")
-    defs = [s for s in tree.body if isinstance(s, ast.Assign) and len(s.targets) == 1
-            and isinstance(s.targets[0], ast.Name) and s.targets[0].id == PINS_NAME]
-    if len(defs) != 1:
-        return [f"{PINS_NAME} must be assigned exactly once at module level; found {len(defs)}"]
-    the_def = defs[0]
-    if not isinstance(the_def.value, ast.Dict):
-        return [f"{PINS_NAME} must be a dict display, not {type(the_def.value).__name__}"]
-    seen: dict = {}
-    for k, v in zip(the_def.value.keys, the_def.value.values):
-        if k is None:
-            out.append(f"line {v.lineno}: a `**` spread in {PINS_NAME} hides its pins from the diff")
-            continue
-        if not (isinstance(k, ast.Constant) and isinstance(k.value, str)):
-            out.append(f"line {k.lineno}: a pin key must be a string literal")
-            continue
-        if k.value in seen:
-            out.append(f"line {k.lineno}: {k.value} is pinned twice (also line {seen[k.value]}) — "
-                       f"Python keeps the LAST value, which the diff rule cannot see")
-        seen.setdefault(k.value, k.lineno)
-        if not (isinstance(v, ast.Constant) and type(v.value) is int):
-            out.append(f"line {k.lineno}: the pin for {k.value} must be an int literal")
-            continue
-        # This also puts the pair on ONE line: a match on the key's line, naming this key and this
-        # value, is the whole `"path": N,` — so a value on a later line cannot match.
-        m = pin_line.match(lines[k.lineno - 1])
-        if not (m and m["path"] == k.value and int(m["n"]) == v.value):
-            out.append(f"line {k.lineno}: the pin for {k.value} does not match check-merge-ready's "
-                       f"PIN_LINE, so a fall on this line would not be HELD")
-    parents = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
-    exempt = {id(n) for s in tree.body if isinstance(s, ast.FunctionDef) and s.name == PIN_WRITER_SCOPE
-              for n in ast.walk(s)}
-    for node in ast.walk(tree):
-        if id(node) in exempt or node is the_def.targets[0]:
-            continue
-        if isinstance(node, (ast.Global, ast.Nonlocal)) and PINS_NAME in node.names:
-            out.append(f"line {node.lineno}: `{type(node).__name__.lower()} {PINS_NAME}` rebinds the pins")
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) \
-                and node.name == PINS_NAME:
-            out.append(f"line {node.lineno}: a definition named {PINS_NAME} rebinds the pins")
-        elif isinstance(node, ast.alias) and (node.asname or node.name) == PINS_NAME:
-            out.append(f"line {node.lineno}: an import rebinds {PINS_NAME}")
-        elif isinstance(node, ast.Name) and node.id == PINS_NAME \
-                and not _pin_read_only(node, parents):
-            out.append(f"line {node.lineno}: {PINS_NAME} is written, deleted or aliased here — "
-                       f"only its one display may set a pin")
-    return out
-
-
-def _pin_read_only(node, parents) -> bool:
-    """A use of the pins' name that cannot change them: an allowlist, so an alias is refused too."""
-    if not isinstance(node.ctx, ast.Load):
-        return False
-    up = parents.get(node)
-    if isinstance(up, ast.Subscript) and up.value is node:
-        return isinstance(up.ctx, ast.Load)
-    if isinstance(up, ast.Attribute) and up.value is node:
-        return up.attr in PIN_READ_METHODS and isinstance(parents.get(up), ast.Call) \
-            and parents[up].func is up
-    if isinstance(up, ast.Call) and node in up.args:
-        return isinstance(up.func, ast.Name) and up.func.id in PIN_READ_CALLS
-    if isinstance(up, ast.comprehension) and up.iter is node:
-        return True
-    if isinstance(up, ast.Compare) and node in up.comparators:
-        return all(isinstance(o, (ast.In, ast.NotIn)) for o in up.ops)
-    return False
+# The names whose mention makes a literal a TOTAL rather than a number: the derived total, or the pins.
+TOTAL_NAMES = frozenset({"declared_total", "EXPECTED_MUTATIONS"})
+# The self-test's own assertions — a literal passed to one of these is asserted, as in `assert`.
+ASSERT_CALLS = frozenset({"case", "check"})
 
 
 def typed_total_sites(src: str, total: int) -> list[int]:
-    """PURE. Lines where an int literal equal to the derived `total` is compared, passed or asserted.
+    """PURE. Lines where an int literal equal to the derived `total` is asserted ABOUT the total.
 
     ⟳ backlog #359 r1 (Codex Medium, Claude L1): a regex for `declared_total(), N)` missed a trailing
     comma, `2_981`, `assert declared_total() == N` and `declared_total() == N, True`. Reading the
-    LITERAL's value, wherever it is compared, passed or asserted, catches every spelling.
+    LITERAL's value catches every one of those spellings.
+    ⟳ r2 (Codex Medium): reading it in ANY call or comparison also hit `timeout(2986)`. A literal now
+    counts only inside a comparison, an `assert`, or a `case`/`check` call that also mentions
+    `TOTAL_NAMES`.
+    ⚠ BOUND: a CONVENTION guard over ordinary spellings. Arithmetic (`2900 + 86`), an f-string, and
+    a name bound to the total all escape it, and that is accepted: a re-typed total no longer
+    protects or loosens anything — `check-merge-ready.py` compares the EFFECTIVE pins — so all it
+    can bring back is the merge conflict this file shed.
     """
     tree = ast.parse(src)
     parents = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
+
+    def about_total(node) -> bool:
+        return any(isinstance(n, ast.Name) and n.id in TOTAL_NAMES for n in ast.walk(node))
+
     hits = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and type(node.value) is int and node.value == total:
-            up = parents.get(node)
-            while up is not None and not isinstance(up, ast.stmt):
-                if isinstance(up, (ast.Compare, ast.Call)):
-                    hits.append(node.lineno)
-                    break
-                up = parents.get(up)
-            else:
-                if isinstance(up, ast.Assert):
-                    hits.append(node.lineno)
+        if not (isinstance(node, ast.Constant) and type(node.value) is int and node.value == total):
+            continue
+        up = parents.get(node)
+        while up is not None:
+            asserting = (isinstance(up, (ast.Compare, ast.Assert))
+                         or (isinstance(up, ast.Call) and isinstance(up.func, ast.Name)
+                             and up.func.id in ASSERT_CALLS))
+            if asserting and about_total(up):
+                hits.append(node.lineno)
+                break
+            if isinstance(up, ast.stmt):
+                break
+            up = parents.get(up)
     return sorted(hits)
 
 
@@ -6624,8 +6560,9 @@ def _self_test_body() -> int:
     # line, and each later merge cost a re-merge and 3–4 extra review rounds. The sum moves only
     # when a pin moves, and the pins fail in both directions (`pin_drift`, and the on-disk case
     # below). What the literal alone caught was a pin LOWERED together with its entries — and
-    # `check-merge-ready.py` HOLDS a falling pin (`PIN_LINE`), so that fall still reaches the owner
-    # with its reason. A same-manifest conflict is REAL and stays; one on a derived number was cost.
+    # `check-merge-ready.py` HOLDS a falling pin (the base's and head's EFFECTIVE pins, read by
+    # `--print-pins`), so that fall still reaches the owner with its reason. A same-manifest
+    # conflict is REAL and stays; one on a derived number was cost.
     _own_src = pathlib.Path(__file__).read_text(encoding="utf-8")
     # ⟳ r1 (Codex Medium, Claude L1): a regex here missed four spellings. The scan reads the LITERAL.
     _t = declared_total()
@@ -6644,55 +6581,53 @@ def _self_test_body() -> int:
          typed_total_sites(f"if declared_total() != {_t}:\n    pass\n", _t), [1])
     case("...and a different number, or the total as plain data, is not",
          typed_total_sites(f'case("t", declared_total(), {_t + 1})\nN = {_t}\n', _t), [])
-    # ─── THE PINS' SHAPE, WHICH MAKES `PIN_LINE` COMPLETE (r1: Codex High, Claude M1) ─────────
-    # ⛔ With the total retired, a falling pin is seen only by `check-merge-ready`'s PIN_LINE, a
-    # rule over the DIFF's lines. Two reviews lowered a pin with no line it matches, both green and
-    # READY: a duplicate key (Python keeps the LAST) and a later `EXPECTED_MUTATIONS[k] -= 4`.
-    # `pin_shape_problems` refuses every shape a line rule cannot see, using PIN_LINE ITSELF —
-    # imported, never copied, so the two cannot disagree about what a pin line is.
-    _cmr_spec = importlib.util.spec_from_file_location(
-        "_cmr_for_plan_code", pathlib.Path(__file__).resolve().parent / "check-merge-ready.py")
-    _cmr = importlib.util.module_from_spec(_cmr_spec)
-    sys.modules[_cmr_spec.name] = _cmr
-    _cmr_spec.loader.exec_module(_cmr)
-    _pins = 'EXPECTED_MUTATIONS = {\n    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n}\n'
-    case("the pins in THIS file are one display, one PIN_LINE pin per line, written nowhere else",
-         pin_shape_problems(_own_src, _cmr.PIN_LINE), [])
-    case("...and so is a minimal display, read by the self-test's own writes",
-         pin_shape_problems(_pins + "def _self_test_body():\n    EXPECTED_MUTATIONS.clear()\n"
-                            "def declared_total():\n    return sum(EXPECTED_MUTATIONS.values())\n",
-                            _cmr.PIN_LINE), [])
-    case("⛔ a duplicate key that LOWERS a pin is refused (Claude S1)",
-         ["twice" in p for p in pin_shape_problems(
-             _pins.replace("}\n", '    "scripts/a.py": 1,\n}\n'), _cmr.PIN_LINE)], [True])
-    case("⛔ a module-level `EXPECTED_MUTATIONS[k] -= 4` is refused (Claude S2)",
-         ["written" in p for p in pin_shape_problems(
-             _pins + 'EXPECTED_MUTATIONS["scripts/a.py"] -= 4\n', _cmr.PIN_LINE)], [True])
-    case("⛔ a pin split over lines is refused, because PIN_LINE cannot read it",
-         ["PIN_LINE" in p for p in pin_shape_problems(
-             _pins.replace('"scripts/b.py": 3,', '"scripts/b.py": (\n        1\n    ),'),
-             _cmr.PIN_LINE)], [True])
-    case("⛔ Codex's duplicate multi-line key is refused on both counts",
-         sorted(("twice" in p, "PIN_LINE" in p) for p in pin_shape_problems(
-             _pins.replace("}\n", '    "scripts/a.py": (\n        4\n    ),\n}\n'),
-             _cmr.PIN_LINE)), [(False, True), (True, False)])
-    case("⛔ every other write, alias or rebinding outside the self-test is refused",
-         [len(pin_shape_problems(_pins + extra, _cmr.PIN_LINE)) for extra in (
-             'EXPECTED_MUTATIONS.update({"scripts/a.py": 1})\n',
-             'def f():\n    EXPECTED_MUTATIONS.pop("scripts/a.py")\n',
-             'def f():\n    EXPECTED_MUTATIONS.setdefault("scripts/c.py", 0)\n',
-             'del EXPECTED_MUTATIONS["scripts/a.py"]\n',
-             'x = EXPECTED_MUTATIONS\nx["scripts/a.py"] = 1\n',
-             'EXPECTED_MUTATIONS |= {"scripts/a.py": 1}\n',
-             'EXPECTED_MUTATIONS = {}\n',
-             'def f():\n    global EXPECTED_MUTATIONS\n',
-             'from x import y as EXPECTED_MUTATIONS\n')],
-         [1, 1, 1, 1, 1, 1, 1, 1, 1])
-    case("⛔ a pin that is not a literal int, or a `**` spread, is refused",
-         [len(pin_shape_problems(_pins.replace("3,", s), _cmr.PIN_LINE))
-          for s in ("3 + 0,", "True,", "N,")] +
-         [len(pin_shape_problems(_pins.replace("}\n", "    **OTHER,\n}\n"), _cmr.PIN_LINE))],
-         [1, 1, 1, 1])
+    # ⟳ r2 (Codex Medium): a literal equal to the total in an UNRELATED call was a false positive.
+    case("...nor the same number in a call or comparison that never mentions the total",
+         typed_total_sites(f"timeout({_t})\nif retries == {_t}:\n    pass\ncase('t', other(), {_t})\n", _t), [])
+    case("...but the same call naming EXPECTED_MUTATIONS is found",
+         typed_total_sites(f"case('t', sum(EXPECTED_MUTATIONS.values()), {_t})\n", _t), [1])
+    # ⚠ A STATED BOUND, asserted so it cannot be forgotten: a CONVENTION guard over ordinary
+    # spellings. Arithmetic, an f-string and a name escape it, and that is accepted — a re-typed
+    # total no longer protects or loosens anything; it only brings the merge conflict back.
+    case("BOUND (stated, r2): arithmetic, an f-string and a name are NOT found",
+         typed_total_sites(f"assert declared_total() == {_t - 86} + 86\n"
+                           f"assert f'{{declared_total()}}' == '{_t}'\n"
+                           f"N = {_t}\nassert declared_total() == N\n", _t), [])
+    # ─── `--print-pins`: THE PINS AS PYTHON HOLDS THEM (backlog #359 r2: REDESIGN) ───────────
+    # ⛔ `check-merge-ready.py` HOLDS a falling pin by running this mode in the base tree and the
+    # head tree and comparing the dicts. Two text rules before it (`PIN_LINE` over the diff, then an
+    # `ast` shape check here) were walked around by inputs that change what Python computes and
+    # leave no line a text rule reads. So the mode must print the EFFECTIVE dict, not the display.
+    def _pins_out(argv):
+        _po2, _pe2 = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(_po2), contextlib.redirect_stderr(_pe2):
+                _rc2 = main(argv)
+        except SystemExit as exc:               # argparse's refusal is a red case, not a dead suite
+            _rc2 = exc.code
+        return _rc2, _po2.getvalue(), _pe2.getvalue()
+    def _js(out):
+        try:
+            return json.loads(out)
+        except ValueError:                      # non-JSON is a red case, not a dead suite
+            return None
+    _rc_p, _out_p, _ = _pins_out(["--print-pins"])
+    case("--print-pins prints this run's EXPECTED_MUTATIONS as JSON, rc=0",
+         (_rc_p, _js(_out_p) == EXPECTED_MUTATIONS), (0, True))
+    _saved_p = dict(EXPECTED_MUTATIONS)
+    try:
+        EXPECTED_MUTATIONS["scripts/check-plan-code.py"] = -1
+        case("⛔ ...the EFFECTIVE value, not the display: a write after import is what it prints",
+             (_js(_pins_out(["--print-pins"])[1]) or {}).get("scripts/check-plan-code.py"), -1)
+    finally:
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_p)
+    _rc_pm, _out_pm, _err_pm = _pins_out(["--print-pins", "--mutate", "."])
+    case("⛔ --print-pins beside --mutate is REFUSED, rc=2 — it would exit 0 having mutated nothing",
+         (_rc_pm, _out_pm, "--print-pins" in _err_pm), (2, "", True))
+    # ⟳ r2 REDESIGN: `pin_shape_problems`, its eight cases and its three mutation entries are
+    # RETIRED WITH THEIR SUBJECT. They proved a runtime invariant from source text, and Codex r2
+    # walked around them three ways. The effective-value comparison in `check-merge-ready.py`
+    # replaces them, and its cases replay every input both rounds found.
     _saved_t = dict(EXPECTED_MUTATIONS)
     try:
         EXPECTED_MUTATIONS.clear()
@@ -6852,6 +6787,9 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
                     help="With --mutate: run only the mutations targeting SCRIPT, written as the "
                          "manifest's `file` (e.g. scripts/check-x.py; repeatable). "
                          "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
+    ap.add_argument("--print-pins", action="store_true",
+                    help="Print EXPECTED_MUTATIONS as JSON, as this run holds it after import. "
+                         "check-merge-ready.py compares the base's and the head's to HOLD a fall.")
     ap.add_argument("--allow-long-local", action="store_true",
                     help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
     ap.add_argument("--compare", metavar="DIR",
@@ -6969,6 +6907,16 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         print("CANNOT RUN — --only and a shard are two different slices; pass one. NOTHING WAS "
               "MEASURED.", file=sys.stderr)
         return 2
+    # backlog #359 r2: the pins as this process EVALUATED them — the one reading of a falling pin
+    # that a duplicate key, a decorator, a default argument or a string cannot fool. It is asked
+    # here, after every refusal above, so it runs the same prefix `--mutate` runs.
+    if a.print_pins:
+        if a.mutate:
+            print("CANNOT RUN — --print-pins and --mutate are two modes; pass one. NOTHING WAS "
+                  "MEASURED.", file=sys.stderr)
+            return 2
+        print(json.dumps(EXPECTED_MUTATIONS, sort_keys=True))
+        return 0
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
@@ -7055,7 +7003,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
     # `main([]) == 2` precisely so that a future edit cannot make "nothing was asked for"
     # exit 0, which is this script's whole thesis about runs that measured nothing.
     print("CANNOT RUN — nothing to do. The modes are `--mutate ROOT` (mutate the delivered "
-          "scripts) and `--self-test`. Plan mode was RETIRED on 2026-09-08 and its code "
+          "scripts), `--print-pins` and `--self-test`. Plan mode was RETIRED on 2026-09-08 and its code "
           "removed. Treat this as NOT CHECKED.", file=sys.stderr)
     return 2
 

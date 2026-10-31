@@ -18489,7 +18489,9 @@ Branch `derived-mutation-total`, backlog #359 (closed here). `check-plan-code`: 
 `manifest_counts`, unchanged, and gains a last line stating both derived totals when anything drifts. The on-disk case
 now compares `pin_drift(manifest_counts(live))` with `[]` instead of comparing two totals. A source scan refuses a
 typed total coming back. `check-merge-ready`'s `PIN_TOTAL` proxy, its two cases and its one mutation entry are retired
-with their subject (pin 85 → 84, cases 211 → 209). A falling per-file pin is still held by `PIN_LINE`, so expect this
-pull request itself to HOLD on that fall. Two new mutants (a typed total, a manifest dropped from the sum) take
-`check-plan-code` 140 → 142. Measured from 2026-10-17: 41 of 43 merged commits to `check-plan-code.py` edited the
-literal.
+with their subject. Measured from 2026-10-17: 41 of 43 merged commits to `check-plan-code.py` edited the literal.
+⟳ r2 REDESIGN (thrashing armed): a falling per-file pin is now HELD by its EFFECTIVE value, not by text.
+`check-plan-code.py --print-pins` prints `EXPECTED_MUTATIONS` as JSON after import; `check-merge-ready`'s
+`pin_pair` archives `scripts/` at the merge base and at HEAD, runs it in each, and HOLDs a key that falls or is
+removed (CANNOT RUN when a side cannot answer). `PIN_LINE` and r1's `pin_shape_problems` are deleted. Pins:
+merge-ready 85 → 87, plan-code 140 → 147; cases: merge-ready 211 → 230, plan-code 265.
