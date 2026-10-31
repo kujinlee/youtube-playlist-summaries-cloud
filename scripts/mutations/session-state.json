@@ -524,12 +524,12 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if compact and ledger:\n        owner",
-        "    if False and ledger:\n        owner"
+        "    if compact and ledger:\n        L.extend(",
+        "    if False and ledger:\n        L.extend("
       ]
     ],
     "expect": [
-      "⭐ floor: the compact block is at most 25% of the full one (the fixture: one owner entry among twenty routine)"
+      "⭐ floor: the compact block is at most 25% of the full one — ONLY for a ledger of one owner entry among twenty routine; the real-ledger shape is the r3 R3-6 case"
     ]
   },
   {
@@ -537,8 +537,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "f\"full: {ledger_path or LEDGER_REL} (main checkout)\")",
-        "f\"see {ledger_path or LEDGER_REL} (main checkout)\")"
+        "f\"full: {path} (main checkout)\")",
+        "f\"see {path} (main checkout)\")"
       ]
     ],
     "expect": [
@@ -550,8 +550,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "shown = rest[-TITLES_SHOWN:]",
-        "shown = rest"
+        "for e in reversed(rest[-TITLES_SHOWN:]):",
+        "for e in reversed(rest):"
       ]
     ],
     "expect": [
@@ -615,7 +615,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "hidden = [clean(e.get(\"id\"), 40) for e in rest[:-TITLES_SHOWN]] if len(rest) > TITLES_SHOWN else []",
+        "hidden = ids_of([e for e in rest if id(e) not in taken])",
         "hidden = []"
       ]
     ],
@@ -628,8 +628,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "full: {ledger_path or LEDGER_REL} (main",
-        "full: {LEDGER_REL} (main"
+        "path = ledger_path or LEDGER_REL",
+        "path = LEDGER_REL"
       ]
     ],
     "expect": [
@@ -737,7 +737,7 @@
       ]
     ],
     "expect": [
-      "⭐ r2 R2-1: each of Codex's four hidden phrasings is shown whole with its kind declared, and by the fallback with none"
+      "⭐ r2 R2-1: each of Codex's four hidden phrasings is shown whole with its kind declared, and for a HAND-EDITED line with none (the writer no longer produces a kind-less line: see the r3 R3-1 case)"
     ]
   },
   {
@@ -750,7 +750,7 @@
       ]
     ],
     "expect": [
-      "⭐ r2 R2-1: each of Codex's four hidden phrasings is shown whole with its kind declared, and by the fallback with none"
+      "⭐ r2 R2-1: each of Codex's four hidden phrasings is shown whole with its kind declared, and for a HAND-EDITED line with none (the writer no longer produces a kind-less line: see the r3 R3-1 case)"
     ]
   },
   {
@@ -797,8 +797,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "            L.append(_line(e))\n        for e in shown:",
-        "            L.append(_line(e)[:TITLE_WIDTH])\n        for e in shown:"
+        "        line = _line(e)\n        undecided",
+        "        line = _line(e)[:TITLE_WIDTH]\n        undecided"
       ]
     ],
     "expect": [
@@ -862,8 +862,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "kind = KIND_WAIT if what.startswith(OWNER_MARKER) else KIND_ROUTINE",
-        "kind = KIND_ROUTINE"
+        "    if kind is None:\n        kind = guess_kind(",
+        "    if kind is None:\n        kind = KIND_ROUTINE; _ = guess_kind("
       ]
     ],
     "expect": [
@@ -946,6 +946,163 @@
     ],
     "expect": [
       "⭐ r2 R2-4: the SIZE bound is its own case, on a ledger where routine entries dominate (20 routine, 0 owner): at most 25%"
+    ]
+  },
+  {
+    "name": "floor r3: --add without --kind stores the strict-prefix answer (routine) again",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "kind = guess_kind({\"what\": what, \"on_done\": on_done})",
+        "kind = KIND_WAIT if what.startswith(OWNER_MARKER) else KIND_ROUTINE"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-1: `--add` with NO --kind stores the kind the text looks like — the reviewer's three phrasings are owner kinds, shown whole, and a re-add keeps it"
+    ]
+  },
+  {
+    "name": "floor r3: an owner entry is accepted whatever the cap says",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if used + len(line) + 1 + reserve_footer + len(notice(undecided)) <= BLOCK_CAP:",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-2: 20 owner entries (18 instructions, 2 waits) with 9 PRs: the block is within BLOCK_CAP; the 2 waits are shown FIRST and whole",
+      "⭐ r3 R3-2: the PATHOLOGICAL ledger (200 owner, 200 routine, 100 PRs, 10 problems) is STILL within BLOCK_CAP, and says how many owner entries it left out (the ids it can name are bounded by IDS_LIMIT; the rest are counted, '+K more')"
+    ]
+  },
+  {
+    "name": "floor r3: the cap notice names no ids",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "{id_list(ids, IDS_LIMIT)}",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-2: ...and EVERY owner entry not shown is named by id, with the absolute path of the full file; none is dropped silently"
+    ]
+  },
+  {
+    "name": "floor r3: owner-instruction entries are printed before owner-wait entries",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "key=lambda e: entry_kind(e) != KIND_WAIT)",
+        "key=lambda e: 0)"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-2: 20 owner entries (18 instructions, 2 waits) with 9 PRs: the block is within BLOCK_CAP; the 2 waits are shown FIRST and whole"
+    ]
+  },
+  {
+    "name": "floor r3: the PR list is not bounded in the compact block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if compact and sum(len(x) + 1 for x in L[pr_start:]) > PR_BUDGET:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-2: the PATHOLOGICAL ledger (200 owner, 200 routine, 100 PRs, 10 problems) is STILL within BLOCK_CAP, and says how many owner entries it left out (the ids it can name are bounded by IDS_LIMIT; the rest are counted, '+K more')"
+    ]
+  },
+  {
+    "name": "floor r3: ledger problems are not bounded in the compact block",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "PROBLEMS_SHOWN = 3 ",
+        "PROBLEMS_SHOWN = 30 "
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-2: the PATHOLOGICAL ledger (200 owner, 200 routine, 100 PRs, 10 problems) is STILL within BLOCK_CAP, and says how many owner entries it left out (the ids it can name are bounded by IDS_LIMIT; the rest are counted, '+K more')"
+    ]
+  },
+  {
+    "name": "floor r3: the ids the notice cannot name are not counted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "return out + f\", +{left} more\" if out else f\"+{left} more\"",
+        "return out"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-2: the PATHOLOGICAL ledger (200 owner, 200 routine, 100 PRs, 10 problems) is STILL within BLOCK_CAP, and says how many owner entries it left out (the ids it can name are bounded by IDS_LIMIT; the rest are counted, '+K more')"
+    ]
+  },
+  {
+    "name": "floor r3: the cap is lowered under the real ledger's owner text",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "BLOCK_CAP = 8000 ",
+        "BLOCK_CAP = 6000 "
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-6: on a REAL-LEDGER shape (12 owner of ~440 characters, routine beside them, 9 PRs) every owner entry is whole and the block is within BLOCK_CAP — the 25% bound is NOT claimed here, owner text is most of it"
+    ]
+  },
+  {
+    "name": "floor r3: --override with no '=' is dropped in silence",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if malformed:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written"
+    ]
+  },
+  {
+    "name": "floor r3: --override naming no entry is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if oid not in by_id:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written"
+    ]
+  },
+  {
+    "name": "floor r3: --override on an already-declared entry is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if by_id.get(oid, {}).get(\"kind\") in KINDS:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written"
+    ]
+  },
+  {
+    "name": "floor r3: a flag outside its mode is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "if stray:   #",
+        "if False:   #"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written"
     ]
   }
 ]

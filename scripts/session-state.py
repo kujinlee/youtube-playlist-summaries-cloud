@@ -51,7 +51,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 95 cases
+    python3 scripts/session-state.py --self-test  # 102 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -81,6 +81,14 @@ TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
 TITLE_WIDTH = 120    # the compact block's one line per ledger entry (backlog: context floor)
+BLOCK_CAP = 8000     # the compact block is NEVER longer than this: the harness replaces SessionStart output over 10,000 characters
+                     # with a file path, so an uncapped block loses every owner line with it (trim-hook-floor r3 R3-2). 8,000 and
+                     # not lower because the real ledger's 12 owner entries printed whole were 7.4k when this was written; the fixed
+                     # parts (PRs, problems, notice, footer) are bounded so the worst case is about 6k plus owner entries
+PR_BUDGET = 1800     # of BLOCK_CAP, the most the PR lines may take; the rest is a count and `gh pr list`
+PROBLEMS_SHOWN = 3   # ledger problems named in the compact block; the rest is a count
+IDS_LIMIT = 1000     # characters of owner ids the cap notice may print
+HIDDEN_IDS_LIMIT = 400   # characters of routine ids the footer may print
 TITLES_SHOWN = 5     # non-owner ledger titles the compact block names, newest first; the rest is behind the path
 DRAIN = 1.0       # seconds a killed call's pipes are drained before they are closed (PR #425 r3 XR3)
 # A ledger entry WAITS ON THE OWNER only when its `what` starts with this — an explicit marker, never a word match:
@@ -325,15 +333,17 @@ def normalise_what(what: str) -> str:
 
 
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None) -> None:
-    """`kind` is DECLARED by the caller. Left out, it is `owner-wait` for a `what` that starts with the marker (the
-    back-compat spelling) and `routine` otherwise. A kind that is not one of KINDS is refused, never guessed."""
+    """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
+    written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
+    strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
+    A kind that is not one of KINDS is refused, never guessed."""
     if not id_.strip():
         raise ValueError("an empty id could never be shown or removed")
     if kind is not None and kind not in KINDS:
         raise ValueError(f"kind {kind!r} is not one of {', '.join(KINDS)}")
     what = normalise_what(what)
     if kind is None:
-        kind = KIND_WAIT if what.startswith(OWNER_MARKER) else KIND_ROUTINE
+        kind = guess_kind({"what": what, "on_done": on_done})
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
@@ -365,6 +375,12 @@ def migrate_kinds(path: Path, overrides: dict[str, str] | None = None, apply: bo
         raise ValueError(f"override(s) not one of {', '.join(KINDS)}: {bad}")
     with _locked(path):
         entries, raw = _for_update(path)
+        by_id = {e.get("id"): e for e in entries}
+        for oid in overrides:   # r3 R3-5: an override that cannot be used is REFUSED, never dropped in silence
+            if oid not in by_id:
+                raise ValueError(f"--override names {oid!r}, which is not an entry in the ledger")
+            if by_id.get(oid, {}).get("kind") in KINDS:
+                raise ValueError(f"--override names {oid!r}, which already declares kind {by_id[oid]['kind']!r}")
         rows, out = [], []
         for e in entries:
             have = e.get("kind") if e.get("kind") in KINDS else None
@@ -395,6 +411,71 @@ def _line(e: dict) -> str:
             f"(since {clean(e.get('at'), 20)})")
 
 
+def id_list(ids: list[str], limit: int) -> str:
+    """`ids` joined, never longer than `limit` characters: what does not fit is COUNTED ('+K more'), never dropped silently."""
+    out = ""
+    for n, i in enumerate(ids):
+        piece = (", " if out else "") + i
+        left = len(ids) - n
+        if len(out) + len(piece) > limit - (len(f", +{left} more") if left > 1 else 0):
+            return out + f", +{left} more" if out else f"+{left} more"
+        out += piece
+    return out
+
+
+def _compact_ledger(head: list[str], ledger: list[dict], problems: list[str], mark: str, ledger_path: str) -> list[str]:
+    """The compact block's ledger lines, under BLOCK_CAP for the WHOLE block (`head` is what is already in it).
+    Order: owner-wait entries whole, then owner-instruction entries whole, then routine titles. An owner entry that does
+    not fit is NOT printed and is NAMED by id with the path of the full file, so nothing owner-kind is silently dropped
+    (r3 R3-2). The cap is reserved before an entry is accepted, so the notice can always be printed."""
+    path = ledger_path or LEDGER_REL
+    owner = sorted((e for e in ledger if is_owner(e)), key=lambda e: entry_kind(e) != KIND_WAIT)   # waits first, file order within
+    rest = sorted((e for e in ledger if not is_owner(e)), key=lambda e: str(e.get("at") or ""))   # newest = by `at`
+    prob_lines = [f"  ⚠ {clean(p)}" + mark for p in problems[:PROBLEMS_SHOWN]]
+    if len(problems) > PROBLEMS_SHOWN:
+        prob_lines.append(f"  ⚠ … {len(problems) - PROBLEMS_SHOWN} more ledger problem(s), see {path}" + mark)
+    fixed = sum(len(x) + 1 for x in head) + sum(len(x) + 1 for x in prob_lines) + len("=== END IN FLIGHT ===") + 1
+
+    def notice(ids: list[str]) -> str:
+        if not ids:
+            return ""
+        return (f"  ⛔ {len(ids)} OWNER entr{'y' if len(ids) == 1 else 'ies'} NOT SHOWN (the block is capped at {BLOCK_CAP} "
+                f"characters) — whole in {path}: {id_list(ids, IDS_LIMIT)}\n")
+
+    def footer(n_owner: int, titled: int, hidden: list[str]) -> str:
+        return (f"  {n_owner} owner decision(s) shown whole; {titled} of {len(rest)} other entries titled, newest by `at` last; "
+                f"hidden ids: {id_list(hidden, HIDDEN_IDS_LIMIT) or 'none'}; each entry's what / on_done / since: "
+                f"full: {path} (main checkout)")
+
+    ids_of = lambda es: [clean(e.get("id"), 40) for e in es]
+    used, shown, skipped = fixed, [], []
+    reserve_footer = len(footer(len(owner), 0, ids_of(rest))) + 1
+    for n, e in enumerate(owner):
+        line = _line(e)
+        undecided = skipped + ids_of(owner[n + 1:])
+        if used + len(line) + 1 + reserve_footer + len(notice(undecided)) <= BLOCK_CAP:
+            shown.append(line)
+            used += len(line) + 1
+        else:
+            skipped.append(clean(e.get("id"), 40))
+    titles = []
+    for e in reversed(rest[-TITLES_SHOWN:]):   # newest first so the oldest is what gives way
+        line = f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'), TITLE_WIDTH)}"
+        taken = {id(e)} | {id(t[1]) for t in titles}
+        hidden_now = ids_of([x for x in rest if id(x) not in taken])
+        if used + len(line) + 1 + len(footer(len(shown), len(titles) + 1, hidden_now)) + 1 + len(notice(skipped)) <= BLOCK_CAP:
+            titles.append((line, e))
+            used += len(line) + 1
+    titles.reverse()
+    taken = {id(t[1]) for t in titles}
+    hidden = ids_of([e for e in rest if id(e) not in taken])
+    out = shown + [t[0] for t in titles]
+    if skipped:
+        out.append(notice(skipped).rstrip("\n"))
+    out.append(footer(len(shown), len(titles), hidden))
+    return out + prob_lines
+
+
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
            now: str, truncated: bool = False, mark: str = "", compact: bool = False, ledger_path: str = "",
            owner_elsewhere: int = 0) -> str:
@@ -412,7 +493,11 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
     else:
         L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):"
                  + (mark if truncated else ""))
-        for p in prs:
+        pr_start = len(L)
+        for n_shown, p in enumerate(prs):
+            if compact and sum(len(x) + 1 for x in L[pr_start:]) > PR_BUDGET:   # the cap holds for the PR list too: owner entries are what it protects
+                L.append(f"  … {len(prs) - n_shown} more open PR(s) not listed here (`gh pr list`)")
+                break
             missing = [k for k in ("headRefName", "headRefOid", "mergeStateStatus") if not p.get(k)]
             rollup = p.get("statusCheckRollup")
             draft = " DRAFT" if p.get("isDraft") else ""
@@ -443,22 +528,15 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
         L.append(f"IN-FLIGHT LEDGER ({LEDGER_REL}): none RECORDED — it is written by hand (`--add`), "
                  "so empty is not proof that nothing is running.")
     if compact and ledger:
-        owner = [e for e in ledger if is_owner(e)]
-        rest = sorted((e for e in ledger if not is_owner(e)), key=lambda e: str(e.get("at") or ""))   # newest = by `at`
-        shown = rest[-TITLES_SHOWN:]
-        hidden = [clean(e.get("id"), 40) for e in rest[:-TITLES_SHOWN]] if len(rest) > TITLES_SHOWN else []
-        for e in owner:
-            L.append(_line(e))
-        for e in shown:
-            L.append(f"  [{clean(e.get('id'), 60)}] {clean(e.get('what'), TITLE_WIDTH)}")
-        L.append(f"  {len(owner)} owner decision(s) shown whole; {len(shown)} of {len(rest)} other entries titled, "
-                 f"newest by `at` last; hidden ids: {', '.join(hidden) or 'none'}; each entry's what / on_done / since: "
-                 f"full: {ledger_path or LEDGER_REL} (main checkout)")
-        ledger = []
+        L.extend(_compact_ledger(L, ledger, ledger_problems, mark, ledger_path))
+        L.append("=== END IN FLIGHT ===")
+        return "\n".join(L)
     for e in ledger:
         L.append(_line(e))
-    for prob in ledger_problems:
+    for prob in ledger_problems[:PROBLEMS_SHOWN if compact else None]:
         L.append(f"  ⚠ {clean(prob)}" + mark)
+    if compact and len(ledger_problems) > PROBLEMS_SHOWN:
+        L.append(f"  ⚠ … {len(ledger_problems) - PROBLEMS_SHOWN} more ledger problem(s), see {ledger_path or LEDGER_REL}" + mark)
     L.append("=== END IN FLIGHT ===")
     return "\n".join(L)
 
@@ -581,7 +659,8 @@ def _self_test_body() -> int:
     cled.append({"id": "own", "what": OWNER_MARKER + " decide " + "o" * 500, "on_done": "answer", "at": "10-30 02:00"})
     full_block = render(cprs, None, cled, [], "now")
     small = render(cprs, None, cled, [], "now", compact=True)
-    case("⭐ floor: the compact block is at most 25% of the full one (the fixture: one owner entry among twenty routine)",
+    case("⭐ floor: the compact block is at most 25% of the full one — ONLY for a ledger of one owner entry among twenty routine; "
+         "the real-ledger shape is the r3 R3-6 case",
          len(small) * 100 <= 25 * len(full_block), True)
     case("⭐ floor: the compact block prints the file that holds every ledger entry", f"full: {LEDGER_REL}" in small, True)
     case("⭐ floor: an OWNER entry is shown whole (uncapped) and its on_done too",
@@ -628,7 +707,8 @@ def _self_test_body() -> int:
         bare = render(None, "x", [ent, *newer], [], "now", compact=True)
         decl = render(None, "x", [dict(ent, kind=KIND_WAIT), *newer], [], "now", compact=True)
         got[name_] = (f"[{name_}]" in bare and "1 owner decision(s)" in bare, f"[{name_}]" in decl and "1 owner decision(s)" in decl)
-    case("⭐ r2 R2-1: each of Codex's four hidden phrasings is shown whole with its kind declared, and by the fallback with none",
+    case("⭐ r2 R2-1: each of Codex's four hidden phrasings is shown whole with its kind declared, and for a HAND-EDITED line with none "
+         "(the writer no longer produces a kind-less line: see the r3 R3-1 case)",
          got, {n_: (True, True) for n_ in phrasings})
     prose = {"id": "plain", "what": "Ship the thing by Friday " + "p" * 500 + " END-OF-WORDS", "on_done": "d" * 300 + " END-DONE",
              "at": "10-30 00:00", "kind": KIND_INSTRUCTION}
@@ -652,6 +732,91 @@ def _self_test_body() -> int:
     own_only = [dict(own500, id=f"o{n}") for n in range(4)]
     case("⭐ r2 R2-4: ...and the stated cost: owner entries are never trimmed, so an owner-only ledger is NOT smaller compact",
          len(render(None, "x", own_only, [], "now", compact=True)) >= len(render(None, "x", own_only, [], "now")) - 400, True)
+    # ─── r3 fold: the reviewer's inputs ───
+    def owner_ents(n, kind=KIND_INSTRUCTION, width=420, prefix="ow"):
+        return [{"id": f"{prefix}-{i}", "what": f"OWNER 10:{i:02d}: " + "i" * width + f" END{prefix}{i}", "on_done": "d",
+                 "at": f"10-30 1{i % 10}:00", "kind": kind} for i in range(n)]
+    real_shape = (owner_ents(8, KIND_INSTRUCTION) + owner_ents(4, KIND_WAIT, prefix="wt")
+                  + [dict(routine[i % 5], id=f"rt{i}") for i in range(11)])   # 12 owner, 11 routine: the real ledger's counts
+    real_prs = [dict(cprs[0], number=500 + n, headRefName=f"branch-{n}") for n in range(9)]
+    out = render(real_prs, None, real_shape, [], "now", compact=True, ledger_path="/main/.claude/inflight.jsonl")
+    n_owner = sum(1 for e in real_shape if is_owner(e))
+    case("⭐ r3 R3-6: on a REAL-LEDGER shape (12 owner of ~440 characters, routine beside them, 9 PRs) every owner entry is whole and the "
+         "block is within BLOCK_CAP — the 25% bound is NOT claimed here, owner text is most of it",
+         (len(out) <= BLOCK_CAP, sum(1 for e in real_shape if is_owner(e) and f"[{e['id']}]" in out and f"END{e['id'].replace('-', '')}" in out),
+          f"{n_owner} owner decision(s) shown whole" in out, "NOT SHOWN" in out), (True, n_owner, True, False))
+    # R3-2: 18 owner entries (the reviewer's input) cannot fit; the block stays capped, orders waits first, and NAMES what it left out
+    crowd = owner_ents(18, KIND_INSTRUCTION) + owner_ents(2, KIND_WAIT, prefix="wt")
+    crowd_out = render(cprs[:9], None, crowd + routine, [], "now", compact=True, ledger_path="/main/.claude/inflight.jsonl")
+    shown_ids = {e["id"] for e in crowd if f"  [{e['id']}] " in crowd_out}
+    left_out = [e["id"] for e in crowd if e["id"] not in shown_ids]
+    notice = next((ln for ln in crowd_out.splitlines() if "NOT SHOWN" in ln), "")
+    case("⭐ r3 R3-2: 20 owner entries (18 instructions, 2 waits) with 9 PRs: the block is within BLOCK_CAP; the 2 waits are shown FIRST and whole",
+         (len(crowd_out) <= BLOCK_CAP, all(f"END{w}{i}" in crowd_out for w in ("wt",) for i in range(2)),
+          len(left_out) > 0), (True, True, True))
+    case("⭐ r3 R3-2: ...and EVERY owner entry not shown is named by id, with the absolute path of the full file; none is dropped silently",
+         (all(i in notice for i in left_out), "/main/.claude/inflight.jsonl" in notice, f"{len(left_out)} OWNER entries NOT SHOWN" in notice,
+          [i for i in left_out if i.startswith("wt-")]), (True, True, True, []))
+    many = [{"id": f"owner-entry-{i:03d}-" + "q" * 20, "what": "OWNER 09:00: " + "m" * 300, "on_done": "d", "at": "10-30 09:00", "kind": KIND_INSTRUCTION}
+            for i in range(200)] + [dict(e, id=f"routine-entry-{i:03d}-" + "z" * 20) for i, e in enumerate(routine * 40)]
+    many_prs = [dict(cprs[0], number=n, headRefName="b" * 40) for n in range(100)]
+    many_out = render(many_prs, None, many, ["problem " + "p" * 300] * 10, "now", compact=True, ledger_path="/m/" + "d" * 150 + "/inflight.jsonl")
+    shown_n = sum(1 for e in many if is_owner(e) and f"  [{e['id']}] " in many_out)
+    case("⭐ r3 R3-2: the PATHOLOGICAL ledger (200 owner, 200 routine, 100 PRs, 10 problems) is STILL within BLOCK_CAP, and says how many owner "
+         "entries it left out (the ids it can name are bounded by IDS_LIMIT; the rest are counted, '+K more')",
+         (len(many_out) <= BLOCK_CAP, f"{200 - shown_n} OWNER entries NOT SHOWN" in many_out, "more open PR(s) not listed" in many_out,
+          many_out.count("more ledger problem"), bool(re.search(r"\+\d+ more", (many_out.split("NOT SHOWN") + ["", ""])[1].split("\n")[0]))),
+         (True, True, True, 1, True))
+    # R3-1: the writer. The reviewer's three inputs, through main(--add), with no --kind
+    from contextlib import redirect_stderr as _rs
+    _nogit = lambda c, w, timeout=TIMEOUT: (128, "fatal: not a git repository")  # noqa: E731
+    w3 = Path(tempfile.mkdtemp(prefix="ss-r3-"))
+    try:
+        phr = {"new-instr": "OWNER 23:40: do the next thing now (owner: 'when convenient') " + "n" * 200,
+               "new-note": "NOTE: WAITS-ON-OWNER: pick A or B",
+               "new-lower": "waits-on-owner (card when back): pick A or B"}
+        with redirect_stdout(io.StringIO()), _rs(io.StringIO()):
+            for id_, what_ in phr.items():
+                main(["--add", id_, what_, "d"], root=w3, run=_nogit)
+            main(["--add", "plain", "run the nightly job", "d"], root=w3, run=_nogit)
+            main(["--add", "declared", "WAITS-ON-OWNER: pick", "d", "--kind", "routine"], root=w3, run=_nogit)
+            main(["--add", "new-instr", "OWNER 23:41: do the next thing now (owner: 'when convenient')", "d"], root=w3, run=_nogit)   # a re-add
+        led3 = {e["id"]: e for e in read_ledger(w3 / LEDGER_REL)[0]}
+        blk = render(None, "x", [*led3.values(), *newer], [], "now", compact=True)
+        case("⭐ r3 R3-1: `--add` with NO --kind stores the kind the text looks like — the reviewer's three phrasings are owner kinds, "
+             "shown whole, and a re-add keeps it",
+             ({k: led3[k]["kind"] for k in phr}, all(f"  [{k}] " in blk for k in phr), "hidden ids" in blk and "new-" not in blk.split("hidden ids:")[1]),
+             ({"new-instr": KIND_INSTRUCTION, "new-note": KIND_WAIT, "new-lower": KIND_WAIT}, True, True))
+        case("⭐ r3 R3-1: ...a plain job is still `routine`, and an explicit `--kind routine` is kept over the text",
+             (led3["plain"]["kind"], led3["declared"]["kind"]), (KIND_ROUTINE, KIND_ROUTINE))
+        # R3-5: --override that cannot be used is refused, and nothing is written
+        mig3 = Path(tempfile.mkdtemp(prefix="ss-r3m-"))
+        (mig3 / ".claude").mkdir()
+        (mig3 / LEDGER_REL).write_text("".join(json.dumps(e) + "\n" for e in (
+            {"id": "build-402", "what": "BUILD it (owner: 'when convenient')", "on_done": "d", "at": "T"},
+            {"id": "done-one", "what": "x", "on_done": "d", "at": "T", "kind": KIND_ROUTINE})))
+        before_m = (mig3 / LEDGER_REL).read_bytes()
+        rcs, errs = {}, {}
+        for label, argv in {"no-equals": ["--migrate-kinds", "--override", "build-402", "--apply"],
+                            "unknown": ["--migrate-kinds", "--override", "no-such=owner-wait", "--apply"],
+                            "declared": ["--migrate-kinds", "--override", "done-one=owner-wait", "--apply"],
+                            "stray-apply": ["--apply"], "stray-override": ["--override", "a=routine"],
+                            "stray-kind": ["--kind", "routine"],
+                            "good": ["--migrate-kinds", "--override", "build-402=owner-instruction"]}.items():
+            eb = io.StringIO()
+            with redirect_stdout(io.StringIO()), _rs(eb):
+                rcs[label] = main(argv, root=mig3, run=_nogit)
+            errs[label] = eb.getvalue()
+        case("⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, "
+             "and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written",
+             (rcs, (mig3 / LEDGER_REL).read_bytes() == before_m, not (mig3 / LEDGER_REL.replace("jsonl", "jsonl.bak-kinds")).exists(),
+              "no '='" in errs["no-equals"], "not an entry" in errs["unknown"], "already declares" in errs["declared"],
+              all("only means something" in errs[k] for k in ("stray-apply", "stray-override", "stray-kind"))),
+             ({"no-equals": 2, "unknown": 2, "declared": 2, "stray-apply": 2, "stray-override": 2, "stray-kind": 2, "good": 0},
+              True, True, True, True, True, True))
+        shutil.rmtree(mig3, ignore_errors=True)
+    finally:
+        shutil.rmtree(w3, ignore_errors=True)
     tmpk = Path(tempfile.mkdtemp(prefix="ss-kind-")) / "inflight.jsonl"
     try:
         ledger_add(tmpk, "a", "plain", "d", "T")
@@ -697,10 +862,10 @@ def _self_test_body() -> int:
         proposal = migrate_kinds(mig, {"m4": KIND_INSTRUCTION})
         untouched = mig.read_bytes() == before
         backup = mig.with_suffix(".jsonl.bak-kinds")
+        bad_override = outcome(migrate_kinds, mig, {"m3": "nope"})   # BEFORE the apply: afterwards m3 is declared and is refused for that reason
         applied = migrate_kinds(mig, {"m4": KIND_INSTRUCTION}, apply=True)
         after = {e["id"]: e["kind"] for e in read_ledger(mig)[0]}
         second = outcome(migrate_kinds, mig, {}, True)
-        bad_override = outcome(migrate_kinds, mig, {"m3": "nope"})
         backup_same = backup.exists() and backup.read_bytes() == before
         mig2 = mig.parent / "second.jsonl"
         mig2.write_text(json.dumps({"id": "z1", "what": "WAITS-ON-OWNER: pick", "on_done": "d", "at": "T"}) + "\n")
@@ -1054,14 +1219,13 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--add", nargs=3, metavar=("ID", "WHAT", "ON_DONE"),
                     help="record a background job (re-adding an ID replaces it). Declare what the owner has to do with it "
-                         "with --kind. A WHAT that starts with 'WAITS-ON-OWNER:' (written without the colon, it is "
-                         "normalised) is an owner-wait when --kind is left out; mentioning the owner in the text makes "
-                         "nothing an owner entry")
+                         "with --kind. Left out, the kind is what the text looks like (`guess_kind`, the wide reading: a "
+                         "WAITS-ON-OWNER marker in any form, an `OWNER hh:mm:` lead, a `(card`, owner-approval wording), "
+                         "never `routine` by default for text that says so")
     ap.add_argument("--kind", choices=KINDS,
                     help="what the owner has to do with the entry, declared and never inferred: `owner-wait` (a decision waits "
                          "on them), `owner-instruction` (something they told us to do) or `routine`. Every reader prints the "
-                         "first two WHOLE and trims `routine`. Left out, it is `owner-wait` for a WHAT that starts with the "
-                         f"marker and `routine` otherwise")
+                         "first two WHOLE and trims `routine`. Left out, it is what the text looks like (`guess_kind`)")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
                     help="print the kind each entry has or would get; with --apply, back the ledger up to "
@@ -1072,13 +1236,25 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
+    stray = [flag for flag, on in (("--apply", args.apply and not args.migrate_kinds),
+                                   ("--override", bool(args.override) and not args.migrate_kinds),
+                                   ("--kind", args.kind is not None and not args.add)) if on]
+    if stray:   # r3 R3-5: a flag given outside the mode that reads it did nothing and said nothing
+        print(f"CANNOT RUN — {', '.join(stray)} only means something with "
+              f"{'--migrate-kinds' if stray[0] != '--kind' else '--add'}; nothing was done", file=sys.stderr)
+        return 2
     main, main_err = main_checkout(root, run)
     led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
     if main_err and (args.add or args.done is not None):
         print(f"note: {main_err}; using {led}", file=sys.stderr)
     try:
         if args.migrate_kinds:
-            ov = dict(o.split("=", 1) for o in args.override if "=" in o)
+            malformed = [o for o in args.override if "=" not in o]
+            if malformed:
+                print(f"CANNOT RUN — --override takes ID=KIND, and {malformed[0]!r} has no '=' (kinds: {', '.join(KINDS)})",
+                      file=sys.stderr)
+                return 2
+            ov = dict(o.split("=", 1) for o in args.override)
             rows = migrate_kinds(led, ov, apply=args.apply)
             print(f"{'APPLIED' if args.apply else 'PROPOSAL (nothing written; add --apply)'} — {led}")
             for id_, now_, want, why in rows:

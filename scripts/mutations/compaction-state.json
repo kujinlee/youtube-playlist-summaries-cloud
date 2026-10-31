@@ -355,8 +355,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    return fit(\"\\n\".join(L), PRINT_CAP - len(end) - 1, \"the session's snapshot file\") + \"\\n\" + end",
-        "    return \"\\n\".join(L) + \"\\n\" + end"
+        "PRINT_CAP - len(end) - 1\n    if len(text) <= budget:",
+        "PRINT_CAP - len(end) - 1\n    if True:"
       ]
     ],
     "expect": [
@@ -946,6 +946,32 @@
     ],
     "expect": [
       "⭐ r2: when routine NOT CAPTURED lines crowd the print past its limit, the OWNER decisions are what stays (they come first)"
+    ]
+  },
+  {
+    "name": "floor r3: the print's cut names no owner decision",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "gone = [i for i in ids if f\"ledger [{i}]\" not in cut]",
+        "gone = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-4: 30 owner decisions past the print limit: the print is within PRINT_CAP, every decision is shown OR named by id (none in both, none in neither), and the count of the named is stated"
+    ]
+  },
+  {
+    "name": "floor r3: the owner-id reader expects leading spaces the digest has cleaned away",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "OWNER_ID = re.compile(r\"\\s*ledger",
+        "OWNER_ID = re.compile(r\"  ledger"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-4: 30 owner decisions past the print limit: the print is within PRINT_CAP, every decision is shown OR named by id (none in both, none in neither), and the count of the named is stated"
     ]
   }
 ]

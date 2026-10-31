@@ -2003,7 +2003,10 @@ EXPECTED_MUTATIONS = {
     # are re-bound on the fallback and on `_line`; the rest are new: the fallback's four readings, the declared kind
     # governing, `--add`'s kind (stored, validated, defaulted), the full shape, and the migration (propose, keep, override,
     # backup, no second apply, bad override).
-    "scripts/session-state.py": 73,
+    # ⟳ 73 -> 85 (context floor r3): `--add` stores what the text looks like; the compact block is CAPPED (owner entries
+    # accepted against a reserved notice, waits first, the PR list and the problems bounded, the overflow named and counted,
+    # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
+    "scripts/session-state.py": 85,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -2046,7 +2049,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 63 -> 73 (context floor r2): the snapshot selects by the declared kind, owner text is never cut (decisions, what,
     # on_done, /compact instructions, title block), the cap makes room for it, the digest puts it first, and the in-flight
     # block says where the owner entries went.
-    "scripts/compaction-state.py": 73,
+    # ⟳ 73 -> 75 (context floor r3): the print's cut names the owner decisions it took (the ids, and the reader of the
+    # digest's whitespace-cleaned lines). The reserved room for the notice has NO mutation: the case's lines are short
+    # enough that the cut's own slack hides it.
+    "scripts/compaction-state.py": 75,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6292,7 +6298,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2617)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2631)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 110 cases
+    python3 scripts/compaction-state.py --self-test  # 111 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -118,6 +118,8 @@ DIGEST_WHOLE = ("## Pending OWNER decisions", "## The owner's recent words")   #
 DIGEST_HEAD = re.compile(r"#{1,3} ")
 WHOLE = 10**9          # the width of a value that is never cut (an owner decision, the /compact instructions)
 SNAPSHOT_CAP = 8000     # under PRINT_CAP with the print's heading lines
+OWNER_ID = re.compile(r"\s*ledger \[([^\]]+)\]")   # a line of the OWNER decisions section; `decision_section` writes it
+OWNER_IDS_LIMIT = 1000  # characters of owner ids the print's cut notice may name; the rest is counted ('+K more')
 PRINT_CAP = 9800        # the harness replaces SessionStart output over 10,000 characters with a file path
 STALE_AFTER = 30 * 60   # seconds: a receipt this old or older is not shown (r4 X4-5: age < 0 is refused too)
 STDIN_WAIT = 2.0
@@ -773,6 +775,14 @@ SESSION_NOT_COMPACTION = ("session identity is not compaction identity: a delaye
                           "session, or an earlier one whose successor's PreCompact did not run, can be shown here.")
 
 
+def _id_list(ids: list[str], limit: int) -> str:
+    """session-state's `id_list` (ids joined, the overflow COUNTED, never silent); a plain join only when that file cannot load."""
+    try:
+        return _session_state().id_list(ids, limit)
+    except Exception:  # noqa: BLE001
+        return ", ".join(ids)[:limit]
+
+
 def _clean_keep_nc(line: str, width: int) -> str:
     """clean(line, width), except a cut never takes the NOT CAPTURED words with it: the marker and what follows it are
     kept, the front is cut instead."""
@@ -840,7 +850,19 @@ def render_print(snap_text, snap_err, now: float, receipt: dict | None = None, r
                  f"receipt {clean(r['nonce'], 40)}).")
     else:
         L.append(digest(snap_text, f"{SESSIONS_REL}/{session_id}/snapshot.md"))
-    return fit("\n".join(L), PRINT_CAP - len(end) - 1, "the session's snapshot file") + "\n" + end
+    text, budget = "\n".join(L), PRINT_CAP - len(end) - 1
+    if len(text) <= budget:
+        return text + "\n" + end
+    # r3 R3-4: a cut that falls INSIDE the owner section must not drop a decision without saying so. The ids are reserved
+    # first (bounded by OWNER_IDS_LIMIT), the text is cut, and every owner entry whose line did not survive is NAMED.
+    ids = [m.group(1) for m in map(OWNER_ID.match, text.splitlines()) if m]
+    cut = fit(text, budget - OWNER_IDS_LIMIT - 120, "the session's snapshot file")
+    gone = [i for i in ids if f"ledger [{i}]" not in cut]
+    note = ""
+    if gone:
+        note = (f"\n  ⛔ {len(gone)} OWNER decision(s) NOT SHOWN here (cut at the print limit) — whole in the snapshot file above: "
+                + _id_list(gone, OWNER_IDS_LIMIT))
+    return cut + note + "\n" + end
 
 
 def run_child(mode: str, payload: dict | None, root: Path, timeout: float, now: float, nonce: str | None = None,
@@ -1259,7 +1281,26 @@ def _self_test_body() -> int:
         out_huge = render_print(huge, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
         case("⭐ r2: past the harness's 10,000-character limit the print SAYS it is cut and names the file; routine headings go first",
              ("TRUNCATED" in out_huge, "snapshot file" in out_huge, len(out_huge) <= PRINT_CAP,
-              "full: .remember/compaction/" in out_huge), (True, True, True, True))
+              "full: .remember/compaction/" in out_huge,
+              # r3 R3-4: ...and every owner entry the cut took is NAMED, not just "TRUNCATED" (the 12,000 z's sit in the first one)
+              all(f"ledger [own-{i:02d}]" in out_huge.split("NOT SHOWN")[0] or f"own-{i:02d}" in out_huge.split("NOT SHOWN")[-1]
+                  for i in range(15)) and "NOT SHOWN" in out_huge), (True, True, True, True, True))
+        # r3 R3-4: a cut inside the owner section NAMES every decision it dropped (the reviewer's input: the real ledger plus 12)
+        packed = root / "packed"
+        (packed / ".claude").mkdir(parents=True)
+        (packed / ".git").mkdir()
+        (packed / ".claude" / "inflight.jsonl").write_text("".join(
+            json.dumps({"id": f"pk-{i:02d}", "what": f"OWNER 10:{i:02d}: " + "i" * 420 + f" PKEND{i:02d}", "on_done": "d", "at": "T",
+                        "kind": "owner-instruction"}) + "\n" for i in range(30)))
+        snap_pk = snapshot(payload, None, packed, fake_run(), 1000.0, lambda p: ([], None, 0), asks_ok, nonce="N1")
+        out_pk = render_print(snap_pk, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        pk_ids = [f"pk-{i:02d}" for i in range(30)]
+        pk_shown = [i for i in pk_ids if f"ledger [{i}]" in out_pk.split("NOT SHOWN")[0]]
+        pk_named = [i for i in pk_ids if i in out_pk.split("NOT SHOWN")[-1]] if "NOT SHOWN" in out_pk else []
+        case("⭐ r3 R3-4: 30 owner decisions past the print limit: the print is within PRINT_CAP, every decision is shown OR named by id "
+             "(none in both, none in neither), and the count of the named is stated",
+             (len(out_pk) <= PRINT_CAP, 0 < len(pk_shown) < 30, sorted(pk_shown + pk_named) == pk_ids, set(pk_shown).isdisjoint(pk_named),
+              f"{30 - len(pk_shown)} OWNER decision(s) NOT SHOWN" in out_pk), (True, True, True, True, True))
         crowded = snap_own.replace("## Worktrees (git worktree list)\n", "## Worktrees (git worktree list)\n"
                                    + "".join(f"  line {i} {NC} " + "w" * 180 + "\n" for i in range(80)))
         out_crowded = render_print(crowded, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
