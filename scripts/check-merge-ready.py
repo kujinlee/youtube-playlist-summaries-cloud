@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 237 cases
+    python3 scripts/check-merge-ready.py --self-test # 241 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -465,6 +465,32 @@ class SiblingUnusable(Exception):
     """A working-tree sibling this script runs IN-PROCESS could not be imported, or misbehaved."""
 
 
+def _describe(exc: BaseException, text: bool = True) -> str:
+    """`Name` or `Name: message` for an exception that may have come from a SIBLING — touching no sibling code.
+
+    ⛔ An f-string `{exc}` calls the `__str__` the sibling defined, and `exc.__class__` its `__class__`;
+    either can raise `SystemExit(0)` from OUTSIDE the `try` that guards the call, which leaves `main()`
+    at rc 0 with no verdict (r6 Codex F1: the formatting of a caught error is the same class as the
+    error). The name is read from `type`'s own descriptor — a metaclass `__name__` property is skipped
+    — and the message is guarded; whatever fails prints as `<unprintable>`. Only `KeyboardInterrupt`
+    passes through."""
+    try:
+        name = type.__dict__["__name__"].__get__(type(exc))
+    except KeyboardInterrupt:
+        raise
+    except BaseException:
+        name = "<unprintable>"
+    if not text:
+        return name
+    try:
+        msg = str.__str__(str(exc))                 # an exact str: a subclass could override __format__
+    except KeyboardInterrupt:
+        raise
+    except BaseException:
+        msg = "<unprintable>"
+    return f"{name}: {msg}"
+
+
 def _import_sibling(src: Path, name: str, error=SiblingUnusable):
     """Import the working-tree sibling `src` as module `name`, FAILING CLOSED — ONE rule, BOTH importers.
 
@@ -484,7 +510,7 @@ def _import_sibling(src: Path, name: str, error=SiblingUnusable):
     except KeyboardInterrupt:
         raise
     except BaseException as exc:
-        raise error(f"{src.name} could not be imported ({exc.__class__.__name__}: {exc})") from None
+        raise error(f"{src.name} could not be imported ({_describe(exc)})") from None
     return mod
 
 
@@ -931,7 +957,7 @@ def pins_at(run, rev: str) -> dict:
     except KeyboardInterrupt:
         raise
     except BaseException as exc:                    # a refused display, or a reader that misbehaves
-        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {exc.__class__.__name__}: {exc}") from None
+        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {_describe(exc)}") from None
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
@@ -1025,8 +1051,7 @@ def granted_escapes(pr_body: str) -> dict[str, str | None]:
     except KeyboardInterrupt:
         raise
     except BaseException as exc:                    # a matcher that misbehaves
-        raise SiblingUnusable(f"{DASHBOARD_GATE.name}: exemption_reason: "
-                              f"{exc.__class__.__name__}: {exc}") from None
+        raise SiblingUnusable(f"{DASHBOARD_GATE.name}: exemption_reason: {_describe(exc)}") from None
 
 
 def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
@@ -1164,7 +1189,7 @@ def main(argv: list[str]) -> int:
         try:
             _granted = granted_escapes(body_file.read_text())
         except Exception as exc:                      # a broken import must not hide the verdict
-            print(f"     ⚠ escape cross-check NOT RUN ({exc.__class__.__name__}) — "
+            print(f"     ⚠ escape cross-check NOT RUN ({_describe(exc, text=False)}) — "
                   f"treat the gate verdicts above as the answer")
             _granted = None
         if _granted is not None:
@@ -1205,7 +1230,7 @@ def main(argv: list[str]) -> int:
         gathered = True
     except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash
         code, line = 2, (f"CANNOT RUN — could not read the branch's diff or its mutation pins "
-                         f"({exc.__class__.__name__}: {exc}), so the house "
+                         f"({_describe(exc)}), so the house "
                          "rule's exceptions were NOT checked. Treat this as NOT RUN.")
         holds, gathered = [], False
     if gathered:
@@ -1213,7 +1238,7 @@ def main(argv: list[str]) -> int:
             nr = granted_escapes(body_file.read_text()).get("NO-REVIEW:") is not None
         except Exception as exc:
             nr = None
-            code, line = 2, (f"CANNOT RUN — the NO-REVIEW matcher failed ({exc.__class__.__name__}), "
+            code, line = 2, (f"CANNOT RUN — the NO-REVIEW matcher failed ({_describe(exc, text=False)}), "
                              f"so the waiver exception was NOT checked. Treat this as NOT RUN.")
         # Paths from the machine list — never `.split()` of `--name-only`, which cut a path
         # containing a space into two "files"; hunks from each file's own patch.
@@ -2180,6 +2205,43 @@ def _self_test_body() -> int:
     _rc, _o = _gate_main(_real_cde, "18")
     check("...while a well-behaved COPY of the dashboard gate still HOLDS the fall, rc=3 (the adjacent negative)",
           (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
+    # ⛔ r6 Codex F1: the SAME class one step later. The error text is built from the sibling's exception,
+    # and `{exc}` calls a `__str__` the sibling defines — outside the protected `try`. Codex's `Broken`
+    # raises SystemExit(0) from `__str__`; each of the three raises below left `main()` at rc 0, no verdict.
+    _broken = ('\nclass Broken(Exception):\n    def __str__(self):\n        raise SystemExit(0)\n')
+    _rc, _o = _gate_main(_real_cde + _broken + 'if __name__ != "__main__":\n    raise Broken()\n', "19")
+    check("⭐ main() is CANNOT RUN, rc=2, when the dashboard gate's import raises an exception whose __str__ exits (r6 Codex F1)",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    _rc, _o = _gate_main(_real_cde + _broken + "def exemption_reason(body, marker):\n    raise Broken()\n", "20")
+    check("⭐ ...and when the gate's exemption_reason raises one",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    _f6 = Path(tempfile.mkdtemp())
+    (_f6 / "check-plan-code.py").write_text(_real_src + _broken + "def pin_display(src):\n    raise Broken()\n",
+                                            encoding="utf-8")
+    _saved_reader = globals()["PINS_READER"]
+    globals()["PINS_READER"] = _f6 / "check-plan-code.py"
+    try:
+        _rc, _o = _main(["scripts/check-plan-code.py"], "24",
+                        pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+    except BaseException as exc:          # SystemExit escaping main() is exactly the defect
+        _rc, _o = f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
+    finally:
+        globals()["PINS_READER"] = _saved_reader
+        shutil.rmtree(_f6, ignore_errors=True)
+    check("⭐ ...and when the pins reader's pin_display raises one",
+          (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
+    class _EvilMeta(type):
+        __name__ = property(lambda c: (_ for _ in ()).throw(SystemExit(0)))
+    class Evil(Exception, metaclass=_EvilMeta):
+        def __str__(self):
+            raise SystemExit(0)
+        __class__ = property(lambda self: (_ for _ in ()).throw(SystemExit(0)))
+    try:                                  # an escape is a RED case, never a dead suite
+        _dsc = (_describe(Evil()), _describe(Evil(), text=False))
+    except BaseException as exc:
+        _dsc = f"ESCAPED {type(exc).__name__}"
+    check("_describe never calls sibling code: a metaclass __name__, a __class__ and a __str__ that each exit",
+          _dsc, ("Evil: <unprintable>", "Evil"))
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.
     _rc, _o = _main(["docs/g.yml"], "21", status="R100\0.github/workflows/g.yml\0docs/g.yml\0")

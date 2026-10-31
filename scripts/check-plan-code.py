@@ -2209,7 +2209,9 @@ EXPECTED_MUTATIONS = {
     # `git ls-tree` read as an answer. Three entries are REBOUND to the renamed cases.
     # ⟳ r4 (Codex F2): 87 -> 89 — importing THIS file for its reader fails CLOSED: the import's catch
     # and the reader call's catch, each narrowed to `Exception`, let a `SystemExit` out as rc 0.
-    "scripts/check-merge-ready.py": 91,
+    # ⟳ r6 (Codex F1): 91 -> 92 — the error text built from a sibling's exception is sibling code too:
+    # `_describe` guards `str(exc)`, and an unguarded one lets a `__str__` that exits leave rc 0.
+    "scripts/check-merge-ready.py": 92,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

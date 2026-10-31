@@ -1106,7 +1106,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {exc.__class__.__name__}: {exc}\") from None",
+    "        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {_describe(exc)}\") from None",
     "        return {}"
    ]
   ],
@@ -1173,5 +1173,16 @@
    ]
   ],
   "expect": "⭐ ...and when the gate's exemption_reason itself raises SystemExit"
+ },
+ {
+  "name": "_describe calls str(exc) UNGUARDED, so a sibling exception whose __str__ exits escapes main() as rc 0 while the error text is built (r6 Codex F1)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException:\n        msg = \"<unprintable>\"",
+    "    except ZeroDivisionError:\n        msg = \"<unprintable>\""
+   ]
+  ],
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when the dashboard gate's import raises an exception whose __str__ exits (r6 Codex F1)"
  }
 ]
