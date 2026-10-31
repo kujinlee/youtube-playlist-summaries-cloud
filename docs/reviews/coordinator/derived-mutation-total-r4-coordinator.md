@@ -80,7 +80,12 @@ cases pass: **234/234**.
   `Exception`, and the call's catch narrowed to `Exception`. Each goes red via the case it names. One entry was
   REBOUND: "a display check-plan-code refuses reads as pinning nothing", whose `raise PinsUnreadable(...)` line
   changed text.
-- `check-plan-code`: 279 -> 279 cases. Pin 149 -> 149. Comments only, plus the merge-ready pin.
+- `check-plan-code`: 279 -> 281 cases. Pin 149 -> 149. The diff is comments, the merge-ready pin, and two cases
+  that CI's `check-fixture-variation` asked for. That step had been red on this PR's `verify` since `9fad9a10`, which
+  hid every later `verify` step. `typed_total_sites(total=...)` and `manifest_counts(muts=...)` were each passed one
+  value at every call site, so two cases now vary them: a text that hits at 7 is silent at 8, and a synthetic list
+  counts per file. The later steps were then run locally, and all were green: check-main-drivable,
+  check-producer-enumeration, check-group-claims and check-doc-citations.
 - Derived total: 2991 -> 2993.
 
 **Sweeps** (`--mutate . --only <file> --allow-long-local`; these are diagnostic slices, and the full sweep runs in CI):

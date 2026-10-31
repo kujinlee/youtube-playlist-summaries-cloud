@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 279 cases
+    python3 scripts/check-plan-code.py --self-test          # 281 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -6696,6 +6696,9 @@ def _self_test_body() -> int:
          typed_total_sites(f"timeout({_t})\nif retries == {_t}:\n    pass\ncase('t', other(), {_t})\n", _t), [])
     case("...but the same call naming EXPECTED_MUTATIONS is found",
          typed_total_sites(f"case('t', sum(EXPECTED_MUTATIONS.values()), {_t})\n", _t), [1])
+    # The TOTAL is a parameter, not today's value: the same text is a hit at 7 and silent at 8.
+    case("...the scan reads the total it is GIVEN, not today's",
+         [typed_total_sites('case("t", declared_total(), 7)\n', n) for n in (7, 8)], [[1], []])
     # ⚠ A STATED BOUND, asserted so it cannot be forgotten: a CONVENTION guard over ordinary
     # spellings. Arithmetic, an f-string and a name escape it, and that is accepted — a re-typed
     # total no longer protects or loosens anything; it only brings the merge conflict back.
@@ -6864,6 +6867,8 @@ def _self_test_body() -> int:
     # commit was 128/128 green. That is a falsifier with a recorded observation behind it, which is
     # the property the ratchet exists to supply — supplied here by a different mechanism, said out
     # loud so nobody reads the missing entry as an oversight.
+    case("manifest_counts counts entries PER FILE",
+         manifest_counts([{"file": "a"}, {"file": "b"}, {"file": "a"}]), {"a": 2, "b": 1})
     _live_entries, _live_problems = load_manifests(_repo)
     case("the manifests ON DISK load with no refusal", _live_problems, [])
     # ⟳ backlog #359: this compared the TOTAL, which a +1 in one manifest and a -1 in another
