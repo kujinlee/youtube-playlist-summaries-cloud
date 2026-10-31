@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 447 cases
+    python3 scripts/check-main-drivable.py --self-test   # 452 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -2521,6 +2521,50 @@ def _wired(src: str) -> str:
     head = src.index("def main(")
     body = src.index(":\n", head) + 2
     return src[:body] + "    if '--self-test' in argv:\n        return _self_test()\n" + src[body:]
+
+
+# ⛔ THE LIVE RECONCILE'S DEADLINE (PR #443, shard 8). The memo-key mutant ("drops every argument that
+# is not a node") makes `world_class` recurse exponentially, but ONLY over a tree whose functions' names
+# bind each other — measured: `classify(check-plan-leak.py)` 0.4 s clean, over 200 s mutated, which hit
+# the harness's SUITE_TIMEOUT and reported NOT MEASURED instead of the mutant's named case, which had
+# already gone red ~5 s in. A wall-clock bound on the live reconcile turns "hangs" into a RED CASE.
+# `BaseException`, so no `except Exception` inside the subject can swallow the alarm.
+LIVE_DEADLINE_S = 45
+
+
+class DeadlineExceeded(BaseException):
+    pass
+
+
+def with_deadline(thunk, seconds: float):
+    """Run `thunk` under a wall-clock deadline; return `(value, timed_out)`. SIGALRM (macOS and Linux)."""
+    import signal
+
+    def _expire(signum, frame):
+        raise DeadlineExceeded()
+
+    previous = signal.signal(signal.SIGALRM, _expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        return thunk(), False
+    except DeadlineExceeded:
+        return None, True
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def live_reconcile(live: dict[str, str], debt: frozenset[str], deadline: float = LIVE_DEADLINE_S,
+                   assess_fn=None):
+    """`(problems, verdicts, timed_out)` for the live population; a raise or an expiry is a PROBLEM."""
+    assess_fn = assess_fn or assess
+    try:
+        got, timed_out = with_deadline(lambda: assess_fn(live, debt), deadline)
+        if timed_out:
+            return [f"DEADLINE {deadline}s"], {}, True
+        return got[0], got[1], False
+    except Exception as exc:                        # noqa: BLE001 — reporting IS the point
+        return [f"RAISED {type(exc).__name__}"], {}, False
 
 
 def case(name: str, got, want) -> None:
@@ -5281,20 +5325,34 @@ def _self_test_body() -> int:                                      # noqa: C901 
     case("...and its literal-path call is NOT credited rebind by a stale substitution",
          _overcredited, [])
 
+    # The deadline, proved with a SHORT injected one (never wait 45 s): a stalled `assess` yields the
+    # timed-out flag and a problem, a prompt one is untouched, and the alarm is disarmed afterwards.
+    import time as _time
+    _t0 = _time.monotonic()
+    _stalled = live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: _time.sleep(3))
+    case("a stalled reconcile hits its deadline and reports a problem, in well under the stall",
+         (_stalled[2], len(_stalled[0]), _time.monotonic() - _t0 < 2), (True, 1, True))
+    _prompt = live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: (["p"], {"v": 1}))
+    case("...a prompt reconcile is returned untouched and not timed out", _prompt, (["p"], {"v": 1}, False))
+    _raised = live_reconcile({}, frozenset(), 0.2, assess_fn=lambda t, d: 1 / 0)
+    case("...a raising reconcile is a problem, not a timeout", (_raised[0], _raised[2]),
+         (["RAISED ZeroDivisionError"], False))
+    import signal as _signal
+    case("...and the alarm is disarmed once it returns", _signal.getitimer(_signal.ITIMER_REAL)[0], 0.0)
+
     discovered = sorted(live_root.glob(GUARD_GLOB))
     case("the live population is non-empty", len(discovered) > 0, True)
     live = {str(p.relative_to(live_root)): p.read_text() for p in discovered}
     # ⛔ TWELFTH DYING CASE. `subprocess_self_calls`' `node.args` presence test raises on a REAL
     # guard on disk, so this case — the one that reconciles the committed debt against the live
     # population — took the suite down at 289 with nothing attributable.
-    _assessed = _caught(lambda: assess(live, MAIN_DEBT))
-    live_problems, live_verdicts = (_assessed if isinstance(_assessed, tuple)
-                                    else ([_assessed], {}))
+    live_problems, live_verdicts, _live_timed_out = live_reconcile(live, MAIN_DEBT)
+    case("the live reconcile finished within 45 s", (_live_timed_out, LIVE_DEADLINE_S), (False, 45))
     case("...and the committed MAIN_DEBT reconciles against it with no findings",
          live_problems, [])
     case("...every pinned name is in the population",
          sorted(MAIN_DEBT - set(live_verdicts)), [])
-    case("...no pinned name complies", sorted(p for p in MAIN_DEBT if live_verdicts[p].complies), [])
+    case("...no pinned name complies", sorted(p for p in MAIN_DEBT if p in live_verdicts and live_verdicts[p].complies), [])
 
     print(f"\n{ok}/{ok + fail} passed")
     # The declared count has ONE owner — the docstring — and is READ, never repeated here.

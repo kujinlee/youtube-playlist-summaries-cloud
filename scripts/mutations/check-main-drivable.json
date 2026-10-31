@@ -2547,5 +2547,18 @@
    "...and `_MEMO_MAX` entries are a FULL memo, not an overflowing one: all kept, all hits on a second pass, and the next insertion evicts exactly one"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the live reconcile's deadline is never armed, so a stalled `assess` runs to the harness's timeout instead of yielding a red case (PR #443 shard 8)",
+  "edits": [
+   [
+    "    signal.setitimer(signal.ITIMER_REAL, seconds)\n",
+    "    signal.setitimer(signal.ITIMER_REAL, 0)\n"
+   ]
+  ],
+  "expect": [
+   "a stalled reconcile hits its deadline and reports a problem, in well under the stall"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]

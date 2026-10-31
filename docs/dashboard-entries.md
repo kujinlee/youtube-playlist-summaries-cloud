@@ -18423,3 +18423,4 @@ owner's dangerous-push flag for it.
 `scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
 remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
 the command text; the redesign removes their common cause, and each finding is now a case.
+CI shard 8 also needed a fix that rides here: `check-main-drivable`'s live reconcile now has a 45 s deadline, because an old mutant made `world_class` recurse exponentially only on this PR's tree (`check-plan-leak.py`), so the shard hit the 120 s limit and reported NOT MEASURED; backlog #405's early stop would be the structural fix. `EXPECTED_MUTATIONS` 2807 -> 2808.
