@@ -2219,7 +2219,11 @@ EXPECTED_MUTATIONS = {
     # each retired subject's replacement and has at least one per finding F1-F10.
     # ⟳ cap-and-cache: 58 → 79. 21 for the hook block's 8-line cap and its summary, the uncapped
     # CLI, and the 10-minute cache (hit, expiry, malformed, atomic write, age, key, main checkout).
-    "scripts/check-stalled-work.py": 79,
+    # ⟳ r2 REDESIGN: 79 → 105. THREE retired WITH THEIR SUBJECT — gh's own budget (one deadline now)
+    # and the squash heuristic (two: its match and its empty-diff guard), all gone. 29 entered: the
+    # cache's schema (one per refusal), shaping at render, ages recomputed from now, the candidate
+    # window, whitespace-exact MERGED, and the one deadline (expired, killed, shared by every call).
+    "scripts/check-stalled-work.py": 105,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -6288,7 +6292,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2644)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2670)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

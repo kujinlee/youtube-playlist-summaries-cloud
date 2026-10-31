@@ -314,6 +314,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #410 (2026-10-30): every parameter varied except main.*, EXEMPT with its reason.
+    # ⟳ r2: `unpushed_item.times` is gone — the oldest time and the count are measured into a FACT.
     "check-stalled-work.py": (
         "coordinator_rounds.names_by_tree", "fmt_age.seconds", "hook_block.lines", "hook_block.rc",
         "iso_epoch.stamp", "main.argv", "main.now", "main.prs", "main.stdin_text", "parse_refs.text",
@@ -322,7 +323,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "review_items.now", "review_items.rounds", "run.argv", "run.now", "run.prs",
         "run.stdin_text", "scratch_for.project_dir", "scratch_for.session_id", "scratch_for.tmpdir",
         "scratch_for.uid", "unpushed_item.branch", "unpushed_item.limit_s", "unpushed_item.now",
-        "unpushed_item.path", "unpushed_item.times", "unpushed_item.where",
+        "unpushed_item.count", "unpushed_item.oldest", "unpushed_item.path", "unpushed_item.where",
         "own_prs.rows", "safe_ref.name",),
     # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
     "check-diff-coverage.py": (

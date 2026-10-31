@@ -18343,4 +18343,6 @@ Backlog #410: `scripts/check-stalled-work.py` (commits on no remote past 30 min;
 commit is over 3 h old; a review half with no coordinator doc at its round), rc 0/1/2. Wired as a
 UserPromptSubmit hook, `.claude/hooks/stalled-work.sh`, and stated in `docs/process-checklists.md` →
 *Dispatched work must report in-turn*. The hook block is capped at 8 item lines plus a summary
-(the CLI is not), and cached for 10 min in `.claude/stalled-work-cache/` (git-ignored, atomic write).
+(the CLI is not), and its MEASUREMENT is cached for 10 min in `.claude/stalled-work-cache/` (git-ignored,
+atomic write): facts under a strict schema, re-rendered with fresh ages on every read. The whole check runs
+inside one 15 s deadline, and a branch is called merged only when every commit's exact change is on master.

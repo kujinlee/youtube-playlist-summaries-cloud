@@ -4,12 +4,12 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    age = int(now - min(times))",
-        "    age = int(now - max(times))"
+        "\"oldest\": min(times),",
+        "\"oldest\": max(times),"
       ]
     ],
     "expect": [
-      "...its age is the oldest's"
+      "tip_fact: the OLDEST time and the count, never rendered text"
     ]
   },
   {
@@ -121,8 +121,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    except CannotRun as exc:\n        return CANNOT_RUN,",
-        "    except CannotRun as exc:\n        return CLEAR,"
+        "    except CannotRun as exc:\n        return cannot_run(exc)",
+        "    except CannotRun as exc:\n        return CLEAR, []"
       ]
     ],
     "expect": [
@@ -368,8 +368,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        subj = shape(subject, \"review subject\")",
-        "        subj = subject"
+        "    subj = shape(subject, \"review subject\")",
+        "    subj = subject"
       ]
     ],
     "expect": [
@@ -463,8 +463,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        return CANNOT_RUN, [f\"CANNOT RUN — {shape(exc, 'error', 300, free=True)}. \"",
-        "        return CANNOT_RUN, [f\"CANNOT RUN — {exc}. \""
+        "[f\"CANNOT RUN — {shape(exc, 'error', 300, free=True)}.",
+        "[f\"CANNOT RUN — {exc}."
       ]
     ],
     "expect": [
@@ -482,19 +482,6 @@
     ],
     "expect": [
       "F3: the CANNOT RUN block is framed as untrusted DATA too"
-    ]
-  },
-  {
-    "name": "F4: gh's budget grows past a third of the hook's 30 s",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "GH_TIMEOUT_S = 3",
-        "GH_TIMEOUT_S = 12"
-      ]
-    ],
-    "expect": [
-      "timeouts: gh's budget is well under the hook's, so the CANNOT RUN arrives (F4)"
     ]
   },
   {
@@ -541,8 +528,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        if not m:\n            continue\n        key = (m[\"subject\"]",
-        "        if not m or now - mtime > 48 * 3600:\n            continue\n        key = (m[\"subject\"]"
+        "    return [review_item(f, now) for f in review_facts(halves, rounds)]",
+        "    return [review_item(f, now) for f in review_facts(halves, rounds) if now - f[\"mtime\"] <= 48 * 3600]"
       ]
     ],
     "expect": [
@@ -589,42 +576,17 @@
     ]
   },
   {
-    "name": "F8: a squash merge is not recognised",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "    return bool(combined_ids) and combined_ids <= mainline_ids",
-        "    return False"
-      ]
-    ],
-    "expect": [
-      "F8: a branch squash-merged into origin/master, its remote branch deleted, is MERGED, not STALLED"
-    ]
-  },
-  {
     "name": "F8: a rebase merge is not recognised",
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if lines and all(ln.startswith(\"-\") for ln in lines):",
-        "    if False:"
+        "    if not lines or not all(ln.startswith(\"- \") for ln in lines):\n        return None",
+        "    if True:\n        return None"
       ]
     ],
     "expect": [
-      "on_mainline: every commit '-' in cherry is a rebase merge"
-    ]
-  },
-  {
-    "name": "F8: an empty combined diff counts as merged",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "bool(combined_ids) and ",
-        ""
-      ]
-    ],
-    "expect": [
-      "on_mainline: an EMPTY combined diff is not a match (nothing to compare)"
+      "cherry_shas: every commit '-' gives the commits; a '+' or nothing gives None",
+      "R2-3: a commit whose EXACT change is on master (a rebase merge) is MERGED"
     ]
   },
   {
@@ -645,8 +607,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "            out = git(repo, \"log\", \"--format=%ct\", t[\"sha\"], \"--not\", \"--remotes\")",
-        "            out = git(repo, \"log\", \"--format=%at\", t[\"sha\"], \"--not\", \"--remotes\")"
+        "            out = git(b, repo, \"log\", \"--format=%ct\", t[\"sha\"], \"--not\", \"--remotes\")",
+        "            out = git(b, repo, \"log\", \"--format=%at\", t[\"sha\"], \"--not\", \"--remotes\")"
       ]
     ],
     "expect": [
@@ -671,7 +633,7 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if p.returncode != 0:\n        raise CannotRun(f\"gh api graphql exited",
+        "    if rc != 0:\n        raise CannotRun(f\"gh api graphql exited",
         "    if False:\n        raise CannotRun(f\"gh api graphql exited"
       ]
     ],
@@ -866,8 +828,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    return with_age(block, 0)",
-        "    return block"
+        "    return with_age(hook_block(rc, lines, scratch), age)",
+        "    return hook_block(rc, lines, scratch)"
       ]
     ],
     "expect": [
@@ -879,8 +841,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if hit is not None:\n        return with_age(",
-        "    if False:\n        return with_age("
+        "    snap, age, extra = read_cache(path, key, now), 0.0, []",
+        "    snap, age, extra = None, 0.0, []"
       ]
     ],
     "expect": [
@@ -892,8 +854,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "return with_age(hit[\"block\"], now - hit[\"at\"])",
-        "return with_age(hit[\"block\"], 0)"
+        "        age = now - snap[\"at\"]",
+        "        age = 0"
       ]
     ],
     "expect": [
@@ -905,8 +867,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if now - at >= CACHE_TTL_S:",
-        "    if False:"
+        "at < CACHE_TTL_S:",
+        "at < 10 ** 12:"
       ]
     ],
     "expect": [
@@ -918,8 +880,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if now < at:  # from the future: a clock moved back",
-        "    if False:"
+        "not 0 <= now - at",
+        "not -10 ** 12 <= now - at"
       ]
     ],
     "expect": [
@@ -931,8 +893,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if not isinstance(data, dict) or data.get(\"key\") != key:",
-        "    if not isinstance(data, dict):"
+        "data[\"v\"] != CACHE_VERSION or data[\"key\"] != key:",
+        "data[\"v\"] != CACHE_VERSION:"
       ]
     ],
     "expect": [
@@ -944,8 +906,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if not isinstance(at, (int, float)) or isinstance(at, bool) or not (block is None or isinstance(block, str)):",
-        "    if not (block is None or isinstance(block, str)):"
+        "    if not _typed(at, \"num\") or not 0 <= now - at",
+        "    if not 0 <= now - at"
       ]
     ],
     "expect": [
@@ -957,8 +919,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    fd, tmp = tempfile.mkstemp(prefix=\".tmp-\", dir=path.parent)\n    try:\n        with os.fdopen(fd, \"w\") as fh:\n            json.dump(payload, fh)\n        os.replace(tmp, path)",
-        "    tmp = path.with_suffix(\".unused\")\n    try:\n        with open(path, \"w\") as fh:\n            json.dump(payload, fh)"
+        "    fd, tmp = tempfile.mkstemp(prefix=\".tmp-\", dir=path.parent)\n    try:\n        with os.fdopen(fd, \"w\") as fh:\n            json.dump(payload, fh, allow_nan=False)\n        os.replace(tmp, path)",
+        "    tmp = path.with_suffix(\".unused\")\n    try:\n        with open(path, \"w\") as fh:\n            json.dump(payload, fh, allow_nan=False)"
       ]
     ],
     "expect": [
@@ -983,7 +945,7 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "            write_cache(path, {\"key\": key, \"at\": now, \"block\": block})",
+        "            write_cache(path, {\"v\": CACHE_VERSION, \"key\": key, \"at\": now, **snap})",
         "            pass"
       ]
     ],
@@ -992,12 +954,12 @@
     ]
   },
   {
-    "name": "a CANNOT RUN is cached, so a recovered gh stays unread for 10 min",
+    "name": "a CANNOT RUN is cached as an empty measurement, so a recovered gh stays unread and the failure is silent",
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if rc != CANNOT_RUN:\n        try:\n            write_cache",
-        "    if True:\n        try:\n            write_cache"
+        "            return with_age(hook_block(*cannot_run(exc)), 0)",
+        "            snap = {\"facts\": [], \"counts\": dict.fromkeys(COUNT_KEYS, 0), \"notes\": []}"
       ]
     ],
     "expect": [
@@ -1022,12 +984,394 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    return f\"{Path(repo).resolve()}\\0{scratch if scratch is not None else ''}\"",
-        "    return f\"{Path(repo).resolve()}\""
+        "    return f\"{Path(repo).resolve()}\\0{scratch if scratch is not None else ''}\\0{limit_s}\"",
+        "    return f\"{Path(repo).resolve()}\\0{limit_s}\""
       ]
     ],
     "expect": [
       "the cache is written under the main checkout's .claude/, keyed by the repo and the scratchpad"
+    ]
+  },
+  {
+    "name": "R2-1: a fact of an unknown kind is read back from the cache",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        schema = FACT_SCHEMA.get(f.get(\"kind\")) if isinstance(f, dict) else None",
+        "        schema = FACT_SCHEMA.get(f.get(\"kind\"), FACT_SCHEMA[\"tip\"]) if isinstance(f, dict) else None"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses an unknown fact kind"
+    ]
+  },
+  {
+    "name": "R2-1: a fact carrying an extra field (a rendered line) is read back",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "set(f) != {\"kind\", *schema}",
+        "not {\"kind\", *schema} <= set(f)"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses an extra fact field"
+    ]
+  },
+  {
+    "name": "R2-1: a cached string has no length bound",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        return isinstance(v, str) and len(v) <= CACHE_MAX_STR",
+        "        return isinstance(v, str)"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses a string over 400 characters"
+    ]
+  },
+  {
+    "name": "R2-5: a non-finite number is accepted, so an mtime of NaN reaches the age arithmetic",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        return isinstance(v, (int, float)) and math.isfinite(v)",
+        "        return isinstance(v, (int, float))"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses R2-5: an mtime of NaN"
+    ]
+  },
+  {
+    "name": "a bool is accepted where an int belongs",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if isinstance(v, bool):\n        return False\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses a bool where an int belongs"
+    ]
+  },
+  {
+    "name": "an unknown note code is read back",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "isinstance(c, str) and c in NOTE_CODES for c in notes",
+        "isinstance(c, str) for c in notes"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses an unknown note code"
+    ]
+  },
+  {
+    "name": "a negative count is read back",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "all(_typed(v, \"int\") and v >= 0 for v",
+        "all(_typed(v, \"int\") for v"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses a negative count"
+    ]
+  },
+  {
+    "name": "the cache's fact count is unbounded",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "not isinstance(facts, list) or len(facts) > CACHE_MAX_FACTS",
+        "not isinstance(facts, list)"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses over 5000 facts"
+    ]
+  },
+  {
+    "name": "R2-1: a top-level key beside the measurement (a rendered block) is read back",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "set(data) != {\"v\", \"key\", \"at\", \"facts\", \"notes\", \"counts\"}",
+        "not {\"v\", \"key\", \"at\", \"facts\", \"notes\", \"counts\"} <= set(data)"
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses a rendered block beside the facts"
+    ]
+  },
+  {
+    "name": "another cache version is read as this one",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "type(data[\"v\"]) is not int or data[\"v\"] != CACHE_VERSION or ",
+        ""
+      ]
+    ],
+    "expect": [
+      "valid_snapshot refuses another version"
+    ]
+  },
+  {
+    "name": "the cache file has no size bound",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if len(raw) > CACHE_MAX_BYTES:\n            return None",
+        "        if False:\n            return None"
+      ]
+    ],
+    "expect": [
+      "a cache file over 1 MB is a miss, though its JSON is valid"
+    ]
+  },
+  {
+    "name": "R2-1: the cache is read back without its schema, so the r1 format is believed",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return data if valid_snapshot(data, key, now) else None",
+        "    return data if isinstance(data, dict) else None"
+      ]
+    ],
+    "expect": [
+      "R2-1: the reviewer's planted cache (a rendered block, the right key, a current time) is re-measured"
+    ]
+  },
+  {
+    "name": "R2-1: a PR's ref name is not shaped at render, so a cached one reaches the block raw",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "{safe_ref(pr['headRefName'])}",
+        "{pr['headRefName']}"
+      ]
+    ],
+    "expect": [
+      "R2-1: items_from shapes every string of a planted fact — no newline and no instruction in any line"
+    ]
+  },
+  {
+    "name": "R2-1: a half's location is not shaped at render",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "{shape(f['where'], 'review location')}",
+        "{f['where']}"
+      ]
+    ],
+    "expect": [
+      "R2-1: items_from shapes every string of a planted fact — no newline and no instruction in any line"
+    ]
+  },
+  {
+    "name": "R2-1: the tree of a half's latest fold is not shaped at render",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "{shape(f['tree'], 'worktree path')}",
+        "{f['tree']}"
+      ]
+    ],
+    "expect": [
+      "R2-1: items_from shapes every string of a planted fact — no newline and no instruction in any line"
+    ]
+  },
+  {
+    "name": "R2-4: a cached measurement is aged from when it was MEASURED, so a stall that ripens inside the TTL is hidden",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    rc, lines = report(snap, a, scratch, now, extra)",
+        "    rc, lines = report(snap, a, scratch, now - age, extra)"
+      ]
+    ],
+    "expect": [
+      "R2-4: two seconds later, FROM THE CACHE (no git or gh call), the same tip is STALLED at 30m01s"
+    ]
+  },
+  {
+    "name": "R2-4: no candidates — only a tip already past the limit is merge-checked, so one that ripens from the cache is a false STALLED",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    candidate_s = max(0, limit_s - CACHE_TTL_S)",
+        "    candidate_s = limit_s"
+      ]
+    ],
+    "expect": [
+      "R2-4: a CANDIDATE (25 min old when measured) that ripens from the cache is MERGED, as it is"
+    ]
+  },
+  {
+    "name": "R2-3: patch-ids are whitespace-blind again (--stable on both sides)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    mine = patch_ids(git(b, repo, \"patch-id\", \"--verbatim\",",
+        "    mine = patch_ids(git(b, repo, \"patch-id\", \"--stable\","
+      ],
+      [
+        "    mainline = set(patch_ids(git(b, repo, \"patch-id\", \"--verbatim\",",
+        "    mainline = set(patch_ids(git(b, repo, \"patch-id\", \"--stable\","
+      ]
+    ],
+    "expect": [
+      "R2-3: `return 2` OUTSIDE the if on the branch, INSIDE it on master (2 vs 1) is STALLED, never MERGED"
+    ]
+  },
+  {
+    "name": "R2-3: git cherry's whitespace-blind '-' alone declares MERGED",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return shas is not None and all(mine.get(s) in mainline_ids for s in shas)",
+        "    return shas is not None"
+      ]
+    ],
+    "expect": [
+      "R2-3: on_mainline: one commit whose VERBATIM patch-id is not on the mainline is NOT merged, though cherry said '-'",
+      "R2-3: `return 2` OUTSIDE the if on the branch, INSIDE it on master (2 vs 1) is STALLED, never MERGED"
+    ]
+  },
+  {
+    "name": "R2-3: ONE commit on the mainline is enough for MERGED",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "all(mine.get(s) in mainline_ids for s in shas)",
+        "any(mine.get(s) in mainline_ids for s in shas)"
+      ]
+    ],
+    "expect": [
+      "R2-3: on_mainline: one commit whose VERBATIM patch-id is not on the mainline is NOT merged, though cherry said '-'"
+    ]
+  },
+  {
+    "name": "R2-3: the STALLED action loses its squash hint",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "; if it was \"\n                    f\"squash-merged, check origin/master and remove it (a squash is not recognised)\"",
+        "\"\n                    f\"\""
+      ]
+    ],
+    "expect": [
+      "R2-3: a STALLED tip's action says a squash merge is not recognised, and to check origin/master"
+    ]
+  },
+  {
+    "name": "R2-2: a call is given NO deadline, so it runs as long as it likes",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "            out, err = p.communicate(stdin, timeout=left)",
+        "            out, err = p.communicate(stdin, timeout=None)"
+      ]
+    ],
+    "expect": [
+      "Budget: a call that outlives what is LEFT is killed at the deadline — a 2 s sleep under a 0.3 s budget"
+    ]
+  },
+  {
+    "name": "R2-2: an expired deadline still starts the next call",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if left <= 0:\n            raise CannotRun(f\"the check passed its {self.seconds:g}s deadline before {what}\")\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "Budget: past the deadline, the next call is refused before it starts, naming the deadline"
+    ]
+  },
+  {
+    "name": "R2-2: each git call gets a FRESH budget — a per-call timeout, so 64 calls each in time run past the hook's",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    rc, out, err = b.call(what, [\"git\", \"-C\", repo, *args], stdin=stdin)",
+        "    rc, out, err = Budget(b.seconds).call(what, [\"git\", \"-C\", repo, *args], stdin=stdin)"
+      ]
+    ],
+    "expect": [
+      "R2-2: 64 branches, git log 1 s a call, gh hung — the hook returns at its 3 s deadline, a framed CANNOT RUN"
+    ]
+  },
+  {
+    "name": "R2-2: the deadline grows past 60% of the hook's timeout",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "DEADLINE_S = 15",
+        "DEADLINE_S = 19"
+      ]
+    ],
+    "expect": [
+      "R2-2: the one deadline is at most 60% of the hook's timeout, and it is --deadline's default"
+    ]
+  },
+  {
+    "name": "a note's path is printed unshaped",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "{shape(str(scratch), 'path', 400)} \"\n                               f\"is not a directory",
+        "{scratch} \"\n                               f\"is not a directory"
+      ]
+    ],
+    "expect": [
+      "note_lines: each code's text; the path in one is shaped; an unknown code is dropped"
+    ]
+  },
+  {
+    "name": "the cache key drops the stall limit, so a run with another limit reads the wrong candidates",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\\0{scratch if scratch is not None else ''}\\0{limit_s}\"",
+        "\\0{scratch if scratch is not None else ''}\""
+      ]
+    ],
+    "expect": [
+      "cache_key: a different stall limit is a different key"
+    ]
+  },
+  {
+    "name": "a PR head with no gh date is no longer aged from the local store",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"at\": at if at is not None else local_ts.get(pr.get(\"headRefOid\", \"\"))}",
+        "\"at\": at}"
+      ]
+    ],
+    "expect": [
+      "pr_fact: gh's head date first, else the local store's, else None"
+    ]
+  },
+  {
+    "name": "an over-long name is cached whole, so the schema refuses every measurement and every prompt re-measures",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    return s if s is None or len(s) <= CACHE_MAX_STR else \"<over-long>\"",
+        "    return s"
+      ]
+    ],
+    "expect": [
+      "tip_fact: a name over the cache's 400-character bound is stored as a marker `shape` withholds"
     ]
   }
 ]
