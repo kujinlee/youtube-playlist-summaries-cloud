@@ -199,7 +199,7 @@
    ]
   ],
   "expect": [
-   "⛔ Codex r2 H1: a pin lowered in a DEFAULT ARGUMENT at definition time is HELD",
+   "a pin LOWERED in the display is HELD",
    "a mutation pin that DROPS 128 -> 125 is a loosening"
   ]
  },
@@ -481,7 +481,7 @@
    ]
   ],
   "expect": [
-   "a pin REMOVED from the effective dict is HELD",
+   "a pin REMOVED from the display is HELD",
    "a mutation pin DELETED is a loosening"
   ]
  },
@@ -1089,33 +1089,7 @@
   ]
  },
  {
-  "name": "a side that prints non-JSON reads as pinning nothing, so the gate fails OPEN on a broken base (backlog #359 r2)",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        raise PinsUnreadable(f\"{side}: {PINS_FLAG} printed non-JSON: {out.strip()[:80]!r}\")",
-    "        return {}"
-   ]
-  ],
-  "expect": [
-   "⛔ a head that prints NON-JSON is CANNOT RUN, never a pass"
-  ]
- },
- {
-  "name": "the base-only import fallback answers for the HEAD too, so the side under review need not run --print-pins (backlog #359 r2)",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        if r.returncode != 0 and legacy_ok and",
-    "        if r.returncode != 0 and"
-   ]
-  ],
-  "expect": [
-   "⛔ ...but a HEAD without --print-pins is CANNOT RUN — the side under review must answer"
-  ]
- },
- {
-  "name": "main() never reads the effective pins, so no fall is ever held (backlog #359 r2)",
+  "name": "main() never reads the pins, so no fall is ever held (backlog #359 r2)",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
@@ -1124,7 +1098,33 @@
    ]
   ],
   "expect": [
-   "⭐ main() HOLDS a READY PR whose head's EFFECTIVE pin falls, rc=3"
+   "⭐ main() HOLDS a READY PR whose head's pin falls, rc=3"
+  ]
+ },
+ {
+  "name": "a display check-plan-code refuses reads as pinning nothing, so a duplicate key or a computed pin fails OPEN (backlog #359 r3)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {exc}\")",
+    "        return {}"
+   ]
+  ],
+  "expect": [
+   "⛔ a head with no single literal display is CANNOT RUN, never a pass"
+  ]
+ },
+ {
+  "name": "a failing `git ls-tree` is read as an answer, so an unread side can pin anything (backlog #359 r3)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if ls.returncode != 0:\n        raise PinsUnreadable",
+    "    if False:\n        raise PinsUnreadable"
+   ]
+  ],
+  "expect": [
+   "⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}"
   ]
  }
 ]

@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 230 cases
+    python3 scripts/check-merge-ready.py --self-test # 227 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -47,14 +47,12 @@ from __future__ import annotations
 import argparse
 import functools
 import importlib.util
-import io
 import json
 import os
 import posixpath
 import re
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import sys
 from pathlib import Path
@@ -425,8 +423,7 @@ def ci_conclusion(checks: list[dict]) -> tuple[int, str]:
 # ── THE FETCH, impure ─────────────────────────────────────────────────────────────────────────
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     kw.setdefault("text", True)
-    kw.setdefault("cwd", ROOT)
-    return subprocess.run(cmd, capture_output=True, **kw)
+    return subprocess.run(cmd, capture_output=True, cwd=ROOT, **kw)
 
 
 def as_text(out) -> str:
@@ -846,90 +843,66 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
     return changed_paths(st), fs
 
 
-# ── THE MUTATION PINS, BY THEIR EFFECTIVE VALUE (backlog #359 r2: REDESIGN) ─────────────────────
-# ⛔ A falling pin is read from what Python EVALUATES in each tree, never from text. Two rounds of
-# text rules were each walked around. First `PIN_LINE` read the diff's lines; then an `ast` shape check
-# read the source. The inputs that beat them: a duplicate key (Python keeps the LAST value),
-# `EXPECTED_MUTATIONS[k] -= 4`, a write hidden in a default argument or a decorator, a pin line inside
-# a string literal, and a locally shadowed `dict`. Each changes what Python computes and leaves no
-# line a text rule reads. Master's typed total had the property this restores: it compared the
-# EVALUATED sum, so every one of those inputs went red there.
-# So both trees are materialised and asked: `check-plan-code.py --print-pins` prints the dict
-# after import, as the harness holds it. A side that cannot answer is CANNOT RUN, never a pass.
-# ⚠ BOUNDS, stated:
-#   * only `scripts/` is materialised. An import that needs a file outside it fails, which is
-#     CANNOT RUN; an import that reads such a file only IF it exists sees it absent;
-#   * a write made only on the `--mutate` path, after `--print-pins` has returned, is not seen.
+# ── THE MUTATION PINS, BY THEIR DISPLAY (backlog #359 r3) ───────────────────────────────────────
+# ⛔ A falling pin is read from the `EXPECTED_MUTATIONS` DISPLAY at the merge base and at HEAD, as
+# DATA, by `check-plan-code.pin_display` — imported, so "find the display" has ONE owner. Neither tree
+# is executed. That is sound because the harness proves, in the process that USES the pins, that they
+# ARE the display (`--mutate` before any mutation, `--self-test` at its top): any write the display
+# does not show — a duplicate key, `-= 4`, a default argument, a decorator, a shadowed `dict`, or one
+# gated on argv or the environment — is refused THERE. A display that cannot be read is CANNOT RUN.
+# ⟳ r2 ran `--print-pins` in each tree instead, and r3 (Claude F1) beat it with a write gated on that
+# invocation: it printed 87 while the harness held 82. The subprocess, the tar, the timeout and the
+# base-only import fallback are deleted with it.
 # ⚠ NO WRITTEN-REASON ESCAPE, as before: `PIN_LINE` had none either. The reason for a fall is
 # written at the pin by convention, and the HOLD is what puts it in front of the owner.
 PINS_SCRIPT = "scripts/check-plan-code.py"
-PINS_FLAG = "--print-pins"
-PINS_TIMEOUT = 120
-# ⚠ THE BASE ONLY, and only while it PREDATES `PINS_FLAG`: argparse refuses the flag by this exact
-# message, and the base's dict is then read by importing the module. The base is the reviewed,
-# merged side; the head, the side under review, must answer `PINS_FLAG` itself or CANNOT RUN.
-PINS_PROBE = ("import importlib.util, json, sys\n"
-              "s = importlib.util.spec_from_file_location('pins_probe', sys.argv[1])\n"
-              "m = importlib.util.module_from_spec(s)\n"
-              "sys.modules[s.name] = m\n"          # `dataclasses` looks the module up by name
-              "s.loader.exec_module(m)\n"
-              "print(json.dumps(m.EXPECTED_MUTATIONS, sort_keys=True))\n")
 
 
 class PinsUnreadable(Exception):
-    """One side's effective pins could not be read. `main()` reports CANNOT RUN."""
+    """One side's mutation pins could not be read. `main()` reports CANNOT RUN."""
 
 
-def parse_pins(out: str, side: str) -> dict:
-    """PURE. `--print-pins`'s stdout as {path: int}, or `PinsUnreadable` — never an empty guess."""
+@functools.lru_cache(maxsize=1)
+def _pins_reader():
+    """`check-plan-code`, imported for its ONE display reader — never a second copy of the rule."""
+    src = Path(__file__).with_name("check-plan-code.py")
+    spec = importlib.util.spec_from_file_location("_cpc_for_merge_ready", src)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod                    # `dataclasses` looks the module up by name
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def pins_at(run, rev: str) -> dict:
+    """The mutation pins `rev`'s `PINS_SCRIPT` DISPLAYS. `run(cmd, **kw)` is `_run`'s shape.
+
+    A tree without `PINS_SCRIPT` — no `scripts/` at all included — pins nothing, `{}`. Every other
+    failure, and a display `pin_display` refuses, raises `PinsUnreadable`."""
+    ls = run(["git", "ls-tree", "--name-only", rev, "--", PINS_SCRIPT], text=True)
+    if ls.returncode != 0:
+        raise PinsUnreadable(f"{rev}: `git ls-tree` exited {ls.returncode}")
+    if not ls.stdout.strip():
+        return {}
+    shown = run(["git", "show", f"{rev}:{PINS_SCRIPT}"], text=True, encoding="utf-8")
+    if shown.returncode != 0:
+        raise PinsUnreadable(f"{rev}: `git show` exited {shown.returncode}")
+    reader = _pins_reader()
     try:
-        pins = json.loads(out)
-    except ValueError:
-        raise PinsUnreadable(f"{side}: {PINS_FLAG} printed non-JSON: {out.strip()[:80]!r}")
-    if not (isinstance(pins, dict)
-            and all(isinstance(k, str) and type(v) is int for k, v in pins.items())):
-        raise PinsUnreadable(f"{side}: {PINS_FLAG} printed something other than {{path: int}}")
-    return pins
-
-
-def effective_pins(run, rev: str, *, legacy_ok: bool) -> dict:
-    """The mutation pins `rev`'s tree EVALUATES to. `run(cmd, **kw)` is `_run`'s shape.
-
-    `scripts/` is archived from git into a temporary directory, and `PINS_SCRIPT PINS_FLAG` is run
-    there. A tree with no `PINS_SCRIPT` pins nothing, `{}`. Every other failure raises."""
-    tar = run(["git", "archive", "--format=tar", rev, "scripts"], text=False)
-    if tar.returncode != 0:
-        raise PinsUnreadable(f"{rev}: `git archive` exited {tar.returncode}")
-    with tempfile.TemporaryDirectory() as d:
-        try:
-            with tarfile.open(fileobj=io.BytesIO(tar.stdout)) as t:
-                t.extractall(d, filter="data")
-        except tarfile.TarError as exc:
-            raise PinsUnreadable(f"{rev}: the archive did not unpack ({exc})")
-        if not (Path(d) / PINS_SCRIPT).is_file():
-            return {}
-        r = run([sys.executable, "-I", PINS_SCRIPT, PINS_FLAG], cwd=d, text=True,
-                timeout=PINS_TIMEOUT)
-        if r.returncode != 0 and legacy_ok and f"unrecognized arguments: {PINS_FLAG}" in r.stderr:
-            r = run([sys.executable, "-I", "-c", PINS_PROBE, PINS_SCRIPT], cwd=d, text=True,
-                    timeout=PINS_TIMEOUT)
-        if r.returncode != 0:
-            tail = (r.stderr or r.stdout).strip().split("\n")[-1][:120]
-            raise PinsUnreadable(f"{rev}: `{PINS_SCRIPT} {PINS_FLAG}` exited {r.returncode}: {tail}")
-        return parse_pins(r.stdout, rev)
+        return reader.pin_display(shown.stdout)
+    except reader.PinDisplayError as exc:
+        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {exc}")
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
-    """(the merge base's effective pins, HEAD's) — what `main()` hands `hold_reasons`."""
+    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`."""
     mb = run(["git", "merge-base", base, "HEAD"], text=True)
     if mb.returncode != 0:
         raise PinsUnreadable(f"`git merge-base {base} HEAD` exited {mb.returncode}")
-    return (effective_pins(run, mb.stdout.strip(), legacy_ok=True),
-            effective_pins(run, "HEAD", legacy_ok=False))
+    return pins_at(run, mb.stdout.strip()), pins_at(run, "HEAD")
 
 
 def pin_falls(old: dict, new: dict) -> list[str]:
-    """PURE. A pin whose effective value FALLS, or that is gone from the head, is a loosening."""
+    """PURE. A pin whose value FALLS, or that is gone from the head, is a loosening."""
     out = []
     for path in sorted(old):
         if path not in new:                         # r1 CLAUDE M2: deleted or renamed away
@@ -946,7 +919,7 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
 
     `no_review` is the review gate's OWN matcher's answer for `NO-REVIEW:` (passed in, so the
     rule stays pure and cannot disagree with the gate about where a waiver counts). `pins` is
-    `pin_pair`'s (base, head) effective mutation pins, read outside so this stays pure.
+    `pin_pair`'s (base, head) mutation pins, read outside so this stays pure.
     """
     out: list[str] = []
     per = diff_lines(diff, fs)
@@ -954,7 +927,7 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
     for f in files:
         if BASELINE_FILE.match(f):
             out.append(f"loosens a gate: {f} is a pinned baseline and this PR edits it")
-    # The mutation pins, by their EFFECTIVE value in each tree — see `pin_falls`. Required, so a
+    # The mutation pins, by their DISPLAY in each tree — see `pin_pair`. Required, so a
     # caller cannot skip the comparison by forgetting it.
     out.extend(pin_falls(*pins))
     # ⟳ backlog #359: a proxy for a falling mutation TOTAL stood here. The total is no longer typed —
@@ -1181,7 +1154,7 @@ def main(argv: list[str]) -> int:
         pins = pin_pair(_run, BASE_REF)
         gathered = True
     except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash
-        code, line = 2, (f"CANNOT RUN — could not read the branch's diff or its effective mutation pins "
+        code, line = 2, (f"CANNOT RUN — could not read the branch's diff or its mutation pins "
                          f"({exc.__class__.__name__}: {exc}), so the house "
                          "rule's exceptions were NOT checked. Treat this as NOT RUN.")
         holds, gathered = [], False
@@ -1490,7 +1463,7 @@ def _self_test_body() -> int:
               has(H([bl]), "pinned baseline"), True)
     check("...but a file merely NAMED like one outside docs/reviews/ is not",
           H(["scripts/baseline.json"]), [])
-    # The pins, as `pin_pair` hands them over: (base, head) EFFECTIVE values, not diff lines.
+    # The pins, as `pin_pair` hands them over: (base, head) displays read as data, not diff lines.
     for o, n in ((128, 125), (30, 2)):
         check(f"a mutation pin that DROPS {o} -> {n} is a loosening",
               has(pin_falls({"scripts/a.py": o}, {"scripts/a.py": n}), f"{o} -> {n}"), True)
@@ -1880,35 +1853,25 @@ def _self_test_body() -> int:
           has(pin_falls({"scripts/a.py": 30}, {}), "scripts/a.py (30) is removed"), True)
     check("...and so is one renamed to another key",
           has(pin_falls({"scripts/b.py": 12}, {"scripts/c.py": 12}), "scripts/b.py (12) is removed"), True)
-    # ── THE PINS BY EFFECTIVE VALUE (backlog #359 r2) — each input below beat a TEXT rule ─────
-    # Base and head are synthetic `check-plan-code.py` trees, archived to tar in memory and RUN for
-    # real: `effective_pins` unpacks them and asks each `--print-pins`. Only `git` is faked here; a
-    # real repository, and the real `check-plan-code.py`, are both driven further down.
-    def _syn(extra="", pins='    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n', cli=True):
-        tail = ('if __name__ == "__main__":\n'
-                '    if sys.argv[1:] != ["--print-pins"]:\n'
-                '        sys.exit("error: unrecognized arguments: " + " ".join(sys.argv[1:]))\n'
-                '    print(json.dumps(EXPECTED_MUTATIONS))\n') if cli else (
-                'if __name__ == "__main__":\n'
-                '    sys.exit("error: unrecognized arguments: " + " ".join(sys.argv[1:]))\n')
-        return "import json, sys\nEXPECTED_MUTATIONS = {\n" + pins + "}\n" + extra + tail
-    def _tar(files):
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w") as t:
-            for rel, text in files.items():
-                data = text.encode()
-                ti = tarfile.TarInfo(rel)
-                ti.size = len(data)
-                t.addfile(ti, io.BytesIO(data))
-        return buf.getvalue()
+    # ── THE PINS BY THEIR DISPLAY (backlog #359 r3) ─────────────────────────────────────────────
+    # Base and head are synthetic `check-plan-code.py` texts; only `git` is faked here, and the DISPLAY
+    # reader is the real one, imported from the real `check-plan-code.py`. A real repository and the
+    # real file are both driven further down. Inputs that change what Python COMPUTES without touching
+    # the display (`-= 4`, a default argument, a decorator, a shadowed `dict`, a gated write) are not
+    # this script's to see: the harness refuses them where the pins are used (check-plan-code's cases).
+    def _syn(extra="", pins='    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n'):
+        return "import json, sys\nEXPECTED_MUTATIONS = {\n" + pins + "}\n" + extra
     def _prun(trees):
-        """A runner over in-memory trees: `git` is answered from `trees`, the interpreter is REAL."""
+        """A runner over in-memory trees: `ls-tree` and `show` are answered from `trees`."""
         def run(cmd, **kw):
             if cmd[:2] == ["git", "merge-base"]:
                 return subprocess.CompletedProcess(cmd, 0, "base\n", "")
-            if cmd[:2] == ["git", "archive"]:
-                return subprocess.CompletedProcess(cmd, 0, _tar(trees[cmd[3]]), b"")
-            return subprocess.run(cmd, capture_output=True, **kw)
+            if cmd[:3] == ["git", "ls-tree", "--name-only"]:
+                return subprocess.CompletedProcess(cmd, 0, f"{cmd[-1]}\n" if cmd[-1] in trees[cmd[3]] else "", "")
+            if cmd[:2] == ["git", "show"]:
+                rev, path = cmd[2].split(":", 1)
+                return subprocess.CompletedProcess(cmd, 0, trees[rev][path], "")
+            return subprocess.CompletedProcess(cmd, 128, "", f"unexpected {cmd}")
         return run
     PCP = "scripts/check-plan-code.py"
     import fixture_git
@@ -1922,86 +1885,92 @@ def _self_test_body() -> int:
     def PHs(*a):
         return str(PH(*a))                  # a list is not CANNOT RUN, and must not crash
     _drop = "the mutation pin for scripts/a.py drops 5 -> 4"
-    check("⛔ Codex r2 H1: a pin lowered in a DEFAULT ARGUMENT at definition time is HELD",
-          PH(_syn('def _self_test_body(_init=EXPECTED_MUTATIONS.update({"scripts/a.py": 4})):\n'
-                  '    pass\n')), [f"loosens a gate: {_drop}"])
-    check("⛔ Codex r2 H1: a pin lowered by a DECORATOR is HELD",
-          PH(_syn('@(lambda f: (EXPECTED_MUTATIONS.update({"scripts/a.py": 4}), f)[1])\n'
-                  'def _self_test_body():\n    pass\n')), [f"loosens a gate: {_drop}"])
+    check("a pin LOWERED in the display is HELD",
+          PH(_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')), [f"loosens a gate: {_drop}"])
     check("⛔ Codex r2 H2: a real fall beside a STRING that holds the old pin line is HELD",
           PH(_syn("_audit_note = '''\n    \"scripts/a.py\": 5,\n'''\n",
                   pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')), [f"loosens a gate: {_drop}"])
-    check("⛔ Codex r2 H3: a pin lowered through a locally SHADOWED `dict` is HELD",
-          PH(_syn("def adjust_pins():\n    def dict(pins):\n        pins['scripts/a.py'] = 4\n"
-                  "    dict(EXPECTED_MUTATIONS)\nadjust_pins()\n")), [f"loosens a gate: {_drop}"])
-    check("⛔ r1 (Claude S1, Codex X1): a DUPLICATE key that lowers a pin is HELD",
-          PH(_syn(pins='    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n    "scripts/a.py": (\n        4\n    ),\n')),
-          [f"loosens a gate: {_drop}"])
-    check("⛔ r1 (Claude S2): a later `EXPECTED_MUTATIONS[k] -= 4` is HELD, at the value it computes",
-          PH(_syn('EXPECTED_MUTATIONS["scripts/a.py"] -= 4\n')),
-          ["loosens a gate: the mutation pin for scripts/a.py drops 5 -> 1"])
-    check("a pin REMOVED from the effective dict is HELD",
-          PH(_syn("del EXPECTED_MUTATIONS['scripts/b.py']\n")),
+    check("⛔ r1 (Claude S1, Codex X1): a DUPLICATE key that lowers a pin is CANNOT RUN, never a pass",
+          PHs(_syn(pins='    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n    "scripts/a.py": (\n        4\n    ),\n'))
+          .startswith("CANNOT RUN: HEAD:"), True)
+    check("a pin REMOVED from the display is HELD",
+          PH(_syn(pins='    "scripts/a.py": 5,\n')),
           ["loosens a gate: the mutation pin for scripts/b.py (3) is removed"])
     check("...an UNCHANGED tree is not held", PH(_syn()), [])
-    check("...nor an INCREASED pin, though its text moved", PH(_syn('EXPECTED_MUTATIONS["scripts/a.py"] += 2\n')), [])
-    check("⛔ a head that cannot IMPORT is CANNOT RUN, never a pass",
-          PHs(_syn("raise ImportError('broken head')\n")).startswith("CANNOT RUN: HEAD:"), True)
-    check("⛔ a head that prints NON-JSON is CANNOT RUN, never a pass",
-          PHs(_syn("print('hello')\n")).startswith("CANNOT RUN: HEAD: --print-pins printed non-JSON"), True)
-    check("...and so is a head whose pins are not {path: int}",
-          PHs(_syn('EXPECTED_MUTATIONS["scripts/a.py"] = "5"\n')).startswith("CANNOT RUN: HEAD:"), True)
-    check("a BASE that predates --print-pins is read by import, so its pins still count",
-          PH(_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'), _syn(cli=False)),
-          [f"loosens a gate: {_drop}"])
-    check("⛔ ...but a HEAD without --print-pins is CANNOT RUN — the side under review must answer",
-          PHs(_syn(cli=False)).startswith("CANNOT RUN: HEAD:"), True)
+    check("...nor a RAISED pin", PH(_syn(pins='    "scripts/a.py": 7,\n    "scripts/b.py": 3,\n')), [])
+    check("nothing is EXECUTED: a head that would raise at import is read by its display alone",
+          PH(_syn("raise ImportError('never run')\n")), [])
+    check("⛔ a head with no single literal display is CANNOT RUN, never a pass",
+          [PHs(s).startswith("CANNOT RUN: HEAD:") for s in
+           (_syn() + _syn(), "EXPECTED_MUTATIONS = dict(a=5)\n", _syn(pins='    "scripts/a.py": 2 + 3,\n'))],
+          [True, True, True])
+    check("⛔ ...and so is a BASE whose display cannot be read — the base is not trusted to be empty",
+          PHs(_syn(), "EXPECTED_MUTATIONS = dict(a=5)\n").startswith("CANNOT RUN: base:"), True)
+    check("a base with no check-plan-code.py (a new repository) pins nothing, {}",
+          pin_pair(_prun({"base": {}, "HEAD": {PCP: _syn()}}), "m"),
+          ({}, {"scripts/a.py": 5, "scripts/b.py": 3}))
     check("a head with no check-plan-code.py at all removes every pin",
-          pin_falls(*pin_pair(_prun({"base": {PCP: _syn()}, "HEAD": {"scripts/x.py": ""}}), "m")),
+          pin_falls(*pin_pair(_prun({"base": {PCP: _syn()}, "HEAD": {}}), "m")),
           ["loosens a gate: the mutation pin for scripts/a.py (5) is removed",
            "loosens a gate: the mutation pin for scripts/b.py (3) is removed"])
-    # THE REAL `check-plan-code.py`, with Codex r2 H1's exact edit applied to the head copy: the
-    # synthetic module above proves the rule; only the real one proves `--print-pins` reads it.
+    def _err(run_rc_for):
+        def run(cmd, **kw):
+            rc = run_rc_for(cmd)
+            if cmd[:2] == ["git", "merge-base"]:
+                return subprocess.CompletedProcess(cmd, rc, "base\n", "")
+            if cmd[:3] == ["git", "ls-tree", "--name-only"]:
+                return subprocess.CompletedProcess(cmd, rc, f"{PCP}\n", "")
+            return subprocess.CompletedProcess(cmd, rc, _syn(), "")
+        try:
+            return pin_pair(run, "m")
+        except PinsUnreadable as exc:
+            return f"CANNOT RUN: {exc}"
+    check("⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}",
+          [str(_err(lambda c, w=w: 128 if c[1] == w else 0)).startswith("CANNOT RUN")
+           for w in ("merge-base", "ls-tree", "show")], [True, True, True])
+    # THE REAL `check-plan-code.py`: the synthetic texts above prove the rule; only the real one
+    # proves its display is what `pin_display` reads.
     _here = Path(__file__).resolve().parent
-    _real_tree = {f"scripts/{n}": (_here / n).read_text(encoding="utf-8")
-                  for n in ("check-plan-code.py", "coverage_verdict.py")}
-    _sig = "def _self_test_body() -> int:"
+    _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _k = "scripts/check-vocabulary-collisions.py"
-    _hit = dict(_real_tree)
-    _hit[PCP] = _real_tree[PCP].replace(
-        _sig, f'def _self_test_body(_init=EXPECTED_MUTATIONS.update({{"{_k}": 0}})) -> int:', 1)
     try:
-        _rp = pin_pair(_prun({"base": _real_tree, "HEAD": _hit}), "m")
+        _base_pins = _pins_reader().pin_display(_real_src)
+        _hit = _real_src.replace(f'    "{_k}": {_base_pins[_k]},', f'    "{_k}": 0,', 1)
+        _rp = pin_pair(_prun({"base": {PCP: _real_src}, "HEAD": {PCP: _hit}}), "m")
         _rerr = None
     except Exception as exc:
         _rp, _rerr = ({}, {}), f"{exc.__class__.__name__}: {exc}"
-    check("⭐ the REAL check-plan-code.py answers --print-pins on both sides", (_rerr, len(_rp[0]) > 10), (None, True))
-    check("⭐ ...and Codex r2 H1's default-argument edit to it is HELD at the value it computes",
+    check("⭐ the REAL check-plan-code.py's display is read on both sides", (_rerr, len(_rp[0]) > 10), (None, True))
+    check("⭐ ...and a pin lowered in it is HELD at the value it shows",
           [r for r in pin_falls(*_rp) if _k in r], [f"loosens a gate: the mutation pin for {_k} drops {_rp[0].get(_k)} -> 0"])
     # A REAL repository, so the `git` commands themselves are measured, not only the fake's answers.
     _pg = Path(tempfile.mkdtemp())
     def _pgrun(cmd, **kw):
         if cmd[0] == "git":
             cmd = ["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]]
-            kw.setdefault("cwd", _pg)
+            kw["cwd"] = _pg
             kw.setdefault("env", fixture_git.env(HOME=str(_pg)))
         return subprocess.run(cmd, capture_output=True, **kw)
     try:
-        (_pg / "scripts").mkdir()
         _pgrun(["git", "init", "-q"], text=True)
+        (_pg / "README").write_text("no scripts yet\n")
+        _pgrun(["git", "add", "-A"], text=True)
+        _pgrun(["git", "commit", "-qm", "root"], text=True)
+        _pgrun(["git", "branch", "rootbr"], text=True)
+        (_pg / "scripts").mkdir()
         (_pg / PCP).write_text(_syn())
         _pgrun(["git", "add", "-A"], text=True)
         _pgrun(["git", "commit", "-qm", "base"], text=True)
         _pgrun(["git", "branch", "basebr"], text=True)
-        (_pg / PCP).write_text(_syn('EXPECTED_MUTATIONS["scripts/b.py"] -= 1\n'))
+        (_pg / PCP).write_text(_syn(pins='    "scripts/a.py": 5,\n    "scripts/b.py": 2,\n'))
         _pgrun(["git", "commit", "-qam", "head"], text=True)
-        _pgr = pin_falls(*pin_pair(_pgrun, "basebr"))
+        _pgr = (pin_falls(*pin_pair(_pgrun, "basebr")), pin_pair(_pgrun, "rootbr")[0])
     except Exception as exc:
         _pgr = f"{exc.__class__.__name__}: {exc}"
     finally:
         shutil.rmtree(_pg, ignore_errors=True)
-    check("⭐ real git: a pin lowered by a write outside its display is HELD",
-          _pgr, ["loosens a gate: the mutation pin for scripts/b.py drops 3 -> 2"])
+    check("⭐ real git: a pin lowered in the display is HELD, and a base with no scripts/ pins {}",
+          _pgr, (["loosens a gate: the mutation pin for scripts/b.py drops 3 -> 2"], {}))
     for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
         r = H([mig], at="abc")
         check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)
@@ -2022,7 +1991,7 @@ def _self_test_body() -> int:
     # ⛔ THE CALL SITE, not only the rules — unit coverage does not compose. `main()` is driven
     # end to end over a FAKE `_run`, so deleting the wiring reddens these even with every pure
     # case above still green. Two distinct holds, one clean PR, and one cleared app-code PR.
-    import contextlib
+    import contextlib, io
     _real_run = globals()["_run"]
     _tmp = Path(tempfile.mkdtemp()) / "body.md"
     def _fake(files, diff, body="", status=None, tree="", pins_head=None):
@@ -2048,15 +2017,14 @@ def _self_test_body() -> int:
                 return cp(status)
             if cmd[:2] == ["git", "merge-base"]:
                 return cp("mb\n")
+            if cmd[:3] == ["git", "ls-tree", "--name-only"]:    # the pins: base `mb` and HEAD
+                return cp(f"{PCP}\n")
+            if cmd[:2] == ["git", "show"]:
+                return cp(_syn() if cmd[2].startswith("mb:") else (pins_head or _syn()))
             if cmd[:2] == ["git", "ls-tree"]:
                 return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:
                 return cp(diff)
-            if cmd[:2] == ["git", "archive"]:       # the pins: base `mb` and HEAD, both RUN for real
-                return subprocess.CompletedProcess(
-                    cmd, 0, _tar({PCP: _syn() if cmd[3] == "mb" else (pins_head or _syn())}), b"")
-            if cmd[0] == sys.executable:
-                return subprocess.run(cmd, capture_output=True, **kw)
             return cp("ok\n")                       # the three gate scripts
         return run
     def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None):
@@ -2080,15 +2048,15 @@ def _self_test_body() -> int:
     _rc, _o = _main(["docs/x.md"], "12")
     check("main() leaves a clean READY PR as READY, rc=0", (_rc, "HOLD" in _o), (0, False))
     _rc, _o = _main(["scripts/check-plan-code.py"], "13",
-                    pins_head=_syn('def f(_=EXPECTED_MUTATIONS.update({"scripts/b.py": 1})):\n    pass\n'))
-    check("⭐ main() HOLDS a READY PR whose head's EFFECTIVE pin falls, rc=3",
+                    pins_head=_syn(pins='    "scripts/a.py": 5,\n    "scripts/b.py": 1,\n'))
+    check("⭐ main() HOLDS a READY PR whose head's pin falls, rc=3",
           (_rc, "scripts/b.py drops 3 -> 1" in _o), (3, True))
     try:                                  # a crash here is a RED case, never a dead suite
-        _rc, _o = _main(["scripts/check-plan-code.py"], "14", pins_head=_syn("print('not json')\n"))
+        _rc, _o = _main(["scripts/check-plan-code.py"], "14", pins_head="EXPECTED_MUTATIONS = dict(a=5)\n")
     except Exception as exc:
         _rc, _o = None, exc.__class__.__name__
     check("⭐ main() is CANNOT RUN, rc=2, when the head's pins cannot be read",
-          (_rc, "effective mutation pins" in _o), (2, True))
+          (_rc, "mutation pins" in _o), (2, True))
     # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
     # workflow was renamed there — so only a main() that reads the list holds it.
     _rc, _o = _main(["docs/g.yml"], "21", status="R100\0.github/workflows/g.yml\0docs/g.yml\0")

@@ -3,8 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --print-pins         # EXPECTED_MUTATIONS as JSON, as evaluated
-    python3 scripts/check-plan-code.py --self-test          # 265 cases
+    python3 scripts/check-plan-code.py --self-test          # 279 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -84,7 +83,6 @@ import argparse
 import ast
 import dataclasses
 import contextlib
-import importlib.util
 import io
 import json
 import os
@@ -1476,7 +1474,13 @@ EXPECTED_MUTATIONS = {
     # around it three ways). Three added: `--print-pins` printing a constant, `--print-pins` beside
     # `--mutate` accepted, and the total scan no longer asking whether the total is mentioned. The
     # AST-scan entry is REBOUND to the new comparison test.
-    "scripts/check-plan-code.py": 147,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ r3 (Claude F1): 147 -> 149 — `--print-pins` is deleted, and its two entries (printing a constant,
+    # accepted beside `--mutate`) are RETIRED WITH THEIR SUBJECT. Four added: the pins-are-the-display
+    # assertion removed from `--mutate`, the same removed from `--self-test`, a duplicate display key
+    # resolved instead of refused, and the display-versus-held comparison inverted to refuse only a RISE.
+    # (An inversion that refuses AGREEING pins is stopped by the top-of-suite refusal, which is CANNOT
+    # RUN, and the harness rightly does not count a cannot-run as a catch — measured on the first sweep.)
+    "scripts/check-plan-code.py": 149,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2198,6 +2202,11 @@ EXPECTED_MUTATIONS = {
     # `PIN_LINE` over the diff, which is deleted. Its two entries are REBOUND to `pin_falls`; three
     # added: a non-JSON side failing open, the base-only import fallback answering for the head, and
     # main() never reading the pins.
+    # ⟳ r3 (Claude F1): 87 -> 87 — the pins are read from each side's DISPLAY by `pin_display`, so the
+    # subprocess is deleted. Two entries RETIRED WITH THEIR SUBJECT (a non-JSON `--print-pins` failing
+    # open, and the base-only import fallback answering for the head); two added, both fail-open
+    # directions of the new read: a display `pin_display` refuses read as `{}`, and a failing
+    # `git ls-tree` read as an answer. Three entries are REBOUND to the renamed cases.
     "scripts/check-merge-ready.py": 87,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
@@ -2839,6 +2848,79 @@ def pin_drift(counts: dict) -> list[str]:
     return drift
 
 
+# ── THE PINS ARE THEIR DISPLAY (backlog #359 r3) ─────────────────────────────────────────────
+# ⛔ ONE READER for "the pins a tree declares": the single module-level `EXPECTED_MUTATIONS = {...}`
+# display, read as DATA. `check-merge-ready.py` imports it and applies it to the merge base's text
+# and the head's, so a falling pin is HELD without executing either tree. That reading is only sound
+# if the dict this harness USES is that display — so `--mutate` (before any mutation) and
+# `--self-test` (at its top) each assert `pin_display_problems(...) == []` in their own process, and
+# refuse with rc 2 otherwise. A write the display does not show — a duplicate key, `-= 4`, a default
+# argument, a decorator, a shadowed `dict`, or one gated on argv or the environment (r3, Claude F1)
+# — is then refused where the pins are consumed, under whatever invocation it was gated on.
+# ⚠ BOUND, stated: a write made inside the harness's own functions AFTER that assertion (in
+# `mutate_delivered`, say) is not seen. That is an edit to the checker, the class master's typed
+# total had too: beating it meant rewriting the cases that observed it.
+PINS_NAME = "EXPECTED_MUTATIONS"
+PINS_REFUSAL = ("CANNOT RUN — the pins this process holds are not its EXPECTED_MUTATIONS display, "
+                "so check-merge-ready, which reads the display, would compare the wrong numbers")
+
+
+class PinDisplayError(ValueError):
+    """The source has no single literal `EXPECTED_MUTATIONS` display. Every reader: CANNOT RUN."""
+
+
+def pin_display(src: str) -> dict:
+    """PURE. The ONE module-level `EXPECTED_MUTATIONS = {...}` display in `src`, as {path: int}.
+
+    Refused (`PinDisplayError`) unless there is exactly one module-level assignment to the name and
+    its value is a dict display of string-literal keys and int-literal values with NO duplicate key —
+    Python keeps the last duplicate, so a display carrying one shows a number nobody holds."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        raise PinDisplayError(f"the source does not parse ({exc.msg}, line {exc.lineno})")
+
+    def names(stmt):
+        if isinstance(stmt, ast.Assign):
+            return stmt.targets
+        return [stmt.target] if isinstance(stmt, (ast.AnnAssign, ast.AugAssign)) else []
+    sites = [s for s in tree.body
+             if any(isinstance(t, ast.Name) and t.id == PINS_NAME for t in names(s))]
+    if len(sites) != 1:
+        raise PinDisplayError(f"{len(sites)} module-level assignments to {PINS_NAME}, not exactly one")
+    disp = sites[0].value
+    if not isinstance(disp, ast.Dict):
+        raise PinDisplayError(f"line {sites[0].lineno}: {PINS_NAME} is not a dict display")
+    pins: dict = {}
+    for k, v in zip(disp.keys, disp.values):
+        if not (isinstance(k, ast.Constant) and type(k.value) is str):
+            raise PinDisplayError(f"line {v.lineno}: a key that is not a string literal")
+        if not (isinstance(v, ast.Constant) and type(v.value) is int):
+            raise PinDisplayError(f"line {v.lineno}: {k.value}'s pin is not an int literal")
+        if k.value in pins:
+            raise PinDisplayError(f"line {k.lineno}: {k.value} is a DUPLICATE key — Python keeps the "
+                                  f"last value, so the display shows a pin nobody holds")
+        pins[k.value] = v.value
+    return pins
+
+
+def pin_display_problems(src: str, effective: dict) -> list[str]:
+    """PURE. Why the pins a process HOLDS (`effective`) are not the display in its source — one line
+    per differing key, or the reason there is no display. Empty when they agree."""
+    try:
+        display = pin_display(src)
+    except PinDisplayError as exc:
+        return [str(exc)]
+    return [f"{k}: the display says {display.get(k)}, this process holds {effective.get(k)}"
+            for k in sorted(display.keys() | effective.keys())
+            if display.get(k) != effective.get(k)]
+
+
+def own_pin_problems() -> list[str]:
+    """`pin_display_problems` for THIS process: its own file's display against the dict it holds."""
+    return pin_display_problems(pathlib.Path(__file__).read_text(encoding="utf-8"), EXPECTED_MUTATIONS)
+
+
 # The names whose mention makes a literal a TOTAL rather than a number: the derived total, or the pins.
 TOTAL_NAMES = frozenset({"declared_total", "EXPECTED_MUTATIONS"})
 # The self-test's own assertions — a literal passed to one of these is asserted, as in `assert`.
@@ -3429,6 +3511,20 @@ def parse_fail_names(out: str) -> list[str]:
             for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
 
 
+@contextlib.contextmanager
+def _suite_owns_the_pins():
+    """THE SUITE ONLY (backlog #359 r3). Its synthetic `--mutate` runs REWRITE `EXPECTED_MUTATIONS`
+    on purpose, around `main()`, over a fixture root — so the display assertion, which is about THIS
+    file's pins and is proved by its own cases on a real copy of this file, stands down for them."""
+    global own_pin_problems
+    real = own_pin_problems
+    own_pin_problems = lambda: []
+    try:
+        yield
+    finally:
+        own_pin_problems = real
+
+
 def _budget_wiring(root: pathlib.Path) -> dict:
     """`main()` over the fixture ROOT under each CI / flag / --only setting: {key: (rc, stdout)}.
 
@@ -3445,7 +3541,8 @@ def _budget_wiring(root: pathlib.Path) -> dict:
             if ci is not None:
                 os.environ["CI"] = ci
             buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
+                    _suite_owns_the_pins():
                 out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
     finally:
         os.environ.pop("CI", None)
@@ -3472,6 +3569,12 @@ def _self_test_body() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
+    # ⛔ backlog #359 r3: FIRST, the pins this suite measures are its display — see `PINS_REFUSAL`.
+    _disp = own_pin_problems()
+    case("⛔ the pins this process holds ARE its EXPECTED_MUTATIONS display", _disp, [])
+    if _disp:
+        print(PINS_REFUSAL + ":\n" + "\n".join(f"  {_d}" for _d in _disp), file=sys.stderr)
+        return 2
 
     # ── r3 B5 + B6: THE CONTRACT'S OWN CLAUSES ───────────────────────────
     # ⟳ backlog #91. These were asserted on `verdicts_are_trustworthy`; the clauses now
@@ -4238,7 +4341,7 @@ def _self_test_body() -> int:
         with tempfile.TemporaryDirectory() as _td:
             _r = pathlib.Path(_td); _mini(_r)
             _mo, _mer = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(_mo), contextlib.redirect_stderr(_mer):
+            with contextlib.redirect_stdout(_mo), contextlib.redirect_stderr(_mer), _suite_owns_the_pins():
                 main(["--mutate", str(_r)])
             case("--mutate itself supplies the reporter, so a real run is not silent",
                  [l for l in _mer.getvalue().split("\n") if l.startswith("[1/1] ")],
@@ -4454,7 +4557,7 @@ def _self_test_body() -> int:
                     # that supplies `stderr_progress` — so without this the suite's own stderr
                     # carries progress from a nested run, and `out[-400:]` diagnostics upstream
                     # lose the failure they exist to show (r1 H1).
-                    with contextlib.redirect_stderr(io.StringIO()):
+                    with contextlib.redirect_stderr(io.StringIO()), _suite_owns_the_pins():
                         main(["--mutate", str(_r7)])
                     _mut_out = sys.stdout.getvalue()
                 finally:
@@ -4488,7 +4591,7 @@ def _self_test_body() -> int:
                 try:
                     # stderr discarded for the same reason as above: the real entry point is
                     # the one place a reporter is supplied, and this is a NESTED run.
-                    with contextlib.redirect_stderr(io.StringIO()):
+                    with contextlib.redirect_stderr(io.StringIO()), _suite_owns_the_pins():
                         main(["--mutate", str(root)])
                     return sys.stdout.getvalue()
                 finally:
@@ -6560,8 +6663,9 @@ def _self_test_body() -> int:
     # line, and each later merge cost a re-merge and 3–4 extra review rounds. The sum moves only
     # when a pin moves, and the pins fail in both directions (`pin_drift`, and the on-disk case
     # below). What the literal alone caught was a pin LOWERED together with its entries — and
-    # `check-merge-ready.py` HOLDS a falling pin (the base's and head's EFFECTIVE pins, read by
-    # `--print-pins`), so that fall still reaches the owner with its reason. A same-manifest
+    # `check-merge-ready.py` HOLDS a falling pin (the base's and head's DISPLAYS, read by
+    # `pin_display`, which this harness proves are the pins it uses), so that fall still reaches
+    # the owner with its reason. A same-manifest
     # conflict is REAL and stays; one on a derived number was cost.
     _own_src = pathlib.Path(__file__).read_text(encoding="utf-8")
     # ⟳ r1 (Codex Medium, Claude L1): a regex here missed four spellings. The scan reads the LITERAL.
@@ -6593,41 +6697,111 @@ def _self_test_body() -> int:
          typed_total_sites(f"assert declared_total() == {_t - 86} + 86\n"
                            f"assert f'{{declared_total()}}' == '{_t}'\n"
                            f"N = {_t}\nassert declared_total() == N\n", _t), [])
-    # ─── `--print-pins`: THE PINS AS PYTHON HOLDS THEM (backlog #359 r2: REDESIGN) ───────────
-    # ⛔ `check-merge-ready.py` HOLDS a falling pin by running this mode in the base tree and the
-    # head tree and comparing the dicts. Two text rules before it (`PIN_LINE` over the diff, then an
-    # `ast` shape check here) were walked around by inputs that change what Python computes and
-    # leave no line a text rule reads. So the mode must print the EFFECTIVE dict, not the display.
-    def _pins_out(argv):
-        _po2, _pe2 = io.StringIO(), io.StringIO()
+    # ─── THE PINS ARE THEIR DISPLAY (backlog #359 r3) ────────────────────────────────────────
+    # ⛔ `check-merge-ready.py` HOLDS a falling pin by reading the `EXPECTED_MUTATIONS` DISPLAY at the
+    # merge base and at the head, as data — `pin_display`, the one reader. That is only sound if the
+    # dict this harness USES is that display, so both of its consumers prove it in their OWN process:
+    # `--mutate` before any mutation runs, and this suite at its top (`pin_display_problems`).
+    # ⟳ r2 read the EFFECTIVE dict in a separate `--print-pins` process instead, and r3 (Claude F1)
+    # beat it with a write conditioned on that invocation — `if "--print-pins" not in sys.argv:` —
+    # which reported 87 while the harness held 82. An assertion made where the pins are consumed
+    # cannot be split from them, so a write conditioned on anything is refused there.
+    # ⟳ r3: `--print-pins`, its three cases and its two mutation entries are RETIRED WITH THEIR
+    # SUBJECT; r2's retirement of `pin_shape_problems` (eight cases, three entries) stands.
+    _dsrc = ('import sys\nEXPECTED_MUTATIONS = {\n    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n}\n')
+    case("the display is read as data: {path: int}",
+         pin_display(_dsrc), {"scripts/a.py": 5, "scripts/b.py": 3})
+
+    def _display_refused(src):
         try:
-            with contextlib.redirect_stdout(_po2), contextlib.redirect_stderr(_pe2):
-                _rc2 = main(argv)
-        except SystemExit as exc:               # argparse's refusal is a red case, not a dead suite
-            _rc2 = exc.code
-        return _rc2, _po2.getvalue(), _pe2.getvalue()
-    def _js(out):
-        try:
-            return json.loads(out)
-        except ValueError:                      # non-JSON is a red case, not a dead suite
+            pin_display(src)
             return None
-    _rc_p, _out_p, _ = _pins_out(["--print-pins"])
-    case("--print-pins prints this run's EXPECTED_MUTATIONS as JSON, rc=0",
-         (_rc_p, _js(_out_p) == EXPECTED_MUTATIONS), (0, True))
-    _saved_p = dict(EXPECTED_MUTATIONS)
-    try:
-        EXPECTED_MUTATIONS["scripts/check-plan-code.py"] = -1
-        case("⛔ ...the EFFECTIVE value, not the display: a write after import is what it prints",
-             (_js(_pins_out(["--print-pins"])[1]) or {}).get("scripts/check-plan-code.py"), -1)
-    finally:
-        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_p)
-    _rc_pm, _out_pm, _err_pm = _pins_out(["--print-pins", "--mutate", "."])
-    case("⛔ --print-pins beside --mutate is REFUSED, rc=2 — it would exit 0 having mutated nothing",
-         (_rc_pm, _out_pm, "--print-pins" in _err_pm), (2, "", True))
-    # ⟳ r2 REDESIGN: `pin_shape_problems`, its eight cases and its three mutation entries are
-    # RETIRED WITH THEIR SUBJECT. They proved a runtime invariant from source text, and Codex r2
-    # walked around them three ways. The effective-value comparison in `check-merge-ready.py`
-    # replaces them, and its cases replay every input both rounds found.
+        except PinDisplayError as exc:
+            return str(exc)
+    # r1 (Claude S1, Codex X1): Python keeps the LAST duplicate, so a display with one hides a value.
+    case("⛔ a DUPLICATE key in the display is REFUSED, not resolved to the last value",
+         "DUPLICATE" in str(_display_refused(_dsrc.replace("}\n", '    "scripts/a.py": (\n        4\n    ),\n}\n'))),
+         True)
+    case("...and so is a display that is not a literal {str: int}",
+         [bool(_display_refused(_dsrc.replace(*r))) for r in
+          (('"scripts/b.py": 3', '"scripts/b.py": 1 + 2'), ('"scripts/b.py": 3', '"scripts/b.py": True'),
+           ('"scripts/b.py": 3', '**{"scripts/b.py": 3}'), ('{\n    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n}', 'dict(a=5)'))],
+         [True, True, True, True])
+    case("...and a source with no display, or two",
+         [bool(_display_refused(s)) for s in ("x = 1\n", _dsrc + _dsrc)], [True, True])
+
+    def _eff(extra):
+        """What a module EVALUATES its pins to — the dict a process holds after import."""
+        ns: dict = {"__name__": "pins_eval"}
+        exec(compile(_dsrc + extra, "<pins>", "exec"), ns)
+        return ns["EXPECTED_MUTATIONS"]
+    case("an UNCHANGED module holds exactly its display", pin_display_problems(_dsrc, _eff("")), [])
+    case("...and a RAISED pin in the display is still its display",
+         pin_display_problems(_dsrc.replace(": 5,", ": 9,"), {"scripts/a.py": 9, "scripts/b.py": 3}), [])
+    # Every r1/r2 input that changes what Python computes without touching the display. Each is
+    # REFUSED here; check-merge-ready, which reads displays, never has to see it.
+    for _why, _extra in (
+            ("r1 (Claude S2): a later `-= 4`", 'EXPECTED_MUTATIONS["scripts/a.py"] -= 4\n'),
+            ("Codex r2 H1: a DEFAULT ARGUMENT",
+             'def _self_test_body(_init=EXPECTED_MUTATIONS.update({"scripts/a.py": 4})):\n    pass\n'),
+            ("Codex r2 H1: a DECORATOR",
+             '@(lambda f: (EXPECTED_MUTATIONS.update({"scripts/a.py": 4}), f)[1])\ndef g():\n    pass\n'),
+            ("Codex r2 H3: a shadowed `dict`",
+             "def adjust_pins():\n    def dict(pins):\n        pins['scripts/a.py'] = 4\n"
+             "    dict(EXPECTED_MUTATIONS)\nadjust_pins()\n")):
+        case(f"⛔ {_why} write outside the display is REFUSED, naming the key",
+             pin_display_problems(_dsrc, _eff(_extra)),
+             [f"scripts/a.py: the display says 5, this process holds {1 if '-= 4' in _extra else 4}"])
+    case("⛔ a pin DELETED at runtime is refused too",
+         pin_display_problems(_dsrc, _eff("del EXPECTED_MUTATIONS['scripts/b.py']\n")),
+         ["scripts/b.py: the display says 3, this process holds None"])
+    # THE WIRING, in a real process. r3 (Claude F1)'s three inputs, applied to a COPY of this very
+    # file and run as CI runs it. Each copy must refuse before measuring anything.
+    # ⚠ A copy does not spawn copies of its own: each carries `_PINS_COPY = True` in its SOURCE, because
+    # without the refusal a copy's suite reaches this same case, and an environment marker does not
+    # survive `fixture_git.isolated()` (measured: a mutant that dropped the refusal recursed ~25 deep).
+    # Each copy runs in its own session and its whole group is killed at the timeout.
+    if not globals().get("_PINS_COPY"):
+        _here_dir = pathlib.Path(__file__).resolve().parent
+        _cp = pathlib.Path(tempfile.mkdtemp())
+
+        def _copy_run(attack, argv, env=None):
+            (_cp / "scripts").mkdir(exist_ok=True)
+            for _n in ("coverage_verdict.py", "fixture_git.py"):
+                shutil.copy(_here_dir / _n, _cp / "scripts" / _n)
+            _src = pathlib.Path(__file__).read_text(encoding="utf-8")
+            _guard = '\nif __name__ == "__main__":'
+            (_cp / "scripts" / "check-plan-code.py").write_text(
+                _src.replace(_guard, "\n_PINS_COPY = True\n" + attack + _guard, 1), encoding="utf-8")
+            (_cp / "empty").mkdir(exist_ok=True)
+            pr = subprocess.Popen([sys.executable, str(_cp / "scripts" / "check-plan-code.py"), *argv],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                  stdin=subprocess.DEVNULL, cwd=str(_cp / "empty"),
+                                  env={**os.environ, **(env or {})}, start_new_session=True)
+            try:
+                _o, _e = pr.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(OSError):
+                    os.killpg(pr.pid, 9)
+                pr.communicate()
+                return None, "timeout"
+            return pr.returncode, PINS_REFUSAL in _e
+        _k5 = 'EXPECTED_MUTATIONS["scripts/check-merge-ready.py"] -= 5\n'
+        try:
+            _argv_attack = 'if "--print-pins" not in sys.argv:\n    ' + _k5
+            case("⛔ r3 F1: a write gated on argv is REFUSED by --mutate, rc=2",
+                 _copy_run(_argv_attack, ["--mutate", "."]), (2, True))
+            case("⛔ r3 F1: ...and by --self-test, rc=2",
+                 _copy_run(_argv_attack, ["--self-test"]), (2, True))
+            case("⛔ r3 F1: a write gated on CI=true is REFUSED by --mutate under CI",
+                 _copy_run('if os.environ.get("CI") == "true":\n    ' + _k5, ["--mutate", "."],
+                           {"CI": "true"}), (2, True))
+            case("⛔ r3 F1: a write made whenever the run is NOT --self-test is REFUSED by --mutate",
+                 _copy_run('if "--self-test" not in sys.argv:\n    ' + _k5, ["--mutate", "."]), (2, True))
+            case("...while an UNCHANGED copy is not refused for its pins",
+                 _copy_run("", ["--mutate", "."])[1], False)
+        finally:
+            shutil.rmtree(_cp, ignore_errors=True)
     _saved_t = dict(EXPECTED_MUTATIONS)
     try:
         EXPECTED_MUTATIONS.clear()
@@ -6787,9 +6961,6 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
                     help="With --mutate: run only the mutations targeting SCRIPT, written as the "
                          "manifest's `file` (e.g. scripts/check-x.py; repeatable). "
                          "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
-    ap.add_argument("--print-pins", action="store_true",
-                    help="Print EXPECTED_MUTATIONS as JSON, as this run holds it after import. "
-                         "check-merge-ready.py compares the base's and the head's to HOLD a fall.")
     ap.add_argument("--allow-long-local", action="store_true",
                     help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
     ap.add_argument("--compare", metavar="DIR",
@@ -6907,17 +7078,13 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         print("CANNOT RUN — --only and a shard are two different slices; pass one. NOTHING WAS "
               "MEASURED.", file=sys.stderr)
         return 2
-    # backlog #359 r2: the pins as this process EVALUATED them — the one reading of a falling pin
-    # that a duplicate key, a decorator, a default argument or a string cannot fool. It is asked
-    # here, after every refusal above, so it runs the same prefix `--mutate` runs.
-    if a.print_pins:
-        if a.mutate:
-            print("CANNOT RUN — --print-pins and --mutate are two modes; pass one. NOTHING WAS "
-                  "MEASURED.", file=sys.stderr)
-            return 2
-        print(json.dumps(EXPECTED_MUTATIONS, sort_keys=True))
-        return 0
     if a.mutate:
+        # ⛔ backlog #359 r3: the pins this run USES are its display, asserted HERE, in the process
+        # that consumes them and before any mutation runs — check-merge-ready reads the display.
+        _held = own_pin_problems()
+        if _held:
+            print(PINS_REFUSAL + ":\n" + "\n".join(f"  {_d}" for _d in _held), file=sys.stderr)
+            return 2
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
             print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
@@ -7003,7 +7170,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
     # `main([]) == 2` precisely so that a future edit cannot make "nothing was asked for"
     # exit 0, which is this script's whole thesis about runs that measured nothing.
     print("CANNOT RUN — nothing to do. The modes are `--mutate ROOT` (mutate the delivered "
-          "scripts), `--print-pins` and `--self-test`. Plan mode was RETIRED on 2026-09-08 and its code "
+          "scripts) and `--self-test`. Plan mode was RETIRED on 2026-09-08 and its code "
           "removed. Treat this as NOT CHECKED.", file=sys.stderr)
     return 2
 

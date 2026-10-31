@@ -1791,25 +1791,47 @@
     "expect": "...nor the same number in a call or comparison that never mentions the total"
   },
   {
-    "name": "--print-pins prints a constant instead of the pins this run holds (backlog #359 r2)",
+    "name": "--mutate no longer asserts that the pins it uses are its display, so a write gated on argv is measured (backlog #359 r3)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        print(json.dumps(EXPECTED_MUTATIONS, sort_keys=True))",
-        "        print(json.dumps({}, sort_keys=True))"
+        "        if _held:\n",
+        "        if False:\n"
       ]
     ],
-    "expect": "--print-pins prints this run's EXPECTED_MUTATIONS as JSON, rc=0"
+    "expect": "⛔ r3 F1: a write gated on argv is REFUSED by --mutate, rc=2"
   },
   {
-    "name": "--print-pins beside --mutate is accepted, and exits 0 having mutated nothing (backlog #359 r2)",
+    "name": "--self-test no longer refuses when the pins it uses are not its display (backlog #359 r3)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if a.mutate:\n            print(\"CANNOT RUN — --print-pins and --mutate",
-        "        if False:\n            print(\"CANNOT RUN — --print-pins and --mutate"
+        "    if _disp:\n        print(PINS_REFUSAL",
+        "    if False:\n        print(PINS_REFUSAL"
       ]
     ],
-    "expect": "⛔ --print-pins beside --mutate is REFUSED, rc=2 — it would exit 0 having mutated nothing"
+    "expect": "⛔ r3 F1: ...and by --self-test, rc=2"
+  },
+  {
+    "name": "a DUPLICATE key in the display resolves to the last value instead of being refused (backlog #359 r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if k.value in pins:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "⛔ a DUPLICATE key in the display is REFUSED, not resolved to the last value"
+  },
+  {
+    "name": "the display-versus-held comparison is inverted to refuse only a RISE, so a pin lowered at runtime passes (backlog #359 r3)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if display.get(k) != effective.get(k)]",
+        "            if (display.get(k) or 0) < (effective.get(k) or 0)]"
+      ]
+    ],
+    "expect": "⛔ r1 (Claude S2): a later `-= 4` write outside the display is REFUSED, naming the key"
   }
 ]

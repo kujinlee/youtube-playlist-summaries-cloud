@@ -18493,5 +18493,10 @@ with their subject. Measured from 2026-10-17: 41 of 43 merged commits to `check-
 ⟳ r2 REDESIGN (thrashing armed): a falling per-file pin is now HELD by its EFFECTIVE value, not by text.
 `check-plan-code.py --print-pins` prints `EXPECTED_MUTATIONS` as JSON after import; `check-merge-ready`'s
 `pin_pair` archives `scripts/` at the merge base and at HEAD, runs it in each, and HOLDs a key that falls or is
-removed (CANNOT RUN when a side cannot answer). `PIN_LINE` and r1's `pin_shape_problems` are deleted. Pins:
-merge-ready 85 → 87, plan-code 140 → 147; cases: merge-ready 211 → 230, plan-code 265.
+removed (CANNOT RUN when a side cannot answer). `PIN_LINE` and r1's `pin_shape_problems` are deleted.
+⟳ r3 (Claude F1): a write gated on the invocation (`if "--print-pins" not in sys.argv:`, or on `CI=true`) made
+`--print-pins` report 87 while the harness held 82, so the HOLD now reads each side's `EXPECTED_MUTATIONS` DISPLAY as
+data (`check-plan-code.pin_display`, imported; a duplicate key is refused), executing neither tree, and the harness
+asserts in its OWN process (`--mutate` before any mutation, `--self-test` at its top) that the pins it uses ARE that
+display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-only fallback are deleted. Pins:
+merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.
