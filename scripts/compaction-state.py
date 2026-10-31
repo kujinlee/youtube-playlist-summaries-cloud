@@ -987,8 +987,9 @@ def real_time_cases(env) -> bool:
       - the parent's return within its kill + 1 s — `the WHOLE PreCompact hook ends within its capture deadline`.
     The skipped real-time cases still run on EVERY PR in CI's ordinary step, which `ci_runs_real_time` pins. Mutants
     that only the real-time cases kill are NOT measured by the sweep; the known ones are listed in backlog #424
-    (a capture killed before its deadline, the stdin read's bound, and others), with the structural fix: an injectable
-    clock or scaled deadlines, so the skip can be removed. Backlog #423's two kill details are killed in neither mode."""
+    (a capture killed before its deadline, and others), with the structural fix: an injectable
+    clock or scaled deadlines, so the skip can be removed. Backlog #423's two kill details, and the stdin read's 2 s bound
+    (`STDIN_WAIT`), are killed in neither mode."""
     return env.get(MUTATION_RUN_ENV) != "1"
 
 
@@ -1020,8 +1021,8 @@ def ci_runs_real_time(ci_text: str) -> str | None:
     anchors and aliases, a folded `run: >`, and an `if:` whose expression is always true are not modelled — any
     `if:` is refused, and `continue-on-error:` is refused unless literally `false`. The marker is caught only by its
     NAME anywhere in the file, so one assembled from `vars` or `fromJSON` is not seen. Also NOT seen (r3, F2): a
-    `needs:` on a job that is skipped (GitHub then skips `verify` too), a step-level `shell:`, and a job-level
-    `defaults.run.shell`, any of which can make the step not run the script."""
+    `needs:` on a job that is skipped (GitHub then skips `verify` too), a step-level `shell:`, and a job-level or
+    workflow-level `defaults.run.shell`, any of which can make the step not run the script."""
     lines = ci_text.splitlines()
     try:
         top = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
