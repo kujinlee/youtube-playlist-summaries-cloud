@@ -2207,7 +2207,17 @@ EXPECTED_MUTATIONS = {
     # fail — a branched binding answered by `_is_restore_value` before the rule under test, and a
     # callee-scope substitution no input distinguished. Every `expect` below was derived by
     # RUNNING its mutation against a green control, never written from the finding.
-    "scripts/check-main-drivable.py": 183,
+    # ⟳ 2026-10-30, backlog #401: 183 -> 189. Six entries for the node-identity memo that took
+    # the suite from ~68s to ~8s — a key coarser than identity, an entry that stops holding its
+    # nodes, a key that drops the name, and each of the three freezes — plus ONE RETARGET: the r9
+    # nested-class anchor moved, unchanged, into `_class_methods`.
+    # ⟳ 2026-10-30, PR #449 round 1's fold: 189 -> 194. Five entries, no retargets — the memo
+    # that never reuses, the case-folded key, the cap that never evicts, eviction by insertion
+    # rather than use, and the entry that drops its arguments (asserted on the node, not the
+    # allocator).
+    # ⟳ 2026-10-30, PR #449 round 2's fold: 194 -> 196, declared sum 2549 -> 2551 (read with
+    # `ast`). Two entries, no retargets — the cap that evicts the SECOND entry, and `>=` for `>`.
+    "scripts/check-main-drivable.py": 196,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
@@ -2226,6 +2236,21 @@ EXPECTED_MUTATIONS = {
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
+    # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
+    # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
+    # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
+    # regular-file read, the expiring main-checkout override, the two readers, and the SendMessage gate.
+    # Then 63 -> 74: the absent-cache notice said once per session, and the stale message's path.
+    # ⟳ PR #446 r2 fold: 74 -> 85. Two retired with their subject (the wake gate no longer reads the
+    # recipient's name, so "a name CONTAINING main" and "a [ref] suffix" have nothing to mutate) and 13
+    # new: the caller's agent_id (5), integers parsed as floats and the parser's RecursionError (3), the
+    # read's deadline (3), and stripping every GIT_* variable (2).
+    # ⟳ PR #446 r3 fold: 85 -> 94, none retired. The reader thread as a DAEMON, killed only by a case that
+    # runs the checker as a child process (1), and the control messages allowed at REFUSE (8).
+    # ⟳ PR #446 r4 fold: 94 -> 102, none retired. The stdin read's deadline at both call sites, as a daemon,
+    # failing toward the gate (4), its byte bound through real stdin (2), the control type as a string (1), and
+    # the missing-cache case's precondition (1).
+    "scripts/check-usage-pace.py": 102,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2374,7 +2399,7 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON IS STALE, BUT THE SAVING IS STILL A LATENCY ONE.
     backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
     sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
-    `needs: null` and `matrix: {shard: [1..N]}` (N=12 since 2026-10-24, backlog #231).
+    `needs: null` and `matrix: {shard: [1..N]}` (N=24 since 2026-10-30, backlog #231; 12 from 2026-10-24).
 
     ⛔⛔ AND HERE IS A CLAIM I WROTE AND r5 CODEX REFUTED BY MEASUREMENT — recorded because the
     error is more instructive than the number. I wrote that the sweep therefore costs *"~48 runner-
@@ -4493,6 +4518,7 @@ def _self_test_body() -> int:
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-transcript-references.py",
+                                      "scripts/check-usage-pace.py",
                                       "scripts/check-vocabulary-collisions.py",
                                       # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
                                       # manifest — and it is NOT a `check-*` guard, so this list is
@@ -6297,7 +6323,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2641)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2756)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

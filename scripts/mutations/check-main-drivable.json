@@ -2045,8 +2045,8 @@
   "name": "a NESTED class's methods become invisible to the callee owner, so `C.Inner().nested()` hands main the global (r9 Claude Medium)",
   "edits": [
    [
-    "        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)",
-    "        named = [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
+    "    return [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)",
+    "    return [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
    ]
   ],
   "expect": [
@@ -2376,6 +2376,175 @@
   ],
   "expect": [
    "...and a helper in the ENCLOSING scope resolves for a call one scope deeper \u2014 the middle of the chain, which neither the call's own scope nor the module supplies"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the memo keys a node by its TYPE rather than its identity, so every function after the first is answered from the first one's entry \u2014 the resolver's three binding forms collapse to one answer (backlog #401)",
+  "edits": [
+   [
+    "        key = tuple(id(a) if",
+    "        key = tuple(type(a).__name__ if"
+   ]
+  ],
+  "expect": [
+   "the resolver reads `with \u2026 as`, `for \u2026 in` and `=` alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo entry stops holding the nodes it is keyed on, so a freed tree's id is reused by the next one and the cache hands back the previous tree's answer (backlog #401)",
+  "edits": [
+   [
+    "            hit = memo[key] = (args, out)",
+    "            hit = memo[key] = (None, out)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a memoised helper answers for THIS tree, though every tree before it is gone and its address is reused (backlog #401)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the memo key drops every argument that is not a node, so `_bound_values(\"p\", fn)` answers with what it found for `td` (backlog #401)",
+  "edits": [
+   [
+    "else a for a in args)",
+    "else None for a in args)"
+   ]
+  ],
+  "expect": [
+   "...and for THIS name: one function, two names, two answers"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memoised LIST is handed out mutable, so one caller's append changes the answer every later caller gets for that node (backlog #401)",
+  "edits": [
+   [
+    "                out = tuple(out)\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memoised SET is handed out mutable, so one caller's add changes the answer every later caller gets for that tree (backlog #401)",
+  "edits": [
+   [
+    "                out = frozenset(out)\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memoised DICT is handed out mutable, so one caller's assignment changes the answer every later caller gets for that tree (backlog #401)",
+  "edits": [
+   [
+    "                out = types.MappingProxyType(out)\n",
+    "                pass\n"
+   ]
+  ],
+  "expect": [
+   "...and the ONE answer every caller shares refuses to be mutated, so a caller cannot corrupt it for the next \u2014 list, set and dict alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo that never REUSES an answer keeps every answer right and loses the whole speedup (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "        hit = memo.get(key)\n",
+    "        hit = None\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the memo IS A CACHE: two calls on one tree build once (r1 Codex Minor \u2014 losing the reuse kept every answer right, lost the whole speedup, and survived 441/441)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo key that ignores CASE answers `P` with `p`'s binding (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "        key = tuple(id(a) if isinstance(a, ast.AST) else a for a in args)\n",
+    "        key = tuple(id(a) if isinstance(a, ast.AST) else a.lower() if isinstance(a, str) else a for a in args)\n"
+   ]
+  ],
+  "expect": [
+   "...and a name is told apart by its EXACT spelling: `p` and `P` are two names, two answers (r1 Codex Minor \u2014 a key that ignored case survived 441/441)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo with NO EVICTION retains every tree it was ever asked about (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "            if len(memo) > _MEMO_MAX:\n",
+    "            if False:\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the memo is BOUNDED: past `_MEMO_MAX` entries the least recently USED goes, and its tree with it (r1 Codex Minor \u2014 unbounded, ~30 MB over 20,000 discarded trees)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo that evicts by INSERTION order drops the entry still in use (backlog #401)",
+  "edits": [
+   [
+    "            memo[key] = memo.pop(key)                # most recently used goes last\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the memo is BOUNDED: past `_MEMO_MAX` entries the least recently USED goes, and its tree with it (r1 Codex Minor \u2014 unbounded, ~30 MB over 20,000 discarded trees)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo ENTRY that does not hold its arguments lets the node die and its id be reused, asserted on the node rather than the allocator (backlog #401, r1 Codex Minor)",
+  "edits": [
+   [
+    "            hit = memo[key] = (args, out)\n",
+    "            hit = memo[key] = (None, out)\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a memo ENTRY keeps alive the node its key names, so that id cannot be reused while the entry exists \u2014 asserted on the node, not on what the allocator does (backlog #401)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a capped memo that evicts the SECOND entry rather than the oldest, masked by any prior entry in a shared memo (backlog #401, r2 Codex Minor)",
+  "edits": [
+   [
+    "                del memo[next(iter(memo))]            # the least recently used, its arguments with it\n",
+    "                del memo[list(memo)[1]]            # the least recently used, its arguments with it\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 in a FRESH memo, the insertion past `_MEMO_MAX` evicts exactly the OLDEST entry \u2014 not the second, and not two (r2 Codex Minor \u2014 `list(memo)[1]` survived 445/445)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a memo capped at `>=` rather than `>` holds one entry fewer than `_MEMO_MAX` and rebuilds the oldest (backlog #401, r2 Codex Minor)",
+  "edits": [
+   [
+    "len(memo) > _MEMO_MAX:",
+    "len(memo) >= _MEMO_MAX:"
+   ]
+  ],
+  "expect": [
+   "...and `_MEMO_MAX` entries are a FULL memo, not an overflowing one: all kept, all hits on a second pass, and the next insertion evicts exactly one"
   ],
   "file": "scripts/check-main-drivable.py"
  }
