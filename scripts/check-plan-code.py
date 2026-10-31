@@ -2287,6 +2287,30 @@ EXPECTED_MUTATIONS = {
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
     "scripts/check-memory-index-budget.py": 28,
     "scripts/check-memory-link.py": 8,
+    # backlog #410 (2026-10-30): the stalled-work detector joins with 31 entries — 22, plus 9 for the
+    # untrusted-gh-text fold (cross-repo PRs dropped, every printed gh string held to a shape).
+    # ⟳ r1 fold: 31 → 58. NINE retired WITH THEIR SUBJECT — the no-upstream exclusion, the age window,
+    # the checkout-mtime filters (two), the main-checkout skip, `updatedAt` (two) and SAFE_REF_RE (two,
+    # now `shape`) are gone, F5/F6/F7 removed them. 36 entered against the r1 code, which re-covers
+    # each retired subject's replacement and has at least one per finding F1-F10.
+    # ⟳ cap-and-cache: 58 → 79. 21 for the hook block's 8-line cap and its summary, the uncapped
+    # CLI, and the 10-minute cache (hit, expiry, malformed, atomic write, age, key, main checkout).
+    # ⟳ r2 REDESIGN: 79 → 105. THREE retired WITH THEIR SUBJECT — gh's own budget (one deadline now)
+    # and the squash heuristic (two: its match and its empty-diff guard), all gone. 29 entered: the
+    # cache's schema (one per refusal), shaping at render, ages recomputed from now, the candidate
+    # window, whitespace-exact MERGED, and the one deadline (expired, killed, shared by every call).
+    # ⟳ r3: 105 → 112. ONE retired as EQUIVALENT, not with its subject: `--verbatim` → `--stable` now
+    # survives (measured, 233/233 green) because `git merge-tree` refuses the whitespace case on its own.
+    # 8 entered: the merge-tree requirement and its conflict rule, the orphan merge base, the cache's
+    # tip-moved check and its packed-refs read, the hook's catch-all, the bounded drain, a list `kind`.
+    # ⟳ SPLIT (r3 decision): 112 → 80. The cache left this file whole (it is preserved on the branch
+    # `stalled-work-cache` and filed as its own backlog row), and 32 entries were RETIRED WITH THEIR
+    # SUBJECT: the cache's read, expiry, key, atomic write and schema (21), the age line, `_clip`, the
+    # candidate window, ages-from-measurement, the tip-moved check, its packed-refs read and the list
+    # `kind` (11). Nothing was retargeted; every one that remains is run against the suite below.
+    # ⟳ r4 (F1): 80 → 84. `own_prs` REFUSES a malformed gh node instead of dropping it: six entries
+    # pin the validation (2 retired: the old drop-based filter's two anchors no longer exist).
+    "scripts/check-stalled-work.py": 84,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
@@ -4565,6 +4589,7 @@ def _self_test_body() -> int:
                                       "scripts/check-selection-card.py",
                                       "scripts/check-selftest-counts.py",
                                       "scripts/check-sentinel-meanings.py",
+                                      "scripts/check-stalled-work.py",
                                       "scripts/check-storage-grant-pin.py",
 "scripts/check-storage-independence.py",
                                       "scripts/check-surface-recall.py",
@@ -6376,7 +6401,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2878)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2962)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

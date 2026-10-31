@@ -313,6 +313,18 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #410 (2026-10-30): every parameter varied except main.*, EXEMPT with its reason.
+    # ⟳ r2: `unpushed_item.times` is gone — the oldest time and the count are measured into a FACT.
+    "check-stalled-work.py": (
+        "coordinator_rounds.names_by_tree", "fmt_age.seconds", "hook_block.lines", "hook_block.rc",
+        "iso_epoch.stamp", "main.argv", "main.now", "main.prs", "main.stdin_text", "parse_refs.text",
+        "parse_worktrees.porcelain", "pr_item.commit_ts", "pr_item.draft_limit_s", "pr_item.now",
+        "pr_item.pr", "render.counts", "render.items", "render.notes", "review_items.halves",
+        "review_items.now", "review_items.rounds", "run.argv", "run.now", "run.prs",
+        "run.stdin_text", "scratch_for.project_dir", "scratch_for.session_id", "scratch_for.tmpdir",
+        "scratch_for.uid", "unpushed_item.branch", "unpushed_item.limit_s", "unpushed_item.now",
+        "unpushed_item.count", "unpushed_item.oldest", "unpushed_item.path", "unpushed_item.where",
+        "own_prs.rows", "safe_ref.name",),
     # backlog #393 (2026-10-29): the plan-leak push gate, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #443 r1: re-derived after the redesign onto git's pre-push hook.
@@ -1228,6 +1240,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #410 (2026-10-30): check-stalled-work.py's main() is driven through one helper.
+    "check-stalled-work.py:main.argv": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    "check-stalled-work.py:main.now": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    "check-stalled-work.py:main.prs": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    "check-stalled-work.py:main.stdin_text": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
     # PR #440 r2: the shared hostile-payload fixture's scratch directory.
     "bounded_read.py:hostile_payloads.d": "a scratch directory the fixture writes its transcript files and FIFO into; the payloads' CONTENT is the variation, and any directory is equivalent",
     # PR #440 r3 C4: the same fixture, filtered to its non-regular members — the same scratch directory.
