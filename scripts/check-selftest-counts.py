@@ -158,6 +158,9 @@ POPULATION: frozenset[str] = frozenset({
     # LIBRARY: `check-ratchet-contract`'s population is `check-*` guards, so nothing else observes
     # its declared count at all. Its own first run printed 37 against a docstring saying 34.
     "observer_log.py",
+    # ⟳ PR #440 r2: the ONE bounded reader of the five guards' untrusted input — a LIBRARY, pinned in the commit
+    # that creates it, so this list is the outside observer of its declared count.
+    "bounded_read.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
     "check-group-claims.py",         # ⟳ 2026-09-11. Pinned in the commit that creates it:
                                      # a guard declaring a count nothing verifies is the
@@ -268,6 +271,7 @@ POPULATION: frozenset[str] = frozenset({
     "check-sentinel-meanings.py",
     "check-storage-grant-pin.py",
     "check-vocabulary-collisions.py",
+    "check-usage-pace.py",           # backlog #399 — pinned in the commit that creates it.
 })
 
 # The denominator is the total. Scripts differ on the words around it, so the line is matched on

@@ -18346,3 +18346,91 @@ UserPromptSubmit hook, `.claude/hooks/stalled-work.sh`, and stated in `docs/proc
 (the CLI is not). No cache: the hook measures on every prompt (a per-session facts cache is preserved on
 the branch `stalled-work-cache`, filed as its own backlog row). The whole check runs
 inside one 15 s deadline, and a branch is called merged only when every commit's exact change is on master.
+
+## 2026-10-30
+The slowest check in the repository got about seven times faster. The test suite of the guard that
+checks every script's `main()` can be driven from its own tests used to take about 68 seconds on a
+laptop. That one suite was two thirds of all the work in CI's mutation sweep, because the sweep runs
+it once for every one of its mutations. It now takes about 8 seconds and gives the same answers.
+<!--tech-->
+Backlog #401. `scripts/check-main-drivable.py` gains `_memo_by_node`, a cache keyed on the
+identity of a helper's AST arguments. Each entry holds those nodes, so no id can be reused while it
+exists, and the answer it hands back is frozen. It wraps `_all_functions`, `note_globals_imports`,
+`_own_scope`, `_bound_values`, `_defs_in_scope` and a new per-tree `_class_methods` behind
+`_resolve_callee`. `_parents` already had its own cache. The memo is capped at `_MEMO_MAX` (64)
+entries per helper, least recently used first out, because `check-fixture-git-isolation.py` calls
+`suite_entries` directly and never reaches `assess()`. Asking about 20,000 discarded trees used to
+keep about 30 MB; it now keeps 0.1 MB. A tree must not be edited once a memoised helper has seen it.
+There are seven new cases and the suite now has 445. Eleven new mutation entries take
+`EXPECTED_MUTATIONS` from 183 to 194 and the declared sum from 2538 to 2549. One anchor moved: the
+r9 nested-class entry now points into `_class_methods`.
+
+## 2026-10-30
+The mutation-testing check in CI was nearly running out of time again: its slowest piece took 29
+of its 30 allowed minutes. It is now split into 24 pieces instead of 12, which should bring the
+slowest one to about 18 minutes. That figure is a prediction until this branch's own CI run
+measures it. Most of the time goes to one check. It is filed as its own item, because adding more
+pieces does not fix it.
+<!--tech-->
+`mutation-sweep` matrix 12 -> 24 (backlog #231 reopened: its 1,500 s trigger fired again). Measured
+on run 40799920596 (`fea33073`): slowest shard 1758 s, 1.02x inside `timeout-minutes: 30`. Per-target
+cost re-derived from CI log timestamps: 12,965 s of mutation work, 309 s control floor per shard;
+`check-main-drivable.py` is 68% of the work (backlog #401). Predicted at N=24: slowest ~1,055 s, 1.71x.
+
+## 2026-10-30
+**Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
+one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
+a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
+report back, and work already running carries on. To let them through anyway, the refusal shows you a one-line
+command that allows them for two hours, or launch with `ALLOW_SPAWN_OVER_LIMIT=1`. The agent itself is not told how.
+If the cached number is more than 15 minutes old, every prompt says so loudly and names the file to check; if it is
+missing altogether (a clone with no such statusline), that is said once per session. Nothing is blocked either way,
+so a statusline hiccup cannot stop work.
+<!--tech-->
+Backlog #399, PR #446. `scripts/check-usage-pace.py` (rules separate from the file read, 213 self-test cases, 74
+mutations all killed by their named case); hooks `.claude/hooks/usage-pace-prompt.sh` (UserPromptSubmit),
+`.claude/hooks/usage-pace-spawn.sh` (PreToolUse on Agent) and `.claude/hooks/usage-pace-wake.sh` (PreToolUse on
+SendMessage, added by the owner's round-1 decision), all through `run-hook.sh`. The deny travels as JSON at
+exit 0, and every non-zero exit is mapped to 1, so a broken checker can never block a prompt.
+
+## 2026-10-30
+Five tooling checks no longer fail silently, or crash, on input they cannot read. The check that warns about bare
+reference numbers in a finished turn used to say nothing at all when the session transcript was corrupt — the same
+silence as "nothing to warn about"; it now says it could not run. All five — that one, the step-banner check, the
+closing-table check, the CI-watch check and the handoff-path check — could crash on an unreadable byte, a malformed
+hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. They now
+share one reader for that input, so none of them can hang on a named pipe or crash on a deeply nested message, and a
+transcript damaged in the middle is reported as unreadable instead of being quietly read around. One thing a session
+can see changes: if the handoff skill's file cannot be decoded, `/handoff` is now BLOCKED under a headline
+saying the path could not be checked, where it used to only warn.
+<!--tech-->
+Branch `guards-cannot-run`, PR #440: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
+(d) stay open. `check-transcript-references` returns rc 2 when no transcript record parses, and refuses a non-object
+payload; `check-banner-armed`, `check-closing-table` and `check-transcript-references` read the transcript as UTF-8
+inside an `(OSError, UnicodeDecodeError)` handler; `check-handoff-path` catches `UnicodeDecodeError` (through the CLI
+too); `check-ci-watched` refuses a checks answer that is not a list of objects and an arm directory it cannot list.
+Every input exits 2 with a CANNOT RUN message and no traceback. 12 new cases, 9 new mutations plus one retargeted,
+each killed by the case it names. Round 1 (both halves NOT CONVERGED) widened each fix to its class: one payload check,
+`check-banner-armed.transcript_lines`, now serves all three Stop-hook guards (raw stdin bytes; null, true, 1 and a string
+as well as a list; a number or a NUL byte as `transcript_path`), and an undecodable LINE was skipped rather than blinding
+the transcript (reverted in round 2). `check-ci-watched` refuses an object row with no string `status`/`state` and a mixed list. The handoff
+hook gives receipt 2 its own headline. 16 more cases and 12 more mutations, with one entry retired with its subject
+(the reference guard's own dict check, now the borrowed one's). The hook's own mutant was run by hand and killed by the
+case it names, because a manifest can only target `scripts/<stem>.py`. Round 1 m3 and m4 are filed as backlog #331 (e) and (f).
+Round 2 (Codex NOT CONVERGED: an undecodable mid-transcript record passing QUIET because of round 1's skip, a
+200,000-deep payload's `RecursionError`, an empty check status read as "CI running", a FIFO `transcript_path` hanging the
+Stop hook) moved the route to a redesign: ONE bounded reader, the new `scripts/bounded_read.py`, used by all five guards.
+It reads only a regular file (`O_NONBLOCK`, then `S_ISREG` on the descriptor) or stdin, under a byte bound (256 MiB for a
+file; 1 MiB and 2 s for stdin), maps every parse exception to CANNOT RUN at one deliberate broad catch, and tolerates
+only a torn FINAL record — so round 1's line skip is reverted, and backlog #331 (e) partial corruption and (f) the
+`splitlines()` split are fixed with it. `check-ci-watched` requires a non-empty status from a known set. The per-guard
+copies it replaces are deleted. One list of hostile payloads, `bounded_read.hostile_payloads`, drives each transcript
+guard's real `--decide`. The FIFO class was live in `check-handoff-path` too (its CLI hung on a FIFO SKILL.md) and is
+fixed there. Verdicts over 50 real transcripts are unchanged against master. `EXPECTED_MUTATIONS` 2552.
+
+## 2026-10-30
+Every message the coordinator sends re-sends a fixed block of context, and about 16,000 tokens of it was text our own start-up hooks print. The in-flight block now shows each open PR on one line, every item the owner decided or is waiting to decide in full (whatever way it was written down), and a one-line title for only the five newest of the other ledger entries, with the hidden ones listed by name; the snapshot printed after a compaction shows its headings, the owner's recorded words, the owner-decision section and any line marked "not captured". Both print the file that holds the whole text, and nothing is deleted. Measured on this repository, the in-flight block fell from 11,716 to 8,550 characters and the compaction snapshot from 7,527 to 3,638. That is less than first hoped: the review found the first cut hid owner decisions, and keeping them costs size.
+
+What this does not reach: the last handoff and the REMEMBER block are printed by the remember plugin, not by this repository, so they are unchanged here.
+<!--tech-->
+Backlog: none filed. `scripts/session-state.py`: `render(..., compact=True, ledger_path=...)` (the hook's `collect()` passes both; the compaction snapshot still takes the full shape), `keep_whole()` (wider than `waits_on_owner`), `normalise_what()` in `ledger_add`, `TITLE_WIDTH`=120, `TITLES_SHOWN`=5. `scripts/compaction-state.py`: `digest()` replaces the whole-snapshot append in `render_print`, `DIGEST_WHOLE`, `_clean_keep_nc`. Self-tests: session-state 81, compaction-state 103; 25 new mutations (EXPECTED_MUTATIONS 2565 -> 2590); the `DEFER` mutation was re-anchored onto the digest line.
