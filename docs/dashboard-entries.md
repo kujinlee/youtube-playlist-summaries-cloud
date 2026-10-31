@@ -18474,6 +18474,9 @@ of scope. `EXPECTED_MUTATIONS` 2738; `compaction-state` 58 of 58 killed, `fixtur
 two new mutants were run by hand, and its full run is left to CI.
 
 ## 2026-10-31
+Seven pieces of queued follow-up work are now written down as backlog items, so none depends on anyone remembering them: the stale generated pages after a merge, the early-exit CI waiter, the extra review round a merge of master forces, a flaky mutant, a gap in the push-blocking hook, the unset local hook path, and a mangled word in one guard. Agents are also now told to send their final report as a message, because plain output never reaches the coordinator.
+
+## 2026-10-31
 Two open pull requests that each add a mutation no longer collide on the same line. The mutation harness counted its
 coverage twice: once per file, and once more as a typed grand total that every such pull request had to edit. Any two
 open at once conflicted on that total, and each later merge paid for a re-merge and three or four extra review rounds.
