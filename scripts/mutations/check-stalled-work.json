@@ -208,32 +208,6 @@
     ]
   },
   {
-    "name": "a cross-repository PR is kept: the isCrossRepository filter is dropped",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "        if not isinstance(r, dict) or r.get(\"isCrossRepository\") is not False:",
-        "        if not isinstance(r, dict):"
-      ]
-    ],
-    "expect": [
-      "own_prs DROPS a cross-repository PR"
-    ]
-  },
-  {
-    "name": "the cross-repo filter fails OPEN: a row with no isCrossRepository field is kept",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "r.get(\"isCrossRepository\") is not False:",
-        "r.get(\"isCrossRepository\") is True:"
-      ]
-    ],
-    "expect": [
-      "own_prs drops a row with no isCrossRepository field (fail closed)"
-    ]
-  },
-  {
     "name": "own_prs is not applied to the gh listing, so a stranger's PR reaches the hook",
     "file": "scripts/check-stalled-work.py",
     "edits": [
@@ -264,12 +238,12 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        if not isinstance(n, int) or isinstance(n, bool):",
-        "        if False:"
+        "    if not isinstance(r.get(\"number\"), int) or isinstance(r.get(\"number\"), bool):\n        return \"a node has no integer",
+        "    if False:\n        return \"a node has no integer"
       ]
     ],
     "expect": [
-      "own_prs: a non-int number drops the row"
+      "own_prs: a non-int number REFUSES (r4 F1; was a silent drop)"
     ]
   },
   {
@@ -316,8 +290,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "                    \"isDraft\": r.get(\"isDraft\") is True, \"headCommittedAt\": head_commit_ts(r, oid)})",
-        "                    \"isDraft\": r.get(\"isDraft\") is True, \"headCommittedAt\": None})"
+        "\"isDraft\": r[\"isDraft\"], \"headCommittedAt\": head_commit_ts(r, oid)})",
+        "\"isDraft\": r[\"isDraft\"], \"headCommittedAt\": None})"
       ]
     ],
     "expect": [
@@ -1044,6 +1018,84 @@
     ],
     "expect": [
       "F4: a child that exits at once while a grandchild in its OWN session holds the pipe is a CANNOT RUN at the deadline, inside a bound (macOS: killpg on a zombie-only group raises PermissionError)"
+    ]
+  },
+  {
+    "name": "r4 F1: a cross-repository PR is kept: the exclusion is dropped",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if r[\"isCrossRepository\"]:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "own_prs DROPS a cross-repository PR"
+    ]
+  },
+  {
+    "name": "r4 F1: a malformed gh node is not refused: the validation result is ignored",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if problem:\n            raise CannotRun(f\"gh printed a malformed pull request",
+        "        if False:\n            raise CannotRun(f\"gh printed a malformed pull request"
+      ]
+    ],
+    "expect": [
+      "r4 F1: own_prs REFUSES a null node"
+    ]
+  },
+  {
+    "name": "r4 F1: isDraft stops being a required field",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "for key in (\"isCrossRepository\", \"isDraft\"):",
+        "for key in (\"isCrossRepository\",):"
+      ]
+    ],
+    "expect": [
+      "r4 F1: own_prs REFUSES an own-repo PR with no isDraft"
+    ]
+  },
+  {
+    "name": "r4 F1: isCrossRepository stops being a required field",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "(\"isCrossRepository\", \"isDraft\"):\n        if not isinstance",
+        "(\"isDraft\",):\n        if not isinstance"
+      ]
+    ],
+    "expect": [
+      "r4 F1: own_prs REFUSES a row with no isCrossRepository field (was a silent drop)"
+    ]
+  },
+  {
+    "name": "r4 F1: a non-list reply is an empty list again",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        raise CannotRun(\"gh printed no pull request list: nodes is not a list\")\n    for r in rows:",
+        "        return []\n    for r in rows:"
+      ]
+    ],
+    "expect": [
+      "r4 F1: own_prs REFUSES a non-list (was an empty list)"
+    ]
+  },
+  {
+    "name": "r4 F1: a boolean passes for the PR number",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        " or isinstance(r.get(\"number\"), bool)",
+        ""
+      ]
+    ],
+    "expect": [
+      "r4 F1: a boolean number is not an int"
     ]
   }
 ]

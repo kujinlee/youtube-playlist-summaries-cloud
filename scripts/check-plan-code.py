@@ -2232,7 +2232,9 @@ EXPECTED_MUTATIONS = {
     # SUBJECT: the cache's read, expiry, key, atomic write and schema (21), the age line, `_clip`, the
     # candidate window, ages-from-measurement, the tip-moved check, its packed-refs read and the list
     # `kind` (11). Nothing was retargeted; every one that remains is run against the suite below.
-    "scripts/check-stalled-work.py": 80,
+    # ⟳ r4 (F1): 80 → 84. `own_prs` REFUSES a malformed gh node instead of dropping it: six entries
+    # pin the validation (2 retired: the old drop-based filter's two anchors no longer exist).
+    "scripts/check-stalled-work.py": 84,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -6301,7 +6303,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2645)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2649)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
