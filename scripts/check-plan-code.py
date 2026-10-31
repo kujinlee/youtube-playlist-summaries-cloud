@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 246 cases
+    python3 scripts/check-plan-code.py --self-test          # 249 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -169,6 +169,9 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     temp tree create it themselves.
     """
     env = dict(os.environ)
+    # Backlog #407 r1: STRIPPED, not merely never added — a borrower (`check-selftest-counts.audit`) run from inside a
+    # mutation run would otherwise inherit the marker and count a suite short. `mutation_env` adds it back.
+    env.pop(MUTATION_RUN_ENV, None)
     env["HOME"] = str(d / CHILD_HOME)
     env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
     # ⛔ NO BYTECODE CACHE, AND THIS ONE LINE IS A CORRECTNESS FIX, NOT A TIDINESS ONE.
@@ -193,6 +196,20 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     # milliseconds against suites measured in seconds.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
+
+
+# Backlog #407: says THIS is a mutation run, so a suite may leave out the cases that only wait on a REAL deadline
+# (`compaction-state.py`'s 11 s kill) — CI's ordinary check still runs them. `fixture_git.PROCESS_PASSED` keeps it.
+MUTATION_RUN_ENV = "PLAN_CODE_MUTATION_RUN"
+
+
+def mutation_env(d: pathlib.Path) -> dict[str, str]:
+    """`child_env` plus the mutation-run marker — for the harness's OWN suite runs only (`run_suite_parts`).
+
+    ⛔ NOT folded into `child_env`: that is BORROWED (`check-selftest-counts.audit` counts every suite under it), and
+    measured, a marker there made the count check run `compaction-state` short — 100 cases of a declared 102.
+    """
+    return {**child_env(d), MUTATION_RUN_ENV: "1"}
 
 
 # What the harness stages into the mutation tree.
@@ -732,7 +749,7 @@ def run_suite_parts(d: pathlib.Path, name: str) -> tuple[int, str, str]:
     try:
         r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
                            capture_output=True, text=True, timeout=SUITE_TIMEOUT,
-                           env=child_env(d))
+                           env=mutation_env(d))
     except subprocess.TimeoutExpired:
         return 2, "", (f"CANNOT RUN — {name} --self-test did not finish in "
                        f"{SUITE_TIMEOUT}s. NOT CHECKED.")
@@ -1439,7 +1456,9 @@ EXPECTED_MUTATIONS = {
     #   eleven entries added, none retired. ⟳ r1 fold: 128 -> 131 — four anchors this branch orphaned
     #   REBOUND (r1 CLAUDE H2, plus two of its own), three added for main()'s --only wiring and CI=true.
     #   ⟳ r2 fold: 131 -> 133 — a failed control is reported before, and priced out of, a budget refusal.
-    "scripts/check-plan-code.py": 137,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-10-31, backlog #407: 137 -> 139 — the harness's own suite runs carry the mutation-run marker
+    # (`mutation_env`), and the BORROWED `child_env` does not. ⟳ r1 fold: 139 -> 140 — `child_env` STRIPS an inherited one.
+    "scripts/check-plan-code.py": 140,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2088,7 +2107,15 @@ EXPECTED_MUTATIONS = {
     # ⟳ 73 -> 75 (context floor r3): the print's cut names the owner decisions it took (the ids, and the reader of the
     # digest's whitespace-cleaned lines). The reserved room for the notice has NO mutation: the case's lines are short
     # enough that the cut's own slack hides it.
-    "scripts/compaction-state.py": 75,
+    # ⟳ 2026-10-30, backlog #407 (counted on its own branch from 54, merged after the context floor): +4 — the
+    # real-time cases' marker (1), CI's real-time step (2), the hook modes never reading it (1); the CR1 own-group
+    # entry RETARGETED onto the event-ordered case.
+    # ⟳ r1 fold: +6 — the stdin deadline's wiring in `main` and gh's own 8 s, in every run (the two mutants r1
+    # proved survived the skip); the CI step's `if:`/`continue-on-error` on the step and the job, and its job (3); no
+    # hook mode naming the marker, statically (1).
+    # ⟳ r2 fold: +4 — the child adapter's gh and git timeouts (Codex A, B), and the self-test step only directly under
+    # `steps:` (matrix data; a nested list item). Merged with the context floor's 75: 75 + 14 = 89.
+    "scripts/compaction-state.py": 89,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -2107,7 +2134,8 @@ EXPECTED_MUTATIONS = {
     # ctypes, effects reported, EXEMPT files imported) — 48 -> 48.
     # r3 fold (SPLIT): 48 -> 55, the -I -S audit child and rule 5's static direct-launcher half.
     "scripts/check-fixture-git-isolation.py": 55,
-    "scripts/fixture_git.py": 12,
+    # ⟳ 2026-10-30, backlog #407: 12 -> 13, the mutation harness's run marker passed through isolated().
+    "scripts/fixture_git.py": 13,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
     # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
@@ -5189,6 +5217,27 @@ def _self_test_body() -> int:
              "either, or this run poisons the next one",
              (_e1.get("PYTHONDONTWRITEBYTECODE"), _e2.get("PYTHONDONTWRITEBYTECODE")),
              ("1", "1"))
+        # Backlog #407: `child_env` is BORROWED (`check-selftest-counts.audit` runs every suite under it to count its
+        # cases), so the mutation-run marker must not ride on it — measured, it did, and the count check saw 100 of 102.
+        case("...but `child_env` alone does NOT mark a mutation run — it is borrowed outside one (backlog #407)",
+             (_e1.get(MUTATION_RUN_ENV), _e2.get(MUTATION_RUN_ENV)), (None, None))
+        # r1 (Codex P1, Claude L3): this suite itself runs under the marker when the harness re-runs it as a control, so
+        # an INHERITED marker must be stripped too — measured, without it this suite was 247/248 under the marker.
+        _ambient = os.environ.get(MUTATION_RUN_ENV)
+        os.environ[MUTATION_RUN_ENV] = "1"
+        try:
+            _inherited = child_env(pathlib.Path(_bd)).get(MUTATION_RUN_ENV)
+        finally:
+            if _ambient is None:
+                os.environ.pop(MUTATION_RUN_ENV, None)
+            else:
+                os.environ[MUTATION_RUN_ENV] = _ambient
+        case("⭐ ...and STRIPS a marker it inherits, so a borrower run inside a mutation run counts in full (backlog #407)",
+             (_inherited, os.environ.get(MUTATION_RUN_ENV)), (None, _ambient))
+        _probe = pathlib.Path(_bd) / "marker_probe.py"
+        _probe.write_text("import os\nprint(os.environ.get('PLAN_CODE_MUTATION_RUN'))\n")
+        case("⭐ ...and every suite the harness itself spawns IS told it is a mutation run (backlog #407)",
+             run_suite_parts(pathlib.Path(_bd), "marker_probe.py")[:2], (0, "1\n"))
         case("...and the redirected home is derived from the directory it is given, so the two "
              "trees cannot share one home", _e1["HOME"] == _e2["HOME"], False)
 
@@ -6401,7 +6450,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2962)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2980)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

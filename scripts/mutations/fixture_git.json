@@ -160,5 +160,18 @@
     "expect": [
       "...and the interpreter's own settings kept (PYTHONDONTWRITEBYTECODE)"
     ]
+  },
+  {
+    "name": "#407: isolated() drops the mutation harness's run marker",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "PROCESS_PASSED = (\"PYTHONDONTWRITEBYTECODE\", \"PLAN_CODE_MUTATION_RUN\", \"PYTHONPATH\",",
+        "PROCESS_PASSED = (\"PYTHONDONTWRITEBYTECODE\", \"PYTHONPATH\","
+      ]
+    ],
+    "expect": [
+      "...and the mutation harness's run marker kept (PLAN_CODE_MUTATION_RUN, backlog #407)"
+    ]
   }
 ]
