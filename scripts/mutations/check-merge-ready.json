@@ -1142,12 +1142,12 @@
   ]
  },
  {
-  "name": "pins_at calls pin_display RAW, bypassing `_cross`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s, mutated by the shared-catch entry)",
+  "name": "pins_at bypasses `_cross` with its own `except Exception`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s)",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
     "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,\n                  error=lambda d: PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {d}\"))",
-    "    return _exact_pins(reader.pin_display(shown.stdout))"
+    "    try:\n        return _exact_pins(reader.pin_display(shown.stdout))\n    except Exception as exc:\n        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {_describe(exc)}\") from None"
    ]
   ],
   "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
@@ -1201,15 +1201,15 @@
   "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
  },
  {
-  "name": "_exact_pins returns the sibling's ORIGINAL object, not a fresh copy, so a dict subclass's __iter__ runs in pin_falls and exits rc 0 (r7 Claude F2)",
+  "name": "_exact_pins checks the dict but not its keys and values, so a bool pin passes as 1 and a fall is hidden as READY (r7 Claude F2)",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        out[str.__str__(k)] = int.__int__(v)\n    return out",
-    "        out[str.__str__(k)] = int.__int__(v)\n    return got"
+    "        if type(k) is not str or type(v) is not int:\n            raise TypeError(",
+    "        if False:\n            raise TypeError("
    ]
   ],
-  "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns a dict subclass whose __iter__ exits (r7 P1)"
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
  },
  {
   "name": "_exact_reason accepts any value unchecked, so a value whose __bool__ exits is truth-tested in escape_diagnosis and a refusal becomes rc 0 (r7 Claude F3)",

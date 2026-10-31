@@ -2212,8 +2212,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ r6 (Codex F1): 91 -> 92 — the error text built from a sibling's exception is sibling code too:
     # `_describe` guards `str(exc)`, and an unguarded one lets a `__str__` that exits leave rc 0.
     # ⟳ r7 (Claude F1-F3): 92 -> 96 — what a sibling RETURNS or RAISES is reduced to exact builtins in
-    # `_cross` before it leaves: isinstance in `_exact_pins`, returning the original object, an unchecked
+    # `_cross` before it leaves: isinstance in `_exact_pins`, its key/value check dropped, an unchecked
     # exemption value, and an uncoerced class name each go red. Three entries are RE-BOUND to `_cross`.
+    # ⚠ Returning the original object instead of the copy is an EQUIVALENT mutant (measured: the exact-
+    # type checks already refuse every subclass), so it is not pinned.
     "scripts/check-merge-ready.py": 96,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,

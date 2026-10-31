@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 241 cases
+    python3 scripts/check-merge-ready.py --self-test # 253 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -519,7 +519,11 @@ def _cross(call, *args, reduce, error):
 
 
 def _exact_pins(got) -> dict:
-    """`pin_display`'s answer as a FRESH `{str: int}` — an exact dict, str keys, int values (a bool refused)."""
+    """`pin_display`'s answer as a FRESH `{str: int}` — an exact dict, str keys, int values (a bool refused).
+
+    ⚠ The type checks carry the rule; once they pass, the copy changes nothing a verdict can show
+    (measured: returning `got` instead survives every case), so it is kept as the rule's shape, not
+    as a second line of defence."""
     if type(got) is not dict:
         raise TypeError("pin_display did not return an exact dict")
     out = {}

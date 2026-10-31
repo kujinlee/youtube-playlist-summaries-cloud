@@ -71,20 +71,24 @@ well-behaved gate under a refusal is NOT READY (rc 1). The existing NO-REVIEW ca
 exemption is honoured. Suite: **253/253**.
 
 **Mutation entries** (pin 92 -> 96): `_exact_pins` using `isinstance` (red via the bool case); `_exact_pins`
-returning the original object (red via P1); `_exact_reason` accepting any value (red via P11); `_describe` leaving the
-name uncoerced (red via P12). Three entries whose anchor was the per-call catch, now gone, are RE-BOUND: the
-refused-display fail-open and the two RAW-call bypasses of `_cross`; the shared-catch entry now binds `_cross`'s one
-`except`.
+dropping its key/value check (red via the bool case); `_exact_reason` accepting any value (red via P11); `_describe`
+leaving the name uncoerced (red via P12). Three entries whose anchor was the per-call catch, now gone, are RE-BOUND:
+the refused-display fail-open, and the two bypasses of `_cross` by a call with its own `except Exception`; the
+shared-catch entry now binds `_cross`'s one `except`.
+⚠ **Not pinned: `_exact_pins` returning the original object instead of its copy.** The coordinator asked for it; it is
+an EQUIVALENT mutant. Measured: the first sweep reported it SURVIVED, and P1 under it is still CANNOT RUN, because the
+exact-type checks refuse the `_D` before the copy matters. The copy is kept as the rule's shape, and the docstring
+says it is not a second line of defence.
 
 **The bound** (in `_cross`'s docstring and both pin blocks): F4, *a sibling returning a WRONG but well-typed answer is
 trusted, as master trusts it*; F5, *a forged `KeyboardInterrupt` escapes at rc 130, which fails closed*.
 
 ## HOLD triage (for the merge-time HOLD comment)
 
-This fold changes the boundary's shape: the `except BaseException` handlers in `pins_at`, `granted_escapes` and
-`_import_sibling` are replaced by calls through `_cross`, whose own handler raises `error`. Those removed handler lines
-are on a failure path and will read as removals; each is a MOVE into `_cross`, which raises on the same inputs and
-more. The r5/r6 false HOLDs stand as quoted there.
+Measured at this fold, against `origin/master`: `failure_path_removals` reports the SAME five `check-merge-ready.py`
+lines and one `check-plan-code.py` line as r5 and r6, and the pin comparison reports no falls (`check-merge-ready`'s
+pin rises 92 -> 96). The `except BaseException` handlers this fold moved into `_cross` do not appear. **The same six
+lines are all FALSE HOLDs**, with the before/after as quoted in the r5 coordinator document.
 
 ## Ladder (decision log)
 
