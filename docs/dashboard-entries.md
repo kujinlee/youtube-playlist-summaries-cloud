@@ -18409,6 +18409,13 @@ copies it replaces are deleted. One list of hostile payloads, `bounded_read.host
 guard's real `--decide`. The FIFO class was live in `check-handoff-path` too (its CLI hung on a FIFO SKILL.md) and is
 fixed there. Verdicts over 50 real transcripts are unchanged against master. `EXPECTED_MUTATIONS` 2552.
 
+## 2026-10-30
+Every message the coordinator sends re-sends a fixed block of context, and about 16,000 tokens of it was text our own start-up hooks print. The in-flight block now shows each open PR on one line, every item the owner decided or is waiting to decide in full (whatever way it was written down), and a one-line title for only the five newest of the other ledger entries, with the hidden ones listed by name; the snapshot printed after a compaction shows its headings, the owner's recorded words, the owner-decision section and any line marked "not captured". Both print the file that holds the whole text, and nothing is deleted. Measured on this repository, the in-flight block fell from 11,716 to 8,550 characters and the compaction snapshot from 7,527 to 3,638. That is less than first hoped: the review found the first cut hid owner decisions, and keeping them costs size.
+
+What this does not reach: the last handoff and the REMEMBER block are printed by the remember plugin, not by this repository, so they are unchanged here.
+<!--tech-->
+Backlog: none filed. `scripts/session-state.py`: `render(..., compact=True, ledger_path=...)` (the hook's `collect()` passes both; the compaction snapshot still takes the full shape), `keep_whole()` (wider than `waits_on_owner`), `normalise_what()` in `ledger_add`, `TITLE_WIDTH`=120, `TITLES_SHOWN`=5. `scripts/compaction-state.py`: `digest()` replaces the whole-snapshot append in `render_print`, `DIGEST_WHOLE`, `_clean_keep_nc`. Self-tests: session-state 81, compaction-state 103; 25 new mutations (EXPECTED_MUTATIONS 2565 -> 2590); the `DEFER` mutation was re-anchored onto the digest line.
+
 ## 2026-10-31
 The mutation sweep spends less time waiting on one slow test suite. The test suite for the compaction snapshot hook
 proves that the hook gives up on time by actually waiting, about 11 seconds per run, and the sweep re-ran it once for

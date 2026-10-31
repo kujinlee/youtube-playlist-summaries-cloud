@@ -2035,7 +2035,18 @@ EXPECTED_MUTATIONS = {
     # ⟳ 32 -> 34 (r3): the bounded post-kill drain (XR3), and `own_group=False` honoured (CR1).
     # ⟳ 34 -> 40 (r4): the `mark` on three failure lines, `fetch` taking the caller's main checkout, and an exited call
     # reported as exited (twice); four anchors retargeted onto the rewritten `render` and `_run` lines.
-    "scripts/session-state.py": 40,
+    # ⟳ 40 -> 46 (context floor): the compact block (off, path, owner entry, titles, one-line PR) and collect()'s call.
+    # ⟳ 46 -> 56 (context floor r1): the wider owner matcher (text, bare token, card, OWNER), sort by `at`, hidden ids, the
+    # absolute ledger path (render and collect), and the marker normalised by --add (two).
+    # ⟳ 56 -> 73 (context floor r2, the REDESIGN): owner relevance is a DECLARED `kind`. Four entries RETIRE with their
+    # subject (the text matcher the compact block used: approval text, bare token, OWNER prefix, the title-width cap) and
+    # are re-bound on the fallback and on `_line`; the rest are new: the fallback's four readings, the declared kind
+    # governing, `--add`'s kind (stored, validated, defaulted), the full shape, and the migration (propose, keep, override,
+    # backup, no second apply, bad override).
+    # ⟳ 73 -> 85 (context floor r3): `--add` stores what the text looks like; the compact block is CAPPED (owner entries
+    # accepted against a reserved notice, waits first, the PR list and the problems bounded, the overflow named and counted,
+    # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
+    "scripts/session-state.py": 85,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -2072,12 +2083,24 @@ EXPECTED_MUTATIONS = {
     # boundary (age < 0, age >= 30 min), the print child's kill onto the deadline, five expects renamed.
     # 55 -> 54: the snapshot's final `fit` retires as an EQUIVALENT mutant — with the keys line now four fixed fields,
     # every section is capped and the owner section takes only the room left, so no input reaches the backstop.
-    # ⟳ 2026-10-30, backlog #407: 54 -> 58 — the real-time cases' marker (1), CI's real-time step (2), the hook
-    # modes never reading it (1); the CR1 own-group entry RETARGETED onto the event-ordered case.
-    # ⟳ r1 fold: 58 -> 64 — the stdin deadline's wiring in `main` and gh's own 8 s, in every run (the two mutants r1
+    # ⟳ 54 -> 58 (context floor): the print's digest (whole snapshot, path, owner section, NOT CAPTURED line).
+    # ⟳ 58 -> 63 (context floor r1): the owner's words kept whole, the title block, a cut that keeps NOT CAPTURED, a
+    # heading level that must not end the section, and the other sections' bodies left in the file.
+    # ⟳ 63 -> 73 (context floor r2): the snapshot selects by the declared kind, owner text is never cut (decisions, what,
+    # on_done, /compact instructions, title block), the cap makes room for it, the digest puts it first, and the in-flight
+    # block says where the owner entries went.
+    # ⟳ 73 -> 75 (context floor r3): the print's cut names the owner decisions it took (the ids, and the reader of the
+    # digest's whitespace-cleaned lines). The reserved room for the notice has NO mutation: the case's lines are short
+    # enough that the cut's own slack hides it.
+    # ⟳ 2026-10-30, backlog #407 (counted on its own branch from 54, merged after the context floor): +4 — the
+    # real-time cases' marker (1), CI's real-time step (2), the hook modes never reading it (1); the CR1 own-group
+    # entry RETARGETED onto the event-ordered case.
+    # ⟳ r1 fold: +6 — the stdin deadline's wiring in `main` and gh's own 8 s, in every run (the two mutants r1
     # proved survived the skip); the CI step's `if:`/`continue-on-error` on the step and the job, and its job (3); no
     # hook mode naming the marker, statically (1).
-    "scripts/compaction-state.py": 64,
+    # ⟳ r2 fold: +4 — the child adapter's gh and git timeouts (Codex A, B), and the self-test step only directly under
+    # `steps:` (matrix data; a nested list item). Merged with the context floor's 75: 75 + 14 = 89.
+    "scripts/compaction-state.py": 89,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -6378,7 +6401,7 @@ def _self_test_body() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2745)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2815)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
