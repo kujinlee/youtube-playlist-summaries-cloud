@@ -21,8 +21,10 @@ THE DECISION, in this order (the first that applies wins):
                        W of 180k on a 1M model gets the 200k bound, which is early, never late. ⚠ The table is the
                        documented windows, NOT MEASURED per model; the coordinator's transcript peaked at 966,673.
                        The margin also covers the tool results after the last usage, which `ctx` does not see.
-                       Never below W (r2 R2-3): a W of 190k-200k or 950k-1M has no headroom, the hook cannot defer there,
-                       and the log says `ceiling_by: no-headroom` so --summary's drop metric can exclude those rows.
+                       When that ceiling is not above W (r3 Codex 1: a W of 190k-200k or 900k-1M has no room under 90%
+                       of L), the hook NEVER defers: every auto compaction is allowed and the log says
+                       `ceiling_by: no-headroom`, so --summary's drop metric can exclude those rows. The ceiling is never
+                       above 90% of L, whatever W is — flooring it at W (r2) put it at the hard limit.
     allow-idle         nothing has happened for >= 5 min — the newest assistant, user (tool results, prompts) or
                        attachment (notifications) record is that old. Idle compaction fires PreCompact with the same
                        trigger `auto` and the payload carries nothing else that tells it apart, so this is the only
@@ -70,7 +72,7 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 81 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 83 cases
 
 EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
 past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
@@ -302,7 +304,7 @@ def sentinel_armed(fields: dict, session: str | None) -> bool:
 def ceiling(w: int) -> tuple[int, int]:
     """(the ceiling, the context limit L it assumed). PURE. L is the smallest documented window holding W."""
     limit = min((n for n in CONTEXT_LIMITS if n >= w), default=CONTEXT_LIMITS[0])
-    return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit   # never below W (r2 Claude R2-3)
+    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit   # never above 90% of L; <= W means no headroom (r3 Codex 1)
 
 
 def decide(trigger, w: int | None, ctx: int | None, last_at: float | None, now: float, sigs: list[str]) -> str:
@@ -311,7 +313,8 @@ def decide(trigger, w: int | None, ctx: int | None, last_at: float | None, now: 
         return "allow-manual"
     if w is None or ctx is None or last_at is None:
         return "allow-cannot-run"
-    if ctx >= ceiling(w)[0]:
+    top = ceiling(w)[0]
+    if top <= w or ctx >= top:   # no headroom above W: never defer (r3 Codex 1)
         return "allow-ceiling"
     if now - last_at >= IDLE_S:
         return "allow-idle"
@@ -427,7 +430,7 @@ def evaluate(payload_text: str, env: dict, home: Path, now: float) -> tuple[str,
         sigs = signals(scanned, now, armed)
         top, limit = ceiling(w)
         rec.update(ctx=scanned["ctx"], w=w, ceiling=top, limit=limit,
-                   ceiling_by=("no-headroom" if top == w else "1.5W" if top == int(CEILING_FACTOR * w) else "limit"),
+                   ceiling_by=("no-headroom" if top <= w else "1.5W" if top == int(CEILING_FACTOR * w) else "limit"),
                    idle_s=int(now - scanned["last_at"]), signals=sigs)
         return decide("auto", w, scanned["ctx"], scanned["last_at"], now, sigs), rec
     except Exception as exc:  # noqa: BLE001 - FAIL OPEN by design: a hook that blocks on its own error wedges the session
@@ -474,9 +477,10 @@ def hook(payload_text: str, env: dict, home: Path, now: float, snapshot: Path) -
             os.write(fd, (json.dumps(rec) + "\n").encode())
         finally:
             os.close(fd)
-    except OSError as exc:
-        print(f"compaction-boundary: log NOT WRITTEN ({exc}); verdict {verdict}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 - a log that cannot be written must not decide: ALLOW (r3 Codex 2)
+        print(f"compaction-boundary: log NOT WRITTEN ({exc}); verdict {verdict}; allowing", file=sys.stderr)
         where = None
+        verdict = "allow-log-failed" if verdict.startswith("block-") else verdict
     if verdict.startswith("block-"):
         return json.dumps({"decision": "block", "reason": (
             f"compaction deferred: mid-work ({verdict[6:]}); it runs at a boundary, after {IDLE_S // 60} min idle, "
@@ -688,10 +692,14 @@ def _self_test_body() -> int:
     # ── the ceiling ──
     case("⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)",
          [ceiling(150_000), ceiling(180_000), ceiling(200_000), ceiling(300_000), ceiling(900_000), ceiling(1_000_000)],
-         [(180_000, 200_000), (180_000, 200_000), (200_000, 200_000), (450_000, 1_000_000), (900_000, 1_000_000),
-          (1_000_000, 1_000_000)])
-    case("⭐ the ceiling is never below W — 190k, 200k, 950k and 1M windows have none to give (r2 Claude R2-3)",
-         [ceiling(w)[0] >= w for w in (190_000, 200_000, 950_000, 1_000_000)], [True] * 4)
+         [(180_000, 200_000), (180_000, 200_000), (180_000, 200_000), (450_000, 1_000_000), (900_000, 1_000_000),
+          (900_000, 1_000_000)])
+    case("⭐ the ceiling is never above 90% of the limit — a window with no headroom does not raise it (r3 Codex 1)",
+         [ceiling(w)[0] <= int(LIMIT_SHARE * ceiling(w)[1]) for w in (190_000, 200_000, 950_000, 1_000_000)], [True] * 4)
+    case("⭐ FAILS IF a window with no headroom defers: W = 1M, 950k and 200k allow just below W (r3 Codex 1)",
+         [decide("auto", 1_000_000, 999_999, T0, T0 + 1, ["agent"]), decide("auto", 950_000, 949_999, T0, T0 + 1, ["agent"]),
+          decide("auto", 200_000, 199_999, T0, T0 + 1, ["plan"]), decide("auto", 200_000, 100_000, T0, T0 + 1, ["plan"])],
+         ["allow-ceiling"] * 4)
     case("⭐ a 900k window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
          decide("auto", 900_000, 999_999, T0, T0 + 1, ["plan"]), "allow-ceiling")
 
@@ -844,6 +852,13 @@ def _self_test_body() -> int:
         return got[0][0], got[0][1]
     case("⭐ hook: a FIFO at the transcript is refused at once — allowed, snapshot taken (r1 Codex 6)",
          lambda: fifo("transcript")[0], "SNAPPED\n")
+    def log_unwritable():
+        d, payload, snap = world([asst(T0, 270_000)])
+        (d / ".claude" / LOG_NAME).mkdir()   # opening a directory for writing raises OSError
+        out, where = hook(payload, {"CLAUDE_PROJECT_DIR": str(d)}, d / "home", T0 + 60, snap)
+        return out, where, (d / "snap.got").exists()
+    case("⭐ FAILS IF a log error changes the decision: an armed plan and an unwritable log still ALLOW, one snapshot (r3 Codex 2)",
+         log_unwritable, ("SNAPPED\n", None, True))
     case("⭐ hook: a FIFO at the log is refused at once — the log is NOT written, compaction still allowed",
          lambda: fifo("log"), ("SNAPPED\n", None))
 
@@ -864,7 +879,7 @@ def _self_test_body() -> int:
         rec = json.loads(where.read_text())
         return rec["verdict"], rec["ceiling"], rec["ceiling_by"]
     case("⭐ hook: a ceiling with no room above W is logged `no-headroom`, so --summary can exclude it (r2 Claude R2-3)",
-         no_headroom, ("allow-ceiling", 200_000, "no-headroom"))
+         no_headroom, ("allow-ceiling", 180_000, "no-headroom"))
 
     def nested_repo():
         d, payload, snap = world([asst(T0, 270_000)])

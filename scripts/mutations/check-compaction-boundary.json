@@ -4,8 +4,8 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "    if ctx >= ceiling(w)[0]:",
-        "    if ctx > ceiling(w)[0]:"
+        "    if top <= w or ctx >= top:",
+        "    if top <= w or ctx > top:"
       ]
     ],
     "expect": [
@@ -400,7 +400,7 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "    return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit",
+        "    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit",
         "    return int(CEILING_FACTOR * w), limit"
       ]
     ],
@@ -558,16 +558,16 @@
     ]
   },
   {
-    "name": "the ceiling may fall below W",
+    "name": "the ceiling is floored at W again (r2), which put it at the hard limit",
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit",
-        "return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit"
+        "    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit   # never above",
+        "    return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit   # never above"
       ]
     ],
     "expect": [
-      "⭐ the ceiling is never below W — 190k, 200k, 950k and 1M windows have none to give (r2 Claude R2-3)"
+      "⭐ the ceiling is never above 90% of the limit — a window with no headroom does not raise it (r3 Codex 1)"
     ]
   },
   {
@@ -575,7 +575,7 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "(\"no-headroom\" if top == w else \"1.5W\"",
+        "(\"no-headroom\" if top <= w else \"1.5W\"",
         "(\"1.5W\""
       ]
     ],
@@ -594,6 +594,32 @@
     ],
     "expect": [
       "⭐ hook: a cwd in a NESTED repo (.remember) still sees the project's plan, and the log stays out of it (r2 Claude R2-2)"
+    ]
+  },
+  {
+    "name": "a window with no headroom defers again (the no-headroom allow is dropped)",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if top <= w or ctx",
+        "    if ctx"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a window with no headroom defers: W = 1M, 950k and 200k allow just below W (r3 Codex 1)"
+    ]
+  },
+  {
+    "name": "a log write error leaves the block decision standing",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        verdict = \"allow-log-failed\" if verdict.startswith(\"block-\") else verdict\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a log error changes the decision: an armed plan and an unwritable log still ALLOW, one snapshot (r3 Codex 2)"
     ]
   }
 ]
