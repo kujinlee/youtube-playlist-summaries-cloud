@@ -1815,6 +1815,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #443 r2 (SPLIT): +8 for the folds — forced diff prefixes and the unreadable-path refusal (F1),
     # GIT_NO_REPLACE_OBJECTS (F4), the absolute hooks path and its upgrade (F3), the redacted NAME hit (F5) -> 76.
     "scripts/check-plan-leak.py": 76,
+    # ⟳ 2026-11-01, backlog #438: the per-PR battery runner joins at 23, pinned in the commit that creates it.
+    # Each entry is killed by the case it names: the three FAILS-IF lines of the row, CANNOT RUN, the tracer.
+    "scripts/gates-for-pr.py": 23,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -4863,6 +4866,7 @@ def _self_test_body() -> int:
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
                                       "scripts/fixture_git.py",
+                                      "scripts/gates-for-pr.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",

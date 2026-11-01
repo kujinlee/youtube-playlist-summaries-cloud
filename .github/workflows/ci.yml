@@ -864,6 +864,11 @@ jobs:
       - name: check-plan-code self-test
         run: python3 scripts/check-plan-code.py --self-test
 
+      # backlog #438: the local battery runner. CI runs every gate as its own step, so the runner
+      # itself has no work here — only its suite does (the trace, the digest, the never-green rules).
+      - name: gates-for-pr self-test
+        run: python3 scripts/gates-for-pr.py --self-test
+
       # The gate itself. Needs the merge base, hence fetch-depth: 0 on the checkout.
       # BODY goes through env and then a FILE — never interpolated into the shell —
       # because a PR body is attacker-controlled text full of backticks and quotes.

@@ -313,6 +313,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    "gates-for-pr.py": ("ci_gates.base", "ci_gates.workflow", "classify.ignored", "classify.records", "classify.root","digest.inputs",
+                        "git.a", "git_refs.argv","last_green.entries","last_green.world", "main.argv", "main.root", "mutation_gates.targets",
+                        "mutation_targets.changed", "mutation_targets.manifests","read_ledger.path", "status_of.rc",
+                        "status_of.timed_out",),
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
     # by running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #457 r1: + `claude_record.dirty`/`.verdict`, `review_problem.resolve`, `declared_heads.text`,

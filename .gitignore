@@ -189,6 +189,8 @@ docs/explainers/questions.md
 # backlog #363: the goal-tree snapshot log — appended on every merge, so it must churn no tracked file.
 .claude/goal-tree-log.jsonl
 .claude/inflight.jsonl.lock
+# backlog #438: `scripts/gates-for-pr.py`'s last-green ledger (and its lock) — per-machine, read by no reviewer.
+.claude/gates-for-pr/
 
 # backlog #361: written by the PreCompact / PostCompact hooks (`scripts/compaction-state.py`) and printed at the
 # SessionStart after a compaction. `.remember/` is ignored only by a global gitignore on one machine, so these
