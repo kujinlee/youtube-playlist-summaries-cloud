@@ -194,3 +194,6 @@ docs/explainers/questions.md
 # SessionStart after a compaction. `.remember/` is ignored only by a global gitignore on one machine, so these
 # are named here too.
 .remember/compaction/
+# One JSON line per PreCompact decision from .claude/hooks/compaction-boundary.sh (backlog #440), so the
+# share of compactions the 1.5 x W ceiling forces can be measured (`check-compaction-boundary.py --summary`).
+.claude/compaction-boundary.log
