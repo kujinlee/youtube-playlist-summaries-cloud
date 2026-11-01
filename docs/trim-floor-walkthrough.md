@@ -29,8 +29,8 @@ Measured on this branch against `origin/master` (bytes as `wc -c`; characters as
 | `CLAUDE.md` | 1,044 B | 1,044 B | — |
 | `AGENTS.md` | 327 B | 327 B | — |
 | `docs/dev-process.md` | 25,255 B (220 lines) | 14,409 B (214 lines) | −10,846 B |
-| `docs/plugins.md` | 20,976 B (259 lines) | 9,685 B (162 lines) | −11,291 B |
-| **Always-loaded total** | **47,602 B** | **25,465 B** | **−22,137 B (−46%)** |
+| `docs/plugins.md` | 20,976 B (259 lines) | 9,716 B (162 lines) | −11,260 B |
+| **Always-loaded total** | **47,602 B** | **25,496 B** | **−22,106 B (−46%)** |
 
 **Expected per-turn saving: about 22 KB, roughly 5,500 tokens.** ⚠ The token figure is an ESTIMATE
 at about 4 characters per token; no tokenizer was run. ⚠ The 10-30 usage study put this chain at

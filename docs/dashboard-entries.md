@@ -18509,7 +18509,7 @@ word, into a reference document that is read only when a task needs it, and a on
 This is a DRAFT for you to walk through before it merges: `docs/trim-floor-walkthrough.md` lists every section, where it
 went, and why it is safe to read on demand.
 <!--tech-->
-Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,255 → 14,409 B; `docs/plugins.md` 20,976 → 9,685 B.
+Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,255 → 14,409 B; `docs/plugins.md` 20,976 → 9,716 B.
 The mechanically-enforced table is cut to one line per row, full rows in `process-checklists.md` → *Mechanically
 enforced checks — the full rows*; the thrashing paragraph and the Code Review detail go to `review-method.md`; the
 handoff layer table to `process-checklists.md`; the spine-length history to `process-rationale.md`. Three bare
