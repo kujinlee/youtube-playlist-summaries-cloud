@@ -22,28 +22,28 @@ memory index `MEMORY.md` (out of scope).
 
 ## Before and after
 
-Measured on this branch against `origin/master` (characters as Python `len`, re-measured after round 2).
+Measured on this branch against `origin/master` (characters as Python `len`, re-measured after round 3).
 
 | File | Before | After | Change |
 |---|---:|---:|---:|
-| `CLAUDE.md` + `AGENTS.md` | 1,371 | 1,371 | — |
-| `docs/dev-process.md` | 25,159 | 14,673 | −10,486 |
-| `docs/plugins.md` | 20,851 | 10,621 | −10,230 |
-| **Always-loaded total** | **47,377** | **26,661** | **−20,716 (−44%)** |
+| `CLAUDE.md` + `AGENTS.md` | 1,367 | 1,367 | — |
+| `docs/dev-process.md` | 25,159 | 14,700 | −10,459 |
+| `docs/plugins.md` | 20,851 | 10,970 | −9,881 |
+| **Always-loaded total** | **47,377** | **27,037** | **−20,340 (−43%)** |
 
-(`dev-process.md` is 214 lines and `plugins.md` 166 lines after the round-2 fold.)
+(`dev-process.md` is 214 lines and `plugins.md` 166 lines after the round-3 fold.)
 
-**Saving: about 20.7k characters, roughly 5.2k raw tokens per API CALL** (not per turn; a turn is many
+**Saving: about 20.3k characters, roughly 5.1k raw tokens per API CALL** (not per turn; a turn is many
 calls). ⚠ This is an ESTIMATE: characters / 4, no tokenizer was run. The imports sit in the cached
-prefix, so the realistic cost is lower: a cache read bills about 0.1x, so about **520 weighted tokens per
-call**, plus about **6.5k weighted tokens per fresh prefix write** (1.25x; every new agent, every
+prefix, so the realistic cost is lower: a cache read bills about 0.1x, so about **510 weighted tokens per
+call**, plus about **6.4k weighted tokens per fresh prefix write** (1.25x; every new agent, every
 compaction, every cache expiry). Against a typical coordinator call of about 54k weighted tokens that is
 about 1%. ⚠ The 10-30 usage study put this chain at about 162 KB; the files measure about 47 KB on
 `origin/master` today, so the scopes or measurement methods need reconciling and the study's "about 15% of each
 call" should be re-derived before anyone quotes a percentage.
 
-The on-demand docs grew by the moved text: `process-checklists.md` +17,073 B, `review-method.md`
-+14,423 B, `process-rationale.md` +930 B. They load only when a task reads them.
+The on-demand docs grew by the moved text: `process-checklists.md` +17,142 bytes, `review-method.md`
++14,485 bytes (`wc -c`), `process-rationale.md` +930 bytes. They load only when a task reads them.
 
 ## Where each section went
 
@@ -60,13 +60,16 @@ The on-demand docs grew by the moved text: `process-checklists.md` +17,073 B, `r
 Phase 5 rules, the architecture-review paragraph, *Not yet in CI*, the "anything longer than a line
 goes in a FILE" rule, *Tools*, *Project-Specific*, and every plugin table in `plugins.md`.
 
-## Two small text changes made during the move
+## Three small text changes made during the move
 
 - Three bare references in the moved table were qualified, because the reference-namespace guard
-  checks added lines: `#56` → `backlog #56` (twice) and `#137` → `backlog #137`. Both were checked
+  checks added lines: `#56` → `backlog #56` (twice) and `#137` → `backlog #137`. All three were checked
   against `docs/backlog.md` and the merge log.
 - Each moved block opens with one italic line saying it was moved, from where, and that the rule
   still stands in the spine.
+- Two moved blocks carry an inserted bracketed note `[moved from `plugins.md`; …]` (the Agent-tool
+  paragraph in `review-method.md` and the layer-table row in `process-checklists.md`) saying where the
+  spine now keeps the rule.
 
 ## What the owner might push back on
 

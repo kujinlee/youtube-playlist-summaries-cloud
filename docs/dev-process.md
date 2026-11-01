@@ -149,7 +149,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 | `scripts/check-ratchet-contract.py` | every guard on disk has a `--self-test`, no fail-open handler, and a caller or a `NO-CALLER:` reason |
 | `scripts/check-paid-caller-arrival.py` | fires when a non-test caller reaches `record_artifact` (backlog 26's trigger) |
 | `scripts/check-function-revokes.py` | every new `public` function revokes PUBLIC in its own migration |
-| `scripts/check-python-pin.py` | every CI job pins Python, the pins agree, and in CI the pin took effect |
+| `scripts/check-python-pin.py` | every CI job pins Python or is exempt with a reason, the pins agree, and in CI the pin took effect |
 | `scripts/check-docs.py` | documentation integrity, including this file's line budget |
 | `scripts/check-memory-index-budget.py` | the always-loaded memory index fits the harness's injection budget (characters) |
 | `scripts/check-backlog-closure.py` | warns when a merged subject closes a backlog row that lacks `✅` (warn-only) |

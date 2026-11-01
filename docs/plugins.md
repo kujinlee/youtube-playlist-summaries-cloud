@@ -88,7 +88,7 @@ When multiple installed skills can handle the same task, use this table.
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED, and a vendored edit is reverted by `npx skills@latest add
 mattpocock/skills`** — so the RULE box above is the authority, `scripts/check-handoff-path.py` +
 `.claude/hooks/enforce-handoff-path.sh` the leading gate (run its `--self-test` after touching it), and
-the skill file only a convenience. ⛔ A repaired plugin COMMAND is re-authored under `.claude/commands/`,
+the skill file only a convenience. Lagging check: a `handoff-XXXXXX.md` in `$TMPDIR` means something wrote one anyway. ⛔ A repaired plugin COMMAND is re-authored under `.claude/commands/`,
 never patched in the vendored copy. The three layers, layer 2's falsifier and what it does NOT do:
 [`process-checklists.md`](process-checklists.md) → *Session handoff — the three layers*.
 
@@ -117,14 +117,14 @@ Codex outage: `codex update`. ⚠ **NEVER loosen the resolver to accept a hidden
 
 **Fallback — Codex unavailable for ANY reason → never block; auto-fall back to a Claude adversarial review**
 (a fresh subagent with full file access and an adversarial mandate, saved to the normal review path, the Codex gap noted in the
-doc). Do not wait, pause, or retry beyond one quick check (`--write-config`, a single re-run) on repeated non-timeout errors. ⛔ EXCEPT a TIMEOUT, usually your own `--timeout`: DOUBLE IT and re-run once first.
+doc, and the Codex pass re-attempted before merge if access returns). Do not wait, pause, or retry beyond one quick check (`--write-config`, a single re-run) on repeated non-timeout errors. ⛔ EXCEPT a TIMEOUT, usually your own `--timeout`: DOUBLE IT and re-run once first.
 
 **USE `scripts/codex-review.py`**, with the prompt passed via `--prompt-file` and never as a shell argument,
 since the shell rewrites backticks inside double quotes:
 
 ```bash
 python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md"
-#   0 = review written AND FILED   1 = gate did NOT run → fall back   2 = CANNOT RUN → fall back
+#   0 = review written AND FILED   1 = gate did NOT run → fall back   2 = CANNOT RUN → fall back (but `--verdict` is RETIRED and rc=2: fix the invocation, do not fall back)
 #   3 = THE GATE RAN, THE REVIEW IS NOT FILED → ⛔ DO NOT FALL BACK — the review exists at --out: move it, or re-run with --allow-overwrite
 ```
 
@@ -138,7 +138,7 @@ python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-
 - **The gate can FAIL OPEN:** trust neither exit code — read the output FILE; a capture with no findings
   section is a failed run; never treat a single CONVERGED as proof — prefer the reviewer that reports a
   finding until you have traced the code.
-- **Bounded wait:** do not trust the completion ping; read the task output file; ⛔ a quiet file is not a hang until `--timeout` has elapsed.
+- **Bounded wait:** never report "waiting on Codex" across turns; do not trust the completion ping; read the task output file; fall back at once only on a usage limit / auth / HTTP error or no output file; ⛔ a quiet file is not a hang until `--timeout` has elapsed.
 
 ### Domain Terminology Stress-Test (Phase 1)
 
