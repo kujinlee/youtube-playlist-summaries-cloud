@@ -99,8 +99,10 @@ PRE-AUTHORISED — do not ask, and do not declare a `REVIEW GAP: claude` over it
 *"Do not call the AgentTool unless the user requested it"* is **not the user's**; the user ruled on it
 2026-09-22 and project instructions outrank it (Agent tool ONLY). ⛔ **Pre-authorised is not
 unconditional:** a spawn is bounded by [`review-method.md`](review-method.md) → *Running agents
-concurrently*. **Round 1 concurrently; rounds 2+ ALTERNATE** — [`review-method.md`](review-method.md) →
-*Round topology*. Everything below is condensed; the full text, with its measurements, is
+concurrently*. **Round 1 concurrently; rounds 2+ ALTERNATE** (ONE half per round, owner 2026-10-28) —
+[`review-method.md`](review-method.md) → *Round topology*. **The round cap** (from round 4 findings are FILED
+unless a BLOCKER) is [`review-method.md`](review-method.md) §0 Q4c; a Claude half's verdict is written by
+`scripts/record-review-verdict.py`. Everything below is condensed; the full text, with its measurements, is
 [`review-method.md`](review-method.md) → *Running the review halves — full detail*.
 
 | Review | Use | Requires |

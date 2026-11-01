@@ -18509,9 +18509,44 @@ word, into a reference document that is read only when a task needs it, and a on
 This is a DRAFT for you to walk through before it merges: `docs/trim-floor-walkthrough.md` lists every section, where it
 went, and why it is safe to read on demand.
 <!--tech-->
-Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,255 → 14,409 B; `docs/plugins.md` 20,976 → 9,716 B.
+Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,453 → 14,607 B; `docs/plugins.md` 21,118 → 9,949 B.
 The mechanically-enforced table is cut to one line per row, full rows in `process-checklists.md` → *Mechanically
 enforced checks — the full rows*; the thrashing paragraph and the Code Review detail go to `review-method.md`; the
 handoff layer table to `process-checklists.md`; the spine-length history to `process-rationale.md`. Three bare
 references in the moved table qualified (backlog #56 twice, backlog #137). The 10-30 study's "about 162 KB" does not
 match the 47.6 KB measured here and should be re-derived.
+
+## 2026-10-31
+Review rounds now stop at round 3. Round 1 still uses both reviewers, because they mostly find
+different problems. Rounds 2 and 3 use one reviewer each. From round 4 on, findings go into the
+backlog instead of being fixed in the branch, unless it is a BLOCKER: a reproduced input that makes
+the merged change give a false green, lose data or open a security hole, with a local fix. Round 5
+exists only to re-check such a fix, and nothing it finds is folded. This is your decision of 31 October, based on 14 days of data: the first three
+rounds found 83% of the serious problems that were fixed, and the remaining 129 rounds found 17%. A
+Claude review can now leave the same "a review saw this code" record that a Codex run leaves. Codex
+runs made only to write that record cost about 7.4% of the weekly Codex limit.
+<!--tech-->
+Branch `review-round-cap`, PR #457, backlog #434. The rule is written once, in `docs/review-method.md`
+§0 Q4c. `dev-process.md` and `plugins.md` now point to it, and Iterative Re-Review / *Keep going*
+are bounded by it. `scripts/record-review-verdict.py` (98 cases, 21 mutations) writes
+`codex-review.verdict_record` for a filed Claude half, with `writer: claude`, the head and overlay
+`reviewed_state` observes (refused unless the tree is at `--head`), the review's FIRST line
+`Reviewed head: <full sha>` and LAST line `VERDICT: …`, no symlink and no overwrite. Round 2 found
+the Markdown parser beaten by comments, quotes and nested fences, so it reads fixed positions now. Round 1 caught a literal `dirty: {}` that let a
+reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-review-recorded` only rewords
+(195 cases). ⚠ `check-review-decision.py` does not apply the cap yet.
+
+## 2026-11-01
+Six ways to spend fewer tokens are now written down as queued work, each with a trigger and a way it would be shown wrong: run the pre-push checks in one call and skip unchanged ones, warn when a routine job is given the expensive model, hold off compaction in the middle of work, check the Codex budget before a review, close finished jobs in the ledger automatically, and stop the usage-pace check going blind while you are away. The token-management page also no longer claims the always-loaded instructions are about 15% of each call, since that share was never established.
+<!--tech-->
+Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.6 KB on origin/master (draft PR #458), so the earlier 162 KB figure covered more than those files.
+
+## 2026-11-01
+Four comments and one test name in the mutation checker said "2807" where they should say "TOTAL". A bad search-and-replace caused it, and a later one repeated it. The word is back. Nothing the checker does has changed.
+<!--tech-->
+Branch `fix-2616-total`, backlog #430. PR #440 (`dad5971b`) replaced TOTAL with 2616 at five places in `scripts/check-plan-code.py`. PR #443 then replaced 2616 with 2807, so the five read 2807 on master. All five are restored. The real `2807 -> 2808` declared-sum note is unchanged, and no `scripts/mutations/*.json` entry named the renamed case. `--self-test` 281/281.
+
+## 2026-11-01
+Two long-running branches are closed without merging, and what they leave behind is now written down. The explainer contrast layer (PR 364) was built and measured but never passed its fifth review round. The twelve-fix review-tooling branch (PR 371) was stuck for eighteen rounds fixing its own fixes. Each is now one queued backlog row with what is done, what is left and the open findings, and both branches stay on GitHub.
+<!--tech-->
+Branch `file-364-371-remainders`. Backlog rows 445 (PR 364, tip `9ce3cad8`, local tag `backup/1031/unify-explainer-style`) and 446 (PR 371, tip `b2abf875`, local tag `backup/1031/backlog-249-260-fixes`). Also pushed, with no PR: `feat/plan-ruled-out`; `rescue-two-uncommitted-memories` and `remember-local-snapshots` were already on origin at their local tips. Plan-leak scans: 0 hits on all three.

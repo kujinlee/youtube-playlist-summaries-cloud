@@ -15,15 +15,17 @@ Immediately after saving the plan document, create these items with `TaskCreate`
 
 ```
 [ ] Run the dual adversarial review of the plan (Codex + Claude, independent)
-[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence
+[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence or the
+      round cap (review-method.md §0 Q4c — from round 4 findings are FILED unless a BLOCKER)
 [ ] Address all Blocking/High; record Medium/Low dispositions in the review doc
 [ ] Convergence reached — a full re-review round with no new Blocking/High?
       YES → notify the human (PushNotification) and PROCEED to implementation.
-      NO, or a goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
+      NO at round 3 → FILE the rest per §0 Q4c, notify, and PROCEED.
+      A goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
 [ ] Clear sentinel: rm .claude/plan-gate-pending  (if sentinel exists from the write hook)
 ```
 
-**Rule (Conditional AFK):** the plan gate is **convergence**, not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: review cannot converge, an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (deploy, or a merge that `check-merge-ready.py` HOLDs — the house rule of 2026-10-25: merge when READY). Never mark a "wait for human" step complete speculatively.
+**Rule (Conditional AFK):** the plan gate is **convergence or the round cap** (`review-method.md` §0 Q4c), not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: a BLOCKER needs a decision (§0 Q4c), an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (deploy, or a merge that `check-merge-ready.py` HOLDs — the house rule of 2026-10-25: merge when READY). Never mark a "wait for human" step complete speculatively.
 
 **Why both hook and task list?** The hook (PreToolUse on Agent) is a machine-enforceable backstop — it blocks subagent dispatch while the sentinel file exists; clear the sentinel only once the gate is satisfied (convergence, or a human decision when one was actually needed). The task list is the human-readable contract for what must happen first. Neither is sufficient alone.
 

@@ -96,8 +96,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        why = (f\"{unusable} round(s) recorded no commit (verdicts written before schema 2)\"\n               if unusable else \"no Codex verdict was added by this branch\")",
-        "        why = \"no Codex verdict was added by this branch\""
+        "        why = (f\"{unusable} round(s) recorded no commit (verdicts written before schema 2)\"\n               if unusable else \"no review verdict was added by this branch\")",
+        "        why = \"no review verdict was added by this branch\""
       ]
     ],
     "expect": [

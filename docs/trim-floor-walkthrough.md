@@ -28,18 +28,18 @@ Measured on this branch against `origin/master` (bytes as `wc -c`; characters as
 |---|---:|---:|---:|
 | `CLAUDE.md` | 1,044 B | 1,044 B | — |
 | `AGENTS.md` | 327 B | 327 B | — |
-| `docs/dev-process.md` | 25,255 B (220 lines) | 14,409 B (214 lines) | −10,846 B |
-| `docs/plugins.md` | 20,976 B (259 lines) | 9,716 B (162 lines) | −11,260 B |
-| **Always-loaded total** | **47,602 B** | **25,496 B** | **−22,106 B (−46%)** |
+| `docs/dev-process.md` | 25,453 B | 14,607 B (214 lines) | −10,846 B |
+| `docs/plugins.md` | 21,118 B | 9,949 B (164 lines) | −11,169 B |
+| **Always-loaded total** | **47,942 B** | **25,927 B** | **−22,015 B (−46%)** |
 
 **Expected per-turn saving: about 22 KB, roughly 5,500 tokens.** ⚠ The token figure is an ESTIMATE
 at about 4 characters per token; no tokenizer was run. ⚠ The 10-30 usage study put this chain at
-about 162 KB. The four files measure 47.6 KB on `origin/master` today, so that figure and this one are
+about 162 KB. The four files measure 47.9 KB on `origin/master` today, so that figure and this one are
 not measuring the same thing, and the study's "about 15% of each call" should be re-derived before
 anyone quotes a saving as a percentage of a call.
 
 The on-demand docs grew by the moved text: `process-checklists.md` +17,073 B, `review-method.md`
-+14,246 B, `process-rationale.md` +930 B. They load only when a task reads them.
++14,423 B, `process-rationale.md` +930 B. They load only when a task reads them.
 
 ## Where each section went
 
