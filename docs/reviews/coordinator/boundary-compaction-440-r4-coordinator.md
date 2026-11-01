@@ -21,7 +21,7 @@ findings:
 
 | # | Finding | Disposition |
 |---|---|---|
-| R4-1 | `--summary` counts a `ceiling_by: no-headroom` row as "ceiling forced", though the documentation says those rows are excluded. Predates r3 | **FILED**, not folded (Q4c: a Low in a BLOCKER-only round). The fix is to filter numerator and denominator on `ceiling_by`; no second aggregation exists. To be filed as a backlog row by the coordinator |
+| R4-1 | `--summary` counts a `ceiling_by: no-headroom` row as "ceiling forced", though the documentation says those rows are excluded. Predates r3 | **FILED**, not folded (Q4c: a Low in a BLOCKER-only round). The fix is to filter numerator and denominator on `ceiling_by`; no second aggregation exists. Filed as backlog #447 in this PR |
 
 ## Owner's merge condition: live dry-run, MET
 
