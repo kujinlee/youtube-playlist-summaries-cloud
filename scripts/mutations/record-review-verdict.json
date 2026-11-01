@@ -18,7 +18,7 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "    if review_verdict(text) is None:",
+        "    if review_verdict(body) is None:",
         "    if False:"
       ]
     ],
@@ -31,26 +31,27 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "    if not declared:",
+        "    if declared is None:",
         "    if False:"
       ]
     ],
     "expect": [
       "a review that never names the head it was handed is refused",
-      "a head named in prose but not on a `Reviewed head` line is not declared"
+      "a head named in prose but not on the first line is not declared"
     ]
   },
   {
-    "name": "a six-character prefix counts as naming the head",
+    "name": "an abbreviated head counts as declaring it (r2: the first line carries the FULL sha)",
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "MIN_HEX = 7",
-        "MIN_HEX = 6"
+        "r\"Reviewed head: ([0-9a-f]{40}|",
+        "r\"Reviewed head: ([0-9a-f]{7,40}|"
       ]
     ],
     "expect": [
-      "...nor does a six-character prefix, which is shorter than git's own abbreviation"
+      "...nor does an abbreviation, however long — the first line carries the FULL sha",
+      "a declaration of an ABBREVIATED head: refused as HEAD NOT NAMED, nothing written"
     ]
   },
   {
@@ -162,78 +163,77 @@
     ]
   },
   {
-    "name": "a declaration that names ANOTHER commit too, or an ambiguous sha, is accepted (r1 Codex High)",
+    "name": "a first line declaring ANOTHER commit is accepted (r1 Codex High)",
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "    if wrong:",
+        "    if declared != head:",
         "    if False:"
       ]
     ],
     "expect": [
-      "a declaration that ALSO names another commit is refused",
-      "a review whose resolver calls its declared sha AMBIGUOUS is refused",
-      "...and naming a DIFFERENT commit does not count as naming this one"
+      "...and naming a DIFFERENT commit does not count as naming this one",
+      "...and the head is the one ASKED about: the same review against another head is refused",
+      "...and a first line naming the OTHER full sha is a HEAD MISMATCH"
     ]
   },
   {
-    "name": "a quoted line counts as the reviewer's own declaration (r1 M1, Codex High)",
+    "name": "a prefixed or quoted first line counts as the declaration (r1 M1; r2 H1)",
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "DECLARATION = re.compile(r\"^[\\s*_`]*Reviewed head",
-        "DECLARATION = re.compile(r\"^.*Reviewed head"
+        "HEAD_LINE.fullmatch(",
+        "HEAD_LINE.search("
       ]
     ],
     "expect": [
       "a head named only inside a QUOTED line is refused",
-      "...nor inside a `>` quote"
+      "a declaration with a prefix: refused as HEAD NOT NAMED, nothing written",
+      "a declaration with anything after the sha: refused as HEAD NOT NAMED, nothing written"
     ]
   },
   {
-    "name": "a fenced line counts as the reviewer's own",
+    "name": "a declaration on ANY line counts — a comment, a lazy quote, a later line (r2 H1)",
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "        if FENCE.match(line):",
-        "        if False:"
+        "    m = HEAD_LINE.fullmatch(_lines(text)[0])",
+        "    m = next(filter(None, map(HEAD_LINE.fullmatch, _lines(text))), None)"
       ]
     ],
     "expect": [
-      "a declaration inside a code fence is not one the reviewer wrote",
-      "...and a verdict heading inside a fence is not the reviewer's"
+      "...an HTML comment in the declaration form too: refused as HEAD NOT NAMED, nothing written",
+      "...a lazy continuation in the declaration form too: refused as HEAD NOT NAMED, nothing written",
+      "...the declaration form anywhere BUT the first line is not declared"
     ]
   },
   {
-    "name": "the verdict word is found anywhere in the line, so prose and NOT CONVERGED read as a verdict (r1 M1b)",
+    "name": "a verdict PREFIX reads as the verdict (r2 M3)",
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "VERDICTS = (\"NOT CONVERGED\", \"CONVERGED\")",
-        "VERDICTS = (\"CONVERGED\", \"NOT CONVERGED\")"
-      ],
-      [
-        "if word.startswith(v)",
-        "if v in word"
+        "    m = VERDICT_LINE.fullmatch(last)",
+        "    m = VERDICT_LINE.match(last)"
       ]
     ],
     "expect": [
-      "...and NOT CONVERGED is never read as CONVERGED",
-      "a NOT CONVERGED review is recorded as NOT CONVERGED",
-      "...a heading followed by prose is no verdict"
+      "...nor on the declaration line",
+      "...nor with anything after the word"
     ]
   },
   {
-    "name": "two Verdict headings that disagree are read as a verdict",
+    "name": "a verdict line ANYWHERE is the verdict — a fenced example or a comment (r2 M2)",
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "    if len(found) != 1:",
-        "    if not found:"
+        "    last = next((line for line in reversed(_lines(text)) if line.strip()), \"\")",
+        "    last = next((line for line in _lines(text) if VERDICT_LINE.fullmatch(line)), \"\")"
       ]
     ],
     "expect": [
-      "...and two headings that disagree are no verdict"
+      "...and with the declaration form, the LAST line is the verdict, not the fenced example",
+      "...nor in the declaration form",
+      "...and a verdict line ABOVE the last line is not the verdict"
     ]
   },
   {
@@ -262,6 +262,34 @@
     "expect": [
       "...and the verdict the review states",
       "a NOT CONVERGED review is recorded as NOT CONVERGED"
+    ]
+  },
+  {
+    "name": "a Unicode line separator splits a line, so text Markdown renders on one line is read as two",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "for line in text.split(\"\\n\")]",
+        "for line in text.splitlines()]"
+      ]
+    ],
+    "expect": [
+      "...but a Unicode line separator does not make a new line",
+      "...but a Unicode line separator does not end the first line"
+    ]
+  },
+  {
+    "name": "the first line is read after the body is stripped, so a blank line 1 is skipped",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    declared = declared_head(body)",
+        "    declared = declared_head(text)"
+      ]
+    ],
+    "expect": [
+      "...nor is the first line read after the body is stripped: line 1 is line 1",
+      "a declaration under a blank first line: refused as HEAD NOT NAMED, nothing written"
     ]
   }
 ]

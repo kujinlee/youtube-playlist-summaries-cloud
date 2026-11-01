@@ -18514,9 +18514,10 @@ runs made only to write that record cost about 7.4% of the weekly Codex limit.
 <!--tech-->
 Branch `review-round-cap`, PR #457, backlog #434. The rule is written once, in `docs/review-method.md`
 §0 Q4c. `dev-process.md` and `plugins.md` now point to it, and Iterative Re-Review / *Keep going*
-are bounded by it. `scripts/record-review-verdict.py` (74 cases, 19 mutations) writes
+are bounded by it. `scripts/record-review-verdict.py` (98 cases, 21 mutations) writes
 `codex-review.verdict_record` for a filed Claude half, with `writer: claude`, the head and overlay
-`reviewed_state` observes (refused unless the tree is at `--head`), the review's own `Reviewed head`
-line and `## Verdict`, no symlink and no overwrite. Round 1 caught a literal `dirty: {}` that let a
+`reviewed_state` observes (refused unless the tree is at `--head`), the review's FIRST line
+`Reviewed head: <full sha>` and LAST line `VERDICT: …`, no symlink and no overwrite. Round 2 found
+the Markdown parser beaten by comments, quotes and nested fences, so it reads fixed positions now. Round 1 caught a literal `dirty: {}` that let a
 reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-review-recorded` only rewords
 (195 cases). ⚠ `check-review-decision.py` does not apply the cap yet.

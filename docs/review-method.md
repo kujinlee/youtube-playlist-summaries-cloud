@@ -58,9 +58,11 @@ settled three earlier findings on the branch that built this.
 4. A half that cannot run is recorded `REVIEW GAP: <half>` **with its reason**, never omitted.
    ⟳ **After a Claude half is filed, the coordinator runs `scripts/record-review-verdict.py
    --review-id <id> --head <sha it was handed>` IN THE TREE THE HALF REVIEWED, before any edit or
-   commit**, so no Codex run is spent only to leave a verdict file (Q4c). The brief asks the half for
-   a `Reviewed head <sha>` line of its own and a `## Verdict` section opening with `CONVERGED` or
-   `NOT CONVERGED`; the tool refuses a tree not at that head, and records its uncommitted overlay.
+   commit**, so no Codex run is spent only to leave a verdict file (Q4c). ⛔ **The brief tells the half
+   to make its review's FIRST line exactly `Reviewed head: <full 40-hex sha>` and its LAST non-empty
+   line exactly `VERDICT: CONVERGED` or `VERDICT: NOT CONVERGED`** — fixed positions, matched whole,
+   nothing else in the file read for either, so no quote, fence or comment can stand in for them
+   (PR #457 r2). The tool refuses a tree not at that head, and records its uncommitted overlay.
 5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
    boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each
    finding must state whether siblings were searched for, HOW, and what turned up** — "grepped the
@@ -138,7 +140,7 @@ before any finding exists, so it is never decided mid-loop.
 | **1** | always | **both halves**, concurrently | disposed by Q3 |
 | **2, 3** | the previous round is not converged | one half each, alternating (*Round topology*, step 4) | disposed by Q3 |
 | **4** | round 3's fold changed a guarded path | one half, scoped to that fold | each **FILED as a backlog row**, unless a **BLOCKER** (folded) |
-| **5** | round 4 folded a BLOCKER | one half, scoped to that fix — the **last** round | **all FILED**; a BLOCKER is also notified to the human |
+| **5** | round 4 folded a BLOCKER | one half, scoped to that fix — the **last** round | **all FILED**; a BLOCKER is also notified to the human **and HOLDS the PR** until they answer |
 | **6+** | never | — | — |
 
 A **BLOCKER** is a finding that passes **all three** tests, each checkable from the finding's own
