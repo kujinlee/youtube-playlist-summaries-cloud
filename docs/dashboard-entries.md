@@ -18502,6 +18502,21 @@ asserts in its OWN process (`--mutate` before any mutation, `--self-test` at its
 display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-only fallback are deleted. Pins:
 merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.
 
+## 2026-10-31 [needs-you]
+The process rules that are re-sent to the model on every turn are now 43% shorter: 27.0k characters instead of 47.4k. That is an
+ESTIMATED 5.1k raw tokens fewer per call; because the text is cached, about 510 weighted tokens per call plus about
+6.4k per fresh prefix write, roughly 1% of a typical call. No rule was deleted. Each long passage of history and measurement moved, word for
+word, into a reference document that is read only when a task needs it, and a one-line rule stays behind with a pointer.
+This is a DRAFT for you to walk through before it merges: `docs/trim-floor-walkthrough.md` lists every section, where it
+went, and why it is safe to read on demand.
+<!--tech-->
+Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,159 → 14,700 chars; `docs/plugins.md` 20,851 → 10,970 chars (total 47,377 → 27,037, chars/4 estimate, no tokenizer).
+The mechanically-enforced table is cut to one line per row, full rows in `process-checklists.md` → *Mechanically
+enforced checks — the full rows*; the thrashing paragraph and the Code Review detail go to `review-method.md`; the
+handoff layer table to `process-checklists.md`; the spine-length history to `process-rationale.md`. Three bare
+references in the moved table qualified (backlog #56 twice, backlog #137). The 10-30 study's "about 162 KB" does not
+match the 47.4k characters measured here and should be re-derived.
+
 ## 2026-10-31
 Review rounds now stop at round 3. Round 1 still uses both reviewers, because they mostly find
 different problems. Rounds 2 and 3 use one reviewer each. From round 4 on, findings go into the
@@ -18525,7 +18540,7 @@ reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-r
 ## 2026-11-01
 Six ways to spend fewer tokens are now written down as queued work, each with a trigger and a way it would be shown wrong: run the pre-push checks in one call and skip unchanged ones, warn when a routine job is given the expensive model, hold off compaction in the middle of work, check the Codex budget before a review, close finished jobs in the ledger automatically, and stop the usage-pace check going blind while you are away. The token-management page also no longer claims the always-loaded instructions are about 15% of each call, since that share was never established.
 <!--tech-->
-Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.6 KB on origin/master (draft PR #458), so the earlier 162 KB figure covered more than those files.
+Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.4k characters on origin/master (draft PR #458), while the earlier study's 162 KB figure is a different measurement; the two need reconciling (scope or method).
 
 ## 2026-11-01
 Four comments and one test name in the mutation checker said "2807" where they should say "TOTAL". A bad search-and-replace caused it, and a later one repeated it. The word is back. Nothing the checker does has changed.
@@ -18541,3 +18556,8 @@ Branch `file-364-371-remainders`. Backlog rows 445 (PR 364, tip `9ce3cad8`, loca
 The checks a pull request must pass before it is pushed now run in one command, `python3 scripts/gates-for-pr.py`, which prints one line per check and runs every check every time. A check that fails, times out, is cut off or cannot run is never counted as passing. A version that skipped checks whose inputs had not changed was built and reviewed, and then removed: reviewers could make it skip a check that would have failed, and skipping saved only about 50 seconds of an 8½-minute run.
 <!--tech-->
 Branch `gates-runner-438`, backlog #438, PR #465. The gate set comes from `ci.yml`'s `verify` job plus the local mutation slices for moved manifests; every other `ci.yml` job, the non-Python and multi-line steps and `schema-gates.yml` are printed OUT OF SET. Round 1 (both halves) reproduced false SKIPS through the audit-hook tracer's input digest (warm `.pyc` imports, external symlinks, branch name, env, clock) and a nested-tracer recursion that failed the runner's own self-test; the fold deleted the ledger, tracer and digest rather than repair them (measured: 8m39s full vs 7m49s with 43 of 80 skipped). `--self-test` 35/35, including the self-test run under `run_gate` and a gate that cannot be started; `check-plan-code --mutate . --only scripts/gates-for-pr.py` 10/10 killed and attributed (23 -> 10: 17 retired with their subject, 4 new).
+
+## 2026-11-01
+Automatic compaction now waits for a pause in the work. While a plan is armed, an agent has not reported back, or a Monitor is still watching, the compaction is put off. It still runs once the session has been quiet for 5 minutes, or once the context reaches one and a half times the compaction window, so a stuck signal cannot hold it off for ever. A typed `/compact` is never held. If the hook cannot read the window setting or the transcript, it lets the compaction run and records why. Every decision is logged, so we can see whether compactions usually happen at a pause or only when the ceiling forces them. If it is mostly the ceiling, the hook should be removed.
+<!--tech-->
+Branch `boundary-compaction-440`, PR #463, backlog #440. `scripts/check-compaction-boundary.py` (57 cases, 28 mutations) runs from `.claude/hooks/compaction-boundary.sh` on the `auto` PreCompact matcher. The hook runs `precompact-snapshot.sh` only when it allows, so a blocked call does not also take a snapshot. The `manual` matcher still runs the snapshot directly. The window comes from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, then the project's `settings.local.json`, then `settings.json`, then `~/.claude/settings.json`, each checking `modelSettings[<model>]` first. This order follows the documented settings precedence and has not been tested for this key. The log is `.claude/compaction-boundary.log` in the main checkout, and `--summary` reads it. ⚠ The hook reads the last 8 MB of the transcript, about 20 hours. An agent in that span whose completion notice never arrived blocks compaction until the ceiling.

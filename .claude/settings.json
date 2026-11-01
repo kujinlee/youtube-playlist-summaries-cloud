@@ -224,9 +224,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
-            "timeout": 15,
-            "statusMessage": "Saving a snapshot of in-flight state before compaction..."
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh compaction-boundary.sh",
+            "timeout": 20,
+            "statusMessage": "Checking for a work boundary before compaction..."
           }
         ]
       }

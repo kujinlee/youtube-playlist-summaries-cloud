@@ -2149,6 +2149,14 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 fold: +4 — the child adapter's gh and git timeouts (Codex A, B), and the self-test step only directly under
     # `steps:` (matrix data; a nested list item). Merged with the context floor's 75: 75 + 14 = 89.
     "scripts/compaction-state.py": 89,
+    # backlog #440 (2026-11-01): the PreCompact boundary hook — the ceiling, idle and block order, the three
+    # mid-work signals' detectors, W's precedence and fail-open, the snapshot chained only on ALLOW, the log path.
+    # ⟳ r1 fold: +13 — the sentinel's `paused:`/`session:`, the ceiling's clamp under the model limit, a completed
+    # foreground result, the agent lease, activity beyond assistant records, malformed records, a non-string cwd,
+    # non-blocking opens, undecodable snapshot output. 28 + 13 = 41.
+    # ⟳ r2 fold: +4 — a report quoting the launch phrase, the ceiling's floor at W, its `no-headroom` label, a
+    # nested repo's checkout. 41 + 4 = 45.
+    "scripts/check-compaction-boundary.py": 47,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -4799,6 +4807,8 @@ def _self_test_body() -> int:
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
+                                      # backlog #440: the PreCompact boundary hook, with its manifest.
+                                      "scripts/check-compaction-boundary.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-decision-scheme.py",
                                       "scripts/check-diff-coverage.py",

@@ -321,6 +321,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                         "mutation_gates.targets", "mutation_targets.changed", "mutation_targets.manifests",
                         "run_gate.gate", "run_gate.log", "run_gate.root", "run_gate.timeout",
                         "status_of.rc", "status_of.timed_out"),
+    # backlog #440 (2026-11-01): the PreCompact boundary hook, pinned in the commit that creates it. DERIVED by
+    # running `analyse()` on the delivered source; every parameter varied except main.*, EXEMPT with its reason.
+    # ⟳ r1 fold: + `ceiling.w`, `log_path.*`, `read_tail.*`, `sentinel_armed.*` — the clamp, the log's fallback, the
+    # cut tail and the sentinel's `paused:`/`session:`. Re-derived by running `analyse()`.
+    "check-compaction-boundary.py": (
+        "ceiling.w", "decide.ctx", "decide.last_at", "decide.now", "decide.sigs", "decide.trigger", "decide.w", "hook.env", "hook.home", "hook.now", "hook.payload_text", "hook.snapshot", "iso_epoch.stamp", "log_path.env", "log_path.payload_text", "main.argv", "main.env", "main.now", "main.snapshot", "main.stdin_fd", "read_tail.cap", "read_tail.path", "scan.lines", "sentinel_armed.fields", "sentinel_armed.session", "signals.now", "signals.plan_armed", "signals.scanned", "summary.log_text", "window.env_value", "window.files", "window.model",),
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
     # by running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #457 r1: + `claude_record.dirty`/`.verdict`, `review_problem.resolve`, `declared_heads.text`,
@@ -1255,6 +1261,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
+    "check-compaction-boundary.py:main.argv": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.env": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.now": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.snapshot": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.stdin_fd": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
     # backlog #410 (2026-10-30): check-stalled-work.py's main() is driven through one helper.
     "check-stalled-work.py:main.argv": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
     "check-stalled-work.py:main.now": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
