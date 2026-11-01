@@ -38,7 +38,7 @@ THE TWO HOOK MODES:
                deletes the session's previous snapshot, then captures in the child: the open PRs and the in-flight
                ledger (`session-state.fetch`/`render`, the ledger read from the MAIN checkout, asked for ONCE); `git
                worktree list` with each worktree's branch, tip and clean/dirty state; pending OWNER decisions (ledger
-               entries marked `WAITS-ON-OWNER:`, `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the
+               entries whose DECLARED `kind` is owner-wait or owner-instruction, printed whole; `gen-dashboard.unresolved`); and the owner's recent PROMPTS and the
                newest AskUserQuestion ANSWERS that fit, from `transcript_path`. Under SNAPSHOT_CAP. If the child does
                not finish, the snapshot is `CANNOT RUN — capture timed out after N s and was killed`.
   --print      SessionStart, `compact` source (a matcher). Headed "NEWEST CAPTURE for this session, taken at T (N s
@@ -84,7 +84,7 @@ different compaction — SESSION_NOT_COMPACTION, printed, not fixed; STALE_AFTER
 
     python3 scripts/compaction-state.py --snapshot < payload.json   # what the PreCompact hook runs
     python3 scripts/compaction-state.py --print    < payload.json   # what the SessionStart hook runs
-    python3 scripts/compaction-state.py --self-test  # 96 cases
+    python3 scripts/compaction-state.py --self-test  # 125 cases
 
 EXIT CODES: 0 for every hook mode (failure is IN the text); 0/1 for --self-test; a child mode exits 0 when it wrote
 its file.
@@ -114,7 +114,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STARTED = time.monotonic()   # r4 X4-1: HOOK_DEADLINE is measured from here, the process's start
 SESSIONS_REL = ".remember/compaction"          # r2 REDESIGN (B): <SESSIONS_REL>/<session_id>/{receipt.json,snapshot.md}
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
+DIGEST_WHOLE = ("## Pending OWNER decisions", "## The owner's recent words")   # sections whose body the print shows whole
+DIGEST_HEAD = re.compile(r"#{1,3} ")
+WHOLE = 10**9          # the width of a value that is never cut (an owner decision, the /compact instructions)
 SNAPSHOT_CAP = 8000     # under PRINT_CAP with the print's heading lines
+OWNER_ID = re.compile(r"\s*ledger \[([^\]]+)\]")   # a line of the OWNER decisions section; `decision_section` writes it
+OWNER_IDS_LIMIT = 1000  # characters of owner ids the print's cut notice may name; the rest is counted ('+K more')
 PRINT_CAP = 9800        # the harness replaces SessionStart output over 10,000 characters with a file path
 STALE_AFTER = 30 * 60   # seconds: a receipt this old or older is not shown (r4 X4-5: age < 0 is refused too)
 STDIN_WAIT = 2.0
@@ -127,6 +132,10 @@ ARTIFACT_CAP = 1024 * 1024   # an artifact over this is not read (r3 XR1)
 NC = "NOT CAPTURED"     # r3 Cr7: the ONE word every line about something not captured carries (CLAUDE.md names it)
 GH_TIMEOUT = 8          # per call, inside the child
 GIT_TIMEOUT = 3
+# backlog #407: set by the mutation harness (`check-plan-code.mutation_env`) and passed through `fixture_git.isolated()`
+# (`PROCESS_PASSED`). ONLY the self-test reads it, and only to leave out the cases that wait on a REAL deadline (CI's
+# ordinary check runs them, `ci_runs_real_time`); no hook mode reads it, so it cannot move a deadline a hook uses.
+MUTATION_RUN_ENV = "PLAN_CODE_MUTATION_RUN"
 N_PROMPTS = 12
 RECENT_ASKS = 5
 ITEM_WIDTH = 400
@@ -479,7 +488,7 @@ def pending_asks(root: Path) -> tuple[int | None, list[dict], str | None]:
 
 def decision_section(count, asks, err, waits: list[dict], ledger_complete: bool) -> str:
     L = ["## Pending OWNER decisions"]
-    L += [f"  ledger [{clean(e.get('id'), 60)}] {clean(e.get('what'), 160)} — when done: {clean(e.get('on_done'), 120)}"
+    L += [f"  ledger [{clean(e.get('id'), 60)}] {clean(e.get('what'), WHOLE)} — when done: {clean(e.get('on_done'), WHOLE)}"
           for e in waits]
     if not ledger_complete:
         L.append(f"  in-flight ledger: {NC} — it was not read completely (see the in-flight block above), so owner "
@@ -664,10 +673,17 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
             wts, wt_err = f_wts.result()
         except Exception as exc:  # noqa: BLE001
             wts, wt_err = None, f"{exc.__class__.__name__}: {clean(exc, 120)}"
+    # r2 REDESIGN: an entry's owner relevance is its DECLARED `kind` (session-state.is_owner), never a reading of its text.
+    # Owner entries are printed WHOLE in the decisions section below, so the in-flight block lists only the rest.
+    waits = [e for e in ledger if ss.is_owner(e)] if ss else []
+    shown = [dict(e, what=str(e.get("what") or "").removeprefix(ss.OWNER_MARKER).strip()) for e in waits]   # the marker is not news
+    if ss:
+        ledger = [e for e in ledger if not ss.is_owner(e)]
     stamp_now = time.strftime("%m-%d %H:%M %Z", time.localtime(now))
     if ss:
         # NC is placed by `render` itself on each line whose state was NOT READ — never by searching the text (r4 C4-F3).
-        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f" — {NC}")
+        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f" — {NC}",
+                             owner_elsewhere=len(waits))
     else:
         inflight = f"OPEN PRS and IN-FLIGHT LEDGER: {NC} — CANNOT RUN, {ss_err}"
     count, recent, ask_err = asks(root)
@@ -675,8 +691,6 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     # failed main-checkout lookup and its fallback — marks the owner waits NOT CAPTURED, while the entries that WERE
     # read are still shown.
     ledger_complete = ss is not None and main_err is None and not problems
-    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []
-    shown = [dict(e, what=e["what"][len(ss.OWNER_MARKER):].strip()) for e in waits]   # the marker is not news
     if payload_err:
         records, t_err, nbytes = None, f"the hook payload was unreadable ({payload_err})", 0
     else:
@@ -688,7 +702,7 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
     if payload_err:
         head += f"\n⚠ hook payload: {NC} — UNREADABLE, {clean(payload_err)}"
     if custom:
-        head += f"\n/compact instructions: {clean(custom, 300)}"
+        head += f"\n/compact instructions: {clean(custom, WHOLE)}"   # the owner's own words: never cut
     LEDGER = getattr(ss, "LEDGER_REL", ".claude/inflight.jsonl")
     if main_err:
         where = (f"⚠ {NC} — ledger read from THIS checkout, {root}/{LEDGER}: the main checkout could not be found "
@@ -697,11 +711,14 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
         where = f"ledger read from the MAIN checkout, {main}/{LEDGER} — this hook ran in the worktree {root}"
     else:
         where = f"ledger: {main}/{LEDGER}"
+    # The owner's words are WHOLE: the decisions section is never `fit`, and the /compact instructions are never cut. The cap
+    # that bounds everything else is raised by exactly that protected text, so the trailing sections give way first.
+    # ⚠ STATED BOUND: the PRINT still has the harness's 10,000-character limit (PRINT_CAP), so the print puts these first.
+    decisions = decision_section(count, recent, ask_err, shown, ledger_complete)
     parts = [head,
              "## In flight BEFORE compaction (session-state.py)\n" + clean(where, 400) + "\n"
              + fit(inflight, 2600, "`python3 scripts/session-state.py`"),
-             fit(decision_section(count, recent, ask_err, shown, ledger_complete), 1200,
-                 "`python3 scripts/session-state.py` and the dashboard"),
+             decisions,
              worktree_section(wts, wt_err, 1500)]
 
     # The keys line carries only what the print matches on; the audit that read the rest is deferred (r4 DEFER).
@@ -709,10 +726,11 @@ def snapshot(payload: dict | None, payload_err: str | None, root: Path, run, now
             "session": clean(session_id, 100) if session_id else None}
     keyline = KEYS_OPEN + json.dumps(keys, ensure_ascii=True) + KEYS_CLOSE
     body = "\n\n".join(parts)
-    room = SNAPSHOT_CAP - len(body) - len(keyline) - 4
+    protected = max(0, len(decisions) - 1200) + max(0, len(head) - 600)
+    room = SNAPSHOT_CAP + protected - len(body) - len(keyline) - 4
     window = f"the last {nbytes / 1e6:.1f} MB of the transcript" if nbytes else "the window read"
     parts.append(owner_section(prompts, answers, text_turns, t_err, max(room, 400), window))
-    text = fit("\n\n".join(parts), SNAPSHOT_CAP - len(keyline) - 2, "the transcript itself")
+    text = fit("\n\n".join(parts), SNAPSHOT_CAP + protected - len(keyline) - 2, "the transcript itself")
     return text + "\n" + keyline + "\n"
 
 
@@ -761,6 +779,44 @@ SESSION_NOT_COMPACTION = ("session identity is not compaction identity: a delaye
                           "session, or an earlier one whose successor's PreCompact did not run, can be shown here.")
 
 
+def _id_list(ids: list[str], limit: int) -> str:
+    """session-state's `id_list` (ids joined, the overflow COUNTED, never silent); a plain join only when that file cannot load."""
+    try:
+        return _session_state().id_list(ids, limit)
+    except Exception:  # noqa: BLE001
+        return ", ".join(ids)[:limit]
+
+
+def _clean_keep_nc(line: str, width: int) -> str:
+    """clean(line, width), except a cut never takes the NOT CAPTURED words with it: the marker and what follows it are
+    kept, the front is cut instead."""
+    out = clean(line, width)
+    if NC not in line or NC in out:
+        return out
+    return clean(line[:width // 3], width // 3) + " … " + clean(line[line.index(NC):], width - width // 3 - 3)
+
+
+def digest(snap_text: str, path: str) -> str:
+    """What the print shows of a snapshot every turn (the coordinator re-sends it): the title block (the /compact
+    instructions are the owner's words), the whole body of the sections that hold the owner's words and decisions
+    (DIGEST_WHOLE), then every other heading and each line that says something was NOT CAPTURED. Nothing in the
+    owner's sections is cut by this reader; they come FIRST, so the print's own character limit gives way to the
+    routine headings, never to a decision. The rest stays in the file, and the path is printed."""
+    title, whole, other, mode = [], [], [], "title"
+    for line in _strip_keys(snap_text).strip().splitlines():
+        if DIGEST_HEAD.match(line):
+            if line.startswith("## "):
+                mode = "whole" if line.startswith(DIGEST_WHOLE) else "other"
+            (whole if mode == "whole" else other).append(clean(line, WHOLE) if mode == "whole" else _clean_keep_nc(line, 200))
+        elif mode == "title":
+            title.append(clean(line, WHOLE))
+        elif mode == "whole":
+            whole.append(clean(line, WHOLE))
+        elif NC in line:
+            other.append("  " + _clean_keep_nc(line, 200))
+    return "\n".join([*title, f"full: {path} (every section, whole)", *whole, *other])
+
+
 def render_print(snap_text, snap_err, now: float, receipt: dict | None = None, receipt_err: str | None = None,
                  session_id=None) -> str:
     """The SessionStart block for ONE session. It claims no compaction identity. The snapshot is shown when its nonce
@@ -797,8 +853,20 @@ def render_print(snap_text, snap_err, now: float, receipt: dict | None = None, r
         L.append(f"{NC} — the snapshot is not shown: field `nonce` differs (snapshot {clean(sk.get('nonce'), 40)}, "
                  f"receipt {clean(r['nonce'], 40)}).")
     else:
-        L.append(_strip_keys(snap_text).strip())
-    return fit("\n".join(L), PRINT_CAP - len(end) - 1, "the session's snapshot file") + "\n" + end
+        L.append(digest(snap_text, f"{SESSIONS_REL}/{session_id}/snapshot.md"))
+    text, budget = "\n".join(L), PRINT_CAP - len(end) - 1
+    if len(text) <= budget:
+        return text + "\n" + end
+    # r3 R3-4: a cut that falls INSIDE the owner section must not drop a decision without saying so. The ids are reserved
+    # first (bounded by OWNER_IDS_LIMIT), the text is cut, and every owner entry whose line did not survive is NAMED.
+    ids = [m.group(1) for m in map(OWNER_ID.match, text.splitlines()) if m]
+    cut = fit(text, budget - OWNER_IDS_LIMIT - 120, "the session's snapshot file")
+    gone = [i for i in ids if f"ledger [{i}]" not in cut]
+    note = ""
+    if gone:
+        note = (f"\n  ⛔ {len(gone)} OWNER decision(s) NOT SHOWN here (cut at the print limit) — whole in the snapshot file above: "
+                + _id_list(gone, OWNER_IDS_LIMIT))
+    return cut + note + "\n" + end
 
 
 def run_child(mode: str, payload: dict | None, root: Path, timeout: float, now: float, nonce: str | None = None,
@@ -905,6 +973,98 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, stdin_text: str 
     return 0
 
 
+def real_time_cases(env) -> bool:
+    """Run the cases that wait on the hook's REAL deadlines (11 s, 2 s)? Yes, unless the mutation harness set
+    MUTATION_RUN_ENV (backlog #407): every case a mutant names runs on a short or event-ordered deadline instead.
+
+    WHAT THE SWEEP PROVES UNDER THE MARKER (r1-r3 each refuted a universal "no mutant is lost" claim with new mutants;
+    enumeration cannot close such a claim, so this states what is MEASURED). Exactly that each manifest entry is killed
+    by its named case. Cases added to make the skip cheaper, and the case each runs under:
+      - the capture's group kill of a call in flight — the event-ordered CR1 case;
+      - a call still made after a git that timed out, and gh's own 8 s — `after a git that TIMED OUT`;
+      - the timeouts the CHILD's adapter hands session-state's `_run` — `through the CHILD's adapter`;
+      - the capture's 11 s and the print's 10 s reaching the child — the spy case, with the marker SET;
+      - the parent's return within its kill + 1 s — `the WHOLE PreCompact hook ends within its capture deadline`.
+    The skipped real-time cases still run on EVERY PR in CI's ordinary step, which `ci_runs_real_time` pins. Mutants
+    that only the real-time cases kill are NOT measured by the sweep; the known ones are listed in backlog #424
+    (a capture killed before its deadline, and others), with the structural fix: an injectable
+    clock or scaled deadlines, so the skip can be removed. Backlog #423's two kill details, and the stdin read's 2 s bound
+    (`STDIN_WAIT`), are killed in neither mode."""
+    return env.get(MUTATION_RUN_ENV) != "1"
+
+
+REQUIRED_JOB = "verify"   # THE required check (dev-process.md: renaming or splitting it leaves every PR pending)
+SELF_TEST_RUN = "python3 scripts/compaction-state.py --self-test"
+
+
+def _block(lines: list[str], i: int) -> int:
+    """The end (exclusive) of the YAML block opened at `lines[i]`: the next content line indented no deeper."""
+    ind = len(lines[i]) - len(lines[i].lstrip())
+    j = i + 1
+    while j < len(lines):
+        s = lines[j].strip()
+        if s and not s.startswith("#") and len(lines[j]) - len(lines[j].lstrip()) <= ind:
+            break
+        j += 1
+    return j
+
+
+def ci_runs_real_time(ci_text: str) -> str | None:
+    """None when CI's REQUIRED job has a step running this self-test, with MUTATION_RUN_ENV unset; otherwise why
+    not. Backlog #407's FAILS IF: the real-time run is dropped from CI, or kept where it cannot fail a PR.
+
+    Read by LINE STRUCTURE (the project is stdlib-only, so no YAML parser): the `jobs:` key, the job REQUIRED_JOB at
+    the next indent, its `steps:` key, the list item directly under that key whose `run:` is SELF_TEST_RUN, and an
+    `if:` or `continue-on-error:` on that job or step.
+    ⚠ BOUND, stated rather than hidden: block-style YAML as `ci.yml` is written, with the step list indented deeper
+    than `steps:` (a list at the key's own indent is refused). Flow-style steps (`- {run: …}`),
+    anchors and aliases, a folded `run: >`, and an `if:` whose expression is always true are not modelled — any
+    `if:` is refused, and `continue-on-error:` is refused unless literally `false`. The marker is caught only by its
+    NAME anywhere in the file, so one assembled from `vars` or `fromJSON` is not seen. Also NOT seen (r3, F2): a
+    `needs:` on a job that is skipped (GitHub then skips `verify` too), a step-level `shell:`, and a job-level or
+    workflow-level `defaults.run.shell`, any of which can make the step not run the script."""
+    lines = ci_text.splitlines()
+    try:
+        top = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
+    except StopIteration:
+        return "no top-level `jobs:` in the workflow"
+    end = _block(lines, top)
+    job = next((i for i in range(top + 1, end) if re.fullmatch(rf"  {REQUIRED_JOB}:\s*", lines[i])), None)
+    if job is None:
+        return f"no `{REQUIRED_JOB}` job, the required check"
+    job_end = _block(lines, job)
+    # r2 (Codex M2): a step is a list item DIRECTLY under the job's own `steps:` key — the same text under
+    # `strategy.matrix` is data GitHub never runs.
+    key = next((i for i in range(job + 1, job_end) if re.fullmatch(r"    steps:\s*", lines[i])), None)
+    if key is None:
+        return f"no `steps:` key in the `{REQUIRED_JOB}` job"
+    steps_end = _block(lines, key)
+    item = next((len(l) - len(l.lstrip()) for l in lines[key + 1:steps_end]
+                 if l.strip() and not l.strip().startswith("#")), None)
+    run = next((i for i in range(key + 1, steps_end)
+                if re.fullmatch(rf"\s*(?:- )?run:\s*{re.escape(SELF_TEST_RUN)}\s*", lines[i])), None)
+    if run is None:
+        return f"no `run: {SELF_TEST_RUN}` step in the `{REQUIRED_JOB}` job"
+    run_ind = len(lines[run]) - len(lines[run].lstrip())
+    step = run if lines[run].lstrip().startswith("- ") else next(
+        (i for i in range(run - 1, key, -1)
+         if lines[i].lstrip().startswith("- ") and len(lines[i]) - len(lines[i].lstrip()) == run_ind - 2), None)
+    if step is None or len(lines[step]) - len(lines[step].lstrip()) != item:
+        return f"the `{SELF_TEST_RUN}` line is not a step directly under the `{REQUIRED_JOB}` job's `steps:`"
+    dash = len(lines[step]) - len(lines[step].lstrip())
+    step_lines = [lines[step][:dash] + "  " + lines[step][dash + 2:]] + lines[step + 1:_block(lines, step)]
+    job_keys = [l for l in lines[job + 1:job_end] if re.match(r"    [A-Za-z_-]+:", l)]
+    for where, keys in ((f"the `{REQUIRED_JOB}` job", job_keys),
+                        ("the step", [l for l in step_lines if len(l) - len(l.lstrip()) == dash + 2])):
+        for k in keys:
+            m = re.match(r"\s*(if|continue-on-error):\s*(.*?)\s*$", k)
+            if m and (m.group(1) == "if" or m.group(2) != "false"):
+                return f"{where} carries `{m.group(1)}: {m.group(2)}`, so the real-time run may not run or not fail"
+    if MUTATION_RUN_ENV in ci_text:
+        return f"{MUTATION_RUN_ENV} is named in the workflow, so the real-time cases may be skipped there"
+    return None
+
+
 def self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
     import fixture_git
@@ -929,6 +1089,10 @@ def _self_test_body() -> int:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got!r} want {want!r}")
 
     print("compaction-state --self-test")
+    real_time = real_time_cases(os.environ)
+
+    def skip(name):
+        print(f"  [skip] {name} — waits on a REAL deadline; CI's ordinary check runs it (backlog #407)")
 
     def safe(f):
         try:
@@ -1162,13 +1326,90 @@ def _self_test_body() -> int:
         (busy / ".claude").mkdir(parents=True)
         (busy / ".git").mkdir()
         (busy / ".claude" / "inflight.jsonl").write_text("".join(
-            json.dumps({"id": f"owner-wait-{i:02d}" + "x" * 110, "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold",
-                        "at": "T"}) + "\n" for i in range(60)))
+            json.dumps({"id": f"routine-{i:02d}" + "x" * 110, "what": f"WAITS-ON-OWNER: review page {i}", "on_done": "fold",
+                        "at": "T", "kind": "routine"}) + "\n" for i in range(60)))
         many_wts = "".join(f"worktree /r/wt-{i}\nHEAD {'4' * 40}\nbranch refs/heads/feature-{i:02d}\n\n" for i in range(60))
         snap_big = snapshot(payload, None, busy, fake_run(json.dumps(many_prs), wt_out=many_wts), 1000.0,
                             lambda p: (big, None, 9_000_000), asks_ok, nonce="N1")
-        case("⭐ the size cap holds with 100 PRs, 60 long owner waits and 200 huge prompts, and the keys line survives",
+        case("⭐ the size cap holds with 100 PRs, 60 long routine entries and 200 huge prompts, and the keys line survives",
              (len(snap_big) <= SNAPSHOT_CAP + 1, _keys(snap_big) is not None, "TRUNCATED" in snap_big), (True, True, True))
+        # r2 R2-3: the cap bounds everything EXCEPT the owner's decisions, which are whole; the other sections give way first
+        ownerful = root / "ownerful"
+        (ownerful / ".claude").mkdir(parents=True)
+        (ownerful / ".git").mkdir()
+        (ownerful / ".claude" / "inflight.jsonl").write_text("".join(
+            json.dumps({"id": f"own-{i:02d}", "what": f"decide {i} " + "x" * 300 + f" TAIL{i}", "on_done": "y" * 150 + f" DONE{i}",
+                        "at": "T", "kind": "owner-instruction"}) + "\n" for i in range(15)))
+        snap_own = snapshot(dict(payload, custom_instructions="c" * 400 + " CUSTOM-END"), None, ownerful,
+                            fake_run(json.dumps(many_prs), wt_out=many_wts), 1000.0, lambda p: (big, None, 9_000_000), asks_ok, nonce="N1")
+        dsec = snap_own.split("## Pending OWNER")[1].split("\n\n## Worktrees")[0]
+        case("⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact "
+             "instructions (400+ characters); the keys line survives and the OTHER sections give way",
+             (all(f"TAIL{i}" in snap_own and f"DONE{i}" in snap_own for i in range(15)), "CUSTOM-END" in snap_own,
+              _keys(snap_own) is not None, len(snap_own) <= SNAPSHOT_CAP + len(dsec) + 700),
+             (True, True, True, True))
+        out_own = render_print(snap_own, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        declared = root / "declared"
+        (declared / ".claude").mkdir(parents=True)
+        (declared / ".git").mkdir()
+        (declared / ".claude" / "inflight.jsonl").write_text("".join(json.dumps(e) + "\n" for e in (
+            {"id": "prose-only", "what": "Ship the thing " + "p" * 480 + " PROSE-END", "on_done": "d", "at": "T", "kind": "owner-instruction"},
+            {"id": "says-owner", "what": "WAITS-ON-OWNER: owner approval needed for a routine tidy", "on_done": "OWNER says yes", "at": "T",
+             "kind": "routine"},
+            {"id": "note-card", "what": "NOTE: (card when back) choose A", "on_done": "d", "at": "T"},
+            {"id": "plain", "what": "plain routine job", "on_done": "d", "at": "T", "kind": "routine"})))
+        snap_dec = snapshot(payload, None, declared, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
+        pend = snap_dec.split("## Pending OWNER")[1].split("\n\n## Worktrees")[0]
+        allown = root / "allown"
+        (allown / ".claude").mkdir(parents=True)
+        (allown / ".git").mkdir()
+        (allown / ".claude" / "inflight.jsonl").write_text(json.dumps(
+            {"id": "only-owner", "what": "do it", "on_done": "d", "at": "T", "kind": "owner-instruction"}) + "\n")
+        snap_allown = snapshot(payload, None, allown, fake_run(), 1000.0, transcript_ok, asks_ok, nonce="N1")
+        case("⭐ r2: when every entry is an owner entry the in-flight block says so — it never claims 'none RECORDED'",
+             ("none RECORDED" in snap_allown, "1 owner entry listed whole under 'Pending OWNER decisions'" in snap_allown,
+              "2 owner entries listed whole under 'Pending OWNER decisions'" in snap_dec), (False, True, True))
+        out_dec = render_print(snap_dec, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        case("⭐ r2 R2-2: the snapshot's decisions are the DECLARED kinds: prose-only owner-instruction (whole, 480 characters) and "
+             "an undeclared `NOTE: (card …)` (the fallback) are in; a kind=routine entry that says 'owner' is not",
+             ("[prose-only]" in pend, "PROSE-END" in pend, "[note-card]" in pend, "[says-owner]" in pend, "[plain]" in pend,
+              "[prose-only]" in snap_dec.split("## Pending OWNER")[0]),
+             (True, True, True, False, False, False))
+        case("⭐ r2 R2-2: ...and the DIGEST (the print) shows the same whole decisions, and the routine entry is in the in-flight block only",
+             ("PROSE-END" in out_dec, "[note-card]" in out_dec, "[says-owner]" in snap_dec.split("## Pending OWNER")[0]), (True, True, True))
+        huge = snap_own.replace("TAIL0", "TAIL0" + "z" * 12000)
+        out_huge = render_print(huge, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        case("⭐ r2: past the harness's 10,000-character limit the print SAYS it is cut and names the file; routine headings go first",
+             ("TRUNCATED" in out_huge, "snapshot file" in out_huge, len(out_huge) <= PRINT_CAP,
+              "full: .remember/compaction/" in out_huge,
+              # r3 R3-4: ...and every owner entry the cut took is NAMED, not just "TRUNCATED" (the 12,000 z's sit in the first one)
+              all(f"ledger [own-{i:02d}]" in out_huge.split("NOT SHOWN")[0] or f"own-{i:02d}" in out_huge.split("NOT SHOWN")[-1]
+                  for i in range(15)) and "NOT SHOWN" in out_huge), (True, True, True, True, True))
+        # r3 R3-4: a cut inside the owner section NAMES every decision it dropped (the reviewer's input: the real ledger plus 12)
+        packed = root / "packed"
+        (packed / ".claude").mkdir(parents=True)
+        (packed / ".git").mkdir()
+        (packed / ".claude" / "inflight.jsonl").write_text("".join(
+            json.dumps({"id": f"pk-{i:02d}", "what": f"OWNER 10:{i:02d}: " + "i" * 420 + f" PKEND{i:02d}", "on_done": "d", "at": "T",
+                        "kind": "owner-instruction"}) + "\n" for i in range(30)))
+        snap_pk = snapshot(payload, None, packed, fake_run(), 1000.0, lambda p: ([], None, 0), asks_ok, nonce="N1")
+        out_pk = render_print(snap_pk, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        pk_ids = [f"pk-{i:02d}" for i in range(30)]
+        pk_shown = [i for i in pk_ids if f"ledger [{i}]" in out_pk.split("NOT SHOWN")[0]]
+        pk_named = [i for i in pk_ids if i in out_pk.split("NOT SHOWN")[-1]] if "NOT SHOWN" in out_pk else []
+        case("⭐ r3 R3-4: 30 owner decisions past the print limit: the print is within PRINT_CAP, every decision is shown OR named by id "
+             "(none in both, none in neither), and the count of the named is stated",
+             (len(out_pk) <= PRINT_CAP, 0 < len(pk_shown) < 30, sorted(pk_shown + pk_named) == pk_ids, set(pk_shown).isdisjoint(pk_named),
+              f"{30 - len(pk_shown)} OWNER decision(s) NOT SHOWN" in out_pk), (True, True, True, True, True))
+        crowded = snap_own.replace("## Worktrees (git worktree list)\n", "## Worktrees (git worktree list)\n"
+                                   + "".join(f"  line {i} {NC} " + "w" * 180 + "\n" for i in range(80)))
+        out_crowded = render_print(crowded, None, 1002.0, {"session": SID, "nonce": "N1", "epoch": 1000.0}, None, SID)
+        case("⭐ r2: when routine NOT CAPTURED lines crowd the print past its limit, the OWNER decisions are what stays (they come first)",
+             (all(f"TAIL{i}" in out_crowded for i in range(15)), "TRUNCATED" in out_crowded, len(out_crowded) <= PRINT_CAP),
+             (True, True, True))
+        case("⭐ r2 R2-2/R2-3: the PRINT shows the owner entries and the /compact instructions whole (decisions first), and stays under PRINT_CAP",
+             (all(f"TAIL{i}" in out_own for i in range(15)), "CUSTOM-END" in out_own, len(out_own) <= PRINT_CAP,
+              "full: " in out_own), (True, True, True, True))
         broken = snapshot(None, "payload is not JSON (x)", root, fake_run((4, "gh: auth required")), 1000.0,
                           transcript_ok, lambda r: (None, [], "FileNotFoundError: no store"), nonce="N1")
         case("⭐ every input that fails is a CANNOT RUN line in the snapshot — gh, the asks, the payload's transcript",
@@ -1210,6 +1451,34 @@ def _self_test_body() -> int:
         out = render_print(grown, None, 1200.0, R, None, "sess-1")
         case("⭐ the print stays under PRINT_CAP with a snapshot grown on disk past every cap",
              (len(out) <= PRINT_CAP, out.endswith("=== END COMPACTION STATE ===")), (True, True))
+        # ─── the print is a DIGEST (context floor): headings, NOT CAPTURED lines, the owner section, and the path ───
+        out = render_print(snap, None, 1200.0, R, None, "sess-1")
+        big_len = len(_strip_keys(snap_big).strip())
+        case("⭐ floor: the print is at most 75% of a full-size snapshot's own text, headings kept",
+             (len(render_print(snap_big, None, 1200.0, R, None, "sess-1")) * 100 <= 75 * big_len,
+              "## Worktrees" in out and "## Pending OWNER decisions" in out), (True, True))
+        case("⭐ floor: the print names the snapshot FILE that holds the whole text",
+             "full: .remember/compaction/sess-1/snapshot.md" in out, True)
+        case("⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and "
+             "prompts are what the summary garbles)",
+             ("ledger [walk-361]" in out, "36 unresolved ask(s)" in out, "pause and finish the guards" in out),
+             (True, True, True))
+        some_other = "\n".join(["# PRE-COMPACTION SNAPSHOT — t", "## Worktrees (git worktree list)", "  wt-a /x branch routine-body-line"])
+        case("⭐ floor: a body line of a section that is not the owner's is still left in the file",
+             "routine-body-line" in digest(some_other, "p"), False)
+        inst = "/compact instructions: keep PR #451 OPEN, do not merge it"
+        titled = digest("# PRE-COMPACTION SNAPSHOT — t\n" + inst + "\n\n## Worktrees\n  x", "q1/snapshot.md")
+        case("⭐ r1 F3: the /compact instructions line of the title block reaches the print, and the path given is the one printed",
+             (inst in titled, "full: q1/snapshot.md (every section, whole)" in titled), (True, True))
+        long_nc = "x" * 210 + f" {NC} — status unavailable"
+        cut = digest(f"# T\n\n## In flight\n{long_nc}\n## Worktrees\n  {long_nc}", "p")
+        case("⭐ r1 F5: a NOT CAPTURED line cut for width keeps its marker and what follows it, in a section body and a heading",
+             (cut.count(f"{NC} — status unavailable"), digest(f"# T\n## {long_nc}", "p").count(f"{NC} — status unavailable")),
+             (2, 1))
+        nc_lines = [ln for ln in _strip_keys(snap_big).splitlines() if NC in ln and not ln.startswith("#")]
+        out_big = render_print(snap_big, None, 1200.0, R, None, "sess-1")
+        case("⭐ floor: a line of the snapshot saying NOT CAPTURED still reaches the print",
+             (bool(nc_lines), all(ln.strip() in out_big for ln in nc_lines)), (True, True))
         out = render_print(None, "snapshot.md does not exist", 1200.0, R, None, "sess-1")
         case("⭐ a missing snapshot says NOT CAPTURED — never an empty block",
              f"{NC} — the snapshot is missing: snapshot.md does not exist" in out, True)
@@ -1244,12 +1513,20 @@ def _self_test_body() -> int:
         took_slow = time.monotonic() - t0
         case("⭐ a capture child that sleeps past the deadline is KILLED: the parent returns within deadline + 1 s",
              (rc_slow, why_slow, took_slow < 1.5), (None, "timed out after 0.5 s and was killed", True))
-        t0 = time.monotonic()
         gpid = root / "grandchild.pid"
-        rc_grand, _ = run_capture([sys.executable, "-c",
-                                   "import subprocess, sys, time; g = subprocess.Popen(['sleep', '30']); "
-                                   f"open({str(gpid)!r}, 'w').write(str(g.pid)); time.sleep(4)"], 1.0)
-        took_grand = time.monotonic() - t0
+        # #407: EVENT-ordered, not a fixed 1 s — the deadline starts at 0.3 s and doubles while the grandchild had not
+        # yet written its pid when the kill came (a slow start under load), so only a run where it WAS holding on counts.
+        # The child sleeps 6 s, just past the longest deadline (4.8 s): a mutant that disables the kill waits that out once per
+        # attempt, and 30 s there cost +19 s per such mutant (r1 L1).
+        for grand_t in (0.3, 0.6, 1.2, 2.4, 4.8):
+            gpid.unlink(missing_ok=True)
+            t0 = time.monotonic()
+            rc_grand, _ = run_capture([sys.executable, "-c",
+                                       "import subprocess, sys, time; g = subprocess.Popen(['sleep', '30']); "
+                                       f"open({str(gpid)!r}, 'w').write(str(g.pid)); time.sleep(6)"], grand_t)
+            took_grand = time.monotonic() - t0
+            if (_read(gpid)[0] or "").strip():   # its pid WRITTEN, not merely the file created when the kill came
+                break
         gone = False
         try:
             pid = int(gpid.read_text())
@@ -1265,7 +1542,7 @@ def _self_test_body() -> int:
         except (OSError, ValueError):
             pass
         case("...and a GRANDCHILD holding on (a stuck gh or git) dies with it: the group is killed, nothing is waited on",
-             (rc_grand, took_grand < 2.0, gone), (None, True, True))
+             (rc_grand, took_grand < grand_t + 1.0, gone), (None, True, True))
         left = root / "straggler.pid"
         rc_ok, _ = run_capture([sys.executable, "-c",
                                 "import subprocess; g = subprocess.Popen(['sleep', '30']); "
@@ -1300,12 +1577,12 @@ def _self_test_body() -> int:
         t0 = time.monotonic()
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "killed", stdin_text=json.dumps({"session_id": "S-kill"}), now=7000.0,
-                 capture_timeout=1.0, child=[sys.executable, "-c", "import time; time.sleep(4)"])
+                 capture_timeout=0.3, child=[sys.executable, "-c", "import time; time.sleep(4)"])
         took_hook = time.monotonic() - t0
         killed = _read(session_dir(root / "killed", "S-kill") / "snapshot.md")[0] or ""
         rk = read_receipt(session_dir(root / "killed", "S-kill"))[0] or {}
         case("⭐ the WHOLE PreCompact hook ends within its capture deadline + 1 s and writes THIS session's CANNOT RUN",
-             (took_hook < 2.0, "CANNOT RUN, capture timed out after 1 s" in killed, (_keys(killed) or {}).get("nonce") == rk.get("nonce"),
+             (took_hook < 0.3 + 1.0, "CANNOT RUN, capture timed out after 0.3 s" in killed, (_keys(killed) or {}).get("nonce") == rk.get("nonce"),
               "## In flight" in killed), (True, True, True, False))
 
         # main(), end to end in a temp root, and the hooks themselves.
@@ -1381,16 +1658,49 @@ def _self_test_body() -> int:
         case("read_payload refuses a payload over its cap BEFORE parsing it, from a pipe or a string",
              (read_payload('{"session_id": "' + "x" * 64 + '"}', cap=32), read_payload('{"a": 1}', cap=32)),
              ((None, "the payload is over 32 bytes — NOT READ"), ({"a": 1}, None)))
+        held = "⭐ a stdin held OPEN does not hang the PreCompact hook (read with a deadline)"
+        if real_time:   # the hook's REAL STDIN_WAIT; `read_payload on a held-open pipe` proves the read on 0.2 s
+            rfd, wfd = os.pipe()
+            t0 = time.monotonic()
+            try:
+                r = subprocess.run(["bash", str(hooks_root / ".claude" / "hooks" / "precompact-snapshot.sh")], stdin=rfd,
+                                   capture_output=True, timeout=60, cwd=hooks_root)
+            finally:
+                os.close(rfd)
+                os.close(wfd)
+            case(held, (r.returncode, time.monotonic() - t0 < STDIN_WAIT + 30), (0, True))
+        else:
+            skip(held)
+        # #407 r1 (M1): the HOOK's wiring of its stdin deadline, in EVERY run. `main` reads fd 0 for `left(STDIN_WAIT)`
+        # and no longer, so with its start set 0.6 s before HOOK_DEADLINE it must give up within ~0.1 s. The writer is
+        # closed at 3 s, so a `main` that waits on any other bound (2 s, 40 s) is red within 3 s, never hung.
+        import threading
         rfd, wfd = os.pipe()
-        t0 = time.monotonic()
-        try:
-            r = subprocess.run(["bash", str(hooks_root / ".claude" / "hooks" / "precompact-snapshot.sh")], stdin=rfd,
-                               capture_output=True, timeout=60, cwd=hooks_root)
-        finally:
-            os.close(rfd)
+        saved_fd0, wfd_open = os.dup(0), [True]
+
+        def close_writer():
             os.close(wfd)
-        case("⭐ a stdin held OPEN does not hang the PreCompact hook (read with a deadline)",
-             (r.returncode, time.monotonic() - t0 < STDIN_WAIT + 30), (0, True))
+            wfd_open[0] = False
+        closer = threading.Timer(3.0, close_writer)
+        try:
+            os.dup2(rfd, 0)
+            closer.start()
+            t0 = time.monotonic()
+            with redirect_stdout(io.StringIO()) as held_out:
+                main(["--snapshot"], root=root / "held", now=7100.0,
+                     started=time.monotonic() - HOOK_DEADLINE + PUBLISH_MARGIN + 0.1)
+            took_held = time.monotonic() - t0
+        finally:
+            closer.cancel()
+            if closer.is_alive():
+                closer.join()
+            if wfd_open[0]:
+                os.close(wfd)
+            os.dup2(saved_fd0, 0)
+            os.close(saved_fd0)
+            os.close(rfd)
+        case("⭐ #407: `main` reads a stdin held OPEN for only what is LEFT of the hook's deadline — fd 0, in-process",
+             (took_held < 1.0, "no payload on stdin" in held_out.getvalue()), (True, True))
         (hooks_root / "scripts" / "session-state.py").unlink()
         rc = subprocess.run([sys.executable, str(hooks_root / "scripts" / "compaction-state.py"), "--snapshot"],
                             input=b'{"session_id": "S-nostate"}', capture_output=True, timeout=60, cwd=hooks_root).returncode
@@ -1476,7 +1786,7 @@ def _self_test_body() -> int:
               "trigger manual · session A" in pa.getvalue(), "session B" in pa.getvalue()), (True, False, True, False))
         with redirect_stdout(io.StringIO()):
             main(["--snapshot"], root=root / "late", stdin_text=json.dumps({"session_id": "S-late"}), now=5003.0,
-                 capture_timeout=1.0, child=[sys.executable, "-c", "import time; time.sleep(4)"])
+                 capture_timeout=0.3, child=[sys.executable, "-c", "import time; time.sleep(4)"])
         case("⭐ the receipt is written FIRST and the old snapshot DELETED: a capture that then dies leaves only CANNOT RUN",
              ((read_receipt(late)[0] or {}).get("epoch"), "CANNOT RUN, capture timed out" in (_read(late / "snapshot.md")[0] or ""),
               "trigger unknown" in (_read(late / "snapshot.md")[0] or "")), (5003.0, True, False))
@@ -1542,9 +1852,9 @@ def _self_test_body() -> int:
         t0 = time.monotonic()
         with redirect_stdout(buf):
             main(["--print"], root=root / "slowaux", stdin_text=json.dumps({"session_id": "S-aux"}), now=8302.0,
-                 child=sleeper, aux_timeout=30.0, started=time.monotonic() - HOOK_DEADLINE + 1.0)
+                 child=sleeper, aux_timeout=30.0, started=time.monotonic() - HOOK_DEADLINE + 0.3)
         case("⭐ r4 X4-1: ONE absolute deadline from process start — a child given 30 s is killed when the HOOK's time is up",
-             (time.monotonic() - t0 < 2.0, "the print timed out" in buf.getvalue()), (True, True))
+             (time.monotonic() - t0 < 0.3 + 1.0, "the print timed out" in buf.getvalue()), (True, True))
         # ─── r3 XR4: a symlink anywhere in .remember/compaction/<sid> is refused, and nothing is written outside ──
         outside = root / "outside"
         outside.mkdir()
@@ -1572,21 +1882,16 @@ def _self_test_body() -> int:
             os.chmod(fake / f, 0o755)
         (root / "cr1").mkdir()
         saved_path = os.environ["PATH"]
-        os.environ["PATH"] = f"{fake}:{saved_path}"
-        try:
-            t0 = time.monotonic()
-            with redirect_stdout(io.StringIO()):
-                main(["--snapshot"], root=root / "cr1", stdin_text=json.dumps({"session_id": "S-cr1"}), now=8200.0)
-            took_cr1 = time.monotonic() - t0
-        finally:
-            os.environ["PATH"] = saved_path
 
-        def gone_pid(pid_file: Path) -> bool:
+        def gone_pid(pid_file: Path, within: float = 5.0) -> bool:
+            """Is the pid in `pid_file` gone within `within` s? Polled, so it returns the moment the process is gone: a
+            killed orphan is reaped by init, which lags under load (#407), and only a case that FAILS pays the wait."""
             try:
                 pid = int(pid_file.read_text())
             except (OSError, ValueError):
                 return False
-            for _ in range(30):
+            end = time.monotonic() + within
+            while time.monotonic() < end:
                 try:
                     os.kill(pid, 0)
                 except ProcessLookupError:
@@ -1594,10 +1899,61 @@ def _self_test_body() -> int:
                 time.sleep(0.05)
             os.kill(pid, signal.SIGKILL)   # never leave it running past the case
             return False
-        cr1_gone = gone_pid(straggler)
-        case("⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE",
-             (took_cr1 < CAPTURE_TIMEOUT + 1.5, "CANNOT RUN, capture timed out after 11 s"
-              in (_read(session_dir(root / "cr1", "S-cr1") / "snapshot.md")[0] or ""), cr1_gone), (True, True, True))
+        cr1 = "⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE"
+        if real_time:
+            os.environ["PATH"] = f"{fake}:{saved_path}"
+            try:
+                t0 = time.monotonic()
+                with redirect_stdout(io.StringIO()):
+                    main(["--snapshot"], root=root / "cr1", stdin_text=json.dumps({"session_id": "S-cr1"}), now=8200.0)
+                took_cr1 = time.monotonic() - t0
+            finally:
+                os.environ["PATH"] = saved_path
+            cr1_gone = gone_pid(straggler)
+            case(cr1, (took_cr1 < CAPTURE_TIMEOUT + 1.5, "CANNOT RUN, capture timed out after 11 s"
+                       in (_read(session_dir(root / "cr1", "S-cr1") / "snapshot.md")[0] or ""), cr1_gone), (True, True, True))
+        else:
+            skip(cr1)
+
+        # ─── #407: the same kill on an EVENT-ordered deadline, in every run ────────────────────────────────────────
+        # The property is that a call IN FLIGHT at the kill dies with the capture's group. The deadline starts at 0.5 s and
+        # DOUBLES while the event has not happened — gh had not yet written its straggler's pid when the kill came, as
+        # under heavy load — so the case asserts only on a run where the call WAS in flight, and never needs the 11 s.
+        ev_bin = root / "evbin"
+        ev_bin.mkdir()
+        ev_gh, ev_straggler = root / "ev-gh.pid", root / "ev-straggler.pid"
+        (ev_bin / "git").write_text("#!/bin/sh\nexit 128\n")
+        (ev_bin / "gh").write_text(f"#!/bin/sh\necho $$ > {ev_gh}\nsleep 60 >/dev/null 2>&1 &\n"
+                                   f"echo $! > {ev_straggler}\nsleep 60\n")
+        for f in ("git", "gh"):
+            os.chmod(ev_bin / f, 0o755)
+        ev_at, ev_root = None, None
+        os.environ["PATH"] = f"{ev_bin}:{saved_path}"
+        try:
+            for i, t in enumerate((0.5, 1.0, 2.0, 4.0, 8.0)):
+                for f in (ev_gh, ev_straggler):
+                    f.unlink(missing_ok=True)
+                ev_root = root / f"ev-{i}"
+                ev_root.mkdir()
+                with redirect_stdout(io.StringIO()):
+                    main(["--snapshot"], root=ev_root, stdin_text=json.dumps({"session_id": "S-ev"}), now=8210.0,
+                         capture_timeout=t)
+                try:
+                    int(ev_straggler.read_text())
+                except (OSError, ValueError):
+                    continue   # the event had not happened by the deadline: a longer one, never a verdict
+                ev_at = t
+                break
+        finally:
+            os.environ["PATH"] = saved_path
+        ev_gone = gone_pid(ev_straggler) if ev_at else False
+        try:
+            os.kill(int(ev_gh.read_text()), signal.SIGKILL)   # cleanup: under a mutant the gh itself outlives the kill
+        except (OSError, ValueError):
+            pass
+        case("⭐ r3 CR1 (#407, event-ordered): a gh IN FLIGHT at the capture's kill — its backgrounded sleep dies with the group",
+             (ev_at is not None, ev_at is not None and f"CANNOT RUN, capture timed out after {ev_at:g} s"
+              in (_read(session_dir(ev_root, "S-ev") / "snapshot.md")[0] or ""), ev_gone), (True, True, True))
         esc_bin = root / "escbin"
         esc_bin.mkdir()
         escaped = root / "setpgid.pid"
@@ -1661,6 +2017,46 @@ def _self_test_body() -> int:
         snapshot(payload, None, root, counting, 1000.0, transcript_ok, asks_ok, nonce="N1")
         case("⭐ r4 C4-F5: ONE capture asks git for the main checkout ONCE, and that answer heads and reads the ledger",
              asked.count("git rev-parse --path-format=absolute"), 1)
+        # #407 r1 (M2): what the real CR1 pinned only through the 11 s clock — a git that TIMES OUT does not end the
+        # capture, the gh after it is still made, and gh gets its own per-call deadline. The 8 is a LITERAL on purpose:
+        # CR1's gh had to be still in flight at the 11 s kill after a 3-5 s git, and a case comparing to GH_TIMEOUT
+        # itself could not see that constant shrink (r1: `GH_TIMEOUT = 1` survived under the marker, 100/100).
+        recorded = []
+
+        def recording(cmd, cwd, timeout=GIT_TIMEOUT):
+            recorded.append((" ".join(cmd[:3]), timeout))
+            if cmd[:2] == ["git", "rev-parse"]:
+                return 124, f"timed out after {timeout:.0f}s"
+            return fake_run()(cmd, cwd, timeout)
+        (root / "rec").mkdir()
+        snap_rec = snapshot(payload, None, root / "rec", recording, 1000.0, transcript_ok, asks_ok, nonce="N1")
+        case("⭐ #407: after a git that TIMED OUT the capture still asks gh, and gh is given its own 8 s, not less",
+             ([n for n, _ in recorded][:1], [t for n, t in recorded if n.startswith("gh ")], _keys(snap_rec) is not None),
+             (["git rev-parse --path-format=absolute"], [8], True))
+        # #407 r2 (Codex M1): the case above injects its runner into `snapshot()`, so it never passes through the CHILD's
+        # adapter onto session-state's `_run` — where a cap on gh's or git's timeout survived the marker, 106/106. This
+        # drives the real `--capture` child mode in-process, records what `ss._run` itself is handed, and asserts LITERALS:
+        # git's 3 s (session-state's own 10 s for its rev-parse), gh's 8 s after that git timed out, and the group kept.
+        ss_mod, adapter = _session_state(), []
+
+        def at_run(cmd, cwd, timeout=None, own_group=True):
+            adapter.append((" ".join(cmd[:3]), timeout, own_group))
+            if cmd[:2] == ["git", "rev-parse"]:
+                return 124, f"timed out after {timeout:.0f}s"
+            return fake_run()(cmd, cwd, timeout)
+        (root / "adapter").mkdir()
+        (root / "adapter-payload.json").write_text(json.dumps({"session_id": "S-adapter"}))
+        real_ss_run = ss_mod._run
+        ss_mod._run = at_run
+        try:
+            main(["--capture", "--payload-file", str(root / "adapter-payload.json"), "--out", str(root / "adapter-out.txt"),
+                  "--now", "1000.0", "--root", str(root / "adapter"), "--nonce", "N1"])
+        finally:
+            ss_mod._run = real_ss_run
+        case("⭐ #407 r2: through the CHILD's adapter, session-state's `_run` gets git 3 s (its rev-parse 10 s) and gh 8 s, in the group",
+             (sorted(set(adapter)), _keys(_read(root / "adapter-out.txt")[0] or "") is not None),
+             ([("gh pr list", 8, False), ("git rev-parse --path-format=absolute", 10, False),
+               ("git status --porcelain", 3, False), ("git worktree list", 3, False)], True))
         case("⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged",
              [l.strip()[:20] for l in snap_w.splitlines() if ("codex-r2" in l or "fix-TRUNCATED" in l) and NC in l], [])
         case("a missing or corrupt receipt is (None, why) — the print then says CANNOT RUN, never shows a file",
@@ -1689,6 +2085,107 @@ def _self_test_body() -> int:
              (count, [a["id"] for a in recent], err), (1, ["2026-10-28/1"], None))
         case("a missing dashboard store is CANNOT RUN for the asks, with the reason",
              (pending_asks(root / "nowhere")[0], "cannot be opened" in (pending_asks(root / "nowhere")[2] or "")), (None, True))
+
+        # ─── backlog #407: which cases wait on a REAL deadline, and where those still run ─────────────────────────
+        M = MUTATION_RUN_ENV
+        case("⭐ #407: the mutation-run marker leaves out the real-time cases ONLY when it is \"1\"",
+             safe(lambda: (real_time_cases({}), real_time_cases({M: "1"}), real_time_cases({M: "0"}),
+                           real_time_cases({M: ""}))), (True, False, True, True))
+        ci_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+        ci = safe(ci_path.read_text)
+
+        def wf(step_extra="", job_extra="", where=REQUIRED_JOB):
+            """A block-style workflow: the self-test step in job `where`, a step after it with its OWN `if:` (an
+            adjacent negative — only the self-test's step and job are judged), and a second job."""
+            return ("on: push\njobs:\n"
+                    f"  {where}:\n    runs-on: ubuntu-latest\n{job_extra}    steps:\n"
+                    "      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n"
+                    f"      - name: compaction-state self-test\n{step_extra}        run: {SELF_TEST_RUN}\n"
+                    "      - name: after\n        if: always()\n        continue-on-error: true\n        run: true\n"
+                    "  zz-other:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n")
+        case("⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere",
+             safe(lambda: (ci_runs_real_time(ci), ci_runs_real_time(ci.replace("run: python3 scripts/compaction-state.py "
+                                                                                "--self-test", "run: true")) is not None,
+                           ci_runs_real_time(ci.replace("run: python3 scripts/compaction-state.py --self-test",
+                                                        "# run: python3 scripts/compaction-state.py --self-test")) is not None,
+                           ci_runs_real_time(wf(f"        env: {{{M}: '1'}}\n")) is not None,
+                           ci_runs_real_time(wf()))), (None, True, True, True, None))
+        case("⭐ #407 r1: ...and refuses a self-test STEP that may not run or may not fail (`if:`, `continue-on-error`)",
+             safe(lambda: [ci_runs_real_time(wf(x)) is None for x in
+                           ("        if: false\n", "        if: ${{ always() }}\n", "        continue-on-error: true\n",
+                            "        continue-on-error: false\n")]), [False, False, False, True])
+        case("⭐ #407 r1: ...and a self-test JOB that may not run or may not fail",
+             safe(lambda: [ci_runs_real_time(wf(job_extra=x)) is None for x in
+                           ("    if: false\n", "    continue-on-error: true\n", "    timeout-minutes: 30\n")]),
+             [False, False, True])
+        case("⭐ #407 r1: ...and a self-test step in a job OTHER than the required one",
+             safe(lambda: (ci_runs_real_time(wf(where="mutation-sweep")) is None,
+                           ci_runs_real_time("on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n"
+                                             "      - run: true\n" + wf(where="mutation-sweep").split("jobs:\n", 1)[1])
+                           is None,
+                           ci_runs_real_time(wf().replace("  zz-other:", "  verify-extra:")) is None)),
+             (False, False, True))
+        matrix = ("on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        include:\n"
+                  f"          - name: compaction-state self-test\n            run: {SELF_TEST_RUN}\n"
+                  "    steps:\n      - run: echo no self-test\n")
+        case("⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs",
+             safe(lambda: (ci_runs_real_time(matrix) is None,
+                           ci_runs_real_time(matrix + f"      - name: compaction-state self-test\n        run: {SELF_TEST_RUN}\n")
+                           is None,
+                           ci_runs_real_time(matrix + f"      - name: nested\n        with:\n          run: {SELF_TEST_RUN}\n")
+                           is None,
+                           ci_runs_real_time(matrix + f"      - name: nested\n        with:\n          - run: {SELF_TEST_RUN}\n")
+                           is None)),
+             (False, True, False, False))
+        seen = []
+        marker_before = os.environ.get(M)
+        real_capture = globals()["run_capture"]
+        globals()["run_capture"] = lambda cmd, timeout: (seen.append(timeout), (None, "spied"))[1]
+        (root / "spy").mkdir()
+        os.environ[M] = "1"
+        try:
+            with redirect_stdout(io.StringIO()):
+                main(["--snapshot"], root=root / "spy", stdin_text=json.dumps({"session_id": "S-spy"}), now=9000.0)
+                main(["--print"], root=root / "spy", stdin_text=json.dumps({"session_id": "S-spy"}), now=9001.0)
+        finally:
+            globals()["run_capture"] = real_capture
+            if marker_before is None:
+                os.environ.pop(M, None)
+            else:
+                os.environ[M] = marker_before
+        case("⭐ #407: the marker never reaches a hook mode — with it SET, the capture child gets the REAL 11 s and the "
+             "print child 10 s", seen, [11.0, 10.0])
+        case("...and the spy leaves the marker as it found it, so the cases after it still run as the harness asked",
+             os.environ.get(M), marker_before)
+
+        def names_agree():
+            import importlib.util
+            import fixture_git
+            spec = importlib.util.spec_from_file_location("check_plan_code", Path(__file__).resolve().parent / "check-plan-code.py")
+            cpc = importlib.util.module_from_spec(spec)
+            sys.modules["check_plan_code"] = cpc   # its @dataclasses resolve through sys.modules (backlog #91)
+            spec.loader.exec_module(cpc)
+            return cpc.MUTATION_RUN_ENV, M in fixture_git.PROCESS_PASSED
+        case("#407: the marker is the one the harness sets (`check-plan-code.MUTATION_RUN_ENV`) and "
+             "`fixture_git.isolated()` passes through", safe(names_agree), (M, True))
+
+        # #407 r1 (L2): the spy above sees only what the PARENT hands `run_capture`; it never spawns a child mode, so a
+        # read of the marker in `_child` or `snapshot` is invisible to it. This makes "only the self-test reads it"
+        # mechanical: every function that names MUTATION_RUN_ENV, and every bare string spelling it.
+        # ⚠ BOUND: a name assembled at run time (`"PLAN_CODE_" + …`) or read through another module is not seen.
+        def marker_readers():
+            import ast
+            tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+            readers = set()
+            for top in tree.body:
+                where = top.name if isinstance(top, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<module>"
+                for n in ast.walk(top):
+                    if isinstance(n, ast.Name) and n.id == "MUTATION_RUN_ENV" and not isinstance(n.ctx, ast.Store):
+                        readers.add(where)
+            spelled = sum(isinstance(n, ast.Constant) and n.value == M for n in ast.walk(tree))
+            return sorted(readers), spelled
+        case("⭐ #407 r1: no hook mode can read the marker — only the self-test's two predicates and the suite name it",
+             safe(marker_readers), (["_self_test_body", "ci_runs_real_time", "real_time_cases"], 1))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0

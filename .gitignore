@@ -89,6 +89,13 @@ playwright/.auth/
 .claude/executing-plan
 .claude/executing-plan.state
 
+# The owner's override of the usage pacing gate (backlog #399, PR #446 r1 M2): an expiry epoch, read from the
+# MAIN checkout by scripts/check-usage-pace.py. Committed, it would override every clone and worktree on arrival.
+.claude/allow-spawn-over-limit
+# Which session was last told the usage cache is absent, so it is said once per session (same script).
+.claude/usage-pace-notice
+.claude/usage-pace-notice.*.tmp
+
 # Session plans written by scripts/begin-plan.py. Deliberately NOT in docs/superpowers/plans/:
 # that directory is the anchor registry's population (check-anchors.py globs it and requires a
 # Goal + Anchor header on every dated file) and it is the durable design corpus. A session to-do
@@ -187,3 +194,6 @@ docs/explainers/questions.md
 # SessionStart after a compaction. `.remember/` is ignored only by a global gitignore on one machine, so these
 # are named here too.
 .remember/compaction/
+# One JSON line per PreCompact decision from .claude/hooks/compaction-boundary.sh (backlog #440), so the
+# share of compactions the 1.5 x W ceiling forces can be measured (`check-compaction-boundary.py --summary`).
+.claude/compaction-boundary.log

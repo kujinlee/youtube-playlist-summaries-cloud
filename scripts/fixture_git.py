@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ONE owner for the environment a self-test fixture runs `git` in (backlog #373).
 
-    python3 scripts/fixture_git.py --self-test  # 42 cases
+    python3 scripts/fixture_git.py --self-test  # 43 cases
 
 ⛔ WHY THIS EXISTS. A fixture that builds a repository under a temp directory and runs `git` with the
 caller's environment is not working in that directory when the caller exported `GIT_DIR` (a git hook
@@ -62,8 +62,10 @@ ISOLATION = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_T
 ALLOWED_EXTRA = ("HOME", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
                  "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE")
 # isolated() only: what the interpreter of a self-test's OWN Python children needs. Never a git variable.
-# `PYTHONDONTWRITEBYTECODE` is a correctness setting of the mutation harness (`check-plan-code.child_env`).
-PROCESS_PASSED = ("PYTHONDONTWRITEBYTECODE", "PYTHONPATH", "PYTHONHASHSEED", "PYTHONUTF8", "PYTHONIOENCODING")
+# `PYTHONDONTWRITEBYTECODE` is a correctness setting of the mutation harness (`check-plan-code.child_env`), and
+# `PLAN_CODE_MUTATION_RUN` its marker that a suite runs under it (`check-plan-code.mutation_env`, backlog #407).
+PROCESS_PASSED = ("PYTHONDONTWRITEBYTECODE", "PLAN_CODE_MUTATION_RUN", "PYTHONPATH", "PYTHONHASHSEED", "PYTHONUTF8",
+                  "PYTHONIOENCODING")
 
 
 def env(**extra: str) -> dict[str, str]:
@@ -155,7 +157,7 @@ def _self_test_body() -> int:
                        GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_0="fixture.count", GIT_CONFIG_VALUE_0="1",
                        GIT_CONFIG_KEY_1="core.fsmonitor", GIT_CONFIG_VALUE_1=str(fsmon),
                        GIT_CONFIG_PARAMETERS="'fixture.params=1'", HOME=str(home),
-                       XDG_CONFIG_HOME=str(home / ".config"), PYTHONDONTWRITEBYTECODE="1")
+                       XDG_CONFIG_HOME=str(home / ".config"), PYTHONDONTWRITEBYTECODE="1", PLAN_CODE_MUTATION_RUN="1")
         try:
             os.environ.update(planted)
             e = env()
@@ -217,6 +219,8 @@ def _self_test_body() -> int:
                      (os.environ.get("HOME") != str(home), sorted(os.listdir(os.environ["HOME"]))), (True, []))
                 case("...and the interpreter's own settings kept (PYTHONDONTWRITEBYTECODE)",
                      os.environ.get("PYTHONDONTWRITEBYTECODE"), "1")
+                case("...and the mutation harness's run marker kept (PLAN_CODE_MUTATION_RUN, backlog #407)",
+                     os.environ.get("PLAN_CODE_MUTATION_RUN"), "1")
                 child = subprocess.run([sys.executable, "-c", "import os; print(os.environ.get('GIT_DIR'))"],
                                        capture_output=True, text=True).stdout.strip()
                 case("⭐ a child launched with NO env= inherits the isolated environment", child, "None")

@@ -15,15 +15,17 @@ Immediately after saving the plan document, create these items with `TaskCreate`
 
 ```
 [ ] Run the dual adversarial review of the plan (Codex + Claude, independent)
-[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence
+[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence or the
+      round cap (review-method.md §0 Q4c — from round 4 findings are FILED unless a BLOCKER)
 [ ] Address all Blocking/High; record Medium/Low dispositions in the review doc
 [ ] Convergence reached — a full re-review round with no new Blocking/High?
       YES → notify the human (PushNotification) and PROCEED to implementation.
-      NO, or a goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
+      NO at round 3 → FILE the rest per §0 Q4c, notify, and PROCEED.
+      A goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
 [ ] Clear sentinel: rm .claude/plan-gate-pending  (if sentinel exists from the write hook)
 ```
 
-**Rule (Conditional AFK):** the plan gate is **convergence**, not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: review cannot converge, an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (deploy, or a merge that `check-merge-ready.py` HOLDs — the house rule of 2026-10-25: merge when READY). Never mark a "wait for human" step complete speculatively.
+**Rule (Conditional AFK):** the plan gate is **convergence or the round cap** (`review-method.md` §0 Q4c), not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: a BLOCKER needs a decision (§0 Q4c), an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (deploy, or a merge that `check-merge-ready.py` HOLDs — the house rule of 2026-10-25: merge when READY). Never mark a "wait for human" step complete speculatively.
 
 **Why both hook and task list?** The hook (PreToolUse on Agent) is a machine-enforceable backstop — it blocks subagent dispatch while the sentinel file exists; clear the sentinel only once the gate is satisfied (convergence, or a human decision when one was actually needed). The task list is the human-readable contract for what must happen first. Neither is sufficient alone.
 
@@ -81,6 +83,39 @@ guard. **Commit the fix before mutating** (`git checkout` also reverts an uncomm
 member behind a cast, so behavioural tests are the only net there.
 *(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
 
+**The plan-leak push gate (backlog #393, 2026-10-29).** Plans under `.claude/plans/` stay private and
+the repo is public (backlog #194), so git's own pre-push hook (`.githooks/pre-push` →
+`scripts/check-plan-leak.py --pre-push`) refuses a push when any commit it sends adds eight consecutive words
+of a checkout's plan objective or list item, consecutive added lines joined, unless those eight words are
+already on the remote. It reads what git says is sent (every ref, every commit in the range), so the
+command's form does not matter. CI has no plans (a zero over nothing), so CI runs only its `--self-test`.
+- **Commit messages, annotated tags (peeled, a tag of a tag included) and ADDED file names (empty files too)
+  are pushed text**, and are scanned the same way.
+- **Enabled per clone** by `scripts/install-git-hooks.sh` (sets `core.hooksPath` to the MAIN checkout's
+  `.githooks` as an ABSOLUTE path, so every worktree and `git --git-dir=… push` from any directory runs the
+  same hook — a relative path resolved from the caller's directory and pushed unchecked, PR #443 r2; refuses
+  to replace another hooks path), which the SessionStart hook `.claude/hooks/ensure-plan-leak-hook.sh` runs
+  when the path is unset or relative — and when it points ELSEWHERE, warns LOUDLY that the gate is OFF and
+  changes nothing. `--status` says whether it is active — a MAIN checkout on a branch older than
+  `.githooks/pre-push` leaves the whole clone unchecked, and a moved clone's stale path reads as ELSEWHERE.
+- **The agent push hook refuses the off-switches** it can see: a push command whose raw text mentions
+  `hookspath` or `ALLOW_PLAN_LEAK` anywhere (casefolded, quotes and backslashes deleted — deliberately not a
+  parser) is denied without the owner's `ALLOW_DANGEROUS_PUSH=1`. It reads command text, so it is defence in
+  depth only; the pre-push hook owns the decision. Its filter is `if: Bash(*push*)` (a `git push*` filter
+  cannot match `git -c … push`); verified empirically on Claude Code 2.1.309 to fire on every push form
+  tried and not on `ls`/`pwd`, so a non-push Bash call costs **0 ms**. A command containing `push` pays the
+  hook's own run: median **31 ms** (50 runs through `run-hook.sh`, p90 39 ms, on a loaded machine). Known, OUT-OF-SCOPE evasions (a fourth security pass, declined deliberately): shell expansions (`$'…'`, `${…}`), config includes (`include.path`, `includeIf`) and `GIT_CONFIG_*` set outside the command reach `core.hooksPath` without the word appearing; they are deliberate, never accidental, and the pre-push hook plus the SessionStart status check own the decision.
+- ⛔ **The gate prevents ACCIDENTAL publication. It is not a boundary against a determined agent:** anything
+  with a shell can bypass git hooks (`--no-verify`, another clone, plumbing such as `git send-pack`).
+- **hits → the push is refused**, naming `path:line`, the commit and the plan FILE, never the words, in every
+  channel. The owner sees the words with `python3 scripts/check-plan-leak.py --show` in a terminal (it
+  refuses a non-terminal stdout). Reword the commit; a judged coincidence is pushed with
+  `ALLOW_PLAN_LEAK=1 git push …` (the environment, not the command text).
+- **no plan files (a fresh clone) → allowed, with a NOT RUN warning. Any other CANNOT RUN (git, the remote
+  or plan discovery failed) or a crashed checker → refused.**
+- Bounds: ⛔ **a plan fragment shorter than 8 consecutive words is not caught** (the owner's window,
+  2026-10-29); a plan's headings and paragraphs are not plan text. By hand:
+  `python3 scripts/check-plan-leak.py --base B --head H` (exit 0/1/2/3).
 **Local gates are SCOPED; the full runs are CI's (backlog #402, the split backlog #208 made for the
 mutation sweep).** Before a push, run `python3 scripts/check-selftest-counts.py --changed` (against
 `origin/master` by default), not the bare command: it runs only the pinned suites the branch can have
@@ -152,7 +187,19 @@ A reused agent's context only grows, and every wake-up after an idle wait re-wri
 
 **The coordinator** is NOT reset per PR. Re-reading its context is cheap, and a reset costs a rebuild, about ten turns of re-orientation, and lost nuance while the compaction restore is broken (backlog #396). It restarts (handoff, then `/clear`) only at a natural pause when the owner is present, such as the start of a day.
 
-**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`; backlog #399 builds the pacing hook that reads it.
+**Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`, and the pacing hook (backlog #399) reads it. At **80%** weekly every prompt carries a one-line WARN with the reset time, shown to the owner too; at **90%** a NEW subagent spawn is denied, and so is a `SendMessage` the main session sends to wake an agent (one a subagent sends, a report, is allowed: the hook reads the caller's `agent_id`, never the recipient's name; work in flight continues). The owner's override is `ALLOW_SPAWN_OVER_LIMIT=1` at launch, or an EXPIRY epoch in the main checkout's `.claude/allow-spawn-over-limit` (gitignored); the deny's user-facing message prints the two-hour one-liner, and the agent is never told it. A stale or malformed cache is a loud CANNOT RUN on every prompt, naming the file; an absent one is said once per session; neither blocks anything. The rules live once, in `scripts/check-usage-pace.py`.
+
+**Every optimization adopted for token usage or speed has a row in [`docs/optimization-register.md`](optimization-register.md) BEFORE adoption** (benefit, realistic risk, the signal that it is materialising, the revert path, when to re-evaluate; owner, 2026-11-01).
+
+## Dispatched work must report in-turn (added 2026-10-30, backlog #410)
+
+**Why, measured.** On 2026-10-30 three pieces of work stalled for hours unseen: PR #442's fold was committed and not pushed for about 10 h, PR #443 had 8 commits unpushed for about 5 h, and PR #440's round-3 review was written at 07:15 and never folded. Each agent's last message promised a report "when my background job finishes"; none came.
+
+1. **An agent never ends its turn waiting on a background job.** It runs long jobs in the FOREGROUND with a bounded timeout, and sends ONE final report when everything is done.
+2. **The coordinator's "Waiting" line comes from `scripts/check-stalled-work.py`, with ages** — never from an agent's promise. The UserPromptSubmit hook `.claude/hooks/stalled-work.sh` adds its STALLED lines to the coordinator's context when there are any.
+3. **A dispatched agent's final report is sent with `SendMessage`, because plain output is not delivered to the coordinator** (seen by two stalled folds on 2026-10-30, backlog #410). The agent runs in the foreground with no Monitor, then sends ONE report. Put this line in every brief.
+
+**What makes it FAIL — the observation:** a "Waiting on …" line for an item the check reports STALLED, with no age quoted. Rule 1 is enforced by nothing; rule 2's check is a script, the quoting is a convention.
 
 ## TDD Policy
 
@@ -1076,3 +1123,76 @@ the weakest mechanical shape: *declare a freeze* is a per-PR judgement, and *no 
 in comments* is partly checkable and partly not. Treat them as what they are — advice with a
 measured cost attached — not as gates.
 
+
+---
+
+## Mechanically enforced checks — the full rows
+
+*Moved verbatim from the always-loaded `docs/dev-process.md` on 2026-10-31 to cut the text re-sent on every turn. The rule itself still stands there as one line; this is its full account. Edit the rule there and the account here — never restate the account back into the spine.* The spine's table under *What is mechanically enforced* keeps one line per row and points here.
+
+| Check | Enforces |
+|---|---|
+| `.claude/hooks/block-default-branch-push.sh` | TWO push rules, one hook (THREE since 2026-10-29, below) — the filename is now narrower than the content and is kept only because five MERGED review docs cite it. (1) no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`). (2) ⟳ 2026-09-05: no bare `--force`/`-f` and no `--no-verify` on ANY branch (escape: `ALLOW_DANGEROUS_PUSH=1`, deliberately a SEPARATE flag — authorising a force-push is not the same decision as authorising a push to master). `--force-with-lease` is ALLOWED: denying the safe form would drive people to the dangerous one. Gating every feature-branch push was considered and REJECTED — a prefix everyone types past is worse than none. `--self-test`: 9 cases at its first (25 with rule 3), all four mutations killed via the case each names ⟳ 2026-10-29: plan leaks are git's own `.githooks/pre-push` → `scripts/check-plan-leak.py --pre-push` (backlog #393), not a hook here — no pushed commit may add 8 consecutive words of a gitignored plan, ⚠ a shorter fragment is not caught; enabled per clone by `scripts/install-git-hooks.sh`, which a SessionStart hook runs (or warns LOUDLY); CI has no plans. RULE 3 here refuses an agent push whose text mentions `hookspath` or `ALLOW_PLAN_LEAK` without `ALLOW_DANGEROUS_PUSH=1` (defence in depth; filter `if: Bash(*push*)`, verified to match every push form, 0 ms on other calls); detail in [`process-checklists.md`](process-checklists.md) → *The plan-leak push gate* |
+| `.claude/hooks/enforce-selection-card.sh` + `scripts/check-selection-card.py` | an option list follows `portable-practices` §19 — letters, ONE leading `(Recommended)` placed first, a question-shaped last option — refused at the point the card is offered. ⟳ 2026-09-10: the rule was written in §19 and two memory files and still went **1-for-3 in one session**, because it was recalled rather than read. ⚠ SHAPE ONLY: it cannot see two options that are the SAME WORK, which is the defect §19 exists for, and the block message says so |
+| `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
+| `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt whenever one of its FIVE sources changes — it is derived, so it is never edited by hand (`/goals`; ADR-0010) |
+| `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
+| `.claude/hooks/enforce-handoff-path.sh` + `scripts/check-handoff-path.py` | a session handoff is written where the SessionStart hook reads it — blocks `/handoff` if a vendor update reverted the skill's save path (`--self-test`: 10 cases) |
+| `scripts/check-schema-gates.sh` | **one command for all THIRTEEN schema gates** — run this, not the pieces |
+| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated. ⟳ 2026-09-04 (architecture review #7, finding 4): this row claimed enforcement while `ci.yml` referenced it **zero** times. ⟳⟳ CORRECTED SAME DAY, by CI going red: I then claimed the guard "never uses" the Postgres it was gated behind. **False** — it imports `read_catalog`, and my evidence was taken on a machine with the container running. Its `--self-test` (pure rules) now runs in CI; the catalog-reading run stays in `check-schema-gates.sh` |
+| `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
+| `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol. ⟳ 2026-09-04: same finding, and the sharper half — *one mechanism per concern* IS architecture review #7's findings 1 and 2, so the guard for that class was the one CI could not see. ⟳⟳ Its **rules** are pure (`:125`) and now run in CI as a `--self-test`; its **entry point** needs the catalog, which the first attempt at this row got backwards |
+| `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
+| `scripts/check-ratchet-contract.py` | every guard ON DISK has a `--self-test`, no fail-open handler, and **a caller** — or a written `NO-CALLER:` reason. ⟳ 2026-08-30: the population is the FILESYSTEM; CI-step discovery saw 14 of 24 and missed all three guards that nothing ran, one of them listed in THIS table (`--self-test`: 21 cases) |
+| `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 32 cases). ⟳ r12: this row said 9 and, worse, listed the script as *mechanically enforced* while **nothing executed it** — it is now gate 15 of `scripts/check-schema-gates.sh` |
+| `scripts/check-function-revokes.py` | every newly created `public` function revokes PUBLIC in its own migration — **`alter default privileges` CANNOT do this** (measured 2026-08-28: stored entries are additive to PostgreSQL's built-in `PUBLIC` EXECUTE), so the per-function revoke is the only mechanism that works (`--self-test`: 16 cases) |
+| `scripts/check-python-pin.py` | ⟳ 2026-09-17: **every CI job pins the Python interpreter, the pins agree, and in CI the pin TOOK EFFECT** — `ci.yml` ran bare `python3` **45 times** in the required check and never called `setup-python`, so a runner-image bump could change every guard's behaviour with no commit. ⚠ The rule is *every job pins or is exempt with a reason*, NOT *jobs that run python*: the `schema-gates` job invokes the gates through a shell script and contains no literal `python3`. Locally a mismatch is ADVISORY (a gate red from birth gets switched off — backlog #56); in CI it FAILS. Found by CI and a dev machine disagreeing about the same commit (`Path.is_file()` raises ENAMETOOLONG below 3.13, returns False above) |
+| `scripts/check-docs.py` | documentation integrity |
+| `scripts/check-memory-index-budget.py` | ⭐ **the always-loaded memory index FITS the harness's injection budget — the one quantity that decides whether a row ARRIVES, and nothing measured it.** Measured 2026-10-19: `MEMORY.md` stood at **26,930 characters against a 24,985-character limit**, so **8 of its 145 rows were silently dropped on every load** while `check-memory-link.py`, `recall-llm.corpus_verdict` and `check-docs.py`'s line budget were ALL green — the link guard asks whether the corpus is REACHABLE, this asks whether the index ARRIVES. Fails over budget, WARNS at 90%, and names the remedy (move history rows to the triggered `slice-history.md` entry) in the message. ⛔ **CHARACTERS, not bytes, and that took two rounds** — the harness's reported `26.3KB` is chars/1024 (26.30), not bytes/1024 (27.15), and r1 CLAUDE read the cut point out of its OWN injected context at char 24,958 / byte 25,771. Counting bytes could only ever fire EARLY, never produce a false green, but the suite and the manifest had pinned the wrong unit as the invariant — a mutation entry whose job was to forbid the right answer. ⚠ The UNIT is measured; the ALGORITHM (strict prefix vs row-wise) is **NOT VERIFIED** and the docstring says so. ⚠ Row LENGTH is deliberately not enforced: 35 of 145 rows exceed the harness's own ~200-char suggestion, and a gate red from birth on a quarter of its subject gets switched off (backlog #56). ⚠ NO COUNTS QUOTED HERE ON PURPOSE — this row shipped saying "42 cases, 12 mutations" and both were stale within twenty minutes. The script declares its own case count and `check-selftest-counts` verifies it by running it; `EXPECTED_MUTATIONS` pins the manifest |
+| `scripts/check-backlog-closure.py` | ⭐ **the INVERTED direction (backlog #98)** — every other backlog rule compares a row to ITSELF (marker vs status), so a stale row agrees with itself and disagrees only with **git**; five shipped that way, none caught by a machine. Reads merged subjects, warns when a row they close lacks `✅`. **WARN-ONLY** by backlog #56's measured verdict (a blocking gate on a docs-only mismatch gets switched off); exits **2** only on CANNOT RUN — shallow clone, no git, or ZERO closing tokens. ⚠ Keys on `(backlog #N)` at the **subject TAIL**: measured, ANY-occurrence matched 18 ids and would have fired on **10**, the tail rule 7 and fired on **1** — a true positive. `--self-test`: 20 cases |
+| `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so. Reads the flat layout AND `docs/reviews/<writer>/`, refusing a basename filed in both (`--self-test`: 27 cases). ⟳ 2026-09-04: this row said **14** while the suite ran **22** — a third declared-count drift, caught by `check-selftest-counts.py` only because backlog #92 happened to touch the file |
+| `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to, by a name that survives a rename (ADR-0010; registry `docs/anchors.md`; `--self-test`: 15 cases) |
+| `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; page-producing skills cite it, never restate it (`--self-test`: 8 cases) |
+| `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
+| `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
+| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
+| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
+| `scripts/check-plan-code.py` | **`--mutate .` is what CI runs** (backlog #70, 2026-08-29). ⛔ **2026-10-25, the owner: the FULL sweep is CI's, on shards; locally it is PARTIAL** — off CI, `--mutate` times each target's control and REFUSES a run estimated past 10 min (`--allow-long-local` lets THAT one run through; it cannot persist); `--only <script>` is the local diagnostic (backlog #208). Open the PR as a DRAFT at slice start so the sweep runs there — a draft asserts nothing about readiness. every mutation in `scripts/mutations/*.json` is applied to the DELIVERED scripts and must go red **via the case it names**, over a control proved green first. Coverage cannot shrink — `EXPECTED_MUTATIONS` pins it, and duplicate names/anchors are refused. ⟳ 2026-08-30: every spawned suite runs under a **redirected `HOME`**, so a mutation cannot reach the reader's live pages under `~/explainers/` — structural, not per-entry, because the per-entry version had already failed once. ⟳ 2026-09-08: `<plan>`/`--evidence`/`--compare`/`--verify-evidence` — **PLAN MODE — are RETIRED and now REFUSE with rc=2** naming the retirement; superseded by `--mutate .` (PR #176), which measures the shipped code rather than a document's copy of it. Refused, not deleted, so an old invocation gets a sentence instead of argparse's "unrecognized arguments" (`--self-test`). ⟳⟳ 2026-09-09 (PR 2 of 2): **the refusals stay; the CODE BEHIND THEM IS NOW DELETED** — 7 functions, 7 constants and 143 cases, `3,607 → 1,983` lines. `EXPECTED_MUTATIONS` for this file falls **44 → 23** and the declared sum **392 → 371**, which is the ONE permitted kind of fall: 20 anchors stop resolving because the code they name is gone, so the entries are *retired with their subject* rather than orphaned, recorded at both sites with the count and the reason. ⟳ 2026-09-07: the harness stages `HARNESS_TREE`, not `scripts/` alone — four guards resolve their SUBJECT from the repo root, so a scripts-only tree gave each a red control and left them unmanifested for weeks. ⚠ That tuple is **not** a containment boundary and reading it as one is what cost the four: `copytree` yields a COPY, and the boundary is `child_env`'s `$HOME` redirect above |
+| `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag. Retiring plan mode removed the ONLY reader of the `<!-- file: … -->` grammar, so "no plan embeds code" went from enforced to merely true — measured 2026-09-08 as 0 across 1,115 documents, and an empty corpus is **CANNOT RUN**, because a zero over nothing is not a finding. Prose ABOUT a tag (13 documents, all backticked) must keep passing; a bare substring test breaks every one of them, which `plan-mutation-retarget-r1` already paid for. ⚠ The fence rule is `extract`'s own, taken by RUNNING it: v1 reasoned about the parser instead, and its first live run flagged a committed review doc the parser had never seen (`--self-test`: 21 cases) |
+| `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
+| `.github/workflows/schema-gates.yml` | ⟳ 2026-09-13: **the fifteen schema gates, in CI**, on a database built in a container by `scripts/ci/start-schema-db.sh` (27 migrations + 3 fixtures). ⟳ 2026-09-16 (backlog #137): **NO path filter — it runs on EVERY PR, so the check always reports and can therefore be REQUIRED.** A workflow-level `paths:` filter meant the context never appeared on a docs-only PR, and a required check that never reports leaves a PR *pending forever*; measured, the filter also protected nothing (median 110s beside a 516s `verify`, finishing first in all ten paired runs). ⚠ **Requiring the context is a repo SETTING and must land AFTER this** — the reverse order blocks every docs-only PR. Its `prod-drift` job is the only SCHEDULED gate — production drift is the one subject no push corresponds to. Runs `scripts/check-storage-independence.py`, which holds the fixture to its own claim: it parses with `ast` and derives its file set, because the `grep` it replaced survived 3 of 5 mutations |
+
+---
+
+## Session handoff — the three layers
+
+*Moved verbatim from the always-loaded `docs/plugins.md` on 2026-10-31 to cut the text re-sent on every turn. The rule itself still stands there as one line; this is its full account. Edit the rule there and the account here — never restate the account back into the spine.* The RULE box stays in [`plugins.md`](plugins.md) → *Session Handoff*.
+
+**⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
+`$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the
+resume that found it, is in [`process-rationale.md`](process-rationale.md) → *The handoff with no reader*.
+
+⚠ A vendored edit is reverted by `npx skills@latest add mattpocock/skills`, so **it is the weakest of
+three layers, not the mechanism:**
+
+| Layer | Where | Survives a vendor update? | Fires |
+|---|---|---|---|
+| **1 — Authority** | the RULE box above [moved from `plugins.md`; "above" and "this file" mean `plugins.md`] (`CLAUDE.md` imports this file; instructions beat skills) | ✅ | every session, as context |
+| **2 — Leading gate** | `scripts/check-handoff-path.py` + `.claude/hooks/enforce-handoff-path.sh` (PreToolUse on `Skill`) | ✅ | at `/handoff` invocation, **before** anything is written |
+| 3 — Convenience | `.agents/skills/handoff/SKILL.md` | ❌ reverted | n/a |
+
+**Layer 2's falsifier:** `.agents/skills/handoff/SKILL.md` stops naming `.remember/remember.md` →
+`check-handoff-path.py` exits **1** and the hook **blocks the skill with the correct path in the
+error**. Mutation-tested 2026-08-27: reverted → `rc=2` (blocked); restored → `rc=0`; an unrelated
+skill under the same reversion → `rc=0`, no collateral block. `--self-test` covers 10 cases including
+both near-misses (`.remember/handoff.md`, bare `remember.md`) and CANNOT-RUN on a missing or empty
+file. Run `python3 scripts/check-handoff-path.py --self-test` after touching it.
+
+⚠ **What layer 2 does NOT do, stated rather than hidden:** it guards the *instruction*, not the
+outcome — it cannot observe where the file actually lands. The lagging check still has a job: **if a
+resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, something wrote one anyway.**
+
+⛔ **Same layer-3 logic applies to a repaired plugin COMMAND: re-author it under
+`.claude/commands/`, never patch the vendored copy** (`.claude/commands/clean_gone.md` is the
+worked example). ⚠ That directory is a real git checkout whose `.gitignore` is a bare `*`, so
+`git status` there answers "clean" about a file it cannot see — measured 2026-09-02, **backlog #86**.

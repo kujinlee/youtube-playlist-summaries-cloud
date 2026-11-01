@@ -18261,6 +18261,29 @@ since the two windows held different work. CI's median per run grew from 4.5 to 
 the mutation sweep growing inside one job, and nothing flagged it. Backlog #397 proposes a tripwire that would catch
 that kind of drift in the week it happens.
 
+## 2026-10-29
+Every backlog item now says what kind of work it is — a story, a task or a defect — as you decided
+on the roles review page. Where an item is part of a bigger one, it says so, and the backlog page
+links to that parent. Nothing is guessed: an item with no kind is reported, and a kind the page
+doesn't know, or a link to an item or goal that doesn't exist, stops the page from being built.
+
+All 348 items are labelled. A decision is a task that is waiting on you; adding missing tests is a
+task, unless something was claimed to be true and wasn't. This also answers your old question in
+backlog #90 about splitting stories from tasks.
+<!--tech-->
+Backlog #394. The kind and the parents are a marker at the END of the Item cell —
+`⟦kind: task · part of: backlog #17 · epic: <anchor>⟧` — read by `gen-backlog-page.kind_mark` inside
+the one parser. Unknown kind or malformed marker → `ShapeError` (refused by the page and by
+`check-features`); a parent naming a missing row or an unregistered anchor → refused by both
+(`parent_errors`); no kind → reported (`missing_kind_notes`, a page drift note and a check-features
+warning). The Bundle (tag) cell is untouched, so a kind is never an area. Retagged from the first-pass
+proposal; #210 and #251 moved defect → task by ruling 3; parent links #64 → #59 and #372 → #369 not
+written (absorption and provenance, not parentage).
+`check-reference-namespace.py` gains ONE exemption, approved by the owner on 2026-10-29: an added line
+that is byte-identical to a removed line once its kind marker is removed by `kind_mark` is not judged.
+The 306 old bare references that the retag resurfaced are queued as backlog #395, to be qualified by
+evidence.
+
 ## 2026-10-30
 **Usage limit:** for several weeks the weekly limit has stopped all work for about a day. Measured over the 24 hours
 before the latest halt, and weighted by token type, **reused long-lived agents spent about 70% of the usage**, mostly
@@ -18306,6 +18329,238 @@ The dev-speed page now answers the owner's questions about the mutation sweep:
 It also records a correction: one line had said an item "is filed" before it was.
 
 ## 2026-10-30
+Work that has quietly stopped is now shown, with how long it has been stopped. Earlier today three
+pieces of work sat for hours (a fix committed and never pushed, eight commits waiting, a review never
+acted on) while every status line said "waiting". A new check reads git, GitHub and the review files
+directly, so it does not rely on anyone remembering to report, and the coordinator sees its warnings
+at the start of each turn. Agents are now told to finish their long jobs before they stop, and to
+send one report.
+Its warning shows at most eight items, the most urgent first, and one line saying how many more
+there are and how to list them all. It is measured fresh on every message (about a second and a half
+here); reusing the answer for ten minutes was tried, needed two rounds of fixes, and was split out.
+<!--tech-->
+Backlog #410: `scripts/check-stalled-work.py` (commits on no remote past 30 min; a draft PR whose head
+commit is over 3 h old; a review half with no coordinator doc at its round), rc 0/1/2. Wired as a
+UserPromptSubmit hook, `.claude/hooks/stalled-work.sh`, and stated in `docs/process-checklists.md` →
+*Dispatched work must report in-turn*. The hook block is capped at 8 item lines plus a summary
+(the CLI is not). No cache: the hook measures on every prompt (a per-session facts cache is preserved on
+the branch `stalled-work-cache`, filed as its own backlog row). The whole check runs
+inside one 15 s deadline, and a branch is called merged only when every commit's exact change is on master.
+
+## 2026-10-30
+The slowest check in the repository got about seven times faster. The test suite of the guard that
+checks every script's `main()` can be driven from its own tests used to take about 68 seconds on a
+laptop. That one suite was two thirds of all the work in CI's mutation sweep, because the sweep runs
+it once for every one of its mutations. It now takes about 8 seconds and gives the same answers.
+<!--tech-->
+Backlog #401. `scripts/check-main-drivable.py` gains `_memo_by_node`, a cache keyed on the
+identity of a helper's AST arguments. Each entry holds those nodes, so no id can be reused while it
+exists, and the answer it hands back is frozen. It wraps `_all_functions`, `note_globals_imports`,
+`_own_scope`, `_bound_values`, `_defs_in_scope` and a new per-tree `_class_methods` behind
+`_resolve_callee`. `_parents` already had its own cache. The memo is capped at `_MEMO_MAX` (64)
+entries per helper, least recently used first out, because `check-fixture-git-isolation.py` calls
+`suite_entries` directly and never reaches `assess()`. Asking about 20,000 discarded trees used to
+keep about 30 MB; it now keeps 0.1 MB. A tree must not be edited once a memoised helper has seen it.
+There are seven new cases and the suite now has 445. Eleven new mutation entries take
+`EXPECTED_MUTATIONS` from 183 to 194 and the declared sum from 2538 to 2549. One anchor moved: the
+r9 nested-class entry now points into `_class_methods`.
+
+## 2026-10-30
+The mutation-testing check in CI was nearly running out of time again: its slowest piece took 29
+of its 30 allowed minutes. It is now split into 24 pieces instead of 12, which should bring the
+slowest one to about 18 minutes. That figure is a prediction until this branch's own CI run
+measures it. Most of the time goes to one check. It is filed as its own item, because adding more
+pieces does not fix it.
+<!--tech-->
+`mutation-sweep` matrix 12 -> 24 (backlog #231 reopened: its 1,500 s trigger fired again). Measured
+on run 40799920596 (`fea33073`): slowest shard 1758 s, 1.02x inside `timeout-minutes: 30`. Per-target
+cost re-derived from CI log timestamps: 12,965 s of mutation work, 309 s control floor per shard;
+`check-main-drivable.py` is 68% of the work (backlog #401). Predicted at N=24: slowest ~1,055 s, 1.71x.
+
+## 2026-10-30
+**Usage pacing is now automatic.** Every prompt checks the weekly usage the statusline caches. At 80% or more a
+one-line warning with the reset time (and its time zone) reaches you and the conversation; at 90% or more starting
+a NEW subagent is refused, and so is waking an agent with a message, the expensive case. A finished agent can still
+report back, and work already running carries on. To let them through anyway, the refusal shows you a one-line
+command that allows them for two hours, or launch with `ALLOW_SPAWN_OVER_LIMIT=1`. The agent itself is not told how.
+If the cached number is more than 15 minutes old, every prompt says so loudly and names the file to check; if it is
+missing altogether (a clone with no such statusline), that is said once per session. Nothing is blocked either way,
+so a statusline hiccup cannot stop work.
+<!--tech-->
+Backlog #399, PR #446. `scripts/check-usage-pace.py` (rules separate from the file read, 213 self-test cases, 74
+mutations all killed by their named case); hooks `.claude/hooks/usage-pace-prompt.sh` (UserPromptSubmit),
+`.claude/hooks/usage-pace-spawn.sh` (PreToolUse on Agent) and `.claude/hooks/usage-pace-wake.sh` (PreToolUse on
+SendMessage, added by the owner's round-1 decision), all through `run-hook.sh`. The deny travels as JSON at
+exit 0, and every non-zero exit is mapped to 1, so a broken checker can never block a prompt.
+
+## 2026-10-30
+Five tooling checks no longer fail silently, or crash, on input they cannot read. The check that warns about bare
+reference numbers in a finished turn used to say nothing at all when the session transcript was corrupt — the same
+silence as "nothing to warn about"; it now says it could not run. All five — that one, the step-banner check, the
+closing-table check, the CI-watch check and the handoff-path check — could crash on an unreadable byte, a malformed
+hook message, a malformed CI answer or a folder they could not open; each now says it could not run instead. They now
+share one reader for that input, so none of them can hang on a named pipe or crash on a deeply nested message, and a
+transcript damaged in the middle is reported as unreadable instead of being quietly read around. One thing a session
+can see changes: if the handoff skill's file cannot be decoded, `/handoff` is now BLOCKED under a headline
+saying the path could not be checked, where it used to only warn.
+<!--tech-->
+Branch `guards-cannot-run`, PR #440: backlog #357 (all five inputs) and backlog #331 part (a) only — (b), (b2), (c) and
+(d) stay open. `check-transcript-references` returns rc 2 when no transcript record parses, and refuses a non-object
+payload; `check-banner-armed`, `check-closing-table` and `check-transcript-references` read the transcript as UTF-8
+inside an `(OSError, UnicodeDecodeError)` handler; `check-handoff-path` catches `UnicodeDecodeError` (through the CLI
+too); `check-ci-watched` refuses a checks answer that is not a list of objects and an arm directory it cannot list.
+Every input exits 2 with a CANNOT RUN message and no traceback. 12 new cases, 9 new mutations plus one retargeted,
+each killed by the case it names. Round 1 (both halves NOT CONVERGED) widened each fix to its class: one payload check,
+`check-banner-armed.transcript_lines`, now serves all three Stop-hook guards (raw stdin bytes; null, true, 1 and a string
+as well as a list; a number or a NUL byte as `transcript_path`), and an undecodable LINE was skipped rather than blinding
+the transcript (reverted in round 2). `check-ci-watched` refuses an object row with no string `status`/`state` and a mixed list. The handoff
+hook gives receipt 2 its own headline. 16 more cases and 12 more mutations, with one entry retired with its subject
+(the reference guard's own dict check, now the borrowed one's). The hook's own mutant was run by hand and killed by the
+case it names, because a manifest can only target `scripts/<stem>.py`. Round 1 m3 and m4 are filed as backlog #331 (e) and (f).
+Round 2 (Codex NOT CONVERGED: an undecodable mid-transcript record passing QUIET because of round 1's skip, a
+200,000-deep payload's `RecursionError`, an empty check status read as "CI running", a FIFO `transcript_path` hanging the
+Stop hook) moved the route to a redesign: ONE bounded reader, the new `scripts/bounded_read.py`, used by all five guards.
+It reads only a regular file (`O_NONBLOCK`, then `S_ISREG` on the descriptor) or stdin, under a byte bound (256 MiB for a
+file; 1 MiB and 2 s for stdin), maps every parse exception to CANNOT RUN at one deliberate broad catch, and tolerates
+only a torn FINAL record — so round 1's line skip is reverted, and backlog #331 (e) partial corruption and (f) the
+`splitlines()` split are fixed with it. `check-ci-watched` requires a non-empty status from a known set. The per-guard
+copies it replaces are deleted. One list of hostile payloads, `bounded_read.hostile_payloads`, drives each transcript
+guard's real `--decide`. The FIFO class was live in `check-handoff-path` too (its CLI hung on a FIFO SKILL.md) and is
+fixed there. Verdicts over 50 real transcripts are unchanged against master. `EXPECTED_MUTATIONS` 2552.
+
+## 2026-10-30
+Plans stay private and the repo is public, so pushes are now checked for quoted plan text (backlog #393). It is
+git's own pre-push hook, so it sees exactly what a push sends: every branch and tag, and every commit in it, not
+just the latest state. A commit that adds eight words in a row from any plan is refused, naming the file, line and
+commit, unless those words are already on the remote. The matched words are never printed by the hook; you can
+see them by running the checker with `--show` in your own terminal. A fragment shorter than eight words is not
+caught. Commit messages, tag messages and new file names are checked too. Each session switches the gate on if it
+is off, or warns loudly if something else has taken over git's hook setting. A fresh clone with no plans can still
+push, with a warning. `ALLOW_PLAN_LEAK=1 git push` lets a judged coincidence through; an agent also needs the
+owner's dangerous-push flag for it.
+<!--tech-->
+`scripts/check-plan-leak.py --pre-push` behind `.githooks/pre-push`; its self-test drives real `git push` into bare
+remotes. Round 1 of PR #443 (Codex) found eight Blocking defects in the first design, a Claude Code hook that read
+the command text; the redesign removes their common cause, and each finding is now a case.
+CI shard 8 also needed a fix that rides here: `check-main-drivable`'s live reconcile now has a 45 s deadline, because an old mutant made `world_class` recurse exponentially only on this PR's tree (`check-plan-leak.py`), so the shard hit the 120 s limit and reported NOT MEASURED; backlog #405's early stop would be the structural fix. `EXPECTED_MUTATIONS` 2807 -> 2808.
+
+## 2026-10-30
+Every message the coordinator sends re-sends a fixed block of context, and about 16,000 tokens of it was text our own start-up hooks print. The in-flight block now shows each open PR on one line, every item the owner decided or is waiting to decide in full (whatever way it was written down), and a one-line title for only the five newest of the other ledger entries, with the hidden ones listed by name; the snapshot printed after a compaction shows its headings, the owner's recorded words, the owner-decision section and any line marked "not captured". Both print the file that holds the whole text, and nothing is deleted. Measured on this repository, the in-flight block fell from 11,716 to 8,550 characters and the compaction snapshot from 7,527 to 3,638. That is less than first hoped: the review found the first cut hid owner decisions, and keeping them costs size.
+
+What this does not reach: the last handoff and the REMEMBER block are printed by the remember plugin, not by this repository, so they are unchanged here.
+<!--tech-->
+Backlog: none filed. `scripts/session-state.py`: `render(..., compact=True, ledger_path=...)` (the hook's `collect()` passes both; the compaction snapshot still takes the full shape), `keep_whole()` (wider than `waits_on_owner`), `normalise_what()` in `ledger_add`, `TITLE_WIDTH`=120, `TITLES_SHOWN`=5. `scripts/compaction-state.py`: `digest()` replaces the whole-snapshot append in `render_print`, `DIGEST_WHOLE`, `_clean_keep_nc`. Self-tests: session-state 81, compaction-state 103; 25 new mutations (EXPECTED_MUTATIONS 2565 -> 2590); the `DEFER` mutation was re-anchored onto the digest line.
+
+## 2026-10-31
+The mutation sweep spends less time waiting on one slow test suite. The test suite for the compaction snapshot hook
+proves that the hook gives up on time by actually waiting, about 11 seconds per run, and the sweep re-ran it once for
+each of its 58 mutants. Inside the sweep, the two cases that wait in real time are now skipped. A quicker case proves
+the same thing by waiting only until the event it tests has happened. The ordinary CI check still runs the real-time
+cases on every change, and a test fails if that step is ever removed. Locally the suite now takes about 8.5 seconds
+inside the sweep, against about 22 before. Under heavy load it also stops failing there, which it did on every run
+before.
+<!--tech-->
+Branch `scaled-deadlines`, PR #454, backlog #407. `check-plan-code.mutation_env` (only `run_suite_parts`) sets
+`PLAN_CODE_MUTATION_RUN=1`; `fixture_git.PROCESS_PASSED` keeps it; `compaction-state.real_time_cases` reads it in the
+self-test only. Skipped there: r3 CR1 (the real 11 s) and the held-open stdin. Added: an event-ordered CR1 (deadline
+0.5 s doubling until gh's straggler pid is written), the same doubling for the grandchild case, and 1.0 s → 0.3 s
+test deadlines. Pinned: `ci_runs_real_time` (CI's step present, marker unnamed) and a spy showing hook modes keep
+11 s / 10 s with the marker set. The marker is kept off `child_env` on purpose: `check-selftest-counts` borrows it and
+counted 100 of 102. This deviates from the row's ×0.1 scale: cases are skipped, and no deadline is scaled. Measured
+locally, 3 runs each: idle 22.1–22.8 s → 8.3–9.5 s in a mutation run, with the ordinary run unchanged at about
+22 s; under 24 CPU burners, master is 42–43 s with CR1 red 3 of 3, and the mutation run is 17.5–40 s, green 3 of 3.
+The ordinary run under that load is 58–62 s and its real CR1 is still red: a load flake from before this change, out
+of scope. `EXPECTED_MUTATIONS` 2738; `compaction-state` 58 of 58 killed, `fixture_git` 13 of 13; `check-plan-code`'s
+two new mutants were run by hand, and its full run is left to CI.
+
+## 2026-10-31
+Seven pieces of queued follow-up work are now written down as backlog items, so none depends on anyone remembering them: the stale generated pages after a merge, the early-exit CI waiter, the extra review round a merge of master forces, a flaky mutant, a gap in the push-blocking hook, the unset local hook path, and a mangled word in one guard. Agents are also now told to send their final report as a message, because plain output never reaches the coordinator.
+
+## 2026-10-31
+Two open pull requests that each add a mutation no longer collide on the same line. The mutation harness counted its
+coverage twice: once per file, and once more as a typed grand total that every such pull request had to edit. Any two
+open at once conflicted on that total, and each later merge paid for a re-merge and three or four extra review rounds.
+The total is now worked out from the per-file counts, and the quick self-test checks every file's count against the
+manifests on disk, which is stricter than the total was. Two pull requests still conflict when they change the same
+file's count, because that conflict is real, and also when they change two files whose counts sit on neighbouring
+lines (14 of 81 pairs today), which is backlog #432.
+<!--tech-->
+Branch `derived-mutation-total`, backlog #359 (closed here). `check-plan-code`: the literal case is deleted;
+`declared_total()` sums `EXPECTED_MUTATIONS`; the drift rule moves out of `mutate_delivered` into `pin_drift` plus
+`manifest_counts`, unchanged, and gains a last line stating both derived totals when anything drifts. The on-disk case
+now compares `pin_drift(manifest_counts(live))` with `[]` instead of comparing two totals. A source scan refuses a
+typed total coming back. `check-merge-ready`'s `PIN_TOTAL` proxy, its two cases and its one mutation entry are retired
+with their subject. Measured from 2026-10-17: 41 of 43 merged commits to `check-plan-code.py` edited the literal.
+⟳ r2 REDESIGN (thrashing armed): a falling per-file pin is now HELD by its EFFECTIVE value, not by text.
+`check-plan-code.py --print-pins` prints `EXPECTED_MUTATIONS` as JSON after import; `check-merge-ready`'s
+`pin_pair` archives `scripts/` at the merge base and at HEAD, runs it in each, and HOLDs a key that falls or is
+removed (CANNOT RUN when a side cannot answer). `PIN_LINE` and r1's `pin_shape_problems` are deleted.
+⟳ r3 (Claude F1): a write gated on the invocation (`if "--print-pins" not in sys.argv:`, or on `CI=true`) made
+`--print-pins` report 87 while the harness held 82, so the HOLD now reads each side's `EXPECTED_MUTATIONS` DISPLAY as
+data (`check-plan-code.pin_display`, imported; a duplicate key is refused), executing neither tree, and the harness
+asserts in its OWN process (`--mutate` before any mutation, `--self-test` at its top) that the pins it uses ARE that
+display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-only fallback are deleted. Pins:
+merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.
+
+## 2026-10-31 [needs-you]
+The process rules that are re-sent to the model on every turn are now 43% shorter: 27.0k characters instead of 47.4k. That is an
+ESTIMATED 5.1k raw tokens fewer per call; because the text is cached, about 510 weighted tokens per call plus about
+6.4k per fresh prefix write, roughly 1% of a typical call. No rule was deleted. Each long passage of history and measurement moved, word for
+word, into a reference document that is read only when a task needs it, and a one-line rule stays behind with a pointer.
+This is a DRAFT for you to walk through before it merges: `docs/trim-floor-walkthrough.md` lists every section, where it
+went, and why it is safe to read on demand.
+<!--tech-->
+Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,159 → 14,700 chars; `docs/plugins.md` 20,851 → 10,970 chars (total 47,377 → 27,037, chars/4 estimate, no tokenizer).
+The mechanically-enforced table is cut to one line per row, full rows in `process-checklists.md` → *Mechanically
+enforced checks — the full rows*; the thrashing paragraph and the Code Review detail go to `review-method.md`; the
+handoff layer table to `process-checklists.md`; the spine-length history to `process-rationale.md`. Three bare
+references in the moved table qualified (backlog #56 twice, backlog #137). The 10-30 study's "about 162 KB" does not
+match the 47.4k characters measured here and should be re-derived.
+
+## 2026-10-31
+Review rounds now stop at round 3. Round 1 still uses both reviewers, because they mostly find
+different problems. Rounds 2 and 3 use one reviewer each. From round 4 on, findings go into the
+backlog instead of being fixed in the branch, unless it is a BLOCKER: a reproduced input that makes
+the merged change give a false green, lose data or open a security hole, with a local fix. Round 5
+exists only to re-check such a fix, and nothing it finds is folded. This is your decision of 31 October, based on 14 days of data: the first three
+rounds found 83% of the serious problems that were fixed, and the remaining 129 rounds found 17%. A
+Claude review can now leave the same "a review saw this code" record that a Codex run leaves. Codex
+runs made only to write that record cost about 7.4% of the weekly Codex limit.
+<!--tech-->
+Branch `review-round-cap`, PR #457, backlog #434. The rule is written once, in `docs/review-method.md`
+§0 Q4c. `dev-process.md` and `plugins.md` now point to it, and Iterative Re-Review / *Keep going*
+are bounded by it. `scripts/record-review-verdict.py` (98 cases, 21 mutations) writes
+`codex-review.verdict_record` for a filed Claude half, with `writer: claude`, the head and overlay
+`reviewed_state` observes (refused unless the tree is at `--head`), the review's FIRST line
+`Reviewed head: <full sha>` and LAST line `VERDICT: …`, no symlink and no overwrite. Round 2 found
+the Markdown parser beaten by comments, quotes and nested fences, so it reads fixed positions now. Round 1 caught a literal `dirty: {}` that let a
+reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-review-recorded` only rewords
+(195 cases). ⚠ `check-review-decision.py` does not apply the cap yet.
+
+## 2026-11-01
+Six ways to spend fewer tokens are now written down as queued work, each with a trigger and a way it would be shown wrong: run the pre-push checks in one call and skip unchanged ones, warn when a routine job is given the expensive model, hold off compaction in the middle of work, check the Codex budget before a review, close finished jobs in the ledger automatically, and stop the usage-pace check going blind while you are away. The token-management page also no longer claims the always-loaded instructions are about 15% of each call, since that share was never established.
+<!--tech-->
+Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.4k characters on origin/master (draft PR #458), while the earlier study's 162 KB figure is a different measurement; the two need reconciling (scope or method).
+
+## 2026-11-01
+Four comments and one test name in the mutation checker said "2807" where they should say "TOTAL". A bad search-and-replace caused it, and a later one repeated it. The word is back. Nothing the checker does has changed.
+<!--tech-->
+Branch `fix-2616-total`, backlog #430. PR #440 (`dad5971b`) replaced TOTAL with 2616 at five places in `scripts/check-plan-code.py`. PR #443 then replaced 2616 with 2807, so the five read 2807 on master. All five are restored. The real `2807 -> 2808` declared-sum note is unchanged, and no `scripts/mutations/*.json` entry named the renamed case. `--self-test` 281/281.
+
+## 2026-11-01
+Two long-running branches are closed without merging, and what they leave behind is now written down. The explainer contrast layer (PR 364) was built and measured but never passed its fifth review round. The twelve-fix review-tooling branch (PR 371) was stuck for eighteen rounds fixing its own fixes. Each is now one queued backlog row with what is done, what is left and the open findings, and both branches stay on GitHub.
+<!--tech-->
+Branch `file-364-371-remainders`. Backlog rows 445 (PR 364, tip `9ce3cad8`, local tag `backup/1031/unify-explainer-style`) and 446 (PR 371, tip `b2abf875`, local tag `backup/1031/backlog-249-260-fixes`). Also pushed, with no PR: `feat/plan-ruled-out`; `rescue-two-uncommitted-memories` and `remember-local-snapshots` were already on origin at their local tips. Plan-leak scans: 0 hits on all three.
+
+## 2026-11-01
+The checks a pull request must pass before it is pushed now run in one command, `python3 scripts/gates-for-pr.py`, which prints one line per check and runs every check every time. A check that fails, times out, is cut off or cannot run is never counted as passing. A version that skipped checks whose inputs had not changed was built and reviewed, and then removed: reviewers could make it skip a check that would have failed, and skipping saved only about 50 seconds of an 8½-minute run.
+<!--tech-->
+Branch `gates-runner-438`, backlog #438, PR #465. The gate set comes from `ci.yml`'s `verify` job plus the local mutation slices for moved manifests; every other `ci.yml` job, the non-Python and multi-line steps and `schema-gates.yml` are printed OUT OF SET. Round 1 (both halves) reproduced false SKIPS through the audit-hook tracer's input digest (warm `.pyc` imports, external symlinks, branch name, env, clock) and a nested-tracer recursion that failed the runner's own self-test; the fold deleted the ledger, tracer and digest rather than repair them (measured: 8m39s full vs 7m49s with 43 of 80 skipped). `--self-test` 35/35, including the self-test run under `run_gate` and a gate that cannot be started; `check-plan-code --mutate . --only scripts/gates-for-pr.py` 10/10 killed and attributed (23 -> 10: 17 retired with their subject, 4 new).
+
+## 2026-11-01
+Automatic compaction now waits for a pause in the work. While a plan is armed, an agent has not reported back, or a Monitor is still watching, the compaction is put off. It still runs once the session has been quiet for 5 minutes, or once the context reaches one and a half times the compaction window, so a stuck signal cannot hold it off for ever. A typed `/compact` is never held. If the hook cannot read the window setting or the transcript, it lets the compaction run and records why. Every decision is logged, so we can see whether compactions usually happen at a pause or only when the ceiling forces them. If it is mostly the ceiling, the hook should be removed.
+<!--tech-->
+Branch `boundary-compaction-440`, PR #463, backlog #440. `scripts/check-compaction-boundary.py` (57 cases, 28 mutations) runs from `.claude/hooks/compaction-boundary.sh` on the `auto` PreCompact matcher. The hook runs `precompact-snapshot.sh` only when it allows, so a blocked call does not also take a snapshot. The `manual` matcher still runs the snapshot directly. The window comes from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, then the project's `settings.local.json`, then `settings.json`, then `~/.claude/settings.json`, each checking `modelSettings[<model>]` first. This order follows the documented settings precedence and has not been tested for this key. The log is `.claude/compaction-boundary.log` in the main checkout, and `--summary` reads it. ⚠ The hook reads the last 8 MB of the transcript, about 20 hours. An agent in that span whose completion notice never arrived blocks compaction until the ceiling.
 The check that every test suite's declared case count is true can now run only on what a branch
 changed. Agents ran the full check 366 times in eight days, at about six minutes each under load,
 while CI runs it on every pull request anyway. The local step in the process checklist is now the

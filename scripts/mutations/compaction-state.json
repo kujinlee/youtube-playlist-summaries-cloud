@@ -234,19 +234,6 @@
     ]
   },
   {
-    "name": "the explicit marker is ignored: every ledger entry is listed as waiting on the owner",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "    waits = [e for e in ledger if ss.waits_on_owner(e)] if ss else []",
-        "    waits = list(ledger)"
-      ]
-    ],
-    "expect": [
-      "⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks"
-    ]
-  },
-  {
     "name": "an unreadable hook payload is not said in the snapshot header",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -368,8 +355,8 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "    return fit(\"\\n\".join(L), PRINT_CAP - len(end) - 1, \"the session's snapshot file\") + \"\\n\" + end",
-        "    return \"\\n\".join(L) + \"\\n\" + end"
+        "PRINT_CAP - len(end) - 1\n    if len(text) <= budget:",
+        "PRINT_CAP - len(end) - 1\n    if True:"
       ]
     ],
     "expect": [
@@ -607,7 +594,7 @@
       ]
     ],
     "expect": [
-      "⭐ r3 CR1: a slow git then a hung gh that backgrounds a sleep — killed at the REAL 11 s, and the sleep is GONE"
+      "⭐ r3 CR1 (#407, event-ordered): a gh IN FLIGHT at the capture's kill — its backgrounded sleep dies with the group"
     ]
   },
   {
@@ -650,32 +637,6 @@
     ]
   },
   {
-    "name": "C4-F3: the in-flight block is not marked where its categories fail",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "mark=f\" — {NC}\")",
-        "mark=\"\")"
-      ]
-    ],
-    "expect": [
-      "⭐ r3 Cr7: in the snapshot and the print, EVERY line saying something was not captured carries NOT CAPTURED"
-    ]
-  },
-  {
-    "name": "C4-F3: NOT CAPTURED is found by searching the text again",
-    "file": "scripts/compaction-state.py",
-    "edits": [
-      [
-        "        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f\" — {NC}\")",
-        "        inflight = \"\\n\".join(l + (f\" — {NC}\" if any(w in l for w in (\"CANNOT RUN\", \"TRUNCATED\", \"UNREADABLE\", \"⚠\")) else \"\") for l in ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated).split(\"\\n\"))"
-      ]
-    ],
-    "expect": [
-      "⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged"
-    ]
-  },
-  {
     "name": "C4-F5: fetch asks git for the main checkout a second time",
     "file": "scripts/compaction-state.py",
     "edits": [
@@ -693,12 +654,506 @@
     "file": "scripts/compaction-state.py",
     "edits": [
       [
-        "        L.append(_strip_keys(snap_text).strip())",
+        "        L.append(digest(snap_text, f\"{SESSIONS_REL}/{session_id}/snapshot.md\"))",
         "        pass"
       ]
     ],
     "expect": [
       "⭐ r4 DEFER: the print mentions NO audit, and shows the snapshot without its keys line"
+    ]
+  },
+  {
+    "name": "floor: the print shows the whole snapshot again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "L.append(digest(snap_text, f\"{SESSIONS_REL}/{session_id}/snapshot.md\"))",
+        "L.append(_strip_keys(snap_text).strip())"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the print is at most 75% of a full-size snapshot's own text, headings kept"
+    ]
+  },
+  {
+    "name": "floor r1: the owner's recent words are left out of the print again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "\"## Pending OWNER decisions\", \"## The owner's recent words\")   # sections",
+        "\"## Pending OWNER decisions\",)   # sections"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and prompts are what the summary garbles)"
+    ]
+  },
+  {
+    "name": "floor r1: the title block (the /compact instructions) is left out of the print",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        elif mode == \"title\":\n",
+        "        elif mode == \"title\" and False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F3: the /compact instructions line of the title block reaches the print, and the path given is the one printed"
+    ]
+  },
+  {
+    "name": "floor r1: a cut NOT CAPTURED line loses its marker again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if NC not in line or NC in out:\n        return out\n",
+        "    return out\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F5: a NOT CAPTURED line cut for width keeps its marker and what follows it, in a section body and a heading"
+    ]
+  },
+  {
+    "name": "floor r1: every heading level ends the owner's section (its ### subsections drop out)",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if line.startswith(\"## \"):",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and prompts are what the summary garbles)"
+    ]
+  },
+  {
+    "name": "floor r1: every section's body is shown whole",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "mode = \"whole\" if line.startswith(DIGEST_WHOLE) else \"other\"",
+        "mode = \"whole\""
+      ]
+    ],
+    "expect": [
+      "⭐ floor: a body line of a section that is not the owner's is still left in the file"
+    ]
+  },
+  {
+    "name": "the explicit marker is ignored: every ledger entry is listed as waiting on the owner",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    waits = [e for e in ledger if ss.is_owner(e)] if ss else []",
+        "    waits = list(ledger)"
+      ]
+    ],
+    "expect": [
+      "⭐ pending decisions: the MARKED ledger entry (not one that only mentions the owner) and the dashboard's asks"
+    ]
+  },
+  {
+    "name": "floor r2: the snapshot selects by the strict marker again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "if ss.is_owner(e)] if ss else []",
+        "if ss.waits_on_owner(e)] if ss else []"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-2: the snapshot's decisions are the DECLARED kinds: prose-only owner-instruction (whole, 480 characters) and an undeclared `NOTE: (card …)` (the fallback) are in; a kind=routine entry that says 'owner' is not"
+    ]
+  },
+  {
+    "name": "C4-F3: the in-flight block is not marked where its categories fail",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "mark=f\" — {NC}\",\n",
+        "mark=\"\",\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Cr7: in the snapshot and the print, EVERY line saying something was not captured carries NOT CAPTURED"
+    ]
+  },
+  {
+    "name": "C4-F3: NOT CAPTURED is found by searching the text again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        inflight = ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, mark=f\" — {NC}\",\n                             owner_elsewhere=len(waits))",
+        "        inflight = \"\\n\".join(l + (f\" — {NC}\" if any(w in l for w in (\"CANNOT RUN\", \"TRUNCATED\", \"UNREADABLE\", \"⚠\")) else \"\") for l in ss.render(prs, pr_error, ledger, problems, stamp_now, truncated=truncated, owner_elsewhere=len(waits)).split(\"\\n\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ r4 C4-F3: a ledger entry saying `CANNOT RUN` and a branch named fix-TRUNCATED-keys are CAPTURED — not tagged"
+    ]
+  },
+  {
+    "name": "floor: the digest stops printing the snapshot's file path",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "f\"full: {path} (every section, whole)\"",
+        "f\"({path})\""
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the print names the snapshot FILE that holds the whole text"
+    ]
+  },
+  {
+    "name": "floor: the digest drops the OWNER-decisions body",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        elif mode == \"whole\":\n            whole.append(clean(line, WHOLE))\n",
+        "        elif mode == \"whole\":\n            pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ floor: the OWNER-decisions section AND the owner's recorded words are shown whole (r1 F2: the answers and prompts are what the summary garbles)"
+    ]
+  },
+  {
+    "name": "floor: the digest drops a NOT CAPTURED line",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        elif NC in line:\n            other.append(",
+        "        elif NC in line and False:\n            other.append("
+      ]
+    ],
+    "expect": [
+      "⭐ floor: a line of the snapshot saying NOT CAPTURED still reaches the print"
+    ]
+  },
+  {
+    "name": "floor r2: the decisions section cuts what at 160",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "{clean(e.get('what'), WHOLE)}",
+        "{clean(e.get('what'), 160)}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact instructions (400+ characters); the keys line survives and the OTHER sections give way"
+    ]
+  },
+  {
+    "name": "floor r2: the decisions section cuts on_done at 120",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "{clean(e.get('on_done'), WHOLE)}",
+        "{clean(e.get('on_done'), 120)}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact instructions (400+ characters); the keys line survives and the OTHER sections give way"
+    ]
+  },
+  {
+    "name": "floor r2: the /compact instructions are cut at 300 in the snapshot",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "clean(custom, WHOLE)",
+        "clean(custom, 300)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact instructions (400+ characters); the keys line survives and the OTHER sections give way"
+    ]
+  },
+  {
+    "name": "floor r2: the digest cuts the title block at 300",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "            title.append(clean(line, WHOLE))",
+        "            title.append(clean(line, 300))"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-2/R2-3: the PRINT shows the owner entries and the /compact instructions whole (decisions first), and stays under PRINT_CAP"
+    ]
+  },
+  {
+    "name": "floor r2: the snapshot cap does not make room for the owner's text",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    protected = max(0, len(decisions) - 1200) + max(0, len(head) - 600)",
+        "    protected = 0"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact instructions (400+ characters); the keys line survives and the OTHER sections give way"
+    ]
+  },
+  {
+    "name": "floor r2: the decisions section is fitted to 1200 again",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "             decisions,\n             worktree_section",
+        "             fit(decisions, 1200, \"x\"),\n             worktree_section"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-3: 15 owner-instruction entries of 450 characters are ALL whole in the snapshot, and so are the /compact instructions (400+ characters); the keys line survives and the OTHER sections give way"
+    ]
+  },
+  {
+    "name": "floor r2: the owner entries stay in the in-flight block too",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        ledger = [e for e in ledger if not ss.is_owner(e)]\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 R2-2: the snapshot's decisions are the DECLARED kinds: prose-only owner-instruction (whole, 480 characters) and an undeclared `NOTE: (card …)` (the fallback) are in; a kind=routine entry that says 'owner' is not"
+    ]
+  },
+  {
+    "name": "floor r2: the in-flight block does not say where the owner entries went",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                             owner_elsewhere=len(waits))",
+        "                             owner_elsewhere=0)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: when every entry is an owner entry the in-flight block says so — it never claims 'none RECORDED'"
+    ]
+  },
+  {
+    "name": "floor r2: the digest puts the routine headings before the decisions",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return \"\\n\".join([*title, f\"full: {path} (every section, whole)\", *whole, *other])",
+        "    return \"\\n\".join([*title, f\"full: {path} (every section, whole)\", *other, *whole])"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: when routine NOT CAPTURED lines crowd the print past its limit, the OWNER decisions are what stays (they come first)"
+    ]
+  },
+  {
+    "name": "floor r3: the print's cut names no owner decision",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "gone = [i for i in ids if f\"ledger [{i}]\" not in cut]",
+        "gone = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-4: 30 owner decisions past the print limit: the print is within PRINT_CAP, every decision is shown OR named by id (none in both, none in neither), and the count of the named is stated"
+    ]
+  },
+  {
+    "name": "floor r3: the owner-id reader expects leading spaces the digest has cleaned away",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "OWNER_ID = re.compile(r\"\\s*ledger",
+        "OWNER_ID = re.compile(r\"  ledger"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 R3-4: 30 owner decisions past the print limit: the print is within PRINT_CAP, every decision is shown OR named by id (none in both, none in neither), and the count of the named is stated"
+    ]
+  },
+  {
+    "name": "#407: the marker is ignored, so a mutation run still waits on every REAL deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    return env.get(MUTATION_RUN_ENV) != \"1\"\n",
+        "    return True\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: the mutation-run marker leaves out the real-time cases ONLY when it is \"1\""
+    ]
+  },
+  {
+    "name": "#407: a workflow that sets the marker still reads as CI's real-time run",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if MUTATION_RUN_ENV in ci_text:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere"
+    ]
+  },
+  {
+    "name": "#407: a missing or commented-out step still reads as CI's real-time run",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                if re.fullmatch(rf\"\\s*(?:- )?run:\\s*{re.escape(SELF_TEST_RUN)}\\s*\", lines[i])), None)\n",
+        "                if SELF_TEST_RUN in lines[i]), None)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: CI's ordinary check runs this self-test in REAL time — the step is there, the marker named nowhere"
+    ]
+  },
+  {
+    "name": "#407: the capture child is given the print child's deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "run_child(\"--capture\", payload, root, left(capture_timeout),",
+        "run_child(\"--capture\", payload, root, left(aux_timeout),"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: the marker never reaches a hook mode — with it SET, the capture child gets the REAL 11 s and the print child 10 s"
+    ]
+  },
+  {
+    "name": "#407 r1: main reads stdin for a fixed 40 s, not what is LEFT of the hook's deadline",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "        payload, err = read_payload(stdin_text, wait=left(STDIN_WAIT))\n",
+        "        payload, err = read_payload(stdin_text, wait=40.0)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: `main` reads a stdin held OPEN for only what is LEFT of the hook's deadline — fd 0, in-process"
+    ]
+  },
+  {
+    "name": "#407 r1: gh's per-call deadline shrinks to 1 s, so a slow gh dies before the capture's kill",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "GH_TIMEOUT = 8          # per call, inside the child\n",
+        "GH_TIMEOUT = 1          # per call, inside the child\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407: after a git that TIMED OUT the capture still asks gh, and gh is given its own 8 s, not less"
+    ]
+  },
+  {
+    "name": "#407 r1: an `if:` or `continue-on-error` on the self-test STEP is not looked at",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "                        (\"the step\", [l for l in step_lines if len(l) - len(l.lstrip()) == dash + 2])):\n",
+        "                        (\"the step\", [])):\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: ...and refuses a self-test STEP that may not run or may not fail (`if:`, `continue-on-error`)"
+    ]
+  },
+  {
+    "name": "#407 r1: an `if:` or `continue-on-error` on the required JOB is not looked at",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    for where, keys in ((f\"the `{REQUIRED_JOB}` job\", job_keys),\n",
+        "    for where, keys in ((f\"the `{REQUIRED_JOB}` job\", []),\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: ...and a self-test JOB that may not run or may not fail"
+    ]
+  },
+  {
+    "name": "#407 r1: the self-test step is searched for past the end of the required job",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    run = next((i for i in range(key + 1, steps_end)\n",
+        "    run = next((i for i in range(key + 1, len(lines))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: ...and a self-test step in a job OTHER than the required one"
+    ]
+  },
+  {
+    "name": "#407 r1: a child mode reads the marker",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    payload, err = read_payload(Path(args.payload_file).read_text(encoding=\"utf-8\"))\n",
+        "    payload, err = read_payload(Path(args.payload_file).read_text(encoding=\"utf-8\"),\n                                cap=MAX_STDIN // 2 if os.environ.get(MUTATION_RUN_ENV) else MAX_STDIN)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r1: no hook mode can read the marker — only the self-test's two predicates and the suite name it"
+    ]
+  },
+  {
+    "name": "#407 r2 (Codex A): the child's adapter caps gh's timeout at 1 s",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "timeout=GIT_TIMEOUT: ss._run(c, w, timeout,",
+        "timeout=GIT_TIMEOUT: ss._run(c, w, min(timeout, 1) if c[0] == \"gh\" else timeout,"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: through the CHILD's adapter, session-state's `_run` gets git 3 s (its rev-parse 10 s) and gh 8 s, in the group"
+    ]
+  },
+  {
+    "name": "#407 r2 (Codex B): the child's adapter caps git's timeout at 0.1 s",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "ss._run(c, w, timeout, own_group=False)  # noqa",
+        "ss._run(c, w, min(timeout, 0.1) if c[0] == \"git\" else timeout, own_group=False)  # noqa"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: through the CHILD's adapter, session-state's `_run` gets git 3 s (its rev-parse 10 s) and gh 8 s, in the group"
+    ]
+  },
+  {
+    "name": "#407 r2: the self-test step is searched for anywhere in the required job, matrix data included",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    run = next((i for i in range(key + 1, steps_end)\n                if re.fullmatch(rf\"\\s*(?:- )?run:\\s*{re.escape(SELF_TEST_RUN)}\\s*\", lines[i])), None)\n",
+        "    run = next((i for i in range(job, job_end)\n                if re.fullmatch(rf\"\\s*(?:- )?run:\\s*{re.escape(SELF_TEST_RUN)}\\s*\", lines[i])), None)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs"
+    ]
+  },
+  {
+    "name": "#407 r2: a list item nested inside a step is taken for a step",
+    "file": "scripts/compaction-state.py",
+    "edits": [
+      [
+        "    if step is None or len(lines[step]) - len(lines[step].lstrip()) != item:\n",
+        "    if step is None:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #407 r2: ...and the self-test as MATRIX data, not a step — only a list item directly under `steps:` runs"
     ]
   }
 ]

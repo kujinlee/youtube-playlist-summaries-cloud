@@ -107,6 +107,8 @@ SCRIPTS = ROOT / "scripts"
 POPULATION: frozenset[str] = frozenset({
     # ⟳ 2026-10-07: gained a `--self-test`, so its declared count needs a reader.
     "codex-frontier-model.py",
+    # ⟳ 2026-10-31: pinned in the commit that creates it (the review-round cap's Claude verdict).
+    "record-review-verdict.py",
     # ⟳ 2026-10-02, ADR-0014's rule D2: pinned in the commit that creates it. Its suite went
     # 46 → 73 → 74 → 76 → 79 while it was being written, each step for a real reason, so a
     # docstring count nothing verifies would have been wrong four times in one evening.
@@ -117,6 +119,10 @@ POPULATION: frozenset[str] = frozenset({
     "session-state.py",
     # ⟳ 2026-10-28 (backlog #361): pinned in the commit that creates it.
     "compaction-state.py",
+    # ⟳ 2026-10-30 (backlog #410): pinned in the commit that creates it.
+    "check-stalled-work.py",
+    # ⟳ 2026-11-01 (backlog #440): pinned in the commit that creates it.
+    "check-compaction-boundary.py",
     # ⟳ 2026-10-26 (backlog #223): pinned in the commit that creates it.
     "check-hook-commands.py",
     # ⟳ 2026-10-27 (backlog #364): pinned in the commit that creates it.
@@ -138,6 +144,10 @@ POPULATION: frozenset[str] = frozenset({
     # A docstring count nothing verified would have been wrong three times in twenty minutes.
     "check-transcript-references.py",
     "check-memory-link.py",
+    # ⟳ 2026-11-01 (backlog #438): the per-PR battery runner, pinned in the commit that creates it.
+    "gates-for-pr.py",
+    # ⟳ 2026-10-29 (backlog #393): the plan-leak push gate, pinned in the commit that creates it.
+    "check-plan-leak.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the
     # drift this file exists to refuse — doing that on a brand-new file would be that shape one
@@ -180,6 +190,9 @@ POPULATION: frozenset[str] = frozenset({
     # LIBRARY: `check-ratchet-contract`'s population is `check-*` guards, so nothing else observes
     # its declared count at all. Its own first run printed 37 against a docstring saying 34.
     "observer_log.py",
+    # ⟳ PR #440 r2: the ONE bounded reader of the five guards' untrusted input — a LIBRARY, pinned in the commit
+    # that creates it, so this list is the outside observer of its declared count.
+    "bounded_read.py",
     "check-ci-watched.py",           # ⟳ 2026-09-04: CI ran unwatched on 2 of 3 pushes
     "check-group-claims.py",         # ⟳ 2026-09-11. Pinned in the commit that creates it:
                                      # a guard declaring a count nothing verifies is the
@@ -290,6 +303,7 @@ POPULATION: frozenset[str] = frozenset({
     "check-sentinel-meanings.py",
     "check-storage-grant-pin.py",
     "check-vocabulary-collisions.py",
+    "check-usage-pace.py",           # backlog #399 — pinned in the commit that creates it.
 })
 
 # The denominator is the total. Scripts differ on the words around it, so the line is matched on

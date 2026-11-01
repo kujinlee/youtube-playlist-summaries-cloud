@@ -1206,8 +1206,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "        if isinstance(obj, dict) and isinstance(obj.get(\"message\", {}), dict):",
-        "        if (not isinstance(obj, dict)) or isinstance(obj.get(\"message\", {}), dict):"
+        "    return [o for o in objs if isinstance(o, dict) and isinstance(o.get(\"message\", {}), dict)]",
+        "    return [o for o in objs if (not isinstance(o, dict)) or isinstance(o.get(\"message\", {}), dict)]"
       ]
     ],
     "expect": [
@@ -1219,8 +1219,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        " and isinstance(obj.get(\"message\", {}), dict):",
-        ":"
+        " and isinstance(o.get(\"message\", {}), dict)]",
+        "]"
       ]
     ],
     "expect": [
@@ -1238,6 +1238,58 @@
     ],
     "expect": [
       "⭐ this guard's OWN run_decide maps a raising turn rule to CANNOT RUN, not exit 1 (backlog #152 r1)"
+    ]
+  },
+  {
+    "name": "PR #440 r1 m1 ⟳ r2: the hook's stdin is read as TEXT, unbounded, again — an undecodable payload raises before any handler",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        raw, why = bounded_read.read_stream(sys.stdin)     # bounded in bytes and time (PR #440 r2)",
+        "        raw, why = sys.stdin.read(), \"\"     # bounded in bytes and time (PR #440 r2)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
+    ]
+  },
+  {
+    "name": "PR #440 r2: the bounded reader's refusal is dropped at the turn rule — a corrupt, deep or FIFO transcript reads as no turn, QUIET",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if records is None:\n        return data, None, why\n    turn = _turn_records(records)",
+        "    if records is None:\n        return data, [], why\n    turn = _turn_records(records)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang"
+    ]
+  },
+  {
+    "name": "PR #440 r2: a transcript the turn rule can read NOTHING of is no longer refused — it reads as no turn, QUIET",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if not turn:\n        return data, None,",
+        "    if False:\n        return data, None,"
+      ]
+    ],
+    "expect": [
+      "transcript_records: a transcript whose every record has a non-object `message` is CANNOT RUN — the turn rule's filter leaves nothing to read"
+    ]
+  },
+  {
+    "name": "PR #440 r3 C4: the CANNOT RUN message drops the reader's reason — a FIFO refusal reads like any other",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN: {why}. \"",
+        "        print(f\"CANNOT RUN. \""
+      ]
+    ],
+    "expect": [
+      "⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else"
     ]
   }
 ]

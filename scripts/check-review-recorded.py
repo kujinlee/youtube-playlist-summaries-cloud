@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 194 cases
+    python3 scripts/check-review-recorded.py --self-test  # 195 cases
 
 WHY THIS EXISTS
 ---------------
@@ -53,9 +53,12 @@ SCOPE, STATED RATHER THAN IMPLIED
 ----------------------------------
   * Only verdicts THIS branch ADDED are considered. On `master` the range is empty, so the rule
     correctly says nothing; a MODIFIED historical verdict is not testimony about this branch.
-  * Only the Codex half leaves a verdict. A round that ran as Claude because Codex was down cannot
-    answer this question at all — which is CANNOT RUN, cleared by a `REVIEW GAP:` naming **codex**
-    (a gap about the other half explains a different absence). ⚠ Like the recorded-review question,
+  * ⟳ 2026-10-31: BOTH halves can leave a verdict. `codex-review.py` writes one at dispatch; a
+    Claude half's is written after it is filed, by `record-review-verdict.py`, as the same record
+    (`writer: claude`, `dirty: {}`, a head the review itself names). Nothing here reads the writer,
+    so the rule is unchanged. A round with NO verdict cannot answer this question at all — which
+    is CANNOT RUN, cleared by a `REVIEW GAP:` naming **codex** (a gap about the other half explains
+    a different absence). ⚠ Like the recorded-review question,
     the gap is read over the whole RANGE, so a stacked child is cleared by its parent's
     declaration — measured r3. The pass names the document it relied on rather than hiding it.
   * A verdict older than schema 2 carries no `head`, and one whose head was rebased or squashed
@@ -932,7 +935,7 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
     """
     if not tails:
         why = (f"{unusable} round(s) recorded no commit (verdicts written before schema 2)"
-               if unusable else "no Codex verdict was added by this branch")
+               if unusable else "no review verdict was added by this branch")
         if gap:
             # ⚠ THE RANGE, NOT THE BRANCH — r3 High, and the same honest contract `verdict()` states
             # six lines up: a stacked child is cleared by its PARENT's declaration. Not silently:
@@ -943,8 +946,9 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
                        f"{gap}")
         return 2, (f"CANNOT RUN — {why}, so whether any round saw the code about to merge is "
                    f"UNKNOWN.\n"
-                   f"  Treat this as NOT CHECKED, never as reviewed. Either run a Codex round "
-                   f"against the current tree,\n"
+                   f"  Treat this as NOT CHECKED, never as reviewed. Either record a round against "
+                   f"the current tree (codex-review.py, or record-review-verdict.py for a Claude "
+                   f"half),\n"
                    f"  or record `REVIEW GAP: codex — <reason>` in a review document of this "
                    f"branch (docs/plugins.md).")
     clean = sorted(n for n, paths in tails.items() if not paths)
@@ -1829,6 +1833,12 @@ def _self_test_body() -> int:
     # survived mutation with the suite green and two of them were live fail-opens. ──
     case("a schema-2 verdict whose gate RAN is usable, and the head comes back stripped",
          classify_verdict({"gate_ran": True, "head": " abc123 \n"}), ("abc123", USABLE))
+    # ⟳ 2026-10-31: a CLAUDE half's record (`record-review-verdict.py`) is the wrapper's schema plus
+    # `writer`/`tool`, with a clean overlay — and it is read exactly like a Codex one.
+    case("a Claude half's verdict is usable like a Codex one — the writer is not read",
+         classify_verdict({"schema": 3, "gate_ran": True, "head": "abc123", "dirty": {},
+                           "tool": "record-review-verdict", "writer": "claude"}),
+         ("abc123", USABLE))
     case("a verdict saying the gate did NOT run is skipped, never read as testimony",
          classify_verdict({"gate_ran": False, "head": "abc123"}), (None, SKIP))
     case("...and that rule is the one whose deletion turned exit 2 into exit 0",

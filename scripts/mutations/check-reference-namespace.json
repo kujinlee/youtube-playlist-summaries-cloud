@@ -56,7 +56,7 @@
     "file": "scripts/check-reference-namespace.py",
     "edits": [
       [
-        "        if not in_scope(path, scope):\n            continue\n",
+        "    if not in_scope(path, scope):\n        return out\n",
         ""
       ]
     ],
@@ -69,8 +69,8 @@
     "file": "scripts/check-reference-namespace.py",
     "edits": [
       [
-        "    if r.returncode != 0:\n        raise RuntimeError(f\"git diff {base} failed: {r.stderr.strip()[:200]}\")\n",
-        "    if r.returncode != 0:\n        return \"\"\n"
+        "    if r.returncode != 0:\n        raise RuntimeError(f\"git {' '.join(args[:2])} failed: \"",
+        "    if r.returncode != 0 and False:\n        raise RuntimeError(f\"git {' '.join(args[:2])} failed: \""
       ]
     ],
     "expect": [
@@ -114,6 +114,175 @@
     ],
     "expect": [
       "`deliverable #2` is a QUALIFIED reference, not a bare one"
+    ]
+  },
+  {
+    "name": "#394: the marker-only exemption is never applied, so every retagged row's OLD references fire again",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        if marker_only(body, budget):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "#394: a MARKER-ONLY change to an existing row is exempt"
+    ]
+  },
+  {
+    "name": "#394: the comparison is LOOSE (same length, not byte-identical), so a changed word slips through",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    if stripped is None or budget[stripped] <= 0:",
+        "    if stripped is None or not any(len(k) == len(stripped) for k in budget):"
+      ]
+    ],
+    "expect": [
+      "#394: a marker plus ONE changed word is judged"
+    ]
+  },
+  {
+    "name": "#394: a marked line the base does not hold is exempt, so a NEW row escapes",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "budget[stripped] <= 0:",
+        "budget[stripped] < 0:"
+      ]
+    ],
+    "expect": [
+      "#394: a NEW row carrying a marker and a bare #N is judged"
+    ]
+  },
+  {
+    "name": "#394: an UNMARKED line is compared too, so a line the base holds is exempt without any marker",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    stripped = without_kind_marker(body) if \"⟦\" in body else None",
+        "    stripped = without_kind_marker(body) if \"⟦\" in body else body"
+      ]
+    ],
+    "expect": [
+      "#394: an UNMARKED added line is judged even when the base holds it verbatim"
+    ]
+  },
+  {
+    "name": "#394: an invalid marker RAISES out of the gate instead of being judged",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    except gb.ShapeError:\n        return None",
+        "    except gb.ShapeError:\n        raise"
+      ]
+    ],
+    "expect": [
+      "#394: an INVALID marker on a changed line is still judged, never exempt and never a crash"
+    ]
+  },
+  {
+    "name": "PR #442 r2: the removed side is read from a diff of EVERY path, so a row deleted from another file exempts its copy (X1)",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "exemption_budget(removed_lines(diff), ",
+        "exemption_budget(removed_lines(_git(root, \"diff\", \"--unified=0\", \"--no-renames\", \"--no-color\", base, *([head] if head else []))), "
+      ]
+    ],
+    "expect": [
+      "r2 X1: ...both of the moved row's references are judged"
+    ]
+  },
+  {
+    "name": "PR #442 r2: the two sides are SWAPPED, so the marked line is the base side and nothing is ever exempt",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "removed_lines(diff), added)",
+        "added, removed_lines(diff))"
+      ]
+    ],
+    "expect": [
+      "r2: through REAL git, a marker-only edit of a base row is exempt"
+    ]
+  },
+  {
+    "name": "PR #442 r2: a path ABSENT at the base is treated as holding the lines added to it, so a new file or a rename's target exempts its own rows",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    if base is None:\n        return Counter()",
+        "    if base is None:\n        base = [without_kind_marker(h) or h for h in head]"
+      ]
+    ],
+    "expect": [
+      "r2: a path ABSENT at the base exempts nothing, even a line it would match"
+    ]
+  },
+  {
+    "name": "PR #442 r2: an exemption is not consumed, so one base row exempts every marked copy of it",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    budget[stripped] -= 1\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "r2: a DUPLICATED marker-only row is exempt ONCE — the copy is new prose"
+    ]
+  },
+  {
+    "name": "PR #442 r2: the head's unmarked copies are not subtracted, so a row that stays AND is copied with a marker exempts the copy",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    return Counter(base) - Counter(head)",
+        "    return Counter(base)"
+      ]
+    ],
+    "expect": [
+      "r2: a base row that STAYS unmarked does not also exempt a marked copy of it"
+    ]
+  },
+  {
+    "name": "PR #442 r2: added lines are read by their TEXT, outside hunk state, so content that renders as `+++ b/…` is dropped as a header",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        elif in_hunk and line.startswith(sign):",
+        "        elif line.startswith(sign) and not line.startswith(sign * 3):"
+      ]
+    ],
+    "expect": [
+      "r2: an added line that LOOKS like a header is content, never a new path"
+    ]
+  },
+  {
+    "name": "PR #442 r3 F2: the head side is the worktree's RAW bytes against the base file (the r2 form), so under `eol=crlf` a kept row ends in \\r and its marked duplicate is exempt",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        budget = exemption_budget(removed_lines(diff), added) if any(\"⟦\" in a for a in added) else None",
+        "        budget = exemption_budget(_git(root, \"show\", f\"{base}:{path}\").split(\"\\n\") if _git(root, \"ls-tree\", base, \"--\", path) else None, (root / path).read_bytes().decode(\"utf-8\", \"surrogateescape\").split(\"\\n\")) if any(\"⟦\" in a for a in added) else None"
+      ]
+    ],
+    "expect": [
+      "r3 F2: under `eol=crlf`, a row that stays unmarked still does not exempt a marked copy"
+    ]
+  },
+  {
+    "name": "PR #442 r3 F3: diff lines are split by `splitlines()` (the pre-r2 form), so text after a `\\x1c` loses its `+` and is never judged",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    for line in one_path_diff.split(\"\\n\"):",
+        "    for line in one_path_diff.splitlines():"
+      ]
+    ],
+    "expect": [
+      "r3 F3: an added line holding `\\x1c` is ONE line, so the bare #N after it is judged"
     ]
   }
 ]

@@ -1132,3 +1132,17 @@ non-git directory (*"Not inside a trusted directory"*) and with stdin left open.
 reporting a real failure for an invocation error is the thing to rule out before believing an
 outage.
 
+
+---
+
+## Why the spine is short — history moved out of the always-loaded files
+
+*Moved verbatim from the always-loaded `docs/dev-process.md` on 2026-10-31 to cut the text re-sent on every turn. The rule itself still stands there as one line; this is its full account. Edit the rule there and the account here — never restate the account back into the spine.*
+
+This document reached **576 lines**, of which ~28% was added in two days. Every addition was justified
+by a measured defect; the aggregate was unreadable — the *"individually thoughtful, fail as a set"*
+verdict these reviews keep producing, applied to their own documentation. An unread rule is worse than
+no rule, because it creates a belief that something is covered.
+
+**The eviction queue was drained 2026-09-20** — all three flagged rules resolved, reasons in
+[`process-rationale.md`](process-rationale.md). `check-docs.py` now WARNS before a budget blocks.

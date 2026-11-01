@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push*)",
+            "if": "Bash(*push*)",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-default-branch-push.sh",
             "statusMessage": "Checking branch rule..."
           },
@@ -28,6 +28,26 @@
         ]
       },
       {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-spawn.sh",
+            "statusMessage": "Checking the weekly usage limit..."
+          }
+        ]
+      },
+      {
+        "matcher": "SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-wake.sh",
+            "statusMessage": "Checking the weekly usage limit..."
+          }
+        ]
+      },
+      {
         "matcher": "Skill",
         "hooks": [
           {
@@ -43,6 +63,26 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh enforce-selection-card.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-prompt.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh stalled-work.sh",
+            "statusMessage": "Checking for stalled work...",
+            "timeout": 30
           }
         ]
       }
@@ -148,6 +188,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh session-state.sh",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh ensure-plan-leak-hook.sh",
+            "timeout": 30
           }
         ]
       },
@@ -179,9 +224,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
-            "timeout": 15,
-            "statusMessage": "Saving a snapshot of in-flight state before compaction..."
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh compaction-boundary.sh",
+            "timeout": 20,
+            "statusMessage": "Checking for a work boundary before compaction..."
           }
         ]
       }
