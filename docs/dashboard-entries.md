@@ -18531,3 +18531,8 @@ Backlog rows 438-443, from the 10-30 usage study and the compaction study. The a
 Four comments and one test name in the mutation checker said "2807" where they should say "TOTAL". A bad search-and-replace caused it, and a later one repeated it. The word is back. Nothing the checker does has changed.
 <!--tech-->
 Branch `fix-2616-total`, backlog #430. PR #440 (`dad5971b`) replaced TOTAL with 2616 at five places in `scripts/check-plan-code.py`. PR #443 then replaced 2616 with 2807, so the five read 2807 on master. All five are restored. The real `2807 -> 2808` declared-sum note is unchanged, and no `scripts/mutations/*.json` entry named the renamed case. `--self-test` 281/281.
+
+## 2026-11-01
+Two long-running branches are closed without merging, and what they leave behind is now written down. The explainer contrast layer (PR 364) was built and measured but never passed its fifth review round. The twelve-fix review-tooling branch (PR 371) was stuck for eighteen rounds fixing its own fixes. Each is now one queued backlog row with what is done, what is left and the open findings, and both branches stay on GitHub.
+<!--tech-->
+Branch `file-364-371-remainders`. Backlog rows 445 (PR 364, tip `9ce3cad8`, local tag `backup/1031/unify-explainer-style`) and 446 (PR 371, tip `b2abf875`, local tag `backup/1031/backlog-249-260-fixes`). Also pushed, with no PR: `feat/plan-ruled-out`; `rescue-two-uncommitted-memories` and `remember-local-snapshots` were already on origin at their local tips. Plan-leak scans: 0 hits on all three.
