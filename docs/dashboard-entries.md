@@ -18501,3 +18501,17 @@ data (`check-plan-code.pin_display`, imported; a duplicate key is refused), exec
 asserts in its OWN process (`--mutate` before any mutation, `--self-test` at its top) that the pins it uses ARE that
 display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-only fallback are deleted. Pins:
 merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.
+
+## 2026-10-31 [needs-you]
+The process rules that are re-sent to the model on every turn are now about half as long: 25 KB instead of 48 KB, an
+estimated 5,500 tokens fewer per turn. No rule was deleted. Each long passage of history and measurement moved, word for
+word, into a reference document that is read only when a task needs it, and a one-line rule stays behind with a pointer.
+This is a DRAFT for you to walk through before it merges: `docs/trim-floor-walkthrough.md` lists every section, where it
+went, and why it is safe to read on demand.
+<!--tech-->
+Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,255 → 14,409 B; `docs/plugins.md` 20,976 → 9,685 B.
+The mechanically-enforced table is cut to one line per row, full rows in `process-checklists.md` → *Mechanically
+enforced checks — the full rows*; the thrashing paragraph and the Code Review detail go to `review-method.md`; the
+handoff layer table to `process-checklists.md`; the spine-length history to `process-rationale.md`. Three bare
+references in the moved table qualified (backlog #56 twice, backlog #137). The 10-30 study's "about 162 KB" does not
+match the 47.6 KB measured here and should be re-derived.

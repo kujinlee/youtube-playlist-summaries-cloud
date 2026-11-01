@@ -110,17 +110,13 @@ A one-line change can be the most dangerous thing in the repo.
   exists as soon as the PR does.
 - **Merge when READY** (house rule, 2026-10-25, above); a **HOLD** is the human's — do not merge, notify.
 
-**⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT (corrected 2026-09-14).** It fires when **two
-consecutive rounds carry findings caused by the previous round's own fix, in one component**. A
-count was the wrong repair: measured 2026-08-28, Blocking totals ran 4→5→4 while the character
-shifted entirely, and on a document rounds can be right forever — go build, do not convene.
-⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer *thrashing or prose floor?* in
-the round document, with per-finding evidence. ⟳ **2026-10-20: THE COMPONENT A CONVENED REVIEW
-EXAMINES IS NOT NECESSARILY THE ONE THAT ARMED IT** — rank by TOTAL appearances, not consecutive
-run, because one fixed, gone quiet and COME BACK beats a longer unbroken run. A ranker, never a
-trigger. `check-review-decision.py:review_scope` computes it; the measurement is in
-[`review-method.md`](review-method.md), which also holds both shapes, the test *can a redesign
-remove it?* and the stop condition. The full account is in that retrospective's review doc.
+**⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT.** Phase 6 fires when **two consecutive rounds
+carry findings caused by the previous round's own fix, in one component** — never on a round count.
+⚠ **Reaching four rounds OBLIGES ASKING, and does not fire:** answer *thrashing or prose floor?* in the
+round document, with per-finding evidence. The component a convened review examines is ranked by TOTAL
+appearances (`check-review-decision.py:review_scope`), a ranker, never a trigger. Full account, both
+shapes, *can a redesign remove it?* and the stop condition: [`review-method.md`](review-method.md) →
+*The arming condition — full account*.
 
 **The architecture review — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
@@ -134,39 +130,40 @@ that isn't written down?"* — the one failure no tool can see.
 ## What is mechanically enforced
 
 **The script is the truth. These lines are pointers, not restatements** — a restatement is a second
-copy that drifts.
+copy that drifts. One line per row; each row's measurements and history are in
+[`process-checklists.md`](process-checklists.md) → *Mechanically enforced checks — the full rows*.
 
 | Check | Enforces |
 |---|---|
-| `.claude/hooks/block-default-branch-push.sh` | TWO push rules, one hook (THREE since 2026-10-29, below) — the filename is now narrower than the content and is kept only because five MERGED review docs cite it. (1) no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`). (2) ⟳ 2026-09-05: no bare `--force`/`-f` and no `--no-verify` on ANY branch (escape: `ALLOW_DANGEROUS_PUSH=1`, deliberately a SEPARATE flag — authorising a force-push is not the same decision as authorising a push to master). `--force-with-lease` is ALLOWED: denying the safe form would drive people to the dangerous one. Gating every feature-branch push was considered and REJECTED — a prefix everyone types past is worse than none. `--self-test`: 9 cases at its first (25 with rule 3), all four mutations killed via the case each names ⟳ 2026-10-29: plan leaks are git's own `.githooks/pre-push` → `scripts/check-plan-leak.py --pre-push` (backlog #393), not a hook here — no pushed commit may add 8 consecutive words of a gitignored plan, ⚠ a shorter fragment is not caught; enabled per clone by `scripts/install-git-hooks.sh`, which a SessionStart hook runs (or warns LOUDLY); CI has no plans. RULE 3 here refuses an agent push whose text mentions `hookspath` or `ALLOW_PLAN_LEAK` without `ALLOW_DANGEROUS_PUSH=1` (defence in depth; filter `if: Bash(*push*)`, verified to match every push form, 0 ms on other calls); detail in [`process-checklists.md`](process-checklists.md) → *The plan-leak push gate* |
-| `.claude/hooks/enforce-selection-card.sh` + `scripts/check-selection-card.py` | an option list follows `portable-practices` §19 — letters, ONE leading `(Recommended)` placed first, a question-shaped last option — refused at the point the card is offered. ⟳ 2026-09-10: the rule was written in §19 and two memory files and still went **1-for-3 in one session**, because it was recalled rather than read. ⚠ SHAPE ONLY: it cannot see two options that are the SAME WORK, which is the defect §19 exists for, and the block message says so |
+| `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (`ALLOW_DEFAULT_BRANCH_PUSH=1`); no bare `--force`/`-f` or `--no-verify` anywhere (`ALLOW_DANGEROUS_PUSH=1`; `--force-with-lease` allowed); an agent push mentioning `hookspath`/`ALLOW_PLAN_LEAK` refused. Plan leaks: `.githooks/pre-push` → `scripts/check-plan-leak.py` |
+| `.claude/hooks/enforce-selection-card.sh` + `scripts/check-selection-card.py` | an option list follows `portable-practices` §19 — SHAPE only, it cannot see two options that are the same work |
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
-| `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt whenever one of its FIVE sources changes — it is derived, so it is never edited by hand (`/goals`; ADR-0010) |
+| `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt from its sources, never hand-edited (`/goals`; ADR-0010) |
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
-| `.claude/hooks/enforce-handoff-path.sh` + `scripts/check-handoff-path.py` | a session handoff is written where the SessionStart hook reads it — blocks `/handoff` if a vendor update reverted the skill's save path (`--self-test`: 10 cases) |
-| `scripts/check-schema-gates.sh` | **one command for all THIRTEEN schema gates** — run this, not the pieces |
-| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated. ⟳ 2026-09-04 (architecture review #7, finding 4): this row claimed enforcement while `ci.yml` referenced it **zero** times. ⟳⟳ CORRECTED SAME DAY, by CI going red: I then claimed the guard "never uses" the Postgres it was gated behind. **False** — it imports `read_catalog`, and my evidence was taken on a machine with the container running. Its `--self-test` (pure rules) now runs in CI; the catalog-reading run stays in `check-schema-gates.sh` |
-| `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
-| `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol. ⟳ 2026-09-04: same finding, and the sharper half — *one mechanism per concern* IS architecture review #7's findings 1 and 2, so the guard for that class was the one CI could not see. ⟳⟳ Its **rules** are pure (`:125`) and now run in CI as a `--self-test`; its **entry point** needs the catalog, which the first attempt at this row got backwards |
-| `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
-| `scripts/check-ratchet-contract.py` | every guard ON DISK has a `--self-test`, no fail-open handler, and **a caller** — or a written `NO-CALLER:` reason. ⟳ 2026-08-30: the population is the FILESYSTEM; CI-step discovery saw 14 of 24 and missed all three guards that nothing ran, one of them listed in THIS table (`--self-test`: 21 cases) |
-| `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 32 cases). ⟳ r12: this row said 9 and, worse, listed the script as *mechanically enforced* while **nothing executed it** — it is now gate 15 of `scripts/check-schema-gates.sh` |
-| `scripts/check-function-revokes.py` | every newly created `public` function revokes PUBLIC in its own migration — **`alter default privileges` CANNOT do this** (measured 2026-08-28: stored entries are additive to PostgreSQL's built-in `PUBLIC` EXECUTE), so the per-function revoke is the only mechanism that works (`--self-test`: 16 cases) |
-| `scripts/check-python-pin.py` | ⟳ 2026-09-17: **every CI job pins the Python interpreter, the pins agree, and in CI the pin TOOK EFFECT** — `ci.yml` ran bare `python3` **45 times** in the required check and never called `setup-python`, so a runner-image bump could change every guard's behaviour with no commit. ⚠ The rule is *every job pins or is exempt with a reason*, NOT *jobs that run python*: the `schema-gates` job invokes the gates through a shell script and contains no literal `python3`. Locally a mismatch is ADVISORY (a gate red from birth gets switched off — #56); in CI it FAILS. Found by CI and a dev machine disagreeing about the same commit (`Path.is_file()` raises ENAMETOOLONG below 3.13, returns False above) |
-| `scripts/check-docs.py` | documentation integrity |
-| `scripts/check-memory-index-budget.py` | ⭐ **the always-loaded memory index FITS the harness's injection budget — the one quantity that decides whether a row ARRIVES, and nothing measured it.** Measured 2026-10-19: `MEMORY.md` stood at **26,930 characters against a 24,985-character limit**, so **8 of its 145 rows were silently dropped on every load** while `check-memory-link.py`, `recall-llm.corpus_verdict` and `check-docs.py`'s line budget were ALL green — the link guard asks whether the corpus is REACHABLE, this asks whether the index ARRIVES. Fails over budget, WARNS at 90%, and names the remedy (move history rows to the triggered `slice-history.md` entry) in the message. ⛔ **CHARACTERS, not bytes, and that took two rounds** — the harness's reported `26.3KB` is chars/1024 (26.30), not bytes/1024 (27.15), and r1 CLAUDE read the cut point out of its OWN injected context at char 24,958 / byte 25,771. Counting bytes could only ever fire EARLY, never produce a false green, but the suite and the manifest had pinned the wrong unit as the invariant — a mutation entry whose job was to forbid the right answer. ⚠ The UNIT is measured; the ALGORITHM (strict prefix vs row-wise) is **NOT VERIFIED** and the docstring says so. ⚠ Row LENGTH is deliberately not enforced: 35 of 145 rows exceed the harness's own ~200-char suggestion, and a gate red from birth on a quarter of its subject gets switched off (backlog #56). ⚠ NO COUNTS QUOTED HERE ON PURPOSE — this row shipped saying "42 cases, 12 mutations" and both were stale within twenty minutes. The script declares its own case count and `check-selftest-counts` verifies it by running it; `EXPECTED_MUTATIONS` pins the manifest |
-| `scripts/check-backlog-closure.py` | ⭐ **the INVERTED direction (backlog #98)** — every other backlog rule compares a row to ITSELF (marker vs status), so a stale row agrees with itself and disagrees only with **git**; five shipped that way, none caught by a machine. Reads merged subjects, warns when a row they close lacks `✅`. **WARN-ONLY** by #56's measured verdict (a blocking gate on a docs-only mismatch gets switched off); exits **2** only on CANNOT RUN — shallow clone, no git, or ZERO closing tokens. ⚠ Keys on `(backlog #N)` at the **subject TAIL**: measured, ANY-occurrence matched 18 ids and would have fired on **10**, the tail rule 7 and fired on **1** — a true positive. `--self-test`: 20 cases |
-| `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so. Reads the flat layout AND `docs/reviews/<writer>/`, refusing a basename filed in both (`--self-test`: 27 cases). ⟳ 2026-09-04: this row said **14** while the suite ran **22** — a third declared-count drift, caught by `check-selftest-counts.py` only because backlog #92 happened to touch the file |
-| `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to, by a name that survives a rename (ADR-0010; registry `docs/anchors.md`; `--self-test`: 15 cases) |
-| `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; page-producing skills cite it, never restate it (`--self-test`: 8 cases) |
+| `.claude/hooks/enforce-handoff-path.sh` + `scripts/check-handoff-path.py` | a session handoff is written where the SessionStart hook reads it |
+| `scripts/check-schema-gates.sh` | **one command for all the schema gates** — run this, not the pieces |
+| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
+| `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing |
+| `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary shadows a duplicate protocol |
+| `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its defining expression |
+| `scripts/check-ratchet-contract.py` | every guard on disk has a `--self-test`, no fail-open handler, and a caller or a `NO-CALLER:` reason |
+| `scripts/check-paid-caller-arrival.py` | fires when a non-test caller reaches `record_artifact` (backlog 26's trigger) |
+| `scripts/check-function-revokes.py` | every new `public` function revokes PUBLIC in its own migration |
+| `scripts/check-python-pin.py` | every CI job pins Python, the pins agree, and in CI the pin took effect |
+| `scripts/check-docs.py` | documentation integrity, including this file's line budget |
+| `scripts/check-memory-index-budget.py` | the always-loaded memory index fits the harness's injection budget (characters) |
+| `scripts/check-backlog-closure.py` | warns when a merged subject closes a backlog row that lacks `✅` (warn-only) |
+| `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason |
+| `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to (ADR-0010; `docs/anchors.md`) |
+| `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; skills cite it |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
-| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
-| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
-| `scripts/check-plan-code.py` | **`--mutate .` is what CI runs** (backlog #70, 2026-08-29). ⛔ **2026-10-25, the owner: the FULL sweep is CI's, on shards; locally it is PARTIAL** — off CI, `--mutate` times each target's control and REFUSES a run estimated past 10 min (`--allow-long-local` lets THAT one run through; it cannot persist); `--only <script>` is the local diagnostic (backlog #208). Open the PR as a DRAFT at slice start so the sweep runs there — a draft asserts nothing about readiness. every mutation in `scripts/mutations/*.json` is applied to the DELIVERED scripts and must go red **via the case it names**, over a control proved green first. Coverage cannot shrink — `EXPECTED_MUTATIONS` pins it, and duplicate names/anchors are refused. ⟳ 2026-08-30: every spawned suite runs under a **redirected `HOME`**, so a mutation cannot reach the reader's live pages under `~/explainers/` — structural, not per-entry, because the per-entry version had already failed once. ⟳ 2026-09-08: `<plan>`/`--evidence`/`--compare`/`--verify-evidence` — **PLAN MODE — are RETIRED and now REFUSE with rc=2** naming the retirement; superseded by `--mutate .` (PR #176), which measures the shipped code rather than a document's copy of it. Refused, not deleted, so an old invocation gets a sentence instead of argparse's "unrecognized arguments" (`--self-test`). ⟳⟳ 2026-09-09 (PR 2 of 2): **the refusals stay; the CODE BEHIND THEM IS NOW DELETED** — 7 functions, 7 constants and 143 cases, `3,607 → 1,983` lines. `EXPECTED_MUTATIONS` for this file falls **44 → 23** and the declared sum **392 → 371**, which is the ONE permitted kind of fall: 20 anchors stop resolving because the code they name is gone, so the entries are *retired with their subject* rather than orphaned, recorded at both sites with the count and the reason. ⟳ 2026-09-07: the harness stages `HARNESS_TREE`, not `scripts/` alone — four guards resolve their SUBJECT from the repo root, so a scripts-only tree gave each a red control and left them unmanifested for weeks. ⚠ That tuple is **not** a containment boundary and reading it as one is what cost the four: `copytree` yields a COPY, and the boundary is `child_env`'s `$HOME` redirect above |
-| `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag. Retiring plan mode removed the ONLY reader of the `<!-- file: … -->` grammar, so "no plan embeds code" went from enforced to merely true — measured 2026-09-08 as 0 across 1,115 documents, and an empty corpus is **CANNOT RUN**, because a zero over nothing is not a finding. Prose ABOUT a tag (13 documents, all backticked) must keep passing; a bare substring test breaks every one of them, which `plan-mutation-retarget-r1` already paid for. ⚠ The fence rule is `extract`'s own, taken by RUNNING it: v1 reasoned about the parser instead, and its first live run flagged a committed review doc the parser had never seen (`--self-test`: 21 cases) |
+| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` |
+| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited |
+| `scripts/check-plan-code.py` | `--mutate .`: every mutation in `scripts/mutations/*.json` goes red via the case it names. FULL sweep is CI's; locally PARTIAL (`--only <script>`) — open a DRAFT PR at slice start |
+| `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
-| `.github/workflows/schema-gates.yml` | ⟳ 2026-09-13: **the fifteen schema gates, in CI**, on a database built in a container by `scripts/ci/start-schema-db.sh` (27 migrations + 3 fixtures). ⟳ 2026-09-16 (#137): **NO path filter — it runs on EVERY PR, so the check always reports and can therefore be REQUIRED.** A workflow-level `paths:` filter meant the context never appeared on a docs-only PR, and a required check that never reports leaves a PR *pending forever*; measured, the filter also protected nothing (median 110s beside a 516s `verify`, finishing first in all ten paired runs). ⚠ **Requiring the context is a repo SETTING and must land AFTER this** — the reverse order blocks every docs-only PR. Its `prod-drift` job is the only SCHEDULED gate — production drift is the one subject no push corresponds to. Runs `scripts/check-storage-independence.py`, which holds the fixture to its own claim: it parses with `ast` and derives its file set, because the `grep` it replaced survived 3 of 5 mutations |
+| `.github/workflows/schema-gates.yml` | the schema gates in CI on every PR (no path filter, so it can be required); `prod-drift` is the scheduled gate |
 
 **Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack); run them locally
 before a merge. ⟳ 2026-09-13 the schema gates LEFT this list — CI builds their Postgres in 14s.
@@ -207,14 +204,11 @@ transcript fetching. E2E mocks at the **API route** level, not the lib boundary.
 
 ## Keeping this file short
 
-This document reached **576 lines**, of which ~28% was added in two days. Every addition was justified
-by a measured defect; the aggregate was unreadable — the *"individually thoughtful, fail as a set"*
-verdict these reviews keep producing, applied to their own documentation. An unread rule is worse than
-no rule, because it creates a belief that something is covered.
+Why this file is budgeted, and what it once grew to: [`process-rationale.md`](process-rationale.md) → *Why the spine is short — history
+moved out of the always-loaded files*.
 
 > **Before adding a rule here, ask whether it can be a script.** If it can, write the script and add a
 > pointer row above. If it cannot, it belongs in the checklists, method, or rationale doc — not the
 > spine. **`scripts/check-docs.py` enforces the line budget.**
 
-**The eviction queue was drained 2026-09-20** — all three flagged rules resolved, reasons in
-[`process-rationale.md`](process-rationale.md). `check-docs.py` now WARNS before a budget blocks.
+`check-docs.py` WARNS before a budget blocks.
