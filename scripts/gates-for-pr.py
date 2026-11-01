@@ -3,7 +3,7 @@
 
     python3 scripts/gates-for-pr.py                 # run the battery
     python3 scripts/gates-for-pr.py --list          # the gate set and where each came from; runs nothing
-    python3 scripts/gates-for-pr.py --self-test  # 33 cases
+    python3 scripts/gates-for-pr.py --self-test  # 35 cases
 
     0 = every gate in the set PASSED   1 = a gate FAILED
     2 = CANNOT RUN — the set could not be derived, or a gate ended CANNOT RUN / TIMEOUT / KILLED
@@ -69,6 +69,8 @@ OTHER_JOBS: dict[str, str] = {
 
 def _load(alias: str, filename: str):
     spec = importlib.util.spec_from_file_location(alias, Path(__file__).with_name(filename))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"{filename} cannot be loaded beside {Path(__file__).name}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[alias] = mod
     spec.loader.exec_module(mod)
@@ -198,11 +200,17 @@ def exit_code(tally: dict[str, int]) -> int:
 
 
 def run_gate(gate: Gate, root: Path, timeout: float, log: Path) -> Outcome:
+    """Every path out is a status: a gate that cannot even be started is CANNOT RUN, never an unset exit."""
     start = time.monotonic()
     timed_out = False
+    rc: int | None = None
     with open(log, "wb") as out:
-        p = subprocess.Popen([sys.executable, gate.script, *gate.args], cwd=root, stdout=out,
-                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+        try:
+            p = subprocess.Popen([sys.executable, gate.script, *gate.args], cwd=root, stdout=out,
+                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+        except OSError as e:
+            out.write(f"gates-for-pr: the gate could not be started: {e}\n".encode())
+            return Outcome("CANNOT RUN", None, time.monotonic() - start)
         try:
             rc = p.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -269,7 +277,7 @@ def line(status: str, name: str, detail: str) -> str:
 
 
 def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "gates-for-pr").split("\n")[0])
     ap.add_argument("--base", default="master")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="seconds per gate")
@@ -525,6 +533,12 @@ def _end_to_end() -> list[tuple[str, bool]]:
         o = run_gate(Gate("fails", "scripts/h.py", (), "t"), repo, 5, tmp / "h.log")
         case("run_gate alone: exit 1 is FAIL, and the gate's output is in its log",
              (o.status, o.rc, (tmp / "h.log").exists()), ("FAIL", 1, True))
+        o = run_gate(Gate("missing", "scripts/no-such.py", (), "t"), repo, 5, tmp / "m.log")
+        case("a gate script that does not exist is CANNOT RUN (python's exit 2), never green",
+             (o.status, o.rc), ("CANNOT RUN", 2))
+        o = run_gate(Gate("unstartable", "scripts/a.py", (), "t"), tmp / "no-such-dir", 5, tmp / "u.log")
+        case("a gate that cannot even be STARTED is CANNOT RUN with no exit code, and the log says why",
+             (o.status, o.rc, "could not be started" in (tmp / "u.log").read_text()), ("CANNOT RUN", None, True))
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):

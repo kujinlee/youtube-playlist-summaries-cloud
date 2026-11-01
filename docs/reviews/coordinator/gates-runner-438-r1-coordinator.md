@@ -48,7 +48,7 @@ reasons, the per-gate timeout, one mutation slice per moved manifest. New: `exit
 every gate PASSED, 1 on any FAIL, 2 on any other non-pass — so a TIMEOUT, KILLED or CANNOT RUN can never read as green.
 No parallelism existed; none was added.
 
-**Evidence on the fold:** `--self-test` 33/33 (was 61: the trace/digest/ledger cases left with their subject).
+**Evidence on the fold:** `--self-test` 35/35 (was 61: the trace/digest/ledger cases left with their subject). ⟳ Pyright (coordinator) flagged `rc` possibly unbound in `run_gate`: no reachable path left it unset (a wait exception other than the timeout re-raises), but a gate that cannot be STARTED (`Popen` raising `OSError`) crashed the whole run with a traceback. It is now an explicit CANNOT RUN outcome with the reason in its log, and `rc` starts as None; two cases cover a missing gate script (python's exit 2) and an unstartable gate.
 `check-plan-code --mutate . --only scripts/gates-for-pr.py`: 10 mutations, 10 killed, 10 attributed. `EXPECTED_MUTATIONS`
 23 → 10: 17 retired with their subject, 6 kept, 4 new — recorded at `scripts/check-plan-code.py` (the pin's comment) and in
 backlog row 438. `check-fixture-variation` `EXAMINED_KEYS` re-derived by running `analyse()`. `.gitignore`'s ledger line
