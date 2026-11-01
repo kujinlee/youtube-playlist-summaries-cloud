@@ -1,0 +1,137 @@
+[
+  {
+    "name": "an empty or stub review is recorded as a review",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if len(text) < _cx.MIN_REVIEW_CHARS:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an empty review file is refused",
+      "a stub under the minimum length is refused"
+    ]
+  },
+  {
+    "name": "a review stating no verdict is recorded — the finding-less file is credited",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if not VERDICT_WORD.search(text):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a review stating no verdict is refused — a finding-less file is a failed run"
+    ]
+  },
+  {
+    "name": "a review that never names the head is recorded against any head the coordinator types",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if not any(head.lower().startswith(t) for t in HEX_TOKEN.findall(text.lower())):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a review that never names the head it was handed is refused",
+      "a review naming an older head cannot be RECORDED against a later one"
+    ]
+  },
+  {
+    "name": "a six-character prefix counts as naming the head",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "MIN_HEX = 7",
+        "MIN_HEX = 6"
+      ]
+    ],
+    "expect": [
+      "...nor does a six-character prefix, which is shorter than git's own abbreviation"
+    ]
+  },
+  {
+    "name": "a CODEX id is recorded here, testifying that a gate ran when nothing ran it",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if who != WRITER:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a CODEX id is refused — its verdict is written by the wrapper that ran it",
+      "a Codex id through this door: refused"
+    ]
+  },
+  {
+    "name": "an existing verdict is overwritten",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "exists=os.path.exists(vpath)",
+        "exists=False"
+      ]
+    ],
+    "expect": [
+      "an existing verdict is NOT overwritten"
+    ]
+  },
+  {
+    "name": "a head that is not a commit is recorded as typed",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    return out if p.returncode == 0 and out else None",
+        "    return out if p.returncode == 0 and out else head"
+      ]
+    ],
+    "expect": [
+      "a head that is not a commit here: refused, nothing written"
+    ]
+  },
+  {
+    "name": "the overlay is written as unknown, so the consumer cannot use the Claude verdict",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "head=head, dirty={}, prompt=prompt, tree=tree)",
+        "head=head, dirty=None, prompt=prompt, tree=tree)"
+      ]
+    ],
+    "expect": [
+      "...and a CLEAN overlay, so uncommitted fixes read as unseen",
+      "check-review-recorded: a Claude verdict on the FINAL tree satisfies it"
+    ]
+  },
+  {
+    "name": "the head is recorded as the abbreviation typed, not the commit it resolved to",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    rec = claude_record(review_id=args.review_id, head=head,",
+        "    rec = claude_record(review_id=args.review_id, head=args.head,"
+      ]
+    ],
+    "expect": [
+      "...under the FULL sha, though it was handed an abbreviation"
+    ]
+  },
+  {
+    "name": "the record says the gate did not run, so no consumer can use it",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    rec = _cx.verdict_record(gate_ran=True,",
+        "    rec = _cx.verdict_record(gate_ran=False,"
+      ]
+    ],
+    "expect": [
+      "...says the gate ran",
+      "check-review-recorded: a Claude verdict on the FINAL tree satisfies it"
+    ]
+  }
+]

@@ -83,6 +83,8 @@ SCRIPTS = ROOT / "scripts"
 POPULATION: frozenset[str] = frozenset({
     # ⟳ 2026-10-07: gained a `--self-test`, so its declared count needs a reader.
     "codex-frontier-model.py",
+    # ⟳ 2026-10-31: pinned in the commit that creates it (the review-round cap's Claude verdict).
+    "record-review-verdict.py",
     # ⟳ 2026-10-02, ADR-0014's rule D2: pinned in the commit that creates it. Its suite went
     # 46 → 73 → 74 → 76 → 79 while it was being written, each step for a real reason, so a
     # docstring count nothing verifies would have been wrong four times in one evening.
