@@ -18521,3 +18521,8 @@ are bounded by it. `scripts/record-review-verdict.py` (98 cases, 21 mutations) w
 the Markdown parser beaten by comments, quotes and nested fences, so it reads fixed positions now. Round 1 caught a literal `dirty: {}` that let a
 reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-review-recorded` only rewords
 (195 cases). ⚠ `check-review-decision.py` does not apply the cap yet.
+
+## 2026-11-01
+Six ways to spend fewer tokens are now written down as queued work, each with a trigger and a way it would be shown wrong: run the pre-push checks in one call and skip unchanged ones, warn when a routine job is given the expensive model, hold off compaction in the middle of work, check the Codex budget before a review, close finished jobs in the ledger automatically, and stop the usage-pace check going blind while you are away. The token-management page also no longer claims the always-loaded instructions are about 15% of each call, since that share was never established.
+<!--tech-->
+Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.6 KB on origin/master (draft PR #458), so the earlier 162 KB figure covered more than those files.
