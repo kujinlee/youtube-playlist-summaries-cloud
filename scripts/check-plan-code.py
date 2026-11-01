@@ -1779,6 +1779,10 @@ EXPECTED_MUTATIONS = {
     #   (X1, a symlink nested in docs/reviews): the OR's master branch, its reviewed-root half, its
     #   lexical reading, and main asking it before --out is resolved.
     "scripts/codex-review.py": 71,
+    # ⟳ new (review-round cap, 2026-10-31): a Claude half's verdict — one entry per refusal, plus the
+    # three fields a consumer reads (gate_ran, the full head, the clean overlay). ⟳ PR #457 r2: 19 -> 21,
+    # the fixed-position reads (the `\n` split, the unstripped first line); seven retargeted.
+    "scripts/record-review-verdict.py": 21,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -4877,6 +4881,8 @@ def _self_test_body() -> int:
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
                                       "scripts/recall-llm.py",
+                                      # ⟳ 2026-10-31, the review-round cap: a Claude half's verdict.
+                                      "scripts/record-review-verdict.py",
                                       "scripts/regen-pages.py",
                                       "scripts/session-state.py"])
     # A literal on purpose: its whole job is that the total cannot move without

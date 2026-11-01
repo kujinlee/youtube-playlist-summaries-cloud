@@ -20,14 +20,14 @@ Detail lives in four places, each with a different read-trigger:
 
 The **spec is the human gate.** Design, terminology, and goal decisions are settled *with* the human
 in Phase 1. Once `docs/design-spec.md` is approved the goal is fixed, and **plan (Phase 2) and
-implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence is the
-quality gate, not a human sign-off. At convergence the coordinator *notifies* and continues.
+implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence, bounded by
+the round cap ([`review-method.md`](review-method.md) §0 Q4c), is the quality gate, not a human sign-off. At convergence the coordinator *notifies* and continues.
 
 Pull the human back in only for an **unexpected situation**:
 
 - a genuine ambiguity or fork the spec did not settle (a real decision, not a mechanical choice);
-- an adversarial-review round that **cannot converge**. This collides with *Iterative Re-Review*,
-  which says keep going. The rule is **notify and continue**. Stop and wait only if (a) the human
+- an adversarial-review round that **cannot converge** — ⟳ 2026-10-31 the **round cap** governs: from r4 findings are
+  FILED unless a BLOCKER ([`review-method.md`](review-method.md) §0 Q4c). **Notify and continue**; wait only if (a) the human
   replies, (b) the next action is outward-facing or irreversible, or (c) the fix is not clearly
   specified — i.e. you would be guessing at intent. Continuing while a notification is outstanding is
   correct; going silent is not;
@@ -86,8 +86,8 @@ must stay in sync — updated proactively, without being asked.
 |---|---|---|---|
 | 0 | Setup | `git init`, `docs/` | — |
 | 1 | **Brainstorming** | `docs/design-spec.md` | grill-with-docs + adversarial review + **user approval**. Spec contents: checklists doc |
-| 2 | **Writing Plans** | `docs/implementation-plan.md` | dual adversarial review **to convergence**; then notify and proceed. Post-Plan Gate: checklists doc |
-| 3 | **Implementation** | code + tests | per-task two-stage review to convergence, autonomous. Per-Task Checklist: checklists doc |
+| 2 | **Writing Plans** | `docs/implementation-plan.md` | dual adversarial review **to convergence or the round cap**; then notify and proceed. Post-Plan Gate: checklists doc |
+| 3 | **Implementation** | code + tests | per-task two-stage review to convergence or the round cap, autonomous. Per-Task Checklist: checklists doc |
 | 4 | **Verification** | evidence | enumerate every UX case as a task list *before* clicking anything; screenshots to `.screenshots/` (gitignored) |
 | 5 | **Final Review + Finish** | PR | full review → commit → push → PR → **merge when READY; a HOLD goes to the human** |
 | 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or on THRASHING: two consecutive rounds whose findings came from the previous round's fix** |
@@ -114,7 +114,7 @@ A one-line change can be the most dangerous thing in the repo.
 consecutive rounds carry findings caused by the previous round's own fix, in one component**. A
 count was the wrong repair: measured 2026-08-28, Blocking totals ran 4→5→4 while the character
 shifted entirely, and on a document rounds can be right forever — go build, do not convene.
-⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer *thrashing or prose floor?* in
+⚠ **Reaching four rounds OBLIGES ASKING, and does not fire** — and is the round cap (§0 Q4c). Answer *thrashing or prose floor?* in
 the round document, with per-finding evidence. ⟳ **2026-10-20: THE COMPONENT A CONVENED REVIEW
 EXAMINES IS NOT NECESSARILY THE ONE THAT ARMED IT** — rank by TOTAL appearances, not consecutive
 run, because one fixed, gone quiet and COME BACK beats a longer unbroken run. A ranker, never a

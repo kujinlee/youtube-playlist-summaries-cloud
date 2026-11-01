@@ -56,6 +56,13 @@ settled three earlier findings on the branch that built this.
 3. Codex's final message **is** its review; it writes no file. File each half under
    `docs/reviews/<writer>/`.
 4. A half that cannot run is recorded `REVIEW GAP: <half>` **with its reason**, never omitted.
+   ⟳ **After a Claude half is filed, the coordinator runs `scripts/record-review-verdict.py
+   --review-id <id> --head <sha it was handed>` IN THE TREE THE HALF REVIEWED, before any edit or
+   commit**, so no Codex run is spent only to leave a verdict file (Q4c). ⛔ **The brief tells the half
+   to make its review's FIRST line exactly `Reviewed head: <full 40-hex sha>` and its LAST non-empty
+   line exactly `VERDICT: CONVERGED` or `VERDICT: NOT CONVERGED`** — fixed positions, matched whole,
+   nothing else in the file read for either, so no quote, fence or comment can stand in for them
+   (PR #457 r2). The tool refuses a tree not at that head, and records its uncommitted overlay.
 5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
    boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each
    finding must state whether siblings were searched for, HOW, and what turned up** — "grepped the
@@ -124,6 +131,48 @@ rounds cleanly. Inverted, it is why PR #299 was right to run seventeen.
 > ⛔ **Never spend a round on (b) before offering 1–3 to the human.** That is exactly what PR #302
 > cost, twice.
 
+**(c) ⛔ THE ROUND CAP — round 4 onward FILES, it does not fold** (the owner's decision, 2026-10-31).
+It overrides (a) from round 4, and it is **pre-committed**: round 1's coordinator document states it
+before any finding exists, so it is never decided mid-loop.
+
+| Round | Runs when | Who reviews | Findings |
+|---|---|---|---|
+| **1** | always | **both halves**, concurrently | disposed by Q3 |
+| **2, 3** | the previous round is not converged | one half each, alternating (*Round topology*, step 4) | disposed by Q3 |
+| **4** | round 3's fold changed a guarded path | one half, scoped to that fold | each **FILED as a backlog row**, unless a **BLOCKER** (folded) |
+| **5** | round 4 folded a BLOCKER | one half, scoped to that fix — the **last** round | **all FILED**; a BLOCKER is also notified to the human **and HOLDS the PR** until they answer |
+| **6+** | never | — | — |
+
+A **BLOCKER** is a finding that passes **all three** tests, each checkable from the finding's own
+text — anything else is filed, however it is graded:
+
+1. it names a **concrete input** (a command, a file's content, a sequence of steps) under which the
+   PR **as merged** gives a false green, loses or corrupts data, or opens a security hole (auth,
+   RLS, a secret, unbounded spend);
+2. the reviewer **ran** that input against the reviewed head and quotes what it produced — a
+   reproduction, not an argument;
+3. the fix is **local**: inside files the PR already changes, with no new mechanism, script or schema.
+
+One that passes 1 and 2 but not 3 is filed **and** notified to the human: it needs a decision, not
+a round.
+
+**The round-3 fold and tree identity (b).** Round 3's fold commits code no round has seen. Cheapest
+first: hold round 2's fold **uncommitted** when round 3 is dispatched (answer 2), which works with
+either half — Codex observes the overlay at dispatch, `record-review-verdict.py` when it is run, so
+run it before any commit (its docstring states that bound, backlog #435); a fold that is purely
+editorial takes `NO-REVIEW: <reason>` (answer 3); otherwise round 4 above sees it. Round 4 is the
+tree-identity round as well as the BLOCKER round, never one of each.
+
+**Measured over the 14 days to 2026-10-31, 273 rounds.** Round 1 found **58%** of the
+Blocking/High findings that were fixed; rounds 1–2 **78%**; rounds 1–3 **83%**. Rounds 4+ were
+**129 rounds for 17%**, and half of that 17% was fix-induced. The round-1 halves overlapped on only
+about **25–35%** of Blocking/High, which is why round 1 keeps both. **31** rounds were Codex runs
+made only to produce a verdict file, about **7.4%** of the Codex weekly limit — which is why a
+Claude half now writes its own (Q2 step 4).
+
+⚠ `scripts/check-review-decision.py` does not apply the cap yet: from round 3, read its
+*CONTINUE* through this rule.
+
 ### Q5 · Thrashing → architecture review
 
 Per finding, answer **in the round document**: *did the previous round's fix cause this?*
@@ -135,7 +184,8 @@ Per finding, answer **in the round document**: *did the previous round's fix cau
 | findings drifting to *under-specified* while the artifact improves | **STOP REVIEWING — go build** |
 
 Apply the single test at `:173`, never the symptom list; using the list as a checklist produced a
-measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**, and does not fire.
+measured false escalation on 2026-08-14. Reaching four rounds **obliges asking**, and does not fire;
+it is also the round cap (Q4c), so the answer goes into the round-3 document.
 
 ### Q6 · Record the call
 
@@ -490,17 +540,17 @@ nobody is looking at the repair.
    sentence after *"Fix."* never does.
 4. **Rounds 2+ alternate**, scoped to the delta, sent to the half that did NOT author the fix.
    Match the reviewer to the risk: reproduction and execution → Codex; experiment design → Claude.
-   ⚠ **"Alternate" has two readings on record, and which one governs is the OWNER's decision**
-   (backlog #339, open). *Pair-per-round:* both halves of round N run one after the other and are
-   filed as round N. *One-half-per-round:* each round carries one half, and records `REVIEW GAP:
-   <half> — alternation`. `check-review-rounds.py` accepts both today, and for a solo half in round 2 or later its failure line names both.
+   ✅ **"Alternate" means ONE half per round** — decided by the owner 2026-10-28 (backlog #339);
+   the round records `REVIEW GAP: <half> — alternation` for the other, and §0 Q4c's rows apply it.
+   `check-review-rounds.py` still accepts a pair too, and for a solo half in round 2 or later its failure line names both.
 5. **Stop when a round has seen the tree that will merge** and no code change follows it. Holding
    the last round's fixes uncommitted so the reviewer sees the final state satisfies this and is the
    documented way to do it.
 
 Step 5 is the only step with a machine behind it: `scripts/check-review-recorded.py` reads what each
-Codex run records at dispatch — the commit, and the **git tree entry** of every file handed over
-uncommitted — and refuses a branch where guarded code was committed after **every** round. Its own
+round's verdict records — a Codex run at dispatch, the commit and the **git tree entry** of every file
+handed over uncommitted; a Claude half via `scripts/record-review-verdict.py`, the commit its review
+names — and refuses a branch where guarded code was committed after **every** round. Its own
 two review rounds are why it compares entries and not something weaker: r1 reproduced "review `x`
 dirty, then edit `x` again and commit", which a path match certifies; r2 then reproduced the same
 class one layer in, a **mode-only** change that a content match certifies. No usable round is
@@ -588,7 +638,7 @@ Address all High/P1 findings before showing the user. ⟳ **SUPERSEDED 2026-09-1
 
 ### Iterative Re-Review (big / critical changes) — required
 
-One review round is not the gate; **convergence** is. After addressing a round's Blocking/High findings, **re-run the full dual adversarial review (Codex + Claude) on the *revised* artifact**, and repeat until a round reaches **diminishing returns**. Fixes routinely introduce new defects or expose deeper ones that the first pass could not see — a single round gives false confidence.
+One review round is not the gate; **convergence** is — **bounded by the round cap (§0 Q4c, 2026-10-31): from round 4 findings are filed unless a BLOCKER, and rounds 2–3 run one half each.** After addressing a round's Blocking/High findings, re-review the *revised* artifact, and repeat until a round reaches **diminishing returns** or the cap. Fixes routinely introduce new defects or expose deeper ones that the first pass could not see — a single round gives false confidence.
 
 **When this is required** (any one triggers it):
 - Schema / identity / idempotency changes; concurrency, leasing, or locking; auth / RLS / multi-tenant isolation; money-spending or irreversible paths.
@@ -600,8 +650,8 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 **The loop:**
 1. Review (Codex + Claude, independent) → group Blocking/High/Medium/Low.
 2. Address all Blocking/High. ⟳ Medium is **disposed by §0 Q3**, not presented — see the supersession above.
-3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
-4. Repeat from 2.
+3. **Re-review the revised artifact** — one half per round from round 2 (§0 Q4c), explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
+4. Repeat from 2, until round 3; after that, file (§0 Q4c).
 
 ### ⚠ Non-convergence means different things on a DOCUMENT and on CODE — added 2026-08-28
 
@@ -807,7 +857,7 @@ the live system, not by reading vendor types.
 
 **Stop (diminishing returns) when** a full re-review round returns **no new Blocking or High** — only Low/nits, or findings already known-and-accepted (recorded as deferred with an owner). That round is the gate; then get human approval. Do **not** stop merely because you are tired of reviewing or the artifact "feels done."
 
-**Keep going when** a round surfaces a *new* Blocking/High (common after a big rewrite) — that is proof the loop is still earning its cost; another round is mandatory.
+**Keep going when** a round surfaces a *new* Blocking/High (common after a big rewrite) — through round 3. ⟳ From round 4 the round cap governs (§0 Q4c): such a finding is FILED unless it is a BLOCKER.
 
 **Save every round** to `docs/reviews/` with a version/round suffix (e.g. `-v2-rereview.md`) so the convergence trail is auditable.
 
