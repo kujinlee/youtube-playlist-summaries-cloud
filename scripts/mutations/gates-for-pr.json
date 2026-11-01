@@ -1,0 +1,112 @@
+[
+  {
+    "name": "exit 2 (CANNOT RUN) reads as a PASS",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    return {0: \"PASS\", 2: \"CANNOT RUN\"}.get(rc, \"FAIL\")",
+        "    return {0: \"PASS\", 2: \"PASS\"}.get(rc, \"FAIL\")"
+      ]
+    ],
+    "expect": "exit 0 is the only PASS"
+  },
+  {
+    "name": "a negative exit (a signal) stops being KILLED",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if rc is None or rc < 0:\n        return \"KILLED\"",
+        "    if rc is None:\n        return \"KILLED\""
+      ]
+    ],
+    "expect": "exit 0 is the only PASS"
+  },
+  {
+    "name": "a stale NOT_LOCAL name no longer refuses the set",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if stale:\n        return [], [], f\"NOT_LOCAL names a step",
+        "    if False:\n        return [], [], f\"NOT_LOCAL names a step"
+      ]
+    ],
+    "expect": "a NOT_LOCAL name that no longer matches a step REFUSES the set (it cannot go stale silently)"
+  },
+  {
+    "name": "a verify job with no python gate yields an empty set instead of CANNOT RUN",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if not gates:\n        return [], out, f\"the `{CI_JOB}` job yielded no Python gate",
+        "    if False:\n        return [], out, f\"the `{CI_JOB}` job yielded no Python gate"
+      ]
+    ],
+    "expect": "a verify job with no python gate is CANNOT RUN, never an empty pass"
+  },
+  {
+    "name": "the PR-only base ref is no longer rewritten to --base",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "        line = run.replace(BASE_REF, f\"origin/{base}\")",
+        "        line = run"
+      ]
+    ],
+    "expect": "a PR-only step is IN the set, its base ref rewritten to --base"
+  },
+  {
+    "name": "a moved MANIFEST no longer runs the scripts it names",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "        if manifest in changed:\n            out |= files",
+        "        if False:\n            out |= files"
+      ]
+    ],
+    "expect": "a moved MANIFEST runs every script it names"
+  },
+  {
+    "name": "a TIMEOUT, KILLED or CANNOT RUN with no FAIL exits 0, as if green",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if any(n for s, n in tally.items() if s != \"PASS\"):\n        return 2",
+        "    if False:\n        return 2"
+      ]
+    ],
+    "expect": "the run is 0 only when every gate PASSED; a FAIL is 1; any other non-pass is 2"
+  },
+  {
+    "name": "a FAIL no longer makes the run 1",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if tally.get(\"FAIL\"):\n        return 1",
+        "    if False:\n        return 1"
+      ]
+    ],
+    "expect": "the run is 0 only when every gate PASSED; a FAIL is 1; any other non-pass is 2"
+  },
+  {
+    "name": "the other ci.yml jobs (the mutation sweep) stop being printed OUT OF SET",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "        if job != CI_JOB:\n            out.append(",
+        "        if job == \"\":\n            out.append("
+      ]
+    ],
+    "expect": "node, a multi-line block, another CI variable, a non-PR condition and every other job are OUT OF SET"
+  },
+  {
+    "name": "an untracked file stops counting as moved, so a new manifest's slice is not run",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    return set(diff.stdout.split()) | set(new.stdout.split()), \"\"",
+        "    return set(diff.stdout.split()), \"\""
+      ]
+    ],
+    "expect": "a moved (untracked) manifest puts its script's mutation slice in the set"
+  }
+]

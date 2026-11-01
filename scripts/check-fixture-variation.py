@@ -313,6 +313,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ PR #465 r1 fold: `classify.*`, `digest.inputs`, `git_refs.argv`, `last_green.*` and `read_ledger.path` leave with
+    # the skip ledger they belonged to (deleted, not renamed); `exit_code.tally` and `run_gate.*` join.
+    "gates-for-pr.py": ("ci_gates.base", "ci_gates.workflow", "exit_code.tally", "git.a", "main.argv", "main.root",
+                        "mutation_gates.targets", "mutation_targets.changed", "mutation_targets.manifests",
+                        "run_gate.gate", "run_gate.log", "run_gate.root", "run_gate.timeout",
+                        "status_of.rc", "status_of.timed_out"),
     # backlog #440 (2026-11-01): the PreCompact boundary hook, pinned in the commit that creates it. DERIVED by
     # running `analyse()` on the delivered source; every parameter varied except main.*, EXEMPT with its reason.
     # ⟳ r1 fold: + `ceiling.w`, `log_path.*`, `read_tail.*`, `sentinel_armed.*` — the clamp, the log's fallback, the

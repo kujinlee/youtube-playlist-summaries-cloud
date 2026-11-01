@@ -120,6 +120,8 @@ POPULATION: frozenset[str] = frozenset({
     # A docstring count nothing verified would have been wrong three times in twenty minutes.
     "check-transcript-references.py",
     "check-memory-link.py",
+    # ⟳ 2026-11-01 (backlog #438): the per-PR battery runner, pinned in the commit that creates it.
+    "gates-for-pr.py",
     # ⟳ 2026-10-29 (backlog #393): the plan-leak push gate, pinned in the commit that creates it.
     "check-plan-leak.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
