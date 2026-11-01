@@ -18501,3 +18501,19 @@ data (`check-plan-code.pin_display`, imported; a duplicate key is refused), exec
 asserts in its OWN process (`--mutate` before any mutation, `--self-test` at its top) that the pins it uses ARE that
 display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-only fallback are deleted. Pins:
 merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.
+
+## 2026-10-31
+Review rounds now stop at round 3. Round 1 still uses both reviewers, because they mostly find
+different problems. Rounds 2 and 3 use one reviewer each. From round 4 on, findings go into the
+backlog instead of being fixed in the branch, unless one would make the change wrong and nothing
+else would catch it. This is your decision of 31 October, based on 14 days of data: the first three
+rounds found 83% of the serious problems that were fixed, and the remaining 129 rounds found 17%. A
+Claude review can now leave the same "a review saw this code" record that a Codex run leaves. Codex
+runs made only to write that record cost about 7.4% of the weekly Codex limit.
+<!--tech-->
+Branch `review-round-cap`, PR #457, backlog #434. The rule is written once, in `docs/review-method.md`
+§0 Q4c. `dev-process.md` and `plugins.md` now point to it, and Iterative Re-Review / *Keep going*
+are bounded by it. `scripts/record-review-verdict.py` (44 cases, 10 mutations) writes
+`codex-review.verdict_record` for a filed Claude half, with `writer: claude`, `dirty: {}`, a head
+that resolves to a commit the review names, and no overwrite. `check-review-recorded` only rewords
+(195 cases). ⚠ `check-review-decision.py` does not apply the cap yet.
