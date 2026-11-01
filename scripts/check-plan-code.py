@@ -4880,6 +4880,8 @@ def _self_test_body() -> int:
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
                                       "scripts/recall-llm.py",
+                                      # ⟳ 2026-10-31, the review-round cap: a Claude half's verdict.
+                                      "scripts/record-review-verdict.py",
                                       "scripts/regen-pages.py",
                                       "scripts/session-state.py"])
     # A literal on purpose: its whole job is that the total cannot move without

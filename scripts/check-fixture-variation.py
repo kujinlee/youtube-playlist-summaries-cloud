@@ -313,6 +313,9 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
+    # by running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    "record-review-verdict.py": ("claude_record.chars", "claude_record.head", "claude_record.prompt", "claude_record.review_id", "claude_record.tree", "main.argv", "main.root", "review_problem.body", "review_problem.head", "writer_problem.review_id",),
     # backlog #410 (2026-10-30): every parameter varied except main.*, EXEMPT with its reason.
     # ⟳ r2: `unpushed_item.times` is gone — the oldest time and the count are measured into a FACT.
     "check-stalled-work.py": (

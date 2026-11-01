@@ -2,7 +2,7 @@
 """Record the verdict a CLAUDE review half leaves — the same record a Codex run leaves.
 
     python3 scripts/record-review-verdict.py --review-id <subject>-r<N>-claude --head <sha> [--prompt <brief>]
-    python3 scripts/record-review-verdict.py --self-test  # 44 cases
+    python3 scripts/record-review-verdict.py --self-test  # 48 cases
 
 Run by the COORDINATOR after a Claude half is filed at `docs/reviews/claude/<review-id>.md`.
 
@@ -230,6 +230,10 @@ def _self_test_body() -> int:
          first(review_problem(GOOD.replace(H[:8], H[:6]), H)), "HEAD NOT NAMED")
     case("...while the full sha names it", review_problem(GOOD.replace(H[:8], H), H), None)
     case("a review that names the head and states a verdict is accepted", review_problem(GOOD, H), None)
+    case("...and the head is the one ASKED about: the same review against another head is refused",
+         first(review_problem(GOOD, OTHER)), "HEAD NOT NAMED")
+    case("...while a review naming that other head is accepted for it",
+         review_problem(GOOD.replace(H[:8], OTHER[:10]), OTHER), None)
 
     # ── the writer rule, pure ──
     case("a Claude half id is accepted", writer_problem("x-r1-claude"), None)
@@ -251,6 +255,10 @@ def _self_test_body() -> int:
     case("...carries the head", _rec.get("head"), H)
     case("...and a CLEAN overlay, so uncommitted fixes read as unseen", _rec.get("dirty"), {})
     case("...and the prompt", _rec.get("prompt"), "brief.md")
+    _rec2 = claude_record(review_id="y-claude-r3", head=OTHER, tree="/u", prompt=None, chars=4321)
+    case("every field comes from the arguments, not a constant",
+         (_rec2["review"], _rec2["head"], _rec2["tree"], _rec2["prompt"], "4321" in _rec2["reason"]),
+         ("y-claude-r3.md", OTHER, "/u", None, True))
 
     # ── end to end, over a repository the case built ──
     crr = _load("check-review-recorded")
@@ -288,6 +296,14 @@ def _self_test_body() -> int:
             finally:
                 crr.ROOT = saved
 
+        # A root that is not a repository: nothing there is a commit, so nothing can be recorded.
+        _bare = os.path.join(td, "not-a-repo")
+        os.makedirs(os.path.join(_bare, "docs", "reviews", "claude"))
+        pathlib.Path(_bare, "docs/reviews/claude/z-r1-claude.md").write_text(GOOD, encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            case("outside a repository the head resolves to nothing: refused, nothing written",
+                 (main(["--review-id", "z-r1-claude", "--head", H], root=_bare),
+                  os.path.exists(os.path.join(_bare, "docs/reviews/verdicts"))), (RC_REFUSED, False))
         git("init", "-q", "-b", "main")
         write("lib/a.ts", "v1\n")
         git("add", "-A"); git("commit", "-q", "-m", "base"); git("branch", "base")
@@ -312,8 +328,11 @@ def _self_test_body() -> int:
         case("a head that is not a commit here: refused, nothing written",
              (rc, os.path.exists(os.path.join(root, verdict))), (RC_REFUSED, False))
         write(review, GOOD.replace(H[:8], h1[:8]))
+        # A good review filed where this tool would look for it, so ONLY the writer rule can refuse.
+        write("docs/reviews/claude/x-r1-codex.md", GOOD.replace(H[:8], h1[:8]))
         rc, out = run("--review-id", "x-r1-codex", "--head", h1)
         case("a Codex id through this door: refused", rc, RC_REFUSED)
+        os.remove(os.path.join(root, "docs/reviews/claude/x-r1-codex.md"))
 
         rc, out = run("--review-id", rid, "--head", h1[:8])
         case("a Claude half that names its head is RECORDED", rc, RC_WRITTEN)
