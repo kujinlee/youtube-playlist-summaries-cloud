@@ -22,25 +22,24 @@ memory index `MEMORY.md` (out of scope).
 
 ## Before and after
 
-Measured on this branch against `origin/master` (characters as Python `len`, re-measured after round 1).
+Measured on this branch against `origin/master` (characters as Python `len`, re-measured after round 2).
 
 | File | Before | After | Change |
 |---|---:|---:|---:|
 | `CLAUDE.md` + `AGENTS.md` | 1,371 | 1,371 | — |
-| `docs/dev-process.md` | 24,925 | 14,231 | −10,694 |
-| `docs/plugins.md` | 21,081 | 10,074 | −11,007 |
-| **Always-loaded total** | **47,377** | **25,676** | **−21,701 (−46%)** |
+| `docs/dev-process.md` | 25,159 | 14,673 | −10,486 |
+| `docs/plugins.md` | 20,851 | 10,621 | −10,230 |
+| **Always-loaded total** | **47,377** | **26,661** | **−20,716 (−44%)** |
 
-(The 214-line `dev-process.md` and 164-line `plugins.md` are unchanged by the round-1 fold, which edited
-lines in place.)
+(`dev-process.md` is 214 lines and `plugins.md` 166 lines after the round-2 fold.)
 
-**Saving: about 21.7k characters, roughly 5.4k raw tokens per API CALL** (not per turn; a turn is many
+**Saving: about 20.7k characters, roughly 5.2k raw tokens per API CALL** (not per turn; a turn is many
 calls). ⚠ This is an ESTIMATE: characters / 4, no tokenizer was run. The imports sit in the cached
-prefix, so the realistic cost is lower: a cache read bills about 0.1x, so about **540 weighted tokens per
-call**, plus about **6.8k weighted tokens per fresh prefix write** (1.25x; every new agent, every
+prefix, so the realistic cost is lower: a cache read bills about 0.1x, so about **520 weighted tokens per
+call**, plus about **6.5k weighted tokens per fresh prefix write** (1.25x; every new agent, every
 compaction, every cache expiry). Against a typical coordinator call of about 54k weighted tokens that is
 about 1%. ⚠ The 10-30 usage study put this chain at about 162 KB; the files measure about 47 KB on
-`origin/master` today, so the two are not measuring the same thing and the study's "about 15% of each
+`origin/master` today, so the scopes or measurement methods need reconciling and the study's "about 15% of each
 call" should be re-derived before anyone quotes a percentage.
 
 The on-demand docs grew by the moved text: `process-checklists.md` +17,073 B, `review-method.md`

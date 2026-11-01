@@ -116,8 +116,8 @@ do not hand-edit the slug). ⛔ **The model list is keyed to the CLI version** �
 Codex outage: `codex update`. ⚠ **NEVER loosen the resolver to accept a hidden model.** If it refuses, READ ITS MESSAGE and verify with `codex exec -m <slug>` inside a git worktree before recording a `REVIEW GAP`.
 
 **Fallback — Codex unavailable for ANY reason → never block; auto-fall back to a Claude adversarial review**
-(a fresh subagent with an adversarial mandate, saved to the normal review path, the Codex gap noted in the
-doc). ⛔ EXCEPT a TIMEOUT, usually your own `--timeout`: DOUBLE IT and re-run once first.
+(a fresh subagent with full file access and an adversarial mandate, saved to the normal review path, the Codex gap noted in the
+doc). Do not wait, pause, or retry beyond one quick check (`--write-config`, a single re-run) on repeated non-timeout errors. ⛔ EXCEPT a TIMEOUT, usually your own `--timeout`: DOUBLE IT and re-run once first.
 
 **USE `scripts/codex-review.py`**, with the prompt passed via `--prompt-file` and never as a shell argument,
 since the shell rewrites backticks inside double quotes:
@@ -128,6 +128,7 @@ python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-
 #   3 = THE GATE RAN, THE REVIEW IS NOT FILED → ⛔ DO NOT FALL BACK — the review exists at --out: move it, or re-run with --allow-overwrite
 ```
 
+- ⛔ Run `python3 scripts/codex-review.py --self-test` after touching the wrapper.
 - `--review-id` is REQUIRED, one path segment, and names the filed review; `--out` is scratch and must be
   OUTSIDE the repository.
 - ⛔ **OUTPUT CONTRACT IS PER HALF — Claude writes a file; Codex must not** (its final message IS the
