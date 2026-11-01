@@ -18526,3 +18526,8 @@ reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-r
 Six ways to spend fewer tokens are now written down as queued work, each with a trigger and a way it would be shown wrong: run the pre-push checks in one call and skip unchanged ones, warn when a routine job is given the expensive model, hold off compaction in the middle of work, check the Codex budget before a review, close finished jobs in the ledger automatically, and stop the usage-pace check going blind while you are away. The token-management page also no longer claims the always-loaded instructions are about 15% of each call, since that share was never established.
 <!--tech-->
 Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.6 KB on origin/master (draft PR #458), so the earlier 162 KB figure covered more than those files.
+
+## 2026-11-01
+Five comments and one test name in the mutation checker said "2807" where they should say "TOTAL". A bad search-and-replace caused it, and a later one repeated it. The word is back. Nothing the checker does has changed.
+<!--tech-->
+Branch `fix-2616-total`, backlog #430. PR #440 (`dad5971b`) replaced TOTAL with 2616 at five places in `scripts/check-plan-code.py`. PR #443 then replaced 2616 with 2807, so the five read 2807 on master. All five are restored. The real `2807 -> 2808` declared-sum note is unchanged, and no `scripts/mutations/*.json` entry named the renamed case. `--self-test` 281/281.

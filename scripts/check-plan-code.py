@@ -1646,7 +1646,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 (claude) 1 High + 5 Medium + 3 Low: 56 -> 61. FIVE entries — the `review_added`
     # DIRECTORY clause (High 1: dropping `p.startswith(REVIEW_DIR)` left the suite green, so
     # ANY added `.md` would have recorded a review round), the retired extension-less rule
-    # (Medium 3), the bare-`docs` skip (Medium 2), the 2807 path bound (Medium 4), and the
+    # (Medium 3), the bare-`docs` skip (Medium 2), the TOTAL path bound (Medium 4), and the
     # anti-drift ORDER — which needed `antidrift_verdict` extracted out of `main` first,
     # because the call site was unfalsifiable and the entry written for it SURVIVED
     # (Medium 6). ⚠ One entry was RENAMED rather than re-anchored: it claimed to re-admit
@@ -3452,7 +3452,7 @@ def progress_line(done: int, total: int, label: str) -> str:
     most readers most of the time; the first draft of this docstring said "~25 minutes" from
     exactly that unmeasured recollection. What is stable, and what this function restores, is the
     RATE: one line per mutation plus one per control and re-control, so the total is derived
-    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO 2807 IS QUOTED —
+    from `EXPECTED_MUTATIONS` and moves whenever the manifest does. ⚠ NO TOTAL IS QUOTED —
     the first version of this sentence gave one and it was the PREVIOUS manifest's number
     on the day it was written. A gap much longer than `SUITE_TIMEOUT` is the signal.
 
@@ -4632,7 +4632,7 @@ def _self_test_body() -> int:
                 case("a run whose CONTROL failed prints no tally at all (r5 H1, path 2 of 3)",
                      _no_tally(_mutate_output(_rA)), (True, False, False))
 
-            # PATH 3 — 2807 SHORTFALL. Every declared mutation's anchor is absent, so
+            # PATH 3 — TOTAL SHORTFALL. Every declared mutation's anchor is absent, so
             # `run_mutations` skips all of them: `declared > 0` while `ev["mutations"]` is empty.
             # The counts are not merely incomplete, they are ZERO — and "0 of 2 produced a verdict"
             # must not render as a clean "0 survivor(s)".
@@ -4658,7 +4658,7 @@ def _self_test_body() -> int:
                      "entries (backlog #252)",
                      ("'anchor absent one'" in _outB_pre, "'anchor absent two'" in _outB_pre,
                       "before any tree is staged" in _outB_pre), (True, True, True))
-                case("a 2807 SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
+                case("a TOTAL SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
                      _no_tally(_outB), (True, False, False))
                 case("...and it names the arithmetic, so dropped entries are not invisible",
                      "0 of 2" in _outB, True)
@@ -5646,7 +5646,7 @@ def _self_test_body() -> int:
     # ⚠ The digit run's LENGTH, not its alphabet — round 7 L1. `int()` refuses beyond 4300 digits,
     # so an unbounded `[0-9]*` matched a string the conversion then raised on.
     # ⚠ BOTH SIDES. The bound appears twice in the pattern, so a mutation may remove only one —
-    # asserting a long INDEX alone would leave a long 2807 unguarded, which is the "two distinct
+    # asserting a long INDEX alone would leave a long TOTAL unguarded, which is the "two distinct
     # inputs" rule applied to one expression.
     # ⛔ AND IT MUST OBSERVE A RAISE RATHER THAN SUFFER ONE. The first draft asserted the RETURN
     # VALUE, so removing the bound made `parse_shard` raise and the suite died BEFORE printing any
