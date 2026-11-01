@@ -81,3 +81,15 @@ metadata:
 - [⭐ RESUME: anchors + stable ids](anchor-name-and-stable-id-handoff.md) — M4 MERGED (#155); `0027` LIVE ON PROD. The stable-id roadmap **EXISTS** — I once re-derived it wrongly
 - [Serve-path bounding MERGED](serve-path-bounding-merged.md) — a single CONVERGED verdict was WRONG 4 of 5 times
 - [gh two-remotes footgun](gh-two-remotes-footgun.md) — ✅ RESOLVED; keep `--body-file`
+
+### Rows moved out of the index 2026-11-01
+
+Moved to bring `MEMORY.md` under 90% of its budget; each link still resolves.
+
+- [Detached dig retention](detached-dig-retention-decision.md) — retiring a rule dissolved a review High with zero code change
+- [CANDIDATE stopping rule](stopping-rule-defect-class-shift.md) — ⏳ untested and partly falsified
+- [check-main-drivable is slow PER main() CALL SITE](main-drivable-cost-is-per-call-site.md) — main([...]) inside a long _self_test: 50s → 209s, past the 120s shard timeout. One call in a small helper → 52s
+- [⭐ Scoped mutation run in 4s](scoped-mutation-run-in-four-seconds.md) — ⛔ DECIDED: PARTIAL locally (only manifests whose file MOVED — co-scoping an unchanged 183 cost 4h), FULL in CI shards. 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file. Prune a COPY of HARNESS_TREE's SIX paths. ⭐ The harness is structurally browserless (`typescript` only → ERR_MODULE_NOT_FOUND)
+- [Local manual-test env](local-manual-test-env.md) — `~/code/agentic-ai-docs/yps-sync-test/`; sync is ADDITIVE
+- [Staging Supabase](staging-supabase-project.md) — ⚠ throwaway `neeufoxdbgbpkjukzzuc`; DELETE when B3/B4 done
+- [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation

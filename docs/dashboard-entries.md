@@ -18579,3 +18579,10 @@ Backlog #402: `scripts/check-selftest-counts.py --only <script>…` / `--changed
 (`changed_paths`, `reached`, `changed_scope`, `only_names`; `audit(..., only)`). Backlog #388:
 `scripts/check-run-hook.py` `world_base` / `crowded_dirs` (`CROWDED = 10_000`), and `launch` returns
 `TIMED_OUT` instead of raising. Manifests 8 → 21 and 12 → 18; `EXPECTED_MUTATIONS` sum 2557.
+
+## 2026-11-01
+The usage audit of the last two days is now on the backlog. Where the 230 million weighted tokens went: 19% was agents waiting on one long command and then paying to re-load their whole context, about 25% was the fixed context every new agent starts with, 12% was large command output carried along, and 13% was output. Seven rows (backlog 455 to 461) and seven matching rows in the optimization register hold the fixes and what each could cost; none is adopted yet.
+
+Also moved seven older rows out of the always-loaded memory index so it stays under its size limit.
+<!--tech-->
+Backlog #455 to #461 (kind task), `docs/optimization-register.md` rows 15 to 21 (status proposed), seven rows moved from `docs/memory/MEMORY.md` to `docs/memory/slice-history.md` (index 89% of budget).
