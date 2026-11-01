@@ -1170,7 +1170,7 @@ three layers, not the mechanism:**
 
 | Layer | Where | Survives a vendor update? | Fires |
 |---|---|---|---|
-| **1 — Authority** | the RULE box above (`CLAUDE.md` imports this file; instructions beat skills) | ✅ | every session, as context |
+| **1 — Authority** | the RULE box above [moved from `plugins.md`; "above" and "this file" mean `plugins.md`] (`CLAUDE.md` imports this file; instructions beat skills) | ✅ | every session, as context |
 | **2 — Leading gate** | `scripts/check-handoff-path.py` + `.claude/hooks/enforce-handoff-path.sh` (PreToolUse on `Skill`) | ✅ | at `/handoff` invocation, **before** anything is written |
 | 3 — Convenience | `.agents/skills/handoff/SKILL.md` | ❌ reverted | n/a |
 

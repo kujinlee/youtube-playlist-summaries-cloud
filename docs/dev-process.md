@@ -135,7 +135,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 
 | Check | Enforces |
 |---|---|
-| `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (`ALLOW_DEFAULT_BRANCH_PUSH=1`); no bare `--force`/`-f` or `--no-verify` anywhere (`ALLOW_DANGEROUS_PUSH=1`; `--force-with-lease` allowed); an agent push mentioning `hookspath`/`ALLOW_PLAN_LEAK` refused. Plan leaks: `.githooks/pre-push` → `scripts/check-plan-leak.py` |
+| `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (`ALLOW_DEFAULT_BRANCH_PUSH=1`); no bare `--force`/`-f` or `--no-verify` anywhere (`ALLOW_DANGEROUS_PUSH=1`; `--force-with-lease` allowed); an agent push mentioning `hookspath`/`ALLOW_PLAN_LEAK` refused. Plan leaks: `.githooks/pre-push` → `scripts/check-plan-leak.py` (8+ consecutive words; shorter NOT caught; per clone via `scripts/install-git-hooks.sh`, not in CI — `process-checklists.md` → *The plan-leak push gate*) |
 | `.claude/hooks/enforce-selection-card.sh` + `scripts/check-selection-card.py` | an option list follows `portable-practices` §19 — SHAPE only, it cannot see two options that are the same work |
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
 | `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt from its sources, never hand-edited (`/goals`; ADR-0010) |
@@ -163,7 +163,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 | `scripts/check-plan-code.py` | `--mutate .`: every mutation in `scripts/mutations/*.json` goes red via the case it names. FULL sweep is CI's; locally PARTIAL (`--only <script>`) — open a DRAFT PR at slice start |
 | `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
-| `.github/workflows/schema-gates.yml` | the schema gates in CI on every PR (no path filter, so it can be required); `prod-drift` is the scheduled gate |
+| `.github/workflows/schema-gates.yml` | the schema gates in CI on every PR (no path filter, so it can be required — land the workflow BEFORE the required-check setting); `prod-drift` is the scheduled gate |
 
 **Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack); run them locally
 before a merge. ⟳ 2026-09-13 the schema gates LEFT this list — CI builds their Postgres in 14s.

@@ -99,7 +99,7 @@ PRE-AUTHORISED — do not ask, and do not declare a `REVIEW GAP: claude` over it
 *"Do not call the AgentTool unless the user requested it"* is **not the user's**; the user ruled on it
 2026-09-22 and project instructions outrank it (Agent tool ONLY). ⛔ **Pre-authorised is not
 unconditional:** a spawn is bounded by [`review-method.md`](review-method.md) → *Running agents
-concurrently*. **Round 1 concurrently; rounds 2+ ALTERNATE** (ONE half per round, owner 2026-10-28) —
+concurrently*: **commit before spawning**; never run concurrently Postgres-role work, `git` in the main working tree, or top-level `docs/reviews/` writes during a Codex run. **Round 1 concurrently; rounds 2+ ALTERNATE** (ONE half per round, owner 2026-10-28, with a `REVIEW GAP: <half> — alternation` line for the other) —
 [`review-method.md`](review-method.md) → *Round topology*. **The round cap** (from round 4 findings are FILED
 unless a BLOCKER) is [`review-method.md`](review-method.md) §0 Q4c; a Claude half's verdict is written by
 `scripts/record-review-verdict.py`. Everything below is condensed; the full text, with its measurements, is
@@ -113,7 +113,7 @@ unless a BLOCKER) is [`review-method.md`](review-method.md) §0 Q4c; a Claude ha
 **Codex model — resolve the current frontier dynamically, never hard-code a version:**
 `python3 scripts/codex-frontier-model.py --write-config` (syncs the managed block in `~/.codex/config.toml`;
 do not hand-edit the slug). ⛔ **The model list is keyed to the CLI version** — a stale CLI looks like a
-Codex outage: `codex update`. ⚠ **NEVER loosen the resolver to accept a hidden model.**
+Codex outage: `codex update`. ⚠ **NEVER loosen the resolver to accept a hidden model.** If it refuses, READ ITS MESSAGE and verify with `codex exec -m <slug>` inside a git worktree before recording a `REVIEW GAP`.
 
 **Fallback — Codex unavailable for ANY reason → never block; auto-fall back to a Claude adversarial review**
 (a fresh subagent with an adversarial mandate, saved to the normal review path, the Codex gap noted in the
@@ -125,7 +125,7 @@ since the shell rewrites backticks inside double quotes:
 ```bash
 python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md"
 #   0 = review written AND FILED   1 = gate did NOT run → fall back   2 = CANNOT RUN → fall back
-#   3 = THE GATE RAN, THE REVIEW IS NOT FILED → ⛔ DO NOT FALL BACK — the review exists at --out
+#   3 = THE GATE RAN, THE REVIEW IS NOT FILED → ⛔ DO NOT FALL BACK — the review exists at --out: move it, or re-run with --allow-overwrite
 ```
 
 - `--review-id` is REQUIRED, one path segment, and names the filed review; `--out` is scratch and must be
@@ -134,9 +134,10 @@ python3 scripts/codex-review.py --prompt-file <path> --review-id <subject>-r<N>-
   review). ⛔ **Each half is filed under `docs/reviews/<writer>/`, never the top level.**
 - **Two sandboxes:** disabling Claude Code's does nothing to Codex's; the wrapper passes
   `-s danger-full-access`. ⛔ A reviewer that could not run the suite = the gate did NOT run.
-- **The gate can FAIL OPEN:** trust neither exit code — read the output FILE; never treat a single
-  CONVERGED as proof.
-- **Bounded wait:** read the task output file; ⛔ a quiet file is not a hang until `--timeout` has elapsed.
+- **The gate can FAIL OPEN:** trust neither exit code — read the output FILE; a capture with no findings
+  section is a failed run; never treat a single CONVERGED as proof — prefer the reviewer that reports a
+  finding until you have traced the code.
+- **Bounded wait:** do not trust the completion ping; read the task output file; ⛔ a quiet file is not a hang until `--timeout` has elapsed.
 
 ### Domain Terminology Stress-Test (Phase 1)
 

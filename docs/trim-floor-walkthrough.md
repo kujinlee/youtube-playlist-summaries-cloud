@@ -22,21 +22,26 @@ memory index `MEMORY.md` (out of scope).
 
 ## Before and after
 
-Measured on this branch against `origin/master` (bytes as `wc -c`; characters as Python `len`).
+Measured on this branch against `origin/master` (characters as Python `len`, re-measured after round 1).
 
 | File | Before | After | Change |
 |---|---:|---:|---:|
-| `CLAUDE.md` | 1,044 B | 1,044 B | — |
-| `AGENTS.md` | 327 B | 327 B | — |
-| `docs/dev-process.md` | 25,453 B | 14,607 B (214 lines) | −10,846 B |
-| `docs/plugins.md` | 21,118 B | 9,949 B (164 lines) | −11,169 B |
-| **Always-loaded total** | **47,942 B** | **25,927 B** | **−22,015 B (−46%)** |
+| `CLAUDE.md` + `AGENTS.md` | 1,371 | 1,371 | — |
+| `docs/dev-process.md` | 24,925 | 14,231 | −10,694 |
+| `docs/plugins.md` | 21,081 | 10,074 | −11,007 |
+| **Always-loaded total** | **47,377** | **25,676** | **−21,701 (−46%)** |
 
-**Expected per-turn saving: about 22 KB, roughly 5,500 tokens.** ⚠ The token figure is an ESTIMATE
-at about 4 characters per token; no tokenizer was run. ⚠ The 10-30 usage study put this chain at
-about 162 KB. The four files measure 47.9 KB on `origin/master` today, so that figure and this one are
-not measuring the same thing, and the study's "about 15% of each call" should be re-derived before
-anyone quotes a saving as a percentage of a call.
+(The 214-line `dev-process.md` and 164-line `plugins.md` are unchanged by the round-1 fold, which edited
+lines in place.)
+
+**Saving: about 21.7k characters, roughly 5.4k raw tokens per API CALL** (not per turn; a turn is many
+calls). ⚠ This is an ESTIMATE: characters / 4, no tokenizer was run. The imports sit in the cached
+prefix, so the realistic cost is lower: a cache read bills about 0.1x, so about **540 weighted tokens per
+call**, plus about **6.8k weighted tokens per fresh prefix write** (1.25x; every new agent, every
+compaction, every cache expiry). Against a typical coordinator call of about 54k weighted tokens that is
+about 1%. ⚠ The 10-30 usage study put this chain at about 162 KB; the files measure about 47 KB on
+`origin/master` today, so the two are not measuring the same thing and the study's "about 15% of each
+call" should be re-derived before anyone quotes a percentage.
 
 The on-demand docs grew by the moved text: `process-checklists.md` +17,073 B, `review-method.md`
 +14,423 B, `process-rationale.md` +930 B. They load only when a task reads them.
@@ -84,3 +89,12 @@ It is 6,688 bytes and loaded every turn in every project. Candidates to move to 
 - The thread-line paragraph's origin story ("added 2026-09-04 at the user's request…") — keep the two
   glyph examples.
 - The "This one is convention, not a machine" note under *Open every session*.
+
+## Risk
+
+The realistic risk is a rule clause lost from the always-loaded text, not a lost file. Round 1 of the
+review found 5 Medium and several Low such clauses (commit-before-spawn and the three serialise-only
+hazards, a capture with no findings section being a failed run, the plan-leak gate's per-clone install
+and 8-word bound, the schema-gates ordering, the resolver-refusal check, the rc=3 recovery, the
+alternation gap line, the completion-ping caution); all are restored here as short clauses in the spine
+line they belong to. The revert path is `git revert` of the squash commit.

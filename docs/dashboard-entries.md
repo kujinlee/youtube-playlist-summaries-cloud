@@ -18503,18 +18503,19 @@ display, rc 2 otherwise. `--print-pins`, the subprocess, the tar and the base-on
 merge-ready 85 → 87, plan-code 140 → 149; cases: merge-ready 211 → 227, plan-code 249 → 279.
 
 ## 2026-10-31 [needs-you]
-The process rules that are re-sent to the model on every turn are now about half as long: 25 KB instead of 48 KB, an
-estimated 5,500 tokens fewer per turn. No rule was deleted. Each long passage of history and measurement moved, word for
+The process rules that are re-sent to the model on every turn are now about half as long: 25.7k characters instead of 47.4k. That is an
+ESTIMATED 5.4k raw tokens fewer per call; because the text is cached, about 540 weighted tokens per call plus about
+6.8k per fresh prefix write, roughly 1% of a typical call. No rule was deleted. Each long passage of history and measurement moved, word for
 word, into a reference document that is read only when a task needs it, and a one-line rule stays behind with a pointer.
 This is a DRAFT for you to walk through before it merges: `docs/trim-floor-walkthrough.md` lists every section, where it
 went, and why it is safe to read on demand.
 <!--tech-->
-Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 25,453 → 14,607 B; `docs/plugins.md` 21,118 → 9,949 B.
+Branch `trim-always-loaded`, docs only. `docs/dev-process.md` 24,925 → 14,231 chars; `docs/plugins.md` 21,081 → 10,074 chars (total 47,377 → 25,676, chars/4 estimate, no tokenizer).
 The mechanically-enforced table is cut to one line per row, full rows in `process-checklists.md` → *Mechanically
 enforced checks — the full rows*; the thrashing paragraph and the Code Review detail go to `review-method.md`; the
 handoff layer table to `process-checklists.md`; the spine-length history to `process-rationale.md`. Three bare
 references in the moved table qualified (backlog #56 twice, backlog #137). The 10-30 study's "about 162 KB" does not
-match the 47.6 KB measured here and should be re-derived.
+match the 47.4k characters measured here and should be re-derived.
 
 ## 2026-10-31
 Review rounds now stop at round 3. Round 1 still uses both reviewers, because they mostly find
@@ -18539,7 +18540,7 @@ reviewed-then-reverted fix pass; the record-time bound is backlog #435. `check-r
 ## 2026-11-01
 Six ways to spend fewer tokens are now written down as queued work, each with a trigger and a way it would be shown wrong: run the pre-push checks in one call and skip unchanged ones, warn when a routine job is given the expensive model, hold off compaction in the middle of work, check the Codex budget before a review, close finished jobs in the ledger automatically, and stop the usage-pace check going blind while you are away. The token-management page also no longer claims the always-loaded instructions are about 15% of each call, since that share was never established.
 <!--tech-->
-Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.6 KB on origin/master (draft PR #458), so the earlier 162 KB figure covered more than those files.
+Backlog rows 438-443, from the 10-30 usage study and the compaction study. The always-loaded files measure 47.4k characters on origin/master (draft PR #458), so the earlier 162 KB figure covered more than those files.
 
 ## 2026-11-01
 Four comments and one test name in the mutation checker said "2807" where they should say "TOTAL". A bad search-and-replace caused it, and a later one repeated it. The word is back. Nothing the checker does has changed.
