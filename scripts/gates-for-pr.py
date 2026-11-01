@@ -3,7 +3,7 @@
 
     python3 scripts/gates-for-pr.py                 # run the battery
     python3 scripts/gates-for-pr.py --list          # the gate set and where each came from; runs nothing
-    python3 scripts/gates-for-pr.py --self-test  # 35 cases
+    python3 scripts/gates-for-pr.py --self-test  # 37 cases
 
     0 = every gate in the set PASSED   1 = a gate FAILED
     2 = CANNOT RUN — the set could not be derived, or a gate ended CANNOT RUN / TIMEOUT / KILLED
@@ -59,6 +59,12 @@ NESTED = "--nested-self-test"     # the self-test runs ITSELF under `run_gate` w
 # A name here that no longer matches a step REFUSES the run, so the list cannot silently go stale.
 NOT_LOCAL: dict[str, str] = {
     "Roadmap test counts match the suite": "reads jest-results.json, which only CI's `npm test` step writes",
+}
+# CI steps that run FULL in CI and SCOPED locally (backlog #402): the step's name -> the local arguments, `{base}`
+# filled with `--base`. The full run is ~6 min under load and CI runs it on every PR anyway. A name here that no
+# longer matches a step REFUSES the run, like NOT_LOCAL.
+SCOPED_LOCALLY: dict[str, tuple[str, ...]] = {
+    "Declared self-test counts match the suites": ("--changed", "--base", "origin/{base}"),
 }
 # The reason printed for a ci.yml job other than `verify`. A job not named here still prints, generically.
 OTHER_JOBS: dict[str, str] = {
@@ -145,12 +151,20 @@ def ci_gates(workflow: str, base: str) -> tuple[list[Gate], list[tuple[str, str]
         if "$" in line:
             out.append((name, "reads a variable only CI sets"))
             continue
+        if name in SCOPED_LOCALLY:
+            args = tuple(a.format(base=base) for a in SCOPED_LOCALLY[name])
+            gates.append(Gate(name, m.group(1), args, f"ci.yml job {CI_JOB}, SCOPED locally"))
+            out.append((f"{name} (full run)", "the FULL count check is CI's; locally only `--changed` runs"))
+            continue
         gates.append(Gate(name, m.group(1), tuple(shlex.split(m.group(2))), f"ci.yml job {CI_JOB}"))
     if not gates:
         return [], out, f"the `{CI_JOB}` job yielded no Python gate — a parse that finds nothing is not a pass"
     stale = sorted(set(NOT_LOCAL) - seen)
     if stale:
         return [], [], f"NOT_LOCAL names a step the `{CI_JOB}` job no longer has: {', '.join(stale)}"
+    stale = sorted(set(SCOPED_LOCALLY) - seen)
+    if stale:
+        return [], [], f"SCOPED_LOCALLY names a step the `{CI_JOB}` job no longer has: {', '.join(stale)}"
     for job in blocks:
         if job != CI_JOB:
             out.append((f"ci.yml job {job}", OTHER_JOBS.get(job, f"another CI job; this runner derives only `{CI_JOB}`")))
@@ -343,7 +357,8 @@ def _self_test_body(nested: bool) -> int:
     case("...and to a different --base when one is given",
          [g.args for g in ci_gates(wf, "main")[0] if g.name == "pr only"], [("--base", "origin/main")])
     case("node, a multi-line block, another CI variable, a non-PR condition and every other job are OUT OF SET",
-         sorted(n for n, _ in out), ["Roadmap test counts match the suite", "ci var", "ci.yml job mutation-sweep",
+         sorted(n for n, _ in out), ["Declared self-test counts match the suites (full run)",
+                                     "Roadmap test counts match the suite", "ci var", "ci.yml job mutation-sweep",
                                      "ci.yml job other-job", "multi", "node tests", "push only"])
     case("...the mutation-sweep job says it is the FULL sweep; an unnamed job says only verify is derived",
          [dict(out)["ci.yml job mutation-sweep"], dict(out)["ci.yml job other-job"]],
@@ -354,6 +369,14 @@ def _self_test_body(nested: bool) -> int:
     case("a NOT_LOCAL name that no longer matches a step REFUSES the set (it cannot go stale silently)",
          ci_gates(wf.replace("name: Roadmap test counts", "name: Renamed test counts"), "master")[2],
          "NOT_LOCAL names a step the `verify` job no longer has: Roadmap test counts match the suite")
+    case("the count-check step runs SCOPED locally (--changed against --base); its full run is out of set as CI's",
+         ([(g.args, g.source) for g in gates if g.name == "Declared self-test counts match the suites"],
+          dict(out)["Declared self-test counts match the suites (full run)"]),
+         ([(("--changed", "--base", "origin/master"), "ci.yml job verify, SCOPED locally")],
+          "the FULL count check is CI's; locally only `--changed` runs"))
+    case("a SCOPED_LOCALLY name that no longer matches a step REFUSES the set",
+         ci_gates(wf.replace("name: Declared self-test counts", "name: Renamed counts"), "master")[2],
+         "SCOPED_LOCALLY names a step the `verify` job no longer has: Declared self-test counts match the suites")
     case("a workflow with no verify job cannot yield a set", ci_gates("jobs:\n  other:\n    steps: []\n", "m")[2],
          "the workflow has no `verify` job")
     case("a verify job with no python gate is CANNOT RUN, never an empty pass",
@@ -416,6 +439,8 @@ WF_FIXTURE = WF_HEAD + """\
       - name: pr only
         if: github.event_name == 'pull_request'
         run: python3 scripts/f.py --base "origin/$GITHUB_BASE_REF"
+      - name: Declared self-test counts match the suites
+        run: python3 scripts/c.py
       - name: node tests
         run: npm test
       - name: multi
@@ -448,6 +473,7 @@ GATE_SCRIPTS = {
     "k.py": "import os, signal\nfrom pathlib import Path\nPath({log!r}).open('a').write('k\\n')\n"
             "os.kill(os.getpid(), signal.SIGKILL)\n",
     "f.py": "from pathlib import Path\nPath({log!r}).open('a').write('f\\n')\n",
+    "c.py": "from pathlib import Path\nPath({log!r}).open('a').write('c\\n')\n",
 }
 
 
@@ -504,13 +530,13 @@ def _end_to_end() -> list[tuple[str, bool]]:
         case("...and nothing moved, so no mutation slice is in the set", "mutations of" in out, False)
 
         rc, out, ran = run()
-        case("every gate in the set executes once", sorted(ran), ["a", "b", "d", "e", "f", "h", "k"])
+        case("every gate in the set executes once", sorted(ran), ["a", "b", "c", "d", "e", "f", "h", "k"])
         case("...a and b PASS, h FAIL, d CANNOT RUN, e TIMEOUT, k KILLED",
              [status(out, n) for n in ("gate a", "gate b", "fails", "cannot", "slow", "dies")],
              ["PASS", "PASS", "FAIL", "CANNOT RUN", "TIMEOUT", "KILLED"])
         case("...a FAIL makes the run 1", rc, 1)
         case("...the summary counts every non-pass by its own name, never as a pass",
-             re.search(r"^summary: 3 pass · 1 fail · 1 cannot run · 1 timeout · 1 killed · ", out, re.M) is not None,
+             re.search(r"^summary: 4 pass · 1 fail · 1 cannot run · 1 timeout · 1 killed · ", out, re.M) is not None,
              True)
         case("...out-of-set steps and jobs are printed, not hidden",
              [status(out, n) for n in ("node tests", "ci.yml job mutation-sweep", "schema-gates.yml")],
@@ -518,7 +544,7 @@ def _end_to_end() -> list[tuple[str, bool]]:
 
         rc, out, ran = run()
         case("a second run over an unchanged tree runs every gate AGAIN — nothing is skipped",
-             (sorted(ran), "SKIPPED" in out), (["a", "b", "d", "e", "f", "h", "k"], False))
+             (sorted(ran), "SKIPPED" in out), (["a", "b", "c", "d", "e", "f", "h", "k"], False))
 
         (repo / WORKFLOW).write_text(WF_FIXTURE.replace("        run: python3 scripts/h.py\n", "        run: python3 scripts/a.py\n"))
         rc, out, ran = run()

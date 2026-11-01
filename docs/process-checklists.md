@@ -116,6 +116,11 @@ command's form does not matter. CI has no plans (a zero over nothing), so CI run
 - Bounds: ⛔ **a plan fragment shorter than 8 consecutive words is not caught** (the owner's window,
   2026-10-29); a plan's headings and paragraphs are not plan text. By hand:
   `python3 scripts/check-plan-leak.py --base B --head H` (exit 0/1/2/3).
+**Local gates are SCOPED; the full runs are CI's (backlog #402, the split backlog #208 made for the
+mutation sweep).** Before a push, run `python3 scripts/check-selftest-counts.py --changed` (against
+`origin/master` by default), not the bare command: it runs only the pinned suites the branch can have
+moved, and prints `nothing to check` when there are none. The unscoped run stays in `ci.yml` on every
+PR. Measured 2026-10-30 — the bare run was made locally 366 times in eight days.
 
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
 

@@ -1821,7 +1821,8 @@ EXPECTED_MUTATIONS = {
     # false greens through them; the skip saved ~50 s of 8m39s), so 17 entries are retired with their subject,
     # not orphaned; 6 survive (exit status, NOT_LOCAL, empty set, --base, moved manifest) and 4 are new (the
     # run's exit code twice, the other ci.yml jobs printed OUT OF SET, an untracked manifest counting as moved).
-    "scripts/gates-for-pr.py": 10,
+    # backlog #402 (PR #450 r1): 10 -> 12, the count check runs SCOPED locally and a stale SCOPED_LOCALLY name refuses.
+    "scripts/gates-for-pr.py": 12,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -1948,7 +1949,11 @@ EXPECTED_MUTATIONS = {
     # deleting the `passed` filter still returned 8; (2) the borrowed-name case re-derived the
     # comprehension instead of calling it, so deleting the real rule left the case green. A
     # second implementation of one rule, tested against itself.
-    "scripts/check-selftest-counts.py": 8,
+    # backlog #402 (2026-10-30): 8 -> 21, the scoped mode — the dependency rule, the three change
+    # sources, the --only refusal, and `only` scoping the runs but never the population ratchet.
+    # PR #450 r1 fold: 21 -> 23. +3 (a rename counts both names at two diff sources; propagation reaches a fixed point),
+    # -1 ("string references are closed transitively too" is retired with its subject: closure is now the rule).
+    "scripts/check-selftest-counts.py": 23,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
@@ -2160,7 +2165,8 @@ EXPECTED_MUTATIONS = {
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
-    "scripts/check-run-hook.py": 12,
+    # backlog #388 (2026-10-30): 12 -> 18, the uncrowded world base (the bound, its ancestors, `top`, the pick) and a timed-out launch as a red world.
+    "scripts/check-run-hook.py": 18,
     # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces. 17 -> 36 and 6 -> 12 in the
     # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules); 36 -> 45 in round 2's
     # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.

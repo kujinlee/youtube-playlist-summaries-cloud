@@ -1276,6 +1276,11 @@ EXEMPT: dict[str, str] = {
     "bounded_read.py:hostile_payloads.d": "a scratch directory the fixture writes its transcript files and FIFO into; the payloads' CONTENT is the variation, and any directory is equivalent",
     # PR #440 r3 C4: the same fixture, filtered to its non-regular members — the same scratch directory.
     "bounded_read.py:non_regular_payloads.d": "the scratch directory it hands to `hostile_payloads`, whose members it filters; the payloads' CONTENT is the variation, and any directory is equivalent",
+    # backlog #402 (2026-10-30): the scoped-mode cases are the first in the suite to call `audit`, and its
+    # two borrowed functions have ONE implementation each by design — the file imports them from
+    # check-plan-code rather than copying the rule, which is the defect its docstring refuses.
+    "check-selftest-counts.py:audit.count_drift": "the borrowed rule has one implementation by design (check-plan-code.count_drift); a second would be the copy this script exists not to make",
+    "check-selftest-counts.py:audit.child_env": "the borrowed HOME redirect has one implementation by design (check-plan-code.child_env); a second would be the copy this script exists not to make",
     # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
     # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
     "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",

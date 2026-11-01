@@ -18561,3 +18561,21 @@ Branch `gates-runner-438`, backlog #438, PR #465. The gate set comes from `ci.ym
 Automatic compaction now waits for a pause in the work. While a plan is armed, an agent has not reported back, or a Monitor is still watching, the compaction is put off. It still runs once the session has been quiet for 5 minutes, or once the context reaches one and a half times the compaction window, so a stuck signal cannot hold it off for ever. A typed `/compact` is never held. If the hook cannot read the window setting or the transcript, it lets the compaction run and records why. Every decision is logged, so we can see whether compactions usually happen at a pause or only when the ceiling forces them. If it is mostly the ceiling, the hook should be removed.
 <!--tech-->
 Branch `boundary-compaction-440`, PR #463, backlog #440. `scripts/check-compaction-boundary.py` (57 cases, 28 mutations) runs from `.claude/hooks/compaction-boundary.sh` on the `auto` PreCompact matcher. The hook runs `precompact-snapshot.sh` only when it allows, so a blocked call does not also take a snapshot. The `manual` matcher still runs the snapshot directly. The window comes from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, then the project's `settings.local.json`, then `settings.json`, then `~/.claude/settings.json`, each checking `modelSettings[<model>]` first. This order follows the documented settings precedence and has not been tested for this key. The log is `.claude/compaction-boundary.log` in the main checkout, and `--summary` reads it. ⚠ The hook reads the last 8 MB of the transcript, about 20 hours. An agent in that span whose completion notice never arrived blocks compaction until the ceiling.
+
+## 2026-10-30
+The check that every test suite's declared case count is true can now run only on what a branch
+changed. Agents ran the full check 366 times in eight days, at about six minutes each under load,
+while CI runs it on every pull request anyway. The local step in the process checklist is now the
+scoped form; CI still runs the full check.
+
+The test that kept going red for no reason is fixed, and the cause was not what anyone guessed. One
+of its cases runs a hook from a folder path longer than 1,024 characters. On a Mac that makes the
+shell work out its own location by reading every folder above it, and this machine's temporary
+folder holds about 349,000 leftover folders, so that one step took 80 to 93 seconds against a
+60-second limit. The test now builds its folders somewhere uncrowded. The leftover folders are still
+there, and what leaves them behind has not been found.
+<!--tech-->
+Backlog #402: `scripts/check-selftest-counts.py --only <script>…` / `--changed [--base origin/master]`
+(`changed_paths`, `reached`, `changed_scope`, `only_names`; `audit(..., only)`). Backlog #388:
+`scripts/check-run-hook.py` `world_base` / `crowded_dirs` (`CROWDED = 10_000`), and `launch` returns
+`TIMED_OUT` instead of raising. Manifests 8 → 21 and 12 → 18; `EXPECTED_MUTATIONS` sum 2557.
