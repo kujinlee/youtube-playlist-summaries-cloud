@@ -315,7 +315,9 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
     # by running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
-    "record-review-verdict.py": ("claude_record.chars", "claude_record.head", "claude_record.prompt", "claude_record.review_id", "claude_record.tree", "main.argv", "main.root", "review_problem.body", "review_problem.head", "writer_problem.review_id",),
+    # ⟳ PR #457 r1: + `claude_record.dirty`/`.verdict`, `review_problem.resolve`, `declared_heads.text`,
+    # `review_verdict.text` — the observed overlay, the parsed verdict and the declaration rule.
+    "record-review-verdict.py": ("claude_record.chars", "claude_record.dirty", "claude_record.head", "claude_record.prompt", "claude_record.review_id", "claude_record.tree", "claude_record.verdict", "declared_heads.text", "main.argv", "main.root", "review_problem.body", "review_problem.head", "review_problem.resolve", "review_verdict.text", "writer_problem.review_id",),
     # backlog #410 (2026-10-30): every parameter varied except main.*, EXEMPT with its reason.
     # ⟳ r2: `unpushed_item.times` is gone — the oldest time and the count are measured into a FACT.
     "check-stalled-work.py": (

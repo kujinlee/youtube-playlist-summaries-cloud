@@ -2,7 +2,7 @@
 """Record the verdict a CLAUDE review half leaves — the same record a Codex run leaves.
 
     python3 scripts/record-review-verdict.py --review-id <subject>-r<N>-claude --head <sha> [--prompt <brief>]
-    python3 scripts/record-review-verdict.py --self-test  # 48 cases
+    python3 scripts/record-review-verdict.py --self-test  # 74 cases
 
 Run by the COORDINATOR after a Claude half is filed at `docs/reviews/claude/<review-id>.md`.
 
@@ -35,13 +35,28 @@ afterwards by the coordinator, so `head` is the coordinator's statement — and 
 every way of stating it wrongly fails CLOSED or is refused:
 
   * `head` must resolve to a COMMIT here, and is recorded as the full sha.
-  * the filed review must NAME that commit (a hex prefix of 7+ characters, git's own minimum
-    abbreviation). The coordinator cannot record a head the review document does not itself claim
-    to have seen, so a verdict cannot be moved forward onto a later commit by re-running this.
-  * `dirty` is `{}`: the half is credited with the COMMITTED tree at `head` and nothing else. A
-    reviewer who was handed uncommitted fixes therefore has those paths read as UNSEEN once they
-    are committed, and `check-review-recorded` fails the branch — the wrong answer is a false red,
-    never a false green.
+  * ⟳ PR #457 r1 (H1, both halves): THE TREE IS OBSERVED, NOT ASSERTED. `head` and `dirty` are what
+    `codex-review.reviewed_state` reads from the checkout, and `--head` must EQUAL the HEAD it reads.
+    The first version wrote a literal `dirty: {}` — which `reviewed_state` defines as *the tree WAS
+    clean* — without looking. Reproduced end to end: a reviewer handed an uncommitted `GOOD`, the
+    fix then reverted and `BAD` merged, and `check-review-recorded` passed. That is the r11 Blocking
+    `tail_candidates` exists to close, reopened by the producer: the union it relies on is empty
+    when the overlay is. A `None` overlay (the tree could not be described) is recorded as `None`,
+    exactly as the wrapper records it, and the consumer counts it UNUSABLE.
+  * the filed review must DECLARE that commit, on a line it wrote — `Reviewed head <sha>`, not inside
+    a `>` quote or a code fence — and every sha on that line must resolve, here, to `head`. A token
+    is resolved by `git rev-parse`, which refuses an ambiguous abbreviation, and must be 7+ hex
+    characters (git's own minimum). ⟳ r1 (Codex High, Claude M1): any hex token anywhere used to
+    count, so a review naming the head only to DISPUTE it (*"my tree was at X"*, or *"> later commit
+    B was not reviewed"*) was recorded against it.
+  * the verdict is the first line under a `Verdict` heading, and it OPENS with `NOT CONVERGED` or
+    `CONVERGED` — matched at the start, so the one is never read as the other — and is RECORDED in
+    the verdict as `verdict`. ⟳ r1 (Claude M1b): a bare `\bCONVERGED\b` matched inside `NOT
+    CONVERGED`, a quoted brief, and *"I could not tell whether it CONVERGED"*. No other script parses
+    a review's verdict word (searched: `scripts/*.py` for `CONVERGED`), so this is the one rule.
+  * no symlink is followed, at the review or at the verdict (r1 L3, both halves): a link let a file
+    outside `docs/reviews/` be testified to, and a dangling one let the verdict be written outside
+    `docs/reviews/verdicts/`.
   * a later commit cannot forge it: `check-review-recorded.round_tail` compares every guarded path
     changed after `head` against the merging tree, as it always has for Codex.
   * an existing verdict is never overwritten — there is no `--allow-overwrite`; delete it in a
@@ -55,6 +70,11 @@ every way of stating it wrongly fails CLOSED or is refused:
 ⚠ BOUNDS, STATED. A coordinator who edits the review document to name a later commit, then records
 it, defeats this; that is a deliberate act in a reviewable diff, not an accident this can see. And
 like the Codex record, it says what was IN the tree at `head`, not what the reviewer READ.
+⚠ THE TREE IS OBSERVED AT RECORD TIME, NOT AT REVIEW TIME — the one place this is weaker than the
+wrapper, which observes at dispatch. A fix the reviewer saw and the coordinator reverted BEFORE
+recording is not in the overlay, so record as soon as the half is filed, in the tree it reviewed,
+before any fold edit. Closing it needs a dispatch-time snapshot — a new mechanism, filed as
+backlog #435.
 
 Exit codes: 0 = recorded   1 = REFUSED, nothing written   2 = CANNOT RUN (the write failed)
 """
@@ -78,22 +98,86 @@ RC_WRITTEN, RC_REFUSED, RC_CANNOT_RUN = 0, 1, 2
 # git's own minimum abbreviation; a shorter prefix names too many commits to be a claim about one.
 MIN_HEX = 7
 HEX_TOKEN = re.compile(r"\b[0-9a-f]{%d,64}\b" % MIN_HEX)
-VERDICT_WORD = re.compile(r"\bCONVERGED\b")
+DECLARATION = re.compile(r"^[\s*_`]*Reviewed head\b(.*)$", re.IGNORECASE)
+VERDICT_HEADING = re.compile(r"^#{1,6}\s*Verdict\b", re.IGNORECASE)
+FENCE = re.compile(r"^\s*(```|~~~)")
+# Each is matched at the START of the line, so `NOT CONVERGED` is never read as the word it contains.
+VERDICTS = ("NOT CONVERGED", "CONVERGED")
 
 
-def review_problem(body: "str | None", head: str) -> "str | None":
-    """PURE. Why this filed review cannot be testified to, or None. The first word is the rule."""
+def written_lines(text: str) -> "list[str]":
+    """PURE. The lines outside a code fence. A `>` quote needs no rule of its own: `DECLARATION`
+    and `VERDICT_HEADING` are anchored at the line start, which a quote's `>` never matches."""
+    out, fenced = [], False
+    for line in text.splitlines():
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        out.append(line)
+    return out
+
+
+def declared_heads(text: str) -> "list[str]":
+    """PURE. Every sha on a `Reviewed head …` line the reviewer wrote, lower-cased."""
+    out = []
+    for line in written_lines(text):
+        m = DECLARATION.match(line)
+        if m:
+            out.extend(HEX_TOKEN.findall(m.group(1).lower()))
+    return out
+
+
+def review_verdict(text: str) -> "str | None":
+    """PURE. The verdict the review states, or None when it states none, or states two.
+
+    Under EVERY `Verdict` heading the reviewer wrote, the first non-blank line must open with a
+    verdict; one that does not, or two headings that disagree, is no verdict.
+    """
+    lines = written_lines(text)
+    found = set()
+    for i, line in enumerate(lines):
+        if not VERDICT_HEADING.match(line):
+            continue
+        body = next((x for x in lines[i + 1:] if x.strip()), "")
+        word = body.strip().lstrip("*_` ").upper()
+        found.add(next((v for v in VERDICTS if word.startswith(v)), None))
+    if len(found) != 1:
+        return None
+    return found.pop()
+
+
+def link_problem(path: str, root: str) -> "str | None":
+    """Why `path` cannot be read or written without following a symlink, or None. Reads the fs."""
+    real = os.path.join(os.path.realpath(root), os.path.relpath(path, root))
+    if os.path.realpath(path) != real:
+        return (f"SYMLINK — {path} resolves through a link to {os.path.realpath(path)}; a review "
+                f"or verdict is testified to only where it is, never through a link")
+    return None
+
+
+def review_problem(body: "str | None", head: str, resolve) -> "str | None":
+    """PURE given `resolve` (a sha token -> the full commit it names here, or None). Why this
+    filed review cannot be testified to, or None. The first word is the rule."""
     if body is None:
         return "MISSING — the review is not filed where check-review-rounds pairs it"
     text = body.strip()
     if len(text) < _cx.MIN_REVIEW_CHARS:
         return (f"EMPTY — {len(text)} characters, under the {_cx.MIN_REVIEW_CHARS} below which "
                 f"codex-review.py refuses to call a message a review")
-    if not VERDICT_WORD.search(text):
-        return "NO VERDICT — the review states neither CONVERGED nor NOT CONVERGED"
-    if not any(head.lower().startswith(t) for t in HEX_TOKEN.findall(text.lower())):
-        return (f"HEAD NOT NAMED — the review never names {head[:12]}, so it cannot be recorded "
-                f"as having seen it. Name the commit the half was handed in the review itself")
+    if review_verdict(text) is None:
+        return ("NO VERDICT — no `## Verdict` heading opens with CONVERGED or NOT CONVERGED (or "
+                "two disagree)")
+    declared = declared_heads(text)
+    if not declared:
+        return (f"HEAD NOT NAMED — the review has no `Reviewed head <sha>` line of its own (a "
+                f"quoted or fenced line does not count), so it cannot be recorded as having seen "
+                f"{head[:12]}")
+    wrong = [t for t in declared if resolve(t) != head]
+    if wrong:
+        return (f"HEAD MISMATCH — the review declares {', '.join(wrong)}, which is not "
+                f"{head[:12]} here (another commit, or an ambiguous abbreviation)")
     return None
 
 
@@ -121,14 +205,17 @@ def resolve_head(root: str, head: str) -> "str | None":
     return out if p.returncode == 0 and out else None
 
 
-def claude_record(*, review_id: str, head: str, tree: str, prompt: "str | None",
-                  chars: int) -> dict:
-    """PURE. `codex-review.verdict_record`, with the two fields that say a Claude half left it."""
+def claude_record(*, review_id: str, head: str, dirty: "dict[str, str] | None", tree: str,
+                  prompt: "str | None", chars: int, verdict: str) -> dict:
+    """PURE. `codex-review.verdict_record`, with the fields that say a Claude half left it.
+
+    `dirty` is what `reviewed_state` OBSERVED, passed through unchanged — `None` stays `None`."""
     rec = _cx.verdict_record(gate_ran=True, exit_code=0, review_id=review_id,
                              reason=f"claude half filed: {chars} chars, names {head[:12]}",
-                             head=head, dirty={}, prompt=prompt, tree=tree)
+                             head=head, dirty=dirty, prompt=prompt, tree=tree)
     rec["tool"] = TOOL
     rec["writer"] = WRITER
+    rec["verdict"] = verdict
     return rec
 
 
@@ -158,23 +245,33 @@ def main(argv: "list[str]", root: "str | None" = None) -> int:
         return refuse(problem)
     vpath = _in_root(_cx.verdict_path(args.review_id), root)
     rpath = _in_root(_cx.promotion_path(args.review_id, WRITER), root)
-    exists = _cx.overwrite_refusal(vpath, exists=os.path.exists(vpath), allow_overwrite=False,
+    for path in (vpath, rpath):
+        linked = link_problem(path, root)
+        if linked:
+            return refuse(linked)
+    # `lexists`: a dangling link EXISTS. (It is refused above; this is the overwrite rule's input.)
+    exists = _cx.overwrite_refusal(vpath, exists=os.path.lexists(vpath), allow_overwrite=False,
                                    what="the verdict")
     if exists:
         return refuse(exists)
     head = resolve_head(root, args.head)
     if head is None:
         return refuse(f"REFUSED — {args.head!r} is not a commit in {root}")
+    seen, dirty = _cx.reviewed_state(root)
+    if seen != head:
+        return refuse(f"TREE MOVED — {root} is at {seen or 'no readable HEAD'}, not {head[:12]}. "
+                      f"Record in the tree the half reviewed, before any fold edit or commit")
     try:
         with open(rpath, encoding="utf-8", errors="replace") as f:
             body: "str | None" = f.read()
     except OSError:
         body = None
-    problem = review_problem(body, head)
+    problem = review_problem(body, head, lambda t: resolve_head(root, t))
     if problem:
         return refuse(f"{problem}\n  review: {rpath}")
-    rec = claude_record(review_id=args.review_id, head=head, tree=root, prompt=args.prompt,
-                        chars=len((body or "").strip()))
+    rec = claude_record(review_id=args.review_id, head=head, dirty=dirty, tree=root,
+                        prompt=args.prompt, chars=len((body or "").strip()),
+                        verdict=review_verdict(body or "") or "")
     err = _cx.write_verdict(vpath, rec)
     if err:
         print(f"CANNOT RUN — the verdict could not be written ({err}). TREAT THIS AS NOT RUN.",
@@ -209,31 +306,61 @@ def _self_test_body() -> int:
     H = "0123456789abcdef0123456789abcdef01234567"
     OTHER = "fedcba9876543210fedcba9876543210fedcba98"
     PAD = "x" * _cx.MIN_REVIEW_CHARS
-    GOOD = f"# x — round 1 — Claude half\n\nReviewed at `{H[:8]}`.\n\n## Verdict\n\nCONVERGED\n{PAD}\n"
+    GOOD = f"# x — round 1 — Claude half\n\nReviewed head `{H[:8]}`.\n\n## Verdict\n\nCONVERGED\n{PAD}\n"
 
     # ── the review-file rule, pure ──
-    case("a missing review file is refused", first(review_problem(None, H)), "MISSING")
-    case("an empty review file is refused", first(review_problem("", H)), "EMPTY")
+    def res(full: str):
+        """A resolver standing in for `git rev-parse`: a prefix of `full` names `full`."""
+        return lambda t: full if full.startswith(t) else None
+
+    case("a missing review file is refused", first(review_problem(None, H, res(H))), "MISSING")
+    case("an empty review file is refused", first(review_problem("", H, res(H))), "EMPTY")
     case("...and so is a whitespace-only one, which is empty after strip",
-         first(review_problem("   \n\t\n", H)), "EMPTY")
+         first(review_problem("   \n\t\n", H, res(H))), "EMPTY")
     case("a stub under the minimum length is refused",
-         first(review_problem(f"CONVERGED {H[:8]}", H)), "EMPTY")
+         first(review_problem(f"CONVERGED {H[:8]}", H, res(H))), "EMPTY")
     case("a review stating no verdict is refused — a finding-less file is a failed run",
-         first(review_problem(GOOD.replace("CONVERGED", "done"), H)), "NO VERDICT")
+         first(review_problem(GOOD.replace("CONVERGED", "done"), H, res(H))), "NO VERDICT")
     case("...and `NOT CONVERGED` is a verdict, not its absence",
-         review_problem(GOOD.replace("CONVERGED", "NOT CONVERGED"), H), None)
+         review_problem(GOOD.replace("CONVERGED", "NOT CONVERGED"), H, res(H)), None)
     case("a review that never names the head it was handed is refused",
-         first(review_problem(GOOD.replace(H[:8], "zzzzzzzz"), H)), "HEAD NOT NAMED")
+         first(review_problem(GOOD.replace(H[:8], "zzzzzzzz"), H, res(H))), "HEAD NOT NAMED")
     case("...and naming a DIFFERENT commit does not count as naming this one",
-         first(review_problem(GOOD.replace(H[:8], OTHER[:8]), H)), "HEAD NOT NAMED")
+         first(review_problem(GOOD.replace(H[:8], OTHER[:8]), H, res(H))), "HEAD MISMATCH")
     case("...nor does a six-character prefix, which is shorter than git's own abbreviation",
-         first(review_problem(GOOD.replace(H[:8], H[:6]), H)), "HEAD NOT NAMED")
-    case("...while the full sha names it", review_problem(GOOD.replace(H[:8], H), H), None)
-    case("a review that names the head and states a verdict is accepted", review_problem(GOOD, H), None)
+         first(review_problem(GOOD.replace(H[:8], H[:6]), H, res(H))), "HEAD NOT NAMED")
+    case("...while the full sha names it", review_problem(GOOD.replace(H[:8], H), H, res(H)), None)
+    case("a review that names the head and states a verdict is accepted", review_problem(GOOD, H, res(H)), None)
     case("...and the head is the one ASKED about: the same review against another head is refused",
-         first(review_problem(GOOD, OTHER)), "HEAD NOT NAMED")
+         first(review_problem(GOOD, OTHER, res(OTHER))), "HEAD MISMATCH")
     case("...while a review naming that other head is accepted for it",
-         review_problem(GOOD.replace(H[:8], OTHER[:10]), OTHER), None)
+         review_problem(GOOD.replace(H[:8], OTHER[:10]), OTHER, res(OTHER)), None)
+
+    case("a review whose resolver calls its declared sha AMBIGUOUS is refused",
+         first(review_problem(GOOD, H, lambda t: None)), "HEAD MISMATCH")
+    case("a head named in prose but not on a `Reviewed head` line is not declared",
+         first(review_problem(GOOD.replace("Reviewed head", "Looked at"), H, res(H))), "HEAD NOT NAMED")
+    case("a declaration inside a code fence is not one the reviewer wrote",
+         declared_heads(f"```\nReviewed head {H[:8]}\n```\n"), [])
+    case("...nor inside a `>` quote", declared_heads(f"> Reviewed head {H[:8]}\n"), [])
+    case("...while a bold declaration line is read, every sha on it",
+         declared_heads(f"**Reviewed head `{H[:8]}`** (`{H}`), not {OTHER[:8]}\n"),
+         [H[:8], H, OTHER[:8]])
+    case("the verdict is read under the heading", review_verdict("## Verdict\n\nCONVERGED.\n"),
+         "CONVERGED")
+    case("...and NOT CONVERGED is never read as CONVERGED",
+         review_verdict("## Verdict\n\n**NOT CONVERGED.** H1 stands.\n"), "NOT CONVERGED")
+    case("...a heading followed by prose is no verdict",
+         review_verdict("## Verdict\n\nI could not tell whether it CONVERGED.\n"), None)
+    case("...nor is the word with no heading", review_verdict("CONVERGED\n"), None)
+    case("...and two headings that disagree are no verdict",
+         review_verdict("## Verdict\nCONVERGED\n## Verdict\nNOT CONVERGED\n"), None)
+    case("...while two that agree are that verdict",
+         review_verdict("## Verdict\nNOT CONVERGED\n### verdict\nNOT CONVERGED — again\n"),
+         "NOT CONVERGED")
+    case("...and a verdict heading inside a fence is not the reviewer's",
+         review_verdict("```\n## Verdict\nCONVERGED\n```\n## Verdict\nNOT CONVERGED\n"),
+         "NOT CONVERGED")
 
     # ── the writer rule, pure ──
     case("a Claude half id is accepted", writer_problem("x-r1-claude"), None)
@@ -245,7 +372,8 @@ def _self_test_body() -> int:
          writer_problem("../x-r1-claude") is not None, True)
 
     # ── the record, pure ──
-    _rec = claude_record(review_id="x-r1-claude", head=H, tree="/t", prompt="brief.md", chars=900)
+    _rec = claude_record(review_id="x-r1-claude", head=H, dirty={}, tree="/t", prompt="brief.md",
+                         chars=900, verdict="CONVERGED")
     case("the record is the wrapper's schema", _rec.get("schema"), 3)
     case("...says the gate ran", _rec.get("gate_ran"), True)
     case("...and was not a refusal", _rec.get("refused"), False)
@@ -253,12 +381,18 @@ def _self_test_body() -> int:
     case("...names the tool that wrote it, not codex-review", _rec.get("tool"), "record-review-verdict")
     case("...joins on the filed review's name", _rec.get("review"), "x-r1-claude.md")
     case("...carries the head", _rec.get("head"), H)
-    case("...and a CLEAN overlay, so uncommitted fixes read as unseen", _rec.get("dirty"), {})
+    case("...and the overlay it was GIVEN, here a clean one", _rec.get("dirty"), {})
+    case("...and the verdict the review states", _rec.get("verdict"), "CONVERGED")
     case("...and the prompt", _rec.get("prompt"), "brief.md")
-    _rec2 = claude_record(review_id="y-claude-r3", head=OTHER, tree="/u", prompt=None, chars=4321)
+    _rec2 = claude_record(review_id="y-claude-r3", head=OTHER, dirty={"lib/a.ts": "100644 ab"},
+                          tree="/u", prompt=None, chars=4321, verdict="NOT CONVERGED")
     case("every field comes from the arguments, not a constant",
-         (_rec2["review"], _rec2["head"], _rec2["tree"], _rec2["prompt"], "4321" in _rec2["reason"]),
-         ("y-claude-r3.md", OTHER, "/u", None, True))
+         (_rec2["review"], _rec2["head"], _rec2["tree"], _rec2["prompt"], "4321" in _rec2["reason"],
+          _rec2["dirty"], _rec2.get("verdict")),
+         ("y-claude-r3.md", OTHER, "/u", None, True, {"lib/a.ts": "100644 ab"}, "NOT CONVERGED"))
+    case("...and an overlay that could not be read stays None — UNUSABLE, never clean",
+         claude_record(review_id="z-r1-claude", head=H, dirty=None, tree="/t", prompt=None,
+                       chars=1, verdict="CONVERGED")["dirty"], None)
 
     # ── end to end, over a repository the case built ──
     crr = _load("check-review-recorded")
@@ -327,6 +461,7 @@ def _self_test_body() -> int:
         rc, out = run("--review-id", rid, "--head", BOGUS)
         case("a head that is not a commit here: refused, nothing written",
              (rc, os.path.exists(os.path.join(root, verdict))), (RC_REFUSED, False))
+        case("...and says it is not a commit", "is not a commit" in out, True)
         write(review, GOOD.replace(H[:8], h1[:8]))
         # A good review filed where this tool would look for it, so ONLY the writer rule can refuse.
         write("docs/reviews/claude/x-r1-codex.md", GOOD.replace(H[:8], h1[:8]))
@@ -366,7 +501,7 @@ def _self_test_body() -> int:
         write(f"docs/reviews/claude/{rid2}.md", GOOD.replace(H[:8], h1[:8]))
         rc, out = run("--review-id", rid2, "--head", h3)
         case("a review naming an older head cannot be RECORDED against a later one", rc, RC_REFUSED)
-        case("...and says why", "HEAD NOT NAMED" in out, True)
+        case("...and says why", "HEAD MISMATCH" in out, True)
 
         # Codex verdicts exactly as before: the wrapper's own record, written by its own writer.
         _cxrec = _cx.verdict_record(gate_ran=True, exit_code=0, review_id="x-r2-codex", reason="r",
@@ -379,6 +514,117 @@ def _self_test_body() -> int:
         case("a CODEX verdict on the final tree still satisfies it, unchanged",
              (_err, g[0], "x-r2-codex.verdict.json" in g[1]), (None, 0, True))
         case("...and the codex record still says codex-review wrote it", _cxrec["tool"], "codex-review")
+
+    # ── the tree the review SAW, end to end (round 1 of PR #457: H1, M1, L3) ──
+    with tempfile.TemporaryDirectory() as td:
+        root = os.path.join(td, "repo")
+        os.makedirs(root)
+        env = fixture_git.env(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e", GIT_COMMITTER_NAME="t",
+                              GIT_COMMITTER_EMAIL="t@e")
+
+        def git(*a: str) -> str:
+            p = subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, env=env)
+            if p.returncode:
+                raise RuntimeError(f"fixture git {a}: {p.stderr}")
+            return p.stdout.strip()
+
+        def write(rel: str, text: str) -> None:
+            p = pathlib.Path(root, rel)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding="utf-8")
+
+        def run(*a: str) -> "tuple[int, str]":
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                rc = main(list(a), root=root)
+            return rc, buf.getvalue()
+
+        def gate() -> "tuple[int, str]":
+            saved = crr.ROOT
+            crr.ROOT = pathlib.Path(root)
+            try:
+                changed, added = crr.changed_paths("base"), crr.added_paths("base")
+                tails, unusable = crr.round_tails(crr.branch_verdicts(added), changed)
+                return crr.tail_verdict(tails, unusable, None)
+            finally:
+                crr.ROOT = saved
+
+        def recorded(rid: str) -> dict:
+            p = pathlib.Path(root, f"docs/reviews/verdicts/{rid}.verdict.json")
+            return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+
+        git("init", "-q", "-b", "main")
+        write("lib/a.ts", "v1\n")
+        git("add", "-A"); git("commit", "-q", "-m", "base"); git("branch", "base")
+        write("lib/a.ts", "BAD\n")
+        git("add", "-A"); git("commit", "-q", "-m", "work")
+        h1 = git("rev-parse", "HEAD")
+
+        # H1, the r11 Blocking reopened: a reviewer handed an UNCOMMITTED fix, the fix then reverted.
+        write("lib/a.ts", "GOOD\n")
+        write("docs/reviews/claude/t-r1-claude.md", GOOD.replace(H[:8], h1[:8]))
+        rc, out = run("--review-id", "t-r1-claude", "--head", h1)
+        case("a half handed an uncommitted fix is recorded WITH that fix in its overlay",
+             (rc, "lib/a.ts" in (recorded("t-r1-claude").get("dirty") or {})), (RC_WRITTEN, True))
+        git("checkout", "--", "lib/a.ts")
+        git("add", "docs"); git("commit", "-q", "-m", "review r1")
+        case("...so a fix reviewed and then REVERTED does not pass the final-tree gate",
+             gate()[0], 1)
+
+        # M1: the coordinator's --head is checked against the tree, not only against the text.
+        write("lib/a.ts", "v3\n")
+        git("add", "-A"); git("commit", "-q", "-m", "fix after r1")
+        h3 = git("rev-parse", "HEAD")
+        write("docs/reviews/claude/t-r2-claude.md", GOOD.replace(H[:8], h1[:8]))
+        rc, out = run("--review-id", "t-r2-claude", "--head", h1)
+        case("a head the tree is NOT at is refused, though the review names it",
+             (rc, recorded("t-r2-claude")), (RC_REFUSED, {}))
+        case("...and says the tree moved", "TREE MOVED" in out, True)
+
+        # M1: a head named only to dispute it, in a quoted line, is not a declaration.
+        write("docs/reviews/claude/t-r3-claude.md",
+              GOOD.replace(f"Reviewed head `{H[:8]}`.", f"> Reviewed head {h3[:8]}\n\nThe brief "
+                           f"above is quoted; my tree was at an earlier commit."))
+        rc, out = run("--review-id", "t-r3-claude", "--head", h3)
+        case("a head named only inside a QUOTED line is refused", rc, RC_REFUSED)
+        write("docs/reviews/claude/t-r4-claude.md",
+              GOOD.replace(f"Reviewed head `{H[:8]}`.", f"Reviewed head `{h3[:8]}`, not {h1[:8]}."))
+        rc, out = run("--review-id", "t-r4-claude", "--head", h3)
+        case("a declaration that ALSO names another commit is refused", rc, RC_REFUSED)
+
+        # M1b: `NOT CONVERGED` is never read as CONVERGED, and prose is not a verdict.
+        write("docs/reviews/claude/t-r5-claude.md",
+              GOOD.replace(H[:8], h3[:8]).replace("CONVERGED", "NOT CONVERGED"))
+        rc, out = run("--review-id", "t-r5-claude", "--head", h3)
+        case("a NOT CONVERGED review is recorded as NOT CONVERGED",
+             (rc, recorded("t-r5-claude").get("verdict")), (RC_WRITTEN, "NOT CONVERGED"))
+        write("docs/reviews/claude/t-r6-claude.md",
+              GOOD.replace(H[:8], h3[:8]).replace("## Verdict\n\nCONVERGED",
+                                                  "I could not tell whether it CONVERGED."))
+        rc, out = run("--review-id", "t-r6-claude", "--head", h3)
+        case("prose that merely CONTAINS the word is not a verdict", rc, RC_REFUSED)
+
+        # L3: no symlink is followed, on either path.
+        outside = os.path.join(td, "elsewhere.md")
+        pathlib.Path(outside).write_text(GOOD.replace(H[:8], h3[:8]), encoding="utf-8")
+        os.symlink(outside, os.path.join(root, "docs/reviews/claude/t-r7-claude.md"))
+        rc, out = run("--review-id", "t-r7-claude", "--head", h3)
+        case("a review that is a SYMLINK is refused", (rc, recorded("t-r7-claude")), (RC_REFUSED, {}))
+        write("docs/reviews/claude/t-r8-claude.md", GOOD.replace(H[:8], h3[:8]))
+        target = os.path.join(td, "planted.json")
+        os.symlink(target, os.path.join(root, "docs/reviews/verdicts/t-r8-claude.verdict.json"))
+        rc, out = run("--review-id", "t-r8-claude", "--head", h3)
+        case("a DANGLING symlink at the verdict path is refused, and nothing is written through it",
+             (rc, os.path.exists(target)), (RC_REFUSED, False))
+        # A linked DIRECTORY: the verdict file itself does not exist, so only the link rule refuses.
+        elsewhere = os.path.join(td, "verdicts-elsewhere")
+        os.makedirs(elsewhere)
+        os.rename(os.path.join(root, "docs/reviews/verdicts"), os.path.join(td, "verdicts-real"))
+        os.symlink(elsewhere, os.path.join(root, "docs/reviews/verdicts"))
+        write("docs/reviews/claude/t-r9-claude.md", GOOD.replace(H[:8], h3[:8]))
+        rc, out = run("--review-id", "t-r9-claude", "--head", h3)
+        case("a verdicts DIRECTORY that is a symlink is refused, and nothing is written there",
+             (rc, os.listdir(elsewhere)), (RC_REFUSED, []))
 
     failed = 0
     for name, got, want in cases:

@@ -20,8 +20,8 @@ Detail lives in four places, each with a different read-trigger:
 
 The **spec is the human gate.** Design, terminology, and goal decisions are settled *with* the human
 in Phase 1. Once `docs/design-spec.md` is approved the goal is fixed, and **plan (Phase 2) and
-implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence is the
-quality gate, not a human sign-off. At convergence the coordinator *notifies* and continues.
+implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence, bounded by
+the round cap ([`review-method.md`](review-method.md) §0 Q4c), is the quality gate, not a human sign-off. At convergence the coordinator *notifies* and continues.
 
 Pull the human back in only for an **unexpected situation**:
 

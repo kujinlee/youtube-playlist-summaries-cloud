@@ -1781,7 +1781,7 @@ EXPECTED_MUTATIONS = {
     "scripts/codex-review.py": 71,
     # ⟳ new (review-round cap, 2026-10-31): a Claude half's verdict — one entry per refusal, plus the
     # three fields a consumer reads (gate_ran, the full head, the clean overlay).
-    "scripts/record-review-verdict.py": 10,
+    "scripts/record-review-verdict.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.

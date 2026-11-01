@@ -18,7 +18,7 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "    if not VERDICT_WORD.search(text):",
+        "    if review_verdict(text) is None:",
         "    if False:"
       ]
     ],
@@ -31,13 +31,13 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "    if not any(head.lower().startswith(t) for t in HEX_TOKEN.findall(text.lower())):",
+        "    if not declared:",
         "    if False:"
       ]
     ],
     "expect": [
       "a review that never names the head it was handed is refused",
-      "a review naming an older head cannot be RECORDED against a later one"
+      "a head named in prose but not on a `Reviewed head` line is not declared"
     ]
   },
   {
@@ -72,7 +72,7 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "exists=os.path.exists(vpath)",
+        "exists=os.path.lexists(vpath)",
         "exists=False"
       ]
     ],
@@ -90,7 +90,7 @@
       ]
     ],
     "expect": [
-      "a head that is not a commit here: refused, nothing written"
+      "...and says it is not a commit"
     ]
   },
   {
@@ -98,12 +98,12 @@
     "file": "scripts/record-review-verdict.py",
     "edits": [
       [
-        "head=head, dirty={}, prompt=prompt, tree=tree)",
+        "head=head, dirty=dirty, prompt=prompt, tree=tree)",
         "head=head, dirty=None, prompt=prompt, tree=tree)"
       ]
     ],
     "expect": [
-      "...and a CLEAN overlay, so uncommitted fixes read as unseen",
+      "...and the overlay it was GIVEN, here a clean one",
       "check-review-recorded: a Claude verdict on the FINAL tree satisfies it"
     ]
   },
@@ -132,6 +132,136 @@
     "expect": [
       "...says the gate ran",
       "check-review-recorded: a Claude verdict on the FINAL tree satisfies it"
+    ]
+  },
+  {
+    "name": "the recorder writes a clean overlay it never observed — the r11 Blocking reopened (PR #457 r1 H1)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "head=head, dirty=dirty, tree=root,",
+        "head=head, dirty={}, tree=root,"
+      ]
+    ],
+    "expect": [
+      "a half handed an uncommitted fix is recorded WITH that fix in its overlay",
+      "...so a fix reviewed and then REVERTED does not pass the final-tree gate"
+    ]
+  },
+  {
+    "name": "a --head the tree is not at is recorded, because only the review text was checked (r1 M1)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if seen != head:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a head the tree is NOT at is refused, though the review names it"
+    ]
+  },
+  {
+    "name": "a declaration that names ANOTHER commit too, or an ambiguous sha, is accepted (r1 Codex High)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if wrong:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a declaration that ALSO names another commit is refused",
+      "a review whose resolver calls its declared sha AMBIGUOUS is refused",
+      "...and naming a DIFFERENT commit does not count as naming this one"
+    ]
+  },
+  {
+    "name": "a quoted line counts as the reviewer's own declaration (r1 M1, Codex High)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "DECLARATION = re.compile(r\"^[\\s*_`]*Reviewed head",
+        "DECLARATION = re.compile(r\"^.*Reviewed head"
+      ]
+    ],
+    "expect": [
+      "a head named only inside a QUOTED line is refused",
+      "...nor inside a `>` quote"
+    ]
+  },
+  {
+    "name": "a fenced line counts as the reviewer's own",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "        if FENCE.match(line):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a declaration inside a code fence is not one the reviewer wrote",
+      "...and a verdict heading inside a fence is not the reviewer's"
+    ]
+  },
+  {
+    "name": "the verdict word is found anywhere in the line, so prose and NOT CONVERGED read as a verdict (r1 M1b)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "VERDICTS = (\"NOT CONVERGED\", \"CONVERGED\")",
+        "VERDICTS = (\"CONVERGED\", \"NOT CONVERGED\")"
+      ],
+      [
+        "if word.startswith(v)",
+        "if v in word"
+      ]
+    ],
+    "expect": [
+      "...and NOT CONVERGED is never read as CONVERGED",
+      "a NOT CONVERGED review is recorded as NOT CONVERGED",
+      "...a heading followed by prose is no verdict"
+    ]
+  },
+  {
+    "name": "two Verdict headings that disagree are read as a verdict",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if len(found) != 1:",
+        "    if not found:"
+      ]
+    ],
+    "expect": [
+      "...and two headings that disagree are no verdict"
+    ]
+  },
+  {
+    "name": "a symlinked review or verdict path is followed (r1 L3, both halves)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "        if linked:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a review that is a SYMLINK is refused",
+      "a verdicts DIRECTORY that is a symlink is refused, and nothing is written there"
+    ]
+  },
+  {
+    "name": "the parsed verdict is not recorded",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    rec[\"verdict\"] = verdict\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the verdict the review states",
+      "a NOT CONVERGED review is recorded as NOT CONVERGED"
     ]
   }
 ]
