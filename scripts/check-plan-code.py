@@ -2142,6 +2142,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ r2 fold: +4 — the child adapter's gh and git timeouts (Codex A, B), and the self-test step only directly under
     # `steps:` (matrix data; a nested list item). Merged with the context floor's 75: 75 + 14 = 89.
     "scripts/compaction-state.py": 89,
+    # backlog #440 (2026-11-01): the PreCompact boundary hook — the ceiling, idle and block order, the three
+    # mid-work signals' detectors, W's precedence and fail-open, the snapshot chained only on ALLOW, the log path.
+    "scripts/check-compaction-boundary.py": 28,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
