@@ -4,8 +4,8 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "    if ctx >= CEILING_FACTOR * w:",
-        "    if ctx > CEILING_FACTOR * w:"
+        "    if ctx >= ceiling(w)[0]:",
+        "    if ctx > ceiling(w)[0]:"
       ]
     ],
     "expect": [
@@ -96,8 +96,8 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "if not isinstance(d, dict) or d.get(\"isSidechain\"):",
-        "if not isinstance(d, dict):"
+        "        if d.get(\"isSidechain\"):\n            continue\n",
+        ""
       ]
     ],
     "expect": [
@@ -301,16 +301,17 @@
     ]
   },
   {
-    "name": "a plan armed in the session's worktree is not seen",
+    "name": "the project dir's plan is read instead of the session's own checkout's",
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "for r in (checkout, project) if r)",
-        "for r in (project,) if r)"
+        "read_regular((checkout or project) / \".claude/executing-plan\")",
+        "read_regular((project or checkout) / \".claude/executing-plan\")"
       ]
     ],
     "expect": [
-      "hook: a plan armed in the session's WORKTREE blocks, and the log goes to the MAIN checkout"
+      "hook: a plan armed in the session's WORKTREE blocks, and the log goes to the MAIN checkout",
+      "⭐ hook: the PROJECT dir's plan is not a worktree session's (r1 Claude F1 — teammates read the coordinator's)"
     ]
   },
   {
@@ -336,7 +337,8 @@
       ]
     ],
     "expect": [
-      "⭐ hook: sentinel + young transcript + below ceiling prints a BLOCK decision and takes no snapshot"
+      "⭐ hook: sentinel + young transcript + below ceiling prints a BLOCK decision and takes no snapshot",
+      "read_tail drops the cut first line of a tail, and only of a cut one"
     ]
   },
   {
@@ -363,6 +365,183 @@
     ],
     "expect": [
       "hook: a payload that could not be read FAILS OPEN and logs WHY"
+    ]
+  },
+  {
+    "name": "a paused sentinel still counts as mid-work",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if \"paused\" in fields:\n        return False\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
+      "⭐ hook: a PAUSED sentinel does not block — the live shape, paused for two days"
+    ]
+  },
+  {
+    "name": "another session's sentinel counts as mid-work",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return not (armed_in and session and armed_in != session)",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ a sentinel armed in ANOTHER session is not mid-work",
+      "⭐ hook: a sentinel from ANOTHER session does not block"
+    ]
+  },
+  {
+    "name": "the ceiling is not clamped below the model's limit",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit",
+        "    return int(CEILING_FACTOR * w), limit"
+      ]
+    ],
+    "expect": [
+      "⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)",
+      "⭐ a 1M window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
+      "hook: with no project dir in env, W comes from the HOME settings — 150k's ceiling is the 200k limit's 180k"
+    ]
+  },
+  {
+    "name": "the limit is taken as the first window ABOVE W, not one that holds it",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(n for n in CONTEXT_LIMITS if n >= w)",
+        "(n for n in CONTEXT_LIMITS if n > w)"
+      ]
+    ],
+    "expect": [
+      "⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)"
+    ]
+  },
+  {
+    "name": "an agentId footer marks any result as a background launch",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        " if \"agent launched\" in text else None",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a COMPLETED foreground result carries an agentId footer too — still done (r1 Codex 1)"
+    ]
+  },
+  {
+    "name": "an open agent never ages out",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "st[\"open\"] and (st[\"at\"] is None or now - st[\"at\"] < AGENT_LEASE_S)",
+        "st[\"open\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ an open background agent stops counting at its 3 h lease (r1 Codex 3, Claude F3)"
+    ]
+  },
+  {
+    "name": "the agent lease becomes inclusive: exactly 3 h still counts",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "now - st[\"at\"] < AGENT_LEASE_S",
+        "now - st[\"at\"] <= AGENT_LEASE_S"
+      ]
+    ],
+    "expect": [
+      "⭐ an open background agent stops counting at its 3 h lease (r1 Codex 3, Claude F3)"
+    ]
+  },
+  {
+    "name": "only an assistant record is activity",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "if d.get(\"type\") in ACTIVITY_TYPES and at is not None:",
+        "if d.get(\"type\") == \"assistant\" and at is not None:"
+      ]
+    ],
+    "expect": [
+      "⭐ last_at is the newest ACTIVITY: a tool result after the last assistant record counts (r1 Codex 4)",
+      "a queued notification (an attachment) is activity too",
+      "⭐ hook: a tool result arriving NOW is not idle, though the call was 10 min ago (r1 Codex 4)"
+    ]
+  },
+  {
+    "name": "a malformed record is skipped, not failed open on",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        if scanned[\"malformed\"]:\n            raise CannotRun(",
+        "        if False:\n            raise CannotRun("
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a record that does not parse FAILS OPEN, with the count (r1 Codex 5)"
+    ]
+  },
+  {
+    "name": "a malformed record is not counted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            out[\"malformed\"] += 1\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a record that is not a JSON object is COUNTED, never skipped; a blank line is not one",
+      "⭐ hook: a record that does not parse FAILS OPEN, with the count (r1 Codex 5)"
+    ]
+  },
+  {
+    "name": "a non-string cwd reaches Path()",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return Path(cwd) if isinstance(cwd, str) and cwd else Path(\".\")",
+        "    return Path(cwd) if cwd else Path(\".\")"
+      ]
+    ],
+    "expect": [
+      "⭐ log_path: a non-string cwd falls back to `.`, never raises (r1 Claude F6)"
+    ]
+  },
+  {
+    "name": "files are opened blocking",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "fd = os.open(path, flags | os.O_NONBLOCK | getattr(os, \"O_NOCTTY\", 0), 0o644)",
+        "fd = os.open(path, flags | getattr(os, \"O_NOCTTY\", 0), 0o644)"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a FIFO at the transcript is refused at once — allowed, snapshot taken (r1 Codex 6)",
+      "⭐ hook: a FIFO at the log is refused at once — the log is NOT written, compaction still allowed"
+    ]
+  },
+  {
+    "name": "undecodable snapshot output raises",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "errors=\"replace\", timeout=SNAPSHOT_TIMEOUT",
+        "timeout=SNAPSHOT_TIMEOUT"
+      ]
+    ],
+    "expect": [
+      "hook: undecodable snapshot output is passed through, not raised (it ran the snapshot TWICE, r1 Codex)"
     ]
   }
 ]

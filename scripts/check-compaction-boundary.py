@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Defer an AUTO compaction while work is in flight, up to a ceiling of 1.5 x W (backlog #440).
+"""Defer an AUTO compaction while work is in flight, up to a ceiling of 1.5 x W below the model's limit (backlog #440).
 
 WHY THIS EXISTS. Auto-compaction fires when the context reaches the window W (`autoCompactWindow`), wherever the
 work happens to be — in the middle of a plan, with an agent's report still owed, with a Monitor still watching CI.
@@ -11,18 +11,37 @@ THE DECISION, in this order (the first that applies wins):
 
     allow-manual       the trigger is not `auto` — a `/compact` is deliberate, and an always-blocking hook made
                        `/compact` unusable elsewhere
-    allow-cannot-run   W, the context size or the transcript cannot be read. FAIL OPEN: a compaction hook that
-                       blocks on its own error would wedge the session. The reason goes to the log.
-    allow-ceiling      context >= 1.5 x W. The hard bound: a signal that never clears (a stale sentinel, a lost
-                       notification) delays compaction to here and no further.
-    allow-idle         the transcript's last ASSISTANT event is >= 5 min old. Idle compaction fires PreCompact with
-                       the same trigger `auto`, so this is the only way to tell it apart; idle is a boundary.
+    allow-cannot-run   W, the context size or the transcript cannot be read, or a transcript record in the tail
+                       does not parse (it may be the completion that would clear a signal). FAIL OPEN: a compaction
+                       hook that blocks on its own error would wedge the session. The reason goes to the log.
+    allow-ceiling      context >= the ceiling: min(1.5 x W, 90% of the model's context limit L). The hard bound: a
+                       signal that never clears (a stale sentinel, a lost notification) delays compaction to here and
+                       no further. L is not readable from a hook, so it is the SMALLEST documented window that can
+                       hold W — 200k, else 1M — because Claude Code caps W at the model's window (r1, Codex 2): a
+                       W of 180k on a 1M model gets the 200k bound, which is early, never late. ⚠ The table is the
+                       documented windows, NOT MEASURED per model; the coordinator's transcript peaked at 966,673.
+                       The margin also covers the tool results after the last usage, which `ctx` does not see.
+    allow-idle         nothing has happened for >= 5 min — the newest assistant, user (tool results, prompts) or
+                       attachment (notifications) record is that old. Idle compaction fires PreCompact with the same
+                       trigger `auto` and the payload carries nothing else that tells it apart, so this is the only
+                       test; idle is a boundary. ⚠ BOUND: correct only while the harness's idle compaction waits >= 5
+                       min after the last activity. The documented delay is about an hour; the study's notice ("before
+                       the prompt cache expired") would fire sooner on a 5-min cache TTL — NOT MEASURED (r1 Claude F5).
     block-<signals>    any mid-work signal, joined with `+` (e.g. `block-plan+agent`):
-                         plan     `.claude/executing-plan` exists in the session's checkout or the project dir
-                         agent    an Agent call has no completion: a background agent with no `<task-notification>`
-                                  carrying a `<status>` for its tool-use id or task id, a named teammate with no
-                                  `idle_notification`/`shutdown_response` since it was spawned, a foreground agent
-                                  with no tool_result yet; a `TaskStop` of its task id also ends it
+                         plan     `.claude/executing-plan` in the session's OWN checkout (the project dir only when
+                                  no checkout holds the cwd), unless it is `paused:` or names a `session:` other than
+                                  `CLAUDE_CODE_BRIDGE_SESSION_ID` — the fields `begin-plan.py` writes and the Stop
+                                  guard honours. ⚠ That id is SHARED by a coordinator and its in-process teammates
+                                  (measured: a teammate's env carries the coordinator's), so a teammate in the same
+                                  checkout reads the coordinator's plan as its own; the ceiling bounds it.
+                         agent    an Agent call has no completion, and is under 3 h old: a background agent with no
+                                  `<task-notification>` carrying a `<status>` for its tool-use id or task id, a named
+                                  teammate with no `idle_notification`/`shutdown_response` since it was spawned, a
+                                  foreground agent with no tool_result yet; a `TaskStop` of its task id also ends it.
+                                  Background means the result SAYS it launched — a completed foreground result also
+                                  carries an `agentId:` footer (r1 Codex 1). The 3 h lease: a lost notification held
+                                  the signal for the whole tail (r1: 6 of 253 agents never closed; the longest live
+                                  one was ~1.2 h)
                          monitor  a Monitor whose task has no `<status>` notification, no `TaskStop`, and whose own
                                   expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed
     allow-no-signal    none of the above — the work is at a boundary.
@@ -48,7 +67,10 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 57 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 77 cases
+
+EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
+past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
 
 EXIT: `--hook` always exits 0 (exit 2 would BLOCK); `--summary` exits 2 when the log cannot be read (CANNOT RUN).
 """
@@ -58,9 +80,11 @@ import json
 import os
 import re
 import select
+import stat
 import subprocess
 import sys
 import time
+import importlib.util
 from datetime import datetime
 from pathlib import Path
 
@@ -72,6 +96,10 @@ MAX_STDIN = 1_000_000
 STDIN_WAIT = 2.0
 SNAPSHOT_TIMEOUT = 15
 W_RANGE = (100_000, 1_000_000)
+CONTEXT_LIMITS = (200_000, 1_000_000)   # the documented windows; the smallest that holds W is the model's (above)
+LIMIT_SHARE = 0.9
+AGENT_LEASE_S = 3 * 3600
+ACTIVITY_TYPES = ("assistant", "user", "attachment")
 LOG_NAME = "compaction-boundary.log"
 ENV_W = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
 END_TYPES = ("idle_notification", "shutdown_response")
@@ -115,22 +143,32 @@ def _tag(block: str, name: str) -> str | None:
 def scan(lines: list[str]) -> dict:
     """Read transcript records IN ORDER into what the decision needs. PURE.
 
-    -> {"ctx", "model", "last_at", "agents": {tool_use_id: state}, "monitors": {tool_use_id: state}}.
-    Completion evidence is read only from non-assistant records, so the model quoting a notification is not one."""
-    out = {"ctx": None, "model": None, "last_at": None, "agents": {}, "monitors": {}}
+    -> {"ctx", "model", "last_at", "malformed", "agents": {tool_use_id: state}, "monitors": {tool_use_id: state}}.
+    `last_at` is the newest ACTIVITY (`ACTIVITY_TYPES`), `ctx` the last assistant usage. `malformed` counts records
+    that are not a JSON object — the caller fails open on any, since one may be the completion that clears a signal
+    (r1 Codex 5; measured 0 in the coordinator's 74,195 lines, so this costs nothing in practice). `lines` holds whole
+    records only: `read_tail` drops a cut first line. Completion evidence is read only from non-assistant records, so
+    the model quoting a notification is not one."""
+    out = {"ctx": None, "model": None, "last_at": None, "malformed": 0, "agents": {}, "monitors": {}}
     agents, monitors = out["agents"], out["monitors"]
     for line in lines:
+        if not line.strip():
+            continue
         try:
             d = json.loads(line)
         except ValueError:
+            d = None
+        if not isinstance(d, dict):
+            out["malformed"] += 1
             continue
-        if not isinstance(d, dict) or d.get("isSidechain"):
+        if d.get("isSidechain"):
             continue
         at = iso_epoch(d.get("timestamp"))
+        if d.get("type") in ACTIVITY_TYPES and at is not None:
+            out["last_at"] = at
         m = d.get("message") if isinstance(d.get("message"), dict) else {}
         content = m.get("content")
         if d.get("type") == "assistant":
-            out["last_at"] = at if at is not None else out["last_at"]
             u = m.get("usage")
             if isinstance(u, dict):
                 out["ctx"] = sum(int(u.get(k) or 0) for k in
@@ -141,7 +179,7 @@ def scan(lines: list[str]) -> dict:
                     continue
                 inp = x.get("input") if isinstance(x.get("input"), dict) else {}
                 if x.get("name") == "Agent":
-                    agents[x.get("id")] = {"open": True, "task": None, "name": None}
+                    agents[x.get("id")] = {"open": True, "task": None, "name": None, "at": at}
                 elif x.get("name") == "Monitor":
                     ms = inp.get("timeout_ms")
                     monitors[x.get("id")] = {"open": True, "task": None, "at": at,
@@ -161,7 +199,7 @@ def scan(lines: list[str]) -> dict:
                 tid = x.get("tool_use_id")
                 if tid in agents:
                     st = agents[tid]
-                    aid = re.search(r"agentId: (\w+)", text)
+                    aid = re.search(r"agentId: (\w+)", text) if "agent launched" in text else None
                     team = re.search(r"Spawned successfully.*?\nname: ([\w-]+)", text, re.S)
                     if x.get("is_error") or not (aid or team):
                         st["open"] = False           # a foreground agent: its result IS its completion
@@ -197,9 +235,9 @@ def scan(lines: list[str]) -> dict:
 
 
 def signals(scanned: dict, now: float, plan_armed: bool) -> list[str]:
-    """The mid-work signals present. PURE."""
+    """The mid-work signals present. PURE. An agent past its lease stops counting, as a Monitor past its expiry does."""
     out = ["plan"] if plan_armed else []
-    if any(st["open"] for st in scanned["agents"].values()):
+    if any(st["open"] and (st["at"] is None or now - st["at"] < AGENT_LEASE_S) for st in scanned["agents"].values()):
         out.append("agent")
     if any(st["open"] and (st["expires"] is None or now < st["expires"]) for st in scanned["monitors"].values()):
         out.append("monitor")
@@ -235,13 +273,29 @@ def window(env_value: str | None, files: list[tuple[str, str | None]], model: st
     raise CannotRun("no autoCompactWindow is set in the environment or any settings file")
 
 
+def sentinel_armed(fields: dict, session: str | None) -> bool:
+    """Whether a parsed `.claude/executing-plan` is a mid-work signal. PURE. A `paused:` plan is not (r1 Claude F1:
+    the live sentinel had been paused for two days); nor is one whose `session:` names another session. Either id
+    unknown counts — the ceiling bounds a wrong guess, and a missed live plan is the defect this hook exists for."""
+    if "paused" in fields:
+        return False
+    armed_in = fields.get("session")
+    return not (armed_in and session and armed_in != session)
+
+
+def ceiling(w: int) -> tuple[int, int]:
+    """(the ceiling, the context limit L it assumed). PURE. L is the smallest documented window holding W."""
+    limit = min((n for n in CONTEXT_LIMITS if n >= w), default=CONTEXT_LIMITS[0])
+    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit
+
+
 def decide(trigger, w: int | None, ctx: int | None, last_at: float | None, now: float, sigs: list[str]) -> str:
     """The verdict. PURE. A None `w`, `ctx` or `last_at` means it could not be read: fail OPEN."""
     if trigger != "auto":
         return "allow-manual"
     if w is None or ctx is None or last_at is None:
         return "allow-cannot-run"
-    if ctx >= CEILING_FACTOR * w:
+    if ctx >= ceiling(w)[0]:
         return "allow-ceiling"
     if now - last_at >= IDLE_S:
         return "allow-idle"
@@ -263,18 +317,37 @@ def main_checkout(checkout: Path) -> Path | None:
     if g.is_dir():
         return checkout
     try:
-        gitdir = Path(g.read_text().split("gitdir:", 1)[1].strip())
+        gitdir = Path((read_regular(g) or "").split("gitdir:", 1)[1].strip())
         gitdir = gitdir if gitdir.is_absolute() else (checkout / gitdir)
-        common = (gitdir / (gitdir / "commondir").read_text().strip()).resolve()
+        common = (gitdir / (read_regular(gitdir / "commondir") or "").strip()).resolve()
     except (OSError, IndexError):
         return None
     return common.parent if common.name == ".git" else None
 
 
+def open_regular(path: Path, flags: int = os.O_RDONLY) -> int:
+    """A descriptor for `path`, opened NON-BLOCKING and refused unless it is a regular file: a FIFO with no peer
+    blocks a plain `open()` past every bound this hook sets (r1 Codex 6). Raises OSError."""
+    fd = os.open(path, flags | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0), 0o644)
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(f"{path} is not a regular file")
+    return fd
+
+
+def read_regular(path: Path) -> str | None:
+    """The text of `path`, None when it does not exist. Raises OSError."""
+    try:
+        fd = open_regular(path)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, "rb") as f:
+        return f.read().decode("utf-8", "replace")
+
+
 def read_tail(path: Path, cap: int = TAIL_BYTES) -> list[str]:
-    with open(path, "rb") as f:
-        f.seek(0, 2)
-        size = f.tell()
+    with os.fdopen(open_regular(path), "rb") as f:
+        size = f.seek(0, 2)
         f.seek(max(0, size - cap))
         data = f.read().decode("utf-8", "replace")
     lines = data.split("\n")
@@ -309,32 +382,52 @@ def evaluate(payload_text: str, env: dict, home: Path, now: float) -> tuple[str,
         if payload.get("trigger") != "auto":
             return decide(payload.get("trigger"), None, None, None, now, []), rec
         project = Path(env["CLAUDE_PROJECT_DIR"]) if env.get("CLAUDE_PROJECT_DIR") else None
-        checkout = checkout_of(Path(payload.get("cwd") or "."))
-        if not payload.get("transcript_path"):
+        checkout = checkout_of(_cwd(payload))
+        if not isinstance(payload.get("transcript_path"), str) or not payload["transcript_path"]:
             raise CannotRun("the payload names no transcript_path")
         scanned = scan(read_tail(Path(payload["transcript_path"])))
+        if scanned["malformed"]:
+            raise CannotRun(f"{scanned['malformed']} transcript record(s) in the tail are not JSON objects")
         if scanned["ctx"] is None or scanned["last_at"] is None:
             raise CannotRun("no assistant usage in the transcript tail")
         root = project or checkout
-        files = [(str(p), p.read_text() if p.is_file() else None) for p in
+        files = [(str(p), read_regular(p)) for p in
                  ([root / ".claude/settings.local.json", root / ".claude/settings.json"] if root else [])
                  + [home / ".claude/settings.json"]]
         w = window(env.get(ENV_W), files, scanned["model"])
-        armed = any((r / ".claude/executing-plan").exists() for r in (checkout, project) if r)
+        pp = _plan_progress()
+        sentinel = read_regular((checkout or project) / ".claude/executing-plan") if (checkout or project) else None
+        armed = sentinel is not None and sentinel_armed(pp.parse_sentinel(sentinel), pp.current_session(env))
         sigs = signals(scanned, now, armed)
-        rec.update(ctx=scanned["ctx"], w=w, ceiling=int(CEILING_FACTOR * w), idle_s=int(now - scanned["last_at"]),
-                   signals=sigs)
+        top, limit = ceiling(w)
+        rec.update(ctx=scanned["ctx"], w=w, ceiling=top, limit=limit,
+                   ceiling_by="1.5W" if top == int(CEILING_FACTOR * w) else "limit",
+                   idle_s=int(now - scanned["last_at"]), signals=sigs)
         return decide("auto", w, scanned["ctx"], scanned["last_at"], now, sigs), rec
     except Exception as exc:  # noqa: BLE001 - FAIL OPEN by design: a hook that blocks on its own error wedges the session
         rec["cannot_run"] = f"{type(exc).__name__}: {exc}"
         return "allow-cannot-run", rec
 
 
+def _cwd(payload) -> Path:
+    """The payload's `cwd`, or `.` when it is absent or not a string (`"cwd": 5` crashed `log_path`, r1 Claude F6)."""
+    cwd = payload.get("cwd") if isinstance(payload, dict) else None
+    return Path(cwd) if isinstance(cwd, str) and cwd else Path(".")
+
+
+def _plan_progress():
+    """`check-plan-progress.py`, by path: it owns the sentinel's grammar and the session id — never a second copy."""
+    spec = importlib.util.spec_from_file_location("_plan_progress", REPO_ROOT / "scripts" / "check-plan-progress.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def log_path(payload_text: str, env: dict) -> Path | None:
     """`<main checkout>/.claude/compaction-boundary.log`, or None when no checkout can be found."""
     try:
-        cwd = Path(json.loads(payload_text).get("cwd") or ".")
-    except (ValueError, AttributeError):
+        cwd = _cwd(json.loads(payload_text))
+    except ValueError:
         cwd = Path(".")
     co = checkout_of(cwd) or (Path(env["CLAUDE_PROJECT_DIR"]) if env.get("CLAUDE_PROJECT_DIR") else None)
     main = main_checkout(co) if co else None
@@ -350,8 +443,11 @@ def hook(payload_text: str, env: dict, home: Path, now: float, snapshot: Path) -
     try:
         if where is None:
             raise OSError("no checkout found for the log")
-        with open(where, "a") as f:
-            f.write(json.dumps(rec) + "\n")
+        fd = open_regular(where, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+        try:
+            os.write(fd, (json.dumps(rec) + "\n").encode())
+        finally:
+            os.close(fd)
     except OSError as exc:
         print(f"compaction-boundary: log NOT WRITTEN ({exc}); verdict {verdict}", file=sys.stderr)
         where = None
@@ -361,7 +457,7 @@ def hook(payload_text: str, env: dict, home: Path, now: float, snapshot: Path) -
             f"or at {rec['ceiling']} tokens of context")}), where
     try:
         r = subprocess.run(["bash", str(snapshot)], input=payload_text, capture_output=True, text=True,
-                           timeout=SNAPSHOT_TIMEOUT)
+                           errors="replace", timeout=SNAPSHOT_TIMEOUT)   # undecodable output ran it TWICE (r1 Codex)
         return r.stdout, where
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"precompact-snapshot: NOT CAPTURED — CANNOT RUN ({type(exc).__name__})\n", where
@@ -475,15 +571,30 @@ def _self_test_body() -> int:
     case("ctx is input + cache_read + cache_creation of the LAST assistant usage",
          scan([asst(T0, 111_000), asst(T0 + 1, 222_000)])["ctx"], 222_000)
     case("the model is the last assistant message's", scan([asst(T0, model="m1"), asst(T0 + 1, model="m2")])["model"], "m2")
-    case("last_at is the last ASSISTANT record, not a later user record",
-         scan([asst(T0), note(T0 + 900, "hi")])["last_at"], iso_epoch(stamp(T0)))
+    case("⭐ last_at is the newest ACTIVITY: a tool result after the last assistant record counts (r1 Codex 4)",
+         scan([asst(T0), result(T0 + 900, "tX", "built")])["last_at"], iso_epoch(stamp(T0 + 900)))
+    case("a queued notification (an attachment) is activity too",
+         scan([asst(T0), note(T0 + 700, tn(task="q"), kind="attachment")])["last_at"], iso_epoch(stamp(T0 + 700)))
     case("a sidechain record is ignored", scan([asst(T0, 5), json.dumps({**json.loads(asst(T0 + 1, 9)),
                                                                         "isSidechain": True})])["ctx"], 5)
-    case("a cut first line and junk lines are skipped", scan(['{"type": "assist', "not json", asst(T0, 7)])["ctx"], 7)
+    case("⭐ a record that is not a JSON object is COUNTED, never skipped; a blank line is not one",
+         (lambda r: (r["malformed"], r["ctx"]))(scan(["not json", "[1]", "", asst(T0, 7)])), (2, 7))
+    tails = Path(tempfile.mkdtemp())
+    (tails / "cut.jsonl").write_text('{"a": 1}\n{"b": 2}\n')
+    (tails / "whole.jsonl").write_text('{"c": 3}\n')
+    case("read_tail drops the cut first line of a tail, and only of a cut one",
+         _try(lambda: (read_tail(tails / "cut.jsonl", 12), read_tail(tails / "whole.jsonl"))),
+         (['{"b": 2}', ''], ['{"c": 3}', '']))
     A = ("tA", "Agent", {"description": "d"})
     case("⭐ an Agent with no result yet (foreground, running) is a signal", signals(scan([asst(T0, uses=[A])]), T0 + 60, False), ["agent"])
     case("a foreground Agent whose result came back is done",
          signals(scan([asst(T0, uses=[A]), result(T0, "tA", "the report")]), T0 + 60, False), [])
+    case("⭐ a COMPLETED foreground result carries an agentId footer too — still done (r1 Codex 1)",
+         signals(scan([asst(T0, uses=[A]), result(T0, "tA", "Review complete.\nagentId: abc123\n<usage>subagent_tokens: "
+                                                    "1234\ntool_uses: 1\nduration_ms: 20000</usage>")]), T0 + 60, False), [])
+    case("⭐ an open background agent stops counting at its 3 h lease (r1 Codex 3, Claude F3)",
+         [signals(scan([asst(T0, uses=[A]), result(T0, "tA", ASYNC)]), T0 + AGENT_LEASE_S + dt, False) for dt in (-1, 0)],
+         [["agent"], []])
     case("an Agent whose launch failed is done", signals(scan([asst(T0, uses=[A]), result(T0, "tA", ASYNC, err=True)]), T0 + 60, False), [])
     case("⭐ a background agent with no notification is a signal",
          signals(scan([asst(T0, uses=[A]), result(T0, "tA", ASYNC)]), T0 + 60, False), ["agent"])
@@ -532,6 +643,25 @@ def _self_test_body() -> int:
     case("the signals combine in order", signals(scan([asst(T0, uses=[A, M]), result(T0, "tM", MON)]), T0 + 60, True),
          ["plan", "agent", "monitor"])
 
+    # ── the plan sentinel ──
+    case("⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
+         sentinel_armed({"plan": "p", "paused": "waiting on in-flight work"}, "session_1"), False)
+    case("⭐ a sentinel armed in ANOTHER session is not mid-work",
+         sentinel_armed({"plan": "p", "session": "session_old"}, "session_1"), False)
+    case("a sentinel armed in THIS session is",
+         sentinel_armed({"plan": "p", "session": "session_1"}, "session_1"), True)
+    case("a session that cannot be compared counts — either side unknown",
+         (sentinel_armed({"plan": "p"}, "session_1"), sentinel_armed({"plan": "p", "session": "session_1"}, None)),
+         (True, True))
+
+    # ── the ceiling ──
+    case("⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)",
+         [ceiling(150_000), ceiling(180_000), ceiling(200_000), ceiling(300_000), ceiling(900_000), ceiling(1_000_000)],
+         [(180_000, 200_000), (180_000, 200_000), (180_000, 200_000), (450_000, 1_000_000), (900_000, 1_000_000),
+          (900_000, 1_000_000)])
+    case("⭐ a 1M window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
+         decide("auto", 1_000_000, 999_999, T0, T0 + 1, ["plan"]), "allow-ceiling")
+
     # ── window ──
     case("the env var decides first", _try(lambda: window("250000", [("local", '{"autoCompactWindow": 300000}')], "m1")), 250000)
     case("modelSettings for THIS model beats the same file's top level",
@@ -559,20 +689,20 @@ def _self_test_body() -> int:
          decide("auto", 300_000, 450_000, T0 + 50, T0 + 51, ["plan", "agent"]), "allow-ceiling")
     case("⭐ FAILS IF an idle compaction is blocked: 5 min idle ALLOWS despite signals",
          decide("auto", 300_000, 280_000, T0 - 40, T0 - 40 + IDLE_S, ["plan"]), "allow-idle")
-    case("no signal at a boundary allows", decide("auto", 200_000, 180_000, T0, T0 + 3, []), "allow-no-signal")
+    case("no signal at a boundary allows", decide("auto", 300_000, 280_000, T0, T0 + 3, []), "allow-no-signal")
     case("an unreadable last event fails OPEN", decide("auto", 200_000, 180_000, None, T0 + 3, ["plan"]), "allow-cannot-run")
     case("iso_epoch reads a Z stamp", iso_epoch("2027-01-15T08:00:00.500Z"), 1800000000.5)
     case("iso_epoch: not a stamp is None", (iso_epoch("yesterday"), iso_epoch(None)), (None, None))
 
     # ── the hook end to end (a real tree: transcript, settings, sentinel, snapshot stub) ──
-    def world(lines, settings='{"autoCompactWindow": 300000}', armed=True, trigger="auto"):
+    def world(lines, settings='{"autoCompactWindow": 300000}', armed=True, trigger="auto", sentinel="plan: x\n"):
         d = Path(tempfile.mkdtemp(prefix="cb-")).resolve()
         (d / ".git").mkdir()
         (d / ".claude").mkdir()
         if settings is not None:
             (d / ".claude/settings.local.json").write_text(settings)
         if armed:
-            (d / ".claude/executing-plan").write_text("plan: x\n")
+            (d / ".claude/executing-plan").write_text(sentinel)
         (d / "t.jsonl").write_text("\n".join(lines) + "\n")
         snap = d / "snap.sh"
         snap.write_text('cat > "$(dirname "$0")/snap.got"; echo SNAPPED\n')
@@ -580,9 +710,9 @@ def _self_test_body() -> int:
                               "session_id": "s1"})
         return d, payload, snap
 
-    def run(lines, now, **kw):
+    def run(lines, now, env=None, **kw):
         d, payload, snap = world(lines, **kw)
-        out, where = hook(payload, {"CLAUDE_PROJECT_DIR": str(d)}, d / "home", now, snap)
+        out, where = hook(payload, {"CLAUDE_PROJECT_DIR": str(d), **(env or {})}, d / "home", now, snap)
         log = [json.loads(x) for x in (d / ".claude" / LOG_NAME).read_text().splitlines()]
         return out, log[-1], (d / "snap.got").exists(), where == d / ".claude" / LOG_NAME
 
@@ -605,6 +735,26 @@ def _self_test_body() -> int:
          run_case([asst(T0, 270_000)], T0 + 60, lambda out, rec, snapped, _: (
              out, rec["verdict"], "does not parse" in rec.get("cannot_run", "")), settings="{not json"),
          ("SNAPPED\n", "allow-cannot-run", True))
+    case("⭐ hook: a PAUSED sentinel does not block — the live shape, paused for two days",
+         run_case([asst(T0, 270_000)], T0 + 60, lambda out, rec, *_: (out, rec["verdict"]),
+                  sentinel="plan: .claude/plans/x.md\narmed: 2026-10-30T05:16:54-07:00\nsession: session_1\n"
+                           "paused: waiting on in-flight work\npaused_unticked: 3\n", env={"CLAUDE_CODE_BRIDGE_SESSION_ID": "session_1"}),
+         ("SNAPPED\n", "allow-no-signal"))
+    case("⭐ hook: a sentinel from ANOTHER session does not block",
+         run_case([asst(T0, 270_000)], T0 + 60, lambda out, rec, *_: rec["verdict"],
+                  sentinel="plan: p\nsession: session_old\n", env={"CLAUDE_CODE_BRIDGE_SESSION_ID": "session_1"}),
+         "allow-no-signal")
+    case("⭐ hook: a tool result arriving NOW is not idle, though the call was 10 min ago (r1 Codex 4)",
+         run_case([asst(T0, 270_000, uses=[("tB", "Bash", {})]), result(T0 + 600, "tB", "ok")], T0 + 610,
+                  lambda out, rec, snapped, _: (decision(out), rec["verdict"], snapped)),
+         ("block", "block-plan", False))
+    case("⭐ hook: a record that does not parse FAILS OPEN, with the count (r1 Codex 5)",
+         run_case([asst(T0, 270_000), "not json"], T0 + 60, lambda out, rec, *_: (out, rec["verdict"], rec.get("cannot_run"))),
+         ("SNAPPED\n", "allow-cannot-run", "CannotRun: 1 transcript record(s) in the tail are not JSON objects"))
+    case("hook: undecodable snapshot output is passed through, not raised (it ran the snapshot TWICE, r1 Codex)",
+         lambda: (lambda d, payload, snap: (snap.write_text("printf '\\377ok'\n"),
+                                            hook(payload, {"CLAUDE_PROJECT_DIR": str(d)}, d, T0 + IDLE_S + 1, snap)[0])[1])(
+             *world([asst(T0, 270_000)])), "\ufffdok")
     case("hook: a manual trigger allows and logs allow-manual",
          run_case([asst(T0, 270_000)], T0 + 60, lambda out, rec, *_: (out, rec["verdict"]), trigger="manual"),
          ("SNAPPED\n", "allow-manual"))
@@ -624,15 +774,56 @@ def _self_test_body() -> int:
     case("hook: a plan armed in the session's WORKTREE blocks, and the log goes to the MAIN checkout",
          in_worktree, ("block", True))
 
+    def main_plan_only():
+        d, payload, snap = world([asst(T0, 270_000)])
+        wt = d / "wt"
+        (d / ".git" / "worktrees" / "w1").mkdir(parents=True)
+        (d / ".git" / "worktrees" / "w1" / "commondir").write_text("../..\n")
+        wt.mkdir()
+        (wt / ".git").write_text(f"gitdir: {d}/.git/worktrees/w1\n")
+        out, _ = hook(json.dumps({**json.loads(payload), "cwd": str(wt)}), {"CLAUDE_PROJECT_DIR": str(d)}, d, T0 + 60, snap)
+        return out
+    case("⭐ hook: the PROJECT dir's plan is not a worktree session's (r1 Claude F1 — teammates read the coordinator's)",
+         main_plan_only, "SNAPPED\n")
+    case("⭐ log_path: a non-string cwd falls back to `.`, never raises (r1 Claude F6)",
+         lambda: log_path(json.dumps({"cwd": 5}), {}) == log_path("{}", {}), True)
+    case("log_path: a cwd in no checkout falls back to the project dir's",
+         (lambda d: log_path(json.dumps({"cwd": "/"}), {"CLAUDE_PROJECT_DIR": str(d)}) == d / ".claude" / LOG_NAME)(
+             world([asst(T0)])[0]), True)
+
+    def fifo(kind):
+        """A FIFO with no peer where the hook opens a file; a blocking open would hang, so it runs in a thread and
+        the peer is opened after 2 s to release it — the case reports `hung`, never hangs the suite."""
+        import threading
+        d, payload, snap = world([asst(T0, 270_000)], armed=False)
+        f = d / "t.jsonl" if kind == "transcript" else d / ".claude" / LOG_NAME
+        f.unlink(missing_ok=True)
+        os.mkfifo(f)
+        got = []
+        th = threading.Thread(target=lambda: got.append(hook(payload, {"CLAUDE_PROJECT_DIR": str(d)}, d, T0 + 60, snap)),
+                              daemon=True)
+        th.start()
+        th.join(2)
+        if th.is_alive():
+            os.close(os.open(f, (os.O_WRONLY if kind == "transcript" else os.O_RDONLY) | os.O_NONBLOCK))
+            th.join(2)
+            return "hung"
+        return got[0][0], got[0][1]
+    case("⭐ hook: a FIFO at the transcript is refused at once — allowed, snapshot taken (r1 Codex 6)",
+         lambda: fifo("transcript")[0], "SNAPPED\n")
+    case("⭐ hook: a FIFO at the log is refused at once — the log is NOT written, compaction still allowed",
+         lambda: fifo("log"), ("SNAPPED\n", None))
+
     def from_home():
         d, payload, snap = world([asst(T0, 270_000)], settings=None)
         h = d / "user-home"
         (h / ".claude").mkdir(parents=True)
         (h / ".claude/settings.json").write_text('{"modelSettings": {"m1": {"autoCompactWindow": 150000}}}')
         out, where = hook(payload, {}, h, T0 + 60, snap)
-        return out, json.loads((d / ".claude" / LOG_NAME).read_text())["ceiling"]
-    case("hook: with no project dir in env, W comes from the HOME settings — 270k is past ITS ceiling of 225k",
-         from_home, ("SNAPPED\n", 225_000))
+        rec = json.loads((d / ".claude" / LOG_NAME).read_text())
+        return out, rec["ceiling"], rec["limit"], rec["ceiling_by"]
+    case("hook: with no project dir in env, W comes from the HOME settings — 150k's ceiling is the 200k limit's 180k",
+         from_home, ("SNAPPED\n", 180_000, 200_000, "limit"))
 
     def no_snapshot():
         d, payload, snap = world([asst(T0, 270_000)], armed=False)

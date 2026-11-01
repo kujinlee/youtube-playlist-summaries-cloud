@@ -2144,7 +2144,10 @@ EXPECTED_MUTATIONS = {
     "scripts/compaction-state.py": 89,
     # backlog #440 (2026-11-01): the PreCompact boundary hook — the ceiling, idle and block order, the three
     # mid-work signals' detectors, W's precedence and fail-open, the snapshot chained only on ALLOW, the log path.
-    "scripts/check-compaction-boundary.py": 28,
+    # ⟳ r1 fold: +13 — the sentinel's `paused:`/`session:`, the ceiling's clamp under the model limit, a completed
+    # foreground result, the agent lease, activity beyond assistant records, malformed records, a non-string cwd,
+    # non-blocking opens, undecodable snapshot output. 28 + 13 = 41.
+    "scripts/check-compaction-boundary.py": 41,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
