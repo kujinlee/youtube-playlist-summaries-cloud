@@ -18585,4 +18585,4 @@ The usage audit of the last two days is now on the backlog. Where the 230 millio
 
 Also moved seven older rows out of the always-loaded memory index so it stays under its size limit.
 <!--tech-->
-Backlog #455 to #461 (kind token-saving), `docs/optimization-register.md` rows 15 to 21 (status proposed), seven rows moved from `docs/memory/MEMORY.md` to `docs/memory/slice-history.md` (index 89% of budget).
+Backlog #455 to #461 (kind task), `docs/optimization-register.md` rows 15 to 21 (status proposed), seven rows moved from `docs/memory/MEMORY.md` to `docs/memory/slice-history.md` (index 89% of budget).
