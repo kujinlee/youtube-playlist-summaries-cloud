@@ -4795,6 +4795,8 @@ def _self_test_body() -> int:
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
+                                      # backlog #440: the PreCompact boundary hook, with its manifest.
+                                      "scripts/check-compaction-boundary.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-decision-scheme.py",
                                       "scripts/check-diff-coverage.py",
