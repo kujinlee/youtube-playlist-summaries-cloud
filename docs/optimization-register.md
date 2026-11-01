@@ -39,6 +39,36 @@ session scratch files, not committed; the figures quoted here are the copy of re
 
 Row 14 is a measuring tool, not a saving; it is here because rows 1, 2 and 5 are priced with it.
 
+## Evidence source and decision rule, per row
+
+Owner, 2026-11-01 10:19: "re-evaluation has to be backed by evidence." The table above is already wide, so
+the two columns the owner asked for sit in this table, keyed by row number. **Principle: a row is changed or
+reverted only on its evidence, never on opinion; a re-evaluation records the evidence it read** (the command, the
+count, the date). The thresholds below are PROPOSED starting values, chosen here and not derived from data; the
+first re-evaluation may change them, and says so. "NO EVIDENCE SOURCE YET" means nothing collects the data today;
+the cheapest way to start is given.
+
+| # | Evidence source (what to read, how) | Decision rule (adjust or revert when) |
+|---|---|---|
+| 1 | **NO EVIDENCE SOURCE YET for retries.** Cheapest start: when the coordinator re-dispatches a job a Sonnet agent did, it adds `retry_of: <first agent name>` to the `.claude/inflight.jsonl` entry; count those per job class. Spend per model is readable now: the usage study's `agents.py` over the session transcripts, plus `python3 ~/.claude/meter/regress.py` for the ratio | 2 or more retries in 20 Sonnet runs of one job class: that class goes back to Opus. A meter ratio showing Sonnet within 20% of Opus per token: re-price and reconsider the whole row |
+| 2 | **NO EVIDENCE SOURCE YET**, same start as row 1, with the `retry_of` entry also carrying `effort: low`. Content errors: a `docs/reviews/` finding or an owner correction naming a file a low-effort agent wrote | 2 or more retries in 20 low-effort runs, or any one content error that a gate passed: that job class returns to the default effort |
+| 3 | The review ids and verdicts under `docs/reviews/` (r4 and later, filed rather than folded) and the backlog rows they created; `git log origin/master --grep='Revert'` and `gh pr list --state merged --search 'fix in:title'` for the later bug. The study's `reviews.py` re-runs the round counts | A filed r4+ Blocking/High finding becomes a merged bug or a revert within 20 merged PRs: reopen the cap to r4 for that change class. None in 20 PRs: keep |
+| 4 | The compaction study's `loss2.py` run over a newer transcript (re-read calls in the 30 calls after each compaction); the `.remember/compaction/<session>/snapshot.md` captures; owner corrections quoted from the transcript | Excess above ~150k weighted per compaction over at least 5 compactions, or one owner correction for a decision a summary lost: raise W to 400k. The study's lost-nuance gap is stated, so the first rule is a floor, not a clean test |
+| 5 | `python3 scripts/check-stalled-work.py --scratch <scratchpad>` and its STALLED lines; the usage study's `agents.py` (per-agent spend and spans) and `idle_rewrite.py` (fresh prefix versus idle rewrite) | More than 2 stalls in a week, or fresh-prefix writes costing more than the idle rewrites they replaced over the same week: allow reuse inside one hot task |
+| 6 | One grep over the transcripts: `grep -l '<plugin>:' ~/.claude/projects/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/*.jsonl` for each disabled plugin's skill names, after 2026-10-31. A one-liner, not a committed script | Any one hit that was a real need: re-enable that plugin (`supabase` before the next schema task, regardless) |
+| 7 | **NO EVIDENCE SOURCE YET** for "a slip traceable to a moved clause". Cheapest start: a process-slip note (a review finding, an owner correction, a feedback memory) names the clause and its current file; `grep` those notes for the section names PR #458 moved | One traced slip: restore that clause to the always-loaded file. Three after merge: send the trim back to review |
+| 8 | Reverted; closed. The evidence of record is the pair of figures in the row (about 19 weighted per call against about 54k per lapse) | None; do not retry |
+| 9 | Backlog #424's list of missed mutants; the `mutation-sweep` and ordinary `verify` job results on any `compaction-state` change (`gh run list --workflow ci.yml --json conclusion,headBranch`) | A `compaction-state` defect reaches master or production that every manifest mutant passed, or a seventh missed mutant is found: remove the skip |
+| 10 | Shard times: `gh run view <run> --json jobs` for the `mutation-sweep` jobs. Local-green, CI-red: `gh run list --workflow ci.yml --json conclusion,headBranch,jobs` filtered to a failed `mutation-sweep` on a branch that recorded a local partial run. The memo: `check-main-drivable.py --self-test` | More than one CI-only mutation red in a week: widen the local run. A slowest shard past 1,500 s again: add shards (backlog #231). A wrong memoised answer: remove the memo |
+| 11 | `python3 scripts/check-stalled-work.py --scratch <scratchpad>` (uncached, the CLI is not capped) compared with `git log` and `gh pr list` at the same moment | One stall the owner finds that the hook did not show: cache window to 2 min, or remove the cache |
+| 12 | **NO EVIDENCE SOURCE YET** for a contradiction between an action and a ledger entry the digest did not print. Cheapest start: count, per session, whether the `full:` path was ever opened (a Read or cat of it in the transcript) and flag an action that contradicts an entry in that file | An action traced to a detail only the full text held: print the full block again |
+| 13 | `cat ~/.claude/.rate-limits.json` against `/usage`; the hook's own output lines in the transcript (CANNOT RUN count per week) | One refusal at under 90% on the owner's reading, or a CANNOT RUN all night after backlog #443: raise the refuse line or turn the refusal into a warning |
+| 14 | `python3 ~/.claude/meter/regress.py` and `wc -l ~/.claude/meter/log.jsonl` | A printed ratio with CANNOT RUN or an interval too wide to separate the two models: keep collecting, decide nothing from it |
+
+**Rows with NO EVIDENCE SOURCE YET: 1 and 2 (retries), 7 (slips traced to a moved clause), 12 (contradicting
+actions).** Rows 1, 2 and 5 also lean on counts that came from the usage study's scratch scripts, which are not
+committed.
+
 ## Re-evaluation
 
 Three triggers. Any one opens a review of the rows it names.
@@ -52,8 +82,9 @@ Three triggers. Any one opens a review of the rows it names.
    Each review reads the signal column of every row, writes one dated line per row (kept, tuned, reverted) with the
    evidence it read, and re-measures a benefit still marked ESTIMATE if a source now exists.
 
-A re-evaluation that keeps a row on opinion, or reverts one on opinion, is not a re-evaluation. A row whose
-evidence source cannot be run gets that source started first.
+A row is changed or reverted only on its evidence, never on opinion. A re-evaluation records the evidence it
+read (the command, the count, the date) beside its verdict; one that keeps or reverts a row on opinion is not a
+re-evaluation. A row marked NO EVIDENCE SOURCE YET gets that source started first.
 
 ## How to add a row
 
