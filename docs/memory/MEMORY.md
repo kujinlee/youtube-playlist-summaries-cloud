@@ -94,8 +94,6 @@
 - [postgrest aborts return, don't throw](postgrest-abort-returns-not-throws.md) — race your own timer
 - [`position` is not vestigial](position-column-is-not-vestigial.md) — check consumers per usage SITE, not per symbol
 - [Blocked on a decision, not work](a-gate-can-be-blocked-on-a-decision-not-work.md) — M1.4's last two items weren't engineering
-- [Detached dig retention](detached-dig-retention-decision.md) — retiring a rule dissolved a review High with zero code change
-- [CANDIDATE stopping rule](stopping-rule-defect-class-shift.md) — ⏳ untested and partly falsified
 
 ## Working with me
 
@@ -131,14 +129,9 @@
 
 ## Environments & product context
 
-- [check-main-drivable is slow PER main() CALL SITE](main-drivable-cost-is-per-call-site.md) — main([...]) inside a long _self_test: 50s → 209s, past the 120s shard timeout. One call in a small helper → 52s
-- [⭐ Scoped mutation run in 4s](scoped-mutation-run-in-four-seconds.md) — ⛔ DECIDED: PARTIAL locally (only manifests whose file MOVED — co-scoping an unchanged 183 cost 4h), FULL in CI shards. 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file. Prune a COPY of HARNESS_TREE's SIX paths. ⭐ The harness is structurally browserless (`typescript` only → ERR_MODULE_NOT_FOUND)
 - [Local cloud validation](local-cloud-validation-run.md) — local Supabase (:3001); worker needs env-load + Node 22+
-- [Local manual-test env](local-manual-test-env.md) — `~/code/agentic-ai-docs/yps-sync-test/`; sync is ADDITIVE
-- [Staging Supabase](staging-supabase-project.md) — ⚠ throwaway `neeufoxdbgbpkjukzzuc`; DELETE when B3/B4 done
 - [Access tiers vision](access-tiers-vision.md) — free tier built; the billing layer is the gap
 - [backlog.md stays Markdown](backlog-md-stays-markdown.md) — decided 2026-09-10; don't re-derive the JSON question
-- [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation
 - [⭐ Terminal selection dies under fullscreen TUI](terminal-selection-dead-under-fullscreen-tui.md) — `?1000h` mouse reporting eats the drag; Option-drag is CONSTANT FALSE on macOS until `macOptionClickForcesSelection`. The crosshair is column-select, not capture
 
 ## Slice history
