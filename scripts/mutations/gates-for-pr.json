@@ -1,255 +1,112 @@
 [
- {
-  "name": "a last green whose inputs still digest the same is never used, so an UNCHANGED gate re-runs",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        if digest(inputs, world) == e.get(\"digest\"):\n            return e[\"digest\"]",
-    "        if False:\n            return e[\"digest\"]"
-   ]
-  ],
-  "expect": "UNCHANGED inputs: a, b and the git-reading gate are not re-run"
- },
- {
-  "name": "the digest stops reading file CONTENTS, so a gate whose input changed is skipped",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        h.update(f\"f {f} {world.content(f)}\\n\".encode())",
-    "        h.update(f\"f {f}\\n\".encode())"
-   ]
-  ],
-  "expect": "a commit that touches ONE gate's input re-runs that gate"
- },
- {
-  "name": "a TIMEOUT and a KILLED run are recorded green like a PASS",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        if o.status == \"PASS\":\n            inputs, why = classify(",
-    "        if o.status in (\"PASS\", \"TIMEOUT\", \"KILLED\"):\n            inputs, why = classify("
-   ]
-  ],
-  "expect": "...a TIMEOUT, a KILLED and a CANNOT RUN were never recorded green, so they run again"
- },
- {
-  "name": "exit 2 (CANNOT RUN) reads as a PASS",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    return {0: \"PASS\", 2: \"CANNOT RUN\"}.get(rc, \"FAIL\")",
-    "    return {0: \"PASS\", 2: \"PASS\"}.get(rc, \"FAIL\")"
-   ]
-  ],
-  "expect": "exit 0 is the only PASS"
- },
- {
-  "name": "a negative exit (a signal) stops being KILLED",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    if rc is None or rc < 0:\n        return \"KILLED\"",
-    "    if rc is None:\n        return \"KILLED\""
-   ]
-  ],
-  "expect": "exit 0 is the only PASS"
- },
- {
-  "name": "a gate that runs a program the tracer cannot see becomes skippable",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "                return None, f\"it runs {prog}, whose reads the tracer cannot see\"",
-    "                continue"
-   ]
-  ],
-  "expect": "any other program (gh, node, a shell) is unbounded"
- },
- {
-  "name": "a write inside the repository stops making a gate unbounded",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "                return None, f\"it writes {p} inside the repository\"",
-    "                continue"
-   ]
-  ],
-  "expect": "a write inside the repository is unbounded"
- },
- {
-  "name": "a missing start record no longer means the tracer did not load",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    if not any(r.get(\"k\") == \"start\" for r in records):",
-    "    if False:"
-   ]
-  ],
-  "expect": "no start record: the tracer did not load, so the gate is unbounded"
- },
- {
-  "name": "python started with -I/-E/-S is treated as followed",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "                if flag:\n                    return None, f\"it starts Python with {flag}, which the tracer cannot follow\"",
-    "                if False:\n                    return None, f\"it starts Python with {flag}, which the tracer cannot follow\""
-   ]
-  ],
-  "expect": "python with -I cannot be followed"
- },
- {
-  "name": "python started without the tracer in its environment is treated as followed",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "                if not r.get(\"traced\"):",
-    "                if False:"
-   ]
-  ],
-  "expect": "python in an environment without the tracer cannot be followed"
- },
- {
-  "name": "the tree's NAME LIST leaves the digest, so a file a gate only stat()s can appear unseen",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    for part in (\"gates-for-pr/1\", sys.version, world.today, json.dumps(world.env), world.names()):",
-    "    for part in (\"gates-for-pr/1\", sys.version, world.today, json.dumps(world.env)):"
-   ]
-  ],
-  "expect": "a file a gate only stat()s appearing re-runs gates (the tree's name list is an input)"
- },
- {
-  "name": "a git-reading gate's tree leaves the digest, so HEAD moving does not re-run it",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    if inputs.tree:\n        h.update(f\"t {world.tree(inputs.git)}\\n\".encode())",
-    "    if False:\n        h.update(f\"t {world.tree(inputs.git)}\\n\".encode())"
-   ]
-  ],
-  "expect": "...but HEAD moved, and the git-reading gate reads the tree, so it re-runs"
- },
- {
-  "name": "every git command is digested over EVERY ref, so an unrelated ref re-runs it",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        refs = self.refs() if broad else self.named(tuple(sorted(words)))",
-    "        refs = self.refs()"
-   ]
-  ],
-  "expect": "a ref the git-reading gate does not name moves: it is still skipped"
- },
- {
-  "name": "the refs a git command NAMES leave the digest",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "else self.named(tuple(sorted(words)))",
-    "else \"\""
-   ]
-  ],
-  "expect": "the ref the git-reading gate NAMES moves: it re-runs, and nothing else does"
- },
- {
-  "name": "revisions read from stdin stop counting as a broad ref read",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "                   \"--stdin\", \"--batch\", \"--batch-check\", \"--batch-command\")",
-    "                   \"--batch\", \"--batch-check\", \"--batch-command\")"
-   ]
-  ],
-  "expect": "...and so does --all, or revisions on stdin"
- },
- {
-  "name": "the date leaves the digest",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "sys.version, world.today, json.dumps(world.env)",
-    "sys.version, json.dumps(world.env)"
-   ]
-  ],
-  "expect": "the date is an input: the same files digest differently tomorrow"
- },
- {
-  "name": "a green answers any MODE of the same script",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        if e.get(\"gate\") != gate.script or e.get(\"mode\") != gate.mode:",
-    "        if e.get(\"gate\") != gate.script:"
-   ]
-  ],
-  "expect": "a green answers its own mode, and never another mode of the same script"
- },
- {
-  "name": "a stale NOT_LOCAL name no longer refuses the set",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    if stale:\n        return [], [], f\"NOT_LOCAL names a step",
-    "    if False:\n        return [], [], f\"NOT_LOCAL names a step"
-   ]
-  ],
-  "expect": "a NOT_LOCAL name that no longer matches a step REFUSES the set (it cannot go stale silently)"
- },
- {
-  "name": "a verify job with no python gate yields an empty set instead of CANNOT RUN",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "    if not gates:\n        return [], out, f\"the `{CI_JOB}` job yielded no Python gate",
-    "    if False:\n        return [], out, f\"the `{CI_JOB}` job yielded no Python gate"
-   ]
-  ],
-  "expect": "a verify job with no python gate is CANNOT RUN, never an empty pass"
- },
- {
-  "name": "the tracer stops recording what a gate opens",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "            _w({{\"k\": \"w\" if w else \"r\", \"p\": p}})",
-    "            pass"
-   ]
-  ],
-  "expect": "a commit that touches ONE gate's input re-runs that gate"
- },
- {
-  "name": "the tracer stops recording subprocess launches",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        elif ev == \"subprocess.Popen\":\n            _spawn(a[1], a[2], a[3])",
-    "        elif ev == \"subprocess.Popen\":\n            pass"
-   ]
-  ],
-  "expect": "...a gate that shells out says it is never skipped, and why"
- },
- {
-  "name": "the PR-only base ref is no longer rewritten to --base",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        line = run.replace(BASE_REF, f\"origin/{base}\")",
-    "        line = run"
-   ]
-  ],
-  "expect": "a PR-only step is IN the set, its base ref rewritten to --base"
- },
- {
-  "name": "a moved MANIFEST no longer runs the scripts it names",
-  "file": "scripts/gates-for-pr.py",
-  "edits": [
-   [
-    "        if manifest in changed:\n            out |= files",
-    "        if False:\n            out |= files"
-   ]
-  ],
-  "expect": "a moved MANIFEST runs every script it names"
- }
+  {
+    "name": "exit 2 (CANNOT RUN) reads as a PASS",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    return {0: \"PASS\", 2: \"CANNOT RUN\"}.get(rc, \"FAIL\")",
+        "    return {0: \"PASS\", 2: \"PASS\"}.get(rc, \"FAIL\")"
+      ]
+    ],
+    "expect": "exit 0 is the only PASS"
+  },
+  {
+    "name": "a negative exit (a signal) stops being KILLED",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if rc is None or rc < 0:\n        return \"KILLED\"",
+        "    if rc is None:\n        return \"KILLED\""
+      ]
+    ],
+    "expect": "exit 0 is the only PASS"
+  },
+  {
+    "name": "a stale NOT_LOCAL name no longer refuses the set",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if stale:\n        return [], [], f\"NOT_LOCAL names a step",
+        "    if False:\n        return [], [], f\"NOT_LOCAL names a step"
+      ]
+    ],
+    "expect": "a NOT_LOCAL name that no longer matches a step REFUSES the set (it cannot go stale silently)"
+  },
+  {
+    "name": "a verify job with no python gate yields an empty set instead of CANNOT RUN",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if not gates:\n        return [], out, f\"the `{CI_JOB}` job yielded no Python gate",
+        "    if False:\n        return [], out, f\"the `{CI_JOB}` job yielded no Python gate"
+      ]
+    ],
+    "expect": "a verify job with no python gate is CANNOT RUN, never an empty pass"
+  },
+  {
+    "name": "the PR-only base ref is no longer rewritten to --base",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "        line = run.replace(BASE_REF, f\"origin/{base}\")",
+        "        line = run"
+      ]
+    ],
+    "expect": "a PR-only step is IN the set, its base ref rewritten to --base"
+  },
+  {
+    "name": "a moved MANIFEST no longer runs the scripts it names",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "        if manifest in changed:\n            out |= files",
+        "        if False:\n            out |= files"
+      ]
+    ],
+    "expect": "a moved MANIFEST runs every script it names"
+  },
+  {
+    "name": "a TIMEOUT, KILLED or CANNOT RUN with no FAIL exits 0, as if green",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if any(n for s, n in tally.items() if s != \"PASS\"):\n        return 2",
+        "    if False:\n        return 2"
+      ]
+    ],
+    "expect": "the run is 0 only when every gate PASSED; a FAIL is 1; any other non-pass is 2"
+  },
+  {
+    "name": "a FAIL no longer makes the run 1",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    if tally.get(\"FAIL\"):\n        return 1",
+        "    if False:\n        return 1"
+      ]
+    ],
+    "expect": "the run is 0 only when every gate PASSED; a FAIL is 1; any other non-pass is 2"
+  },
+  {
+    "name": "the other ci.yml jobs (the mutation sweep) stop being printed OUT OF SET",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "        if job != CI_JOB:\n            out.append(",
+        "        if job == \"\":\n            out.append("
+      ]
+    ],
+    "expect": "node, a multi-line block, another CI variable, a non-PR condition and every other job are OUT OF SET"
+  },
+  {
+    "name": "an untracked file stops counting as moved, so a new manifest's slice is not run",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    return set(diff.stdout.split()) | set(new.stdout.split()), \"\"",
+        "    return set(diff.stdout.split()), \"\""
+      ]
+    ],
+    "expect": "a moved (untracked) manifest puts its script's mutation slice in the set"
+  }
 ]

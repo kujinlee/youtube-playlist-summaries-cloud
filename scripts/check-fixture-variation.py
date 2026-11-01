@@ -315,10 +315,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
-    "gates-for-pr.py": ("ci_gates.base", "ci_gates.workflow", "classify.ignored", "classify.records", "classify.root","digest.inputs",
-                        "git.a", "git_refs.argv","last_green.entries","last_green.world", "main.argv", "main.root", "mutation_gates.targets",
-                        "mutation_targets.changed", "mutation_targets.manifests","read_ledger.path", "status_of.rc",
-                        "status_of.timed_out",),
+    # ⟳ PR #465 r1 fold: `classify.*`, `digest.inputs`, `git_refs.argv`, `last_green.*` and `read_ledger.path` leave with
+    # the skip ledger they belonged to (deleted, not renamed); `exit_code.tally` and `run_gate.*` join.
+    "gates-for-pr.py": ("ci_gates.base", "ci_gates.workflow", "exit_code.tally", "git.a", "main.argv", "main.root",
+                        "mutation_gates.targets", "mutation_targets.changed", "mutation_targets.manifests",
+                        "run_gate.gate", "run_gate.log", "run_gate.root", "run_gate.timeout",
+                        "status_of.rc", "status_of.timed_out"),
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
     # by running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #457 r1: + `claude_record.dirty`/`.verdict`, `review_problem.resolve`, `declared_heads.text`,
