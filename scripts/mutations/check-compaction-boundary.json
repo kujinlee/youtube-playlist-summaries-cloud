@@ -400,13 +400,13 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit",
+        "    return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit",
         "    return int(CEILING_FACTOR * w), limit"
       ]
     ],
     "expect": [
       "⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)",
-      "⭐ a 1M window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
+      "⭐ a 900k window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
       "hook: with no project dir in env, W comes from the HOME settings — 150k's ceiling is the 200k limit's 180k"
     ]
   },
@@ -428,7 +428,7 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        " if \"agent launched\" in text else None",
+        " if text.lstrip().startswith(LAUNCHED) else None",
         ""
       ]
     ],
@@ -542,6 +542,58 @@
     ],
     "expect": [
       "hook: undecodable snapshot output is passed through, not raised (it ran the snapshot TWICE, r1 Codex)"
+    ]
+  },
+  {
+    "name": "a report that quotes the launch phrase is read as a background launch",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "if text.lstrip().startswith(LAUNCHED) else None",
+        "if LAUNCHED in text else None"
+      ]
+    ],
+    "expect": [
+      "⭐ a completed foreground report that QUOTES the launch phrase is still done (r2 Claude R2-1)"
+    ]
+  },
+  {
+    "name": "the ceiling may fall below W",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit",
+        "return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit"
+      ]
+    ],
+    "expect": [
+      "⭐ the ceiling is never below W — 190k, 200k, 950k and 1M windows have none to give (r2 Claude R2-3)"
+    ]
+  },
+  {
+    "name": "a ceiling with no headroom is not labelled",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(\"no-headroom\" if top == w else \"1.5W\"",
+        "(\"1.5W\""
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a ceiling with no room above W is logged `no-headroom`, so --summary can exclude it (r2 Claude R2-3)"
+    ]
+  },
+  {
+    "name": "a nested repo's checkout hides the project's plan and takes the log",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return co if main_checkout(co) == main_checkout(project) else project",
+        "    return co"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a cwd in a NESTED repo (.remember) still sees the project's plan, and the log stays out of it (r2 Claude R2-2)"
     ]
   }
 ]

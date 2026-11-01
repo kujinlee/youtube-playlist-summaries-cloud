@@ -2147,7 +2147,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ r1 fold: +13 — the sentinel's `paused:`/`session:`, the ceiling's clamp under the model limit, a completed
     # foreground result, the agent lease, activity beyond assistant records, malformed records, a non-string cwd,
     # non-blocking opens, undecodable snapshot output. 28 + 13 = 41.
-    "scripts/check-compaction-boundary.py": 41,
+    # ⟳ r2 fold: +4 — a report quoting the launch phrase, the ceiling's floor at W, its `no-headroom` label, a
+    # nested repo's checkout. 41 + 4 = 45.
+    "scripts/check-compaction-boundary.py": 45,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.

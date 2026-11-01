@@ -21,6 +21,8 @@ THE DECISION, in this order (the first that applies wins):
                        W of 180k on a 1M model gets the 200k bound, which is early, never late. ⚠ The table is the
                        documented windows, NOT MEASURED per model; the coordinator's transcript peaked at 966,673.
                        The margin also covers the tool results after the last usage, which `ctx` does not see.
+                       Never below W (r2 R2-3): a W of 190k-200k or 950k-1M has no headroom, the hook cannot defer there,
+                       and the log says `ceiling_by: no-headroom` so --summary's drop metric can exclude those rows.
     allow-idle         nothing has happened for >= 5 min — the newest assistant, user (tool results, prompts) or
                        attachment (notifications) record is that old. Idle compaction fires PreCompact with the same
                        trigger `auto` and the payload carries nothing else that tells it apart, so this is the only
@@ -39,7 +41,8 @@ THE DECISION, in this order (the first that applies wins):
                                   teammate with no `idle_notification`/`shutdown_response` since it was spawned, a
                                   foreground agent with no tool_result yet; a `TaskStop` of its task id also ends it.
                                   Background means the result SAYS it launched — a completed foreground result also
-                                  carries an `agentId:` footer (r1 Codex 1). The 3 h lease: a lost notification held
+                                  carries an `agentId:` footer (r1 Codex 1), and a report may QUOTE the phrase, so the result must BEGIN with it
+                                  (r2 Claude R2-1). The 3 h lease: a lost notification held
                                   the signal for the whole tail (r1: 6 of 253 agents never closed; the longest live
                                   one was ~1.2 h)
                          monitor  a Monitor whose task has no `<status>` notification, no `TaskStop`, and whose own
@@ -67,7 +70,7 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 77 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 81 cases
 
 EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
 past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
@@ -98,6 +101,8 @@ SNAPSHOT_TIMEOUT = 15
 W_RANGE = (100_000, 1_000_000)
 CONTEXT_LIMITS = (200_000, 1_000_000)   # the documented windows; the smallest that holds W is the model's (above)
 LIMIT_SHARE = 0.9
+LAUNCHED = "Async agent launched"   # a background launch's result BEGINS so (65 of 65 measured); a report may quote it
+SPAWNED = "Spawned successfully"    # a teammate spawn BEGINS so (189 of 189 measured)
 AGENT_LEASE_S = 3 * 3600
 ACTIVITY_TYPES = ("assistant", "user", "attachment")
 LOG_NAME = "compaction-boundary.log"
@@ -133,6 +138,16 @@ def _strings(obj, out: list[str]) -> list[str]:
         for v in obj:
             _strings(v, out)
     return out
+
+
+def _result_text(content) -> str:
+    """A tool_result's own text: a string, or the `text` of each block. `_strings` would also yield the block's
+    `"type": "text"`, which put a word BEFORE the text and defeated every anchored test of its first characters."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and all(isinstance(b, dict) and isinstance(b.get("text"), str) for b in content):
+        return "\n".join(b["text"] for b in content)
+    return "\n".join(_strings(content, []))
 
 
 def _tag(block: str, name: str) -> str | None:
@@ -195,12 +210,13 @@ def scan(lines: list[str]) -> dict:
             for x in content:
                 if not (isinstance(x, dict) and x.get("type") == "tool_result"):
                     continue
-                text = "\n".join(_strings(x.get("content"), []))
+                text = _result_text(x.get("content"))
                 tid = x.get("tool_use_id")
                 if tid in agents:
                     st = agents[tid]
-                    aid = re.search(r"agentId: (\w+)", text) if "agent launched" in text else None
-                    team = re.search(r"Spawned successfully.*?\nname: ([\w-]+)", text, re.S)
+                    aid = re.search(r"agentId: (\w+)", text) if text.lstrip().startswith(LAUNCHED) else None
+                    team = re.search(r"Spawned successfully.*?\nname: ([\w-]+)", text, re.S) \
+                        if text.lstrip().startswith(SPAWNED) else None
                     if x.get("is_error") or not (aid or team):
                         st["open"] = False           # a foreground agent: its result IS its completion
                     st["task"], st["name"] = (aid.group(1) if aid else None), (team.group(1) if team else None)
@@ -286,7 +302,7 @@ def sentinel_armed(fields: dict, session: str | None) -> bool:
 def ceiling(w: int) -> tuple[int, int]:
     """(the ceiling, the context limit L it assumed). PURE. L is the smallest documented window holding W."""
     limit = min((n for n in CONTEXT_LIMITS if n >= w), default=CONTEXT_LIMITS[0])
-    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit
+    return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit   # never below W (r2 Claude R2-3)
 
 
 def decide(trigger, w: int | None, ctx: int | None, last_at: float | None, now: float, sigs: list[str]) -> str:
@@ -323,6 +339,16 @@ def main_checkout(checkout: Path) -> Path | None:
     except (OSError, IndexError):
         return None
     return common.parent if common.name == ".git" else None
+
+
+def session_checkout(cwd: Path, project: Path | None) -> Path | None:
+    """The checkout whose `.claude/` this session uses: the cwd's, when it is the project's own main checkout or a
+    linked worktree of it; else the project dir. A cwd inside a NESTED repo (`.remember/` has its own `.git`) or an
+    unrelated one is not the project's, so it must not hide the live plan or receive the log (r2 Claude R2-2)."""
+    co = checkout_of(cwd)
+    if project is None or co is None:
+        return co or project
+    return co if main_checkout(co) == main_checkout(project) else project
 
 
 def open_regular(path: Path, flags: int = os.O_RDONLY) -> int:
@@ -382,7 +408,7 @@ def evaluate(payload_text: str, env: dict, home: Path, now: float) -> tuple[str,
         if payload.get("trigger") != "auto":
             return decide(payload.get("trigger"), None, None, None, now, []), rec
         project = Path(env["CLAUDE_PROJECT_DIR"]) if env.get("CLAUDE_PROJECT_DIR") else None
-        checkout = checkout_of(_cwd(payload))
+        checkout = session_checkout(_cwd(payload), project)
         if not isinstance(payload.get("transcript_path"), str) or not payload["transcript_path"]:
             raise CannotRun("the payload names no transcript_path")
         scanned = scan(read_tail(Path(payload["transcript_path"])))
@@ -401,7 +427,7 @@ def evaluate(payload_text: str, env: dict, home: Path, now: float) -> tuple[str,
         sigs = signals(scanned, now, armed)
         top, limit = ceiling(w)
         rec.update(ctx=scanned["ctx"], w=w, ceiling=top, limit=limit,
-                   ceiling_by="1.5W" if top == int(CEILING_FACTOR * w) else "limit",
+                   ceiling_by=("no-headroom" if top == w else "1.5W" if top == int(CEILING_FACTOR * w) else "limit"),
                    idle_s=int(now - scanned["last_at"]), signals=sigs)
         return decide("auto", w, scanned["ctx"], scanned["last_at"], now, sigs), rec
     except Exception as exc:  # noqa: BLE001 - FAIL OPEN by design: a hook that blocks on its own error wedges the session
@@ -429,7 +455,7 @@ def log_path(payload_text: str, env: dict) -> Path | None:
         cwd = _cwd(json.loads(payload_text))
     except ValueError:
         cwd = Path(".")
-    co = checkout_of(cwd) or (Path(env["CLAUDE_PROJECT_DIR"]) if env.get("CLAUDE_PROJECT_DIR") else None)
+    co = session_checkout(cwd, Path(env["CLAUDE_PROJECT_DIR"]) if env.get("CLAUDE_PROJECT_DIR") else None)
     main = main_checkout(co) if co else None
     return main / ".claude" / LOG_NAME if main else None
 
@@ -592,6 +618,11 @@ def _self_test_body() -> int:
     case("⭐ a COMPLETED foreground result carries an agentId footer too — still done (r1 Codex 1)",
          signals(scan([asst(T0, uses=[A]), result(T0, "tA", "Review complete.\nagentId: abc123\n<usage>subagent_tokens: "
                                                     "1234\ntool_uses: 1\nduration_ms: 20000</usage>")]), T0 + 60, False), [])
+    case("⭐ a completed foreground report that QUOTES the launch phrase is still done (r2 Claude R2-1)",
+         [signals(scan([asst(T0, uses=[A]), result(T0, "tA", t)]), T0 + 60, False) for t in (
+             "Review done. The rule keys on 'Async agent launched successfully.'\nVERDICT: CONVERGED\nagentId: abc123 (use SendMessage)",
+             "Notes: 'Spawned successfully.' is the shape.\nname: x\nVERDICT: CONVERGED")],
+         [[], []])
     case("⭐ an open background agent stops counting at its 3 h lease (r1 Codex 3, Claude F3)",
          [signals(scan([asst(T0, uses=[A]), result(T0, "tA", ASYNC)]), T0 + AGENT_LEASE_S + dt, False) for dt in (-1, 0)],
          [["agent"], []])
@@ -657,10 +688,12 @@ def _self_test_body() -> int:
     # ── the ceiling ──
     case("⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)",
          [ceiling(150_000), ceiling(180_000), ceiling(200_000), ceiling(300_000), ceiling(900_000), ceiling(1_000_000)],
-         [(180_000, 200_000), (180_000, 200_000), (180_000, 200_000), (450_000, 1_000_000), (900_000, 1_000_000),
-          (900_000, 1_000_000)])
-    case("⭐ a 1M window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
-         decide("auto", 1_000_000, 999_999, T0, T0 + 1, ["plan"]), "allow-ceiling")
+         [(180_000, 200_000), (180_000, 200_000), (200_000, 200_000), (450_000, 1_000_000), (900_000, 1_000_000),
+          (1_000_000, 1_000_000)])
+    case("⭐ the ceiling is never below W — 190k, 200k, 950k and 1M windows have none to give (r2 Claude R2-3)",
+         [ceiling(w)[0] >= w for w in (190_000, 200_000, 950_000, 1_000_000)], [True] * 4)
+    case("⭐ a 900k window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
+         decide("auto", 900_000, 999_999, T0, T0 + 1, ["plan"]), "allow-ceiling")
 
     # ── window ──
     case("the env var decides first", _try(lambda: window("250000", [("local", '{"autoCompactWindow": 300000}')], "m1")), 250000)
@@ -824,6 +857,24 @@ def _self_test_body() -> int:
         return out, rec["ceiling"], rec["limit"], rec["ceiling_by"]
     case("hook: with no project dir in env, W comes from the HOME settings — 150k's ceiling is the 200k limit's 180k",
          from_home, ("SNAPPED\n", 180_000, 200_000, "limit"))
+
+    def no_headroom():
+        d, payload, snap = world([asst(T0, 270_000)], settings='{"autoCompactWindow": 200000}', armed=False)
+        out, where = hook(payload, {"CLAUDE_PROJECT_DIR": str(d)}, d / "home", T0 + 60, snap)
+        rec = json.loads(where.read_text())
+        return rec["verdict"], rec["ceiling"], rec["ceiling_by"]
+    case("⭐ hook: a ceiling with no room above W is logged `no-headroom`, so --summary can exclude it (r2 Claude R2-3)",
+         no_headroom, ("allow-ceiling", 200_000, "no-headroom"))
+
+    def nested_repo():
+        d, payload, snap = world([asst(T0, 270_000)])
+        n = d / ".remember"
+        (n / ".git").mkdir(parents=True)
+        out, where = hook(json.dumps({**json.loads(payload), "cwd": str(n)}), {"CLAUDE_PROJECT_DIR": str(d)}, d / "home",
+                          T0 + 60, snap)
+        return decision(out), where == d / ".claude" / LOG_NAME, (n / ".claude").exists()
+    case("⭐ hook: a cwd in a NESTED repo (.remember) still sees the project's plan, and the log stays out of it (r2 Claude R2-2)",
+         nested_repo, ("block", True, False))
 
     def no_snapshot():
         d, payload, snap = world([asst(T0, 270_000)], armed=False)
