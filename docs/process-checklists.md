@@ -184,6 +184,8 @@ A reused agent's context only grows, and every wake-up after an idle wait re-wri
 
 **Mechanical half:** the statusline caches the weekly percentage in `~/.claude/.rate-limits.json`, and the pacing hook (backlog #399) reads it. At **80%** weekly every prompt carries a one-line WARN with the reset time, shown to the owner too; at **90%** a NEW subagent spawn is denied, and so is a `SendMessage` the main session sends to wake an agent (one a subagent sends, a report, is allowed: the hook reads the caller's `agent_id`, never the recipient's name; work in flight continues). The owner's override is `ALLOW_SPAWN_OVER_LIMIT=1` at launch, or an EXPIRY epoch in the main checkout's `.claude/allow-spawn-over-limit` (gitignored); the deny's user-facing message prints the two-hour one-liner, and the agent is never told it. A stale or malformed cache is a loud CANNOT RUN on every prompt, naming the file; an absent one is said once per session; neither blocks anything. The rules live once, in `scripts/check-usage-pace.py`.
 
+**Every optimization adopted for token usage or speed has a row in [`docs/optimization-register.md`](optimization-register.md) BEFORE adoption** (benefit, realistic risk, the signal that it is materialising, the revert path, when to re-evaluate; owner, 2026-11-01).
+
 ## Dispatched work must report in-turn (added 2026-10-30, backlog #410)
 
 **Why, measured.** On 2026-10-30 three pieces of work stalled for hours unseen: PR #442's fold was committed and not pushed for about 10 h, PR #443 had 8 commits unpushed for about 5 h, and PR #440's round-3 review was written at 07:15 and never folded. Each agent's last message promised a report "when my background job finishes"; none came.
