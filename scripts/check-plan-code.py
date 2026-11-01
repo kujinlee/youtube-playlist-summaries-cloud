@@ -1821,7 +1821,8 @@ EXPECTED_MUTATIONS = {
     # false greens through them; the skip saved ~50 s of 8m39s), so 17 entries are retired with their subject,
     # not orphaned; 6 survive (exit status, NOT_LOCAL, empty set, --base, moved manifest) and 4 are new (the
     # run's exit code twice, the other ci.yml jobs printed OUT OF SET, an untracked manifest counting as moved).
-    "scripts/gates-for-pr.py": 10,
+    # backlog #402 (PR #450 r1): 10 -> 12, the count check runs SCOPED locally and a stale SCOPED_LOCALLY name refuses.
+    "scripts/gates-for-pr.py": 12,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
@@ -1950,7 +1951,9 @@ EXPECTED_MUTATIONS = {
     # second implementation of one rule, tested against itself.
     # backlog #402 (2026-10-30): 8 -> 21, the scoped mode — the dependency rule, the three change
     # sources, the --only refusal, and `only` scoping the runs but never the population ratchet.
-    "scripts/check-selftest-counts.py": 21,
+    # PR #450 r1 fold: 21 -> 23. +3 (a rename counts both names at two diff sources; propagation reaches a fixed point),
+    # -1 ("string references are closed transitively too" is retired with its subject: closure is now the rule).
+    "scripts/check-selftest-counts.py": 23,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.

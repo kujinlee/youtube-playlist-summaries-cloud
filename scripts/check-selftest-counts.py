@@ -63,9 +63,9 @@ eight days, while CI runs it on every PR anyway. So locally the gate is SCOPED:
     never skipped: a typo that checks nothing would read as a pass.
   * `--changed [--base origin/master]` checks the suites the branch can have moved: the files in
     `git diff --name-only <base>...HEAD`, plus uncommitted and untracked edits (a local gate runs
-    before the commit as often as after it), CLOSED over a dependency rule — a script is reached
+    before the commit as often as after it), CLOSED, to a fixed point, over a dependency rule — a script is reached
     when its CODE imports a reached module by name, or a non-docstring string constant in it holds a
-    reached file's basename (how `spec_from_file_location(SCRIPTS / "check-plan-code.py")`,
+    reached file's basename; a rename counts BOTH names (how `spec_from_file_location(SCRIPTS / "check-plan-code.py")`,
     `LAUNCHER_REL` and every `docs/…` path constant name what they read). Read with `ast`, so a
     comment or a docstring mentioning a file is not a dependency; a string in an error message is,
     which over-selects — the safe direction. A dependency built at runtime from pieces is NOT seen.
@@ -79,7 +79,7 @@ Usage:
     python3 scripts/check-selftest-counts.py --changed             # the local gate
     python3 scripts/check-selftest-counts.py --changed --base <ref>
     python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
-    python3 scripts/check-selftest-counts.py --self-test  # 37 cases
+    python3 scripts/check-selftest-counts.py --self-test  # 40 cases
 """
 from __future__ import annotations
 
@@ -509,24 +509,24 @@ def depends_on(refs: tuple[frozenset[str], tuple[str, ...]], path: str) -> bool:
 
 
 def reached(changed: set[str], sources: dict[str, str]) -> set[str]:
-    """`changed`, plus every `scripts/<name>` that references a changed path, plus — to a fixpoint —
-    every script that IMPORTS a reached module by name.
+    """`changed`, plus — to a FIXED POINT — every `scripts/<name>` that imports a reached module by
+    stem or holds a reached path's basename in a non-docstring string.
 
-    `sources` maps a script's basename to its text. ONE hop for a string reference, a fixpoint for an
-    import, and the asymmetry is measured: `check-plan-code.py` holds every script's path as a
-    dictionary KEY (`EXPECTED_MUTATIONS`), so closing over strings too made a one-file change reach
-    24 of 68 suites through it. An import puts the imported code inside the importer's suite, which
-    a name in a dictionary does not."""
+    `sources` maps a script's basename to its text. Both edges are transitive: a helper that a pinned
+    suite loads BY FILE NAME (`spec_from_file_location`) puts that helper's own imports inside the
+    suite exactly as an `import` would, so a one-hop string edge left helper -> (import) -> loaded
+    script -> suite unreached (PR #450 r1, Codex finding 2, constructed). The cost of closing the
+    string edge is real and accepted: `check-plan-code.py` holds every script's path as a dictionary
+    KEY (`EXPECTED_MUTATIONS`), so a change to any of them reaches it and, through it, whatever loads
+    or names it. Over-selecting is the safe direction; the full run is CI's."""
     refs = {name: code_refs(src) for name, src in sources.items()}
     reach = set(changed)
-    reach |= {f"scripts/{n}" for n, r in refs.items() if any(depends_on(r, p) for p in changed)}
     grew = True
     while grew:
         grew = False
-        stems = {Path(p).stem for p in reach if p.startswith("scripts/") and p.endswith(".py")}
-        for name, (imports, _) in refs.items():
+        for name, r in refs.items():
             key = f"scripts/{name}"
-            if key not in reach and imports & stems:
+            if key not in reach and any(depends_on(r, p) for p in reach):
                 reach.add(key)
                 grew = True
     return reach
@@ -541,8 +541,10 @@ def git_lines(root: Path, *args: str) -> list[str]:
 
 def changed_paths(root: Path, base: str) -> set[str]:
     """What the branch moved: committed since the merge base, plus uncommitted and untracked edits."""
-    return (set(git_lines(root, "diff", "--name-only", f"{base}...HEAD"))
-            | set(git_lines(root, "diff", "--name-only", "HEAD"))
+    # `--no-renames`: by default `--name-only` prints a rename's NEW name only, and a suite that names the
+    # OLD one (a launcher it runs) would then be unreached — a false green (PR #450 r1, both halves).
+    return (set(git_lines(root, "diff", "--name-only", "--no-renames", f"{base}...HEAD"))
+            | set(git_lines(root, "diff", "--name-only", "--no-renames", "HEAD"))
             | set(git_lines(root, "ls-files", "--others", "--exclude-standard")))
 
 
@@ -722,9 +724,13 @@ def _self_test_body() -> int:
           sorted(reached({"scripts/f.py"}, srcs)), ["scripts/f.py"])
     check("an unparseable script reaches nothing, and is not itself reached",
           sorted(reached({"scripts/a.py"}, {"a.py": "", "x.py": "def (: a.py"})), ["scripts/a.py"])
-    check("a string reference is ONE hop; an import is closed to a fixpoint",
+    check("string and import edges are BOTH closed to a fixpoint",
           sorted(reached({"scripts/a.py"}, srcs)),
-          ["scripts/a.py", "scripts/b.py", "scripts/d.py", "scripts/e.py"])
+          ["scripts/a.py", "scripts/b.py", "scripts/c.py", "scripts/d.py", "scripts/e.py"])
+    check("helper -> (import) -> script loaded by path -> suite is reached",
+          sorted(reached({"scripts/h.py"}, {"h.py": "", "m.py": "import h\n",
+                                            "suite.py": 'M = "m.py"\n', "other.py": ""})),
+          ["scripts/h.py", "scripts/m.py", "scripts/suite.py"])
     check("--only accepts a bare name or a scripts/ path",
           result(lambda: only_names(["a.py", "scripts/b.py"], frozenset({"a.py", "b.py", "c.py"}))),
           frozenset({"a.py", "b.py"}))
@@ -763,6 +769,20 @@ def _self_test_body() -> int:
         (root / "scripts/a.py").write_text("A = 2\n")
         check("an UNCOMMITTED edit is in scope, with its importer",
               changed_scope(root, pinned, "base"), frozenset({"a.py", "b.py", "c.py"}))
+        git("checkout", "-q", "--", "scripts/a.py")
+        (root / "scripts/r.py").write_text('R = "launcher.sh"\n')
+        (root / "launcher.sh").write_text("#!/bin/sh\n")
+        git("add", "-A")
+        git("commit", "-qm", "r reads the launcher")
+        git("branch", "-f", "base2", "HEAD")
+        git("mv", "launcher.sh", "launcher-v2.sh")
+        check("a STAGED rename reaches the suite that names the OLD name",
+              "r.py" in changed_scope(root, frozenset({"r.py"}), "base2"), True)
+        git("commit", "-qm", "rename the launcher")
+        check("a COMMITTED rename reaches the suite that names the OLD name",
+              "r.py" in changed_scope(root, frozenset({"r.py"}), "base2"), True)
+        git("reset", "-q", "--hard", "HEAD~1")
+        (root / "scripts/a.py").write_text("A = 2\n")
         (root / "scripts/d.py").write_text("D = 1\n")
         check("an UNTRACKED script is in scope", "d.py" in changed_scope(root, pinned, "base"), True)
         check("an unknown base is CANNOT RUN, never an empty scope",

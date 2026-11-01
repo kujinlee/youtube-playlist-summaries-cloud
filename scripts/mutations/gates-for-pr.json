@@ -108,5 +108,31 @@
       ]
     ],
     "expect": "a moved (untracked) manifest puts its script's mutation slice in the set"
+  },
+  {
+    "name": "#402: the count check stops running scoped locally",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "(\"--changed\", \"--base\", \"origin/{base}\")",
+        "(\"--base\", \"origin/{base}\")"
+      ]
+    ],
+    "expect": [
+      "the count-check step runs SCOPED locally (--changed against --base); its full run is out of set as CI's"
+    ]
+  },
+  {
+    "name": "#402: a stale SCOPED_LOCALLY name no longer refuses the set",
+    "file": "scripts/gates-for-pr.py",
+    "edits": [
+      [
+        "    stale = sorted(set(SCOPED_LOCALLY) - seen)\n    if stale:",
+        "    stale = sorted(set(SCOPED_LOCALLY) - seen)\n    if False:"
+      ]
+    ],
+    "expect": [
+      "a SCOPED_LOCALLY name that no longer matches a step REFUSES the set"
+    ]
   }
 ]
