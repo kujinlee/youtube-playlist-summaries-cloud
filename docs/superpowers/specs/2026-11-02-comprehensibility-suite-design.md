@@ -3,15 +3,16 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — walked through with the owner 2026-11-02 09:20–09:40 (every §8 choice answered); awaiting adversarial review (backlog #384, Phase 1). Nothing here is built yet.
+**Status:** 🟠 needs-you — walked through with the owner 2026-11-02 09:20–09:40 (every §8 choice answered); adversarial round 1 folded (19 findings, `docs/reviews/coordinator/comprehensibility-spec-r1-coordinator.md`); one question for the owner in §10 (backlog #384, Phase 1). Nothing here is built yet.
 Every answer below was given by the owner on the roles review page
 (`docs/explainers/2026-10-28-topic-suite-roles-review.fragment.html`), 2026-10-28 and 2026-11-02 ~09:25.
 
 ## In plain words
 
 The project has seven page producers (`gen-dashboard`, `gen-goals-page`, `gen-backlog-page`,
-`gen-features-page`, the goal tree, `/brief`, the `explain-*` skills — backlog #384). Each was added
-for one moment's need, so several answer the same question and give different answers.
+`gen-features-page`, the goal tree, `/brief`, the `explain-*` skills). Each was added for one
+moment's need, so several answer the same question and give different answers. (Backlog #384's own
+list of seven had `gen-work-lines`; D2 retired it and the goal tree took its place.)
 
 This spec gives every page **one question**, says **who reads it and when**, and says what it must
 **not** repeat. Wherever a page needs a fact another page owns, it **links** to it instead of copying.
@@ -31,9 +32,9 @@ drifts), applied to pages.
 
 | Item | Answer (owner) | When |
 |---|---|---|
-| **D1** "Needs you" | One definition — a decision only the owner can make — shown on the goal-tree page as **two sets, each with ONE source** (refined 11-02, §8 Q2): **blocking now** (in-flight work waiting on the owner; source: the in-flight ledger) and **waiting until picked** (a decision inside a backlog item; source: the row's `status: needs-you`). Dashboard asks link to it | 10-28 03:47; refined 11-02 09:35 |
-| **D2** Work-lines | The goal tree absorbs it; work-lines retired, history archived | 10-28 03:47; done, PR #434 |
-| **D3** Freshness | Every merge rebuilds dashboard, goals, backlog, features and goal tree | 10-28 03:47 |
+| **D1** "Needs you" | One definition — a decision only the owner can make — shown on the goal-tree page as **two disjoint sets, each with ONE source** (§8 Q2): **blocking now** (source: in-flight ledger entries with `entry_kind() == "owner-wait"`) and **waiting until picked** (source: backlog rows with `status: needs-you` that NO live ledger entry references). Rules in §6 row 4 | 10-28 03:47; refined 11-02 09:35 |
+| **D2** Work-lines | The goal tree absorbs it; work-lines retired, history archived | done, PR #434 |
+| **D3** Freshness | Every merge rebuilds dashboard, goals, backlog, features and goal tree | done, PR #433 (`.claude/hooks/regen-pages.sh`) |
 | **R1** Goal tree | Accepted as written; it is the home page | 11-02 |
 | **R2** Backlog | Accepted: the ONLY place an item's state is decided | 11-02 |
 | **R3** Dashboard | A pure change log; "what changed" is a query *since T*, T free-form or from a dropdown (backlog #392) | 10-28 19:12, 19:17 |
@@ -64,98 +65,163 @@ drifts), applied to pages.
 
 | Page | Sources | Links out to | Must NOT restate |
 |---|---|---|---|
-| goal tree | `docs/goal-threads.md`, git and `gh` for every state, the in-flight ledger, backlog status `needs-you` (D1) | PR → GitHub · row → backlog · goal → `/goals` · timeline entry → its past tree · change line → its dashboard entry | a row's detail (backlog), the narrative of a change (dashboard) |
-| backlog | `docs/backlog.md`, read by the one shared parser (backlog #381) | item → its PR · area → `/features` · goal → `/goals` · a needs-you item → the goal tree's list | progress on an item (goal tree), how it was built (the PR) |
+| goal tree | `docs/goal-threads.md`, git and `gh`, the in-flight ledger, backlog `status: needs-you` (D1) | PR → GitHub · row → backlog · goal → `/goals` · timeline entry → its past tree · change line → its dashboard entry | a row's detail (backlog), the narrative of a change (dashboard) |
+| backlog | `docs/backlog.md`, read by the one shared parser (backlog #381) | item → its PR · area → `/features` · goal → `/goals` · a needs-you item → the goal tree's set | progress on an item (goal tree), how it was built (the PR), what changed since T (goal tree, row 6) |
 | dashboard | `docs/dashboard-entries.md` | entry → its PR, its backlog row, its goal | "needs you" (D1), open PRs or where a thread stands (goal tree) |
-| goals | `docs/anchors.md`, roadmap, spec and plan headers, ADRs | goal → its feature nodes, its open rows, its specs and ADRs | what is built (features), what is in flight (goal tree) |
+| goals | `docs/anchors.md`, roadmap, spec and plan headers, ADRs, `ROOTS`/`DEPENDS` | goal → its feature nodes, its rows, its specs and ADRs, its threads' PRs | what is built (features), what is in flight (goal tree) |
 | features | `docs/features.md`, the rows its areas claim | node → its rows, its goal, its ADRs and specs | a gap's detail (the row), intent (goals) |
 | brief | the moment it was written | every item → its live home page | current state, and any count a generated page computes |
-| explainer | the subject, read at the time; answers written into the page | its subject item (row, PR, goal or feature) | status (goal tree or backlog) |
+| explainer | the subject, read at the time; answers written into the page | its declared subject (row 7) | status (goal tree or backlog) |
+
+**In-role, checked (M4):** `/goals` renders each spec/plan's document state (§4, *not a facet*) and the
+spine's milestone rungs; it is the only page that renders either, and each links to its source document.
+Its per-thread PR list is membership ("what belongs"), rendered through `key_link`.
 
 ## 3. Keys and their one home page
 
-| Entity | Key, as written | Home page | Link |
+| Entity | Key, as written | Home page | Link (fragment id the home page must emit) |
 |---|---|---|---|
-| Goal | anchor slug | `/goals` | `/goals#<slug>` |
+| Goal | anchor slug | `/goals` | `/goals#<slug>` — goal cards carry NO id today (row 1 adds it) |
 | Feature | node slug | `/features` | `/features#<slug>` |
 | Backlog item | `backlog #N` | `/backlog-table` | `/backlog-table#iN` |
-| Pull request | `PR #N` | GitHub | `https://github.com/<owner>/<repo>/pull/N`, repo from `git remote get-url origin` |
-| Change | a dated dashboard entry | `/dashboard` | `/dashboard#<date>-<n>` |
+| Pull request | `PR #N` | GitHub | `https://github.com/<owner>/<repo>/pull/N`, repo from `gen-dashboard.repo_slug()`; **no repo → plain text, never a guessed URL** |
+| Change | a dated dashboard entry | `/dashboard` | `/dashboard#<date>-<n>` (`gen-dashboard._slug`) |
 | Topic | explainer slug | the explainer page | `/<slug>` |
-| Thread | a row or PR on the goal tree | `/goal-tree` | `/goal-tree#<key>` |
+| Thread | a row or PR on the goal tree | `/goal-tree` | `/goal-tree#t-<kind>-<N>` — the tree is one `<pre>` with no ids today (row 1 adds them) |
 
-**The one shared link function.** `key_link(kind, key) -> str` (the href) and
-`link_keys(text) -> str` (renders every key found in prose), in **`scripts/page_markup.py`**.
-Why there: `page_markup` is already the ONE inline renderer every generator imports as a library
-(its docstring: four generators disagreed on 11 of 13 inputs before it existed), so a key in prose
-becomes a link at the same step that renders the prose. `page_chrome` owns the chrome — theme,
-stamp, refresh bar — not content, so it is the wrong home. Today the backlog href is hand-built in
-three places (`gen-features-page.py` once, `goal-tree.py` twice) and the PR href in one
-(`goal-tree.py`) — MEASURED on `befd0e6d` by `grep -n 'backlog-table#i\|github.com/.*pull' scripts/`.
-Those call sites move to `key_link`. A key inside a code span stays plain text (a quotation, the
-same exemption `check-reference-namespace.py` makes).
+**Thread ids (Codex #3).** A thread's id is its key (`t-backlog-N`, `t-pr-N`). A key that appears under
+several goals gets the id at its FIRST occurrence in render order; later occurrences link to it. A past
+tree (timeline) is its own page, so its ids do not collide with the live one.
+
+**The one shared link function.** `key_link(kind, key) -> str | None` (the href, `None` when no honest
+link exists) and `link_keys(text) -> str` (renders every key found in prose), in **`scripts/page_markup.py`**,
+the inline renderer gen-dashboard, gen-goals-page, gen-backlog-page, gen-features-page and explainer-serve
+import. The goal tree does NOT import it: its `segments(text, repo)` (`goal-tree.py`) is today's
+`link_keys`, so row 1 MOVES it into `page_markup` and the goal tree imports it. `page_chrome` owns the
+chrome (theme, stamp, refresh bar), not content, so it is the wrong home. Hand-built hrefs today, outside
+tests — MEASURED on `e2ac6e41` by a search that spans line breaks: backlog 3 (`gen-features-page.py` once,
+`goal-tree.py` twice), PR 2 (`goal-tree.py`; `gen-dashboard.py:966-967`, split over two lines), dashboard 1
+(`goal-tree.py`). All six move to `key_link`. A key inside a code span stays plain text (the
+`check-reference-namespace.py` exemption). On generated pages a key is always written QUALIFIED
+(`backlog #N`, `PR #N`); a bare `#N` chip (`gen-goals-page`'s backlog band) becomes qualified.
 
 ## 4. The tag vocabulary — four closed facets
 
 | Facet | Closed values | Registry (the only place a value is added) | Written on a backlog row as |
 |---|---|---|---|
-| **goal** | the anchor slugs | `docs/anchors.md` | derived: the row's area → its feature node → that node's anchor |
+| **goal** | the anchor slugs | `docs/anchors.md` | DERIVED, a set: the union of the resolved anchors of every feature node that claims any of the row's areas |
 | **area** | the `areas:` values | `docs/features.md` (already enforced by `check-features.py`) | the Bundle cell, several allowed (backlog #381) |
 | **kind** | `story`, `task`, `defect` | backlog #394 | `⟦kind: …⟧` (all 422 rows carry it — MEASURED, `befd0e6d`) |
-| **status** | `open`, `parked`, `needs-you`, `done` | this spec | `⟦… · status: …⟧`, split out of the severity column (backlog #90) |
+| **status** | `open`, `parked`, `needs-you`, `done` | this spec | the FIRST WORD of the existing `Status` column, then free prose |
+
+**Goal derivation (Codex #5, Claude H2).** A node's *resolved* anchors are its own `anchors:` list, else
+its parent's resolved anchors, else — for a top node — the explicit `anchors: none — <reason>` (resolves to
+the empty set). A row's goal is the deduplicated union over every node claiming any of its areas (an area
+claimed by two nodes contributes both — `gen-features-page` already places such a row under both). An empty
+union renders "no goal" and is reported, never hidden. An unmatched area is already refused by `check-features.py`.
+
+**`ROOTS`/`DEPENDS` stay, as DEPENDENCY, not membership (Claude H2).** `gen-backlog-page.DEPENDS` maps a row to
+`(relation, root, note)` — `survives`, `partly-dissolved-by`, `blocked-by`, `dissolved-by` — on one root, the
+anchor `stable-blob-addressing`. Rows 20–22 are `dissolved-by` it: deleted by that goal, not serving it. So the
+derived facet does not duplicate DEPENDS; `/goals` shows two bands, "rows serving this goal" (facet) and "rows
+depending on its root" (DEPENDS, relation shown), replacing "Backlog hanging off it". ADR-0010's *Scope*
+("Its anchor mechanism already exists: `ROOTS`") gets a ⟳ amendment saying so (row 3).
+
+**Status, one home (Claude H5).** The backlog has NO severity column — severity is a glyph prefix in the
+Item cell — and HAS a free-text `Status` column (`docs/backlog.md:30`). The facet is that column's first word,
+so the row keeps one home for its state. Migration (row 2), from today's first keyword:
+
+| Today | → | Today | → |
+|---|---|---|---|
+| OPEN, FILED, IN REVIEW, BLOCKED | `open` (a block is a link: DEPENDS or `part of:`) | PARKED, DEFERRED | `parked` |
+| CLOSED, DONE, FIXED, MERGED, DECIDED, SUPERSEDED | `done` | NEEDS-OWNER, NEEDS-OWNER-ACTION | `needs-you` (action: §10) |
+| (none) — 57 rows | classified by hand in row 2; the parser then refuses an empty one | a `✅` glyph in the Item cell | removed; the state is the facet |
+
+The backlog page's `open/closed/all` filter treats `open`, `parked` and `needs-you` as not closed.
+
+**Not a facet: a document's state (Claude H3).** `check-goal-status.py` keeps its own closed vocabulary
+(`✅ shipped`, `🟠 current`/`needs-you`, `⏸ parked`, `⛔ obsolete`) for spec/plan headers. It is the state of a
+DOCUMENT, not of a backlog item, and is not a tag. Shared words mean the same thing (`parked`, `needs-you`).
+A document waiting on the owner is in-flight work, so it is in "blocking now" through an `owner-wait` ledger
+entry; `/goals` renders the header badge as document state and links to the goal tree, and counts nothing.
 
 Nothing else is a tag. Parentage (`part of: backlog #N`, `epic: <anchor>`) is a link, not a tag
-(backlog #394 ruling 2). Severity stays a separate column with glyphs only. Review `component:`
-stays free text (backlog #385).
+(backlog #394 ruling 2). Review `component:` stays free text (backlog #385).
 
 ## 5. Concern → mechanism
 
 | Concern | Mechanism | What already does this, and why it is not enough |
 |---|---|---|
-| An item's state | backlog `status` facet, read by the shared parser | the severity column holds `✅` as a status on 117 of 333 rows (MEASURED, backlog #385) |
-| What needs the owner NOW | the goal tree's "blocking now" set, fed by the in-flight ledger | three lists gave three counts for the SAME kind (37, 12, 0 — MEASURED 2026-10-27, roles page) |
-| What needs the owner LATER | the goal tree's "waiting until picked" set, fed by backlog `status: needs-you` | as above |
+| An item's state | backlog `status` facet, read by the shared parser | `✅` in the Item cell on 117 of 333 rows (MEASURED, backlog #385); free-text Status words, 13 kinds (row 2) |
+| What needs the owner NOW | goal tree "blocking now", from `owner-wait` ledger entries | three lists gave three counts for the SAME kind (37, 12, 0 — MEASURED 2026-10-27, roles page) |
+| What needs the owner LATER | goal tree "waiting until picked", from `status: needs-you` rows no live entry references | as above |
 | What changed | dashboard entries (why) + the goal tree's since-T query (what) | the dashboard alone cannot answer "since T" |
-| A key's link | `page_markup.key_link` | four hand-built hrefs; 0 PR links on generated pages against 18–157 PR mentions per page (MEASURED, inventory 2026-10-27) |
-| A page being current | rebuild on every merge (D3) | `/dashboard` and `/goals` measured stale (built 10-25, 10-23) |
-| A feature's goal | `anchors:` on every feature node | 13 of 28 nodes declare one (MEASURED, `befd0e6d`) |
+| A key's link | `page_markup.key_link` | six hand-built hrefs; 0 PR links on generated pages against 18–157 PR mentions per page (MEASURED, inventory 2026-10-27) |
+| A page being current | rebuild on merge (D3, built, PR #433) + the freshness falsifier (§7) | the hook fires only on a session's `gh pr merge`; a merge in the GitHub UI or another clone is not rebuilt |
+| A feature's goal | resolved `anchors:` (explicit, inherited, or `none — <reason>`) | 13 of 28 nodes declare one (MEASURED, `befd0e6d`) |
 
 ## 6. What changes, as proposed backlog rows (in order — NOT filed)
 
-1. **Every merge rebuilds the five generated pages** (D3). First, because every later change is
-   invisible on a stale page.
-2. **`page_markup.key_link` / `link_keys`: one function renders every key as a link** (L1); move the
-   four hand-built hrefs onto it.
-3. **The backlog `status` facet: four closed values, split out of the severity column** (R-open-5,
-   backlog #90). The parser refuses an unknown value.
-4. **Every feature node declares its goal anchor** (R-open-1); `/goals` and `/features` link both ways.
-5. **The goal tree's two "needs you" sets** (D1, §8 Q2): "blocking now" from the in-flight ledger, "waiting until picked" from backlog `status: needs-you`; when a picked item's decision blocks the work, a ledger entry is created that points to the row, so the decision moves to "blocking now"; dashboard asks link to the goal tree; the 29 unreadable dashboard asks repaired or closed first.
-6. **The dashboard becomes a pure change log**: drop `gen-dashboard.open_prs()` in favour of a link
-   to the goal tree (R3; backlog #384's recorded C3).
-7. **The goal tree's "what changed since T" query** — already backlog #392; each change line links to
-   its dashboard entry.
-8. **An explainer declares its subject item, and that item's page links back** (R7).
-9. **Briefs stop restating counts and link to the generated page** (R-open-3); fix
-   `brief-compose.py`'s default filename, which labelled 4 topic pages "brief" (MEASURED, roles page).
-10. **Decide whether briefs retire**, after row 7 ships (R6; the owner's 20:46 answer).
-11. **One check that no two pages declare the same question** — reads a declared question per page
-    and fails on a duplicate (backlog #384's own FAILS IF).
-12. **Close backlog #385** once rows 3 and 4 land; its facets are defined here.
+1. **`page_markup.key_link` / `link_keys`: one function renders every key as a link** (L1). Move the six
+   hand-built hrefs and `goal-tree.segments` onto it; emit the `/goals#<slug>` and `/goal-tree#t-…` ids (§3);
+   re-bind the mutations anchored on the moved text (`scripts/mutations/goal-tree.json`, the PR-href pair);
+   a check that every internal `#fragment` a generated page links to resolves on its target page.
+2. **The backlog `status` facet: four values, the first word of the `Status` column** (R-open-5, backlog #90).
+   Migrate by §4's table; drop `✅` from Item cells; the parser refuses an unknown or missing value.
+3. **Every feature node resolves a goal anchor** (R-open-1); `/goals` and `/features` link both ways; the goal
+   facet is derived (§4); `/goals` gets its two row bands; ADR-0010 ⟳ Scope amendment; CONTEXT.md updated
+   (*goal anchor* vs a mutation's *Anchor*; the five rebuilt pages; "needs you"; the four facets).
+4. **The goal tree's two "needs you" sets** (D1, §8 Q2):
+   - *Predicate.* "Blocking now" is `session-state.entry_kind(e) == "owner-wait"` — the declared field. Legacy
+     `WAITS-ON-OWNER:`-prefix entries are migrated to `kind: owner-wait`; `needs_from_ledger` moves off
+     `waits_on_owner()`. `owner-instruction` (an instruction FROM the owner) is not in either set.
+   - *Identity and disjointness.* A decision is identified by its backlog row. "Waiting until picked" = rows with
+     `status: needs-you` MINUS rows a live `owner-wait` entry references. Picking such a decision creates the
+     entry (which references the row) — one write, so the decision moves sets atomically; the row's status is
+     not touched. When the entry closes unanswered (work unpicked or interrupted), the row is back in
+     "waiting until picked" with no write; when answered, the row's status changes in the same step.
+   - *Dashboard asks (Claude H4).* Each readable unresolved ask becomes an `owner-wait` entry (if its work is in
+     flight) or a backlog row with `status: needs-you`; the 29 unreadable asks are repaired then converted, or
+     closed. Then `needs_from_dashboard` and the dashboard input to `consolidate` are deleted, and `[needs-you]`
+     stops being a dashboard entry kind. The choose/Send answer tray moves to the goal tree's two sets: an
+     answer closes the ledger entry or changes the row's status — the item's own source.
+5. **The dashboard becomes a pure change log**: drop `gen-dashboard.open_prs()` and its "What needs you"
+   section in favour of a link to the goal tree (R3; backlog #384's recorded C3).
+6. **The goal tree's "what changed since T" query** — already backlog #392; each change line links to its
+   dashboard entry; the backlog's "Since your last visit" selector becomes a link to it with the same T.
+7. **An explainer declares its subject** (R7): `<meta name="subject" content="…">` in the fragment, one of
+   `backlog #N`, `goal:<slug>`, `feature:<slug>`, `PR #N`, `concept`. The generator of the subject's home page
+   reads the fragments and draws the back-link; `PR #N` (GitHub) and `concept` get none. Pages written before
+   this spec are not rewritten (§8 Q7).
+8. **A check reports unlinked keys in hand-written explainer fragments** (§8 Q7) — report, never fail.
+9. **Briefs stop restating counts and link to the generated page** (R-open-3); fix `brief-compose.py`'s
+   default filename, which labelled 4 topic pages "brief" (MEASURED, roles page).
+10. **Decide whether briefs retire**, after row 6 ships (R6; the owner's 20:46 answer).
+11. **Close backlog #385** once rows 2 and 3 land; its facets are defined here.
+12. **One check that no two pages declare the same question** — built LAST (§8 Q9). Each page TYPE declares a
+    question id and its sentence in one registry (a constant in `page_markup`, read by every generator,
+    `brief-compose` and `explainer-serve`; a brief or explainer page carries its type's id). Fails on a
+    duplicate id, a duplicate sentence, a page type with no declaration, and on each §2 *Must NOT restate*
+    cell made concrete (a needs-you count off the goal tree; an open-PR list off the goal tree; a since-T
+    selector off the goal tree). **Bound:** it catches identical declarations and the listed restatements, not
+    two differently worded questions that overlap — that remains a review question.
 
 ## 7. Falsifiers — the observation that shows each rule is not kept
 
 | Rule | It is NOT being kept when… |
 |---|---|
-| One question per page | two pages' declared questions match, or a status question gets two different answers from two pages |
+| One question per page | row 12's check fails, or a status question gets two different answers from two pages |
 | A page is a perspective | a page shows a count or state another page owns, as text and not a link (e.g. a brief stating an open-row count) |
 | The backlog decides state | any page shows an item's state that differs from the backlog row's `status` |
-| One source per "needs you" set | the dashboard or backlog page shows its own needs-you COUNT; the "waiting until picked" set differs from the rows with `status: needs-you`; or the "blocking now" set differs from the ledger's owner-waiting entries |
-| Every key is a link | a generated page contains `backlog #N` or `PR #N` outside a code span and outside an `<a>` |
-| One link function | an href to `/backlog-table#i`, `/goals#`, `/features#` or `github.com/…/pull/` is built anywhere in `scripts/` except `page_markup.key_link` (and its tests) |
-| Four closed facets | a row carries a facet value no registry declares and the parser accepts it; or a fifth facet appears in a row's `⟦…⟧` block |
-| Feature → goal | a feature node with no `anchors:` line (and no recorded reason) passes `check-features.py` |
-| Explainer ↔ subject | an explainer with no declared subject, or a subject page that does not link back to it |
-| Pages are current | a generated page's stamp is older than the newest merge on `origin/master` by more than one rebuild |
+| One source per "needs you" set | the dashboard or backlog page shows its own needs-you COUNT; "blocking now" differs from the `owner-wait` entries; "waiting until picked" differs from `needs-you` rows minus those a live `owner-wait` entry references |
+| The sets are disjoint and complete | a row appears in both sets (overlap); or a row with `status: needs-you`, or a live `owner-wait` entry, appears in neither (absence) |
+| Every key is a link | a generated page contains `backlog #N`, `PR #N` or a bare `#N` chip outside a code span and outside an `<a>` |
+| One link function | an href to `/backlog-table#i`, `/goals#`, `/features#`, `/dashboard#`, `/goal-tree#` or `github.com/…/pull/` is built anywhere in `scripts/` except `page_markup.key_link` (and its tests) |
+| Links resolve | an internal link's `#fragment` has no matching id on its target page |
+| Four closed facets | a row carries a facet value no registry declares and the parser accepts it; or a fifth facet appears |
+| Feature → goal | a feature node whose RESOLVED anchor is unresolved (no own, no inherited, no top-level `none — <reason>`), or names a slug `anchors.md` lacks, passes `check-features.py` |
+| Explainer ↔ subject | an explainer written after this spec with no `subject` meta, or a row/goal/feature subject whose page does not link back |
+| Pages are current | a generated page's recorded source commit is not `origin/master`'s tip more than **1 minute** after that tip was merged — including when the rebuild never ran or failed |
 | Briefs are snapshots | a brief written after this spec contains a number that a generated page computes |
 
 ## 8. Choices the owner's earlier answers did not settle — answered in the walkthrough, 2026-11-02
@@ -163,29 +229,38 @@ stays free text (backlog #385).
 | # | Choice | Answer |
 |---|---|---|
 | 1 | Goal tree answers WHAT changed since T; the dashboard keeps WHY | owner: A, as drafted |
-| 2 | Source of "needs you" | owner: **two kinds, two sets** — *"Need you list in goals are decision task for backlogs which become relevant when the backlog item is being worked and in-flight ledger need you seems different kind of need-you for current working order … those two different need-you decisions can be presented as separate sets as two separate concerns."* Adopted as D1's refinement (§1, row 5, §7) |
-| 3 | Status facet written in the row's `⟦…⟧` block; severity column keeps glyphs only | coordinator (mechanical) |
+| 2 | Source of "needs you" | owner: **two kinds, two sets** — *"Need you list in goals are decision task for backlogs which become relevant when the backlog item is being worked and in-flight ledger need you seems different kind of need-you for current working order … those two different need-you decisions can be presented as separate sets as two separate concerns."* Adopted as D1's refinement (§1, row 4, §7) |
+| 3 | ~~Status facet in the `⟦…⟧` block~~ ⟳ r1: the first word of the existing `Status` column (one home; no severity column exists) | coordinator (mechanical) |
 | 4 | A row's goal is DERIVED through its area's feature node | owner: A |
 | 5 | The 15 of 28 feature nodes with no anchor inherit the parent's; a top node with none declares `anchors: none — <reason>` | owner: A |
 | 6 | The link function lives in `page_markup.py` | coordinator (mechanical) |
 | 7 | Hand-written explainer fragments are not rewritten; a check reports their unlinked keys | owner: A |
 | 8 | The dashboard's open-PR list is dropped; the goal tree owns open PRs | owner: A |
-| 9 | Row 11, the duplicate-question check, is kept and built last | owner: A |
+| 9 | The duplicate-question check is kept and built last (now row 12) | owner: A |
 
 ## 9. What was measured, and what was inferred
 
 | Number | Status | Source |
 |---|---|---|
-| 28 feature nodes, 13 with `anchors:` | MEASURED | `docs/features.md` on `befd0e6d`, heading-and-line count |
-| 422 backlog rows, all with `⟦kind:` | MEASURED | `grep -c` on `docs/backlog.md`, `befd0e6d` |
-| 3 hand-built backlog hrefs, 1 PR href | MEASURED | `grep` over `scripts/`, `befd0e6d` |
+| 28 feature nodes, 13 with `anchors:` | MEASURED | `docs/features.md` on `befd0e6d`; re-measured r1 |
+| 422 backlog rows, all with `⟦kind:` | MEASURED | `grep -c` on `docs/backlog.md`, `befd0e6d`; re-measured r1 |
+| 6 hand-built hrefs (3 backlog, 2 PR, 1 dashboard) | MEASURED | search spanning line breaks over `scripts/`, tests excluded, `e2ac6e41` (r1 corrected 3+1) |
+| Status column first keywords: OPEN 212, CLOSED 72, none 57, DONE 39, FIXED 22, … | MEASURED | Claude r1 half, `e2ac6e41` |
 | 37 / 12 / 0 needs-you counts; 29 unreadable | MEASURED | inventory, 2026-10-27 18:10 (roles page) |
 | 0 PR links; 18–157 PR mentions per page; 358 feature → row links | MEASURED | inventory, 2026-10-27 |
 | 49 of 68 dated pages are briefs; 4 mislabelled | MEASURED | roles page, 2026-10-27/28 |
-| `✅` in severity on 117 of 333 rows | MEASURED | backlog #385, `9ac7c80d` |
-| seven page producers | MEASURED | backlog #384, `f0dfef07` |
+| `✅` on 117 of 333 rows | MEASURED | backlog #385, `9ac7c80d` |
+| seven page producers | MEASURED, then updated | backlog #384, `f0dfef07`; `gen-work-lines` replaced by the goal tree after D2 |
 | 12 proposed rows, their order | ESTIMATED | this spec's judgement |
-| "one rebuild" freshness bound | ESTIMATED | D3 says "not more than a minute behind" |
+| 1-minute freshness bound | OWNER | D3, "not more than a minute behind" |
+
+## 10. Questions for the owner after round 1
+
+**Q1 — Do owner ACTIONS belong in "needs you"?** D1 says *a decision only the owner can make*; the goal tree
+today also lists ACTIONS only the owner can take (`NEEDS-OWNER-ACTION`, `WAITS-ON-OWNER: ACTION:` — Claude r1
+H4), which D1 as written leaves homeless. **Recommended: yes** — "a decision or an action only the owner can
+take", same two sets, each item marked `decision`/`action` by the existing `ACTION:` marker; status keeps four
+values. Alternative: actions are not "needs you" and become ordinary `open` rows.
 
 ## Out of scope
 
