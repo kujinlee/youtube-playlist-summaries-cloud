@@ -26,45 +26,6 @@
     ]
   },
   {
-    "name": "the re-read limit becomes inclusive: an overlap of exactly 50 is denied",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "if seen > REREAD_MAX_LINES:",
-        "if seen >= REREAD_MAX_LINES:"
-      ]
-    ],
-    "expect": [
-      "an overlap of 50 lines is allowed, 51 is denied"
-    ]
-  },
-  {
-    "name": "the re-read rule is dropped",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "    if seen > REREAD_MAX_LINES:\n        return (",
-        "    if False:\n        return ("
-      ]
-    ],
-    "expect": [
-      "a re-read of 100 unchanged lines by the same agent is denied"
-    ]
-  },
-  {
-    "name": "a changed file is still refused: the modification time and size are not compared",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "(r.get(\"mtime_ns\"), r.get(\"size\")) == (stats[r[\"path\"]].st_mtime_ns, stats[r[\"path\"]].st_size)",
-        "True"
-      ]
-    ],
-    "expect": [
-      "a CHANGED file (a new modification time) may be read again"
-    ]
-  },
-  {
     "name": "the main session is gated too",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
@@ -83,7 +44,7 @@
     "edits": [
       [
         "if tool not in (\"Read\", \"Bash\") or not",
-        "if not"
+        "if tool not in (\"Read\", \"Bash\", \"Grep\") or not"
       ]
     ],
     "expect": [
@@ -108,8 +69,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "        if ti.get(\"run_in_background\") is True:\n            return None\n",
-        ""
+        "if ti.get(\"run_in_background\") is True:",
+        "if False:"
       ]
     ],
     "expect": [
@@ -127,6 +88,20 @@
     ],
     "expect": [
       "a command that is not a string is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "a non-string cwd raises a traceback",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if cwd is not None and not isinstance(cwd, str):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "a cwd that is not a string is NOT CHECKED",
+      "main --hook: a cwd that is not a string is NOT CHECKED, no traceback"
     ]
   },
   {
@@ -179,6 +154,71 @@
     ],
     "expect": [
       "a limit that is not an integer is NOT CHECKED (a string, a boolean)"
+    ]
+  },
+  {
+    "name": "an integral float limit is NOT CHECKED",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "or not float(v).is_integer():",
+        "or not isinstance(v, int):"
+      ]
+    ],
+    "expect": [
+      "main --hook: a Read with offset and limit (integers parsed as floats) is judged, not NOT CHECKED"
+    ]
+  },
+  {
+    "name": "a fractional limit is accepted",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        " or not float(v).is_integer():",
+        " or False:"
+      ]
+    ],
+    "expect": [
+      "a limit that is a float with a fraction, or infinite, is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "a notebook, PDF or image is counted",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if os.path.splitext(path)[1].lower().lstrip(\".\") in NOT_TEXT:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "a 500-line notebook, PDF or image (any case, no NUL) is allowed: Read ignores offset/limit for them"
+    ]
+  },
+  {
+    "name": "the extension is compared case-sensitively",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "os.path.splitext(path)[1].lower().lstrip(\".\")",
+        "os.path.splitext(path)[1].lstrip(\".\")"
+      ]
+    ],
+    "expect": [
+      "a 500-line notebook, PDF or image (any case, no NUL) is allowed: Read ignores offset/limit for them"
+    ]
+  },
+  {
+    "name": "a notebook is counted",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "NOT_TEXT = frozenset({\"ipynb\", ",
+        "NOT_TEXT = frozenset({"
+      ]
+    ],
+    "expect": [
+      "a 500-line notebook, PDF or image (any case, no NUL) is allowed: Read ignores offset/limit for them"
     ]
   },
   {
@@ -273,12 +313,51 @@
     ]
   },
   {
+    "name": "a subshell is parsed as a pipeline",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if seg[:1] == [\"(\"]:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "a subshell `( ... )` is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "any `(` in a segment is NOT CHECKED",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if seg[:1] == [\"(\"]:\n            raise",
+        "if \"(\" in seg:\n            raise"
+      ]
+    ],
+    "expect": [
+      "a `$( ... )` in an assignment is not a subshell segment: allowed"
+    ]
+  },
+  {
+    "name": "`|&` is not a pipe",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "PIPES = (\"|\", \"|&\")",
+        "PIPES = (\"|\",)"
+      ]
+    ],
+    "expect": [
+      "`|&` is a pipe: `cat` piped to grep with `|&` is allowed"
+    ]
+  },
+  {
     "name": "`cd` is not followed",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "            cwd = os.path.join(cwd, expand(first[1], vars_, env)) if len(first) > 1 else env.get(\"HOME\", cwd)\n",
-        ""
+        "cwd = os.path.join(cwd, expand(first[1], vars_, env)) if len(first) > 1 else env.get(\"HOME\", cwd)",
+        "pass"
       ]
     ],
     "expect": [
@@ -290,8 +369,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "                vars_[name] = expand(value, vars_, env)",
-        "                pass"
+        "vars_[name] = expand(value, vars_, env)",
+        "pass"
       ]
     ],
     "expect": [
@@ -316,7 +395,7 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "if not all(st and st[0] in READERS for st in later):",
+        "if not all(st and st[0] in READERS for st in stages[1:]):",
         "if False:"
       ]
     ],
@@ -329,8 +408,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "            stream = stream if op2 is None else op2(stream)",
-        "            pass"
+        "for st in [first, *stages[1:]]:",
+        "for st in [first]:"
       ]
     ],
     "expect": [
@@ -338,12 +417,103 @@
     ]
   },
   {
+    "name": "a later stage's file operands are ignored: it reads the pipe",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "for f in files or [\"-\"]:",
+        "for f in (files if st is first else []) or [\"-\"]:"
+      ]
+    ],
+    "expect": [
+      "a later stage that NAMES a file reads it, not the pipe: `cat small | head -n 400 big` is denied"
+    ]
+  },
+  {
+    "name": "`-` is read as a file named -",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if f == \"-\":",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "`-` in a later stage is the pipe: `cat big | cat small -` is 600 lines, denied"
+    ]
+  },
+  {
+    "name": "cat drops `-` with its flags",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "files = [a for a in args if not a.startswith(\"-\") or a == \"-\"]",
+        "files = [a for a in args if not a.startswith(\"-\")]"
+      ]
+    ],
+    "expect": [
+      "`-` in a later stage is the pipe: `cat big | cat small -` is 600 lines, denied"
+    ]
+  },
+  {
+    "name": "cat reads its flags as files",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "files = [a for a in args if not a.startswith(\"-\") or a == \"-\"]\n",
+        "files = list(args)\n"
+      ]
+    ],
+    "expect": [
+      "a flag is not a file operand, even when a file has its name: `cat -n small.txt` is 100 lines"
+    ]
+  },
+  {
+    "name": "a later sed without -n drops the stream",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if op is None:  # `sed` without `-n` later in a pipe prints its input: the stream passes on\n                continue",
+        "if op is None:\n                stream = []\n                continue"
+      ]
+    ],
+    "expect": [
+      "a later `sed` without -n prints its input: `cat big | sed s/a/b/` is denied"
+    ]
+  },
+  {
+    "name": "sed numbers each file separately",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "stream = ([x for piece in pieces for x in op(piece)] if per_file",
+        "stream = ([x for piece in pieces for x in op(piece)] if True"
+      ]
+    ],
+    "expect": [
+      "`sed` reads its files as ONE stream: '1,200p' over two 200-line files is 200 lines, allowed"
+    ]
+  },
+  {
+    "name": "head counts its files as one stream",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "op(piece)] if per_file\n",
+        "op(piece)] if False\n"
+      ]
+    ],
+    "expect": [
+      "`head` counts per file: `head -n 250` of two 200-line files is 400, denied"
+    ]
+  },
+  {
     "name": "files are not summed across one command",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "                stream += op([(os.path.realpath(path), 1, n)])",
-        "                stream = op([(os.path.realpath(path), 1, n)])"
+        "pieces.append([(os.path.realpath(path), 1, n)])",
+        "pieces[:] = [[(os.path.realpath(path), 1, n)]]"
       ]
     ],
     "expect": [
@@ -355,8 +525,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "doc.get(\"cwd\") or os.getcwd()",
-        "os.getcwd()"
+        "bash_spans(cmd, cwd or os.getcwd(), env)",
+        "bash_spans(cmd, os.getcwd(), env)"
       ]
     ],
     "expect": [
@@ -381,8 +551,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "        tok = env.get(\"HOME\", \"~\") + tok[1:]",
-        "        pass"
+        "tok = env.get(\"HOME\", \"~\") + tok[1:]",
+        "pass"
       ]
     ],
     "expect": [
@@ -403,16 +573,211 @@
     ]
   },
   {
+    "name": "a glob is read as a literal path",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if not GLOB_CHARS.search(path):",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "a glob over several files counts them all: `cat [ab].txt` is 400 lines, denied"
+    ]
+  },
+  {
+    "name": "a glob ignores the directory `cd` left",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "found = sorted(glob.glob(path))",
+        "found = sorted(glob.glob(expand(tok, vars_, env)))"
+      ]
+    ],
+    "expect": [
+      "a relative glob is expanded where `cd` left it: `cat big.t?t` is denied"
+    ]
+  },
+  {
+    "name": "a glob that matches nothing is allowed silently",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        raise Unreadable(f\"the glob {tok!r} matches no file\")",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "a glob that matches nothing is NOT CHECKED"
+    ]
+  },
+  {
     "name": "`sed -i` is read as a print",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "        if a.startswith(\"-i\") or a == \"--in-place\" or a.startswith(\"--in-place=\"):\n            return None, []\n",
-        ""
+        "            return None, [], False\n        if a == \"--separate\"",
+        "            pass\n        if a == \"--separate\""
       ]
     ],
     "expect": [
       "`sed -i` edits, it does not read, even with -n and a range"
+    ]
+  },
+  {
+    "name": "`sed -s` is counted as one stream",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if a == \"--separate\" or (a.startswith(\"-\") and not a.startswith(\"--\") and \"s\" in a[1:]):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "`sed -s` (each file numbered alone) is NOT CHECKED: `-s`, `-ns`, `--separate`"
+    ]
+  },
+  {
+    "name": "`sed --separate` is missed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "if a == \"--separate\" or (",
+        "if ("
+      ]
+    ],
+    "expect": [
+      "`sed -s` (each file numbered alone) is NOT CHECKED: `-s`, `-ns`, `--separate`"
+    ]
+  },
+  {
+    "name": "`sed -ns` is missed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        " or (a.startswith(\"-\") and not a.startswith(\"--\") and \"s\" in a[1:]):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "`sed -s` (each file numbered alone) is NOT CHECKED: `-s`, `-ns`, `--separate`"
+    ]
+  },
+  {
+    "name": "sed -e expressions are not joined",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "script = (script + \";\" if script else \"\") + next(it, \"\")",
+        "script = next(it, \"\")"
+      ]
+    ],
+    "expect": [
+      "`sed -n -e R -e R` sums its expressions"
+    ]
+  },
+  {
+    "name": "`sed -n` is not quiet",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "            quiet = True\n",
+        "            quiet = False\n"
+      ]
+    ],
+    "expect": [
+      "`sed -n '1,300p'` is allowed, '1,301p' is denied"
+    ]
+  },
+  {
+    "name": "`-n` in a sed flag group is missed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "quiet = quiet or \"n\" in a[1:]",
+        "quiet = quiet"
+      ]
+    ],
+    "expect": [
+      "`-n` inside a flag group (`sed -En`) is quiet: '1,400p' is denied"
+    ]
+  },
+  {
+    "name": "sed without -n is parsed as ranges",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "    if not quiet:\n        return None, [], False\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "`sed` without -n is not counted"
+    ]
+  },
+  {
+    "name": "a sed `q` is NOT CHECKED",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        if q:\n            cmds.append",
+        "        if False:\n            cmds.append"
+      ]
+    ],
+    "expect": [
+      "`sed -n '1,400p;1q'` stops at line 1: allowed"
+    ]
+  },
+  {
+    "name": "a bare `q` never stops",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "int(q.group(1) or 1)",
+        "int(q.group(1) or END)"
+      ]
+    ],
+    "expect": [
+      "a bare `q` stops at line 1: allowed"
+    ]
+  },
+  {
+    "name": "a `p` after `Nq` prints line N",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "n if j > i else n - 1",
+        "n"
+      ]
+    ],
+    "expect": [
+      "a `p` before `301q` prints line 301 (denied); a `p` after it does not (allowed)"
+    ]
+  },
+  {
+    "name": "a `p` before `Nq` misses line N",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "n if j > i else n - 1 for",
+        "n - 1 for"
+      ]
+    ],
+    "expect": [
+      "a `p` before `301q` prints line 301 (denied); a `p` after it does not (allowed)"
+    ]
+  },
+  {
+    "name": "a `q` does not cap the ranges",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "min([hi, *(n if j > i else n - 1 for j, n in quits)])",
+        "hi"
+      ]
+    ],
+    "expect": [
+      "`sed -n '1,400p;1q'` stops at line 1: allowed"
     ]
   },
   {
@@ -442,16 +807,16 @@
     ]
   },
   {
-    "name": "sed -e expressions are not joined",
+    "name": "`sed -n 'Np'` is read as N to the end",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "script = (script + \";\" if script else \"\") + next(it, \"\")",
-        "script = next(it, \"\")"
+        "lo if m.group(2) is None else",
+        "END if m.group(2) is None else"
       ]
     ],
     "expect": [
-      "`sed -n -e R -e R` sums its expressions"
+      "`sed -n 'Np'` is one line: '100p' is allowed"
     ]
   },
   {
@@ -459,8 +824,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "n, from_start = HEAD_DEFAULT, False",
-        "n, from_start = END, False"
+        "n, from_start, all_but = HEAD_DEFAULT, False, False",
+        "n, from_start, all_but = END, False, False"
       ]
     ],
     "expect": [
@@ -472,8 +837,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "            elif a.startswith(\"-\") and len(a) > 1:\n                v = a[1:]\n",
-        ""
+        "            elif a.startswith(\"-\") and len(a) > 1:\n                v = a[1:]",
+        "            elif False:\n                v = a[1:]"
       ]
     ],
     "expect": [
@@ -485,8 +850,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "            if a.startswith(\"--lines=\"):\n                a = \"-n\" + a[len(\"--lines=\"):]\n",
-        ""
+        "if a.startswith(\"--lines=\"):",
+        "if False:"
       ]
     ],
     "expect": [
@@ -494,16 +859,29 @@
     ]
   },
   {
-    "name": "`head -n -K` is read as K lines",
+    "name": "`head -n -K` is NOT CHECKED",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "                n = END\n",
-        "                n = int(v[1:])\n"
+        "all_but = word == \"head\" and v.startswith(\"-\")",
+        "all_but = False"
       ]
     ],
     "expect": [
-      "`head -n -10` is every line but 10: denied"
+      "`head -n -100` is every line but 100 (400): denied; `head -n -250` (250) is allowed"
+    ]
+  },
+  {
+    "name": "`head -n -K` is read as the whole file",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "take(s, 1, size(s) - n)",
+        "take(s, 1, END)"
+      ]
+    ],
+    "expect": [
+      "`head -n -100` is every line but 100 (400): denied; `head -n -250` (250) is allowed"
     ]
   },
   {
@@ -511,8 +889,21 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "            return (lambda s: take(s, n, END)), files",
-        "            return (lambda s: take(s, size(s) - n + 1, END)), files"
+        "        if from_start:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "`tail -n 50` is allowed, `tail -n +100` (401 lines) is denied"
+    ]
+  },
+  {
+    "name": "`tail -n N` is read as the whole file",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "take(s, size(s) - n + 1, END)",
+        "take(s, 1, END)"
       ]
     ],
     "expect": [
@@ -524,12 +915,25 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "            if a in (\"-f\", \"-F\", \"--follow\", \"-c\")",
-        "            if a in (\"-F\", \"--follow\", \"-c\")"
+        "if a in (\"-f\", \"-F\", \"--follow\", \"-c\") or a.startswith((\"--bytes\", \"-c\")):",
+        "if False:"
       ]
     ],
     "expect": [
       "`tail -f` follows, it is not counted"
+    ]
+  },
+  {
+    "name": "`head -q` is read as a count",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "            if a in HEAD_NOARG:\n                continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "`head -q` and `-v` are flags, not counts"
     ]
   },
   {
@@ -546,59 +950,20 @@
     ]
   },
   {
-    "name": "records older than 24 h are kept",
+    "name": "the denial omits how to get the content",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "if isinstance(r, dict) and now - r.get(\"at\", 0) <= STATE_TTL_S]",
-        "if isinstance(r, dict)]"
+        "\"stays in your context and is re-read at cache rates on every later call. \" + ADVICE)",
+        "\"stays in your context and is re-read at cache rates on every later call.\")"
       ]
     ],
     "expect": [
-      "a record older than 24 h no longer refuses"
+      "the denial says how to get the content: grep -n, offset/limit, sed -n and the limit"
     ]
   },
   {
-    "name": "stale state files are kept",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "            if now - f.stat().st_mtime > STATE_TTL_S:\n                f.unlink()\n",
-        "            pass\n"
-      ]
-    ],
-    "expect": [
-      "another agent's state file older than 24 h is deleted"
-    ]
-  },
-  {
-    "name": "the state is keyed by session, not agent",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "re.sub(r\"[^A-Za-z0-9_-]\", \"_\", aid)[:64]",
-        "\"session\""
-      ]
-    ],
-    "expect": [
-      "another agent may read the same lines"
-    ]
-  },
-  {
-    "name": "the denial omits the remedy",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "stays in your context and is re-read at cache rates on every later call. \" + ADVICE)",
-        "stays in your context and is re-read at cache rates on every later call.\")"
-      ]
-    ],
-    "expect": [
-      "the denial names grep -n, the limit and the remedy"
-    ]
-  },
-  {
-    "name": "a denial is printed as plain text",
+    "name": "a denial is sent as `ask`, not `deny`",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
@@ -634,71 +999,6 @@
     ],
     "expect": [
       "main --hook: a payload that is not UTF-8 is NOT CHECKED, no traceback"
-    ]
-  },
-  {
-    "name": "an integral float limit is NOT CHECKED",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "or not isinstance(v, (int, float)) or not float(v).is_integer():",
-        "or not isinstance(v, int):"
-      ]
-    ],
-    "expect": [
-      "main --hook: a Read with offset and limit (integers parsed as floats) is judged, not NOT CHECKED"
-    ]
-  },
-  {
-    "name": "a fractional limit is accepted",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        " or not float(v).is_integer():",
-        ":"
-      ]
-    ],
-    "expect": [
-      "a limit that is a float with a fraction, or infinite, is NOT CHECKED"
-    ]
-  },
-  {
-    "name": "a symlinked state directory is followed",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "a symlinked state directory is NOT CHECKED"
-    ]
-  },
-  {
-    "name": "a state directory another user owns is used",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "    if st.st_uid != os.getuid():",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "a state directory another user owns is NOT CHECKED"
-    ]
-  },
-  {
-    "name": "the state directory keeps its loose mode",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "    os.chmod(d, 0o700)\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "the state directory is made 0700, and a write leaves no temp file"
     ]
   }
 ]

@@ -329,9 +329,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # `analyse()` on the delivered source; `decide` is varied by every rule case, main.* EXEMPT with its reason.
     # backlog #457 (2026-11-01): the subagent large-read hook, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; `decide` is varied by every rule case, main.* EXEMPT with its reason.
+    # ⟳ r1 fold: the re-read rule and its state removed, so `decide.now`, `decide.state_dir` and `main.state_dir`
+    # are gone with it. Re-derived by running `analyse()`.
     "check-agent-large-read.py": (
-        "decide.doc", "decide.env", "decide.now", "decide.state_dir", "main.argv", "main.env", "main.state_dir",
-        "main.stdin_bytes",
+        "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_bytes",
     ),
     "check-agent-long-call.py": (
         "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_text",
@@ -1274,10 +1275,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 EXEMPT: dict[str, str] = {
     # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
     # backlog #457 (2026-11-01): check-agent-large-read.py's main() is driven from one helper.
-    "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, environments and state it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
-    "check-agent-large-read.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, environments and state it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
-    "check-agent-large-read.py:main.state_dir": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, environments and state it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
-    "check-agent-large-read.py:main.stdin_bytes": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads, environments and state it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
+    "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
+    "check-agent-large-read.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
+    "check-agent-large-read.py:main.stdin_bytes": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
     # backlog #455 (2026-11-01): check-agent-long-call.py's main() is driven from one helper.
     "check-agent-long-call.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
     "check-agent-long-call.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",

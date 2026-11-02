@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse hook on Bash and Read — refuse a SUBAGENT's read of more than 300 lines of a file in one call, and its
-# re-read of lines it already read from an unchanged file (backlog #457). Every line read stays in the agent's context
-# and is re-read at cache rates on every later call; the rule, the measured Read payload and the bounds are described
+# PreToolUse hook on Bash and Read — refuse a SUBAGENT's read of more than 300 lines of a file in one call
+# (backlog #457). Every line read stays in the agent's context and is re-read at cache rates on every later call; the rule, the measured Read payload and the bounds are described
 # ONCE, in scripts/check-agent-large-read.py. The main session is never refused.
 #
 # ⛔ EVERY NON-ZERO EXIT BECOMES 1. The denial travels as JSON on stdout at exit 0; exit 2 would BLOCK, so a broken

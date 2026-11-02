@@ -408,7 +408,7 @@ jobs:
       # backlog #455: a subagent's foreground Bash call that can block past 270 s is refused.
       - name: check-agent-long-call self-test
         run: python3 scripts/check-agent-long-call.py --self-test
-      # backlog #457: a subagent's read of more than 300 lines, or a re-read of an unchanged file, is refused.
+      # backlog #457: a subagent's read of more than 300 lines of a file in one call is refused.
       - name: check-agent-large-read self-test
         run: python3 scripts/check-agent-large-read.py --self-test
       - name: check-hook-commands self-test

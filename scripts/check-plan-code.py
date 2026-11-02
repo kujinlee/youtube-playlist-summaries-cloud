@@ -2169,8 +2169,10 @@ EXPECTED_MUTATIONS = {
     # backlog #457 (2026-11-01): a subagent's read of more than 300 lines, or a re-read of an unchanged file, is
     # refused. Pinned in the commit that creates it — one entry per clause of the Read and Bash readers, the
     # exemptions, the re-read record and NOT CHECKED: 51. ⟳ security fix: + the state directory's symlink, owner and
-    # mode checks. 51 + 3 = 54.
-    "scripts/check-agent-large-read.py": 54,
+    # mode checks. 51 + 3 = 54. ⟳ r1 fold: the re-read rule and its state removed (-10); the notebook/PDF/image
+    # exemption, `sed` as one stream with `q`, globs, a later stage's own files, `-`, `|&`, subshells, `sed -s`,
+    # `head -q`, exact `head -n -K` and the cwd check added — one entry per clause: 77.
+    "scripts/check-agent-large-read.py": 77,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
