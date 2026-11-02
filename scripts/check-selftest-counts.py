@@ -123,6 +123,8 @@ POPULATION: frozenset[str] = frozenset({
     "check-stalled-work.py",
     # ⟳ 2026-11-01 (backlog #440): pinned in the commit that creates it.
     "check-compaction-boundary.py",
+    # ⟳ 2026-11-01 (backlog #455): pinned in the commit that creates it.
+    "check-agent-long-call.py",
     # ⟳ 2026-10-26 (backlog #223): pinned in the commit that creates it.
     "check-hook-commands.py",
     # ⟳ 2026-10-27 (backlog #364): pinned in the commit that creates it.

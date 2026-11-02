@@ -325,6 +325,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # running `analyse()` on the delivered source; every parameter varied except main.*, EXEMPT with its reason.
     # ⟳ r1 fold: + `ceiling.w`, `log_path.*`, `read_tail.*`, `sentinel_armed.*` — the clamp, the log's fallback, the
     # cut tail and the sentinel's `paused:`/`session:`. Re-derived by running `analyse()`.
+    # backlog #455 (2026-11-01): the subagent long-call hook, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; `decide` is varied by every rule case, main.* EXEMPT with its reason.
+    "check-agent-long-call.py": (
+        "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_text",
+    ),
     "check-compaction-boundary.py": (
         "ceiling.w", "decide.ctx", "decide.last_at", "decide.now", "decide.sigs", "decide.trigger", "decide.w", "hook.env", "hook.home", "hook.now", "hook.payload_text", "hook.snapshot", "iso_epoch.stamp", "log_path.env", "log_path.payload_text", "main.argv", "main.env", "main.now", "main.snapshot", "main.stdin_fd", "read_tail.cap", "read_tail.path", "scan.lines", "sentinel_armed.fields", "sentinel_armed.session", "signals.now", "signals.plan_armed", "signals.scanned", "summary.log_text", "window.env_value", "window.files", "window.model",),
     # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
@@ -1262,6 +1267,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
     # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
+    # backlog #455 (2026-11-01): check-agent-long-call.py's main() is driven from one helper.
+    "check-agent-long-call.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
+    "check-agent-long-call.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
+    "check-agent-long-call.py:main.stdin_text": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
     "check-compaction-boundary.py:main.argv": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
     "check-compaction-boundary.py:main.env": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
     "check-compaction-boundary.py:main.now": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
