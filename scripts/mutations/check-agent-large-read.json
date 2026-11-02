@@ -811,8 +811,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "    command = STDERR_REDIRECT.sub(\" \", command)\n",
-        "    command = command\n"
+        "    command = STDERR_REDIRECT.sub(\" \", command)\n    if not READER_WORD",
+        "    if not READER_WORD"
       ]
     ],
     "expect": [
@@ -1102,7 +1102,7 @@
       ]
     ],
     "expect": [
-      "an `&&` list is summed, and a `cd DIR` part moves the later parts: both denied"
+      "an `&&` list is summed, and a leading `cd DIR &&` moves the later parts: both denied"
     ]
   },
   {
@@ -1128,7 +1128,7 @@
       ]
     ],
     "expect": [
-      "an `&&` list is summed, and a `cd DIR` part moves the later parts: both denied"
+      "an `&&` list is summed, and a leading `cd DIR &&` moves the later parts: both denied"
     ]
   },
   {
@@ -1136,8 +1136,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        " and words[1] != \"-\":",
-        ":"
+        " and words[1] != \"-\"):",
+        "):"
       ]
     ],
     "expect": [
@@ -1167,7 +1167,7 @@
       ]
     ],
     "expect": [
-      "an unquoted `#` keeps a list unsplit: `cd DIR; cat small # ; cat big` is allowed"
+      "an unquoted `#` keeps a list unsplit: `cd DIR && cat small # ; cat big` is allowed"
     ]
   },
   {
@@ -1184,12 +1184,12 @@
     ]
   },
   {
-    "name": "an empty list part keeps the list allowed",
+    "name": "a trailing `;` is not dropped",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "        if not part.strip():\n            continue",
-        "        if False:\n            continue"
+        "        parts = parts[:-1]  # ONE trailing",
+        "        pass  # ONE trailing"
       ]
     ],
     "expect": [
@@ -1201,8 +1201,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "    if COMPOUND.search(command.strip()):  # a newline",
-        "    if False:  # a newline"
+        "    if COMPOUND.search(command.strip()) or \"$'\"",
+        "    if \"$'\""
       ]
     ],
     "expect": [
@@ -1223,16 +1223,120 @@
     ]
   },
   {
-    "name": "any first word is taken as `cd` in a list",
+    "name": "`pushd` is taken as `cd` in a list",
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "len(words) == 2 and words[0] == \"cd\" and",
-        "len(words) == 2 and"
+        "        if words and words[0] == \"cd\":",
+        "        if words and words[0] in (\"cd\", \"pushd\"):"
       ]
     ],
     "expect": [
       "`pushd DIR &&` is not `cd`, and `cd DIR ||` is not a list: both allowed"
+    ]
+  },
+  {
+    "name": "a redirect's target runs through an operator",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "2>>?\\s*[^\\s;&|<>()]+)",
+        "2>>?\\s*\\S+)"
+      ]
+    ],
+    "expect": [
+      "a redirect's target ends at an operator: `sed -n 1,200p a 2>/dev/null; sed -n 1,200p b` (400) is denied; `cat a 2>/dev/null; head -n 1 b` (201), `cat small 2>/dev/null; wc -l big` (101), `cat big 2>/dev/null|head -5` (5) are allowed"
+    ]
+  },
+  {
+    "name": "the list split reads a stderr redirect's `>` as an operator",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        elif redirect:\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "a redirect's target ends at an operator: `sed -n 1,200p a 2>/dev/null; sed -n 1,200p b` (400) is denied; `cat a 2>/dev/null; head -n 1 b` (201), `cat small 2>/dev/null; wc -l big` (101), `cat big 2>/dev/null|head -5` (5) are allowed"
+    ]
+  },
+  {
+    "name": "`printf` is a zero-line list part",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "\"true\", \":\", ",
+        "\"true\", \"printf\", \":\", "
+      ]
+    ],
+    "expect": [
+      "`printf` is not a zero-line part (`printf -v D a; cat \"$D\"` assigns): `printf x; cat big` (500) is allowed"
+    ]
+  },
+  {
+    "name": "a `cd` part need not be first",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "n == 0 and sep ==",
+        "sep =="
+      ]
+    ],
+    "expect": [
+      "any `cd` but ONE leading `cd DIR &&` keeps a list allowed whole: after `;` (`cd missing; cat a; cat b`, 400), a second `cd` (`cd logical/link; cd ..; cat big`, 500), a `cd` that is not first"
+    ]
+  },
+  {
+    "name": "a `cd` part may end with `;`",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "sep == \"&&\" and len(words)",
+        "len(words)"
+      ]
+    ],
+    "expect": [
+      "any `cd` but ONE leading `cd DIR &&` keeps a list allowed whole: after `;` (`cd missing; cat a; cat b`, 400), a second `cd` (`cd logical/link; cd ..; cat big`, 500), a `cd` that is not first"
+    ]
+  },
+  {
+    "name": "an empty list part is skipped",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        if not part.strip():  # `;;`, a leading `;`, a trailing `&&`: bash refuses the list, it runs nothing\n            return []",
+        "        if not part.strip():  # `;;`, a leading `;`, a trailing `&&`: bash refuses the list, it runs nothing\n            continue"
+      ]
+    ],
+    "expect": [
+      "an empty part but ONE trailing `;` keeps a list allowed: `cat big;;`, `; cat big`, `cat big &&`, `cat a && ; cat b` (bash: a syntax error, 0 lines)"
+    ]
+  },
+  {
+    "name": "a trailing `&&` is dropped like a trailing `;`",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "and parts[-2][1] == \";\":",
+        "and True:"
+      ]
+    ],
+    "expect": [
+      "an empty part but ONE trailing `;` keeps a list allowed: `cat big;;`, `; cat big`, `cat big &&`, `cat a && ; cat b` (bash: a syntax error, 0 lines)"
+    ]
+  },
+  {
+    "name": "`$'` does not keep a list allowed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        " or \"$'\" in command:  # in doubt",
+        ":  # in doubt"
+      ]
+    ],
+    "expect": [
+      "`$'` anywhere keeps a list allowed: `echo $'\\';cat big;echo ' \\'` is one `echo` (1 line)"
     ]
   }
 ]
