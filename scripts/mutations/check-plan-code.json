@@ -400,8 +400,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "\"attributed\": caught and not unnamed, \"measured\": True})",
-        "\"attributed\": caught, \"measured\": True})"
+        "\"attributed\": caught and not unnamed, \"measured\": True, **_stopped})",
+        "\"attributed\": caught, \"measured\": True, **_stopped})"
       ]
     ],
     "expect": [
@@ -503,8 +503,8 @@
     "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase — the long one — is the one with no progress",
     "edits": [
       [
-        "progress=progress)",
-        "progress=None)"
+        "progress=progress,\n",
+        "progress=None,\n"
       ]
     ],
     "expect": "every phase of --mutate reports its position when a caller asks",
@@ -514,8 +514,8 @@
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only)",
-        "mutate_delivered(mroot, shard=shard, budget=budget, only=only)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n",
+        "mutate_delivered(mroot,\n"
       ]
     ],
     "expect": [
@@ -1083,8 +1083,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only)}\")",
-        "              f\"{len(verdict.survivors)} survivor(s)\")"
+        "            + early_stop_note(verdict.mutations)\n            + f\" — measured over {shard_label(shard, only)}\")",
+        "            + early_stop_note(verdict.mutations))"
       ]
     ],
     "expect": [
@@ -1833,5 +1833,294 @@
       ]
     ],
     "expect": "⛔ r1 (Claude S2): a later `-= 4` write outside the display is REFUSED, naming the key"
+  },
+  {
+    "name": "#405: an EMPTY expect is satisfied at once, so a mutant naming nothing is stopped on its first line",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return bool(wants) and all(w in seen for w in wants)",
+        "return all(w in seen for w in wants)"
+      ]
+    ],
+    "expect": "#405 ...an EMPTY expect never says when to stop"
+  },
+  {
+    "name": "#405: the stop fires when ANY named case is red, not every one",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "and all(w in seen for w in wants)",
+        "and any(w in seen for w in wants)"
+      ]
+    ],
+    "expect": "#405 ...one named case still missing -> keep running"
+  },
+  {
+    "name": "#405: an edit whose own text carries a printer marker is no longer forced to run in full",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if any(m in find or m in repl for m in HARNESS_MARKERS):",
+        "if False:"
+      ]
+    ],
+    "expect": "#405 ...an edit whose own text carries a marker runs in full"
+  },
+  {
+    "name": "#405: a source that does not parse is allowed to stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except SyntaxError:\n        return True\n    # The lines the edit's TEXT",
+        "    except SyntaxError:\n        return False\n    # The lines the edit's TEXT"
+      ]
+    ],
+    "expect": "#405 ...a source that does not parse runs in full"
+  },
+  {
+    "name": "#405: the edit's trailing newline is counted, so a function's last line reads as module level",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    at += find.find(body)\n    first = src.count(\"\\n\", 0, at) + 1\n    last = first + body.count(\"\\n\")",
+        "    first = src.count(\"\\n\", 0, at) + 1\n    last = first + find.count(\"\\n\")"
+      ]
+    ],
+    "expect": "#405 edit_needs_full_run: an edit in PRODUCTION code may stop early"
+  },
+  {
+    "name": "#405: a MODULE-level edit (the __main__ dispatch) is allowed to stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not enclosing:\n        return True",
+        "    if not enclosing:\n        return False"
+      ]
+    ],
+    "expect": "#405 ...a MODULE-level edit runs in full"
+  },
+  {
+    "name": "#405: an edit inside the case printer or trailer is allowed to stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return any(any(m in (ast.get_source_segment(src, n) or \"\") for m in HARNESS_MARKERS)\n               for n in enclosing)",
+        "    return False"
+      ]
+    ],
+    "expect": "#405 ...an edit in the case PRINTER runs in full"
+  },
+  {
+    "name": "#405: the stop signals only the child, not its process GROUP, so a suite's own children run on",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "os.killpg(p.pid, sig)",
+        "os.kill(p.pid, sig)"
+      ]
+    ],
+    "expect": "#405 ...and the SIGINT reached the child's whole process GROUP"
+  },
+  {
+    "name": "#405: the stop sends SIGKILL FIRST, so the child's finally never restores",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if p.poll() is None and signal_group(signal.SIGINT):",
+        "if p.poll() is None and signal_group(signal.SIGKILL):"
+      ]
+    ],
+    "expect": "#405 ...and the child's `finally` RESTORED (SIGINT, never SIGKILL first)"
+  },
+  {
+    "name": "#405: a SIGKILL escalation is recorded as a clean SIGINT stop",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "stop = \"sigkill\"",
+        "stop = \"sigint\""
+      ]
+    ],
+    "expect": "#405 a child that ignores SIGINT is ESCALATED to SIGKILL after the grace, and it is recorded"
+  },
+  {
+    "name": "#405: the child runs BUFFERED, so a [FAIL] line arrives only when the suite ends",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "[sys.executable, \"-u\", name, \"--self-test\"]",
+        "[sys.executable, name, \"--self-test\"]"
+      ]
+    ],
+    "expect": "#405 run_suite_early stops at the named case with SIGINT, before the suite ends"
+  },
+  {
+    "name": "#405: the pump never raises the stop, so early stop is silently a full run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                if stop_names_seen(seen, wants):\n                    ready.set()",
+        "                pass"
+      ]
+    ],
+    "expect": "#405 run_suite_early stops at the named case with SIGINT, before the suite ends"
+  },
+  {
+    "name": "#405: the early-stop runner has no deadline, so a hung suite is never rc 2",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if time.monotonic() > deadline:",
+        "if False:"
+      ]
+    ],
+    "expect": "#405 a hung suite under early stop is rc 2, CANNOT RUN — never a kill"
+  },
+  {
+    "name": "#405: a mutant in the printer/trailer is stopped early anyway",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if early_stop and stop_wants and not needs_full:",
+        "if early_stop and stop_wants:"
+      ]
+    ],
+    "expect": "#405 ...a mutant whose edit is in the case PRINTER runs in FULL, never stopped"
+  },
+  {
+    "name": "#405: the predicate is never asked, so no mutant is forced to run in full",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "needs_full = needs_full or edit_needs_full_run(src, find, repl)",
+        "needs_full = False"
+      ]
+    ],
+    "expect": "#405 ...a mutant whose edit is in the case PRINTER runs in FULL, never stopped"
+  },
+  {
+    "name": "#405: a stopped child's signal rc is read as the verdict, so every early kill is a SURVIVOR",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if stop is not None:\n            rc = 1",
+        "        if False:\n            rc = 1"
+      ]
+    ],
+    "expect": "#405 run_mutations: an early-stopped mutant is KILLED and attributed, and says so"
+  },
+  {
+    "name": "#405: a FULL run's evidence gains a `stop` key, so its evidence is no longer what it was",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "_stopped = {\"stop\": stop} if early_stop else {}",
+        "_stopped = {\"stop\": stop}"
+      ]
+    ],
+    "expect": "#405 ...and with early stop OFF no entry carries `stop` — the FULL evidence is unchanged"
+  },
+  {
+    "name": "#405: a push to master stops early, so the periodic FULL sweep is gone",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if event != \"pull_request\":",
+        "if False:"
+      ]
+    ],
+    "expect": "#405 early_stop_ci: a push to master is the periodic FULL sweep"
+  },
+  {
+    "name": "#405: an unreadable changed-file list allows early stop",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if changed is None:\n        return False, \"the changed-file list could not be read: FULL sweep\"",
+        "    if changed is None:\n        return True, \"the changed-file list could not be read: FULL sweep\""
+      ]
+    ],
+    "expect": "#405 ...a changed-file list that could not be read is FULL"
+  },
+  {
+    "name": "#405: an EMPTY changed-file list allows early stop",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if not [c for c in changed if c.strip()]:",
+        "if False:"
+      ]
+    ],
+    "expect": "#405 ...an EMPTY changed-file list is FULL (it was lost, the sweep would not run)"
+  },
+  {
+    "name": "#405: a pull request changing check-plan-code.py itself stops early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if \"scripts/check-plan-code.py\" in changed:",
+        "if False:"
+      ]
+    ],
+    "expect": "#405 ...a pull request that changes check-plan-code.py itself is FULL"
+  },
+  {
+    "name": "#405: the tally counts every early stop as a SIGKILL escalation",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if m.get(\"stop\") == \"sigkill\")",
+        "if m.get(\"stop\"))"
+      ]
+    ],
+    "expect": "#405 ...an early run counts killed-early and SIGKILL escalations separately"
+  },
+  {
+    "name": "#405: main() drops --early-stop, so the flag is accepted and does nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "early = a.early_stop",
+        "early = False"
+      ]
+    ],
+    "expect": "#405 main() wires --early-stop through to the run (the tally names EARLY STOP)"
+  },
+  {
+    "name": "#405: main() never hands the decision to mutate_delivered",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "early_stop=early)",
+        "early_stop=False)"
+      ]
+    ],
+    "expect": [
+      "#405 main() wires --early-stop through to the run (the tally names EARLY STOP)",
+      "#405 ...--early-stop-ci on a pull request leaving check-plan-code.py alone stops early"
+    ]
+  },
+  {
+    "name": "#405: mutate_delivered never hands early_stop to run_mutations",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "early_stop=early_stop)",
+        "early_stop=False)"
+      ]
+    ],
+    "expect": "#405 main() wires --early-stop through to the run (the tally names EARLY STOP)"
+  },
+  {
+    "name": "#405: --early-stop without --mutate is no longer refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if (a.early_stop or a.early_stop_ci) and not a.mutate:",
+        "if False:"
+      ]
+    ],
+    "expect": "#405 --early-stop without --mutate is refused, rc 2"
   }
 ]

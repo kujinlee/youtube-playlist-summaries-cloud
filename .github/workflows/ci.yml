@@ -1236,6 +1236,7 @@ jobs:
             DIFF_TAKEN=1
           else
             DIFF_TAKEN=0
+            rm -f /tmp/changed.txt   # a partial list must not reach --early-stop-ci (backlog #405)
             echo "::warning::git diff against $BASE failed — the changed-file set is UNDETERMINED,"
             echo "::warning::so the sweep RUNS. An unanswered question must never skip a gate."
           fi
@@ -1365,8 +1366,12 @@ jobs:
           #                                                        (round 6 L1)
           # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
           # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+          # backlog #405: `--early-stop-ci` lets `check-plan-code.early_stop_ci` decide, from
+          # $GITHUB_EVENT_NAME and the changed-file list the step above wrote, whether a mutant may be
+          # stopped once its named case is red. FULL on every push to master (the periodic full
+          # sweep), when the list is missing or empty, and when check-plan-code.py itself changed.
           python3 scripts/check-plan-code.py --mutate . \
-            --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" --early-stop-ci /tmp/changed.txt
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
