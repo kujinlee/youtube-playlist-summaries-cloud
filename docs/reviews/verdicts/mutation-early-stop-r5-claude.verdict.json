@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 41a13c9a33ae6a1cd0f8b1fb1f0f350120c739b5",
+    "docs/reviews/claude/mutation-early-stop-r5-claude.md": "100644 9339c3e2eab0cefde950f966252a3c02367f3c10"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "fa778c504f65aba15ee73863ad38554f00e9806b",
+  "intrusions": [],
+  "model": null,
+  "prompt": "r5 Claude half: refute the r4 narrowed early-stop allow list",
+  "reason": "claude half filed: 11056 chars, names fa778c504f65",
+  "refused": false,
+  "review": "mutation-early-stop-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a57a35d7124802a47",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
