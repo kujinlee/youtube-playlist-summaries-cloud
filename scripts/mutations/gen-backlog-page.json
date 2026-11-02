@@ -385,5 +385,161 @@
     "expect": [
       "#394: the kind and the parents are READ from the marker"
     ]
+  },
+  {
+    "name": "layout: a label is never cut",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if not inner.endswith(\":\") or len(inner) > _LAYOUT_LABEL_MAX or m.start() == 0:\n",
+        "        if True:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a bold lead-in label starts its own block"
+    ]
+  },
+  {
+    "name": "layout: a label mid-sentence is cut",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if prev and (prev.isalnum() or prev == \",\"):\n            continue\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "layout: a label mid-sentence (a letter before it) is not split"
+    ]
+  },
+  {
+    "name": "layout: a nested label is cut",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if not _layout_depth0(h, m.start()):\n            continue\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "layout: a label nested inside another element is not split"
+    ]
+  },
+  {
+    "name": "layout: the glyph stays behind",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                p = r\n",
+        "                break\n"
+      ]
+    ],
+    "expect": [
+      "layout: a glyph before a label travels with the label"
+    ]
+  },
+  {
+    "name": "layout: provenance ends inside parentheses",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        elif c == \".\" and paren == 0 and (k + 1 == len(h) or h[k + 1].isspace()):\n",
+        "        elif c == \".\" and (k + 1 == len(h) or h[k + 1].isspace()):\n"
+      ]
+    ],
+    "expect": [
+      "layout: the filed-provenance clause is its own muted line, ending outside parentheses"
+    ]
+  },
+  {
+    "name": "layout: the leading (filed) marker is not set apart",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if m and _layout_text0(h)[0]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a leading (filed …) marker and a found-provenance are both set apart"
+    ]
+  },
+  {
+    "name": "layout: enumeration ignores parentheses",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if m and paren == 0 and at_word and m.group(1) in alphabet:\n",
+        "            if m and at_word and m.group(1) in alphabet:\n"
+      ]
+    ],
+    "expect": [
+      "layout: markers inside parentheses are not a list"
+    ]
+  },
+  {
+    "name": "layout: enumeration ignores order",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                if idx == len(run):\n",
+        "                if True:\n"
+      ]
+    ],
+    "expect": [
+      "layout: markers out of order are not a list"
+    ]
+  },
+  {
+    "name": "layout: the depth-0 mask counts text inside elements",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if depth == 0:\n            for k in range(i, m.start()):\n",
+        "        if True:\n            for k in range(i, m.start()):\n"
+      ]
+    ],
+    "expect": [
+      "layout: markers inside a code span are not a list"
+    ]
+  },
+  {
+    "name": "layout: the last list item is dropped",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    items = [seg[a:b] for a, b in zip(cuts, cuts[1:] + [len(seg)])]\n",
+        "    items = [seg[a:b] for a, b in zip(cuts, cuts[1:])]\n"
+      ]
+    ],
+    "expect": [
+      "layout: same words, same order, over every fixture"
+    ]
+  },
+  {
+    "name": "layout: a whitespace-only gap is its own block",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if merged and not h[a:b].strip():          # a whitespace-only gap joins the block before it\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: no real row renders a whitespace-only block"
+    ]
+  },
+  {
+    "name": "layout: the card bypasses layout_body",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "      <div class=\"prose\">{layout_body(md(r['body']))}</div>\n",
+        "      <div class=\"prose\">{md(r['body'])}</div>\n"
+      ]
+    ],
+    "expect": [
+      "layout: the card renders its body through layout_body"
+    ]
   }
 ]

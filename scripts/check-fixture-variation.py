@@ -258,7 +258,7 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'format_question_entry.now', 'revision.p',),
     'gen-backlog-page.py': (
         'build.edited', 'build.generated_at', 'build.sha', 'build.stamp',
-        'link_contrast_errors.minimum', 'md.text', 'plain.text', 'report_run.rows',
+        'link_contrast_errors.minimum', 'plain.text', 'report_run.rows',
         'report_run.unread', 'report_unread.unread', 'rows_of.text',),
     'gen-dashboard.py': (
         'commit_dates.window', 'contrast_failures.minimum',),
