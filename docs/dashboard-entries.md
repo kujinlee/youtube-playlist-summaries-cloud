@@ -18601,3 +18601,8 @@ Branch `agent-large-read-guard`, PR #469, backlog #457 (re-scoped: gate output w
 Housekeeping batch: the stalled-work check now fires when work changes (backlog row 460 numbers updated), five new working-rule notes were recorded (rounds are capped, pick an agent's model, no tool call over 270 seconds, usage stops are soft, waiting lines must show age), the goal-thread records were refreshed, and six history-shaped rows moved out of the always-loaded memory index so it sits at 87% of its budget instead of 94%.
 <!--tech-->
 Memory index 23,525 to 21,630 characters; the six rows moved verbatim to `docs/memory/slice-history.md`. Nothing needs you.
+
+## 2026-11-02
+Three more problems with unattended work are on the backlog (rows 466 to 468). Row 466 records a 30-day measurement of risky shell commands: about 1.5 a day run without a safety copy, none ever lost work, so no blocking guard is justified and the design is held ready. Row 467 proposes flagging a helper agent that has gone quiet for over 8 minutes, after one sat 96 minutes unnoticed. Row 468 records that long commands stall while the screen is off and proposes keeping the Mac awake for the session. Nothing needs you.
+<!--tech-->
+Backlog #466 to #468 (kind task, area tooling, status OPEN), no code changed. #466 trigger: a traced loss or more than 2 uncovered destructive git commands in a week. #467: `STALE AGENT` line in `scripts/check-stalled-work.py`. #468: SessionStart hook running `caffeinate -i -s -w <claude pid>`.
