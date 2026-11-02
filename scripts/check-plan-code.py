@@ -1771,7 +1771,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-02, backlog #405 r2: 187 -> 199 — twelve for the ALLOW LIST (`early_path_allowed`):
     # its startup-name, stdlib-shadow, scripts-only, `.pth`, unknown-path, manifest, docs, markdown and
     # empty-entry arms, `early_paths_outside`'s polarity, and its two callers (the per-file rule and
-    # `early_stop_ci`). No existing anchor rebound.
+    # `early_stop_ci`). One existing anchor REBOUND (the no-diff arm's `return True`).
     "scripts/check-plan-code.py": 199,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`

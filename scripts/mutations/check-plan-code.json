@@ -2128,8 +2128,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "measured\n        return True\n    stem =",
-        "measured\n        return False\n    stem ="
+        "measured\n        return True\n    if early_paths_outside",
+        "measured\n        return False\n    if early_paths_outside"
       ]
     ],
     "expect": "#405 early_must_run_full: no diff (None) runs every mutant in FULL"
