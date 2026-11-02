@@ -18601,3 +18601,8 @@ Branch `agent-large-read-guard`, PR #469, backlog #457 (re-scoped: gate output w
 Housekeeping batch: the stalled-work check now fires when work changes (backlog row 460 numbers updated), five new working-rule notes were recorded (rounds are capped, pick an agent's model, no tool call over 270 seconds, usage stops are soft, waiting lines must show age), the goal-thread records were refreshed, and six history-shaped rows moved out of the always-loaded memory index so it sits at 87% of its budget instead of 94%.
 <!--tech-->
 Memory index 23,525 to 21,630 characters; the six rows moved verbatim to `docs/memory/slice-history.md`. Nothing needs you.
+
+## 2026-11-02
+The agent large-read guard now also catches several file reads chained in one command, such as two `sed -n 1,200p` reads joined by `;` or `&&`: their lines are added up, and over 300 the command is refused. That shape was about a fifth of the large-read cost the guard was built for. Anything it is unsure about, a pipe or a command it does not know among them, is still let through, as before. Nothing needs you.
+<!--tech-->
+Branch `build-465`, backlog #465. `scripts/check-agent-large-read.py`: `split_list` (unquoted `;`/`&&` only; `LIST_DOUBT` = `|&()<>#` keeps the command unsplit) and `list_spans` (reader parts summed, `cd DIR` tracked, `LIST_ZERO` parts counted as none, any other part allows the whole list). 96 cases (was 85), 95 mutations (was 83; `EXPECTED_MUTATIONS` pin updated).

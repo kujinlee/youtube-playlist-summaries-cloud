@@ -811,64 +811,12 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "shlex.shlex(STDERR_REDIRECT.sub(\" \", command), posix",
-        "shlex.shlex(command, posix"
+        "    command = STDERR_REDIRECT.sub(\" \", command)\n",
+        "    command = command\n"
       ]
     ],
     "expect": [
       "`2>/dev/null` and `2>&1` do not hide stdout"
-    ]
-  },
-  {
-    "name": "the `cd DIR &&` prefix is not taken",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "        cd_dir, tokens = tokens[1], tokens[3:]\n",
-        "        pass\n"
-      ]
-    ],
-    "expect": [
-      "a relative path after `cd DIR &&` is resolved there"
-    ]
-  },
-  {
-    "name": "the `cd` directory is not applied",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "        cwd = os.path.join(cwd, expand(cd_dir, env))\n",
-        "        pass\n"
-      ]
-    ],
-    "expect": [
-      "a relative path after `cd DIR &&` is resolved there"
-    ]
-  },
-  {
-    "name": "any first word is taken as `cd`",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        "tokens[0] == \"cd\" and ",
-        ""
-      ]
-    ],
-    "expect": [
-      "only `cd DIR &&` is a prefix: `cd DIR;` is a list and `pushd DIR &&` is not `cd`, both allowed"
-    ]
-  },
-  {
-    "name": "any separator after `cd DIR` is taken as `&&`",
-    "file": "scripts/check-agent-large-read.py",
-    "edits": [
-      [
-        " and tokens[2] == \"&&\"",
-        ""
-      ]
-    ],
-    "expect": [
-      "only `cd DIR &&` is a prefix: `cd DIR;` is a list and `pushd DIR &&` is not `cd`, both allowed"
     ]
   },
   {
@@ -920,7 +868,7 @@
       ]
     ],
     "expect": [
-      "a LIST is not a simple command: `;`, `&&`, `||` and `&` after a reader are allowed"
+      "the sum is of DISTINCT parts: 120 + 190 = 310 is denied, 120 + 170 = 290 is allowed"
     ]
   },
   {
@@ -933,7 +881,7 @@
       ]
     ],
     "expect": [
-      "a LIST is not a simple command: `;`, `&&`, `||` and `&` after a reader are allowed"
+      "`||` and `&` after a reader are not a list this hook sums: allowed (bound, stated)"
     ]
   },
   {
@@ -1077,6 +1025,214 @@
     ],
     "expect": [
       "a number of more than 18 digits is NOT CHECKED, not a traceback: a sed `q`, a sed range, a head count"
+    ]
+  },
+  {
+    "name": "a list is not split: every list is allowed (backlog #465 severed)",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        return list_spans(command, cwd, env)",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "a `;` list of readers is summed: `sed -n 1,200p a; sed -n 1,200p b` (400) is denied; a trailing `;`, stderr redirects"
+    ]
+  },
+  {
+    "name": "a list counts only its last reader",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "            spans += bash_spans(part, cwd, env)",
+        "            spans = bash_spans(part, cwd, env)"
+      ]
+    ],
+    "expect": [
+      "the sum is of DISTINCT parts: 120 + 190 = 310 is denied, 120 + 170 = 290 is allowed"
+    ]
+  },
+  {
+    "name": "a list counts only its first reader",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        if simple_command(part) is not None:\n            spans += ",
+        "        if simple_command(part) is not None:\n            spans = spans or "
+      ]
+    ],
+    "expect": [
+      "the sum is of DISTINCT parts: 120 + 190 = 310 is denied, 120 + 170 = 290 is allowed"
+    ]
+  },
+  {
+    "name": "quotes are not tracked by the list split",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        elif c in \"'\\\"\":\n            quote = c",
+        "        elif False:\n            quote = c"
+      ]
+    ],
+    "expect": [
+      "a QUOTED or escaped `;` or `&&` does not split: one `echo` is allowed; 200 + 200 around `';x;'` is denied"
+    ]
+  },
+  {
+    "name": "a backslash does not escape a separator",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        elif c == \"\\\\\":\n            cur.append(command[i:i + 2])",
+        "        elif False:\n            cur.append(command[i:i + 2])"
+      ]
+    ],
+    "expect": [
+      "a QUOTED or escaped `;` or `&&` does not split: one `echo` is allowed; 200 + 200 around `';x;'` is denied"
+    ]
+  },
+  {
+    "name": "`&&` is not a list separator",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        elif command.startswith(\"&&\", i):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "an `&&` list is summed, and a `cd DIR` part moves the later parts: both denied"
+    ]
+  },
+  {
+    "name": "an unknown list part counts nothing instead of keeping the list allowed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        elif not (words and words[0] in LIST_ZERO):\n            return []",
+        "        elif not (words and words[0] in LIST_ZERO):\n            continue"
+      ]
+    ],
+    "expect": [
+      "a list with a part this hook does not know is allowed whole: an assignment, `export`, `{`, `python3`"
+    ]
+  },
+  {
+    "name": "a `cd DIR` list part is ignored",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "            cwd = os.path.join(cwd, expand(words[1], env))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "an `&&` list is summed, and a `cd DIR` part moves the later parts: both denied"
+    ]
+  },
+  {
+    "name": "`cd -` is applied as a directory",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        " and words[1] != \"-\":",
+        ":"
+      ]
+    ],
+    "expect": [
+      "`cd -` (the previous directory, unknown here) keeps a list allowed whole"
+    ]
+  },
+  {
+    "name": "`|` does not keep a list unsplit",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "LIST_DOUBT = \"|",
+        "LIST_DOUBT = \""
+      ]
+    ],
+    "expect": [
+      "a list with a PIPELINE part is allowed whole, even when the pipe's first word counts nothing"
+    ]
+  },
+  {
+    "name": "`#` does not keep a list unsplit",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "<>#\"\n",
+        "<>\"\n"
+      ]
+    ],
+    "expect": [
+      "an unquoted `#` keeps a list unsplit: `cd DIR; cat small # ; cat big` is allowed"
+    ]
+  },
+  {
+    "name": "`echo` is not a zero-line list part",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "LIST_ZERO = frozenset({\"echo\", ",
+        "LIST_ZERO = frozenset({"
+      ]
+    ],
+    "expect": [
+      "`echo` between readers counts nothing: 150 + 150 is allowed (the boundary), 150 + 151 is denied"
+    ]
+  },
+  {
+    "name": "an empty list part keeps the list allowed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        if not part.strip():\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a `;` list of readers is summed: `sed -n 1,200p a; sed -n 1,200p b` (400) is denied; a trailing `;`, stderr redirects"
+    ]
+  },
+  {
+    "name": "a newline, `$(` or backtick does not keep a list allowed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "    if COMPOUND.search(command.strip()):  # a newline",
+        "    if False:  # a newline"
+      ]
+    ],
+    "expect": [
+      "a newline, `$(` or a backtick anywhere keeps a list allowed whole"
+    ]
+  },
+  {
+    "name": "an unsplittable list part raises a traceback",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "        except ValueError:  # never a traceback from the hook\n            return []",
+        "        except ZeroDivisionError:  # never a traceback from the hook\n            return []"
+      ]
+    ],
+    "expect": [
+      "a command naming no reader is not parsed: an unbalanced quote is allowed"
+    ]
+  },
+  {
+    "name": "any first word is taken as `cd` in a list",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "len(words) == 2 and words[0] == \"cd\" and",
+        "len(words) == 2 and"
+      ]
+    ],
+    "expect": [
+      "`pushd DIR &&` is not `cd`, and `cd DIR ||` is not a list: both allowed"
     ]
   }
 ]

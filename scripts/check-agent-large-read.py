@@ -37,19 +37,26 @@ counted.
 
 WHAT BASH FORMS ARE READ: a SIMPLE command only. ⟳ Narrowed in PR #469 round 2, the move PR #468 made: each
 round of review found new edge cases in pipeline and heredoc parsing, an open surface. The command is ONE invocation
-of `cat`, `head`, `tail` or `sed` on file operands, after at most one `cd DIR &&` prefix, with no newline (a heredoc
+of `cat`, `head`, `tail` or `sed` on file operands, with no newline (a heredoc
 has one), `$(` or backtick in it, and no token that is a shell operator (`|`, `|&`, `;`, `&&`, `||`, `&`, `(`, `)`, `<`, `<<`, `>`).
 `2>/dev/null`, `2>>f` and `2>&1` are removed first: they are not stdout. `$VAR`, `${VAR}` and `~/` are expanded
 from the environment. A file operand with `*`, `?` or `[` is expanded as a glob relative to the cwd. `sed` reads
 all its files as ONE stream, so its ranges and a `q` count against their concatenation; `head` and `tail` count per
 file. `-` is stdin, not a file.
 
+A LIST of simple commands joined by `;` or `&&` (backlog #465) is SUMMED: it is split on those two operators only,
+when unquoted (`split_list`), and each part is a simple reader counted as above, `cd DIR` (the later parts resolve
+there), or one of `LIST_ZERO` (`echo`, `printf`, `true`, `:`, `pwd`, `ls`, `wc`, `grep`: no lines counted). So
+`sed -n 1,200p a; echo ---; sed -n 1,200p b` is 400 lines, denied. Every part is counted as if it runs: `&&` after a
+failure is an over-count, a refusal of a list that could have printed that much. ESTIMATED (PR #469 body): lists of
+several readers were 21% of the subagent file-read cost over 300 lines.
+
 ⚠ BOUND, stated (not NOT CHECKED: it is common and not an error): ANY OTHER Bash command is allowed silently, exit 0,
-nothing printed. That includes every pipeline, `cat big | head -n 400` and `cat small | sed -n 1,400p big` among
-them; a list (`cat big; echo`); a heredoc; a subshell; a reader inside `$(...)`; output and input redirection; and
-an assignment prefix. ESTIMATED on this session's transcripts (PR #469 body, cost of subagent file-read results
-over 300 lines): Read 54% and simple commands 16% are covered; compound commands 30% are not — 21% of it a list of
-several readers (`sed -n 1,200p a; sed -n 1,200p b`), 6% a pipeline.
+nothing printed — and IN DOUBT, THE WHOLE LIST IS ALLOWED. That includes every pipeline, `cat big | head -n 400` and
+`cat small | sed -n 1,400p big` among them; a list with ANY part that is not a reader, `cd DIR` or `LIST_ZERO` (a
+pipeline, `||`, `&`, an assignment, `export`, `pushd`, `cd -`, `{ ...; }`, `if`/`for`); an unquoted `#`; a
+heredoc; a subshell; a reader inside `$(...)`; output and input redirection; and an assignment prefix. ESTIMATED on
+this session's transcripts (PR #469 body): a pipeline was 6% of that cost.
 
 ⚠ NOT COVERED, allowed silently: `python -c "print(open(f).read())"`, `awk`, `nl`, `less`, `bat`, `xxd`,
 `git show`, `git diff`, `grep`, and `sed` without `-n` (which prints every line).
@@ -66,13 +73,14 @@ Python's `glob`, which skips dot-files as bash does but cannot see quoting: `cat
 `==> f <==` headers `head` and `tail` print for several files are not counted.
 
     python3 scripts/check-agent-large-read.py --hook < payload.json
-    python3 scripts/check-agent-large-read.py --self-test  # 85 cases
+    python3 scripts/check-agent-large-read.py --self-test  # 96 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED.
 
 FAILS IF: a subagent's Read or `cat`/`sed -n`/`head`/`tail` call that puts more than 300 lines of a text file into
-its context as a SIMPLE command (above) is allowed; or a main-session call, a call of at most 300 lines, a compound
-command, or a Read of a notebook, PDF or image is denied.
+its context as a SIMPLE command (above), or as a `;`/`&&` LIST of them that together print more than 300 lines, is
+allowed; or a main-session call, a call of at most 300 lines, any other compound command (a pipeline, `||`, a list
+with a part this hook does not know), or a Read of a notebook, PDF or image is denied.
 """
 from __future__ import annotations
 
@@ -112,6 +120,12 @@ GLOB_CHARS = re.compile(r"[*?[]")
 SED_RANGE = re.compile(r"(\d{1,18})(?:,(\d{1,18}|\$))?p")
 SED_QUIT = re.compile(r"(\d{0,18})q")
 COUNT = re.compile(r"\d{1,18}")
+# backlog #465: a list is split only on unquoted `;` and `&&`; any of these unquoted leaves the whole command unsplit.
+LIST_DOUBT = "|&()<>#"
+# A list part starting with one of these prints no lines of a file this hook counts and changes no state the later
+# parts depend on. Any OTHER non-reader part (an assignment, `export`, `pushd`, `source`, `{`, `if`) keeps the whole
+# list allowed: a closed set, so an unforeseen command fails toward allow.
+LIST_ZERO = frozenset({"echo", "printf", "true", ":", "pwd", "ls", "wc", "grep"})
 HEAD_NOARG = ("-q", "-v", "--quiet", "--silent", "--verbose")
 END = 10 ** 12
 
@@ -262,32 +276,29 @@ def operands(tok: str, cwd: str, env: dict) -> list[str]:
     return found
 
 
-def simple_command(command: str) -> tuple[str | None, list[str]] | None:
-    """`(cd_dir, words)` for a SIMPLE reader command — `cd_dir` the one `cd DIR &&` prefix or None — else None."""
+def simple_command(command: str) -> list[str] | None:
+    """The words of a SIMPLE reader command, else None. ⟳ backlog #465: a `cd DIR &&` prefix is a list part now
+    (`list_spans`), and the stderr redirects are removed by `bash_spans` — one place each."""
     if not READER_WORD.search(command) or COMPOUND.search(command.strip()):
         return None
     try:
-        lex = shlex.shlex(STDERR_REDIRECT.sub(" ", command), posix=True, punctuation_chars=True)
+        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
         tokens = list(lex)
     except ValueError as exc:
         raise Unreadable(f"shlex cannot split the command ({exc})") from None
-    cd_dir = None
-    if len(tokens) > 3 and tokens[0] == "cd" and tokens[2] == "&&":
-        cd_dir, tokens = tokens[1], tokens[3:]
     if tokens[0] not in READERS or any(OPERATOR.fullmatch(t) for t in tokens):
         return None
-    return cd_dir, tokens
+    return tokens
 
 
 def bash_spans(command: str, cwd: str, env: dict) -> list:
-    """The `(path, first, last)` line ranges a SIMPLE reader command puts into the context; [] for any other."""
-    simple = simple_command(command)
-    if simple is None:
-        return []
-    cd_dir, tokens = simple
-    if cd_dir is not None:
-        cwd = os.path.join(cwd, expand(cd_dir, env))
+    """The `(path, first, last)` line ranges a SIMPLE reader command, or a `;`/`&&` list of them (`list_spans`),
+    puts into the context; [] for any other."""
+    command = STDERR_REDIRECT.sub(" ", command)
+    tokens = simple_command(command)
+    if tokens is None:
+        return list_spans(command, cwd, env)
     op, files, per_file = stage_op(tokens[0], tokens[1:])
     if op is None:
         return []
@@ -301,6 +312,70 @@ def bash_spans(command: str, cwd: str, env: dict) -> list:
                 pieces.append([(os.path.realpath(path), 1, n)])
     return ([x for piece in pieces for x in op(piece)] if per_file
             else op([x for piece in pieces for x in piece]))
+
+
+def split_list(command: str) -> list[str] | None:
+    """The parts of a LIST joined by unquoted `;` and `&&` (backlog #465), or None when the command has any other
+    unquoted shell operator (`|`, `||`, `&`, `(`, `)`, `<`, `>`) or an unquoted `#`: in doubt, the whole command is
+    not split. Quotes and backslashes are tracked, so `'a;b'` and `"x && y"` do not split. After an unbalanced quote
+    the rest is one part, which `shlex` then cannot split (`list_spans` allows it)."""
+    parts, cur, quote, i = [], [], None, 0
+    while i < len(command):
+        c = command[i]
+        if quote:
+            cur.append(c)
+            if c == quote:
+                quote = None
+            elif c == "\\" and quote == '"':
+                cur.append(command[i + 1:i + 2])
+                i += 1
+        elif c in "'\"":
+            quote = c
+            cur.append(c)
+        elif c == "\\":
+            cur.append(command[i:i + 2])
+            i += 1
+        elif c == ";":
+            parts.append("".join(cur))
+            cur = []
+        elif command.startswith("&&", i):
+            parts.append("".join(cur))
+            cur = []
+            i += 1
+        elif c in LIST_DOUBT:
+            return None
+        else:
+            cur.append(c)
+        i += 1
+    return [*parts, "".join(cur)]
+
+
+def list_spans(command: str, cwd: str, env: dict) -> list:
+    """The line ranges a LIST of simple commands puts into the context, SUMMED over its parts (backlog #465): each
+    part is a simple reader (counted as `bash_spans` counts one), `cd DIR` (the later parts resolve there), or a
+    command in `LIST_ZERO` (counted as no lines). Any other part — a pipeline, an assignment, `export`, `{`, `if` —
+    and any command `split_list` will not split make the WHOLE list [] (allowed): fail toward allow."""
+    if COMPOUND.search(command.strip()):  # a newline, `$(` or a backtick: in doubt, the whole list
+        return []
+    parts = split_list(command)
+    if parts is None:
+        return []
+    spans = []
+    for part in parts:
+        if not part.strip():
+            continue
+        if simple_command(part) is not None:
+            spans += bash_spans(part, cwd, env)
+            continue
+        try:
+            words = shlex.split(part)
+        except ValueError:  # never a traceback from the hook
+            return []
+        if len(words) == 2 and words[0] == "cd" and words[1] != "-":
+            cwd = os.path.join(cwd, expand(words[1], env))
+        elif not (words and words[0] in LIST_ZERO):
+            return []
+    return spans
 
 
 def read_spans(ti: dict) -> list:
@@ -462,9 +537,43 @@ def _self_test_body() -> int:
     case("a PIPE is not a simple command: allowed silently, even `cat big | head -n 400` (bound, stated)",
          [sh(f"cat {big} | grep line"), sh(f"cat {big} | head -n 400"), sh(f"cat {big} |& grep line"),
           sh(f"cat {small} | head -n 400 {big}")], ["allow"] * 4)
-    case("a LIST is not a simple command: `;`, `&&`, `||` and `&` after a reader are allowed",
-         [sh(f"cat {big}; echo"), sh(f"cat {big} && echo"), sh(f"cat {big} || echo"), sh(f"cat {big} &")],
-         ["allow"] * 4)
+    case("`||` and `&` after a reader are not a list this hook sums: allowed (bound, stated)",
+         [sh(f"cat {big} || echo"), sh(f"cat {big} &"), sh(f"cat {big} || cat {big}")], ["allow"] * 3)
+    # backlog #465: a list of simple commands joined by `;` or `&&` is SUMMED.
+    case("a `;` list of readers is summed: `sed -n 1,200p a; sed -n 1,200p b` (400) is denied; a trailing `;`, stderr redirects",
+         [sh(f"sed -n 1,200p {two_a}; sed -n 1,200p {two_b}"), sh(f"cat {big}; echo"), sh(f"cat {big};"),
+          sh(f"sed -n 1,200p {two_a} 2>&1; sed -n 1,200p {two_b} 2>/dev/null")], ["deny"] * 4)
+    case("a newline, `$(` or a backtick anywhere keeps a list allowed whole",
+         [sh(f"cat {big}; echo $(date)"), sh(f"cat {big}; echo `date`"), sh(f"cat {big}; echo\necho")],
+         ["allow"] * 3)
+    case("the sum is of DISTINCT parts: 120 + 190 = 310 is denied, 120 + 170 = 290 is allowed",
+         [sh(f"head -n 120 {big}; tail -n 190 {big}"), sh(f"head -n 120 {big}; tail -n 170 {big}")],
+         ["deny", "allow"])
+    case("a list's denial states the summed count: 120 + 190 of big is '310 lines'; 120 + all 100 of small is allowed",
+         ["310 lines" in (decide(p("Bash", command=f"head -n 120 {big}; tail -n 190 {big}"), {}) or ""),
+          sh(f"head -n 120 {big}; tail -n 190 {small}")], [True, "allow"])
+    case("an `&&` list is summed, and a `cd DIR` part moves the later parts: both denied",
+         [sh(f"cat {small} && cat {b300}"), sh(f"cd {root} && sed -n 1,200p a.txt && sed -n 1,200p b.txt"),
+          sh(f"cd {root}; cat small.txt; cd {root}; cat b300.txt")], ["deny"] * 3)
+    case("`echo` between readers counts nothing: 150 + 150 is allowed (the boundary), 150 + 151 is denied",
+         [sh(f"sed -n 1,150p {two_a}; echo ---; sed -n 1,150p {two_b}"),
+          sh(f"sed -n 1,150p {two_a}; echo ---; sed -n 1,151p {two_b}")], ["allow", "deny"])
+    case("a QUOTED or escaped `;` or `&&` does not split: one `echo` is allowed; 200 + 200 around `';x;'` is denied",
+         [sh(f"echo 'x; cat {big}'"), sh(f'echo "x && cat {big}"'),
+          sh(f"head -n 200 {big} ';x;' ; head -n 200 {big}"), sh(f"head -n 200 {big} x\\;y; head -n 200 {big}")],
+         ["allow", "allow", "deny", "deny"])
+    case("a list with a PIPELINE part is allowed whole, even when the pipe's first word counts nothing",
+         [sh(f"cat {small}; cat {big} | head -n 5"), sh(f"cat {big}; echo x | grep x")], ["allow"] * 2)
+    case("a list with a part this hook does not know is allowed whole: an assignment, `export`, `{`, `python3`",
+         [sh(f"D=x; cat {big}"), sh(f"export D=x && cat {big}"), sh(f"{{ cat {big}; }}"),
+          sh(f"cat {big}; python3 x.py")], ["allow"] * 4)
+    case("an unquoted `#` keeps a list unsplit: `cd DIR; cat small # ; cat big` is allowed",
+         sh(f"cd {root}; cat small.txt # ; cat big.txt"), "allow")
+    dash = os.path.join(root, "dash")
+    os.makedirs(os.path.join(dash, "-"))
+    Path(dash, "-", "big.txt").write_text("d\n" * 500)
+    case("`cd -` (the previous directory, unknown here) keeps a list allowed whole",
+         sh(f"cd {dash}; cd -; cat big.txt"), "allow")
     case("a newline, a heredoc, `$( ... )` and backticks are not a simple command: allowed",
          [sh(f"echo hi\ncat {big}"), sh(f"cat <<EOF\nx\nEOF\ncat {big}"), sh(f"cat {big} <<EOF"),
           sh(f"X=$(cat {big})"), sh(f"echo `cat {big}`")], ["allow"] * 5)
@@ -484,10 +593,10 @@ def _self_test_body() -> int:
     case("`2>/dev/null` and `2>&1` do not hide stdout", [sh(f"cat {big} 2>/dev/null"), sh(f"cat {big} 2>&1")],
          ["deny"] * 2)
     case("a relative path after `cd DIR &&` is resolved there", sh(f"cd {root} && cat big.txt"), "deny")
-    case("only ONE `cd DIR &&` prefix is read: a second `&&` is a list, allowed",
-         sh(f"cd {root} && cat big.txt && echo"), "allow")
-    case("only `cd DIR &&` is a prefix: `cd DIR;` is a list and `pushd DIR &&` is not `cd`, both allowed",
-         [sh(f"cd {root}; cat big.txt"), sh(f"pushd {root} && cat big.txt")], ["allow"] * 2)
+    case("a second `&&` after the `cd DIR &&` prefix is a list, summed: denied",
+         sh(f"cd {root} && cat big.txt && echo"), "deny")
+    case("`pushd DIR &&` is not `cd`, and `cd DIR ||` is not a list: both allowed",
+         [sh(f"cd {root} || cat big.txt"), sh(f"pushd {root} && cat big.txt")], ["allow"] * 2)
     case("`cd` with a variable is expanded from the environment", sh("cd $D && cat big.txt", env={"D": root}), "deny")
     case("a relative path resolves against the payload's cwd", verdict({**p("Bash", command="cat big.txt"),
                                                                          "cwd": root}), "deny")

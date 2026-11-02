@@ -2173,8 +2173,10 @@ EXPECTED_MUTATIONS = {
     # exemption, `sed` as one stream with `q`, globs, a later stage's own files, `-`, `|&`, subshells, `sed -s`,
     # `head -q`, exact `head -n -K` and the cwd check added — one entry per clause: 77. ⟳ r2 fold: Bash narrowed to a
     # SIMPLE command; the pipeline, heredoc, subshell and assignment entries removed (-19), one entry per clause of
-    # `simple_command`, `-` as stdin and the 18-digit number bound added (+25): 83.
-    "scripts/check-agent-large-read.py": 83,
+    # `simple_command`, `-` as stdin and the 18-digit number bound added (+25): 83. ⟳ backlog #465: a `;`/`&&` list
+    # summed — one entry per clause of `split_list` and `list_spans` (+15); the `cd DIR &&` prefix of
+    # `simple_command` became a list part (-4, +1 for the list's `cd` test): 95.
+    "scripts/check-agent-large-read.py": 95,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
