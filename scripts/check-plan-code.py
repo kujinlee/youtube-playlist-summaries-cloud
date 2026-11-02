@@ -1143,7 +1143,7 @@ EXPECTED_MUTATIONS = {
     # (unknown kind, `kind:` first, parent shape, must END the cell, one marker), missing kinds
     # reported, the three parent refusals, the marker stripped from the text, the card's kind, and
     # parse reading it.
-    "scripts/gen-backlog-page.py": 33,
+    "scripts/gen-backlog-page.py": 64,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
