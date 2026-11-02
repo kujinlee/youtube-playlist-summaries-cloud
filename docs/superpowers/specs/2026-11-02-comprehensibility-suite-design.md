@@ -32,7 +32,7 @@ drifts), applied to pages.
 
 | Item | Answer (owner) | When |
 |---|---|---|
-| **D1** "Needs you" | One definition — a decision only the owner can make — shown on the goal-tree page as **two disjoint sets, each with ONE source** (§8 Q2): **blocking now** (source: in-flight ledger entries with `entry_kind() == "owner-wait"`) and **waiting until picked** (source: backlog rows with `status: needs-you` that NO live ledger entry references). Rules in §6 row 4 | 10-28 03:47; refined 11-02 09:35 |
+| **D1** "Needs you" | One definition — a decision or an action only the owner can make or take (§10 Q1, 11-02) — shown on the goal-tree page as **two disjoint sets, each with ONE source** (§8 Q2): **blocking now** (source: in-flight ledger entries with `entry_kind() == "owner-wait"`) and **waiting until picked** (source: backlog rows with `status: needs-you` that NO live ledger entry references). Rules in §6 row 4 | 10-28 03:47; refined 11-02 09:35 |
 | **D2** Work-lines | The goal tree absorbs it; work-lines retired, history archived | done, PR #434 |
 | **D3** Freshness | Every merge rebuilds dashboard, goals, backlog, features and goal tree | done, PR #433 (`.claude/hooks/regen-pages.sh`) |
 | **R1** Goal tree | Accepted as written; it is the home page | 11-02 |
@@ -261,6 +261,10 @@ today also lists ACTIONS only the owner can take (`NEEDS-OWNER-ACTION`, `WAITS-O
 H4), which D1 as written leaves homeless. **Recommended: yes** — "a decision or an action only the owner can
 take", same two sets, each item marked `decision`/`action` by the existing `ACTION:` marker; status keeps four
 values. Alternative: actions are not "needs you" and become ordinary `open` rows.
+
+**Answered 2026-11-02 09:56, the owner: A — the recommendation.** "Needs you" is a decision OR an action only the
+owner can take; both sit in the same two sets, each item marked `decision` or `action` by the existing `ACTION:` marker;
+status keeps its four values. D1 (§1) reads accordingly.
 
 ## Out of scope
 
