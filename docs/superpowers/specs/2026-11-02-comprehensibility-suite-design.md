@@ -3,7 +3,7 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — walked through with the owner 2026-11-02 09:20–09:40 (every §8 choice answered); adversarial round 1 folded (19 findings, `docs/reviews/coordinator/comprehensibility-spec-r1-coordinator.md`); one question for the owner in §10 (backlog #384, Phase 1). Nothing here is built yet.
+**Status:** 🟠 needs-you — walked through with the owner 2026-11-02 09:20–09:40 (every §8 choice answered); adversarial rounds 1 and 2 folded (19 + 4 findings, `docs/reviews/coordinator/comprehensibility-spec-r{1,2}-coordinator.md`); §10 Q1 answered (backlog #384, Phase 1). Nothing here is built yet.
 Every answer below was given by the owner on the roles review page
 (`docs/explainers/2026-10-28-topic-suite-roles-review.fragment.html`), 2026-10-28 and 2026-11-02 ~09:25.
 
@@ -127,16 +127,26 @@ derived facet does not duplicate DEPENDS; `/goals` shows two bands, "rows servin
 depending on its root" (DEPENDS, relation shown), replacing "Backlog hanging off it". ADR-0010's *Scope*
 ("Its anchor mechanism already exists: `ROOTS`") gets a ⟳ amendment saying so (row 3).
 
-**Status, one home (Claude H5).** The backlog has NO severity column — severity is a glyph prefix in the
-Item cell — and HAS a free-text `Status` column (`docs/backlog.md:30`). The facet is that column's first word,
-so the row keeps one home for its state. Migration (row 2), from today's first keyword:
+**Status, one home (Claude H5; r2 Codex 1).** The backlog has NO severity column — severity is a glyph leading
+the Item cell and, on 189 rows, the Status cell — and HAS a free-text `Status` column (`docs/backlog.md:30`). The
+facet is that column's first word, so the row keeps one home for its state. Migration (row 2) normalises a cell —
+strip leading `🔴🟠🟡🟢🔵⏳⟳`, then a `(was …)`/`(filed …)` parenthetical; take the first word, upper-cased — maps
+it, and PREPENDS the facet, keeping the old cell verbatim after it (glyphs, `ACTION:` markers, prose). MEASURED over
+all 422 rows through `gen-backlog-page.parse`, `fde542a7` (22 raw first words):
 
-| Today | → | Today | → |
-|---|---|---|---|
-| OPEN, FILED, IN REVIEW, BLOCKED | `open` (a block is a link: DEPENDS or `part of:`) | PARKED, DEFERRED | `parked` |
-| CLOSED, DONE, FIXED, MERGED, DECIDED, SUPERSEDED | `done` | NEEDS-OWNER, NEEDS-OWNER-ACTION | `needs-you` (action: §10) |
-| (none) — 57 rows | classified by hand in row 2; the parser then refuses an empty one | a `✅` glyph in the Item cell | removed; the state is the facet |
+| Normalised first word | Rows | → |
+|---|---|---|
+| `✅` | 131 | `done` |
+| OPEN (any case, `Open.`), PENDING, REOPENED, FIX (OPEN IN PR), IN (REVIEW), BLOCKED | 249 | `open` (a block is a link: DEPENDS or `part of:`) |
+| one of those, but the cell has a later `✅` (today's parser counts it closed) | 20 | by hand — two signals disagree |
+| DEFERRED | 2 | `parked` |
+| prose: PARTLY/PARTIALLY/HALF/FUNCTION/TIER/NARROWED/SCOPE 12, a `⟳ 2026-…` date 3, SPEC 2, DECIDED/CLOSED/OWNER 1 each | 20 | by hand |
+| empty | 0 | — (r1's "57" came from another normalisation) |
 
+No first word maps to `needs-you`: it is set by hand on the 16 not-done rows whose Status says `NEEDS-OWNER`,
+"needs decision" or an unanswered "owner question" (each reviewed; an action keeps its `ACTION:` marker, §10 Q1).
+There is NO default — after migration the parser refuses any first word outside the four. The Item cell's `✅` is
+removed; the state is the facet. This counting rule is row 2's first test (counts move as rows are filed).
 The backlog page's `open/closed/all` filter treats `open`, `parked` and `needs-you` as not closed.
 
 **Not a facet: a document's state (Claude H3).** `check-goal-status.py` keeps its own closed vocabulary
@@ -152,7 +162,7 @@ Nothing else is a tag. Parentage (`part of: backlog #N`, `epic: <anchor>`) is a 
 
 | Concern | Mechanism | What already does this, and why it is not enough |
 |---|---|---|
-| An item's state | backlog `status` facet, read by the shared parser | `✅` in the Item cell on 117 of 333 rows (MEASURED, backlog #385); free-text Status words, 13 kinds (row 2) |
+| An item's state | backlog `status` facet, read by the shared parser | `✅` in the Item cell on 117 of 333 rows (MEASURED, backlog #385); 22 raw Status first words, 40 rows needing a hand call (§4, row 2) |
 | What needs the owner NOW | goal tree "blocking now", from `owner-wait` ledger entries | three lists gave three counts for the SAME kind (37, 12, 0 — MEASURED 2026-10-27, roles page) |
 | What needs the owner LATER | goal tree "waiting until picked", from `status: needs-you` rows no live entry references | as above |
 | What changed | dashboard entries (why) + the goal tree's since-T query (what) | the dashboard alone cannot answer "since T" |
@@ -175,16 +185,22 @@ Nothing else is a tag. Parentage (`part of: backlog #N`, `epic: <anchor>`) is a 
    - *Predicate.* "Blocking now" is `session-state.entry_kind(e) == "owner-wait"` — the declared field. Legacy
      `WAITS-ON-OWNER:`-prefix entries are migrated to `kind: owner-wait`; `needs_from_ledger` moves off
      `waits_on_owner()`. `owner-instruction` (an instruction FROM the owner) is not in either set.
-   - *Identity and disjointness.* A decision is identified by its backlog row. "Waiting until picked" = rows with
-     `status: needs-you` MINUS rows a live `owner-wait` entry references. Picking such a decision creates the
-     entry (which references the row) — one write, so the decision moves sets atomically; the row's status is
-     not touched. When the entry closes unanswered (work unpicked or interrupted), the row is back in
-     "waiting until picked" with no write; when answered, the row's status changes in the same step.
+   - *Identity and disjointness.* An item is identified by its backlog row. "Waiting until picked" = rows with
+     `status: needs-you` MINUS rows ANY live ledger entry references (D1's rule, whatever the entry's kind). An
+     entry that picks such a row MUST be `owner-wait` (the work cannot pass the owner), so picking is one write
+     and the item moves sets atomically; a live entry of another kind referencing a `needs-you` row is a defect
+     §7's completeness falsifier reports. An entry closing UNANSWERED returns the row to "waiting" with no write.
+   - *Answering — one order (r2 Codex 3).* (1) Write the ROW: status leaves `needs-you` (to `open`, `parked` or
+     `done`, per the answer) and its prose records `answered <date> — closes entry <id>`. (2) Close the ENTRY.
+     Between them the item is in "blocking now" only (entry live; row no longer `needs-you`), never back in
+     "waiting". An interruption is recovered at the next tray load or session start: a live `owner-wait` entry
+     that a row's `closes entry <id>` names is closed. Entry-first is FORBIDDEN — it returns the answered item to
+     "waiting". An unpicked row is answered by (1) alone; an `owner-wait` entry with no row, by (2) alone.
    - *Dashboard asks (Claude H4).* Each readable unresolved ask becomes an `owner-wait` entry (if its work is in
      flight) or a backlog row with `status: needs-you`; the 29 unreadable asks are repaired then converted, or
      closed. Then `needs_from_dashboard` and the dashboard input to `consolidate` are deleted, and `[needs-you]`
      stops being a dashboard entry kind. The choose/Send answer tray moves to the goal tree's two sets: an
-     answer closes the ledger entry or changes the row's status — the item's own source.
+     answer writes the item's own source, in the order above.
 5. **The dashboard becomes a pure change log**: drop `gen-dashboard.open_prs()` and its "What needs you"
    section in favour of a link to the goal tree (R3; backlog #384's recorded C3).
 6. **The goal tree's "what changed since T" query** — already backlog #392; each change line links to its
@@ -213,15 +229,16 @@ Nothing else is a tag. Parentage (`part of: backlog #N`, `epic: <anchor>`) is a 
 | One question per page | row 12's check fails, or a status question gets two different answers from two pages |
 | A page is a perspective | a page shows a count or state another page owns, as text and not a link (e.g. a brief stating an open-row count) |
 | The backlog decides state | any page shows an item's state that differs from the backlog row's `status` |
-| One source per "needs you" set | the dashboard or backlog page shows its own needs-you COUNT; "blocking now" differs from the `owner-wait` entries; "waiting until picked" differs from `needs-you` rows minus those a live `owner-wait` entry references |
-| The sets are disjoint and complete | a row appears in both sets (overlap); or a row with `status: needs-you`, or a live `owner-wait` entry, appears in neither (absence) |
+| One source per "needs you" set | the dashboard or backlog page shows its own needs-you COUNT; "blocking now" differs from the `owner-wait` entries; "waiting until picked" differs from `needs-you` rows minus those ANY live ledger entry references |
+| The sets are disjoint and complete | a row appears in both sets (overlap); or a row with `status: needs-you`, or a live `owner-wait` entry, appears in neither (absence); or a live entry that is not `owner-wait` references a `needs-you` row |
+| Answering is ordered | an answered item appears in "waiting until picked" at any point; or a live `owner-wait` entry named by a row's `closes entry <id>` survives the next session start |
 | Every key is a link | a generated page contains `backlog #N`, `PR #N` or a bare `#N` chip outside a code span and outside an `<a>` |
 | One link function | an href to `/backlog-table#i`, `/goals#`, `/features#`, `/dashboard#`, `/goal-tree#` or `github.com/…/pull/` is built anywhere in `scripts/` except `page_markup.key_link` (and its tests) |
 | Links resolve | an internal link's `#fragment` has no matching id on its target page |
 | Four closed facets | a row carries a facet value no registry declares and the parser accepts it; or a fifth facet appears |
 | Feature → goal | a feature node whose RESOLVED anchor is unresolved (no own, no inherited, no top-level `none — <reason>`), or names a slug `anchors.md` lacks, passes `check-features.py` |
 | Explainer ↔ subject | an explainer written after this spec with no `subject` meta, or a row/goal/feature subject whose page does not link back |
-| Pages are current | a generated page's recorded source commit is not `origin/master`'s tip more than **1 minute** after that tip was merged — including when the rebuild never ran or failed |
+| Pages are current | a generated page's recorded source commit is not the REMOTE master tip (`git ls-remote origin refs/heads/master` — never the local `origin/master`, which a missing fetch freezes) more than **1 minute** after that tip was merged (GitHub's time: the PR's `mergedAt`, else the tip's committer date) — including when the rebuild never ran or failed. A failed remote query is NOT RUN, never a pass (r2 Codex 4) |
 | Briefs are snapshots | a brief written after this spec contains a number that a generated page computes |
 
 ## 8. Choices the owner's earlier answers did not settle — answered in the walkthrough, 2026-11-02
@@ -245,7 +262,7 @@ Nothing else is a tag. Parentage (`part of: backlog #N`, `epic: <anchor>`) is a 
 | 28 feature nodes, 13 with `anchors:` | MEASURED | `docs/features.md` on `befd0e6d`; re-measured r1 |
 | 422 backlog rows, all with `⟦kind:` | MEASURED | `grep -c` on `docs/backlog.md`, `befd0e6d`; re-measured r1 |
 | 6 hand-built hrefs (3 backlog, 2 PR, 1 dashboard) | MEASURED | search spanning line breaks over `scripts/`, tests excluded, `e2ac6e41` (r1 corrected 3+1) |
-| Status column first keywords: OPEN 212, CLOSED 72, none 57, DONE 39, FIXED 22, … | MEASURED | Claude r1 half, `e2ac6e41` |
+| Status first word, normalised: `✅` 131, open-words 269 (20 contradicted by a later `✅`), DEFERRED 2, prose 20, empty 0 | MEASURED | `gen-backlog-page.parse`, `fde542a7`, r2 (supersedes r1's "none 57") |
 | 37 / 12 / 0 needs-you counts; 29 unreadable | MEASURED | inventory, 2026-10-27 18:10 (roles page) |
 | 0 PR links; 18–157 PR mentions per page; 358 feature → row links | MEASURED | inventory, 2026-10-27 |
 | 49 of 68 dated pages are briefs; 4 mislabelled | MEASURED | roles page, 2026-10-27/28 |
@@ -254,17 +271,12 @@ Nothing else is a tag. Parentage (`part of: backlog #N`, `epic: <anchor>`) is a 
 | 12 proposed rows, their order | ESTIMATED | this spec's judgement |
 | 1-minute freshness bound | OWNER | D3, "not more than a minute behind" |
 
-## 10. Questions for the owner after round 1
+## 10. Questions for the owner
 
-**Q1 — Do owner ACTIONS belong in "needs you"?** D1 says *a decision only the owner can make*; the goal tree
-today also lists ACTIONS only the owner can take (`NEEDS-OWNER-ACTION`, `WAITS-ON-OWNER: ACTION:` — Claude r1
-H4), which D1 as written leaves homeless. **Recommended: yes** — "a decision or an action only the owner can
-take", same two sets, each item marked `decision`/`action` by the existing `ACTION:` marker; status keeps four
-values. Alternative: actions are not "needs you" and become ordinary `open` rows.
-
-**Answered 2026-11-02 09:56, the owner: A — the recommendation.** "Needs you" is a decision OR an action only the
-owner can take; both sit in the same two sets, each item marked `decision` or `action` by the existing `ACTION:` marker;
-status keeps its four values. D1 (§1) reads accordingly.
+**Q1 — Do owner ACTIONS belong in "needs you"?** (Claude r1 H4: `NEEDS-OWNER-ACTION`, `WAITS-ON-OWNER: ACTION:` were
+homeless under D1.) **Answered 2026-11-02 09:56, the owner: A — the recommendation.** "Needs you" is a decision OR an
+action only the owner can take; both sit in the same two sets, each item marked `decision` or `action` by the existing
+`ACTION:` marker; status keeps its four values. D1 (§1) reads accordingly. Round 2 raised no new question.
 
 ## Out of scope
 
