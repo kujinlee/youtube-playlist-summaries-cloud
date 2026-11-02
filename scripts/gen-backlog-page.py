@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 221 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 233 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -845,10 +845,17 @@ def md(text: str) -> str:
 #      block, with any glyph run just before it (`⚠`, `⛔`, `⭐`) — unless a letter, digit or comma
 #      precedes it, which means it sits mid-sentence;
 #   2. the provenance — a leading `(filed 🟠)`, or `— filed/found/raised … .` right after the title —
-#      becomes its own small muted line;
+#      becomes its own small muted line. The clause ends at its FIRST sentence end (`.` `?` `!`); if
+#      a bold span, a ⭐/⛔/⚠ glyph or a sentence end inside an element comes first, or the clause
+#      runs past 40 words, there is NO muted line — muted text is the text a reader skips, so a
+#      clause that may hold the row's argument stays in the body (PR #475 r1, Claude F2);
 #   3. a run `(a) … (b) …` or `(1) … (2) …` (in order, from a/1, outside parentheses) inside a
-#      block becomes an indented list; the markers stay, as words;
-#   4. nothing else — a long sentence is left as it is.
+#      block becomes an indented list; the markers stay, as words. A run is REFUSED unless every
+#      item has at least 3 words after its marker, none starts with `or`/`and`/`,`, and no marker
+#      directly follows a word that makes it a reference (`exit (2)`, `step (3)`) — `WARN (1) or
+#      CANNOT RUN (2).` is a sentence, not a list (PR #475 r1, Codex M1 + Claude F3);
+#   4. nothing else — a long sentence is left as it is. Every rule, when unsure, leaves one block:
+#      an un-split row is the old rendering, a wrong split is a new defect.
 _LAYOUT_TAG = re.compile(r"<(/?)([a-zA-Z]+)[^>]*>")
 _LAYOUT_VOID = {"br", "img", "wbr", "hr"}
 _LAYOUT_LABEL = re.compile(r"<strong>((?:(?!</strong>).)*?)</strong>", re.S)
@@ -857,6 +864,13 @@ _LAYOUT_PROV = re.compile(r"[—–-] (?:filed|found|raised|split|surfaced|spott
                           r"reported|measured)\b")
 _LAYOUT_LABEL_MAX = 80
 _LAYOUT_PROV_MAX = 700
+_LAYOUT_PROV_WORDS = 40
+_LAYOUT_PROV_STOP = "⭐⛔⚠"
+_LAYOUT_MARKER = re.compile(r"\((?:[a-z]|[1-9])\)")
+_LAYOUT_ENUM_MIN_WORDS = 3
+_LAYOUT_ENUM_JOINERS = ("or", "and")
+_LAYOUT_ENUM_REF_WORDS = {"exit", "code", "codes", "case", "cases", "item", "items", "row", "rows",
+                          "step", "steps"}
 
 
 def _layout_text0(h: str) -> list[bool]:
@@ -912,7 +926,10 @@ def _label_cuts(h: str) -> list[int]:
             while r > 0 and not h[r - 1].isspace() and h[r - 1] not in "<>;":
                 r -= 1
             tok = h[r:q]
-            if tok and r < q and all(not (c.isalnum() or c in ".!?;:,)(\"'*`&_-—–[]") for c in tok) \
+            # …and an enumeration marker `(1)` / `(a)`: `(1) **Binary:** x` is ONE item, so the cut
+            # goes before the marker, not between it and its label (PR #475 r1, Claude F1)
+            if tok and r < q and (all(not (c.isalnum() or c in ".!?;:,)(\"'*`&_-—–[]") for c in tok)
+                                  or _LAYOUT_MARKER.fullmatch(tok)) \
                     and all(mask[k] for k in range(r, q)):
                 p = r
             else:
@@ -933,18 +950,39 @@ def _prov_span(h: str) -> tuple[int, int] | None:
     start = t.end() + ws
     if not _LAYOUT_PROV.match(h, start):
         return None
-    mask = _layout_text0(h)
-    paren = 0
-    for k in range(start, min(len(h), start + _LAYOUT_PROV_MAX)):
-        if not mask[k]:
+    tags = {m.start(): m for m in _LAYOUT_TAG.finditer(h, start)}
+    stack: list[str] = []
+    paren, k, stop = 0, start, min(len(h), start + _LAYOUT_PROV_MAX)
+    while k < stop:
+        t = tags.get(k)
+        if t:
+            name = t.group(2).lower()
+            if name == "strong":                      # a bold span inside: give up, not cut
+                return None
+            if name not in _LAYOUT_VOID:
+                if t.group(1):
+                    stack = stack[:-1]
+                else:
+                    stack.append(name)
+            k = t.end()
             continue
         c = h[k]
+        if "code" in stack:
+            k += 1
+            continue
+        if c in _LAYOUT_PROV_STOP:
+            return None
         if c == "(":
             paren += 1
         elif c == ")":
             paren = max(0, paren - 1)
-        elif c == "." and paren == 0 and (k + 1 == len(h) or h[k + 1].isspace()):
+        elif c in ".?!" and paren == 0 and (k + 1 == len(h) or h[k + 1].isspace()):
+            if stack:                                 # a sentence ends inside <em>: no clean cut
+                return None
+            if len(visible_text(h[start:k + 1]).split()) > _LAYOUT_PROV_WORDS:
+                return None
             return start, k + 1
+        k += 1
     return None
 
 
@@ -974,9 +1012,25 @@ def _enum_cuts(seg: str) -> list[int]:
             elif seg[k] == ")":
                 paren = max(0, paren - 1)
             k += 1
-        if len(run) >= 2:
+        if len(run) >= 2 and _enum_run_ok(seg, run):
             return run
     return []
+
+
+def _enum_run_ok(seg: str, run: list[int]) -> bool:
+    """PURE. Is this marker run a LIST, not a sentence that cites items? One rule: every item has at
+    least 3 words after its marker, none opens with `or`/`and`/`,`, and no marker follows a word
+    that makes it a reference (`exit (2)`, `step (3)`)."""
+    for a, b in zip(run, run[1:] + [len(seg)]):
+        before = visible_text(seg[:a]).split()
+        if before and before[-1].lower().strip(".,;:") in _LAYOUT_ENUM_REF_WORDS:
+            return False
+        words = visible_text(seg[a + 3:b]).split()
+        if len(words) < _LAYOUT_ENUM_MIN_WORDS:
+            return False
+        if words[0].lower() in _LAYOUT_ENUM_JOINERS or words[0].startswith(","):
+            return False
+    return True
 
 
 def _layout_block(seg: str, cls: str = "seg") -> str:
@@ -3889,10 +3943,24 @@ def _self_test_body() -> int:
     def _blocks(src: str) -> list[str]:
         return re.findall(r'<div class="(?:seg|prov)">', _lay(src))
 
+    def _same_words_html(old: str, new: str) -> bool:
+        # A block boundary is NOT zero-width: the browser draws a line break there. So the text is
+        # compared with every inserted block tag as a SENTINEL, and each boundary must sit next to
+        # whitespace the original already had — `see (x)` + new line + `Fix: y` from `see (x)**Fix:**
+        # y` fails, as does a cut inside a word (PR #475 r1, Claude F4).
+        o = _LAYOUT_TAG.sub("", old)
+        n = _LAYOUT_TAG.sub("", re.sub(r"</?(?:div|ol|li)\b[^>]*>", "\x00", new))
+        if visible_text(old) != visible_text(new) or n.replace("\x00", "") != o:
+            return False
+        i = 0
+        for piece in n.split("\x00")[:-1]:
+            i += len(piece)
+            if 0 < i < len(o) and not (o[i - 1].isspace() or o[i].isspace()):
+                return False
+        return True
+
     def _same_words(src: str) -> bool:
-        old, new = md(src), _lay(src)
-        return (visible_text(old) == visible_text(new)
-                and _LAYOUT_TAG.sub("", old) == _LAYOUT_TAG.sub("", new))
+        return _same_words_html(md(src), _lay(src))
 
     _LAY_FIX = [
         "**Title** text. **FAILS IF:** x.",
@@ -3903,13 +3971,26 @@ def _self_test_body() -> int:
         "a. *see. **X:** y* z",
         "**T** — filed 2026-11-02 from PR #1 (r2. see x). Rest. **Fix:** go.",
         "(filed 🟠) **T** — found 2026-11-01. Rest.",
-        "**Fix:** either (a) one; (b) two; (c) three.",
-        "**Work:** (1) first, (2) second.",
+        "**Fix:** either (a) drop the one; (b) keep the two; (c) merge all three.",
+        "**Work:** (1) the first part, (2) the second part.",
         "x (see (a) one and (b) two) y",
         "x (b) one and (a) two y",
         "x `z (a) one (b) two` y",
         "plain words only, nothing to lay out.",
         "",
+        "x. (1) **A:** the first one. (2) **B:** the second one.",
+        "it prints a WARN (1) or CANNOT RUN (2).",
+        "no decision (a) or (b) is recorded here.",
+        "exit (1) means the gate failed, exit (2) means it could not run.",
+        "pick (a) two words (b) then three more words",
+        "x (1), the first one here; (2), the second one here.",
+        "**T** — filed 2026-11-01, asked why? Rest of it. **Fix:** go.",
+        "**T** — filed 2026-11-01 ⭐ the claim. Rest.",
+        "**T** — filed by **me**. Rest.",
+        "**T** — filed *a. b* c. Rest.",
+        "**T** — filed " + "w " * 40 + "end. Rest.",
+        "**T** — filed `a. b` here. Rest.",
+        "x (1) or the first thing here (2) and the second thing here.",
     ]
     case("layout: a bold lead-in label starts its own block",
          lambda: _lay(_LAY_FIX[0]).count('<div class="seg">') == 2
@@ -3931,8 +4012,8 @@ def _self_test_body() -> int:
          lambda: _lay(_LAY_FIX[7]).startswith('<div class="prov">(filed 🟠) </div>')
          and '<div class="prov">— found 2026-11-01.</div>' in _lay(_LAY_FIX[7]))
     case("layout: an (a) (b) (c) run inside a sentence becomes an indented list",
-         lambda: '<strong>Fix:</strong> either <ol class="enum"><li>(a) one; </li><li>(b) two; </li>'
-                 '<li>(c) three.</li></ol>' in _lay(_LAY_FIX[8]))
+         lambda: '<strong>Fix:</strong> either <ol class="enum"><li>(a) drop the one; </li>'
+                 '<li>(b) keep the two; </li><li>(c) merge all three.</li></ol>' in _lay(_LAY_FIX[8]))
     case("layout: a (1) (2) run becomes a list too",
          lambda: _lay(_LAY_FIX[9]).count("<li>") == 2)
     case("layout: markers inside parentheses are not a list",
@@ -3947,6 +4028,41 @@ def _self_test_body() -> int:
          lambda: layout_body('<strong>T</strong> a. <strong>Fix:</strong> b <em>c.</em>')
          == '<div class="seg"><strong>T</strong> a. </div>'
             '<div class="seg"><strong>Fix:</strong> b <em>c.</em></div>')
+    case("layout: an enumeration marker travels with the bold label it opens (r1 Claude F1)",
+         lambda: '<div class="seg">(1) <strong>A:</strong> the first one. </div>'
+                 '<div class="seg">(2) <strong>B:</strong> the second one.</div>' in _lay(_LAY_FIX[15]))
+    case("layout: no real row has a block whose visible text ends in a bare marker (r1 Claude F1)",
+         lambda: not any(re.search(r"\((?:[a-z]|[1-9])\)$", visible_text(b))
+                         for r in _REAL_ROWS
+                         for b in re.findall(r'<div class="(?:seg|prov)">(.*?)</div>', _lay(r["body"]),
+                                             re.S)))
+    case("layout: a run whose item opens with or/and is a sentence, not a list (r1 Codex M1, row 378)",
+         lambda: "<ol" not in _lay(_LAY_FIX[16]) and "<ol" not in _lay(_LAY_FIX[17])
+         and "<ol" not in _lay(_LAY_FIX[27]))
+    case("layout: a marker after a reference word (exit, step …) is not a list marker",
+         lambda: "<ol" not in _lay(_LAY_FIX[18]))
+    case("layout: a run with an item under three words is not a list (r1 Claude F3)",
+         lambda: "<ol" not in _lay(_LAY_FIX[19]))
+    case("layout: a run with an item opening on a comma is not a list",
+         lambda: "<ol" not in _lay(_LAY_FIX[20]))
+    case("layout: the provenance ends at its first ? as well as .",
+         lambda: '<div class="prov">— filed 2026-11-01, asked why?</div>' in _lay(_LAY_FIX[21]))
+    case("layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line",
+         lambda: all('class="prov"' not in _lay(_LAY_FIX[k]) for k in (22, 23, 24)))
+    case("layout: a provenance clause over 40 words is not muted (r1 Claude F2)",
+         lambda: 'class="prov"' not in _lay(_LAY_FIX[25]))
+    case("layout: a sentence end inside a code span does not end the provenance",
+         lambda: '<div class="prov">— filed <code>a. b</code> here.</div>' in _lay(_LAY_FIX[26]))
+    case("layout: no real row has a muted line over 40 words or holding ⭐/⛔ (r1 Claude F2)",
+         lambda: not any(len(visible_text(p).split()) > 40 or "⭐" in p or "⛔" in p
+                         for r in _REAL_ROWS
+                         for p in re.findall(r'<div class="prov">(.*?)</div>', _lay(r["body"]), re.S)))
+    case("layout: the same-words check refuses a block break where the source had no space (r1 Claude F4)",
+         lambda: not _same_words_html(md("see (x)**Fix:** y"),
+                                      '<div class="seg">see (x)</div>'
+                                      '<div class="seg"><strong>Fix:</strong> y</div>')
+         and not _same_words_html("abc def", '<div class="seg">ab</div><div class="seg">c def</div>')
+         and _same_words_html("abc def", '<div class="seg">abc </div><div class="seg">def</div>'))
     case("layout: same words, same order, over every fixture",
          lambda: all(_same_words(s) for s in _LAY_FIX))
     case("layout: same words, same order, over EVERY real backlog row",

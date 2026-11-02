@@ -443,8 +443,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "        elif c == \".\" and paren == 0 and (k + 1 == len(h) or h[k + 1].isspace()):\n",
-        "        elif c == \".\" and (k + 1 == len(h) or h[k + 1].isspace()):\n"
+        "and paren == 0 and (k + 1",
+        "and (k + 1"
       ]
     ],
     "expect": [
@@ -540,6 +540,180 @@
     ],
     "expect": [
       "layout: the card renders its body through layout_body"
+    ]
+  },
+  {
+    "name": "layout r1: a marker is not carried with its label",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                                  or _LAYOUT_MARKER.fullmatch(tok)) \\\n",
+        "                                  or False) \\\n"
+      ]
+    ],
+    "expect": [
+      "layout: an enumeration marker travels with the bold label it opens (r1 Claude F1)",
+      "layout: no real row has a block whose visible text ends in a bare marker (r1 Claude F1)"
+    ]
+  },
+  {
+    "name": "layout r1: a bold span inside the provenance is not a stop",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if name == \"strong\":                      # a bold span inside: give up, not cut\n",
+        "            if False:                      # a bold span inside: give up, not cut\n"
+      ]
+    ],
+    "expect": [
+      "layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line"
+    ]
+  },
+  {
+    "name": "layout r1: a glyph inside the provenance is not a stop",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if c in _LAYOUT_PROV_STOP:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line"
+    ]
+  },
+  {
+    "name": "layout r1: a sentence end inside an element still cuts the provenance",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if stack:                                 # a sentence ends inside <em>: no clean cut\n",
+        "            if False:                                 # a sentence ends inside <em>: no clean cut\n"
+      ]
+    ],
+    "expect": [
+      "layout: a ⭐ glyph, a bold span or an in-element sentence end before the end means NO muted line"
+    ]
+  },
+  {
+    "name": "layout r1: the provenance has no word cap",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if len(visible_text(h[start:k + 1]).split()) > _LAYOUT_PROV_WORDS:\n",
+        "            if len(visible_text(h[start:k + 1]).split()) > 10 ** 6:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a provenance clause over 40 words is not muted (r1 Claude F2)",
+      "layout: no real row has a muted line over 40 words or holding ⭐/⛔ (r1 Claude F2)"
+    ]
+  },
+  {
+    "name": "layout r1: only a period ends the provenance",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "elif c in \".?!\"",
+        "elif c == \".\""
+      ]
+    ],
+    "expect": [
+      "layout: the provenance ends at its first ? as well as ."
+    ]
+  },
+  {
+    "name": "layout r1: a code span's text is scanned for the provenance's end",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if \"code\" in stack:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a sentence end inside a code span does not end the provenance"
+    ]
+  },
+  {
+    "name": "layout r1: a marker run is never refused",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if len(run) >= 2 and _enum_run_ok(seg, run):\n",
+        "        if len(run) >= 2:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a run whose item opens with or/and is a sentence, not a list (r1 Codex M1, row 378)",
+      "layout: a marker after a reference word (exit, step …) is not a list marker",
+      "layout: a run with an item under three words is not a list (r1 Claude F3)",
+      "layout: a run with an item opening on a comma is not a list"
+    ]
+  },
+  {
+    "name": "layout r1: a reference word does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if before and before[-1].lower().strip(\".,;:\") in _LAYOUT_ENUM_REF_WORDS:\n",
+        "        if before and before[-1].lower().strip(\".,;:\") in ():\n"
+      ]
+    ],
+    "expect": [
+      "layout: a marker after a reference word (exit, step …) is not a list marker"
+    ]
+  },
+  {
+    "name": "layout r1: a short item does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if len(words) < _LAYOUT_ENUM_MIN_WORDS:\n",
+        "        if not words:\n"
+      ]
+    ],
+    "expect": [
+      "layout: a run with an item under three words is not a list (r1 Claude F3)"
+    ]
+  },
+  {
+    "name": "layout r1: an or/and item does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "words[0].lower() in _LAYOUT_ENUM_JOINERS or",
+        "False or"
+      ]
+    ],
+    "expect": [
+      "layout: a run whose item opens with or/and is a sentence, not a list (r1 Codex M1, row 378)"
+    ]
+  },
+  {
+    "name": "layout r1: a comma item does not refuse a run",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        " or words[0].startswith(\",\"):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "layout: a run with an item opening on a comma is not a list"
+    ]
+  },
+  {
+    "name": "layout r1: the same-words check counts a block break as zero-width",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if 0 < i < len(o) and not (o[i - 1].isspace() or o[i].isspace()):\n",
+        "            if False and not (o[i - 1].isspace() or o[i].isspace()):\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a block break where the source had no space (r1 Claude F4)"
     ]
   }
 ]
