@@ -56,6 +56,8 @@ one leading `cd DIR &&` (after `;` it may fail and the list goes on; a second `c
 traversal) allows the whole list; only ONE trailing `;` is accepted, and any other empty part (`;;`, a leading `;`,
 a trailing `&&`, `a && ; b`: bash refuses these as syntax errors) allows the whole list; and so does `$'` anywhere
 (ANSI-C quoting, whose `\'` the split does not track).
+A list whose reader name is quoted or partly quoted (e.g. `ca't' big; cat a`) is not recognised as a reader, so the list is
+allowed (architecture review 2026-11-02, docs/reviews/architecture-review-2026-11-02-large-read-parser.md).
 ⟳ PR #471 round 2, the same move: a command with no unquoted `;`/`&&`, or only master's one `cd DIR &&`, takes
 master's path UNCHANGED (`simple_spans`), so it gets master's verdict. A LIST is summed only when it holds none of
 `LIST_STRICT` — `<`, `>`, a backslash, `$'`, `$(`, a backtick — anywhere: no redirect is parsed inside a list, since
