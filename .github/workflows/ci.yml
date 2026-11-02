@@ -1235,7 +1235,10 @@ jobs:
           # my own claim that this component's logic was undented while only its log was wrong.
           # ⚠ `changed_from_nul` REFUSES newline-delimited input, so dropping `-z` here produces
           # `None` and RUNS the sweep rather than silently reinstating the bug.
-          if git diff --name-only -z "$BASE"...HEAD > /tmp/changed.txt; then
+          # ⟳ backlog #405 r3 (CLAUDE C3-L2): `--no-renames` lists a rename's SOURCE path too. With
+          # rename detection on, `git mv .github/workflows/ci.yml docs/ci.yml` listed only the
+          # `docs/` path, which the early-stop allow list accepts and `sweep_needed` skips.
+          if git diff --name-only -z --no-renames "$BASE"...HEAD > /tmp/changed.txt; then
             DIFF_TAKEN=1
           else
             DIFF_TAKEN=0

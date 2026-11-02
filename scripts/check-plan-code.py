@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 348 cases
+    python3 scripts/check-plan-code.py --self-test          # 361 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -867,8 +867,9 @@ def early_path_allowed(path: str) -> bool:
     `package.json`, a lockfile, `.python-version`, `requirements*`, a `*.pth`, a shell script, any
     `.py` outside `scripts/`, `*.ts`, a path never seen before — makes the WHOLE run FULL: an
     unknown path is the unsound direction, and a false FULL only costs time. STATED LIMIT: a
-    computed import, or a module reached only TRANSITIVELY through one the source does not spell,
-    is not seen by the per-file rule, so an allowed `scripts/*.py` can still reach a suite that way.
+    computed import is not seen by the per-file rule, so an allowed `scripts/*.py` can still reach
+    a suite that way. ⟳ r3: a module reached TRANSITIVELY is seen — `early_close_changed` closes the
+    changed set over the same text match before the per-file rule reads it.
     An empty entry is not a path and is allowed (the callers skip it).
     """
     p = pathlib.PurePosixPath(path.strip())
@@ -909,6 +910,9 @@ def early_must_run_full(fname: str, src: str, changed: "list[str] | None") -> bo
     gets a FULL sweep; the speed-up is for the many files a PR leaves alone.
     ⟳ r2: and FULL, for EVERY file, when any changed path is outside `early_path_allowed`'s allow
     list — the bound is stated there, once.
+    ⟳ r3 (CLAUDE C3-M1): `changed` should be the CLOSED set (`early_close_changed`), so a module
+    the target reaches only through another one (`check-live-schema` -> `m4_catalog` ->
+    `m4_base_db`) counts as changed too. `run_mutations` closes it once per run.
     BOUND: an import the source does not spell (a computed module name) is not seen.
     """
     if changed is None:   # no diff: nothing says what master's full sweep measured
@@ -924,20 +928,84 @@ def early_must_run_full(fname: str, src: str, changed: "list[str] | None") -> bo
             continue
         if cp.suffix != ".py":
             continue
-        if cp.stem == stem or cp.stem in src:
+        if cp.stem == stem or early_names_stem(cp.stem, src):
             return True
     return False
 
 
+def early_names_stem(stem: str, src: str) -> bool:
+    """PURE. THE ONE MATCHER for "this source may load that module": `src` spells `stem`. A TEXT
+    match, deliberately coarse (a spurious hit only costs time). Both the per-file rule and the
+    closure below ask it, so the two cannot drift into different notions of "reaches"."""
+    return stem in src
+
+
+def early_close_changed(changed: "list[str] | None",
+                        sources: "dict[str, str]") -> "list[str] | None":
+    """PURE. ⟳ r3 (CLAUDE C3-M1): `changed`, closed over "a script whose source names a changed
+    module's stem is changed too", repeated until nothing new is added. `sources` maps each
+    `scripts/**/*.py` path to its text (`early_sources`). The added paths are appended in the order
+    found; None stays None. Measured before the fix: a PR changing only `scripts/m4_base_db.py`
+    early-stopped `check-live-schema` and `check-catalog-coverage` (19 entries), which load it
+    through `m4_catalog` and never spell it.
+    """
+    if changed is None:
+        return None
+    closed = list(changed)
+    stems = {pathlib.PurePosixPath(c.strip()).stem for c in changed
+             if pathlib.PurePosixPath(c.strip()).suffix == ".py"}
+    grew = True
+    while grew:
+        grew = False
+        for path, src in sorted(sources.items()):
+            st = pathlib.PurePosixPath(path).stem
+            if st not in stems and any(early_names_stem(s, src) for s in stems):
+                stems.add(st)
+                closed.append(path)
+                grew = True   # repeat: a file added in this pass may be named by one already passed
+    return closed
+
+
+EARLY_SOURCE_SKIP = frozenset({"__pycache__", "node_modules", CHILD_HOME})
+
+
+def early_sources(d: pathlib.Path) -> "dict[str, str]":
+    """`{"scripts/<rel>.py": text}` for every `.py` under `d/scripts` — or under `d` itself when it
+    has no `scripts/` (a tree assembled from a plan keeps its scripts at the top). Bytes that do not
+    decode are replaced, never skipped: a skipped file is a module the closure cannot see."""
+    base = d / "scripts" if (d / "scripts").is_dir() else d
+    out = {}
+    for f in sorted(base.rglob("*.py")):
+        rel = f.relative_to(base)
+        if EARLY_SOURCE_SKIP & set(rel.parts[:-1]):
+            continue
+        out["scripts/" + rel.as_posix()] = f.read_text(encoding="utf-8", errors="replace")
+    return out
+
+
 def local_changed(root: pathlib.Path) -> "list[str] | None":
     """The changed-file list `--early-stop` (local) uses: `git diff origin/master...HEAD` in ROOT,
-    or None when it cannot be taken — and None makes every mutant run in FULL."""
+    or None when it cannot be taken — and None makes every mutant run in FULL.
+
+    ⟳ r3 (CLAUDE C3-L2): `--no-renames`, so a rename lists its SOURCE path too — with rename
+    detection on, `git mv .github/workflows/ci.yml docs/ci.yml` listed only `docs/ci.yml`, which
+    the allow list accepts. ⟳ r3 (CLAUDE C3-L1): None, too, when the working tree is DIRTY
+    (untracked files included): the diff is of COMMITS, the run tests the WORKING TREE, so a
+    trailer edited on disk was trusted to master's full sweep.
+    """
     try:
-        r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "-z",
+        r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "-z", "--no-renames",
                             "origin/master...HEAD"], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if r.returncode != 0:
+        return None
+    try:
+        st = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "-z",
+                             "--untracked-files=all"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if st.returncode != 0 or st.stdout:   # dirty: the commits are not what the run will test
         return None
     return changed_from_nul(r.stdout)
 
@@ -1772,7 +1840,12 @@ EXPECTED_MUTATIONS = {
     # its startup-name, stdlib-shadow, scripts-only, `.pth`, unknown-path, manifest, docs, markdown and
     # empty-entry arms, `early_paths_outside`'s polarity, and its two callers (the per-file rule and
     # `early_stop_ci`). One existing anchor REBOUND (the no-diff arm's `return True`).
-    "scripts/check-plan-code.py": 199,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-02, backlog #405 r3: 199 -> 210 — eleven for the CLOSURE and `local_changed`: the
+    # repeat, the match, the caller handing the closed set down, the None arm, the `.py`-only seed,
+    # the one matcher, `early_sources`' glob, skip and no-`scripts/` fallback, the dirty-tree refusal
+    # and `--no-renames`. Four existing anchors REBOUND (the own-file and imported-stem arms, the
+    # `forced` line, `local_changed`'s failure arm).
+    "scripts/check-plan-code.py": 210,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -3546,6 +3619,10 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     with the flag off no entry carries either, so a full run's evidence is exactly what it was.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
+    # ⟳ r3 (CLAUDE C3-M1): the per-file rule reads the CLOSED changed set, taken ONCE from the
+    # unmutated tree — a module reached only through another one is changed too.
+    _closed = (early_close_changed(early_changed, early_sources(d))
+               if early_changed is not None else None)
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
         # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
@@ -3589,7 +3666,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         _w = mut.get("expect")
         stop_wants = [_w] if isinstance(_w, str) else list(_w or [])
         orig = (d / fname).read_text()
-        forced = ("diff" if early_must_run_full(fname, orig, early_changed)
+        forced = ("diff" if early_must_run_full(fname, orig, _closed)
                   else "edit" if needs_full else None)
         needs_full = forced is not None
         (d / fname).write_text(src)
@@ -7539,6 +7616,25 @@ def _self_test_body() -> int:
             case(f"#405 ⛔ a trailer `return 0` is NOT recorded killed early when {_why405}",
                  (_ok, _evm[0]["caught"], _evm[0].get("stop"), _evm[0].get("forced_full"), _evs),
                  (False, False, None, "diff", ["value is two"]))
+        # ⟳ r3 (CLAUDE C3-M1), the reviewer's reproducer: `tgt` imports `mid`, which imports `deep`;
+        # `tgt` never spells `deep`. The PR changes only `deep.py`, which rebinds `sys.exit` to exit 0.
+        # FULL records SURVIVED, so early mode must too — the closed changed set forces `tgt` FULL.
+        # The CONTROL first: with only a doc changed, the same mutant IS stopped early.
+        (_d405 / "tgt.py").write_text(_slow.replace("SLEEP", "3").replace(
+            "import sys, time\n", "import sys, time\nimport mid  # noqa\n", 1))
+        (_d405 / "mid.py").write_text("import deep  # noqa\nHELPER = 1\n")
+        (_d405 / "deep.py").write_text("import sys\n_real = sys.exit\nsys.exit = lambda code=0: _real(0)\n")
+        _tmut = [{"name": "value is two", "file": "tgt.py",
+                  "edits": [["    return 1\n", "    return 2\n"]], "expect": "value is one"}]
+        _ok, _rep, _evm, _evs = run_mutations(_d405, _tmut, {"tgt.py"}, early_stop=True,
+                                              early_changed=["docs/x.md"])
+        case("#405 r3 CONTROL: a doc-only PR stops the mutant of a file whose import chain exits 0",
+             (_evm[0]["caught"], _evm[0].get("stop")), (True, "sigint"))
+        _ok, _rep, _evm, _evs = run_mutations(_d405, _tmut, {"tgt.py"}, early_stop=True,
+                                              early_changed=["scripts/deep.py"])
+        case("#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL",
+             (_ok, _evm[0]["caught"], _evm[0].get("stop"), _evm[0].get("forced_full"), _evs),
+             (False, False, None, "diff", ["value is two"]))
     # ⟳ r2: the ALLOW list. Each refused shape, then the controls that make them able to fail.
     for _p405r2 in (".github/workflows/ci.yml", "scripts/startup/sitecustomize.py", "scripts/__init__.py",
                     "scripts/conftest.py", "scripts/tempfile.py", "lib/x.py", "docs/x.pth",
@@ -7584,6 +7680,73 @@ def _self_test_body() -> int:
          early_must_run_full("scripts/target.py", _src405 + "# fixture_git.md\n",
                              ["scripts/unrelated.py", "scripts/mutations/fixture_git.json", "docs/fixture_git.md", ""]),
          False)
+    # ⟳ r3 (CLAUDE C3-M1): the CLOSURE. `a_tgt` sorts BEFORE `z_mid`, so one pass cannot reach it:
+    # only the repeat does. The control: a file naming nothing changed is not added.
+    _srcs405 = {"scripts/a_tgt.py": "import z_mid\n", "scripts/z_mid.py": "import deep\n",
+                "scripts/deep.py": "", "scripts/lone.py": "import json\n"}
+    case("#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added",
+         early_close_changed(["scripts/deep.py"], _srcs405),
+         ["scripts/deep.py", "scripts/z_mid.py", "scripts/a_tgt.py"])
+    case("#405 r3 ...no diff stays no diff (None), so every mutant still runs FULL",
+         early_close_changed(None, _srcs405), None)
+    case("#405 r3 ...a changed doc or manifest adds nothing (only a .py has a stem to name)",
+         early_close_changed(["docs/deep.md", "scripts/mutations/deep.json"], _srcs405),
+         ["docs/deep.md", "scripts/mutations/deep.json"])
+    # The REAL shape the reviewer measured: two suites load `m4_base_db` through `m4_catalog` and
+    # never spell it. The first pair is the CONTROL that keeps this about TRANSITIVITY: if either
+    # suite ever spells `m4_base_db`, the unclosed answer turns True and this goes red.
+    _root405 = pathlib.Path(__file__).resolve().parent.parent
+    _real405 = early_sources(_root405)
+    for _t405 in ("scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"):
+        _ts405 = _real405.get(_t405, "")
+        case(f"#405 r3 {_t405} reaches m4_base_db only through m4_catalog: unclosed no, closed FULL",
+             (bool(_ts405), early_must_run_full(_t405, _ts405, ["scripts/m4_base_db.py"]),
+              early_must_run_full(_t405, _ts405,
+                                  early_close_changed(["scripts/m4_base_db.py"], _real405))),
+             (True, False, True))
+    # ⟳ r3 (CLAUDE C3-L1, C3-L2): `local_changed` over a real git tree with an `origin/master`.
+    with tempfile.TemporaryDirectory() as _tdg405:
+        _g405 = pathlib.Path(_tdg405)
+
+        def _git405(*args):
+            return subprocess.run(["git", "-C", str(_g405), "-c", "user.name=t", "-c", "user.email=t@t",
+                                   "-c", "commit.gpgsign=false", *args],
+                                  capture_output=True, text=True, timeout=60)
+        _git405("init", "-q")
+        (_g405 / "scripts").mkdir()
+        (_g405 / "scripts" / "zero.py").write_text("x = 1\n")
+        (_g405 / "ci.yml").write_text("on: push\n" * 20)
+        _git405("add", "-A")
+        _git405("commit", "-q", "-m", "base")
+        case("#405 r3 local_changed: a git tree WITHOUT origin/master cannot be diffed: None",
+             local_changed(_g405), None)
+        _git405("update-ref", "refs/remotes/origin/master", "HEAD")
+        _git405("mv", "ci.yml", "docs.yml")
+        _git405("commit", "-q", "-m", "rename")
+        case("#405 r3 local_changed: a committed RENAME lists its source path too (--no-renames)",
+             sorted(local_changed(_g405) or []), ["ci.yml", "docs.yml"])
+        (_g405 / "scripts" / "zero.py").write_text("x = 2\n")
+        case("#405 r3 local_changed: an UNCOMMITTED edit makes the diff untrustworthy: None",
+             local_changed(_g405), None)
+        _git405("checkout", "--", "scripts/zero.py")
+        (_g405 / "scripts" / "startup").mkdir()
+        (_g405 / "scripts" / "startup" / "sitecustomize.py").write_text("")
+        case("#405 r3 local_changed: an UNTRACKED file makes the diff untrustworthy: None",
+             local_changed(_g405), None)
+    # A SECOND tree for both readers: a plan-assembled tree keeps its scripts at the TOP (no
+    # `scripts/`), and its cache and redirected home are not modules; a plain directory is no git tree.
+    with tempfile.TemporaryDirectory() as _tdp405:
+        _p405 = pathlib.Path(_tdp405)
+        (_p405 / "top.py").write_text("import deep\n")
+        (_p405 / "sub").mkdir()
+        (_p405 / "sub" / "low.py").write_text("")
+        for _skip405 in ("__pycache__", CHILD_HOME):
+            (_p405 / _skip405).mkdir()
+            (_p405 / _skip405 / "cached.py").write_text("import deep\n")
+        case("#405 r3 early_sources: a tree with no scripts/ is read from its top; caches and home skipped",
+             early_sources(_p405), {"scripts/sub/low.py": "", "scripts/top.py": "import deep\n"})
+        case("#405 r3 local_changed: a directory that is not a git tree cannot be diffed: None",
+             local_changed(_p405), None)
     case("#405 early_stop_note: a FULL run's tally gains nothing",
          early_stop_note([{"name": "m"}]), "")
     case("#405 ...an early run counts killed-early and SIGKILL escalations separately",

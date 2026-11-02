@@ -2153,8 +2153,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "if cp.stem == stem or cp.stem in src:",
-        "if cp.stem in src:"
+        "if cp.stem == stem or early_names_stem(cp.stem, src):",
+        "if early_names_stem(cp.stem, src):"
       ]
     ],
     "expect": [
@@ -2167,7 +2167,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        " or cp.stem in src:",
+        " or early_names_stem(cp.stem, src):",
         ":"
       ]
     ],
@@ -2189,7 +2189,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "forced = (\"diff\" if early_must_run_full(fname, orig, early_changed)",
+        "forced = (\"diff\" if early_must_run_full(fname, orig, _closed)",
         "forced = (\"diff\" if False"
       ]
     ],
@@ -2244,11 +2244,11 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if r.returncode != 0:\n        return None\n    return changed_from_nul(r.stdout)",
-        "    return changed_from_nul(r.stdout)"
+        "    if r.returncode != 0:\n        return None\n    try:\n        st = ",
+        "    try:\n        st = "
       ]
     ],
-    "expect": "#405 ...local --early-stop with no diff to take (not a git tree) forces every mutant FULL"
+    "expect": "#405 r3 local_changed: a git tree WITHOUT origin/master cannot be diffed: None"
   },
   {
     "name": "#405 r1: local --early-stop never takes a diff, so nothing is forced FULL",
@@ -2392,5 +2392,138 @@
       ]
     ],
     "expect": "#405 r2 CONTROL early_stop_ci: a docs-only pull request may stop early"
+  },
+  {
+    "name": "#405 r3: the closure makes ONE pass, so a file two hops out that sorts first is missed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "grew = True   # repeat",
+        "grew = False   # repeat"
+      ]
+    ],
+    "expect": "#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added"
+  },
+  {
+    "name": "#405 r3: the closure never matches, so nothing reached through another module is added",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if st not in stems and any(early_names_stem(s, src) for s in stems):",
+        "if st not in stems and False:"
+      ]
+    ],
+    "expect": [
+      "#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added",
+      "#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL"
+    ]
+  },
+  {
+    "name": "#405 r3: run_mutations hands the per-file rule the UNCLOSED diff",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "_closed = (early_close_changed(early_changed, early_sources(d))",
+        "_closed = (early_changed"
+      ]
+    ],
+    "expect": "#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL"
+  },
+  {
+    "name": "#405 r3: no diff closes to an EMPTY diff, so nothing is forced FULL",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return None\n    closed = list(changed)",
+        "        return []\n    closed = list(changed)"
+      ]
+    ],
+    "expect": "#405 r3 ...no diff stays no diff (None), so every mutant still runs FULL"
+  },
+  {
+    "name": "#405 r3: a changed DOC's stem seeds the closure",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "             if pathlib.PurePosixPath(c.strip()).suffix == \".py\"}",
+        "}"
+      ]
+    ],
+    "expect": "#405 r3 ...a changed doc or manifest adds nothing (only a .py has a stem to name)"
+  },
+  {
+    "name": "#405 r3: the one matcher never matches",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return stem in src\n",
+        "    return False\n"
+      ]
+    ],
+    "expect": [
+      "#405 ...the PR changed a shared module the source imports (fixture_git): FULL",
+      "#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added"
+    ]
+  },
+  {
+    "name": "#405 r3: early_sources reads no file, so the closure has nothing to walk",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "base.rglob(\"*.py\")",
+        "base.rglob(\"*.pyx\")"
+      ]
+    ],
+    "expect": [
+      "#405 r3 scripts/check-live-schema.py reaches m4_base_db only through m4_catalog: unclosed no, closed FULL",
+      "#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL"
+    ]
+  },
+  {
+    "name": "#405 r3: local_changed trusts the commits over a DIRTY working tree",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if st.returncode != 0 or st.stdout:",
+        "    if st.returncode != 0:"
+      ]
+    ],
+    "expect": [
+      "#405 r3 local_changed: an UNCOMMITTED edit makes the diff untrustworthy: None",
+      "#405 r3 local_changed: an UNTRACKED file makes the diff untrustworthy: None"
+    ]
+  },
+  {
+    "name": "#405 r3: local_changed keeps rename detection, so a rename hides its source path",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "\"--name-only\", \"-z\", \"--no-renames\",",
+        "\"--name-only\", \"-z\","
+      ]
+    ],
+    "expect": "#405 r3 local_changed: a committed RENAME lists its source path too (--no-renames)"
+  },
+  {
+    "name": "#405 r3: early_sources reads a cache or the redirected home as modules",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if EARLY_SOURCE_SKIP & set(rel.parts[:-1]):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "#405 r3 early_sources: a tree with no scripts/ is read from its top; caches and home skipped"
+  },
+  {
+    "name": "#405 r3: early_sources reads only scripts/, so a plan-assembled tree has no sources",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    base = d / \"scripts\" if (d / \"scripts\").is_dir() else d\n",
+        "    base = d / \"scripts\"\n"
+      ]
+    ],
+    "expect": "#405 r3 early_sources: a tree with no scripts/ is read from its top; caches and home skipped"
   }
 ]
