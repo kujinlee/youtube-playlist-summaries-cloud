@@ -18611,3 +18611,15 @@ Branch `build-465`, backlog #465, after three review rounds and an architecture 
 Three more problems with unattended work are on the backlog (rows 466 to 468). Row 466 records a 30-day measurement of risky shell commands: about 1.5 a day run without a safety copy, none ever lost work, so no blocking guard is justified and the design is held ready. Row 467 proposes flagging a helper agent that has gone quiet for over 8 minutes, after one sat 96 minutes unnoticed. Row 468 records that long commands stall while the screen is off and proposes keeping the Mac awake for the session. Nothing needs you.
 <!--tech-->
 Backlog #466 to #468 (kind task, area tooling, status OPEN), no code changed. #466 trigger: a traced loss or more than 2 uncovered destructive git commands in a week. #467: `STALE AGENT` line in `scripts/check-stalled-work.py`. #468: SessionStart hook running `caffeinate -i -s -w <claude pid>`.
+
+## 2026-11-02
+The design for the status and explainer pages is written down, ready for you to walk through. Each
+page now has one question it answers, the goal-tree page is the home page, every backlog row, PR,
+goal and feature mentioned anywhere becomes a link to one home page, and tags shrink to four closed
+lists. It records every answer you gave on the roles review page, lists the work it implies as
+twelve proposed backlog rows in order (not filed yet), and names nine choices your answers did not
+settle, which become the walkthrough's questions.
+<!--tech-->
+Spec `docs/superpowers/specs/2026-11-02-comprehensibility-suite-design.md` (backlog #384, anchor
+`status-visibility`); the roles review fragment carrying the owner's 11-02 answers is committed
+alongside it. Draft PR, no review rounds yet.
