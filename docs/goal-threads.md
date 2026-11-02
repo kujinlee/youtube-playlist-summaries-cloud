@@ -74,6 +74,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-10-31 04:38 "yes. measure it to confirm our assumptions"
 > 2026-11-01 14:22 "4% saving is still big saving. You said you had blind spots so that you missed the duplicates issue. Try to find real impacts without blind spots."
 > 2026-11-01 15:38 "it would be better to be a little aggresive earlier than later days to reset"
+> 2026-11-02 02:20 "If you can make overall behavior control based on situation, it may make us smarter and more productive overall. But introduce fine-grained control after you gather evidences and periodically reassess if current control is optimal or not"
 - fix · PR #453 · hook output trimmed and ledger entries carry an explicit kind, so each turn re-reads less context
 - side · backlog #407, PR #454 · mutation runs skip compaction-state's real-deadline cases, so the CI sweep is faster
 - fix · backlog #359, PR #455 · the mutation total is derived from the per-file pins, so open PRs stop colliding on one line
@@ -85,3 +86,17 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #438, PR #465 · one command runs the per-PR gate set in one call
 - side · backlog #402, PR #450 · the self-test count check runs only what a branch changed locally
 - bookkeeping · PR #467 · the usage audit's findings filed as backlog #455 to backlog #461 and register rows
+- fix · backlog #455, PR #468 · a subagent's foreground Bash call that can block past 270 s is refused
+- fix · backlog #457, PR #469 · a subagent's read of more than 300 lines of a file in one call is refused
+- bookkeeping · backlog #460, PR #470 · backlog #460 numbers, memory and goal-thread records, the memory-index trim
+- fix · backlog #465, PR #471 · a subagent's ;/&& list of file reads is summed against the 300-line limit
+- bookkeeping · PR #472 · work follows the budget situation (TIGHT / AMPLE), reassessed at each weekly reset
+- bookkeeping · PR #473 · backlog #466 to backlog #468 filed: destructive commands measured, stale agents, AFK sleep stalls
+
+## GOAL dev-speed-first
+> 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
+> 2026-11-02 09:09 "let's make development speed issues higher priority than others"
+> 2026-11-02 09:12 "If I cannot correctly understand what you are doing or how the project is progressing, dev speed in local sense doesn't have much meaning. It may be tactically fast, but heading to wrong direction (strategically incorrect or operationally sub-optimal)"
+- fix · backlog #384, PR #474 · direction lane: the comprehensibility suite's overarching design; the spec merged and its rows are filed as backlog #470 to backlog #479
+- fix · backlog #405, PR #476 · a mutant's suite stops once the case its manifest names has gone red
+- fix · PR #475 · the backlog page shows each row's detail with line breaks and indenting, same words
