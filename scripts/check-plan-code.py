@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 361 cases
+    python3 scripts/check-plan-code.py --self-test          # 362 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -850,27 +850,21 @@ def edit_needs_full_run(src: str, find: str, repl: str) -> bool:
 # through, so a PR changing the execution ENVIRONMENT (ci.yml's env, a `sitecustomize.py` on the path,
 # dependency config) was measured FULL-survived and EARLY-killed. An ALLOW list replaces it: early
 # stop is permitted only when EVERY changed path is one the per-file rule below already understands.
-# Basenames Python imports at interpreter startup, or on a package import the suite never spells.
-EARLY_STARTUP_NAMES = frozenset({"sitecustomize.py", "usercustomize.py", "conftest.py", "__init__.py"})
+# ⟳ r4 (CODEX BLOCKER): NARROWED — no changed `.py` is allowed at all (see the review docs for why).
 
 
 def early_path_allowed(path: str) -> bool:
     """PURE. May a pull request change `path` and still have mutants stopped early?
 
-    THE BOUND, in one paragraph. Allowed: anything under `docs/`, any `*.md`, a mutation manifest
-    directly in `scripts/mutations/`, and a `scripts/**/*.py` that is neither startup-capable
-    (`EARLY_STARTUP_NAMES`) nor named like a standard-library module (`scripts/` is a suite's
-    `sys.path[0]`, so a `scripts/tempfile.py` would shadow `import tempfile` in every suite that
-    reaches it). Those are the paths `early_must_run_full` can reason about per file: a doc cannot
-    change what a printed red exits with, and a changed script or manifest forces its own file —
-    and any file whose source names its stem — into FULL. EVERYTHING ELSE — `.github/**`,
-    `package.json`, a lockfile, `.python-version`, `requirements*`, a `*.pth`, a shell script, any
-    `.py` outside `scripts/`, `*.ts`, a path never seen before — makes the WHOLE run FULL: an
-    unknown path is the unsound direction, and a false FULL only costs time. STATED LIMIT: a
-    computed import is not seen by the per-file rule, so an allowed `scripts/*.py` can still reach
-    a suite that way. ⟳ r3: a module reached TRANSITIVELY is seen — `early_close_changed` closes the
-    changed set over the same text match before the per-file rule reads it.
-    An empty entry is not a path and is allowed (the callers skip it).
+    THE BOUND, in one paragraph. Allowed: anything under `docs/`, any `*.md`, and a mutation
+    manifest directly in `scripts/mutations/` — paths that cannot change what a printed red exits
+    with (a manifest can add an entry master never ran in full, and `early_must_run_full` sends
+    that file to FULL). EVERYTHING ELSE makes the WHOLE run FULL, and that includes EVERY `.py`
+    and `.pth` anywhere: no import is traced, so no changed module can reach a suite unseen —
+    a named, transitive, computed or `node_modules` import alike. So does `.github/**`,
+    `package.json`, a lockfile, `.python-version`, `requirements*`, a shell script, `*.ts` and a
+    path never seen before: an unknown path is the unsound direction, and a false FULL only costs
+    time. An empty entry is not a path and is allowed (the callers skip it).
     """
     p = pathlib.PurePosixPath(path.strip())
     if not p.parts:
@@ -878,8 +872,7 @@ def early_path_allowed(path: str) -> bool:
     if p.suffix == ".pth":
         return False
     if p.suffix == ".py":
-        return (p.parts[0] == "scripts" and p.name not in EARLY_STARTUP_NAMES
-                and p.stem not in sys.stdlib_module_names)
+        return False
     if p.parts[0] == "docs" or p.suffix == ".md":
         return True
     return p.suffix == ".json" and p.parent.as_posix() == "scripts/mutations"
@@ -890,97 +883,29 @@ def early_paths_outside(changed: "list[str]") -> "list[str]":
     return [c for c in changed if not early_path_allowed(c)]
 
 
-def early_must_run_full(fname: str, src: str, changed: "list[str] | None") -> bool:
-    """PURE. Must every mutant of `fname` (whose UNMUTATED source is `src`) run in FULL, given the
-    pull request's changed-file list? The answer early stop's soundness rests on — read the bound.
+def early_must_run_full(fname: str, changed: "list[str] | None") -> bool:
+    """PURE. Must every mutant of `fname` run in FULL, given the pull request's changed-file list?
 
-    ⛔ THE CHOICE (r1): early stop trusts "a printed named `[FAIL]` means a non-zero exit" ONLY
-    where the full sweep on master has already measured it — the same file, the same manifest
-    entries, the same imported code. So FULL when:
-      * `changed` is None — no diff, so nothing says what master measured;
-      * the PR changed `fname` itself (its trailer, a helper, its printer: any of it);
-      * the PR changed this file's manifest (`scripts/mutations/<stem>.json`) — a NEW entry was
-        never run in full anywhere (r1 CODEX's reproducer is exactly that shape);
-      * the PR changed any `.py` file whose stem `src` names — a shared module the suite imports
-        (`fixture_git`), or a sibling it loads by filename. A TEXT match, deliberately coarse: a
-        spurious hit only costs time, and it needs no call graph.
-    Non-code changes (docs, SQL, JSON fixtures) cannot change what a printed red exits with — they
-    can change WHICH case goes red, and a full run of that case's suite still measures that.
-    COST: every mutant of a file the PR touches runs in full, so a PR changing `fixture_git.py`
-    gets a FULL sweep; the speed-up is for the many files a PR leaves alone.
-    ⟳ r2: and FULL, for EVERY file, when any changed path is outside `early_path_allowed`'s allow
-    list — the bound is stated there, once.
-    ⟳ r3 (CLAUDE C3-M1): `changed` should be the CLOSED set (`early_close_changed`), so a module
-    the target reaches only through another one (`check-live-schema` -> `m4_catalog` ->
-    `m4_base_db`) counts as changed too. `run_mutations` closes it once per run.
-    BOUND: an import the source does not spell (a computed module name) is not seen.
+    THE BOUND, in one paragraph. Early stop trusts "a printed named `[FAIL]` means a non-zero exit"
+    ONLY where the full sweep on master has already measured it — the same file, the same manifest
+    entries, the same code. So FULL when `changed` is None (no diff, so nothing says what master
+    measured); FULL for EVERY file when any changed path is outside `early_path_allowed`'s allow
+    list, which refuses every `.py` — so a PR that changes the file itself, a module it imports or
+    anything that could reach it never stops early; and FULL for `fname` when the PR changed its
+    own manifest (`scripts/mutations/<stem>.json`), whose new entry was never run in full anywhere.
+    What is left — docs, `*.md`, another file's manifest — can change WHICH case goes red, never
+    what a printed red exits with, and a full run of that case's suite still measures the former.
     """
     if changed is None:   # no diff: nothing says what master's full sweep measured
         return True
-    if early_paths_outside(changed):   # r2: a path outside the allow list moves the WHOLE run to FULL
+    if early_paths_outside(changed):   # the allow list: a refused path moves the WHOLE run to FULL
         return True
     stem = pathlib.PurePosixPath(fname).stem
     for c in changed:
-        cp = pathlib.PurePosixPath(c.strip())   # an empty entry has no suffix, so it is skipped below
-        if cp.suffix == ".json" and cp.parent.name == "mutations":
-            if cp.stem == stem:
-                return True
-            continue
-        if cp.suffix != ".py":
-            continue
-        if cp.stem == stem or early_names_stem(cp.stem, src):
-            return True
+        cp = pathlib.PurePosixPath(c.strip())
+        if cp.suffix == ".json" and cp.parent.name == "mutations" and cp.stem == stem:
+            return True   # its own manifest changed
     return False
-
-
-def early_names_stem(stem: str, src: str) -> bool:
-    """PURE. THE ONE MATCHER for "this source may load that module": `src` spells `stem`. A TEXT
-    match, deliberately coarse (a spurious hit only costs time). Both the per-file rule and the
-    closure below ask it, so the two cannot drift into different notions of "reaches"."""
-    return stem in src
-
-
-def early_close_changed(changed: "list[str] | None",
-                        sources: "dict[str, str]") -> "list[str] | None":
-    """PURE. ⟳ r3 (CLAUDE C3-M1): `changed`, closed over "a script whose source names a changed
-    module's stem is changed too", repeated until nothing new is added. `sources` maps each
-    `scripts/**/*.py` path to its text (`early_sources`). The added paths are appended in the order
-    found; None stays None. Measured before the fix: a PR changing only `scripts/m4_base_db.py`
-    early-stopped `check-live-schema` and `check-catalog-coverage` (19 entries), which load it
-    through `m4_catalog` and never spell it.
-    """
-    if changed is None:
-        return None
-    closed = list(changed)
-    stems = {pathlib.PurePosixPath(c.strip()).stem for c in changed
-             if pathlib.PurePosixPath(c.strip()).suffix == ".py"}
-    grew = True
-    while grew:
-        grew = False
-        for path, src in sorted(sources.items()):
-            st = pathlib.PurePosixPath(path).stem
-            if st not in stems and any(early_names_stem(s, src) for s in stems):
-                stems.add(st)
-                closed.append(path)
-                grew = True   # repeat: a file added in this pass may be named by one already passed
-    return closed
-
-
-EARLY_SOURCE_SKIP = frozenset({"__pycache__", "node_modules", CHILD_HOME})
-
-
-def early_sources(d: pathlib.Path) -> "dict[str, str]":
-    """`{"scripts/<rel>.py": text}` for every `.py` under `d/scripts` — or under `d` itself when it
-    has no `scripts/` (a tree assembled from a plan keeps its scripts at the top). Bytes that do not
-    decode are replaced, never skipped: a skipped file is a module the closure cannot see."""
-    base = d / "scripts" if (d / "scripts").is_dir() else d
-    out = {}
-    for f in sorted(base.rglob("*.py")):
-        rel = f.relative_to(base)
-        if EARLY_SOURCE_SKIP & set(rel.parts[:-1]):
-            continue
-        out["scripts/" + rel.as_posix()] = f.read_text(encoding="utf-8", errors="replace")
-    return out
 
 
 def local_changed(root: pathlib.Path) -> "list[str] | None":
@@ -1091,8 +1016,9 @@ def early_stop_ci(event: str, changed: "list[str] | None") -> tuple[bool, str]:
         only PR runs, so a later docs-only merge cannot cancel it;
       * a diff that could not be taken (`None`) — an unanswered question never loosens a gate;
       * an EMPTY diff — impossible when the sweep runs at all, so it means the list was lost;
-      * a pull request that changes `scripts/check-plan-code.py` — the stop rule itself moved;
-      * ⟳ r2: a pull request that changes any path outside `early_path_allowed`'s allow list.
+      * ⟳ r2: a pull request that changes any path outside `early_path_allowed`'s allow list —
+        which refuses every `.py`, so a PR changing `scripts/check-plan-code.py` (the stop rule
+        itself) is FULL through it. ⟳ r4: that arm had its own test, now masked by this one; deleted.
     """
     if event != "pull_request":
         return False, f"event {event or '<unset>'!r} is not a pull request: FULL sweep"
@@ -1100,14 +1026,12 @@ def early_stop_ci(event: str, changed: "list[str] | None") -> tuple[bool, str]:
         return False, "the changed-file list could not be read: FULL sweep"
     if not [c for c in changed if c.strip()]:
         return False, "the changed-file list is EMPTY, so it was lost: FULL sweep"
-    if "scripts/check-plan-code.py" in changed:
-        return False, "scripts/check-plan-code.py changed, so the stop rule itself moved: FULL sweep"
     _outside = early_paths_outside(changed)
     if _outside:
         return False, (f"{_outside[0]!r} is outside the early-stop allow list (`early_path_allowed`) "
                        f"and {len(_outside) - 1} more: FULL sweep")
-    return True, ("a pull request that leaves scripts/check-plan-code.py alone: EARLY STOP, except "
-                  "the files its diff touches (`early_must_run_full`)")
+    return True, ("a pull request that changes only docs, markdown and manifests: EARLY STOP, except "
+                  "the files whose manifest it changes (`early_must_run_full`)")
 
 
 
@@ -1845,7 +1769,13 @@ EXPECTED_MUTATIONS = {
     # the one matcher, `early_sources`' glob, skip and no-`scripts/` fallback, the dirty-tree refusal
     # and `--no-renames`. Four existing anchors REBOUND (the own-file and imported-stem arms, the
     # `forced` line, `local_changed`'s failure arm).
-    "scripts/check-plan-code.py": 210,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-02, backlog #405 r4: 210 -> 198 — the design NARROWED: every changed `.py` is outside
+    # the allow list, so the closure, `early_sources`, the stem matcher and the startup/stdlib/scripts-only
+    # arms are deleted with their sixteen entries (and `early_stop_ci`'s check-plan-code.py arm, now masked
+    # by the `.py` refusal). Four added: the `.py` refusal, the per-file rule's final `return False`, and
+    # the manifest arm's `.json` and `mutations/` conditions. Three REBOUND (the manifest arm, the
+    # `forced` line, the allow-list arm).
+    "scripts/check-plan-code.py": 198,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -3619,10 +3549,6 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     with the flag off no entry carries either, so a full run's evidence is exactly what it was.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
-    # ⟳ r3 (CLAUDE C3-M1): the per-file rule reads the CLOSED changed set, taken ONCE from the
-    # unmutated tree — a module reached only through another one is changed too.
-    _closed = (early_close_changed(early_changed, early_sources(d))
-               if early_changed is not None else None)
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
         # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
@@ -3666,7 +3592,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         _w = mut.get("expect")
         stop_wants = [_w] if isinstance(_w, str) else list(_w or [])
         orig = (d / fname).read_text()
-        forced = ("diff" if early_must_run_full(fname, orig, _closed)
+        forced = ("diff" if early_must_run_full(fname, early_changed)
                   else "edit" if needs_full else None)
         needs_full = forced is not None
         (d / fname).write_text(src)
@@ -7618,7 +7544,8 @@ def _self_test_body() -> int:
                  (False, False, None, "diff", ["value is two"]))
         # ⟳ r3 (CLAUDE C3-M1), the reviewer's reproducer: `tgt` imports `mid`, which imports `deep`;
         # `tgt` never spells `deep`. The PR changes only `deep.py`, which rebinds `sys.exit` to exit 0.
-        # FULL records SURVIVED, so early mode must too — the closed changed set forces `tgt` FULL.
+        # FULL records SURVIVED, so early mode must too. ⟳ r4: it goes FULL now because a `.py`
+        # changed (`early_path_allowed` refuses every one), not through a closure.
         # The CONTROL first: with only a doc changed, the same mutant IS stopped early.
         (_d405 / "tgt.py").write_text(_slow.replace("SLEEP", "3").replace(
             "import sys, time\n", "import sys, time\nimport mid  # noqa\n", 1))
@@ -7632,23 +7559,56 @@ def _self_test_body() -> int:
              (_evm[0]["caught"], _evm[0].get("stop")), (True, "sigint"))
         _ok, _rep, _evm, _evs = run_mutations(_d405, _tmut, {"tgt.py"}, early_stop=True,
                                               early_changed=["scripts/deep.py"])
-        case("#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL",
+        case("#405 r4 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) changed: a .py, so FULL",
              (_ok, _evm[0]["caught"], _evm[0].get("stop"), _evm[0].get("forced_full"), _evs),
              (False, False, None, "diff", ["value is two"]))
+        # ⟳ r4 (CODEX X4-B1), the reviewer's reproducer: `nmt` imports `nm_mid` from a `node_modules`
+        # directory the r3 closure never scanned, and `nm_mid` imports `nm_deep`. Only `nm_deep.py`
+        # changes. FULL records SURVIVED; so must early mode — because a `.py` changed.
+        (_d405 / "node_modules").mkdir()
+        (_d405 / "node_modules" / "nm_mid.py").write_text("import nm_deep  # noqa\n")
+        (_d405 / "nm_deep.py").write_text("import sys\n_real = sys.exit\nsys.exit = lambda code=0: _real(0)\n")
+        # SLEEP 2, not 3: under a mutant that disables the stop every run waits the whole sleep, and
+        # this suite must stay well inside SUITE_TIMEOUT there (measured r4: 102 s base, 115 s at 3).
+        (_d405 / "nmt.py").write_text(_slow.replace("SLEEP", "2").replace(
+            "import sys, time\n", "import sys, time, pathlib\n"
+            "sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / 'node_modules'))\n"
+            "import nm_mid  # noqa\n", 1))
+        _nmut = [{"name": "value is two", "file": "nmt.py",
+                  "edits": [["    return 1\n", "    return 2\n"]], "expect": "value is one"}]
+        _ok, _rep, _evm, _evs = run_mutations(_d405, _nmut, {"nmt.py"}, early_stop=True,
+                                              early_changed=["docs/x.md"])
+        case("#405 r4 CONTROL: a doc-only PR stops the mutant whose node_modules import chain exits 0",
+             (_evm[0]["caught"], _evm[0].get("stop")), (True, "sigint"))
+        _ok, _rep, _evm, _evs = run_mutations(_d405, _nmut, {"nmt.py"}, early_stop=True,
+                                              early_changed=["scripts/nm_deep.py"])
+        case("#405 r4 ⛔ a module reached through node_modules (nmt -> nm_mid -> nm_deep) changed: FULL",
+             (_ok, _evm[0]["caught"], _evm[0].get("stop"), _evm[0].get("forced_full"), _evs),
+             (False, False, None, "diff", ["value is two"]))
+        # ⟳ r4: ONLY A MANIFEST changes. Its own file goes FULL (a new entry master never ran in full);
+        # every other file still stops early — the per-file arm is per FILE, not per run.
+        (_d405 / "zq.py").write_text(_slow.replace("SLEEP", "2").replace(
+            "    return 1 if fails else 0\n", "    return 0\n"))
+        _ok, _rep, _evm, _evs = run_mutations(_d405, [dict(_zmut[0], file="zq.py"), _nmut[0]], {"zq.py", "nmt.py"},
+                                              early_stop=True, early_changed=["scripts/mutations/zq.json"])
+        case("#405 r4 a manifest-only PR: its own file runs FULL, another file stops early",
+             [(_e["caught"], _e.get("stop"), _e.get("forced_full")) for _e in _evm],   # manifest order
+             [(False, None, "diff"), (True, "sigint", None)])
     # ⟳ r2: the ALLOW list. Each refused shape, then the controls that make them able to fail.
     for _p405r2 in (".github/workflows/ci.yml", "scripts/startup/sitecustomize.py", "scripts/__init__.py",
                     "scripts/conftest.py", "scripts/tempfile.py", "lib/x.py", "docs/x.pth",
-                    "package.json", ".claude/hooks/x.sh"):
+                    "package.json", ".claude/hooks/x.sh",
+                    # ⟳ r4: EVERY .py, a plain script and one under docs/ (where the docs arm would allow it)
+                    "scripts/x.py", "scripts/sub/y.py", "scripts/node_modules/mid.py", "docs/x.py"):
         case(f"#405 r2 early_path_allowed: {_p405r2} is OUTSIDE the allow list",
              early_path_allowed(_p405r2), False)
-    for _p405r2 in ("docs/a.md", "docs/reviews/x.json", "README.md", "scripts/mutations/x.json",
-                    "scripts/x.py", "scripts/sub/y.py", ""):
+    for _p405r2 in ("docs/a.md", "docs/reviews/x.json", "README.md", "scripts/mutations/x.json", ""):
         case(f"#405 r2 CONTROL early_path_allowed: {_p405r2 or '<empty entry>'} is inside the allow list",
              early_path_allowed(_p405r2), True)
     case("#405 r2 early_path_allowed: a manifest NOT directly in scripts/mutations/ is outside",
          early_path_allowed("scripts/mutations/sub/x.json"), False)
     case("#405 r2 early_must_run_full: a path outside the allow list makes an UNTOUCHED file FULL",
-         early_must_run_full("scripts/target.py", "", ["docs/a.md", ".github/workflows/ci.yml"]), True)
+         early_must_run_full("scripts/target.py", ["docs/a.md", ".github/workflows/ci.yml"]), True)
     case("#405 r2 early_stop_ci: a pull request changing ci.yml is a FULL sweep",
          early_stop_ci("pull_request", ["docs/a.md", ".github/workflows/ci.yml"]),
          (False, "'.github/workflows/ci.yml' is outside the early-stop allow list (`early_path_allowed`) "
@@ -7656,54 +7616,39 @@ def _self_test_body() -> int:
     case("#405 r2 CONTROL early_stop_ci: a docs-only pull request may stop early",
          early_stop_ci("pull_request", ["docs/a.md"])[0], True)
     case("#405 early_stop_ci: a push to master is the periodic FULL sweep",
-         early_stop_ci("push", ["scripts/x.py"])[0], False)
+         early_stop_ci("push", ["docs/a.md"])[0], False)   # r4: a docs-only list, or the `.py` refusal masks this arm
     case("#405 ...a changed-file list that could not be read is FULL",
          early_stop_ci("pull_request", None)[0], False)
     case("#405 ...an EMPTY changed-file list is FULL (it was lost, the sweep would not run)",
          early_stop_ci("pull_request", [""])[0], False)
     case("#405 ...a pull request that changes check-plan-code.py itself is FULL",
-         early_stop_ci("pull_request", ["scripts/x.py", "scripts/check-plan-code.py"])[0], False)
-    case("#405 ...a pull request that leaves it alone may stop early",
-         early_stop_ci("pull_request", ["scripts/x.py"])[0], True)
-    _src405 = "import fixture_git\nloader('check-sib.py')\n"
+         early_stop_ci("pull_request", ["docs/a.md", "scripts/check-plan-code.py"])[0], False)
+    case("#405 r4 ...a pull request changing any OTHER script is FULL too",
+         early_stop_ci("pull_request", ["docs/a.md", "scripts/x.py"])[0], False)
+    case("#405 ...a pull request changing only docs and a manifest may stop early",
+         early_stop_ci("pull_request", ["docs/a.md", "scripts/mutations/x.json"])[0], True)
     case("#405 early_must_run_full: no diff (None) runs every mutant in FULL",
-         early_must_run_full("scripts/target.py", _src405, None), True)
+         early_must_run_full("scripts/target.py", None), True)
     case("#405 ...the PR changed the target file itself: FULL",
-         early_must_run_full("scripts/target.py", _src405, ["docs/a.md", "scripts/target.py"]), True)
+         early_must_run_full("scripts/target.py", ["docs/a.md", "scripts/target.py"]), True)
     case("#405 ...the PR changed the target's manifest (a new entry was never run in full): FULL",
-         early_must_run_full("scripts/other-target.py", _src405, ["scripts/mutations/other-target.json"]), True)
+         early_must_run_full("scripts/other-target.py", ["scripts/mutations/other-target.json"]), True)
     case("#405 ...the PR changed a shared module the source imports (fixture_git): FULL",
-         early_must_run_full("scripts/target.py", _src405, ["scripts/fixture_git.py"]), True)
-    case("#405 ...the PR changed a sibling the source loads by filename: FULL",
-         early_must_run_full("scripts/target.py", _src405, ["scripts/check-sib.py"]), True)
-    case("#405 ...an unrelated script, ANOTHER file's manifest and a doc named in the source: early stop allowed",
-         early_must_run_full("scripts/target.py", _src405 + "# fixture_git.md\n",
-                             ["scripts/unrelated.py", "scripts/mutations/fixture_git.json", "docs/fixture_git.md", ""]),
+         early_must_run_full("scripts/target.py", ["scripts/fixture_git.py"]), True)
+    # The CONTROL: ANOTHER file's manifest, and allowed paths that share the target's stem but are
+    # not its manifest (a `.md` under a `mutations/` directory, a `.json` outside one).
+    case("#405 ...another file's manifest and same-stem docs that are not its manifest: early stop allowed",
+         early_must_run_full("scripts/target.py",
+                             ["scripts/mutations/fixture_git.json", "docs/mutations/target.md",
+                              "docs/target.json", ""]),
          False)
-    # ⟳ r3 (CLAUDE C3-M1): the CLOSURE. `a_tgt` sorts BEFORE `z_mid`, so one pass cannot reach it:
-    # only the repeat does. The control: a file naming nothing changed is not added.
-    _srcs405 = {"scripts/a_tgt.py": "import z_mid\n", "scripts/z_mid.py": "import deep\n",
-                "scripts/deep.py": "", "scripts/lone.py": "import json\n"}
-    case("#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added",
-         early_close_changed(["scripts/deep.py"], _srcs405),
-         ["scripts/deep.py", "scripts/z_mid.py", "scripts/a_tgt.py"])
-    case("#405 r3 ...no diff stays no diff (None), so every mutant still runs FULL",
-         early_close_changed(None, _srcs405), None)
-    case("#405 r3 ...a changed doc or manifest adds nothing (only a .py has a stem to name)",
-         early_close_changed(["docs/deep.md", "scripts/mutations/deep.json"], _srcs405),
-         ["docs/deep.md", "scripts/mutations/deep.json"])
-    # The REAL shape the reviewer measured: two suites load `m4_base_db` through `m4_catalog` and
-    # never spell it. The first pair is the CONTROL that keeps this about TRANSITIVITY: if either
-    # suite ever spells `m4_base_db`, the unclosed answer turns True and this goes red.
+    # The REAL shape r3's reviewer measured: two suites load `m4_base_db` through `m4_catalog` and
+    # never spell it. ⟳ r4: FULL now because `m4_base_db.py` is a `.py`, whatever imports it.
     _root405 = pathlib.Path(__file__).resolve().parent.parent
-    _real405 = early_sources(_root405)
     for _t405 in ("scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"):
-        _ts405 = _real405.get(_t405, "")
-        case(f"#405 r3 {_t405} reaches m4_base_db only through m4_catalog: unclosed no, closed FULL",
-             (bool(_ts405), early_must_run_full(_t405, _ts405, ["scripts/m4_base_db.py"]),
-              early_must_run_full(_t405, _ts405,
-                                  early_close_changed(["scripts/m4_base_db.py"], _real405))),
-             (True, False, True))
+        case(f"#405 r4 {_t405} reaches m4_base_db only through m4_catalog: a changed m4_base_db is FULL",
+             ((_root405 / _t405).is_file(), early_must_run_full(_t405, ["scripts/m4_base_db.py"])),
+             (True, True))
     # ⟳ r3 (CLAUDE C3-L1, C3-L2): `local_changed` over a real git tree with an `origin/master`.
     with tempfile.TemporaryDirectory() as _tdg405:
         _g405 = pathlib.Path(_tdg405)
@@ -7733,20 +7678,10 @@ def _self_test_body() -> int:
         (_g405 / "scripts" / "startup" / "sitecustomize.py").write_text("")
         case("#405 r3 local_changed: an UNTRACKED file makes the diff untrustworthy: None",
              local_changed(_g405), None)
-    # A SECOND tree for both readers: a plan-assembled tree keeps its scripts at the TOP (no
-    # `scripts/`), and its cache and redirected home are not modules; a plain directory is no git tree.
+    # A plain directory is no git tree.
     with tempfile.TemporaryDirectory() as _tdp405:
-        _p405 = pathlib.Path(_tdp405)
-        (_p405 / "top.py").write_text("import deep\n")
-        (_p405 / "sub").mkdir()
-        (_p405 / "sub" / "low.py").write_text("")
-        for _skip405 in ("__pycache__", CHILD_HOME):
-            (_p405 / _skip405).mkdir()
-            (_p405 / _skip405 / "cached.py").write_text("import deep\n")
-        case("#405 r3 early_sources: a tree with no scripts/ is read from its top; caches and home skipped",
-             early_sources(_p405), {"scripts/sub/low.py": "", "scripts/top.py": "import deep\n"})
         case("#405 r3 local_changed: a directory that is not a git tree cannot be diffed: None",
-             local_changed(_p405), None)
+             local_changed(pathlib.Path(_tdp405)), None)
     case("#405 early_stop_note: a FULL run's tally gains nothing",
          early_stop_note([{"name": "m"}]), "")
     case("#405 ...an early run counts killed-early and SIGKILL escalations separately",

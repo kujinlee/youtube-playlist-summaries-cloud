@@ -2055,17 +2055,6 @@
     "expect": "#405 ...an EMPTY changed-file list is FULL (it was lost, the sweep would not run)"
   },
   {
-    "name": "#405: a pull request changing check-plan-code.py itself stops early",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "if \"scripts/check-plan-code.py\" in changed:",
-        "if False:"
-      ]
-    ],
-    "expect": "#405 ...a pull request that changes check-plan-code.py itself is FULL"
-  },
-  {
     "name": "#405: the tally counts every early stop as a SIGKILL escalation",
     "file": "scripts/check-plan-code.py",
     "edits": [
@@ -2139,57 +2128,22 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if cp.stem == stem:\n                return True\n            continue",
-        "            continue"
+        "and cp.stem == stem:\n            return True   # its own manifest changed",
+        "and False:\n            return True   # its own manifest changed"
       ]
     ],
     "expect": [
       "#405 ...the PR changed the target's manifest (a new entry was never run in full): FULL",
-      "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR added the mutant to the file's manifest"
+      "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR added the mutant to the file's manifest",
+      "#405 r4 a manifest-only PR: its own file runs FULL, another file stops early"
     ]
-  },
-  {
-    "name": "#405 r1: a PR changing the target FILE itself lets its mutants stop early",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "if cp.stem == stem or early_names_stem(cp.stem, src):",
-        "if early_names_stem(cp.stem, src):"
-      ]
-    ],
-    "expect": [
-      "#405 ...the PR changed the target file itself: FULL",
-      "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR changed the file's own trailer"
-    ]
-  },
-  {
-    "name": "#405 r1: a PR changing a shared module the suite imports lets its mutants stop early",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        " or early_names_stem(cp.stem, src):",
-        ":"
-      ]
-    ],
-    "expect": "#405 ...the PR changed a shared module the source imports (fixture_git): FULL"
-  },
-  {
-    "name": "#405 r1: a changed DOC counts as code, so a doc's stem forces FULL",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        if cp.suffix != \".py\":\n            continue\n",
-        ""
-      ]
-    ],
-    "expect": "#405 ...an unrelated script, ANOTHER file's manifest and a doc named in the source: early stop allowed"
   },
   {
     "name": "#405 r1: run_mutations never asks the diff, so a PR-broken trailer is recorded KILLED early",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "forced = (\"diff\" if early_must_run_full(fname, orig, _closed)",
+        "forced = (\"diff\" if early_must_run_full(fname, early_changed)",
         "forced = (\"diff\" if False"
       ]
     ],
@@ -2262,39 +2216,6 @@
     "expect": "#405 ...local --early-stop with no diff to take (not a git tree) forces every mutant FULL"
   },
   {
-    "name": "#405 r2: a startup-capable basename (sitecustomize.py) is allowed",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "p.name not in EARLY_STARTUP_NAMES\n",
-        "True\n"
-      ]
-    ],
-    "expect": "#405 r2 early_path_allowed: scripts/startup/sitecustomize.py is OUTSIDE the allow list"
-  },
-  {
-    "name": "#405 r2: a script shadowing a standard-library module is allowed",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "\n                and p.stem not in sys.stdlib_module_names)",
-        ")"
-      ]
-    ],
-    "expect": "#405 r2 early_path_allowed: scripts/tempfile.py is OUTSIDE the allow list"
-  },
-  {
-    "name": "#405 r2: a .py outside scripts/ is allowed",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "return (p.parts[0] == \"scripts\" and",
-        "return (True and"
-      ]
-    ],
-    "expect": "#405 r2 early_path_allowed: lib/x.py is OUTSIDE the allow list"
-  },
-  {
     "name": "#405 r2: a .pth file is allowed",
     "file": "scripts/check-plan-code.py",
     "edits": [
@@ -2365,8 +2286,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if early_paths_outside(changed):   # r2",
-        "    if False:   # r2"
+        "    if early_paths_outside(changed):   # the allow list",
+        "    if False:   # the allow list"
       ]
     ],
     "expect": "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR changed ci.yml (the execution environment)"
@@ -2394,92 +2315,6 @@
     "expect": "#405 r2 CONTROL early_stop_ci: a docs-only pull request may stop early"
   },
   {
-    "name": "#405 r3: the closure makes ONE pass, so a file two hops out that sorts first is missed",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "grew = True   # repeat",
-        "grew = False   # repeat"
-      ]
-    ],
-    "expect": "#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added"
-  },
-  {
-    "name": "#405 r3: the closure never matches, so nothing reached through another module is added",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "if st not in stems and any(early_names_stem(s, src) for s in stems):",
-        "if st not in stems and False:"
-      ]
-    ],
-    "expect": [
-      "#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added",
-      "#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL"
-    ]
-  },
-  {
-    "name": "#405 r3: run_mutations hands the per-file rule the UNCLOSED diff",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "_closed = (early_close_changed(early_changed, early_sources(d))",
-        "_closed = (early_changed"
-      ]
-    ],
-    "expect": "#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL"
-  },
-  {
-    "name": "#405 r3: no diff closes to an EMPTY diff, so nothing is forced FULL",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        return None\n    closed = list(changed)",
-        "        return []\n    closed = list(changed)"
-      ]
-    ],
-    "expect": "#405 r3 ...no diff stays no diff (None), so every mutant still runs FULL"
-  },
-  {
-    "name": "#405 r3: a changed DOC's stem seeds the closure",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "             if pathlib.PurePosixPath(c.strip()).suffix == \".py\"}",
-        "}"
-      ]
-    ],
-    "expect": "#405 r3 ...a changed doc or manifest adds nothing (only a .py has a stem to name)"
-  },
-  {
-    "name": "#405 r3: the one matcher never matches",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    return stem in src\n",
-        "    return False\n"
-      ]
-    ],
-    "expect": [
-      "#405 ...the PR changed a shared module the source imports (fixture_git): FULL",
-      "#405 r3 early_close_changed: closes TWO hops, repeating until nothing is added"
-    ]
-  },
-  {
-    "name": "#405 r3: early_sources reads no file, so the closure has nothing to walk",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "base.rglob(\"*.py\")",
-        "base.rglob(\"*.pyx\")"
-      ]
-    ],
-    "expect": [
-      "#405 r3 scripts/check-live-schema.py reaches m4_base_db only through m4_catalog: unclosed no, closed FULL",
-      "#405 r3 ⛔ a module reached only THROUGH another (tgt -> mid -> deep) forces the file FULL"
-    ]
-  },
-  {
     "name": "#405 r3: local_changed trusts the commits over a DIRTY working tree",
     "file": "scripts/check-plan-code.py",
     "edits": [
@@ -2505,25 +2340,53 @@
     "expect": "#405 r3 local_changed: a committed RENAME lists its source path too (--no-renames)"
   },
   {
-    "name": "#405 r3: early_sources reads a cache or the redirected home as modules",
+    "name": "#405 r4: a changed .py is allowed, so a PR changing a module a suite imports stops early",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if EARLY_SOURCE_SKIP & set(rel.parts[:-1]):\n",
-        "        if False:\n"
+        "    if p.suffix == \".py\":\n        return False",
+        "    if p.suffix == \".py\":\n        return True"
       ]
     ],
-    "expect": "#405 r3 early_sources: a tree with no scripts/ is read from its top; caches and home skipped"
+    "expect": [
+      "#405 r2 early_path_allowed: docs/x.py is OUTSIDE the allow list",
+      "#405 r4 ⛔ a module reached through node_modules (nmt -> nm_mid -> nm_deep) changed: FULL"
+    ]
   },
   {
-    "name": "#405 r3: early_sources reads only scripts/, so a plan-assembled tree has no sources",
+    "name": "#405 r4: the per-file rule answers FULL for every file, so nothing ever stops early",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    base = d / \"scripts\" if (d / \"scripts\").is_dir() else d\n",
-        "    base = d / \"scripts\"\n"
+        "            return True   # its own manifest changed\n    return False",
+        "            return True   # its own manifest changed\n    return True"
       ]
     ],
-    "expect": "#405 r3 early_sources: a tree with no scripts/ is read from its top; caches and home skipped"
+    "expect": [
+      "#405 ...another file's manifest and same-stem docs that are not its manifest: early stop allowed",
+      "#405 r4 a manifest-only PR: its own file runs FULL, another file stops early"
+    ]
+  },
+  {
+    "name": "#405 r4: any same-stem file under a mutations/ directory counts as the target's manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if cp.suffix == \".json\" and cp.parent.name == \"mutations\" and cp.stem == stem:",
+        "if cp.parent.name == \"mutations\" and cp.stem == stem:"
+      ]
+    ],
+    "expect": "#405 ...another file's manifest and same-stem docs that are not its manifest: early stop allowed"
+  },
+  {
+    "name": "#405 r4: any same-stem .json anywhere counts as the target's manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        " and cp.parent.name == \"mutations\" and cp.stem == stem:",
+        " and cp.stem == stem:"
+      ]
+    ],
+    "expect": "#405 ...another file's manifest and same-stem docs that are not its manifest: early stop allowed"
   }
 ]

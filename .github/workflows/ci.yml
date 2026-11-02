@@ -1376,8 +1376,9 @@ jobs:
           # $GITHUB_EVENT_NAME and the changed-file list the step above wrote, whether a mutant may be
           # stopped once its named case is red. FULL on a push to master (this step runs there
           # when the merge touches a sweep-relevant root, and a push run is never cancelled), when
-          # the list is missing or empty, and when check-plan-code.py itself changed. On a PR, every
-          # file the diff touches still runs in FULL (`early_must_run_full`).
+          # the list is missing or empty, and when any changed path is outside the allow list (every
+          # `.py`, so check-plan-code.py itself too). On a docs/manifest-only PR, a file whose own
+          # manifest changed still runs in FULL (`early_must_run_full`).
           python3 scripts/check-plan-code.py --mutate . \
             --shard0 "$SHARD_INDEX/$SHARD_TOTAL" --early-stop-ci /tmp/changed.txt
 
