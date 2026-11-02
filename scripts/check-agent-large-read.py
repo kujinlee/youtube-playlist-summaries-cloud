@@ -542,7 +542,7 @@ def _self_test_body() -> int:
     verdict(p(file_path=small, agent="a3"), state=st2)
     case("another agent's state file older than 24 h is deleted", old.exists(), False)
     case("the denial names grep -n, the limit and the remedy",
-         all(x in (decide(p(file_path=big), {}, tempfile.mkdtemp(), clock[0]) or "")
+         all(x in (decide(p(file_path=big), {}, tempfile.mkdtemp(), 0.0) or "")
              for x in ("grep -n", "500 lines", "offset", "300")), True)
 
     def drive(data, state):
