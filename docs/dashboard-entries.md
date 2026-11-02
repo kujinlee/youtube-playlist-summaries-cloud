@@ -18586,3 +18586,8 @@ The usage audit of the last two days is now on the backlog. Where the 230 millio
 Also moved seven older rows out of the always-loaded memory index so it stays under its size limit.
 <!--tech-->
 Backlog #455 to #461 (kind task), `docs/optimization-register.md` rows 15 to 21 (status proposed), seven rows moved from `docs/memory/MEMORY.md` to `docs/memory/slice-history.md` (index 89% of budget).
+
+## 2026-11-01
+Agents are no longer allowed to run a single command that can sit waiting for more than four and a half minutes. Such a wait let the agent's saved context expire, so its next step paid to load everything again; the usage audit put that at 19% of all usage. A refused agent is told to start the long job in the background and check on it in short steps. The main session is never refused.
+<!--tech-->
+Branch `agent-long-call-guard`, backlog #455. `scripts/check-agent-long-call.py` (37 cases, 21 mutations) runs from `.claude/hooks/agent-long-call.sh` on every PreToolUse Bash call. It denies, only when the payload carries a top-level `agent_id` (measured on Claude Code 2.1.309: present for plain and named subagents, absent for the main session), a foreground call whose timeout exceeds 270000 ms, `gh pr checks --watch`, `gh run watch`, or a `sleep` over 270 s. An unreadable payload is NOT CHECKED (exit 1, non-blocking).

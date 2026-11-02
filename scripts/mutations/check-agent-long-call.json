@@ -1,0 +1,275 @@
+[
+  {
+    "name": "the timeout limit becomes inclusive: exactly 270000 ms is denied",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if t > LIMIT_S * 1000:",
+        "    if t >= LIMIT_S * 1000:"
+      ]
+    ],
+    "expect": [
+      "a subagent's timeout 270000 (the boundary) is allowed"
+    ]
+  },
+  {
+    "name": "an explicit timeout is ignored in favour of the default",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if \"timeout\" in tool_input:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an explicit timeout beats BASH_DEFAULT_TIMEOUT_MS"
+    ]
+  },
+  {
+    "name": "a timeout that is not a number is read as zero",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        return t if is_number(t) else None",
+        "        return t if is_number(t) else 0"
+      ]
+    ],
+    "expect": [
+      "a timeout that is not a number is denied"
+    ]
+  },
+  {
+    "name": "BASH_DEFAULT_TIMEOUT_MS is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    d = env.get(\"BASH_DEFAULT_TIMEOUT_MS\")",
+        "    d = None"
+      ]
+    ],
+    "expect": [
+      "no timeout, BASH_DEFAULT_TIMEOUT_MS over the limit is denied"
+    ]
+  },
+  {
+    "name": "the timeout rule is dropped",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        return f\"its timeout is {int(t)} ms, over {LIMIT_S * 1000}\"",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "a subagent's timeout 300000 is denied"
+    ]
+  },
+  {
+    "name": "the watch rule is dropped",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if WATCH.search(cmd):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a subagent's gh pr checks --watch is denied"
+    ]
+  },
+  {
+    "name": "gh run watch is not a watch",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "|gh\\s+run\\s+watch\\b)",
+        ")"
+      ]
+    ],
+    "expect": [
+      "a subagent's gh run watch is denied"
+    ]
+  },
+  {
+    "name": "gh pr checks is a watch without --watch",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "gh\\s+pr\\s+checks\\b[^;&|\\n]*--watch\\b",
+        "gh\\s+pr\\s+checks\\b"
+      ]
+    ],
+    "expect": [
+      "a subagent's gh pr checks WITHOUT --watch is allowed"
+    ]
+  },
+  {
+    "name": "the sleep limit becomes inclusive: exactly 270 s is denied",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        if s > LIMIT_S:",
+        "        if s >= LIMIT_S:"
+      ]
+    ],
+    "expect": [
+      "a subagent's sleep 270 (the boundary) is allowed"
+    ]
+  },
+  {
+    "name": "a sleep's unit suffix is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "]) * UNIT_S[unit]",
+        "])"
+      ]
+    ],
+    "expect": [
+      "a sleep's m suffix is minutes: 5m is denied"
+    ]
+  },
+  {
+    "name": "sleep's arguments are not summed, the last one wins",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        total += float(",
+        "        total = float("
+      ]
+    ],
+    "expect": [
+      "sleep's arguments are SUMMED: 100 200 is denied"
+    ]
+  },
+  {
+    "name": "sleep infinity is read as zero",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "            return float(\"inf\")",
+        "            return 0.0"
+      ]
+    ],
+    "expect": [
+      "sleep infinity is denied"
+    ]
+  },
+  {
+    "name": "any 'sleep' substring is a command",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "CMD_POS = r\"(?:^|[;&|(\\n]|\\bdo\\b|\\bthen\\b|\\belse\\b)\\s*\"",
+        "CMD_POS = r\"\""
+      ]
+    ],
+    "expect": [
+      "a word ending in sleep is not sleep"
+    ]
+  },
+  {
+    "name": "a loop body's do is not a command position",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "|\\bdo\\b|",
+        "|"
+      ]
+    ],
+    "expect": [
+      "a sleep inside a loop body is at a command position"
+    ]
+  },
+  {
+    "name": "run_in_background is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        " or ti.get(\"run_in_background\") is True:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "run_in_background: true is allowed whatever it runs"
+    ]
+  },
+  {
+    "name": "the main session is gated too",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if not sent_by_subagent(json.dumps(doc)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "the MAIN session (no agent_id) is never denied"
+    ]
+  },
+  {
+    "name": "every tool is gated, not only Bash",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if doc.get(\"tool_name\") != \"Bash\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a tool other than Bash is not gated"
+    ]
+  },
+  {
+    "name": "main --hook never prints the denial",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if reason is not None:\n        print(",
+        "    if False:\n        print("
+      ]
+    ],
+    "expect": [
+      "main --hook: a denial is the PreToolUse deny JSON at exit 0"
+    ]
+  },
+  {
+    "name": "an unreadable payload exits 0, silently allowed",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "NOT CHECKED for a long block (backlog #455).\", file=sys.stderr)\n        return 1",
+        "NOT CHECKED for a long block (backlog #455).\", file=sys.stderr)\n        return 0"
+      ]
+    ],
+    "expect": [
+      "main --hook: an unreadable payload is NOT CHECKED — exit 1, said on stderr, no decision"
+    ]
+  },
+  {
+    "name": "a parsed non-object goes on to decide",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if not isinstance(doc, dict):",
+        "    if isinstance(doc, ValueError):"
+      ]
+    ],
+    "expect": [
+      "main --hook: a payload that is not an object is NOT CHECKED too"
+    ]
+  },
+  {
+    "name": "the denial stops naming the remedy",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "start the long work with \"\n    \"`run_in_background: true`, writing",
+        "start the long work with \"\n    \"in the background, writing"
+      ]
+    ],
+    "expect": [
+      "the denial names the cause and the remedy"
+    ]
+  }
+]
