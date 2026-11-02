@@ -98,5 +98,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-02 09:09 "let's make development speed issues higher priority than others"
 > 2026-11-02 09:12 "If I cannot correctly understand what you are doing or how the project is progressing, dev speed in local sense doesn't have much meaning. It may be tactically fast, but heading to wrong direction (strategically incorrect or operationally sub-optimal)"
 - fix · backlog #384, PR #474 · direction lane: the comprehensibility suite's overarching design; the spec merged and its rows are filed as backlog #470 to backlog #479
-- fix · backlog #405, PR #476 · a mutant's suite stops once the case its manifest names has gone red
+- fix · backlog #405, PR #476 · early stop WITHDRAWN after five refuting rounds; PR #476 shipped two CI fixes (a running master run is not cancelled, the changed-file diff sees renames)
+- bookkeeping · backlog #480, backlog #481, backlog #482 · filed from PR #476's rounds: the rename skip, the sound early-stop redesign, the pending master run replacement
+- bookkeeping · backlog #483 · filed from PR #475's CI: the backfill-work-lines F5 inode case is flaky
 - fix · PR #475 · the backlog page shows each row's detail with line breaks and indenting, same words
