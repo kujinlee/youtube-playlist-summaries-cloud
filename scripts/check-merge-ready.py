@@ -274,6 +274,10 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         (4, "the four pull-request-only steps: the two this script invokes itself, plus the "
             "reference-namespace and doc-citations gates, neither of which can run without a "
             "base ref"),
+    # ⟳ 2026-11-02, backlog #405 r1: a concurrency SETTING keyed on the event — a pull request's
+    # older run is cancelled, a push to master's never is. It gates no step.
+    ("ci.yml", "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"):
+        (1, "which runs a newer push CANCELS (pull requests only) — gates no step"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     ("schema-gates.yml", "pull_request:"):
