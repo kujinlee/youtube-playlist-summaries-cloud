@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 315 cases
+    python3 scripts/check-plan-code.py --self-test          # 326 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -778,10 +778,19 @@ def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
 # NON-kill after the stop point in exactly three ways, and early stop cannot see any of them:
 #   1. the suite later exits 2 (its own CANNOT RUN) — full mode records NOT CHECKED, early: killed;
 #   2. the suite later hangs past SUITE_TIMEOUT — the same;
-#   3. the trailer exits 0 despite a printed `[FAIL]`, or a later duplicate of the named case
-#      makes the `expect` ambiguous.
-# (3) is why a mutant whose edit lands in the printer or the trailer runs in FULL
-# (`edit_needs_full_run`); (1) and (2) are what the full sweep on every push to master re-asks.
+#   3. the suite exits 0 despite a printed `[FAIL]` (its trailer, a helper the trailer calls, a
+#      shared module such as `fixture_git.py`), or a later duplicate of the named case makes the
+#      `expect` ambiguous.
+# ⟳ r1 (both halves, HIGH): (3) was guarded by reading the MUTANT'S OWN EDIT (`edit_needs_full_run`),
+# which cannot see a PR that breaks the trailer of the UNMUTATED file, a shared module, or a helper
+# the trailer calls — measured, a trailer ending `return 0` recorded KILLED early and SURVIVED full.
+# Predicting (3) from source is a parsing surface with no end, so the stop rule no longer predicts
+# it: it RELIES ON A MEASUREMENT. A mutant may stop early only when the full sweep on master has
+# already run that exact (file, manifest, imported code) — `early_must_run_full`. Every file the
+# PR's diff could have changed the exit semantics of runs in FULL. `edit_needs_full_run` stays, as a
+# cheap second filter. (1) and (2) are re-asked by the same master sweep: a FULL sweep runs on every
+# push to master that touches a sweep-relevant root (a docs-only merge skips it, and has nothing for
+# it to re-ask), and ci.yml no longer cancels a push run (`cancel-in-progress` is PR-only).
 
 # Seconds between the SIGINT and the SIGKILL that escalates it. SIGINT first, ALWAYS: the child's
 # `finally` blocks and `fixture_git.isolated()` must get to restore what they changed. A module
@@ -835,6 +844,55 @@ def edit_needs_full_run(src: str, find: str, repl: str) -> bool:
         return True
     return any(any(m in (ast.get_source_segment(src, n) or "") for m in HARNESS_MARKERS)
                for n in enclosing)
+
+
+def early_must_run_full(fname: str, src: str, changed: "list[str] | None") -> bool:
+    """PURE. Must every mutant of `fname` (whose UNMUTATED source is `src`) run in FULL, given the
+    pull request's changed-file list? The answer early stop's soundness rests on — read the bound.
+
+    ⛔ THE CHOICE (r1): early stop trusts "a printed named `[FAIL]` means a non-zero exit" ONLY
+    where the full sweep on master has already measured it — the same file, the same manifest
+    entries, the same imported code. So FULL when:
+      * `changed` is None — no diff, so nothing says what master measured;
+      * the PR changed `fname` itself (its trailer, a helper, its printer: any of it);
+      * the PR changed this file's manifest (`scripts/mutations/<stem>.json`) — a NEW entry was
+        never run in full anywhere (r1 CODEX's reproducer is exactly that shape);
+      * the PR changed any `.py` file whose stem `src` names — a shared module the suite imports
+        (`fixture_git`), or a sibling it loads by filename. A TEXT match, deliberately coarse: a
+        spurious hit only costs time, and it needs no call graph.
+    Non-code changes (docs, SQL, JSON fixtures) cannot change what a printed red exits with — they
+    can change WHICH case goes red, and a full run of that case's suite still measures that.
+    COST: every mutant of a file the PR touches runs in full, so a PR changing `fixture_git.py`
+    gets a FULL sweep; the speed-up is for the many files a PR leaves alone.
+    BOUND: an import the source does not spell (a computed module name) is not seen.
+    """
+    if changed is None:   # no diff: nothing says what master's full sweep measured
+        return True
+    stem = pathlib.PurePosixPath(fname).stem
+    for c in changed:
+        cp = pathlib.PurePosixPath(c.strip())   # an empty entry has no suffix, so it is skipped below
+        if cp.suffix == ".json" and cp.parent.name == "mutations":
+            if cp.stem == stem:
+                return True
+            continue
+        if cp.suffix != ".py":
+            continue
+        if cp.stem == stem or cp.stem in src:
+            return True
+    return False
+
+
+def local_changed(root: pathlib.Path) -> "list[str] | None":
+    """The changed-file list `--early-stop` (local) uses: `git diff origin/master...HEAD` in ROOT,
+    or None when it cannot be taken — and None makes every mutant run in FULL."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "-z",
+                            "origin/master...HEAD"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    return changed_from_nul(r.stdout)
 
 
 def run_suite_early(d: pathlib.Path, name: str, wants: list[str], *,
@@ -913,7 +971,9 @@ def early_stop_ci(event: str, changed: "list[str] | None") -> tuple[bool, str]:
 
     ⛔ THE FULL SWEEP IS THE SOUNDNESS CHECK, so every arm that is not a positively-known pull
     request leaving this file alone answers FULL:
-      * a push to master (or any non-PR event) — the periodic full sweep, every merge;
+      * a push to master (or any non-PR event) — the FULL sweep early stop relies on. It runs on
+        a push whose merge touches a sweep-relevant root (`sweep_needed`), and ci.yml cancels
+        only PR runs, so a later docs-only merge cannot cancel it;
       * a diff that could not be taken (`None`) — an unanswered question never loosens a gate;
       * an EMPTY diff — impossible when the sweep runs at all, so it means the list was lost;
       * a pull request that changes `scripts/check-plan-code.py` — the stop rule itself moved.
@@ -926,7 +986,8 @@ def early_stop_ci(event: str, changed: "list[str] | None") -> tuple[bool, str]:
         return False, "the changed-file list is EMPTY, so it was lost: FULL sweep"
     if "scripts/check-plan-code.py" in changed:
         return False, "scripts/check-plan-code.py changed, so the stop rule itself moved: FULL sweep"
-    return True, "a pull request that leaves scripts/check-plan-code.py alone: EARLY STOP"
+    return True, ("a pull request that leaves scripts/check-plan-code.py alone: EARLY STOP, except "
+                  "the files its diff touches (`early_must_run_full`)")
 
 
 
@@ -1651,7 +1712,11 @@ EXPECTED_MUTATIONS = {
     # the full-run predicate's five arms, the child's process-group SIGINT, SIGINT-before-SIGKILL, the
     # escalation record, `-u`, the pump, the deadline, the loop's three uses, `early_stop_ci`'s four arms,
     # the tally's SIGKILL count, and main()'s four wiring points. Four existing anchors REBOUND.
-    "scripts/check-plan-code.py": 175,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-02, backlog #405 r1: 175 -> 187 — twelve for the DIFF RULE (`early_must_run_full`): its
+    # five arms (no diff, the file, its manifest, an imported stem, code-only), the loop
+    # asking it, the edit arm beside it, the tally's by-diff count, the changed list's two hand-downs, and
+    # `local_changed`'s failure arm and its caller. Three existing anchors REBOUND (`_stopped`, both hand-downs).
+    "scripts/check-plan-code.py": 187,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -3200,6 +3265,7 @@ def mutate_delivered(root: pathlib.Path,
                      budget: "float | None" = None,
                      only: "frozenset | None" = None,
                      early_stop: bool = False,
+                     early_changed: "list[str] | None" = None,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
 
@@ -3349,7 +3415,8 @@ def mutate_delivered(root: pathlib.Path,
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
                                                           progress=progress,
-                                                          early_stop=early_stop)
+                                                          early_stop=early_stop,
+                                                          early_changed=early_changed)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         # ⚠ WHAT THIS SHARD DECLARED, not what the manifest holds. `len(muts)` here makes every
@@ -3401,6 +3468,7 @@ def mutate_delivered(root: pathlib.Path,
 
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                   progress=None, early_stop: bool = False,
+                  early_changed: "list[str] | None" = None,
                   ) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
@@ -3415,9 +3483,11 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
 
     `early_stop` (backlog #405, default OFF): stop a mutant's suite once every case its `expect`
     names has printed red — `run_suite_early`. A mutant with no `expect`, or whose edit lands in
-    the printer/trailer (`edit_needs_full_run`), still runs in full. Each entry then carries
-    `stop` (None / "sigint" / "sigkill"); with the flag off no entry carries it, so a full run's
-    evidence is exactly what it was.
+    the printer/trailer (`edit_needs_full_run`), or whose file the PR's `early_changed` diff could
+    have changed the exit semantics of (`early_must_run_full`; None = no diff = all FULL), still
+    runs in full. Each entry then carries `stop` (None / "sigint" / "sigkill") and `forced_full`
+    (None / "diff" / "edit");
+    with the flag off no entry carries either, so a full run's evidence is exactly what it was.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
     for position, mut in enumerate(muts, 1):
@@ -3463,6 +3533,9 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         _w = mut.get("expect")
         stop_wants = [_w] if isinstance(_w, str) else list(_w or [])
         orig = (d / fname).read_text()
+        forced = ("diff" if early_must_run_full(fname, orig, early_changed)
+                  else "edit" if needs_full else None)
+        needs_full = forced is not None
         (d / fname).write_text(src)
         stop = None
         if early_stop and stop_wants and not needs_full:
@@ -3475,7 +3548,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # every named case had printed red, which is the kill this entry asks for.
         if stop is not None:
             rc = 1
-        _stopped = {"stop": stop} if early_stop else {}
+        _stopped = {"stop": stop, "forced_full": forced} if early_stop else {}
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
         # git is a could-not-tell"), and splitting on the first one truncated it to
@@ -3666,8 +3739,11 @@ def early_stop_note(mutations: list) -> str:
         return ""
     early = sum(1 for m in mutations if m.get("stop"))
     killed9 = sum(1 for m in mutations if m.get("stop") == "sigkill")
+    by_diff = sum(1 for m in mutations if m.get("forced_full") == "diff")
+    by_edit = sum(1 for m in mutations if m.get("forced_full") == "edit")
     return (f", EARLY STOP: {early} killed-early ({killed9} escalated to SIGKILL), "
-            f"{len(mutations) - early} ran in full")
+            f"{len(mutations) - early} ran in full ({by_diff} forced FULL by the diff, "
+            f"{by_edit} by the edit)")
 
 
 # One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
@@ -3798,7 +3874,7 @@ def _budget_wiring(root: pathlib.Path) -> dict:
     saved = os.environ.pop("CI", None)
     saved_ev = os.environ.pop("GITHUB_EVENT_NAME", None)
     changed = root / "changed.nul"
-    changed.write_text("scripts/thing.py\0")
+    changed.write_text("docs/thing.md\0")
     out = {}
     try:
         for key, ci, extra, bud in (("local", None, [], 0), ("flag", None, ["--allow-long-local"], 0),
@@ -4457,7 +4533,7 @@ def _self_test_body() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             _ok, _rep, _ev = mutate_delivered(_r)
             case("--mutate catches a mutation in the DELIVERED tree", _ok, True)
-            _okE, _repE, _evE = mutate_delivered(_r, early_stop=True)
+            _okE, _repE, _evE = mutate_delivered(_r, early_stop=True, early_changed=["docs/x.md"])
             case("#405 mutate_delivered hands early_stop down: every entry carries `stop`",
                  (_okE, all("stop" in m for m in _evE.mutations), "stop" in _ev.mutations[0]),
                  (True, True, False))
@@ -4550,6 +4626,10 @@ def _self_test_body() -> int:
                  (_wired["early-pr"][0], "EARLY STOP:" in _wired["early-pr"][1]), (0, True))
             case("#405 ...--early-stop-ci on a PUSH runs the FULL sweep",
                  (_wired["early-push"][0], "EARLY STOP:" in _wired["early-push"][1]), (0, False))
+            case("#405 ...and main() hands the PR's diff down: a docs-only diff forces nothing FULL",
+                 "(0 forced FULL by the diff" in _wired["early-pr"][1], True)
+            case("#405 ...local --early-stop with no diff to take (not a git tree) forces every mutant FULL",
+                 "(1 forced FULL by the diff" in _wired["early"][1], True)
         # ── THE REPORTER IS INJECTED, AND THE DEFAULT IS SILENCE ──────────────────────────
         # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
         # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
@@ -7360,7 +7440,7 @@ def _self_test_body() -> int:
         _ok, _rep, _evm, _evs = run_mutations(
             _d405, [{"name": "value is two", "file": "slow.py",
                      "edits": [["    return 1\n", "    return 2\n"]], "expect": "value is one"}],
-            {"slow.py"}, early_stop=True)
+            {"slow.py"}, early_stop=True, early_changed=["docs/x.md"])
         case("#405 run_mutations: an early-stopped mutant is KILLED and attributed, and says so",
              (_ok, _evm[0]["caught"], _evm[0]["attributed"], _evm[0].get("stop"),
               time.monotonic() - _t405 < 10),
@@ -7369,7 +7449,7 @@ def _self_test_body() -> int:
             _d405, [{"name": "printer", "file": "fast.py",
                      "edits": [["        if want != got:\n", "        if want == got:\n"]],
                      "expect": "value is one"}],
-            {"fast.py"}, early_stop=True)
+            {"fast.py"}, early_stop=True, early_changed=["docs/x.md"])
         case("#405 ...a mutant whose edit is in the case PRINTER runs in FULL, never stopped",
              (_ok, _evm[0]["caught"], _evm[0].get("stop", "absent")), (True, True, None))
         _ok, _rep, _evm, _evs = run_mutations(
@@ -7378,6 +7458,26 @@ def _self_test_body() -> int:
             {"now.py"})
         case("#405 ...and with early stop OFF no entry carries `stop` — the FULL evidence is unchanged",
              (_ok, "stop" in _evm[0]), (True, False))
+        # ⛔ THE FAILS-IF OF THE r1 FIX, built from r1 CLAUDE's reproducer: a suite whose TRAILER
+        # exits 0 despite a printed `[FAIL]`. Full mode records it SURVIVED, so early mode must too
+        # whenever the PR's diff could have made it so — the file itself, or its manifest (a NEW
+        # entry: r1 CODEX's shape). The control first: an UNTOUCHED file is trusted to master's
+        # full sweep and IS stopped, which is what makes the two cases after it able to fail.
+        (_d405 / "zero.py").write_text(_slow.replace("SLEEP", "3").replace(
+            "    return 1 if fails else 0\n", "    return 0\n"))
+        _zmut = [{"name": "value is two", "file": "zero.py",
+                  "edits": [["    return 1\n", "    return 2\n"]], "expect": "value is one"}]
+        _ok, _rep, _evm, _evs = run_mutations(_d405, _zmut, {"zero.py"}, early_stop=True,
+                                              early_changed=["docs/x.md"])
+        case("#405 CONTROL: a trailer exiting 0 in a file the PR left alone IS stopped (master's full sweep owns it)",
+             (_evm[0]["caught"], _evm[0].get("stop")), (True, "sigint"))
+        for _why405, _chg405 in (("the PR changed the file's own trailer", ["scripts/zero.py"]),
+                                 ("the PR added the mutant to the file's manifest", ["scripts/mutations/zero.json"])):
+            _ok, _rep, _evm, _evs = run_mutations(_d405, _zmut, {"zero.py"}, early_stop=True,
+                                                  early_changed=_chg405)
+            case(f"#405 ⛔ a trailer `return 0` is NOT recorded killed early when {_why405}",
+                 (_ok, _evm[0]["caught"], _evm[0].get("stop"), _evm[0].get("forced_full"), _evs),
+                 (False, False, None, "diff", ["value is two"]))
     case("#405 early_stop_ci: a push to master is the periodic FULL sweep",
          early_stop_ci("push", ["scripts/x.py"])[0], False)
     case("#405 ...a changed-file list that could not be read is FULL",
@@ -7388,11 +7488,29 @@ def _self_test_body() -> int:
          early_stop_ci("pull_request", ["scripts/x.py", "scripts/check-plan-code.py"])[0], False)
     case("#405 ...a pull request that leaves it alone may stop early",
          early_stop_ci("pull_request", ["scripts/x.py"])[0], True)
+    _src405 = "import fixture_git\nloader('check-sib.py')\n"
+    case("#405 early_must_run_full: no diff (None) runs every mutant in FULL",
+         early_must_run_full("scripts/target.py", _src405, None), True)
+    case("#405 ...the PR changed the target file itself: FULL",
+         early_must_run_full("scripts/target.py", _src405, ["docs/a.md", "scripts/target.py"]), True)
+    case("#405 ...the PR changed the target's manifest (a new entry was never run in full): FULL",
+         early_must_run_full("scripts/other-target.py", _src405, ["scripts/mutations/other-target.json"]), True)
+    case("#405 ...the PR changed a shared module the source imports (fixture_git): FULL",
+         early_must_run_full("scripts/target.py", _src405, ["scripts/fixture_git.py"]), True)
+    case("#405 ...the PR changed a sibling the source loads by filename: FULL",
+         early_must_run_full("scripts/target.py", _src405, ["scripts/check-sib.py"]), True)
+    case("#405 ...an unrelated script, ANOTHER file's manifest and a doc named in the source: early stop allowed",
+         early_must_run_full("scripts/target.py", _src405 + "# fixture_git.md\n",
+                             ["scripts/unrelated.py", "scripts/mutations/fixture_git.json", "docs/fixture_git.md", ""]),
+         False)
     case("#405 early_stop_note: a FULL run's tally gains nothing",
          early_stop_note([{"name": "m"}]), "")
     case("#405 ...an early run counts killed-early and SIGKILL escalations separately",
-         early_stop_note([{"stop": "sigint"}, {"stop": "sigkill"}, {"stop": None}]),
-         ", EARLY STOP: 2 killed-early (1 escalated to SIGKILL), 1 ran in full")
+         early_stop_note([{"stop": "sigint"}, {"stop": "sigkill"}, {"stop": None, "forced_full": "diff"},
+                          {"stop": None, "forced_full": "edit"}, {"stop": None, "forced_full": "edit"},
+                          {"stop": None, "forced_full": None}]),
+         ", EARLY STOP: 2 killed-early (1 escalated to SIGKILL), 4 ran in full "
+         "(1 forced FULL by the diff, 2 by the edit)")
     _err405 = io.StringIO()
     with contextlib.redirect_stderr(_err405):
         _rc405 = main(["--early-stop"])
@@ -7593,6 +7711,13 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
         only = frozenset(a.only) if a.only else None
         early = a.early_stop
+        _changed = None
+        if a.early_stop and not a.early_stop_ci:
+            _changed = local_changed(mroot)
+            print("early stop: " + ("no diff against origin/master could be taken: every mutant FULL"
+                                    if _changed is None else
+                                    f"{len(_changed)} path(s) changed against origin/master"),
+                  file=sys.stderr)
         if a.early_stop_ci:
             try:
                 _raw = pathlib.Path(a.early_stop_ci).read_text(encoding="utf-8")
@@ -7603,7 +7728,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             print(f"early stop: {_why}", file=sys.stderr)
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
                                                shard=shard, budget=budget, only=only,
-                                               early_stop=early)
+                                               early_stop=early, early_changed=_changed)
         if report and report[0].startswith(LOCAL_REFUSAL):
             print(report[0], file=sys.stderr)
             return 2

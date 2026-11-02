@@ -17,10 +17,13 @@ on:
   push:
     branches: [master]
 
-# A new push to the same PR cancels the previous run.
+# A new push to the same PR cancels the previous run. ⛔ A PUSH TO MASTER IS NEVER CANCELLED
+# (backlog #405 r1): its mutation sweep runs in FULL and is what early stop on pull requests relies
+# on. Cancelling it let a later docs-only merge (whose own sweep is skipped) erase an earlier
+# scripts merge's full sweep with no signal.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -1368,8 +1371,10 @@ jobs:
           # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
           # backlog #405: `--early-stop-ci` lets `check-plan-code.early_stop_ci` decide, from
           # $GITHUB_EVENT_NAME and the changed-file list the step above wrote, whether a mutant may be
-          # stopped once its named case is red. FULL on every push to master (the periodic full
-          # sweep), when the list is missing or empty, and when check-plan-code.py itself changed.
+          # stopped once its named case is red. FULL on a push to master (this step runs there
+          # when the merge touches a sweep-relevant root, and a push run is never cancelled), when
+          # the list is missing or empty, and when check-plan-code.py itself changed. On a PR, every
+          # file the diff touches still runs in FULL (`early_must_run_full`).
           python3 scripts/check-plan-code.py --mutate . \
             --shard0 "$SHARD_INDEX/$SHARD_TOTAL" --early-stop-ci /tmp/changed.txt
 

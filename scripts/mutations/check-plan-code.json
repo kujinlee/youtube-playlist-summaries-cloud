@@ -2015,8 +2015,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "_stopped = {\"stop\": stop} if early_stop else {}",
-        "_stopped = {\"stop\": stop}"
+        "_stopped = {\"stop\": stop, \"forced_full\": forced} if early_stop else {}",
+        "_stopped = {\"stop\": stop, \"forced_full\": forced}"
       ]
     ],
     "expect": "#405 ...and with early stop OFF no entry carries `stop` — the FULL evidence is unchanged"
@@ -2092,8 +2092,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "early_stop=early)",
-        "early_stop=False)"
+        "early_stop=early, early_changed=_changed)",
+        "early_stop=False, early_changed=_changed)"
       ]
     ],
     "expect": [
@@ -2106,8 +2106,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "early_stop=early_stop)",
-        "early_stop=False)"
+        "early_stop=early_stop,\n",
+        "early_stop=False,\n"
       ]
     ],
     "expect": "#405 main() wires --early-stop through to the run (the tally names EARLY STOP)"
@@ -2122,5 +2122,143 @@
       ]
     ],
     "expect": "#405 --early-stop without --mutate is refused, rc 2"
+  },
+  {
+    "name": "#405 r1: no diff (None) lets every mutant stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "measured\n        return True\n    stem =",
+        "measured\n        return False\n    stem ="
+      ]
+    ],
+    "expect": "#405 early_must_run_full: no diff (None) runs every mutant in FULL"
+  },
+  {
+    "name": "#405 r1: a PR changing the target's MANIFEST (a new entry) lets its mutants stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if cp.stem == stem:\n                return True\n            continue",
+        "            continue"
+      ]
+    ],
+    "expect": [
+      "#405 ...the PR changed the target's manifest (a new entry was never run in full): FULL",
+      "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR added the mutant to the file's manifest"
+    ]
+  },
+  {
+    "name": "#405 r1: a PR changing the target FILE itself lets its mutants stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if cp.stem == stem or cp.stem in src:",
+        "if cp.stem in src:"
+      ]
+    ],
+    "expect": [
+      "#405 ...the PR changed the target file itself: FULL",
+      "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR changed the file's own trailer"
+    ]
+  },
+  {
+    "name": "#405 r1: a PR changing a shared module the suite imports lets its mutants stop early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        " or cp.stem in src:",
+        ":"
+      ]
+    ],
+    "expect": "#405 ...the PR changed a shared module the source imports (fixture_git): FULL"
+  },
+  {
+    "name": "#405 r1: a changed DOC counts as code, so a doc's stem forces FULL",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if cp.suffix != \".py\":\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "#405 ...an unrelated script, ANOTHER file's manifest and a doc named in the source: early stop allowed"
+  },
+  {
+    "name": "#405 r1: run_mutations never asks the diff, so a PR-broken trailer is recorded KILLED early",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "forced = (\"diff\" if early_must_run_full(fname, orig, early_changed)",
+        "forced = (\"diff\" if False"
+      ]
+    ],
+    "expect": "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR changed the file's own trailer"
+  },
+  {
+    "name": "#405 r1: an edit in the printer no longer forces FULL once the diff is asked",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "else \"edit\" if needs_full else None)",
+        "else None)"
+      ]
+    ],
+    "expect": "#405 ...a mutant whose edit is in the case PRINTER runs in FULL, never stopped"
+  },
+  {
+    "name": "#405 r1: the tally never counts a mutant forced FULL by the diff",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "by_diff = sum(1 for m in mutations if m.get(\"forced_full\") == \"diff\")",
+        "by_diff = 0"
+      ]
+    ],
+    "expect": "#405 ...an early run counts killed-early and SIGKILL escalations separately"
+  },
+  {
+    "name": "#405 r1: main() drops the PR's changed-file list, so every mutant is forced FULL",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "early_changed=_changed)",
+        "early_changed=None)"
+      ]
+    ],
+    "expect": "#405 ...and main() hands the PR's diff down: a docs-only diff forces nothing FULL"
+  },
+  {
+    "name": "#405 r1: mutate_delivered drops the changed-file list on the way to run_mutations",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "early_changed=early_changed)",
+        "early_changed=None)"
+      ]
+    ],
+    "expect": "#405 ...and main() hands the PR's diff down: a docs-only diff forces nothing FULL"
+  },
+  {
+    "name": "#405 r1: local_changed reads a failed git diff as an EMPTY diff, so nothing is forced FULL",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        return None\n    return changed_from_nul(r.stdout)",
+        "    return changed_from_nul(r.stdout)"
+      ]
+    ],
+    "expect": "#405 ...local --early-stop with no diff to take (not a git tree) forces every mutant FULL"
+  },
+  {
+    "name": "#405 r1: local --early-stop never takes a diff, so nothing is forced FULL",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "_changed = local_changed(mroot)",
+        "_changed = []"
+      ]
+    ],
+    "expect": "#405 ...local --early-stop with no diff to take (not a git tree) forces every mutant FULL"
   }
 ]
