@@ -715,5 +715,44 @@
     "expect": [
       "layout: the same-words check refuses a block break where the source had no space (r1 Claude F4)"
     ]
+  },
+  {
+    "name": "layout r2: the same-words check compares only the visible text, not the original HTML",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if stack or n_html.replace(\"\\x00\", \"\") != old:\n",
+        "        if stack:\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses two words joined across an original <br> (r2 Codex 3)"
+    ]
+  },
+  {
+    "name": "layout r2: the same-words check keeps the list items it should strip",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                            or (t.group(0) == \"<li>\" and stack and stack[-1]))\n",
+        "                            )\n"
+      ]
+    ],
+    "expect": [
+      "layout: same words, same order, over every fixture"
+    ]
+  },
+  {
+    "name": "layout r2: the same-words check does not count an original <br> as a break",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        br = re.compile(r\"<br\\s*/?>\")\n",
+        "        br = re.compile(r\"(?!)\")\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses two words joined across an original <br> (r2 Codex 3)"
+    ]
   }
 ]

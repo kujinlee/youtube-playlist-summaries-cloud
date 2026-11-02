@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 233 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 234 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1043,7 +1043,11 @@ def _layout_block(seg: str, cls: str = "seg") -> str:
 
 
 def layout_body(h: str) -> str:
-    """PURE. `md(body)` → the same HTML with block structure inserted (see the rules above)."""
+    """PURE. `md(body)` → the same HTML with block structure inserted (see the rules above).
+
+    Known bound, accepted (PR #475 r2, Codex findings 1-2): the list rule refuses some genuine lists
+    — rows 153, 311 and 423 (an item ending `case;`/`step;` reads as a reference) and rows 222, 224
+    and 340 (`(b) or …` alternatives) render unsplit, which fails toward less layout, by design."""
     if not h:
         return h
     blocks: list[tuple[int, int, str]] = []
@@ -3944,14 +3948,33 @@ def _self_test_body() -> int:
         return re.findall(r'<div class="(?:seg|prov)">', _lay(src))
 
     def _same_words_html(old: str, new: str) -> bool:
-        # A block boundary is NOT zero-width: the browser draws a line break there. So the text is
-        # compared with every inserted block tag as a SENTINEL, and each boundary must sit next to
-        # whitespace the original already had — `see (x)` + new line + `Fix: y` from `see (x)**Fix:**
-        # y` fails, as does a cut inside a word (PR #475 r1, Claude F4).
-        o = _LAYOUT_TAG.sub("", old)
-        n = _LAYOUT_TAG.sub("", re.sub(r"</?(?:div|ol|li)\b[^>]*>", "\x00", new))
-        if visible_text(old) != visible_text(new) or n.replace("\x00", "") != o:
+        # The new rendering must be the ORIGINAL HTML with only the layout wrappers inserted:
+        # strip exactly the tags `layout_body` adds (`<div class="seg|prov">`, `<ol class="enum">`,
+        # the `<li>` directly inside that `<ol>`, and their closers, matched by a stack) and the rest
+        # must equal `old` byte for byte — so `alpha<br>beta` cannot become `alphabeta` (PR #475 r2,
+        # Codex finding 3). A block boundary is NOT zero-width either: each inserted wrapper must sit
+        # next to whitespace (or a `<br>`) the original already had — `see (x)` + new line + `Fix: y`
+        # from `see (x)**Fix:** y` fails, as does a cut inside a word (PR #475 r1, Claude F4).
+        out: list[str] = []
+        stack: list[bool] = []
+        k = 0
+        for t in re.finditer(r"<(/?)(div|ol|li)\b[^>]*>", new):
+            out.append(new[k:t.start()])
+            k = t.end()
+            if t.group(1):
+                wrap = stack.pop() if stack else False
+            else:
+                wrap = bool(re.fullmatch(r'<div class="(?:seg|prov)">|<ol class="enum">', t.group(0))
+                            or (t.group(0) == "<li>" and stack and stack[-1]))
+                stack.append(wrap)
+            out.append("\x00" if wrap else t.group(0))
+        out.append(new[k:])
+        n_html = "".join(out)
+        if stack or n_html.replace("\x00", "") != old:
             return False
+        br = re.compile(r"<br\s*/?>")
+        o = _LAYOUT_TAG.sub("", br.sub(" ", old))
+        n = _LAYOUT_TAG.sub("", br.sub(" ", n_html))
         i = 0
         for piece in n.split("\x00")[:-1]:
             i += len(piece)
@@ -4063,6 +4086,11 @@ def _self_test_body() -> int:
                                       '<div class="seg"><strong>Fix:</strong> y</div>')
          and not _same_words_html("abc def", '<div class="seg">ab</div><div class="seg">c def</div>')
          and _same_words_html("abc def", '<div class="seg">abc </div><div class="seg">def</div>'))
+    case("layout: the same-words check refuses two words joined across an original <br> (r2 Codex 3)",
+         lambda: not _same_words_html("alpha<br>beta", '<div class="seg">alphabeta</div>')
+         and not _same_words_html("alpha<br>beta", "alphabeta")
+         and not _same_words_html("a <em>b</em>", '<div class="seg">a b</div>')
+         and _same_words_html("alpha<br>beta", '<div class="seg">alpha<br></div><div class="seg">beta</div>'))
     case("layout: same words, same order, over every fixture",
          lambda: all(_same_words(s) for s in _LAY_FIX))
     case("layout: same words, same order, over EVERY real backlog row",
