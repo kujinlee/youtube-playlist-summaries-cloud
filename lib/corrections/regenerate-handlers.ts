@@ -14,7 +14,43 @@ import { NonRetryableError } from '@/lib/job-queue/errors';
 import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { loadSummaryForServe } from '@/lib/html-doc/serve-summary-core';
-import { applyCorrection, CORRECTION_CAPS } from '@/lib/corrections/apply-core';
+import { applyCorrection, CORRECTION_CAPS, meteredCorrectionCents } from '@/lib/corrections/apply-core';
+import type { UsageMeter } from '@/lib/gemini';
+import { raceRpc } from '@/lib/serve-rpc';
+
+/** The wait on EACH correction RPC — the allowance read before the paid call, the spend record after
+ *  it (round 1, M1/M3). Raced against our own timer by `raceRpc`, because a postgrest abort
+ *  RETURNS rather than throws (serve-rpc.ts, `RpcOutcome`). PROVISIONAL, like SERVE_RESERVE_RPC_TIMEOUT_MS:
+ *  one round trip, revise from observed p99. */
+export const CORRECTION_RPC_TIMEOUT_MS = 3_000;
+import { StructuralValidationError, type StructuralFailureReason } from '@/lib/corrections/structural-validation';
+
+/** What the reader is told when the model's corrected document failed structural validation
+ *  (backlog #63). The validator's own message is for the log — it names section indices and parsed
+ *  tuples the reader cannot act on. Typed by reason so a new reason is a compile error here, not a
+ *  raw string in the panel. 422, not 500: nothing failed on the server, and nothing was saved. */
+export const STRUCTURAL_REFUSALS: Record<StructuralFailureReason, { code: string; error: string }> = {
+  'missing-frontmatter': {
+    code: 'structure-missing-frontmatter',
+    error: 'The corrected summary came back without its metadata header, so it was not saved. Please try again.',
+  },
+  'missing-h1': {
+    code: 'structure-missing-h1',
+    error: 'The corrected summary came back without its title, so it was not saved. Please try again.',
+  },
+  'section-count': {
+    code: 'structure-section-count',
+    error: 'The correction added or removed a section, so it was not saved. Corrections can change wording, not which sections exist.',
+  },
+  'section-title': {
+    code: 'structure-section-title',
+    error: 'The correction changed a section heading, so it was not saved. Corrections cannot rename sections.',
+  },
+  'section-timestamp': {
+    code: 'structure-section-timestamp',
+    error: 'The correction changed a section\'s video timestamp link, so it was not saved. Please try again.',
+  },
+};
 
 /** The whole handler, LOCAL and CLOUD, lifted out of app/ so the route file holds no backend
  *  fork, no UUID literal and no serveLocal/serveCloud names — see lib/http/request-scope.ts for
@@ -195,6 +231,10 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     );
   }
 
+  // Filled by fixSummary as each paid attempt returns, and read in the `finally` below — so a press
+  // that throws AFTER paying still records what it paid (backlog #62).
+  const meter: UsageMeter = { attempts: [] };
+
   // EVERYTHING BELOW IS INSIDE THE TRY. On the local branch `getStorageBundle()` sits OUTSIDE it,
   // so a missing client 500s instead of returning an error.
   try {
@@ -222,6 +262,32 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     const mdContent = mdBytes.toString('utf-8');
 
     const trimmedCorrections = typeof corrections === 'string' ? corrections.trim() : undefined;
+
+    // ⚠ THE DAILY LIMIT REFUSES THE PRESS, BEFORE ANY PAID CALL (round 1, H1 — both halves). 0026's
+    // per-owner limit lives inside record_correction_spend, so on its own it refused only the
+    // BOOKKEEPING: from press N+1 Gemini was billed and nothing was written anywhere. Checked before
+    // the annotation write too, so a refused press changes nothing. Fails CLOSED — no readable
+    // allowance, no paid call.
+    // ⚠ A CHECK, NOT A RESERVATION — and the window is UNBOUNDED (round 2, Claude M1): K concurrent
+    // presses at N-1 all pass and all pay; 0026 then refuses K-1 recordings, raising BEFORE its
+    // spend_ledger write, so those presses reach neither counter; and nothing rate-limits this route,
+    // so K is the client's choice. Closing it is reserve/settle — backlog #61.
+    if (trimmedCorrections) {
+      const allowance = await readCorrectionAllowance(supabase);
+      if (!allowance.ok) {
+        return NextResponse.json(
+          { error: 'Corrections are temporarily unavailable. Please try again in a moment.', code: 'correction-limit-unavailable' },
+          { status: 503 },
+        );
+      }
+      if (allowance.calls >= allowance.maxCalls) {
+        return NextResponse.json(
+          { error: 'You have reached today\'s limit for corrections. Please try again tomorrow.', code: 'correction-limit-reached' },
+          { status: 429 },
+        );
+      }
+    }
+
     const storedCorrections = video.corrections ?? '';
     if (trimmedCorrections && trimmedCorrections !== storedCorrections) {
       const { found } = await store.updateVideoAnnotations(principal, videoId, { corrections: trimmedCorrections }, []);
@@ -241,6 +307,7 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
         tags: video.tags ?? [],
         signal: request.signal,
         caps: CORRECTION_CAPS,
+        meter,
       });
       tldr = applied.tldr;
       takeaways = applied.takeaways;
@@ -252,30 +319,6 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
       // `artifacts.summaryMd.key` and falls back to the top-level field, so writing to
       // `video.summaryMd` could target a blob the artifact record does not govern.
       await blobStore.put(principal, mdKey, Buffer.from(applied.content, 'utf-8'), 'text/markdown');
-
-      // Record ACTUAL spend, after the call returned (spec §5.2). Post-hoc, not pre-authorised:
-      // the guardrails see this on the NEXT decision, which is the accepted trade.
-      //
-      // ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST. The money is already spent and the corrected
-      // body is already durable in storage; a 500 here would report failure for work that landed and
-      // invite the user to press again — paying twice to fix a bookkeeping error. That includes
-      // hitting the per-owner daily bound: the correction still happened and the user still gets it.
-      // Log loudly instead. Same rule as the envelope-invalidation failure the spec settled in §2.
-      if (applied.actualCents != null) {
-        const { error: spendError } = await supabase.rpc('record_correction_spend', {
-          p_cents: applied.actualCents,
-        });
-        if (spendError) {
-          console.error(
-            `[correction-spend] FAILED to record owner=${principal.id} video=${videoId} `
-            + `cents=${applied.actualCents}: ${spendError.message}`,
-          );
-        }
-      } else {
-        // null is "the SDK reported no usage", NOT "free" (Task 5). Recording 0 would be a lie the
-        // ledger cannot distinguish from a genuinely free call.
-        console.warn(`[correction-spend] UNMEASURED owner=${principal.id} video=${videoId}`);
-      }
     } else {
       // Bare press or explicit clear: quick-view still refreshes (spec §3), but NOTHING is written to
       // the blob — the prose did not change and a rewritten callout would move the body hash, which
@@ -309,6 +352,89 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
         { status: 413 },
       );
     }
+    if (err instanceof StructuralValidationError) {
+      const { code, error } = STRUCTURAL_REFUSALS[err.reason];
+      return NextResponse.json({ error, code }, { status: 422 });
+    }
     return NextResponse.json({ error: errorSummary(err) }, { status: 500 });
+  } finally {
+    // AFTER the response is decided, on EVERY path: success, structural refusal, exhausted retries,
+    // a failed blob write, an abort. On success this still runs after `blobStore.put`.
+    await recordCorrectionSpend(supabase, meter, user.id, videoId);
+  }
+}
+
+type Allowance = { ok: true; calls: number; maxCalls: number } | { ok: false };
+
+/** Today's recorded correction count for the signed-in owner and 0026's per-owner call limit
+ *  (migration 0028). Anything other than two integers — an error, a timeout, a malformed row — is `ok: false`,
+ *  which the caller treats as a refusal: a missing limit must never read as "no limit". */
+async function readCorrectionAllowance(supabase: ReturnType<typeof createServerSupabase>): Promise<Allowance> {
+  // No `.abortSignal(signal)`: on a timeout the read is simply abandoned, which costs nothing.
+  const out = await raceRpc<unknown>(
+    () => supabase.rpc('correction_allowance'), CORRECTION_RPC_TIMEOUT_MS, 'correction_allowance',
+  );
+  if (!out.ok) {
+    console.error(`[correction-allowance] UNREADABLE (${out.reason}) — refusing the press`);
+    return { ok: false };
+  }
+  const d = out.data as { calls?: unknown; max_calls?: unknown } | null;
+  if (!d || !Number.isInteger(d.calls) || !Number.isInteger(d.max_calls)) {
+    console.error(`[correction-allowance] MALFORMED ${JSON.stringify(d)} — refusing the press`);
+    return { ok: false };
+  }
+  return { ok: true, calls: d.calls as number, maxCalls: d.max_calls as number };
+}
+
+/**
+ * Record ACTUAL spend, after the paid call settled (spec §5.2). Post-hoc, not pre-authorised: the
+ * guardrails see this on the NEXT decision, which is the accepted trade (reserve/settle is backlog #61).
+ *
+ * ⚠ RUNS WHATEVER THE OUTCOME (backlog #62). It used to run only after a successful correction, and
+ * this RPC is the sole writer of both the per-owner-per-day counter and the `spend_ledger` the daily
+ * cap watches — so a correction made to fail deterministically spent in a loop while every guardrail
+ * read zero. Measured in production 2026-08-24: a failed press left 0 rows and the ledger unmoved.
+ *
+ * Every DISPATCHED attempt is charged (round 3): it is metered at the per-attempt bound when sent,
+ * and the bound is replaced by the reported usage if a response arrives (a missing field stays at its
+ * bound) — `meteredCorrectionCents`, UsageMeter. So any exit, whatever the error, leaves its charge,
+ * and a press with attempts always records, never 0¢ and never nothing. An attempt that failed
+ * before Gemini generated anything is over-counted; that is the accepted direction.
+ *
+ * ONE CALL PER PRESS, ALWAYS (round 2, Codex High). 0026 checks `correction_max_cents` per RPC call
+ * and REJECTS the whole amount above it. Round 1 split an over-ceiling press across calls, but each
+ * call spends one of the owner's daily slots, so at calls = N-1 a [3,3,1] press recorded 3¢ and lost
+ * 4. Removed. The ceiling is instead PROVED to cover the worst press —
+ * (FIX_SUMMARY_RETRIES + 1) × CORRECTION_WORST_ATTEMPT_CENTS = 9¢ against 0026's default 12¢ —
+ * by tests/lib/corrections/correction-ceiling.test.ts (the migration's declared default) and by the
+ * cap-soundness case in record-correction-spend.int.test.ts (the live config row). A change to the
+ * caps, the prices, the retries or the ceiling turns one of those red instead of losing money here.
+ *
+ * ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST — and it cannot: it NEVER THROWS, and the call is
+ * bounded by CORRECTION_RPC_TIMEOUT_MS, so a hung ledger delays the response by at most that, never
+ * holds it. The money is already spent; on success the corrected body is already durable, and a 500
+ * would invite the user to press again, paying twice to fix a bookkeeping error. That includes
+ * hitting the per-owner daily bound. Log loudly instead — there is no durable retry of a failed
+ * recording. A timed-out call is not aborted, so it may still land — the safe direction for a
+ * record of spend that already happened.
+ */
+async function recordCorrectionSpend(
+  supabase: ReturnType<typeof createServerSupabase>, meter: UsageMeter, ownerId: string, videoId: string,
+): Promise<void> {
+  if (meter.attempts.length === 0) return;   // bare press, preflight refusal, early 4xx: nothing paid
+  const { cents, estimated } = meteredCorrectionCents(meter);
+  if (estimated > 0) {
+    // Charged at the cap bound, not 0 and not skipped — but still worth seeing, because a bound is
+    // not a measurement.
+    console.warn(`[correction-spend] ESTIMATED owner=${ownerId} video=${videoId} attempts=${estimated} cents=${cents}`);
+  }
+  const out = await raceRpc<unknown>(
+    () => supabase.rpc('record_correction_spend', { p_cents: cents }), CORRECTION_RPC_TIMEOUT_MS, 'record_correction_spend',
+  );
+  if (!out.ok) {
+    const why = out.reason === 'timeout'
+      ? `TIMED OUT after ${CORRECTION_RPC_TIMEOUT_MS}ms`
+      : (out.cause as { message?: string } | undefined)?.message ?? errorSummary(out.cause);
+    console.error(`[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${cents}: ${why}`);
   }
 }
