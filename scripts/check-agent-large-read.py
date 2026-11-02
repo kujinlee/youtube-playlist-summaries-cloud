@@ -46,7 +46,10 @@ object or not UTF-8, a `tool_input` that is not an object, a Read `file_path` th
 integers arrive as floats: `parse_json` reads every integer as one), a command `shlex` cannot split, a `sed -n` script that is not line
 ranges, and a `$VAR` with no value.
 
-⚠ BOUNDS, stated. (1) The state is one small JSON file per agent under `<system temp>/claude-agent-reads/`, entries
+⚠ BOUNDS, stated. (1) The state is one small JSON file per agent under `<system temp>/claude-agent-reads-<uid>/`, a
+directory made 0700 and refused (NOT CHECKED) when it is a symlink or another user owns it, so no other user can
+plant or redirect a state file (a security review, PR #469); each write is `mkstemp` in that directory, then
+`os.replace`. Entries
 older than 24 h dropped and other agents' files older than 24 h deleted. Two PARALLEL calls of one agent can lose
 one record (each writes the whole file): a missed refusal, never a false one. (2) A read is recorded when the hook
 ALLOWS it; if a later hook or the permission check refuses the call, its lines are recorded anyway, and a re-read
@@ -54,7 +57,7 @@ of them is refused while the file is unchanged. (3) An edit by ANOTHER process c
 the re-read is allowed. (4) A file of more than 300 lines is read in ranges of at most 300.
 
     python3 scripts/check-agent-large-read.py --hook < payload.json
-    python3 scripts/check-agent-large-read.py --self-test  # 67 cases
+    python3 scripts/check-agent-large-read.py --self-test  # 70 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED.
 
@@ -69,6 +72,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import sys
 import tempfile
 import time
@@ -79,7 +83,7 @@ REREAD_MAX_LINES = 50
 READ_DEFAULT_LIMIT = 2000
 HEAD_DEFAULT = 10
 STATE_TTL_S = 24 * 3600
-STATE_DIRNAME = "claude-agent-reads"
+STATE_DIRNAME = "claude-agent-reads-{uid}"
 BINARY_SNIFF = 8192
 
 _spec = importlib.util.spec_from_file_location("check_usage_pace",
@@ -303,11 +307,17 @@ def read_spans(ti: dict) -> list:
     return take([(os.path.realpath(path), 1, n)], max(offset, 1), max(offset, 1) + max(limit, 1) - 1)
 
 
-def load_state(state_dir: str, aid: str, now: float) -> tuple[Path, list]:
+def load_state(state_dir: str, aid: str, now: float) -> tuple[Path, Path, list]:
     """This agent's recorded reads younger than 24 h; other agents' state files older than 24 h are deleted."""
     d = Path(state_dir)
-    d.mkdir(parents=True, exist_ok=True)
-    for f in d.glob("*.json"):
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    st = os.lstat(d)
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        raise Unreadable(f"the state directory {d} is a symlink or not a directory")
+    if st.st_uid != os.getuid():
+        raise Unreadable(f"the state directory {d} is owned by uid {st.st_uid}, not this user")
+    os.chmod(d, 0o700)
+    for f in [*d.glob("*.json"), *d.glob("*.tmp")]:
         try:
             if now - f.stat().st_mtime > STATE_TTL_S:
                 f.unlink()
@@ -318,7 +328,7 @@ def load_state(state_dir: str, aid: str, now: float) -> tuple[Path, list]:
         reads = json.loads(path.read_text())["reads"]
     except (OSError, ValueError, KeyError, TypeError):
         reads = []
-    return path, [r for r in reads if isinstance(r, dict) and now - r.get("at", 0) <= STATE_TTL_S]
+    return d, path, [r for r in reads if isinstance(r, dict) and now - r.get("at", 0) <= STATE_TTL_S]
 
 
 def decide(doc: dict, env: dict, state_dir: str, now: float) -> str | None:
@@ -346,7 +356,7 @@ def decide(doc: dict, env: dict, state_dir: str, now: float) -> str | None:
                 "stays in your context and is re-read at cache rates on every later call. " + ADVICE)
     if not spans:
         return None
-    state_path, reads = load_state(state_dir, doc["agent_id"], now)
+    d, state_path, reads = load_state(state_dir, doc["agent_id"], now)
     stats = {p: os.stat(p) for p, _, _ in spans}
     fresh = [r for r in reads if r.get("path") not in stats or
              (r.get("mtime_ns"), r.get("size")) == (stats[r["path"]].st_mtime_ns, stats[r["path"]].st_size)]
@@ -364,8 +374,9 @@ def decide(doc: dict, env: dict, state_dir: str, now: float) -> str | None:
                 "is always readable again.")
     fresh += [{"path": p, "lo": a, "hi": b, "mtime_ns": stats[p].st_mtime_ns, "size": stats[p].st_size, "at": now}
               for p, a, b in spans]
-    tmp = state_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"reads": fresh}))
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps({"reads": fresh}))
     os.replace(tmp, state_path)
     return None
 
@@ -385,7 +396,7 @@ def main(argv: list[str] | None = None, stdin_bytes: bytes | None = None, env: d
         if not isinstance(doc, dict):
             raise Unreadable(f"the hook payload is not a JSON object ({type(doc).__name__})")
         reason = decide(doc, os.environ if env is None else env,
-                        state_dir or os.path.join(tempfile.gettempdir(), STATE_DIRNAME), time.time())
+                        state_dir or os.path.join(tempfile.gettempdir(), STATE_DIRNAME.format(uid=os.getuid())), time.time())
     except (Unreadable, OSError) as exc:
         print(f"⚠ check-agent-large-read: {exc}; this call was NOT CHECKED for a large read (backlog #457).",
               file=sys.stderr)
@@ -541,6 +552,23 @@ def _self_test_body() -> int:
     os.utime(old, (1, 1))
     verdict(p(file_path=small, agent="a3"), state=st2)
     case("another agent's state file older than 24 h is deleted", old.exists(), False)
+    real = tempfile.mkdtemp(prefix="large-read-state-")
+    link = real + "-link"
+    os.symlink(real, link)
+    case("a symlinked state directory is NOT CHECKED", verdict(p(file_path=small, agent="a4"), state=link),
+         "not checked")
+    real_uid = os.getuid
+    os.getuid = lambda: real_uid() + 1
+    try:
+        case("a state directory another user owns is NOT CHECKED", verdict(p(file_path=small, agent="a4")),
+             "not checked")
+    finally:
+        os.getuid = real_uid
+    loose = tempfile.mkdtemp(prefix="large-read-state-")
+    os.chmod(loose, 0o755)
+    verdict(p(file_path=small, agent="a4"), state=loose)
+    case("the state directory is made 0700, and a write leaves no temp file",
+         (stat.S_IMODE(os.stat(loose).st_mode), sorted(os.listdir(loose))), (0o700, ["a4.json"]))
     case("the denial names grep -n, the limit and the remedy",
          all(x in (decide(p(file_path=big), {}, tempfile.mkdtemp(), 0.0) or "")
              for x in ("grep -n", "500 lines", "offset", "300")), True)

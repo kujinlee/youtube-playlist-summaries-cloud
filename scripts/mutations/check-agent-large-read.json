@@ -661,5 +661,44 @@
     "expect": [
       "a limit that is a float with a fraction, or infinite, is NOT CHECKED"
     ]
+  },
+  {
+    "name": "a symlinked state directory is followed",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a symlinked state directory is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "a state directory another user owns is used",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "    if st.st_uid != os.getuid():",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a state directory another user owns is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "the state directory keeps its loose mode",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "    os.chmod(d, 0o700)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "the state directory is made 0700, and a write leaves no temp file"
+    ]
   }
 ]
