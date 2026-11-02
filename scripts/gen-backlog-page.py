@@ -3955,18 +3955,27 @@ def _self_test_body() -> int:
         # Codex finding 3). A block boundary is NOT zero-width either: each inserted wrapper must sit
         # next to whitespace (or a `<br>`) the original already had — `see (x)` + new line + `Fix: y`
         # from `see (x)**Fix:** y` fails, as does a cut inside a word (PR #475 r1, Claude F4).
+        # The stack holds (tag name, is-wrapper, is-the-enum-list): a closer must match the name it
+        # pops, and a `<li>` is a wrapper only directly inside `<ol class="enum">` (PR #475 r3, F2).
+        # The visible text is compared TOO: the byte compare cannot see a wrapper inserted inside a
+        # tag, because the whitespace check strips the host tag with it (PR #475 r3, F1).
+        if visible_text(old) != visible_text(new):
+            return False
         out: list[str] = []
-        stack: list[bool] = []
+        stack: list[tuple[str, bool, bool]] = []
         k = 0
         for t in re.finditer(r"<(/?)(div|ol|li)\b[^>]*>", new):
             out.append(new[k:t.start()])
             k = t.end()
             if t.group(1):
-                wrap = stack.pop() if stack else False
+                if not stack or stack[-1][0] != t.group(2):
+                    return False
+                wrap = stack.pop()[1]
             else:
-                wrap = bool(re.fullmatch(r'<div class="(?:seg|prov)">|<ol class="enum">', t.group(0))
-                            or (t.group(0) == "<li>" and stack and stack[-1]))
-                stack.append(wrap)
+                enum = t.group(0) == '<ol class="enum">'
+                wrap = bool(enum or re.fullmatch(r'<div class="(?:seg|prov)">', t.group(0))
+                            or (t.group(0) == "<li>" and stack and stack[-1][2]))
+                stack.append((t.group(2), wrap, enum))
             out.append("\x00" if wrap else t.group(0))
         out.append(new[k:])
         n_html = "".join(out)
@@ -3996,9 +4005,11 @@ def _self_test_body() -> int:
         "(filed 🟠) **T** — found 2026-11-01. Rest.",
         "**Fix:** either (a) drop the one; (b) keep the two; (c) merge all three.",
         "**Work:** (1) the first part, (2) the second part.",
-        "x (see (a) one and (b) two) y",
-        "x (b) one and (a) two y",
-        "x `z (a) one (b) two` y",
+        # items of 3+ words, so `_enum_run_ok` passes the run and only the paren / order / depth-0 rule
+        # refuses it (PR #475 r3: 1-2-word items masked all three mutations)
+        "x (see (a) one more thing and (b) two more things) y",
+        "x (b) one more thing and (a) two more things y",
+        "x `z (a) one more thing (b) two more things` y",
         "plain words only, nothing to lay out.",
         "",
         "x. (1) **A:** the first one. (2) **B:** the second one.",
@@ -4091,6 +4102,13 @@ def _self_test_body() -> int:
          and not _same_words_html("alpha<br>beta", "alphabeta")
          and not _same_words_html("a <em>b</em>", '<div class="seg">a b</div>')
          and _same_words_html("alpha<br>beta", '<div class="seg">alpha<br></div><div class="seg">beta</div>'))
+    case("layout: the same-words check refuses a wrapper inserted inside a tag (r3 Claude F1)",
+         lambda: not _same_words_html('<a href="u">x</a> y', '<a href="u<div class="seg">">x</a> y</div>')
+         and _same_words_html('<a href="u">x</a> y', '<div class="seg"><a href="u">x</a> y</div>'))
+    case("layout: the same-words check refuses a stray <li> and a mismatched closer (r3 Claude F2)",
+         lambda: not _same_words_html("x y", '<div class="seg"><li>x y</li></div>')
+         and not _same_words_html("x y", '<div class="seg">x y</li>')
+         and _same_words_html("x y", '<div class="seg"><ol class="enum"><li>x y</li></ol></div>'))
     case("layout: same words, same order, over every fixture",
          lambda: all(_same_words(s) for s in _LAY_FIX))
     case("layout: same words, same order, over EVERY real backlog row",

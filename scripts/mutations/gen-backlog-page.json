@@ -734,7 +734,7 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "                            or (t.group(0) == \"<li>\" and stack and stack[-1]))\n",
+        "                            or (t.group(0) == \"<li>\" and stack and stack[-1][2]))\n",
         "                            )\n"
       ]
     ],
@@ -753,6 +753,45 @@
     ],
     "expect": [
       "layout: the same-words check refuses two words joined across an original <br> (r2 Codex 3)"
+    ]
+  },
+  {
+    "name": "layout r3: the same-words check drops the visible-text comparison",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if visible_text(old) != visible_text(new):\n            return False\n        out: list[str] = []\n",
+        "        out: list[str] = []\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a wrapper inserted inside a tag (r3 Claude F1)"
+    ]
+  },
+  {
+    "name": "layout r3: a closer need not match the tag it pops",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                if not stack or stack[-1][0] != t.group(2):\n                    return False\n",
+        "                if not stack:\n                    return False\n"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a stray <li> and a mismatched closer (r3 Claude F2)"
+    ]
+  },
+  {
+    "name": "layout r3: a <li> under any wrapper is stripped, not only under ol.enum",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "and stack and stack[-1][2]))",
+        "and stack and stack[-1][1]))"
+      ]
+    ],
+    "expect": [
+      "layout: the same-words check refuses a stray <li> and a mismatched closer (r3 Claude F2)"
     ]
   }
 ]
