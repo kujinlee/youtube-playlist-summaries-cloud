@@ -2166,6 +2166,10 @@ EXPECTED_MUTATIONS = {
     # commit that creates it (21). ⟳ r1 fold: the sleep and watch rules removed, the effective timeout read the way
     # the harness reads it — one entry per clause of that reading, the exemptions, the deny JSON and NOT CHECKED: 29.
     "scripts/check-agent-long-call.py": 36,
+    # backlog #457 (2026-11-01): a subagent's read of more than 300 lines, or a re-read of an unchanged file, is
+    # refused. Pinned in the commit that creates it — one entry per clause of the Read and Bash readers, the
+    # exemptions, the re-read record and NOT CHECKED: 51.
+    "scripts/check-agent-large-read.py": 51,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
@@ -4809,6 +4813,8 @@ def _self_test_body() -> int:
                                       "scripts/bounded_read.py",
                                       "scripts/brief-compose.py",
                                       # backlog #455: the subagent long-call hook, with its manifest.
+                                      # backlog #457: the subagent large-read hook, with its manifest.
+                                      "scripts/check-agent-large-read.py",
                                       "scripts/check-agent-long-call.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
