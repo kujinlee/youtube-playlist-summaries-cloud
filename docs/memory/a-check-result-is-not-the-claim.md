@@ -299,3 +299,5 @@ the guards themselves (`python3 a && python3 b && git commit …`). An `echo rc=
   unattributed kill — **the mutation run is what finds these; run it scoped after every case edit.**
 
 **2026-10-29: a gate scanned HEAD while a rebase had STOPPED on a conflict**, so HEAD was master and it said `hits: 0` over 0 lines; the push then sent the branch ref, unscanned. It was clean, but by luck. **Gate on the exact ref being pushed** (`--head $(git rev-parse <branch>)`), and never chain a push after a rebase without checking that it finished.
+
+**2026-10-30/31, another instance: a setting verified in a FRESH session is not live in the CURRENT one.** I reported autoCompactWindow=300000 as "live" because a test `claude -p` session honoured it. But settings files load at launch, and the coordinator session ran on at 592k/1000k until the owner saw it in the HUD. **How to apply:** for any config change, ask WHICH process reads it and WHEN; then verify in the process that matters (here: the HUD context %, or `/autocompact` for the running session).
