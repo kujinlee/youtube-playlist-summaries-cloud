@@ -253,7 +253,7 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 </div>
 <div class="wrap ex-body">
 <h1>Dev speed: where the time goes, and a tripwire for new slow steps</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 10:15 · 30234b4c · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-30 10:27 · 30234b4c · uncommitted changes</time></span></div></div>
 <p class="horizon">as of master <code>c983a114</code> · 2026-10-29 03:40 PDT · data from <code>gh run list</code> (1,000 CI runs, 09-06 → 10-29), <code>gh pr list</code> (400 merged PRs, 07-17 → 10-29), all 318 session transcripts of this project, and local timings taken tonight</p>
 <div class="reading"><b>Reading:</b> dev speed is the wall-clock time from a request to a merged PR. This page is (1) a baseline of what we've measured, (2) where the time goes, (3) remedies, and (4) what to collect so that a new slow step is caught when it lands, not weeks later.</div>
 
@@ -417,6 +417,49 @@ Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at th
 <tr><td>Review wrapper remainder (a parent symlink swapped mid-run, a failed write losing a paid review)</td><td>#400</td><td>safety</td></tr>
 <tr><td>A subagent can wake a sibling past the usage gate</td><td>#404</td><td>usage</td></tr>
 <tr><td>The push hook reads heredoc prose as a push</td><td>#398</td><td>false blocks</td></tr></table>
+<p><b>Q (the owner, 10-30 10:18):</b> what would the savings be if these were built? How long would it take to build them?</p>
+<p><b>Savings, as the code-PR CI time you actually wait for.</b> The slowest mutation shard decides how long a code PR's CI takes. Its cost is a fixed control pass of about 309 s plus the sweep's work divided across the shards, times the measured runner spread of 1.24. This model reproduces today's measured shard (28.7 min modelled against 29.3 min measured). It is conservative, because faster suites also shrink the fixed pass.</p>
+<table><tr><th>cumulative</th><th>sweep work</th><th>slowest shard, so code-PR CI</th></tr>
+<tr><td>today, 12 shards</td><td>12,965 s</td><td><b>≈ 29 min</b> (measured)</td></tr>
+<tr><td>+ PR #445, 24 shards</td><td>12,965 s</td><td>≈ 17.6 min</td></tr>
+<tr><td>+ #401 caching (in progress)</td><td>≈ 5,365 s</td><td>≈ 11.0 min</td></tr>
+<tr><td>+ #405 stop at the named case</td><td>≈ 1,825 s</td><td>≈ 8.0 min (part NOT measured)</td></tr>
+<tr><td>+ #406 caches and #407 scaled deadlines</td><td>≈ 300 s</td><td>≈ 6.6 min, where the fixed pass now dominates</td></tr></table>
+<p>So a code PR's CI would go from about 29 minutes to about 7. The other deferred items save different things:</p>
+<ul>
+<li><b>#402 (scoped count check):</b> about 366 local runs of 3–6 minutes each in 8 days, so <b>roughly 2–3 agent-hours a day</b> of waiting, plus the CPU contention those runs cause for every other agent.</li>
+<li><b>#403 (a Claude final round counts):</b> one Codex round, about 15–25 minutes, on each PR whose last round falls to Claude. PR #439 paid this.</li>
+<li><b>#388 (flake fix):</b> no time; it makes a red result mean something again. <b>#397 (tripwire):</b> no time; it catches the NEXT slowdown in the week it lands.</li>
+</ul>
+<p><b>How long to build, from today's own record.</b> Review rounds dominate the time, not the coding. Today's guard changes, all sized "S" in the backlog:</p>
+<ul>
+<li>PR #439 took <b>9 review rounds</b>: about 6 active hours across 30 wall hours, 24 of them the usage-limit halt.</li>
+<li>PR #446 has taken 4 rounds in about 4 hours and is still open.</li>
+<li>PR #440 is on round 3.</li>
+</ul>
+<table><tr><th>item</th><th>size</th><th>estimated active time</th><th>why</th></tr>
+<tr><td>#401 caching</td><td>S</td><td>2–4 h (started 08:25)</td><td>the change is measured; review is the cost</td></tr>
+<tr><td>#406 four caches</td><td>S</td><td>2–4 h</td><td>small, but each cache needs a staleness mutation</td></tr>
+<tr><td>#407 scaled deadlines</td><td>S</td><td>2–4 h</td><td>must keep one real-time run</td></tr>
+<tr><td>#402 scoped count check, with #388</td><td>S</td><td>2–3 h</td><td>a small option, plus a flake diagnosis</td></tr>
+<tr><td>#405 stop at the named case</td><td>M</td><td><b>6–10 h</b></td><td>it changes how the HARNESS decides a kill, so expect several adversarial rounds</td></tr>
+<tr><td>#397 tripwire</td><td>M</td><td>4–6 h</td><td>a new log, a script and a CI hook</td></tr></table>
+<p>These are estimates, inferred from today's PRs, not measured for these items. Building <b>#401, #406 and #407</b> alone (about 6–12 active hours) takes code-PR CI from ≈ 17.6 to about 9.7 minutes, with PR #445 in place. #405 is the biggest single remaining lever, and also the riskiest.</p>
+<p><b>Q (the owner, 10-30 10:26):</b> you estimated each deferred item's saving against its build time. What is the overall saving and the overall build time, counting only the deferred items?</p>
+<p><b>A, counting only the six SPEED items deferred</b> (#405, #406, #407, #402 with #388, #397, #403). This excludes #401 and the shard resize, which are already in progress, and the four safety rows (#396, #398, #400, #404), which save no time.</p>
+<table><tr><th></th><th>total</th><th>how it was computed</th></tr>
+<tr><td><b>Build time</b></td><td><b>about 18–31 active hours</b></td><td>the sum of the per-item estimates (#405 6–10 h; #397 4–6 h; #406, #407 and #403 2–4 h each; #402 with #388 2–3 h). INFERRED from today's PRs, where review rounds, not coding, set the pace</td></tr>
+<tr><td><b>Code-PR CI</b></td><td><b>11.0 → 6.6 min, −4.4 min (−40%) per code PR</b></td><td>the same shard model, starting AFTER #401 and the 24 shards land</td></tr>
+<tr><td>… per day</td><td><b>≈ 22 min</b> of CI wait</td><td>about 5 code PRs a day (35 merged code PRs from 10-23 to 10-29, measured with <code>gh</code>)</td></tr>
+<tr><td><b>Local agent time</b> (#402)</td><td><b>≈ 2–4 agent-hours a day</b></td><td>about 46 local full count-check runs a day (366 in 8 days) at 3–6 min each; this is also CPU every other agent shares</td></tr>
+<tr><td>Review rounds (#403)</td><td>15–25 min per affected PR</td><td>how often a PR's last round falls to Claude was NOT measured</td></tr>
+<tr><td>#397 and #388</td><td>no direct time</td><td>they catch the next slowdown, and restore trust in red results</td></tr></table>
+<p><b>Payback:</b> roughly 2.5–4.5 hours saved a day (22 min of CI plus 2–4 agent-hours) against 18–31 build hours, so <b>about one to two weeks</b>.</p>
+<ul>
+<li>⚠ Agent-hours are not your hours. Faster CI shortens how long a PR waits to merge, which you feel. The local agent time mostly frees CPU and usage quota, which bears on the weekly limit.</li>
+<li><b>The best ratio is in the cheap items:</b> #406, #407 and #402 (about 6–11 h) take most of the local saving and part of the CI saving.</li>
+<li><b>#405 (6–10 h) is the largest single CI lever and the riskiest,</b> because it changes how a kill is decided.</li>
+</ul>
 <p><b>Decided NOT to build:</b> trimming duplicate mutation entries (each tests a different clause), running only the named case (every suite would need restructuring), and a shared on-disk parse cache (parsing is too small a share).</p>
 <p><b>Order by saving ÷ effort:</b> (1) <code>check-main-drivable</code> caching, in progress, ≈ 59%; (2) stop at the named case, ≈ 16%; (3) the four small caches above, ≈ 5%, a few lines each.</p>
 
