@@ -1058,8 +1058,8 @@
     "file": "scripts/check-agent-large-read.py",
     "edits": [
       [
-        "        if simple_command(part) is not None:\n            spans += ",
-        "        if simple_command(part) is not None:\n            spans = spans or "
+        "                return []\n            spans += ",
+        "                return []\n            spans = spans or "
       ]
     ],
     "expect": [
@@ -1381,6 +1381,19 @@
     ],
     "expect": [
       "`grep` is not a zero-line part (`grep \"\" big` prints the file): `grep x small; cat a; cat b` is allowed"
+    ]
+  },
+  {
+    "name": "a list part read through master's `cd` prefix is counted (round 3 severed)",
+    "file": "scripts/check-agent-large-read.py",
+    "edits": [
+      [
+        "            if simple[0] is not None:  # PR #471 round 3",
+        "            if False:  # PR #471 round 3"
+      ]
+    ],
+    "expect": [
+      "a list part master's prefix parser reads as `cd DIR && reader` keeps the list allowed whole: `true; cd . '&&' cat big` (bash: 0 lines), `cat a; cd . '&&' cat big` (200)"
     ]
   }
 ]

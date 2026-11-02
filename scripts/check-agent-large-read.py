@@ -89,7 +89,7 @@ Python's `glob`, which skips dot-files as bash does but cannot see quoting: `cat
 `==> f <==` headers `head` and `tail` print for several files are not counted.
 
     python3 scripts/check-agent-large-read.py --hook < payload.json
-    python3 scripts/check-agent-large-read.py --self-test  # 107 cases
+    python3 scripts/check-agent-large-read.py --self-test  # 108 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED.
 
@@ -394,7 +394,8 @@ def list_spans(command: str, parts: list[tuple[str, str]], cwd: str, env: dict) 
     and the FIRST part may be `cd DIR &&` (the later parts resolve there). Any other part — a pipeline, an
     assignment, `export`, `{`, `if`, `grep`, any other `cd`, an empty part but one trailing `;` — and any of
     `LIST_STRICT` (a redirect, a backslash, `$'`, `$(`, a backtick) or an unquoted `|&()#` anywhere make the WHOLE
-    list [] (allowed): fail toward allow (PR #471 rounds 1 and 2 narrowed it)."""
+    list [] (allowed): fail toward allow (PR #471 rounds 1 and 2 narrowed it). ⟳ Round 3: a part `simple_command`
+    reads through a `cd` prefix (`cd . '&&' cat big`, quote-unaware after `shlex`) also allows the whole list."""
     if COMPOUND.search(command.strip()) or any(x in command for x in LIST_STRICT):  # in doubt, the whole list
         return []
     parts, doubt = split_list(command)
@@ -406,7 +407,10 @@ def list_spans(command: str, parts: list[tuple[str, str]], cwd: str, env: dict) 
     for n, (part, sep) in enumerate(parts):
         if not part.strip():  # `;;`, a leading `;`, a trailing `&&`: bash refuses the list, it runs nothing
             return []
-        if simple_command(part) is not None:
+        simple = simple_command(part)
+        if simple is not None:
+            if simple[0] is not None:  # PR #471 round 3: master's `cd DIR &&` prefix parser stays in master's path
+                return []
             spans += simple_spans(part, cwd, env)
             continue
         try:
@@ -628,6 +632,11 @@ def _self_test_body() -> int:
          [sh(f"cd {root}; cat big.txt"), sh(f"cd {root}/missing; cat {two_a}; cat {two_b}"),
           sh(f"cd {logical}/link; cd ..; cat big.txt"), sh(f"cd {root} && cd . && cat big.txt"),
           sh(f"cat {small} && cd {root} && cat big.txt")], ["allow"] * 5)
+    case("a list part master's prefix parser reads as `cd DIR && reader` keeps the list allowed whole: "
+         "`true; cd . '&&' cat big` (bash: 0 lines), `cat a; cd . '&&' cat big` (200)",
+         [verdict({**p("Bash", command="true; cd . '&&' cat big.txt"), "cwd": root}),
+          verdict({**p("Bash", command=f"cat {two_a}; cd . '&&' cat big.txt"), "cwd": root})],
+         ["allow"] * 2)
     # PR #471 round 2: a command with no `;`/`&&` but master's one `cd DIR &&` takes master's path, master's verdict.
     Path(root, " 2>x(big)").write_text("q\n" * 100)
     Path(root, "  (big)").write_text("q\n" * 500)
