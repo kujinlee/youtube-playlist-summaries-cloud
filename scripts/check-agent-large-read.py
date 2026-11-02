@@ -35,26 +35,31 @@ allowed (`NOT_TEXT`): MEASURED in the 2.1.309 binary, the Read tool takes the ex
 could not be satisfied with a narrower call. Any other file with a NUL byte in its first 8 KB is binary and not
 counted.
 
-WHAT BASH FORMS ARE READ. Only a command that names `cat`, `sed`, `head` or `tail` is parsed at all. It is split on
-`&&`, `||`, `;`, `&` and newlines into pipelines (a heredoc's body is data, so only the first line of a command
-with `<<` is read); `|` and `|&` separate the stages of a pipeline. `cd DIR` moves the directory relative paths
-resolve against, and `NAME=value` sets a variable `$NAME` expands to (else the environment's). A file operand with
-`*`, `?` or `[` is expanded as a glob relative to that directory. In a pipeline whose FIRST stage is `cat`, `head`,
-`tail` or `sed -n` on files, every later stage must be `head`, `tail`, `cat` or `sed -n` for the lines to be counted;
-any other later stage (`grep`, `wc`, `awk`) filters the output and the pipeline is allowed. A later stage that NAMES
-files reads those files, not the pipe (`-` is the pipe). `sed` reads all its files as ONE stream, so its ranges and
-a `q` count against their concatenation; `head` and `tail` count per file. A stage that writes stdout to a file
-(`>`, `>>`) is allowed. `2>/dev/null` and `2>&1` are not output redirects.
+WHAT BASH FORMS ARE READ: a SIMPLE command only. ⟳ Narrowed in PR #469 round 2, the move PR #468 made: each
+round of review found new edge cases in pipeline and heredoc parsing, an open surface. The command is ONE invocation
+of `cat`, `head`, `tail` or `sed` on file operands, after at most one `cd DIR &&` prefix, with no newline (a heredoc
+has one), `$(` or backtick in it, and no token that is a shell operator (`|`, `|&`, `;`, `&&`, `||`, `&`, `(`, `)`, `<`, `<<`, `>`).
+`2>/dev/null`, `2>>f` and `2>&1` are removed first: they are not stdout. `$VAR`, `${VAR}` and `~/` are expanded
+from the environment. A file operand with `*`, `?` or `[` is expanded as a glob relative to the cwd. `sed` reads
+all its files as ONE stream, so its ranges and a `q` count against their concatenation; `head` and `tail` count per
+file. `-` is stdin, not a file.
 
-⚠ NOT COVERED, allowed silently: `python -c "print(open(f).read())"`, `awk`, `nl`, `less`, `bat`, `xxd`, `git show`,
-`git diff`, `tee`, `sed` without `-n` (which prints every line), `grep` with a pattern that matches most lines, a
-reader after a non-reader stage (`grep x f | cat big`), and any reader inside `$(...)`.
+⚠ BOUND, stated (not NOT CHECKED: it is common and not an error): ANY OTHER Bash command is allowed silently, exit 0,
+nothing printed. That includes every pipeline, `cat big | head -n 400` and `cat small | sed -n 1,400p big` among
+them; a list (`cat big; echo`); a heredoc; a subshell; a reader inside `$(...)`; output and input redirection; and
+an assignment prefix. ESTIMATED on this session's transcripts (PR #469 body, cost of subagent file-read results
+over 300 lines): Read 54% and simple commands 16% are covered; compound commands 30% are not — 21% of it a list of
+several readers (`sed -n 1,200p a; sed -n 1,200p b`), 6% a pipeline.
+
+⚠ NOT COVERED, allowed silently: `python -c "print(open(f).read())"`, `awk`, `nl`, `less`, `bat`, `xxd`,
+`git show`, `git diff`, `grep`, and `sed` without `-n` (which prints every line).
 
 ⚠ NOT CHECKED, ALLOWED, AND SAID (stderr, exit 1, never a deny, never a traceback): a payload that is not a JSON
 object or not UTF-8, a `tool_input` that is not an object, a `cwd` that is not a string, a Read `file_path` that is
 not a string or an `offset`/`limit` that is not an integral number (the payload's integers arrive as floats:
-`parse_json` reads every integer as one), a command `shlex` cannot split, a pipeline that opens a subshell `(`, a
-`sed -n` script that is not line ranges and `q`, `sed -s`, a glob that matches nothing, and a `$VAR` with no value.
+`parse_json` reads every integer as one), a simple reader command `shlex` cannot split, a `sed -n` script that is
+not line ranges and `q`, a line number or count of more than 18 digits, `sed -s`, a glob that matches nothing, and
+a `$VAR` with no value.
 
 ⚠ BOUNDS, stated. (1) A file of more than 300 lines is read in ranges of at most 300. (2) A glob is expanded by
 Python's `glob`, which skips dot-files as bash does but cannot see quoting: `cat '*.txt'` is expanded too. (3) The
@@ -66,8 +71,8 @@ Python's `glob`, which skips dot-files as bash does but cannot see quoting: `cat
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED.
 
 FAILS IF: a subagent's Read or `cat`/`sed -n`/`head`/`tail` call that puts more than 300 lines of a text file into
-its context is allowed; or a main-session call, a call of at most 300 lines, a filtered pipeline, or a Read of a
-notebook, PDF or image is denied.
+its context as a SIMPLE command (above) is allowed; or a main-session call, a call of at most 300 lines, a compound
+command, or a Read of a notebook, PDF or image is denied.
 """
 from __future__ import annotations
 
@@ -95,15 +100,18 @@ parse_json = _pace.parse_json
 
 READER_WORD = re.compile(r"\b(cat|sed|head|tail)\b")
 READERS = ("cat", "sed", "head", "tail")
-SEPARATORS = ("&&", "||", ";", "&", ";;")
-PIPES = ("|", "|&")
+# A newline (several commands, or a heredoc and its body) or a command substitution makes a command not simple. A
+# heredoc on one line is caught by `OPERATOR` (`<<`).
+COMPOUND = re.compile(r"\n|\$\(|`")
+# A token made only of these is a shell operator: a pipe, a list, a background `&`, a subshell or a redirection.
+OPERATOR = re.compile(r"[();<>|&]+")
 STDERR_REDIRECT = re.compile(r"(?<!\S)(\d?>&\d|2>>?\s*\S+)")
 VAR = re.compile(r"\$\{(\w+)\}|\$(\w+)")
-ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 GLOB_CHARS = re.compile(r"[*?[]")
-SED_RANGE = re.compile(r"(\d+)(?:,(\d+|\$))?p")
-SED_QUIT = re.compile(r"(\d*)q")
-COUNT = re.compile(r"\d+")
+# At most 18 digits: a longer number is NOT CHECKED, never a traceback from `int` (4300 digits is its limit).
+SED_RANGE = re.compile(r"(\d{1,18})(?:,(\d{1,18}|\$))?p")
+SED_QUIT = re.compile(r"(\d{0,18})q")
+COUNT = re.compile(r"\d{1,18}")
 HEAD_NOARG = ("-q", "-v", "--quiet", "--silent", "--verbose")
 END = 10 ** 12
 
@@ -156,12 +164,12 @@ def count_arg(tok: str) -> int:
 
 
 def stage_op(word: str, args: list[str]):
-    """`(op, files, per_file)` for one `cat`/`head`/`tail`/`sed` stage: `op(stream)` keeps the lines it prints,
-    applied to each file's stream when `per_file`, else to their concatenation. `op` is None for a stage that does
-    not print lines of its input (`sed -i`, `sed` without `-n`, `tail -f`, `head -c`)."""
+    """`(op, files, per_file)` for one `cat`/`head`/`tail`/`sed` command: `op(stream)` keeps the lines it prints,
+    applied to each file's stream when `per_file`, else to their concatenation. `op` is None for a command whose
+    output is not lines of its files (`sed -i`, `sed` without `-n`, `tail -f`, `head -c`)."""
     files, it = [], iter(args)
     if word == "cat":
-        files = [a for a in args if not a.startswith("-") or a == "-"]
+        files = [a for a in args if not a.startswith("-")]
         return (lambda s: s), files, False
     if word in ("head", "tail"):
         n, from_start, all_but = HEAD_DEFAULT, False, False
@@ -232,21 +240,20 @@ def stage_op(word: str, args: list[str]):
     return (lambda s: [p for lo, hi in ranges for p in take(s, lo, hi)]), files, False
 
 
-def expand(tok: str, vars_: dict, env: dict) -> str:
+def expand(tok: str, env: dict) -> str:
     def sub(m):
         name = m.group(1) or m.group(2)
-        v = vars_.get(name, env.get(name))
-        if v is None:
+        if env.get(name) is None:
             raise Unreadable(f"${name} has no value here")
-        return v
+        return env[name]
     if tok == "~" or tok.startswith("~/"):
         tok = env.get("HOME", "~") + tok[1:]
     return VAR.sub(sub, tok)
 
 
-def operands(tok: str, cwd: str, vars_: dict, env: dict) -> list[str]:
+def operands(tok: str, cwd: str, env: dict) -> list[str]:
     """The paths one file operand names: a glob is expanded relative to `cwd`, as the shell would."""
-    path = os.path.join(cwd, expand(tok, vars_, env))
+    path = os.path.join(cwd, expand(tok, env))
     if not GLOB_CHARS.search(path):
         return [path]
     found = sorted(glob.glob(path))
@@ -255,71 +262,45 @@ def operands(tok: str, cwd: str, vars_: dict, env: dict) -> list[str]:
     return found
 
 
-def bash_spans(command: str, cwd: str, env: dict) -> list:
-    """The `(path, first, last)` line ranges a Bash command puts into the context."""
-    if not READER_WORD.search(command):
-        return []
-    text = command.split("\n", 1)[0] if "<<" in command else command
-    text = STDERR_REDIRECT.sub(" ", text).replace("\n", " ; ")
+def simple_command(command: str) -> tuple[str | None, list[str]] | None:
+    """`(cd_dir, words)` for a SIMPLE reader command — `cd_dir` the one `cd DIR &&` prefix or None — else None."""
+    if not READER_WORD.search(command) or COMPOUND.search(command.strip()):
+        return None
     try:
-        lex = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lex = shlex.shlex(STDERR_REDIRECT.sub(" ", command), posix=True, punctuation_chars=True)
         lex.whitespace_split = True
         tokens = list(lex)
     except ValueError as exc:
         raise Unreadable(f"shlex cannot split the command ({exc})") from None
-    segments, cur = [], []
-    for t in tokens:
-        if t in SEPARATORS:
-            segments.append(cur)
-            cur = []
-        else:
-            cur.append(t)
-    segments.append(cur)
-    vars_, spans = {}, []
-    for seg in segments:
-        if seg[:1] == ["("]:
-            raise Unreadable("a subshell `( ... )` is not parsed")
-        stages, cur = [], []
-        for t in seg:
-            if t in PIPES:
-                stages.append(cur)
-                cur = []
-            else:
-                cur.append(t)
-        stages.append(cur)
-        first = stages[0]
-        while first and ASSIGNMENT.match(first[0]):
-            name, _, value = first[0].partition("=")
-            if len(first) == 1 and len(stages) == 1:
-                vars_[name] = expand(value, vars_, env)
-            first = first[1:]
-        if not first:
+    cd_dir = None
+    if len(tokens) > 3 and tokens[0] == "cd" and tokens[2] == "&&":
+        cd_dir, tokens = tokens[1], tokens[3:]
+    if tokens[0] not in READERS or any(OPERATOR.fullmatch(t) for t in tokens):
+        return None
+    return cd_dir, tokens
+
+
+def bash_spans(command: str, cwd: str, env: dict) -> list:
+    """The `(path, first, last)` line ranges a SIMPLE reader command puts into the context; [] for any other."""
+    simple = simple_command(command)
+    if simple is None:
+        return []
+    cd_dir, tokens = simple
+    if cd_dir is not None:
+        cwd = os.path.join(cwd, expand(cd_dir, env))
+    op, files, per_file = stage_op(tokens[0], tokens[1:])
+    if op is None:
+        return []
+    pieces = []
+    for f in files:
+        if f == "-":  # stdin, not a file
             continue
-        if first[0] == "cd" and len(stages) == 1:
-            cwd = os.path.join(cwd, expand(first[1], vars_, env)) if len(first) > 1 else env.get("HOME", cwd)
-            continue
-        if first[0] not in READERS or any(t in (">", ">>", "&>", ">|") for st in stages for t in st):
-            continue
-        if not all(st and st[0] in READERS for st in stages[1:]):
-            continue
-        stream = []
-        for st in [first, *stages[1:]]:
-            op, files, per_file = stage_op(st[0], st[1:])
-            if op is None:  # `sed` without `-n` later in a pipe prints its input: the stream passes on
-                continue
-            pieces = []
-            for f in files or ["-"]:
-                if f == "-":
-                    pieces.append(stream)
-                    continue
-                for path in operands(f, cwd, vars_, env):
-                    n = line_count(path)
-                    if n:
-                        pieces.append([(os.path.realpath(path), 1, n)])
-            stream = ([x for piece in pieces for x in op(piece)] if per_file
-                      else op([x for piece in pieces for x in piece]))
-        spans += stream
-    return spans
+        for path in operands(f, cwd, env):
+            n = line_count(path)
+            if n:
+                pieces.append([(os.path.realpath(path), 1, n)])
+    return ([x for piece in pieces for x in op(piece)] if per_file
+            else op([x for piece in pieces for x in piece]))
 
 
 def read_spans(ti: dict) -> list:
@@ -478,24 +459,36 @@ def _self_test_body() -> int:
     case("a flag is not a file operand, even when a file has its name: `cat -n small.txt` is 100 lines",
          sh(f"cd {root} && cat -n small.txt"), "allow")
     case("`cat` of two 200-line files is 400 lines: denied", sh(f"cat {two_a} {two_b}"), "deny")
-    case("`cat` piped to grep is allowed", sh(f"cat {big} | grep line"), "allow")
-    case("`cat` piped to wc is allowed", sh(f"cat {big} | wc -l"), "allow")
-    case("`cat` piped to head -n 300 is allowed, head -n 301 denied",
-         [sh(f"cat {big} | head -n 300"), sh(f"cat {big} | head -n 301")], ["allow", "deny"])
-    case("`cat -n` piped to sed -n '1,301p' is denied", sh(f"cat -n {big} | sed -n '1,301p'"), "deny")
-    case("`|&` is a pipe: `cat` piped to grep with `|&` is allowed", sh(f"cat {big} |& grep line"), "allow")
-    case("a later stage that NAMES a file reads it, not the pipe: `cat small | head -n 400 big` is denied",
-         sh(f"cat {small} | head -n 400 {big}"), "deny")
-    case("... and `cat big | head -n 100 small` is 100 lines of small: allowed",
-         sh(f"cat {big} | head -n 100 {small}"), "allow")
-    case("`-` in a later stage is the pipe: `cat big | cat small -` is 600 lines, denied",
-         sh(f"cat {big} | cat {small} -"), "deny")
-    case("a later `sed` without -n prints its input: `cat big | sed s/a/b/` is denied",
-         sh(f"cat {big} | sed s/a/b/"), "deny")
+    case("a PIPE is not a simple command: allowed silently, even `cat big | head -n 400` (bound, stated)",
+         [sh(f"cat {big} | grep line"), sh(f"cat {big} | head -n 400"), sh(f"cat {big} |& grep line"),
+          sh(f"cat {small} | head -n 400 {big}")], ["allow"] * 4)
+    case("a LIST is not a simple command: `;`, `&&`, `||` and `&` after a reader are allowed",
+         [sh(f"cat {big}; echo"), sh(f"cat {big} && echo"), sh(f"cat {big} || echo"), sh(f"cat {big} &")],
+         ["allow"] * 4)
+    case("a newline, a heredoc, `$( ... )` and backticks are not a simple command: allowed",
+         [sh(f"echo hi\ncat {big}"), sh(f"cat <<EOF\nx\nEOF\ncat {big}"), sh(f"cat {big} <<EOF"),
+          sh(f"X=$(cat {big})"), sh(f"echo `cat {big}`")], ["allow"] * 5)
+    case("an input redirection and a subshell are not a simple command: allowed",
+         [sh(f"cat < {big}"), sh(f"(cd {root} && cat big.txt)")], ["allow"] * 2)
+    Path(root, "-").write_text("f\n" * 250)
+    case("`-` is stdin, not a file, even with a file named `-` in the cwd: `head -n 300 - small.txt` is 100 lines",
+         [sh(f"cd {root} && head -n 300 - small.txt"), sh(f"cat - {big}")], ["allow", "deny"])
+    case("a newline after a reader is two commands: `cat big` then `echo hi`, allowed", sh(f"cat {big}\necho hi"),
+         "allow")
+    case("a quoted `$( ... )` operand and a backtick operand are not a simple command: allowed",
+         [sh(f'cat "$(echo {small})" {big}'), sh(f"cat `echo x` {big}")], ["allow"] * 2)
+    case("process substitution `<( ... )` is not a simple command: allowed", sh(f"cat {big} <(echo)"), "allow")
+    case("a reader word that is not the command is not read: `echo -n cat big` is allowed", sh(f"echo -n cat {big}"),
+         "allow")
     case("`cat` written to a file is allowed", sh(f"cat {big} > {root}/copy.txt"), "allow")
     case("`2>/dev/null` and `2>&1` do not hide stdout", [sh(f"cat {big} 2>/dev/null"), sh(f"cat {big} 2>&1")],
          ["deny"] * 2)
     case("a relative path after `cd DIR &&` is resolved there", sh(f"cd {root} && cat big.txt"), "deny")
+    case("only ONE `cd DIR &&` prefix is read: a second `&&` is a list, allowed",
+         sh(f"cd {root} && cat big.txt && echo"), "allow")
+    case("only `cd DIR &&` is a prefix: `cd DIR;` is a list and `pushd DIR &&` is not `cd`, both allowed",
+         [sh(f"cd {root}; cat big.txt"), sh(f"pushd {root} && cat big.txt")], ["allow"] * 2)
+    case("`cd` with a variable is expanded from the environment", sh("cd $D && cat big.txt", env={"D": root}), "deny")
     case("a relative path resolves against the payload's cwd", verdict({**p("Bash", command="cat big.txt"),
                                                                          "cwd": root}), "deny")
     case("a cwd that is not a string is NOT CHECKED", verdict({**p("Bash", command="cat big.txt"), "cwd": 23}),
@@ -505,17 +498,11 @@ def _self_test_body() -> int:
     case("a glob over several files counts them all: `cat [ab].txt` is 400 lines, denied",
          sh(f"cat {root}/[ab].txt"), "deny")
     case("a glob that matches nothing is NOT CHECKED", sh(f"cat {root}/nomatch*"), "not checked")
-    case("a subshell `( ... )` is NOT CHECKED", sh(f"(cd {root} && cat big.txt)"), "not checked")
-    case("a `$( ... )` in an assignment is not a subshell segment: allowed", sh(f"X=$(cat {big})"), "allow")
-    case("`NAME=value;` then `$NAME/file` is expanded", sh(f"W={root}; cat $W/big.txt"), "deny")
     case("an environment variable is expanded", sh("cat ${D}/big.txt", env={"D": root}), "deny")
     case("`~/` is the environment's HOME", sh("cat ~/big.txt"), "deny")
     case("a variable with no value is NOT CHECKED", sh("cat $NOPE/big.txt"), "not checked")
     case("an unbalanced quote in a reader command is NOT CHECKED", sh(f"cat '{big}"), "not checked")
     case("a command naming no reader is not parsed: an unbalanced quote is allowed", sh("echo 'hi"), "allow")
-    case("a heredoc body is data: `cat > f <<EOF` with `cat big` inside is allowed",
-         sh(f"cat > {root}/out.txt <<'EOF'\ncat {big}\nEOF"), "allow")
-    case("a newline separates commands", sh(f"echo hi\ncat {big}"), "deny")
     case("`sed -n '1,300p'` is allowed, '1,301p' is denied",
          [sh(f"sed -n '1,300p' {big}"), sh(f"sed -n '1,301p' {big}")], ["allow", "deny"])
     case("`sed -n '200,$p'` on 500 lines is 301: denied", sh(f"sed -n '200,$p' {big}"), "deny")
@@ -550,6 +537,11 @@ def _self_test_body() -> int:
     case("`tail -n 400` is the last 400 lines: denied", sh(f"tail -n 400 {big}"), "deny")
     case("`tail -f` follows, it is not counted", sh(f"tail -f {big}"), "allow")
     case("a line count that is not a number is NOT CHECKED", sh(f"head -n x {big}"), "not checked")
+    case("a number of more than 18 digits is NOT CHECKED, not a traceback: a sed `q`, a sed range, a head count",
+         [sh(f"sed -n '{'9' * 4301}q' {big}"), sh(f"sed -n '{'9' * 4301}p' {big}"),
+          sh(f"sed -n '1,{'9' * 4301}p' {big}"), sh(f"head -n {'9' * 4301} {big}")], ["not checked"] * 4)
+    case("... and 18 digits are read: `head -n 999999999999999999` of 500 lines is denied",
+         sh(f"head -n {'9' * 18} {big}"), "deny")
     case("run_in_background: true is allowed", verdict(p("Bash", command=f"cat {big}", run_in_background=True)),
          "allow")
     case("the MAIN session's `cat` is never denied", verdict(p("Bash", agent=None, command=f"cat {big}")), "allow")
