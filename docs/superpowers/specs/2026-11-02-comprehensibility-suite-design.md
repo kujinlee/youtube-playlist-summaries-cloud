@@ -3,7 +3,7 @@
 > **Anchor:** `status-visibility` — **ADR:** 0010
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** 🟠 needs-you — DRAFT for the owner's walkthrough (backlog #384, Phase 1). Nothing here is built yet.
+**Status:** 🟠 needs-you — walked through with the owner 2026-11-02 09:20–09:40 (every §8 choice answered); awaiting adversarial review (backlog #384, Phase 1). Nothing here is built yet.
 Every answer below was given by the owner on the roles review page
 (`docs/explainers/2026-10-28-topic-suite-roles-review.fragment.html`), 2026-10-28 and 2026-11-02 ~09:25.
 
@@ -31,7 +31,7 @@ drifts), applied to pages.
 
 | Item | Answer (owner) | When |
 |---|---|---|
-| **D1** "Needs you" | One definition — a decision only the owner can make, open now — and one list, on the goal-tree page. Dashboard asks and backlog decision rows link to it | 10-28 03:47 |
+| **D1** "Needs you" | One definition — a decision only the owner can make — shown on the goal-tree page as **two sets, each with ONE source** (refined 11-02, §8 Q2): **blocking now** (in-flight work waiting on the owner; source: the in-flight ledger) and **waiting until picked** (a decision inside a backlog item; source: the row's `status: needs-you`). Dashboard asks link to it | 10-28 03:47; refined 11-02 09:35 |
 | **D2** Work-lines | The goal tree absorbs it; work-lines retired, history archived | 10-28 03:47; done, PR #434 |
 | **D3** Freshness | Every merge rebuilds dashboard, goals, backlog, features and goal tree | 10-28 03:47 |
 | **R1** Goal tree | Accepted as written; it is the home page | 11-02 |
@@ -113,7 +113,8 @@ stays free text (backlog #385).
 | Concern | Mechanism | What already does this, and why it is not enough |
 |---|---|---|
 | An item's state | backlog `status` facet, read by the shared parser | the severity column holds `✅` as a status on 117 of 333 rows (MEASURED, backlog #385) |
-| What needs the owner | the goal tree's needs-you list, fed by `status: needs-you` | three lists gave three counts (37, 12, 0 — MEASURED 2026-10-27, roles page) |
+| What needs the owner NOW | the goal tree's "blocking now" set, fed by the in-flight ledger | three lists gave three counts for the SAME kind (37, 12, 0 — MEASURED 2026-10-27, roles page) |
+| What needs the owner LATER | the goal tree's "waiting until picked" set, fed by backlog `status: needs-you` | as above |
 | What changed | dashboard entries (why) + the goal tree's since-T query (what) | the dashboard alone cannot answer "since T" |
 | A key's link | `page_markup.key_link` | four hand-built hrefs; 0 PR links on generated pages against 18–157 PR mentions per page (MEASURED, inventory 2026-10-27) |
 | A page being current | rebuild on every merge (D3) | `/dashboard` and `/goals` measured stale (built 10-25, 10-23) |
@@ -128,8 +129,7 @@ stays free text (backlog #385).
 3. **The backlog `status` facet: four closed values, split out of the severity column** (R-open-5,
    backlog #90). The parser refuses an unknown value.
 4. **Every feature node declares its goal anchor** (R-open-1); `/goals` and `/features` link both ways.
-5. **One "needs you" list on the goal tree, fed by `status: needs-you`** (D1); dashboard asks and
-   backlog decision rows link to it; the 29 unreadable dashboard asks repaired or closed first.
+5. **The goal tree's two "needs you" sets** (D1, §8 Q2): "blocking now" from the in-flight ledger, "waiting until picked" from backlog `status: needs-you`; when a picked item's decision blocks the work, a ledger entry is created that points to the row, so the decision moves to "blocking now"; dashboard asks link to the goal tree; the 29 unreadable dashboard asks repaired or closed first.
 6. **The dashboard becomes a pure change log**: drop `gen-dashboard.open_prs()` in favour of a link
    to the goal tree (R3; backlog #384's recorded C3).
 7. **The goal tree's "what changed since T" query** — already backlog #392; each change line links to
@@ -149,7 +149,7 @@ stays free text (backlog #385).
 | One question per page | two pages' declared questions match, or a status question gets two different answers from two pages |
 | A page is a perspective | a page shows a count or state another page owns, as text and not a link (e.g. a brief stating an open-row count) |
 | The backlog decides state | any page shows an item's state that differs from the backlog row's `status` |
-| One "needs you" list | the dashboard or backlog page shows its own needs-you COUNT, or the goal tree's list differs from the rows with `status: needs-you` |
+| One source per "needs you" set | the dashboard or backlog page shows its own needs-you COUNT; the "waiting until picked" set differs from the rows with `status: needs-you`; or the "blocking now" set differs from the ledger's owner-waiting entries |
 | Every key is a link | a generated page contains `backlog #N` or `PR #N` outside a code span and outside an `<a>` |
 | One link function | an href to `/backlog-table#i`, `/goals#`, `/features#` or `github.com/…/pull/` is built anywhere in `scripts/` except `page_markup.key_link` (and its tests) |
 | Four closed facets | a row carries a facet value no registry declares and the parser accepts it; or a fifth facet appears in a row's `⟦…⟧` block |
@@ -158,24 +158,19 @@ stays free text (backlog #385).
 | Pages are current | a generated page's stamp is older than the newest merge on `origin/master` by more than one rebuild |
 | Briefs are snapshots | a brief written after this spec contains a number that a generated page computes |
 
-## 8. Choices this spec makes that the owner's answers did not settle
+## 8. Choices the owner's earlier answers did not settle — answered in the walkthrough, 2026-11-02
 
-Each is a walkthrough question.
-
-1. **Goal tree vs dashboard on "what changed".** The goal tree answers WHAT changed since T; the
-   dashboard keeps WHY. Both answer half of "what changed" — the owner should confirm that split.
-2. **The needs-you list's source** is the backlog `status: needs-you`, so a decision must be a row
-   (consistent with backlog #394: a decision is a task plus NEEDS-OWNER).
-3. **The status facet's syntax** — written in the row's `⟦…⟧` block beside `kind`, and the severity
-   column reduced to glyphs.
-4. **A backlog row's goal is DERIVED** through its area's feature node, not written on the row.
-5. **Feature nodes with no fitting anchor** (15 of 28 today, e.g. `guard-and-gate-harness`,
-   `process-harness`) — inherit the parent node's anchor, or declare `anchors: none — <reason>`.
-6. **The link function's home** is `page_markup.py`, not `page_chrome.py`.
-7. **Hand-authored explainer fragments** are not rewritten by `link_keys`; a check reports their
-   unlinked keys instead.
-8. **The dashboard's open-PR list is dropped** rather than kept with a written reason (C3).
-9. **Row 11's duplicate-question check** is new tooling the page did not promise.
+| # | Choice | Answer |
+|---|---|---|
+| 1 | Goal tree answers WHAT changed since T; the dashboard keeps WHY | owner: A, as drafted |
+| 2 | Source of "needs you" | owner: **two kinds, two sets** — *"Need you list in goals are decision task for backlogs which become relevant when the backlog item is being worked and in-flight ledger need you seems different kind of need-you for current working order … those two different need-you decisions can be presented as separate sets as two separate concerns."* Adopted as D1's refinement (§1, row 5, §7) |
+| 3 | Status facet written in the row's `⟦…⟧` block; severity column keeps glyphs only | coordinator (mechanical) |
+| 4 | A row's goal is DERIVED through its area's feature node | owner: A |
+| 5 | The 15 of 28 feature nodes with no anchor inherit the parent's; a top node with none declares `anchors: none — <reason>` | owner: A |
+| 6 | The link function lives in `page_markup.py` | coordinator (mechanical) |
+| 7 | Hand-written explainer fragments are not rewritten; a check reports their unlinked keys | owner: A |
+| 8 | The dashboard's open-PR list is dropped; the goal tree owns open PRs | owner: A |
+| 9 | Row 11, the duplicate-question check, is kept and built last | owner: A |
 
 ## 9. What was measured, and what was inferred
 
