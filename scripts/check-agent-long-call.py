@@ -163,6 +163,14 @@ def main(argv: list[str] | None = None, stdin_text: str | None = None, env: dict
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()` (backlog #382): the repo's rule for every suite, though this one
+    runs no git."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import contextlib
     import io
     ok = fail = 0
