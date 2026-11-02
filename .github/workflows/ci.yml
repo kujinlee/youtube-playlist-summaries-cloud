@@ -17,10 +17,12 @@ on:
   push:
     branches: [master]
 
-# A new push to the same PR cancels the previous run.
+# A new push to the same PR cancels the previous run. ⛔ A PUSH TO MASTER IS NEVER CANCELLED
+# (backlog #405 r1): cancelling it let a later docs-only merge (whose own sweep is skipped) erase an
+# earlier scripts merge's `verify` and full sweep with no signal, leaving that merge unmeasured.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -1232,7 +1234,10 @@ jobs:
           # my own claim that this component's logic was undented while only its log was wrong.
           # ⚠ `changed_from_nul` REFUSES newline-delimited input, so dropping `-z` here produces
           # `None` and RUNS the sweep rather than silently reinstating the bug.
-          if git diff --name-only -z "$BASE"...HEAD > /tmp/changed.txt; then
+          # ⟳ backlog #405 r3 (CLAUDE C3-L2): `--no-renames` lists a rename's SOURCE path too. With
+          # rename detection on, renaming a staged file into `docs/` listed only the `docs/` path,
+          # which `sweep_needed` skips (backlog #480: nothing yet holds this flag).
+          if git diff --name-only -z --no-renames "$BASE"...HEAD > /tmp/changed.txt; then
             DIFF_TAKEN=1
           else
             DIFF_TAKEN=0
