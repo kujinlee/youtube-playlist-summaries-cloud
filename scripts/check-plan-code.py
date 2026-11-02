@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 326 cases
+    python3 scripts/check-plan-code.py --self-test          # 348 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -846,6 +846,49 @@ def edit_needs_full_run(src: str, find: str, repl: str) -> bool:
                for n in enclosing)
 
 
+# ⟳ r2 (CODEX HIGH, fix-induced): the r1 rule DENIED the paths it recognised and let everything else
+# through, so a PR changing the execution ENVIRONMENT (ci.yml's env, a `sitecustomize.py` on the path,
+# dependency config) was measured FULL-survived and EARLY-killed. An ALLOW list replaces it: early
+# stop is permitted only when EVERY changed path is one the per-file rule below already understands.
+# Basenames Python imports at interpreter startup, or on a package import the suite never spells.
+EARLY_STARTUP_NAMES = frozenset({"sitecustomize.py", "usercustomize.py", "conftest.py", "__init__.py"})
+
+
+def early_path_allowed(path: str) -> bool:
+    """PURE. May a pull request change `path` and still have mutants stopped early?
+
+    THE BOUND, in one paragraph. Allowed: anything under `docs/`, any `*.md`, a mutation manifest
+    directly in `scripts/mutations/`, and a `scripts/**/*.py` that is neither startup-capable
+    (`EARLY_STARTUP_NAMES`) nor named like a standard-library module (`scripts/` is a suite's
+    `sys.path[0]`, so a `scripts/tempfile.py` would shadow `import tempfile` in every suite that
+    reaches it). Those are the paths `early_must_run_full` can reason about per file: a doc cannot
+    change what a printed red exits with, and a changed script or manifest forces its own file —
+    and any file whose source names its stem — into FULL. EVERYTHING ELSE — `.github/**`,
+    `package.json`, a lockfile, `.python-version`, `requirements*`, a `*.pth`, a shell script, any
+    `.py` outside `scripts/`, `*.ts`, a path never seen before — makes the WHOLE run FULL: an
+    unknown path is the unsound direction, and a false FULL only costs time. STATED LIMIT: a
+    computed import, or a module reached only TRANSITIVELY through one the source does not spell,
+    is not seen by the per-file rule, so an allowed `scripts/*.py` can still reach a suite that way.
+    An empty entry is not a path and is allowed (the callers skip it).
+    """
+    p = pathlib.PurePosixPath(path.strip())
+    if not p.parts:
+        return True
+    if p.suffix == ".pth":
+        return False
+    if p.suffix == ".py":
+        return (p.parts[0] == "scripts" and p.name not in EARLY_STARTUP_NAMES
+                and p.stem not in sys.stdlib_module_names)
+    if p.parts[0] == "docs" or p.suffix == ".md":
+        return True
+    return p.suffix == ".json" and p.parent.as_posix() == "scripts/mutations"
+
+
+def early_paths_outside(changed: "list[str]") -> "list[str]":
+    """PURE. The changed paths `early_path_allowed` refuses, in order — any one makes the run FULL."""
+    return [c for c in changed if not early_path_allowed(c)]
+
+
 def early_must_run_full(fname: str, src: str, changed: "list[str] | None") -> bool:
     """PURE. Must every mutant of `fname` (whose UNMUTATED source is `src`) run in FULL, given the
     pull request's changed-file list? The answer early stop's soundness rests on — read the bound.
@@ -864,9 +907,13 @@ def early_must_run_full(fname: str, src: str, changed: "list[str] | None") -> bo
     can change WHICH case goes red, and a full run of that case's suite still measures that.
     COST: every mutant of a file the PR touches runs in full, so a PR changing `fixture_git.py`
     gets a FULL sweep; the speed-up is for the many files a PR leaves alone.
+    ⟳ r2: and FULL, for EVERY file, when any changed path is outside `early_path_allowed`'s allow
+    list — the bound is stated there, once.
     BOUND: an import the source does not spell (a computed module name) is not seen.
     """
     if changed is None:   # no diff: nothing says what master's full sweep measured
+        return True
+    if early_paths_outside(changed):   # r2: a path outside the allow list moves the WHOLE run to FULL
         return True
     stem = pathlib.PurePosixPath(fname).stem
     for c in changed:
@@ -976,7 +1023,8 @@ def early_stop_ci(event: str, changed: "list[str] | None") -> tuple[bool, str]:
         only PR runs, so a later docs-only merge cannot cancel it;
       * a diff that could not be taken (`None`) — an unanswered question never loosens a gate;
       * an EMPTY diff — impossible when the sweep runs at all, so it means the list was lost;
-      * a pull request that changes `scripts/check-plan-code.py` — the stop rule itself moved.
+      * a pull request that changes `scripts/check-plan-code.py` — the stop rule itself moved;
+      * ⟳ r2: a pull request that changes any path outside `early_path_allowed`'s allow list.
     """
     if event != "pull_request":
         return False, f"event {event or '<unset>'!r} is not a pull request: FULL sweep"
@@ -986,6 +1034,10 @@ def early_stop_ci(event: str, changed: "list[str] | None") -> tuple[bool, str]:
         return False, "the changed-file list is EMPTY, so it was lost: FULL sweep"
     if "scripts/check-plan-code.py" in changed:
         return False, "scripts/check-plan-code.py changed, so the stop rule itself moved: FULL sweep"
+    _outside = early_paths_outside(changed)
+    if _outside:
+        return False, (f"{_outside[0]!r} is outside the early-stop allow list (`early_path_allowed`) "
+                       f"and {len(_outside) - 1} more: FULL sweep")
     return True, ("a pull request that leaves scripts/check-plan-code.py alone: EARLY STOP, except "
                   "the files its diff touches (`early_must_run_full`)")
 
@@ -1716,7 +1768,11 @@ EXPECTED_MUTATIONS = {
     # five arms (no diff, the file, its manifest, an imported stem, code-only), the loop
     # asking it, the edit arm beside it, the tally's by-diff count, the changed list's two hand-downs, and
     # `local_changed`'s failure arm and its caller. Three existing anchors REBOUND (`_stopped`, both hand-downs).
-    "scripts/check-plan-code.py": 187,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-02, backlog #405 r2: 187 -> 199 — twelve for the ALLOW LIST (`early_path_allowed`):
+    # its startup-name, stdlib-shadow, scripts-only, `.pth`, unknown-path, manifest, docs, markdown and
+    # empty-entry arms, `early_paths_outside`'s polarity, and its two callers (the per-file rule and
+    # `early_stop_ci`). No existing anchor rebound.
+    "scripts/check-plan-code.py": 199,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -7472,12 +7528,37 @@ def _self_test_body() -> int:
         case("#405 CONTROL: a trailer exiting 0 in a file the PR left alone IS stopped (master's full sweep owns it)",
              (_evm[0]["caught"], _evm[0].get("stop")), (True, "sigint"))
         for _why405, _chg405 in (("the PR changed the file's own trailer", ["scripts/zero.py"]),
-                                 ("the PR added the mutant to the file's manifest", ["scripts/mutations/zero.json"])):
+                                 ("the PR added the mutant to the file's manifest", ["scripts/mutations/zero.json"]),
+                                 # r2 CODEX's reproducer, both halves: the ENVIRONMENT moved, not the file
+                                 ("the PR changed ci.yml (the execution environment)",
+                                  ["docs/x.md", ".github/workflows/ci.yml"]),
+                                 ("the PR added an interpreter startup module",
+                                  ["scripts/startup/sitecustomize.py"])):
             _ok, _rep, _evm, _evs = run_mutations(_d405, _zmut, {"zero.py"}, early_stop=True,
                                                   early_changed=_chg405)
             case(f"#405 ⛔ a trailer `return 0` is NOT recorded killed early when {_why405}",
                  (_ok, _evm[0]["caught"], _evm[0].get("stop"), _evm[0].get("forced_full"), _evs),
                  (False, False, None, "diff", ["value is two"]))
+    # ⟳ r2: the ALLOW list. Each refused shape, then the controls that make them able to fail.
+    for _p405r2 in (".github/workflows/ci.yml", "scripts/startup/sitecustomize.py", "scripts/__init__.py",
+                    "scripts/conftest.py", "scripts/tempfile.py", "lib/x.py", "docs/x.pth",
+                    "package.json", ".claude/hooks/x.sh"):
+        case(f"#405 r2 early_path_allowed: {_p405r2} is OUTSIDE the allow list",
+             early_path_allowed(_p405r2), False)
+    for _p405r2 in ("docs/a.md", "docs/reviews/x.json", "README.md", "scripts/mutations/x.json",
+                    "scripts/x.py", "scripts/sub/y.py", ""):
+        case(f"#405 r2 CONTROL early_path_allowed: {_p405r2 or '<empty entry>'} is inside the allow list",
+             early_path_allowed(_p405r2), True)
+    case("#405 r2 early_path_allowed: a manifest NOT directly in scripts/mutations/ is outside",
+         early_path_allowed("scripts/mutations/sub/x.json"), False)
+    case("#405 r2 early_must_run_full: a path outside the allow list makes an UNTOUCHED file FULL",
+         early_must_run_full("scripts/target.py", "", ["docs/a.md", ".github/workflows/ci.yml"]), True)
+    case("#405 r2 early_stop_ci: a pull request changing ci.yml is a FULL sweep",
+         early_stop_ci("pull_request", ["docs/a.md", ".github/workflows/ci.yml"]),
+         (False, "'.github/workflows/ci.yml' is outside the early-stop allow list (`early_path_allowed`) "
+                 "and 0 more: FULL sweep"))
+    case("#405 r2 CONTROL early_stop_ci: a docs-only pull request may stop early",
+         early_stop_ci("pull_request", ["docs/a.md"])[0], True)
     case("#405 early_stop_ci: a push to master is the periodic FULL sweep",
          early_stop_ci("push", ["scripts/x.py"])[0], False)
     case("#405 ...a changed-file list that could not be read is FULL",

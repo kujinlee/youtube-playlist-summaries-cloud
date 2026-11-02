@@ -2260,5 +2260,137 @@
       ]
     ],
     "expect": "#405 ...local --early-stop with no diff to take (not a git tree) forces every mutant FULL"
+  },
+  {
+    "name": "#405 r2: a startup-capable basename (sitecustomize.py) is allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "p.name not in EARLY_STARTUP_NAMES\n",
+        "True\n"
+      ]
+    ],
+    "expect": "#405 r2 early_path_allowed: scripts/startup/sitecustomize.py is OUTSIDE the allow list"
+  },
+  {
+    "name": "#405 r2: a script shadowing a standard-library module is allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "\n                and p.stem not in sys.stdlib_module_names)",
+        ")"
+      ]
+    ],
+    "expect": "#405 r2 early_path_allowed: scripts/tempfile.py is OUTSIDE the allow list"
+  },
+  {
+    "name": "#405 r2: a .py outside scripts/ is allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return (p.parts[0] == \"scripts\" and",
+        "return (True and"
+      ]
+    ],
+    "expect": "#405 r2 early_path_allowed: lib/x.py is OUTSIDE the allow list"
+  },
+  {
+    "name": "#405 r2: a .pth file is allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if p.suffix == \".pth\":\n        return False",
+        "    if p.suffix == \".pth\":\n        return True"
+      ]
+    ],
+    "expect": "#405 r2 early_path_allowed: docs/x.pth is OUTSIDE the allow list"
+  },
+  {
+    "name": "#405 r2: an unknown path (ci.yml) is allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return p.suffix == \".json\" and p.parent.as_posix() == \"scripts/mutations\"",
+        "return True"
+      ]
+    ],
+    "expect": "#405 r2 early_path_allowed: .github/workflows/ci.yml is OUTSIDE the allow list"
+  },
+  {
+    "name": "#405 r2: a mutation manifest is no longer allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "p.parent.as_posix() == \"scripts/mutations\"",
+        "p.parent.as_posix() == \"scripts/mutationz\""
+      ]
+    ],
+    "expect": "#405 r2 CONTROL early_path_allowed: scripts/mutations/x.json is inside the allow list"
+  },
+  {
+    "name": "#405 r2: a non-markdown file under docs/ is no longer allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if p.parts[0] == \"docs\" or p.suffix == \".md\":",
+        "if p.suffix == \".md\":"
+      ]
+    ],
+    "expect": "#405 r2 CONTROL early_path_allowed: docs/reviews/x.json is inside the allow list"
+  },
+  {
+    "name": "#405 r2: a markdown file outside docs/ is no longer allowed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        " or p.suffix == \".md\":\n        return True",
+        ":\n        return True"
+      ]
+    ],
+    "expect": "#405 r2 CONTROL early_path_allowed: README.md is inside the allow list"
+  },
+  {
+    "name": "#405 r2: an empty changed-file entry is refused as a path",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not p.parts:\n        return True",
+        "    if not p.parts:\n        return False"
+      ]
+    ],
+    "expect": "#405 r2 CONTROL early_path_allowed: <empty entry> is inside the allow list"
+  },
+  {
+    "name": "#405 r2: early_must_run_full ignores a path outside the allow list",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if early_paths_outside(changed):   # r2",
+        "    if False:   # r2"
+      ]
+    ],
+    "expect": "#405 ⛔ a trailer `return 0` is NOT recorded killed early when the PR changed ci.yml (the execution environment)"
+  },
+  {
+    "name": "#405 r2: early_stop_ci ignores a path outside the allow list",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if _outside:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "#405 r2 early_stop_ci: a pull request changing ci.yml is a FULL sweep"
+  },
+  {
+    "name": "#405 r2: early_paths_outside returns the ALLOWED paths instead",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if not early_path_allowed(c)]",
+        "if early_path_allowed(c)]"
+      ]
+    ],
+    "expect": "#405 r2 CONTROL early_stop_ci: a docs-only pull request may stop early"
   }
 ]
