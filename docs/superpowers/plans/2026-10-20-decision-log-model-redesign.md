@@ -1,5 +1,7 @@
 # The decision log records a projection of the decisions, and every trigger reads it as the decisions
 
+> ## ⛔ RETIRED 2026-10-28 by the owner: superseded by the backlog #327 simplification (keep the ladder and the bet written before each round; drop the triggers that only warn). Kept as the record; do not resume it.
+
 > **Anchor:** `review-decides-itself` — **ADR:** 0014
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
@@ -11,7 +13,7 @@
 > ⭐ **The mechanism CONSUMES those signals**, so a decision layer over non-discriminating inputs cannot
 > work however well it is built. The work moved one level down — **backlog #328** (one `corpus()` owner + a
 
-**Status:** 🟠 needs-you — ⟳ 2026-10-23 (backlog audit, master `92c78bff`): the deferral's precondition is lifted, **0 of 9** §6 tasks are done, and whether to resume or retire this slice is the owner's call, so it waits on a decision rather than on the agent. Previously `current`: the ⏸️ deferral's precondition is LIFTED (backlog #328 and #329 both ✅ closed) and §1.1's first finding shipped as backlog #321 in `ee0e461b`. Resuming is the owner's call; backlog #314 still governs one of the two signals.
+**Status:** ⛔ obsolete — RETIRED 2026-10-28 by the owner (selection card), superseded by the backlog #327 simplification. Previously 🟠 needs-you — ⟳ 2026-10-23 (backlog audit, master `92c78bff`): the deferral's precondition is lifted, **0 of 9** §6 tasks are done, and whether to resume or retire this slice is the owner's call, so it waits on a decision rather than on the agent. Previously `current`: the ⏸️ deferral's precondition is LIFTED (backlog #328 and #329 both ✅ closed) and §1.1's first finding shipped as backlog #321 in `ee0e461b`. Resuming is the owner's call; backlog #314 still governs one of the two signals.
 > denominator guard) and **backlog #329** (make convergence satisfiable).
 >
 > ⛔ **DEFER is terminal on the ladder — *stop, file it*.** r2's nine findings are **filed, not fixed**;

@@ -373,8 +373,8 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "        with _write_sandbox() as (_box, _real):\n            return _self_test(real_out=_real, sandbox=_box)",
-        "        with _write_sandbox() as (_box, _real):\n            return _self_test(real_out=OUT_DEFAULT, sandbox=_box)"
+        "    with _write_sandbox() as (_box, _real):\n        return _self_test_body(real_out=_real, sandbox=_box)",
+        "    with _write_sandbox() as (_box, _real):\n        return _self_test_body(real_out=OUT_DEFAULT, sandbox=_box)"
       ]
     ],
     "expect": "the suite never writes to the REAL dashboard path"
@@ -417,8 +417,8 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "        with _write_sandbox() as (_box, _real):",
-        "        globals()[\"OUT_DEFAULT\"] = pathlib.Path(tempfile.mkdtemp()) / \"dashboard.html\"\n        with contextlib.nullcontext((pathlib.Path(\"/nowhere\"), OUT_DEFAULT)) as (_box, _real):"
+        "    with _write_sandbox() as (_box, _real):",
+        "    globals()[\"OUT_DEFAULT\"] = pathlib.Path(tempfile.mkdtemp()) / \"dashboard.html\"\n    with contextlib.nullcontext((pathlib.Path(\"/nowhere\"), OUT_DEFAULT)) as (_box, _real):"
       ]
     ],
     "expect": "the suite never writes to the REAL dashboard path"

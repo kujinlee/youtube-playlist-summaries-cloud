@@ -327,5 +327,239 @@
       ]
     ],
     "expect": "the generated-at moment reaches the composed page's stamp"
+  },
+  {
+    "name": "the composer stops supplying the ex-body scope, so a default switcher restyles nothing",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        body = f'\\n<div class=\"{page_chrome.TEXT_SCOPE_CLASS}\">{body}</div>\\n'",
+        "        body = body"
+      ]
+    ],
+    "expect": [
+      "...and the composer wraps the fragment's content in the class the switcher's CSS styles, so a press has something to restyle"
+    ]
+  },
+  {
+    "name": "the switcher is again added only to a fragment that hand-authored ex-body",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    want_switcher = not own_switcher\n",
+        "    want_switcher = not own_switcher and page_chrome.has_text_consumer(content)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #376 FALSIFIER: a fragment with NO ex-body gets the text-style switcher, once, with all three buttons"
+    ]
+  },
+  {
+    "name": "the --em refusal is dropped, so a dark block leaning on the shim ships at 1.78:1",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        assert_em_in_every_palette(page_css)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a DARK theme block without --em is REFUSED, and the refusal names that block"
+    ]
+  },
+  {
+    "name": "the wrap ignores a hand-placed scope, nesting a second ex-body inside it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            and not page_chrome.has_text_consumer(content)):",
+        "            and True):"
+      ]
+    ],
+    "expect": [
+      "a fragment that ALREADY opts in gets the switcher but no second scope around its own"
+    ]
+  },
+  {
+    "name": "zero palette blocks passes the --em check vacuously",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if not blocks:\n        raise SystemExit(\n            f\"brief-compose: CANNOT VERIFY",
+        "    if False:\n        raise SystemExit(\n            f\"brief-compose: CANNOT VERIFY"
+      ]
+    ],
+    "expect": [
+      "⛔ theme palettes with NO block declaring the ground is CANNOT VERIFY, not a pass"
+    ]
+  },
+  {
+    "name": "every :root rule counts as a palette, so the scheme's role block is asked for --em",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if not _TOKEN_DECL.search(body):\n            continue\n",
+        "        if False:\n            continue\n"
+      ]
+    ],
+    "expect": [
+      "...but a :root rule that is NOT a palette (the scheme's role block declares no --bg) is not asked for --em"
+    ]
+  },
+  {
+    "name": "the wrap no longer asks the bar, so a page with no switcher is wrapped anyway",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if (page_chrome.has_text_control(chrome_bar)\n",
+        "    if (True\n"
+      ]
+    ],
+    "expect": [
+      "a fragment with NO theme palettes gets no switcher, and so no scope either"
+    ]
+  },
+  {
+    "name": "r1 XM1: a selector list mixing the root with body is no longer refused",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if (ctx, sel) not in CANONICAL_BLOCKS:\n",
+        "        if (ctx, sel) not in CANONICAL_BLOCKS and False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 XM1: a palette in a selector list MIXED with `body` is refused by name, not skipped"
+    ]
+  },
+  {
+    "name": "r1 XM2: a block-valued custom property naming --em is read past",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if stray > 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 XM2: `--em` TEXT inside a block-valued custom property is refused, not read as a declaration"
+    ]
+  },
+  {
+    "name": "r1 XM2: a rule body ends at the first }, inside a custom property's value",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            end = _scan_to(text, j + 1, \"\")\n",
+        "            end = text.find(\"}\", j + 1) % (n + 1)\n"
+      ]
+    ],
+    "expect": [
+      "...and a block value BEFORE a real `--em` does not end the rule (r1 XM2, the other way)"
+    ]
+  },
+  {
+    "name": "r1 XM3: the --em check asks the composer's bar, so a fragment's own switcher is unchecked",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if page_chrome.has_text_control(doc):\n        assert_em_in_every_palette(page_css)\n",
+        "    if page_chrome.has_text_control(chrome_bar):\n        assert_em_in_every_palette(page_css)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 XM3: a fragment bringing its OWN #schemer is checked too — a dark block without --em is refused"
+    ]
+  },
+  {
+    "name": "r1 Xm4: --em is checked for presence only, not contrast",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if ratio < CONTRAST_MIN:\n            weak.append(f\"{where}:",
+        "        if False:\n            weak.append(f\"{where}:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Xm4: the LIGHT --em in a dark block is refused on its contrast"
+    ]
+  },
+  {
+    "name": "r1 Cm3: a statement at-rule swallows the stylesheet after it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if j >= n or text[j] != \"{\":\n                i = j + 1",
+        "            if j >= n:\n                i = j + 1"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm3: an `@import …;` before a palette is skipped, so the palette after it is read"
+    ]
+  },
+  {
+    "name": "r1 Cm4: CSS nesting inside a palette rule is merged as if it were flat",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        if nested:\n            refusals.append(",
+        "        if False:\n            refusals.append("
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Cm4: CSS nesting inside a palette rule is refused by name, not read past"
+    ]
+  },
+  {
+    "name": "r2 X2: the selector is compared AS WRITTEN, so whitespace in an attribute hides a dark block",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "                out.append((ctx, \"\".join(prelude.split()), \" \".join(shown + (prelude,)), body))",
+        "                out.append((ctx, prelude, \" \".join(shown + (prelude,)), body))"
+      ]
+    ],
+    "expect": [
+      "⛔ r2 X2: whitespace inside the attribute selector does not hide a dark block — it IS the canonical block, and its 1.00:1 is refused"
+    ]
+  },
+  {
+    "name": "r2: a palette block may declare one token without the other",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "        for tok in PALETTE_TOKENS:\n            if tok not in got:\n",
+        "        for tok in PALETTE_TOKENS:\n            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⟳ r2: a palette SPLIT over two `:root` rules is refused by name — each block declares both tokens"
+    ]
+  },
+  {
+    "name": "r3: a palette value need only START with a colour, so `#16151a!important` passes as literal",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            if not _HEX.fullmatch(value):\n",
+        "            if not _HEX.match(value):\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r2 X1: `!important` on a palette token is refused by name (it would win at 1.00:1)"
+    ]
+  },
+  {
+    "name": "r3: a var() alias counts as a literal palette colour again",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "_HEX = re.compile(r\"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\")\n",
+        "_HEX = re.compile(r\"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})|var\\(.*\\)\")\n"
+      ]
+    ],
+    "expect": [
+      "⛔ r3 X1: a var() alias for --em, redefined by a LATER rule, is refused — not literal"
+    ]
   }
 ]

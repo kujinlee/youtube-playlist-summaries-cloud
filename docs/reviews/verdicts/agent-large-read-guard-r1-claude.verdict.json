@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/agent-large-read-guard-r1-claude.md": "100644 828174b05ba04d5147b9ccac579452e7f4ddf81c",
+    "docs/reviews/codex/agent-large-read-guard-r1-codex.md": "100644 5ad18b4cc392f10a8f63881dd682a612045949e9",
+    "docs/reviews/verdicts/agent-large-read-guard-r1-codex.verdict.json": "100644 65b801de33de50d76737a33203af1e46ea1b3504"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "63d77c7b95b8482496ce581a74200ff493da10cd",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/review-469-r1-prompt.md",
+  "reason": "claude half filed: 9650 chars, names 63d77c7b95b8",
+  "refused": false,
+  "review": "agent-large-read-guard-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-457",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

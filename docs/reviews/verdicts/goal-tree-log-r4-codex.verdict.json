@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 3859 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "6da2f3412be4d82aca6879fb899175f5e24cbf75",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../363-codex-r4.md",
+  "reason": "3859 chars",
+  "refused": false,
+  "review": "goal-tree-log-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

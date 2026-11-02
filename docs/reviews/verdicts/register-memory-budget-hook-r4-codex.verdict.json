@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 3825 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "e8c7c68ce7148c65462dc3097fd19bf9abd4f3ea",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../430-codex-r4.md",
+  "reason": "3825 chars",
+  "refused": false,
+  "review": "register-memory-budget-hook-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

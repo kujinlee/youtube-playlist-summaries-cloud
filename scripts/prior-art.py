@@ -128,6 +128,13 @@ def report(terms: list[str], show_all: bool) -> int:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     """The regression this tool exists for: it must find all three #36 references."""
     cases = [
         (["MODEL_KEY", "videoId"], "docs/superpowers/specs/2026-07-02-stage-1c-supabase-adapters-design.md"),

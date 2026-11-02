@@ -1,0 +1,18 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 CLI wrote no final message (exit 1)",
+    "  gpt-6-astra: ok \u2014 5425 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "736e9b10e62b827fcf48a7c38d590ee1abaaa6c7",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "../382-codex-r3.md",
+  "reason": "5425 chars",
+  "refused": false,
+  "review": "wrap-every-selftest-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

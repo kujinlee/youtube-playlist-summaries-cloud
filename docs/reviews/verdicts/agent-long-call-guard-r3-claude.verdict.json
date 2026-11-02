@@ -1,0 +1,20 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/agent-long-call-guard-r3-claude.md": "100644 1055440f98c3ca877363c7247bb89698aab58901"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3a6951399c3e900d7b4f213ab25de59aa0ca4fc5",
+  "intrusions": [],
+  "model": null,
+  "prompt": "PR 468 r3 Claude half: refute the r2 fold and binary-faithful timeout semantics",
+  "reason": "claude half filed: 4542 chars, names 3a6951399c3e",
+  "refused": false,
+  "review": "agent-long-call-guard-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-455",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

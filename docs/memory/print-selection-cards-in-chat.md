@@ -131,3 +131,10 @@ dashboard tray's `[needs-you]`.
 
 Belongs in `docs/portable-practices.md` — the user named it a portable practice, and it is
 project-independent. See [[project-has-two-deliverables]].
+
+⟳ **2026-10-27, a new shape of the same lapse:** I relayed a subagent's report that ended *"Decision needed? No… the
+owner could optionally choose X or Y"* — and passed the two choices on as a table cell ("✅ nothing; optional:…").
+The user: *"you recommended in a transcript which I may or may not read (mostly not). if you want some real action, it
+must be a selection card."* **How to apply:** when relaying ANY report, grep it for "owner could", "optionally",
+"your call", "if you prefer" — each is a fork for the user, and goes on a card in the same turn, never into a table row.
+"Optional" is not "not a decision"; it is a decision with a default.

@@ -1561,8 +1561,23 @@ def _write_sandbox():
         _shutil.rmtree(sandbox, ignore_errors=True)
 
 
-def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
-    """The cases. `_write_sandbox` is already in force — see main()."""
+def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _sandboxed_self_test()
+
+
+def _sandboxed_self_test() -> int:
+    # The sandbox wraps the CALL, so its `finally` covers every case —
+    # including ones appended at the very end of `_self_test_body`, where the
+    # previous explicit restore left a window (L2).
+    with _write_sandbox() as (_box, _real):
+        return _self_test_body(real_out=_real, sandbox=_box)
+
+
+def _self_test_body(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
+    """The cases. `_write_sandbox` is already in force — see `_sandboxed_self_test`."""
     ok = fail = 0
 
     # ⛔ ROUND 4, High — the previous guard read the SOURCE TEXT for a string
@@ -3372,8 +3387,12 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("the suite never writes to the REAL dashboard path",
          (OUT_DEFAULT != real_out, str(OUT_DEFAULT).startswith(str(sandbox))),
          (True, True))
+    # ⟳ backlog #382: this suite runs inside `fixture_git.isolated()`, whose HOME is a fresh temp
+    # directory, while OUT_DEFAULT was computed at IMPORT from the caller's HOME. `Path.home()` here
+    # is therefore NOT what a normal run uses: the real path is the reader's page, outside it.
     case("...and the real path is still what a normal run would use",
-         real_out == pathlib.Path.home() / "explainers" / "dashboard.html", True)
+         (real_out.parts[-2:], str(real_out).startswith(str(pathlib.Path.home()))),
+         (("explainers", "dashboard.html"), False))
 
     # L1 — the falsifier the `atexit` handler could never have. A NESTED
     # sandbox with a raising body: the restore must still run, and the temp
@@ -3405,7 +3424,7 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # satisfied by `_outer` being any third thing.
     case("...and it restores the value IN FORCE, not a copy of the real path",
          (_outer == sandbox / "dashboard.html",
-          _outer != pathlib.Path.home() / "explainers" / "dashboard.html"),
+          _outer != real_out),
          (True, True))
 
     # ⚠ THE SANDBOX'S BLIND SPOT, guarded where it actually lives (round 3, Low).
@@ -3453,11 +3472,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
     a = ap.parse_args(argv)
     if a.self_test:
-        # The sandbox wraps the CALL, so its `finally` covers every case —
-        # including ones appended at the very end of `_self_test`, where the
-        # previous explicit restore left a window (L2).
-        with _write_sandbox() as (_box, _real):
-            return _self_test(real_out=_real, sandbox=_box)
+        return _self_test()
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2

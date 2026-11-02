@@ -341,6 +341,13 @@ def _drive_main(tmp: Path, name: str, files: dict[str, str],
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases, failures = 0, 0
 
     def case(label: str, got: object, want: object) -> None:

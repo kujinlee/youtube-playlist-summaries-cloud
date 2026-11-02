@@ -119,11 +119,12 @@ WHAT IT CANNOT SEE, stated rather than hidden:
 
 THE THREAD CLASS (`unknown-thread`, owner's decision 2026-10-22 — option A: warn first, then block)
 ---------------------------------------------------------------------------------------------------
-The work-lines page (`scripts/gen-work-lines.py`) shows a thread exactly when
+The goal tree's plan list (read by `scripts/gen-work-lines.py`; the work-lines page that first showed
+it retired, backlog #389) knows a thread exactly when
 `.claude/plans/<slug>.md` exists in ANY checkout — armed or not, finished or not. On 2026-10-22 a side job was run
-on banners alone, so it had no plan file and never reached that page, and none of the three
+on banners alone, so it had no plan file and never reached that list, and none of the three
 classes above could notice: they ask whether a bannered job STOPPED PARTWAY, not whether the
-thread it ran on is one the page knows. The rule:
+thread it ran on is one the plan reader knows. The rule:
 
     warn  <=>  the judged turn's LAST banner `> **Thread:**` row names a READABLE slug, AND
                no checkout's `.claude/plans/<slug>.md` exists.
@@ -158,8 +159,8 @@ thread it ran on is one the page knows. The rule:
     `also=<class>` naming any original class that fired the same turn (`also=-` for none), so the
     count of turns ONLY this class caught is one grep (`thread_log_line`).
   * ⭐ EVERY CHECKOUT (owner's decision 2026-10-22, option A). The plan files are those of every
-    checkout `git worktree list` reports, via `gen-work-lines.plan_dirs` — the page's own reader,
-    so the two cannot disagree. Measured: two `chrome-bar-fold` turns warned while that plan sat in
+    checkout `git worktree list` reports, via `gen-work-lines.plan_dirs` — the reader the goal
+    tree's plan list uses, so the two cannot disagree. Measured: two `chrome-bar-fold` turns warned while that plan sat in
     a worktree's `.claude/plans/`. If git cannot answer, only this checkout is read and the warning
     SAYS so; an unlistable directory is skipped and named. A registered checkout whose folder is
     GONE is skipped silently — it holds no plans to miss (r3 Claude F2). If NOTHING could be
@@ -168,8 +169,8 @@ thread it ran on is one the page knows. The rule:
     already answers the question, so that turn is not warned about.
   * ⚠ A REUSED SLUG IS NOT SEEN — a documented bound, accepted by the coordinator (r2 Codex 2). A
     new side job named like an OLD plan's slug is hidden behind the old file: the check is the
-    filename, not whether that plan describes this work, and the page then shows the new work
-    under the old plan. No lifecycle is tracked to close this.
+    filename, not whether that plan describes this work, and the goal tree then shows the new
+    work under the old plan. No lifecycle is tracked to close this.
 
 MODE: WARN through the same channel and log as the rest (`unknown-thread`, detail
 `<kind> <slug>`), naming the command that creates the plan. BLOCK is ONE named switch,
@@ -188,9 +189,9 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 236 cases
+    python3 scripts/check-banner-armed.py --self-test  # 247 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
-                          4 = THREAD UNKNOWN TO THE WORK-LINES PAGE, BLOCKING — only while THREAD_BLOCK is True
+                          4 = THREAD WITH NO PLAN FILE, BLOCKING — only while THREAD_BLOCK is True
 """
 from __future__ import annotations
 
@@ -209,6 +210,7 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observer_log  # noqa: E402  — the ONE owner of the record grammar (backlog #166, #170)
+import bounded_read  # noqa: E402  — the ONE reader of untrusted input (PR #440 r2)
 SENTINEL = ROOT / ".claude/executing-plan"
 WARN_LOG = ROOT / ".claude/banner-warnings.log"
 # ⛔ A SEPARATE FILE, AND THAT IS THE POINT (backlog #97). The late flush is an OBSERVATION, not a
@@ -282,17 +284,43 @@ def _is_turn_boundary(rec: dict) -> bool:
     return True
 
 
+def _turn_records(objs: list) -> list[dict]:
+    """The records the turn rule can read. PURE. ⛔ backlog #152: `123` / `[1]` are valid JSON and are not
+    records — and (r1) nor is an object whose `message` is not an object: the turn rule reads `message.get(...)`
+    and raised on `"x"` or `123`. THE ONE PLACE this filter lives; both readers below call it."""
+    return [o for o in objs if isinstance(o, dict) and isinstance(o.get("message", {}), dict)]
+
+
 def _parse_records(lines: list[str]) -> list[dict]:
-    records = []
+    """IN-MEMORY lines -> turn records, permissively. ⚠ FOR CASES THAT BUILD A TRANSCRIPT AS A LIST OF STRINGS.
+    Untrusted input never comes through here: a transcript ON DISK is read by `transcript_records`, which refuses
+    a corrupt record rather than skipping it (PR #440 r2 X1)."""
+    objs = []
     for raw in lines:
         raw = raw.strip()
         if not raw:
             continue
         try:
-            records.append(json.loads(raw))
+            objs.append(json.loads(raw))
         except (ValueError, TypeError):
             continue
-    return records
+    return _turn_records(objs)
+
+
+def transcript_records(payload: "str | bytes") -> tuple[dict, "list[dict] | None", str]:
+    """-> (payload object, turn records or None, why not). The ONE read of a Stop payload for the three guards.
+
+    ⛔ PR #440 round 2, the redesign: the reading itself — payload shape, a REGULAR file under a byte bound, a
+    parse whose every exception is CANNOT RUN, only a torn FINAL record tolerated — is `bounded_read.
+    stop_transcript`'s, and this adds only the turn rule's own filter. `None` means CANNOT RUN, with `why`.
+    """
+    data, records, why = bounded_read.stop_transcript(payload)
+    if records is None:
+        return data, None, why
+    turn = _turn_records(records)
+    if not turn:
+        return data, None, "no record in the transcript is one the turn rule can read"
+    return data, turn, ""
 
 
 def windows(records: list[dict]) -> list[TurnWindow]:
@@ -566,11 +594,11 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
     return best
 
 
-# ── THE FOURTH CLASS: a THREAD the work-lines page does not know (added 2026-10-22) ──────────
-# The banner's `> **Thread:**` row names the thread from the PLAN SLUG (CLAUDE.md), and
-# `scripts/gen-work-lines.py` shows a thread exactly when `.claude/plans/<slug>.md` exists —
-# armed or not, finished or not. A thread switched to by banner alone has no such file and never
-# reaches that page. See the module docstring, section THE THREAD CLASS, for the rule and bounds.
+# ── THE FOURTH CLASS: a THREAD with no plan file (added 2026-10-22) ──────────────────────────
+# The banner's `> **Thread:**` row names the thread from the PLAN SLUG (CLAUDE.md), and the plan
+# reader (`scripts/gen-work-lines.py`, which the goal tree's plan list reads through) knows a thread
+# exactly when `.claude/plans/<slug>.md` exists — armed or not, finished or not. A thread switched
+# to by banner alone has no such file and never reaches that list. See the module docstring, section THE THREAD CLASS, for the rule and bounds.
 THREAD_RE = re.compile(r"^>\s*\*\*Thread:\*\*(.*)$")
 _SLUG = r"`([A-Za-z0-9][A-Za-z0-9._-]*)`"
 _LEADING_SLUG_RE = re.compile(r"^\s*" + _SLUG)
@@ -714,7 +742,7 @@ def decide_thread(texts: list[str], known: set[str] | None,
     """PURE. -> (exit_code, message, reason, detail). QUIET is (0, "", "", "").
 
     `known` is the set of plan slugs across every checkout's `.claude/plans/` — the threads the
-    work-lines page shows — or None when none of them could be read. None is CANNOT RUN, but only
+    plan reader knows — or None when none of them could be read. None is CANNOT RUN, but only
     when there is a readable thread to judge: with nothing to look up, nothing was missed.
     `notes` say what was not read; a warning or a CANNOT RUN carries them.
     `block` is passed in rather than read from THREAD_BLOCK so both modes are testable.
@@ -724,7 +752,7 @@ def decide_thread(texts: list[str], known: set[str] | None,
         if rows and thread_name(rows[-1]) is not None:
             return CANNOT_RUN, (
                 "CANNOT RUN: no checkout's .claude/plans/ could be read, so this check cannot "
-                "tell whether the thread the previous turn ended on is on the work-lines page. "
+                "tell whether the thread the previous turn ended on has a plan file. "
                 "TREAT THE THREAD CHECK AS NOT RUN." + "".join(f"\n     · {n}" for n in notes or [])
             ), "", ""
         return QUIET, "", "", ""
@@ -734,14 +762,14 @@ def decide_thread(texts: list[str], known: set[str] | None,
     kind, name = hit
     how = ("a `⤳ SWITCHED` row names it as the target" if kind == "switched"
            else "the last banner's `**Thread:**` row names it")
-    head = "⛔ THREAD UNKNOWN TO THE WORK-LINES PAGE (BLOCKING)" if block else \
-        "⚠ THREAD UNKNOWN TO THE WORK-LINES PAGE"
+    head = "⛔ THREAD WITH NO PLAN FILE (BLOCKING)" if block else \
+        "⚠ THREAD WITH NO PLAN FILE"
     msg = (
         f"{head} — the previous turn ended on thread `{name}` ({how}), and no checkout "
         f"has .claude/plans/{name}.md.\n"
         "\n"
-        "   The work-lines page (scripts/gen-work-lines.py) shows a thread only when its plan\n"
-        "   file exists, so this thread's work is invisible there. Create its plan:\n"
+        "   The goal tree's plan list shows a thread only when its plan file exists, so this\n"
+        "   thread's work is invisible there. Create its plan:\n"
         "\n"
         f"     python3 scripts/begin-plan.py {name} \"title|doing|why\" ...\n"
         "\n"
@@ -1022,10 +1050,10 @@ def known_threads(plan_dir: Path) -> set[str] | None:
 
 
 def known_everywhere() -> tuple[set[str] | None, list[str]]:
-    """The threads the work-lines page shows: the plan slugs of EVERY checkout. -> (known, notes).
+    """The threads the plan reader knows: the plan slugs of EVERY checkout. -> (known, notes).
 
     ⭐ The owner's decision 2026-10-22 (option A). The directories come from
-    `gen-work-lines.plan_dirs` — the page's own reader, so this check and the page cannot disagree
+    `gen-work-lines.plan_dirs` — the goal tree's plan reader, so this check and that list cannot disagree
     about which checkouts count. `notes` name what was NOT read (git unable to list worktrees, a
     directory that exists and could not be listed); a warning carries them.
     ⚠ READ AT JUDGING TIME, NOT SAMPLED: a plan created after the turn ended already answers it.
@@ -1288,32 +1316,29 @@ def _log_flush(session: str, late: tuple) -> bool:
     return observer_log.append(FLUSH_LOG, flush_line(late[0], late[1], observer_log.now(), session))
 
 
-def run_decide(payload: str) -> int:
-    try:
-        data = json.loads(payload) if payload.strip() else {}
-    except (ValueError, TypeError):
-        data = {}
-
+def run_decide(payload: "str | bytes") -> int:
+    # ⛔ backlog #357(1)(2), PR #440 r1 X1/m1, r2: the payload and transcript are read ONCE, by `bounded_read`.
+    data, all_records, why = transcript_records(payload)
     session_id = str(data.get("session_id", "") or "")
 
     # ── 1. select the judged turn ─────────────────────────────────────────────────────────────
-    all_records: list[dict] | None = None
-    path = data.get("transcript_path")
-    if isinstance(path, str) and path:
-        try:
-            all_records = _parse_records(Path(path).read_text().splitlines())
-        except OSError:
-            all_records = None
-
-    if not all_records:
-        print("CANNOT RUN: the stop-hook payload named no readable transcript, so this check could "
+    if all_records is None:
+        print(f"CANNOT RUN: {why}. "
+              "The stop-hook payload named no readable transcript, so this check could "
               "not look for a step banner. TREAT THIS AS NOT RUN — do not read the absence of a "
               "warning as 'nothing was announced'.", file=sys.stderr)
         return CANNOT_RUN
 
-    wins = windows(all_records)
-    live = wins[-1]
-    judged = judged_window(wins)
+    try:
+        wins = windows(all_records)
+        live = wins[-1]
+        judged = judged_window(wins)
+    except Exception as exc:
+        # ⛔ backlog #152 r1: unguarded, anything the turn rule raised left the Stop hook as exit 1 — the code a
+        # real WARNING uses. Whatever it was, this guard did not look.
+        print(f"CANNOT RUN: the turn rule raised {type(exc).__name__}: {exc}. TREAT THIS AS NOT RUN — do not "
+              "read the absence of a warning as 'nothing was announced'.", file=sys.stderr)
+        return CANNOT_RUN
 
     # ── 2. sample the sentinel for the LIVE turn ──────────────────────────────────────────────
     # ⚠ THIS IS THE SAMPLE POINT THE FIX DEPENDS ON, AND IT WAS ALREADY CORRECT.
@@ -1559,6 +1584,13 @@ def run_decide(payload: str) -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -1614,6 +1646,93 @@ def _self_test() -> int:
     B = "## ▶ STEP {} of {} — doing a thing"
 
     # ── the rule ───────────────────────────────────────────────────────────────────────────
+    # backlog #152: a line that is valid JSON but NOT an object (`123`, `[1]`, `"s"`) reached the turn rule
+    # and raised AttributeError out of the Stop hook; only objects are records.
+    case("⭐ _parse_records keeps only JSON OBJECTS — `123`, `[1]` and `\"s\"` are not records (backlog #152)",
+         _parse_records(["123", "[1]", '"s"', '{"type": "user"}', "not json"]) == [{"type": "user"}])
+    # r1 (both halves): an OBJECT whose `message` is not an object crashed the turn rule the same way.
+    case("...and a record whose `message` is not an object is not a record either (backlog #152 r1)",
+         _parse_records(['{"type": "user", "message": 123}', '{"type": "user", "message": "x"}',
+                         '{"type": "user", "message": {"content": "q"}}'])
+         == [{"type": "user", "message": {"content": "q"}}])
+    def _safe_rc(fn):
+        # a crash must be a NAMED red case, or the mutation harness cannot attribute the kill
+        try:
+            return fn()
+        except Exception as exc:                       # noqa: BLE001
+            return f"RAISED {type(exc).__name__}"
+    def _banner_rule_raises() -> int:
+        import contextlib as _cl, io as _io, tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"; tp.write_text('{"type": "user"}\n')
+            real = globals()["windows"]; globals()["windows"] = lambda recs: (_ for _ in ()).throw(KeyError("x"))
+            try:
+                with _cl.redirect_stderr(_io.StringIO()):
+                    return run_decide(json.dumps({"transcript_path": str(tp), "session_id": "s"}))
+            finally:
+                globals()["windows"] = real
+    case("⭐ this guard's OWN run_decide maps a raising turn rule to CANNOT RUN, not exit 1 (backlog #152 r1)",
+         _safe_rc(_banner_rule_raises) == CANNOT_RUN)
+    def _banner_bad_input(payload_of) -> int:
+        import contextlib as _cl, io as _io, tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"; tp.write_bytes(b'\xff{"type": "user"}\n\xfe\n')
+            with _cl.redirect_stderr(_io.StringIO()):
+                return run_decide(payload_of(tp))
+    def _banner_bad_input_bytes(data: bytes) -> int:
+        import contextlib as _cl, io as _io, tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"; tp.write_bytes(data)
+            with _cl.redirect_stderr(_io.StringIO()):
+                return run_decide(json.dumps({"transcript_path": str(tp), "session_id": "s"}))
+    # ⛔ PR #440 r2 X1, REVERTING r1 m2: an undecodable record BETWEEN two whole ones is corruption, not a torn
+    # write. r1 skipped it, so the guard read the turn around it and the registered hook returned 0.
+    case("⭐ r2 X1: an undecodable record mid-transcript is CANNOT RUN, never skipped (r1 m2 reverted)",
+         _safe_rc(lambda: _banner_bad_input_bytes(b'{"type": "user", "message": {"content": "go"}}\n\xff\n'
+                                                  b'{"type": "assistant", "message": {"content": []}}\n')) == CANNOT_RUN)
+    case("⭐ backlog #357(1): a transcript NO line of which decodes is CANNOT RUN, never a traceback",
+         _safe_rc(lambda: _banner_bad_input(lambda tp: json.dumps({"transcript_path": str(tp), "session_id": "s"}))) == CANNOT_RUN)
+    def _torn_tail():
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"
+            tp.write_bytes(b'{"type": "user"}\n{"type": "user", "n": 2}\n{"type": "assistant", "x": "ab\xe2\x9b')
+            return transcript_records(json.dumps({"transcript_path": str(tp)}))[1]
+    case("⭐ a torn FINAL record cut mid-character is dropped and its predecessors kept — a write in progress, not "
+         "corruption (PR #440 r1 m2, narrowed by r2 X1)",
+         safe(lambda: _torn_tail() == [{"type": "user"}, {"type": "user", "n": 2}]))
+    case("transcript_records: a number as transcript_path is refused, and the payload object is still returned",
+         safe(lambda: transcript_records('{"transcript_path": 5, "session_id": "s"}')
+              == ({"transcript_path": 5, "session_id": "s"}, None, "the hook payload names no transcript_path string")))
+    case("transcript_records: a transcript whose every record has a non-object `message` is CANNOT RUN — the turn "
+         "rule's filter leaves nothing to read",
+         safe(lambda: _banner_bad_input_bytes(b'{"type": "user", "message": 5}\n') == CANNOT_RUN))
+    case("⭐ backlog #357(2): a payload that is JSON but not an object is CANNOT RUN, never a traceback",
+         _safe_rc(lambda: _banner_bad_input(lambda tp: "[]")) == CANNOT_RUN)
+
+    # ⛔ PR #440 r1 + r2: EVERY hostile input any round found, through the REAL `--decide` as the hook runs it.
+    # The list is `bounded_read.hostile_payloads`'s, shared by the three transcript guards, so an input added
+    # there is red here until it is handled.
+    def _hostile_cli() -> list:
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            me = [str(Path(__file__).resolve())]
+            return [(n, bounded_read.run_cli(me + ["--decide"], b)) for n, b in bounded_read.hostile_payloads(Path(d))]
+    _hostile = _safe_rc(_hostile_cli)
+    case("⭐ r1+r2: every hostile payload — NUL, number, bad bytes, non-objects, 200,000-deep, FIFO, directory, a "
+         "corrupt mid-transcript record — is CANNOT RUN through --decide: rc 2, no traceback, no hang",
+         isinstance(_hostile, list) and [g for _, g in _hostile] == [(2, False)] * len(_hostile) and len(_hostile) >= 14)
+    # ⛔ PR #440 r3 C4: rc 2 above is also what a DROPPED S_ISREG check gives (a writer-less FIFO reads as empty),
+    # so the case above passes for an ambient reason on these three. This one asserts the refusal's REASON.
+    def _non_regular_cli() -> list:
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            me = [str(Path(__file__).resolve()), "--decide"]
+            return [bounded_read.run_cli_naming(me, b, bounded_read.NOT_REGULAR)
+                    for _, b in bounded_read.non_regular_payloads(Path(d))]
+    _non_regular = _safe_rc(_non_regular_cli)
+    case("⭐ r3 C4: a transcript_path that is not a regular file — a FIFO, a directory, /dev/zero — is refused through --decide BY NAME, never read as empty and refused for something else",
+         isinstance(_non_regular, list) and len(_non_regular) == 3 and set(_non_regular) == {(2, False, True)})
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
     # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE
@@ -1803,15 +1922,14 @@ def _self_test() -> int:
     # ── EVERY CHECKOUT'S PLANS — a REAL `git worktree add` (owner's decision, option A) ─────
     # The measured case: two `chrome-bar-fold` turns warned while that plan sat in a worktree's
     # `.claude/plans/`. ROOT is swapped to the temp repo's MAIN checkout for `known_everywhere`.
-    import os as _osw, subprocess as _spw
+    import subprocess as _spw
+    import fixture_git  # backlog #373: one constructed environment, built per call
     with _tfk.TemporaryDirectory() as _gw:
-        _genv = {**{k: v for k, v in _osw.environ.items() if not k.startswith("GIT_")},
-                 "HOME": _gw, "GIT_CONFIG_NOSYSTEM": "1"}
 
         def _git(cwd, *args):
             return _spw.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
                              "-c", "commit.gpgsign=false", "-C", str(cwd), *args],
-                            capture_output=True, text=True, env=_genv, timeout=60)
+                            capture_output=True, text=True, env=fixture_git.env(HOME=_gw), timeout=60)
 
         _gm = Path(_gw).resolve() / "repo"
         _gm.mkdir()
@@ -3355,6 +3473,10 @@ if __name__ == "__main__":
     if a.self_test:
         sys.exit(_self_test())
     if a.decide:
-        sys.exit(run_decide(sys.stdin.read()))
+        raw, why = bounded_read.read_stream(sys.stdin)     # bounded in bytes and time (PR #440 r2)
+        if raw is None:
+            print(f"CANNOT RUN: the stop-hook payload: {why}. TREAT THIS AS NOT RUN.", file=sys.stderr)
+            sys.exit(CANNOT_RUN)
+        sys.exit(run_decide(raw))
     ap.print_help()
     sys.exit(CANNOT_RUN)

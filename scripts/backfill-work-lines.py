@@ -46,7 +46,7 @@ line. That needs a PR's state at a past moment, which no transcript holds; the b
     <!-- parent: <slug-or-dash> -->
     <!-- parent-source: transcript <session-id-8> <ISO time of the arm> -->
 
-`gen-work-lines.py` reads the second line and draws such a node distinctly, so live evidence and
+`gen-work-lines.py` reads the second line and the goal tree marks such a link "(reconstructed)", so live evidence and
 rebuilt history can always be told apart.
 
 ⭐ BANNERS ARE A CROSS-CHECK, NOT A SOURCE. A `⤳ SWITCHED from `X` … → `Y`` line in the assistant's
@@ -1846,6 +1846,13 @@ def _tick_out(i: int, n: int, slug: str = "one") -> str:
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     import tempfile
     cases = failures = 0
 

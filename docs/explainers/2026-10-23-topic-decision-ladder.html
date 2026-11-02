@@ -6,7 +6,7 @@
 <title>The decision ladder</title>
 
 <style>
-:root{
+:root{--em:#2d4a7c;
   --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
   --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
   --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
@@ -16,12 +16,14 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
+  :root:not([data-theme="light"]){--em:#9db8e8;
     --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
     --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
     --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
@@ -30,7 +32,9 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
@@ -41,7 +45,7 @@
    Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
    `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
    toggle over undeclared tokens is a button that changes an attribute nothing styles. */
-:root[data-theme="light"]{
+:root[data-theme="light"]{--em:#2d4a7c;
   --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
   --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
   --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
@@ -51,11 +55,13 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
-:root[data-theme="dark"]{
+:root[data-theme="dark"]{--em:#9db8e8;
     --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
     --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
     --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
@@ -64,7 +70,9 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
@@ -167,7 +175,14 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
   /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
      fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
      palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
-     what nobody supplied. */
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
   @media (prefers-color-scheme: dark) {
     html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
            --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
@@ -227,7 +242,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
 <div class="wrap ex-body">
 
 <h1>The decision ladder: bets, lost bets and the twelve triggers</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-23 16:47 · 92c78bff · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-25 07:34 · 65e9263a · uncommitted changes</time></span></div></div>
 <p class="horizon">as of <code>40b765e4</code> (master, PR #387 merged) · 2026-10-23 14:21 PDT · source read: <code>scripts/check-decision-scheme.py</code>, <code>docs/reviews/decision-scheme/{decision-log.jsonl,baseline.json}</code></p>
 
 <div class="reading">
@@ -420,6 +435,7 @@ label is the string, and the function behind it is named <code>t&lt;N&gt;_…</c
     ("4 NO IMPROVEMENT", t4_no_improvement(rows, pinned_rounds["median"])),
     ("5 RANKER MISS", t5_ranker_miss(rows)),
 ):                                     # ← these FAIL the run
+# ⟳ 2026-10-25: trigger 4 has since MOVED to the WARN list, suspended pending backlog #327
     ...
 for name, result in (
     ("6 DENOMINATOR MOVED", t6_denominator_moved(...)),
@@ -464,7 +480,7 @@ calls this “the FAIL/WARN split … in this file’s existing style (t4/t9)”
 <tr><td>1</td><td>NOT FED</td><td>FAIL</td><td>Did a subject reach ≥2 review rounds with no log row at all?</td><td><code>t1_not_fed</code></td></tr>
 <tr><td>2</td><td>NON-TERMINATION</td><td>FAIL</td><td>Has a unit used every rung, is it still drawing findings, and is it <b>not</b> closed?</td><td><code>t2_non_termination</code></td></tr>
 <tr><td>3</td><td>LOST BET NOT ESCALATED</td><td>FAIL</td><td>After a lost bet, was the next bet on that unit ever logged?</td><td><code>t3_lost_bet_not_escalated</code></td></tr>
-<tr><td>4</td><td>NO IMPROVEMENT</td><td>FAIL</td><td>Are the last 5 finished subjects no shorter than the pre-scheme median (4 rounds)?</td><td><code>t4_no_improvement</code></td></tr>
+<tr><td>4</td><td>NO IMPROVEMENT</td><td>FAIL — ⟳ <b>suspended to WARN 2026-10-25</b>, pending backlog #327</td><td>Are the last 5 finished subjects no shorter than the pre-scheme median (4 rounds)?</td><td><code>t4_no_improvement</code></td></tr>
 <tr><td>5</td><td>RANKER MISS</td><td>FAIL</td><td>Did the ranker name the wrong component twice in a row?</td><td><code>t5_ranker_miss</code></td></tr>
 <tr><td>6</td><td>DENOMINATOR MOVED</td><td>WARN</td><td>Has the review corpus grown under the pinned baseline?</td><td><code>t6_denominator_moved</code></td></tr>
 <tr><td>7</td><td>SAMPLE REACHED</td><td>WARN</td><td>Are there 10 ranker predictions yet, enough to re-score it?</td><td><code>t7_sample_reached</code></td></tr>

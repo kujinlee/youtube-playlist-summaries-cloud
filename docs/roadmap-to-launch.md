@@ -2442,7 +2442,7 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
       r1's 19** then **4 of r2's 8**. ⟳ The r1 figure was **19**, not the 18 three artifacts of mine
       claimed — I counted prose in a slice whose subject is a machine built to stop that. r2's reviewer
       applied the design's own §5 condition unprompted and reached the same place.
-- [x] ⏸️ **DECIDED 2026-10-20 — DEFER** (backlog **#327**). The owner ruled *defer it, fix the signals first*.
+- [x] ⏸️ **DECIDED 2026-10-20 — DEFER** (backlog **#327**). ⟳ **REOPENED 2026-10-25 by the owner** as *keep, simplify or retire the scheme*, after trigger 4's first verdict (no improvement: median 4 vs 4); trigger 4 is suspended to a WARN until it rules. The owner ruled *defer it, fix the signals first*.
       The ladder says **SPLIT**: `log-schema` took REDESIGN at r1, its failure observation is satisfied,
       and DEFER is the rung *after* SPLIT — §5 forbids only a third **REDESIGN**, which SPLIT is not.
       SPLIT is also the only route in this slice with positive evidence (`relocation` 5 → 0 → 0, n=1).
@@ -2485,6 +2485,14 @@ the work now:
 - [ ] **backlog #333** — the sweep's shards are imbalanced ~2x in wall-clock against a predicted
       1.15x, and the sweep IS the critical path: verify→`mutation-sweep-complete` is **19–23 min**
       and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
+- [ ] **backlog #356** — TS gate weakenings still READY: npm call site (`package.json` never gets hunks),
+  `process .exit`, and Node comments. Split off backlog #354 at r2; fix through a real-git world case.
+- [x] **backlog #354** — `check-merge-ready` misses TypeScript gates (`process.exit(1)` -> `0` in
+  `check-service-confinement.ts` prints READY). XS fix: `.ts/.js` in `GATE_CODE`, `process.exit`/`throw` in `FAIL_PATH`.
+- [ ] **backlog #355** — `check-merge-ready` HOLDs a line that only GAINED arguments near a failure path (PR #400's
+  `shard=shard)`). A false hold, fails closed; fix only if the replay shows it recurs.
+- [x] **backlog #353** — `check-merge-ready` reads paths from git's machine format (`--name-status -z -M`), not
+  patch headers — fixed on PR #399 before merge, at the owner's call. Real-git self-test covers every shape found.
 - [ ] **backlog #334** — a declined escalation must pre-commit the observation that would reverse it.
 
 ⟳ **backlog #321's FOURTH occurrence — the decision that ends the slice — IS NOW RECORDED (2026-10-21).**

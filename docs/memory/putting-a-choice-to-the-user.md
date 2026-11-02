@@ -170,3 +170,7 @@ recommend clearly so I don't have to spend much time." A neutral multiple-choice
 non-neutral decision is itself the friction to avoid — reserve AskUserQuestion's
 even-handed framing for genuinely even choices.
 
+
+**Every option carries PROS and CONS in REALISTIC impact (owner 11-01 10:10: "provide pros and cons analysis (in realistic impact) when you present selection").** Not "faster"/"riskier" but the size of it: tokens or % of the weekly limit, minutes or days saved, what concretely breaks or is lost, and how likely. Put it in each option's description as `Pro: … Con: …`, and if the card can't hold it, put a short pros/cons table in the message right above the card. **Why:** a trade-off without a magnitude can't be weighed; e.g. the global-trim card first claimed 2–3 KB and the measured saving was ~1 KB.
+
+**LEAD a decision with the VERDICT in plain words (owner 11-01 10:14, quoting my line back as the model):** "The change's realistic benefit is close to nothing, and its risk, though small, outweighs it. I also need to correct how I've been sizing these savings, and that correction applies to #458 too." — "this kind of information is what I need when I make decision". So, before any card: (1) one sentence: is the realistic benefit big or small, and does the risk outweigh it; (2) any correction to numbers I gave earlier, and WHICH past decisions it touches; then the pros/cons with magnitudes, then the card.

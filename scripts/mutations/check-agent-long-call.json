@@ -1,0 +1,471 @@
+[
+  {
+    "name": "the timeout limit becomes inclusive: exactly 270000 ms is denied",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "t <= LIMIT_S * 1000",
+        "t < LIMIT_S * 1000"
+      ]
+    ],
+    "expect": [
+      "a subagent's timeout 270000 (the boundary) is allowed"
+    ]
+  },
+  {
+    "name": "the timeout rule is dropped",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if t <= LIMIT_S * 1000:\n        return None\n    return (",
+        "    if True:\n        return None\n    return ("
+      ]
+    ],
+    "expect": [
+      "a subagent's timeout 300000 is denied"
+    ]
+  },
+  {
+    "name": "a numeric-string timeout is not coerced",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if isinstance(t, str) and NUMERIC_STRING.fullmatch(js_trim(t)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a numeric-string timeout is read as its number: '300000' is denied"
+    ]
+  },
+  {
+    "name": "a numeric-string timeout is not trimmed first",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "NUMERIC_STRING.fullmatch(js_trim(t))",
+        "NUMERIC_STRING.fullmatch(t)"
+      ]
+    ],
+    "expect": [
+      "a numeric-string timeout is read as its number: '300000' is denied"
+    ]
+  },
+  {
+    "name": "a timeout the schema refuses is read as zero",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        raise Unreadable(f\"its timeout {tool_input['timeout']!r} is not a number of milliseconds\")",
+        "        t = 0"
+      ]
+    ],
+    "expect": [
+      "a timeout string that is not numeric is NOT CHECKED",
+      "main --hook: a timeout the schema refuses is NOT CHECKED, said on stderr, no traceback"
+    ]
+  },
+  {
+    "name": "a boolean timeout counts as a number",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "and not is_number(t):",
+        "and not isinstance(t, (int, float)):"
+      ]
+    ],
+    "expect": [
+      "a boolean timeout is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "an absent timeout is judged like a present one",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if \"timeout\" in tool_input and",
+        "    if"
+      ]
+    ],
+    "expect": [
+      "no timeout, no env: the harness default 120000 is allowed"
+    ]
+  },
+  {
+    "name": "a null timeout is read as absent",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "if \"timeout\" in tool_input and not",
+        "if t is not None and not"
+      ]
+    ],
+    "expect": [
+      "a null timeout is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "timeout 0 is taken literally, not as the default",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    requested = t or default_timeout_ms(env)",
+        "    requested = default_timeout_ms(env) if t is None else t"
+      ]
+    ],
+    "expect": [
+      "timeout 0 is the default (Rt || fde())"
+    ]
+  },
+  {
+    "name": "a negative timeout is read as the default",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "= t or default",
+        "= t if t and t > 0 else default"
+      ]
+    ],
+    "expect": [
+      "a negative timeout passes through Math.min and is allowed"
+    ]
+  },
+  {
+    "name": "BASH_DEFAULT_TIMEOUT_MS is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    v = harness_int(env.get(\"BASH_DEFAULT_TIMEOUT_MS\", \"\"))",
+        "    v = None"
+      ]
+    ],
+    "expect": [
+      "no timeout, BASH_DEFAULT_TIMEOUT_MS over the limit is denied"
+    ]
+  },
+  {
+    "name": "BASH_MAX_TIMEOUT_MS is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "requested if cap is None or not cap > 0 else",
+        "requested if True else"
+      ]
+    ],
+    "expect": [
+      "BASH_MAX_TIMEOUT_MS caps an explicit timeout"
+    ]
+  },
+  {
+    "name": "the cap may fall below the default",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "else min(requested, max(cap, default_timeout_ms(env)))",
+        "else min(requested, cap)"
+      ]
+    ],
+    "expect": [
+      "the cap is never below the default: max(BASH_MAX, default)"
+    ]
+  },
+  {
+    "name": "an env value must be all digits, not a parseInt prefix",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    m = INT_PREFIX.match(n)",
+        "    m = INT_PREFIX.fullmatch(n)"
+      ]
+    ],
+    "expect": [
+      "an env value is read by parseInt: '300000ms' is 300000"
+    ]
+  },
+  {
+    "name": "an env value is not trimmed",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    n = js_trim(s)",
+        "    n = s"
+      ]
+    ],
+    "expect": [
+      "an env value is trimmed first: ' 300000' is 300000"
+    ]
+  },
+  {
+    "name": "the exponent form is read by parseInt",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        if EXP_FORM.fullmatch(n):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an env value in exponent form is its number: '1e6'"
+    ]
+  },
+  {
+    "name": "a non-integer exponent form is kept",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "            return v if v.is_integer() else None",
+        "            return v"
+      ]
+    ],
+    "expect": [
+      "an exponent form that is not an integer is NaN, so the default"
+    ]
+  },
+  {
+    "name": "the 32-character limit on the special forms is dropped",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if len(n) <= 32:",
+        "    if True:"
+      ]
+    ],
+    "expect": [
+      "an exponent form over 32 characters is read by parseInt"
+    ]
+  },
+  {
+    "name": "the thousands form is read by parseInt",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        if THOUSANDS_FORM.fullmatch(n):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an env value in thousands form is its digits: '300,000'"
+    ]
+  },
+  {
+    "name": "a long env value is an int, which cannot be formatted",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    return float(m.group()) if m else None",
+        "    return int(m.group()) if m else None"
+      ]
+    ],
+    "expect": [
+      "an env value of 400 digits is a float, not a raise"
+    ]
+  },
+  {
+    "name": "run_in_background is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if ti.get(\"run_in_background\") is True and",
+        "    if False and"
+      ]
+    ],
+    "expect": [
+      "run_in_background: true is allowed whatever its timeout"
+    ]
+  },
+  {
+    "name": "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is ignored",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "and not harness_bool(\n            env.get(\"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS\")):",
+        "and True:"
+      ]
+    ],
+    "expect": [
+      "run_in_background is ignored when CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is set"
+    ]
+  },
+  {
+    "name": "the main session is gated too",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if not sent_by_subagent(json.dumps(doc)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "the MAIN session (no agent_id) is never denied"
+    ]
+  },
+  {
+    "name": "every tool is gated, not only Bash",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if doc.get(\"tool_name\") != \"Bash\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a tool other than Bash is not gated"
+    ]
+  },
+  {
+    "name": "a tool_input that is not an object is silently allowed",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        raise Unreadable(f\"its tool_input is not an object ({type(ti).__name__})\")",
+        "        return None"
+      ]
+    ],
+    "expect": [
+      "a tool_input that is not an object is NOT CHECKED"
+    ]
+  },
+  {
+    "name": "main --hook never prints the denial",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    if reason is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "main --hook: a denial is the PreToolUse deny JSON at exit 0"
+    ]
+  },
+  {
+    "name": "an unreadable payload exits 0, silently allowed",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "(backlog #455).\",\n              file=sys.stderr)\n        return 1",
+        "(backlog #455).\",\n              file=sys.stderr)\n        return 0"
+      ]
+    ],
+    "expect": [
+      "main --hook: an unreadable payload is NOT CHECKED — exit 1, said on stderr, no decision"
+    ]
+  },
+  {
+    "name": "a parsed non-object goes on to decide",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "        if not isinstance(doc, dict):\n            raise Unreadable(",
+        "        if False:\n            raise Unreadable("
+      ]
+    ],
+    "expect": [
+      "main --hook: a payload that is not an object is NOT CHECKED too"
+    ]
+  },
+  {
+    "name": "the denial stops naming the remedy",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "or start the long work with `run_in_background: true` writing",
+        "or start the long work in the background writing"
+      ]
+    ],
+    "expect": [
+      "the denial names the cause and the remedy"
+    ]
+  },
+  {
+    "name": "a non-positive BASH_MAX_TIMEOUT_MS is accepted as the cap",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "or not cap > 0 else",
+        "else"
+      ]
+    ],
+    "expect": [
+      "a non-positive BASH_MAX_TIMEOUT_MS is not valid: the 600000 cap stays (0, -1)"
+    ]
+  },
+  {
+    "name": "trimming is Python's strip(), not JavaScript's",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    return s.strip(JS_WHITESPACE)",
+        "    return s.strip()"
+      ]
+    ],
+    "expect": [
+      "JS trim removes the BOM: '\\ufeff300000' is 300000"
+    ]
+  },
+  {
+    "name": "U+0085 is trimmed as Python does",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "\\u3000\\ufeff\")",
+        "\\u3000\\ufeff\\u0085\")"
+      ]
+    ],
+    "expect": [
+      "JS trim keeps U+0085: '\\x85300000' is NaN, so the default"
+    ]
+  },
+  {
+    "name": "a numeric-string timeout is trimmed with Python's strip",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "NUMERIC_STRING.fullmatch(js_trim(t)):\n        t = float(js_trim(t))",
+        "NUMERIC_STRING.fullmatch(t.strip()):\n        t = float(t.strip())"
+      ]
+    ],
+    "expect": [
+      "a numeric-string timeout is trimmed as JS does: BOM trimmed, U+0085 refused"
+    ]
+  },
+  {
+    "name": "any non-empty CLAUDE_CODE_DISABLE_BACKGROUND_TASKS disables the exemption",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "js_trim(str(v).lower()) in TRUE_WORDS if v else False",
+        "bool(v)"
+      ]
+    ],
+    "expect": [
+      "a false-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ('false', '0', 'banana') keeps the exemption"
+    ]
+  },
+  {
+    "name": "the disable flag is not trimmed",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "js_trim(str(v).lower()) in TRUE_WORDS",
+        "str(v).lower() in TRUE_WORDS"
+      ]
+    ],
+    "expect": [
+      "a true-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is trimmed and case-insensitive"
+    ]
+  },
+  {
+    "name": "a true word is dropped from the disable flag's set",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "TRUE_WORDS = (\"1\", \"true\", \"yes\", \"on\")",
+        "TRUE_WORDS = (\"1\", \"true\", \"yes\")"
+      ]
+    ],
+    "expect": [
+      "a true-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is trimmed and case-insensitive"
+    ]
+  }
+]

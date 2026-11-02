@@ -431,38 +431,20 @@
     ]
   },
   {
-    "name": "r1 M5: only the artifact ROOT is refused, so an --out in a writer directory is allowed",
-    "file": "scripts/codex-review.py",
-    "edits": [
-      [
-        "    if here != tree and not here.startswith(tree + os.sep):",
-        "    if here != tree:"
-      ]
-    ],
-    "expect": [
-      "an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
-      "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
-    ]
-  },
-  {
     "name": "r1 M5: the --out rule is inverted, refusing every scratch path and allowing the tree",
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    if here != tree and not here.startswith(tree + os.sep):\n        return None",
-        "    if here == tree or here.startswith(tree + os.sep):\n        return None"
+        "    if not any(same_dir_or_inside(here, root, stat) for root in roots):",
+        "    if any(same_dir_or_inside(here, root, stat) for root in roots):"
       ]
     ],
     "expect": [
-      "an --out inside a writer subdirectory is REFUSED — it would make that directory watched",
-      "…and so is one at the artifact root itself",
-      "…and the refusal says CANNOT RUN and names the documented scratch shape",
       "the documented shape — a scratch path outside the repository — is NOT refused",
       "…nor is a sibling whose name merely STARTS with the artifact tree's",
       "…nor anything outside the repository at all",
       "…and still files its OWN testimony, so a refusal is on the record rather than silent",
-      "…marked `refused`, which is what stops the consumer accusing the review it spared",
-      "an --out inside the artifact tree is refused by the real CLI, before any snapshot"
+      "…marked `refused`, which is what stops the consumer accusing the review it spared"
     ]
   },
   {
@@ -470,7 +452,7 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "    out_refusal = out_location_refusal(args.out)",
+        "    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)",
         "    out_refusal = None"
       ]
     ],
@@ -552,5 +534,317 @@
       "…and an OVER-LENGTH id is told its length and the cap, which is the one reason a caller cannot work out by looking",
       "…while a SEPARATOR still gets the separator rule, so naming the reason did not lose the one rule the message always named"
     ]
+  },
+  {
+    "name": "#121 main reads the head of the checkout this file lives in again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    head_at_dispatch, dirty_at_dispatch = reviewed_state(tree_at_dispatch)",
+        "    head_at_dispatch, dirty_at_dispatch = reviewed_state(REPO_ROOT)"
+      ]
+    ],
+    "expect": "⭐ #121 a review run FROM worktree B records B's head, not the head of the checkout the wrapper lives in"
+  },
+  {
+    "name": "#121 reviewed_root asks git for the wrong thing, not the top level",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "[\"git\", \"-C\", here, \"rev-parse\", \"--show-toplevel\"]",
+        "[\"git\", \"-C\", here, \"rev-parse\", \"--show-prefix\"]"
+      ]
+    ],
+    "expect": "#121 reviewed_root resolves the TOP LEVEL of the checkout it is asked from, even from a subdirectory"
+  },
+  {
+    "name": "#121 outside a repository reviewed_root falls back to this file's checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return os.path.realpath(top) if p.returncode == 0 and top else here",
+        "    return os.path.realpath(top) if p.returncode == 0 and top else REPO_ROOT"
+      ]
+    ],
+    "expect": "…and outside any repository it answers with the directory itself, never this file's checkout — whose head would be a confident answer about the wrong tree"
+  },
+  {
+    "name": "#121 the verdict no longer names the tree it measured",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        \"tree\": tree,",
+        "        \"tree\": None,"
+      ]
+    ],
+    "expect": "…and the verdict NAMES the tree it measured, so a wrong head is diagnosable from the file"
+  },
+  {
+    "name": "#121 r1 X6 the Codex subprocess runs in the wrapper's own checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "                cwd=cwd,\n",
+        "                cwd=REPO_ROOT,\n"
+      ]
+    ],
+    "expect": "⭐ #121 r1 X6 the reviewer runs AT the reviewed root, not in the wrapper's checkout"
+  },
+  {
+    "name": "#121 r1 X4 the Codex subprocess inherits GIT_DIR again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "                cwd=cwd,\n                env=unredirected(),\n",
+        "                cwd=cwd,\n"
+      ]
+    ],
+    "expect": "⭐ #121 r1 X4 the reviewer gets the SAME git context the record describes — GIT_DIR stripped, so git there answers about B"
+  },
+  {
+    "name": "#121 r1 main does not tell run_codex where the reviewed tree is",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "run_codex(slug, prompt, args.timeout, cwd=tree_at_dispatch)",
+        "run_codex(slug, prompt, args.timeout)"
+      ]
+    ],
+    "expect": "⭐ #121 r1 X6 the reviewer runs AT the reviewed root, not in the wrapper's checkout"
+  },
+  {
+    "name": "#121 r1 C2 the --out refusal covers only this file's checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    roots = [r for r in (REPO_ROOT, reviewed) if r]",
+        "    roots = [r for r in (REPO_ROOT,) if r]"
+      ]
+    ],
+    "expect": "#121 r4 X1 …and so is ANY --out inside the reviewed checkout, however spelled"
+  },
+  {
+    "name": "#121 r1 C2 main does not hand the reviewed tree to the --out refusal",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "out_location_refusal(args.out, reviewed=tree_at_dispatch)",
+        "out_location_refusal(args.out)"
+      ]
+    ],
+    "expect": "#121 r1 C2 …and main asks it: the real CLI run from B refuses that --out"
+  },
+  {
+    "name": "#121 r1 C2 the watch covers only this file's checkout",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    for root in (REPO_ROOT, reviewed):",
+        "    for root in (REPO_ROOT,):"
+      ]
+    ],
+    "expect": "#121 r1 C2 …and the reviewed tree's docs/reviews is a watched root"
+  },
+  {
+    "name": "#121 r1 C2 main does not hand the reviewed tree to the watch",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "watched_dirs(args.out, reviewed=tree_at_dispatch)",
+        "watched_dirs(args.out)"
+      ]
+    ],
+    "expect": "#121 r1 C2 an agent write into the REVIEWED tree's docs/reviews is caught and moved out"
+  },
+  {
+    "name": "#121 r2 X3 --out is normalised before its symlinks are resolved",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    return os.path.realpath(os.path.join(cwd or os.getcwd(), out_path))",
+        "    return os.path.realpath(os.path.abspath(os.path.join(cwd or os.getcwd(), out_path)))"
+      ]
+    ],
+    "expect": [
+      "#121 r2 X3 --out resolves THROUGH the symlink before `..`, to where it really lands"
+    ]
+  },
+  {
+    "name": "#121 r2 X3 main checks and writes the --out as typed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    args.out = resolve_out(args.out)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "#121 r2 X3 an `alias/..` --out onto an existing capture meets the OVERWRITE refusal"
+    ]
+  },
+  {
+    "name": "#121 r2 X4 a missing artifact directory is not watched",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            if d not in dirs:\n                dirs.append(d)",
+        "            if os.path.isdir(d) and d not in dirs:\n                dirs.append(d)"
+      ]
+    ],
+    "expect": [
+      "#121 r2 X4 an artifact directory created DURING the run is still watched"
+    ]
+  },
+  {
+    "name": "#121 r3 M3 identity never matches, so only the spelling is compared",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            if (st.st_dev, st.st_ino) == (t.st_dev, t.st_ino):",
+        "            if False:"
+      ]
+    ],
+    "expect": "⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled"
+  },
+  {
+    "name": "#121 r3 M3 the refusal compares the spelling of the path, not its identity",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "any(same_dir_or_inside(here, root, stat) for root",
+        "any(here == root for root"
+      ]
+    ],
+    "expect": "⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled"
+  },
+  {
+    "name": "#121 r3 M3 the identity check stops at the directory itself, never walking up",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            pass\n        parent = os.path.dirname(p)\n",
+        "            pass\n        parent = p\n"
+      ]
+    ],
+    "expect": "#121 r3 M3 same_dir_or_inside walks UP to the tree from a deeper directory"
+  },
+  {
+    "name": "#121 r3 M3 the refusal drops the stat it was handed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "same_dir_or_inside(here, root, stat)",
+        "same_dir_or_inside(here, root)"
+      ]
+    ],
+    "expect": "⭐ #121 r3 M3 a path that IS the artifact tree by identity is refused, however spelled"
+  },
+  {
+    "name": "#121 r4 X2 the capture is written THROUGH the --out entry again",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            write_capture(args.out, artifact)\n",
+        "            with open(args.out, \"w\", encoding=\"utf-8\") as _f:\n                _f.write(artifact)\n"
+      ]
+    ],
+    "expect": "⭐ #121 r4 X2 a hard-linked --out is REPLACED, never written through: the filed review is untouched"
+  },
+  {
+    "name": "#121 r4 X3 the temporary file is COPIED onto --out, following whatever is there",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        os.replace(tmp, path)\n",
+        "        shutil.copyfile(tmp, path)\n        os.unlink(tmp)\n"
+      ]
+    ],
+    "expect": "⭐ #121 r4 X3 a symlink planted at --out mid-run is replaced, never followed"
+  },
+  {
+    "name": "#121 r4 the temporary file is left behind after the capture is written",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        os.replace(tmp, path)\n    except BaseException:",
+        "        shutil.copyfile(tmp, path)\n    except BaseException:"
+      ]
+    ],
+    "expect": "#121 r4 the exclusive temporary file does not outlive the rename"
+  },
+  {
+    "name": "#121 r4 X4 identity is the inode alone, so the same inode on another device matches",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "(st.st_dev, st.st_ino) == (t.st_dev, t.st_ino)",
+        "st.st_ino == t.st_ino"
+      ]
+    ],
+    "expect": "#121 r4 X4 the same inode on ANOTHER device is not the tree"
+  },
+  {
+    "name": "#121 r6 X1 the checkouts' RESOLVED docs/reviews are not compared, so a symlink out of the checkout passes",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    roots += [os.path.realpath(os.path.join(r, REVIEW_ROOT)) for r in roots]\n",
+        "\n"
+      ]
+    ],
+    "expect": "⭐ #121 r6 X1 an --out through an ALIAS of the checkout, into a docs/reviews SYMLINKED out of it, is refused by the real CLI, and the filed review is untouched"
+  },
+  {
+    "name": "#121 r7 X1 the combined rule drops master's branch of the OR, leaving identity alone",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    refusals = [master_out_refusal(out_path, r) for r in (REPO_ROOT, reviewed) if r]\n",
+        "    refusals = []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched",
+      "⭐ #121 r7 parity: every --out master refuses is refused by the combined rule"
+    ]
+  },
+  {
+    "name": "#121 r7 X1 master's rule covers only this file's checkout, not the reviewed one",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "master_out_refusal(out_path, r) for r in (REPO_ROOT, reviewed) if r]",
+        "master_out_refusal(out_path, r) for r in (REPO_ROOT,) if r]"
+      ]
+    ],
+    "expect": [
+      "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched",
+      "⭐ #121 r7 parity: every --out master refuses is refused by the combined rule"
+    ]
+  },
+  {
+    "name": "#121 r7 X1 master's rule resolves --out first, erasing its route through docs/reviews",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    here = os.path.dirname(os.path.abspath(out_path)) or \".\"\n",
+        "    here = os.path.dirname(os.path.realpath(out_path)) or \".\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched",
+      "#121 r7 parity table: master refuses exactly the rows it should, so the table is not vacuous"
+    ]
+  },
+  {
+    "name": "#121 r7 X1 main resolves --out BEFORE asking the refusal, so a nested symlink is followed",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)\n",
+        "    args.out = resolve_out(args.out)\n    out_refusal = out_location_refusal(args.out, reviewed=tree_at_dispatch)\n"
+      ]
+    ],
+    "expect": "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched"
   }
 ]

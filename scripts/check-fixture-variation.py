@@ -313,6 +313,212 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ PR #465 r1 fold: `classify.*`, `digest.inputs`, `git_refs.argv`, `last_green.*` and `read_ledger.path` leave with
+    # the skip ledger they belonged to (deleted, not renamed); `exit_code.tally` and `run_gate.*` join.
+    "gates-for-pr.py": ("ci_gates.base", "ci_gates.workflow", "exit_code.tally", "git.a", "main.argv", "main.root",
+                        "mutation_gates.targets", "mutation_targets.changed", "mutation_targets.manifests",
+                        "run_gate.gate", "run_gate.log", "run_gate.root", "run_gate.timeout",
+                        "status_of.rc", "status_of.timed_out"),
+    # backlog #440 (2026-11-01): the PreCompact boundary hook, pinned in the commit that creates it. DERIVED by
+    # running `analyse()` on the delivered source; every parameter varied except main.*, EXEMPT with its reason.
+    # ⟳ r1 fold: + `ceiling.w`, `log_path.*`, `read_tail.*`, `sentinel_armed.*` — the clamp, the log's fallback, the
+    # cut tail and the sentinel's `paused:`/`session:`. Re-derived by running `analyse()`.
+    # backlog #455 (2026-11-01): the subagent long-call hook, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; `decide` is varied by every rule case, main.* EXEMPT with its reason.
+    # backlog #457 (2026-11-01): the subagent large-read hook, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; `decide` is varied by every rule case, main.* EXEMPT with its reason.
+    # ⟳ r1 fold: the re-read rule and its state removed, so `decide.now`, `decide.state_dir` and `main.state_dir`
+    # are gone with it. Re-derived by running `analyse()`.
+    "check-agent-large-read.py": (
+        "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_bytes",
+    ),
+    "check-agent-long-call.py": (
+        "decide.doc", "decide.env", "main.argv", "main.env", "main.stdin_text",
+    ),
+    "check-compaction-boundary.py": (
+        "ceiling.w", "decide.ctx", "decide.last_at", "decide.now", "decide.sigs", "decide.trigger", "decide.w", "hook.env", "hook.home", "hook.now", "hook.payload_text", "hook.snapshot", "iso_epoch.stamp", "log_path.env", "log_path.payload_text", "main.argv", "main.env", "main.now", "main.snapshot", "main.stdin_fd", "read_tail.cap", "read_tail.path", "scan.lines", "sentinel_armed.fields", "sentinel_armed.session", "signals.now", "signals.plan_armed", "signals.scanned", "summary.log_text", "window.env_value", "window.files", "window.model",),
+    # review-round cap (2026-10-31): a Claude half's verdict, pinned in the commit that creates it. DERIVED
+    # by running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ PR #457 r1: + `claude_record.dirty`/`.verdict`, `review_problem.resolve`, `declared_heads.text`,
+    # `review_verdict.text` — the observed overlay, the parsed verdict and the declaration rule.
+    # ⟳ r2: `declared_heads` -> `declared_head` and `review_problem.resolve` is GONE — the first line
+    # carries the full sha and is compared to the head, so no token is resolved.
+    "record-review-verdict.py": ("claude_record.chars", "claude_record.dirty", "claude_record.head", "claude_record.prompt", "claude_record.review_id", "claude_record.tree", "claude_record.verdict", "declared_head.text", "main.argv", "main.root", "review_problem.body", "review_problem.head", "review_verdict.text", "writer_problem.review_id",),
+    # backlog #410 (2026-10-30): every parameter varied except main.*, EXEMPT with its reason.
+    # ⟳ r2: `unpushed_item.times` is gone — the oldest time and the count are measured into a FACT.
+    "check-stalled-work.py": (
+        "coordinator_rounds.names_by_tree", "fmt_age.seconds", "hook_block.lines", "hook_block.rc",
+        "iso_epoch.stamp", "main.argv", "main.now", "main.prs", "main.stdin_text", "parse_refs.text",
+        "parse_worktrees.porcelain", "pr_item.commit_ts", "pr_item.draft_limit_s", "pr_item.now",
+        "pr_item.pr", "render.counts", "render.items", "render.notes", "review_items.halves",
+        "review_items.now", "review_items.rounds", "run.argv", "run.now", "run.prs",
+        "run.stdin_text", "scratch_for.project_dir", "scratch_for.session_id", "scratch_for.tmpdir",
+        "scratch_for.uid", "unpushed_item.branch", "unpushed_item.limit_s", "unpushed_item.now",
+        "unpushed_item.count", "unpushed_item.oldest", "unpushed_item.path", "unpushed_item.where",
+        "own_prs.rows", "safe_ref.name",),
+    # backlog #393 (2026-10-29): the plan-leak push gate, pinned in the commit that creates it. DERIVED by
+    # running `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    # ⟳ PR #443 r1: re-derived after the redesign onto git's pre-push hook.
+    "check-plan-leak.py": (
+        'candidate_windows.n', 'candidate_windows.removed', 'candidate_windows.runs', 'candidate_windows.win',
+        'hooks_status.root', 'judged_text.body', 'judged_text.key', 'judged_text.removed', 'leak_hits.n',
+        'leak_hits.public', 'leak_hits.removed', 'leak_hits.runs', 'leak_hits.win', 'main.argv', 'main.err',
+        'main.out', 'main.root', 'main.stdin', 'main.tty', 'parse_added_paths.text', 'parse_log.log_text',
+        'parse_messages.text', 'parse_updates.stdin_text', 'plan_strings.serving', 'plan_strings.text',
+        'public_in.cands', 'public_in.texts', 'report.hits', 'report.n', 'report.n_runs', 'report.n_strings',
+        'report.n_windows', 'session_start.root', 'show_lines.hits', 'tag_run.sha', 'tag_run.tag_text',
+        'tag_target.tag_text', 'unquote_path.raw', 'windows.n', 'windows.sources', 'words.s',
+    ),
+    # PR #440 r2: the shared bounded reader, pinned in the commit that creates it.
+    "bounded_read.py": (
+        "hostile_payloads.d",
+        "non_regular_payloads.d",
+        "parse_json.data",
+        "parse_jsonl.data",
+        "read_file.cap",
+        "read_file.path",
+        "read_stream.cap",
+        "read_stream.stream",
+        "read_stream.wait",
+        "read_text.path",
+        "stop_transcript.payload",
+    ),
+    # backlog #399 (2026-10-30): every parameter varied by a case; none exempt.
+    "check-usage-pace.py": (
+        # ⟳ PR #446 r1 fold: override_active and spawn_output are gone (the override now expires and is read
+        # from the MAIN checkout; the spawn and wake gates share gate_output), so their keys go with them.
+        # ⟳ PR #446 r2 fold: addressed_home is gone (the wake gate reads the caller's agent_id, never the
+        # recipient), so its key goes with it; sent_by_subagent, parse_json and the read's deadline are new.
+        "sent_by_subagent.payload", "parse_json.text", "read_regular.deadline", "count.x", "evaluate.missing", "evaluate.now", "evaluate.text",
+        "gate_output.message", "gate_output.override", "gate_output.verdict", "local_time.t",
+        "evaluate.path", "locate_override.env", "locate_override.now", "locate_override.root",
+        "main.argv", "main.env", "main.payload", "main_checkout.root", "override_path.root", "override_rule.now", "override_rule.reason", "override_rule.text",
+        "pct.p", "prompt_output.message", "prompt_output.override", "prompt_output.verdict",
+        "read_regular.limit", "read_regular.path", "safe_time.t", "session_of.payload",
+        "told_this_session.payload", "told_this_session.root",
+    ),
+    # backlog #251 (2026-10-26): every parameter varied by a case; none exempt.
+    "check-diff-coverage.py": (
+        "binary_paths.diff_text",
+        "decision_lines.source",
+        "diff_path.raw",
+        "edited_lines.edits",
+        "edited_lines.source",
+        "main.argv",
+        "main.root",
+        "measurable.src",
+        "parse_diff.diff_text",
+        "run_check.base",
+        "run_check.root",
+        "run_check.run",
+        "self_test_lines.source",
+        "uncovered.changed",
+        "uncovered.edits",
+        "uncovered.sources",
+    ),
+    # backlog #361 (2026-10-28): pinned in the commit that creates it; re-pinned at the PR #425 r2 REDESIGN the r3 SPLIT (`mentioned` deleted) and the r4 DEFER (`audit`, `explicit_names`, `bound_keys` deleted).
+    "compaction-state.py": (
+        "main.argv",
+        "main.aux_timeout",
+        "main.capture_timeout",
+        "main.child",
+        "main.now",
+        "main.root",
+        "main.started",
+        "main.stdin_text",
+        "open_session_dir.create",
+        "open_session_dir.root",
+        "open_session_dir.session_id",
+        "owner_items.records",
+        "owner_items.session_id",
+        "owner_section.answers",
+        "owner_section.budget",
+        "owner_section.err",
+        "owner_section.prompts",
+        "owner_section.text_turns",
+        "owner_section.window",
+        "pending_asks.root",
+        "read_in.cap",
+        "read_in.dfd",
+        "read_in.name",
+        "read_payload.cap",
+        "read_payload.fd",
+        "read_payload.stdin_text",
+        "read_payload.wait",
+        "read_receipt.sdir",
+        "read_transcript.path",
+        "render_print.now",
+        "render_print.receipt",
+        "render_print.receipt_err",
+        "render_print.session_id",
+        "render_print.snap_err",
+        "render_print.snap_text",
+        "run_capture.cmd",
+        "run_capture.timeout",
+        "session_dir.root",
+        "session_dir.session_id",
+        "snapshot.asks",
+        "snapshot.nonce",
+        "snapshot.now",
+        "snapshot.payload",
+        "snapshot.payload_err",
+        "snapshot.root",
+        "snapshot.run",
+        "snapshot.transcript",
+        "withhold_pasted.text",
+        "worktree_section.budget",
+        "worktree_section.err",
+        "worktree_section.wts",
+        "worktrees.root",
+        "worktrees.run",
+    ),
+    # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
+    "session-state.py": (
+        "check_summary.rollup",
+        "clean.value",
+        "clean.width",
+        "failing_names.rollup",
+        "collect.now",
+        "collect.root",
+        "collect.run",
+        "ledger_add.id_",
+        "ledger_add.now",
+        "ledger_add.on_done",
+        "ledger_add.path",
+        "ledger_add.what",
+        "ledger_done.id_",
+        "ledger_done.path",
+        "main.argv",
+        "main.root",
+        "main.run",
+        "read_ledger.path",
+        "render.ledger",
+        "render.ledger_problems",
+        "render.now",
+        "render.pr_error",
+        "render.prs",
+        "render.truncated",
+    ),
+    # backlog #373 (2026-10-27): the fixture-git guard varies every parameter but `main.argv` (EXEMPT, reason
+    # below); the helper's one parameter is its extras, varied by the HOME and author-identity callers.
+    "check-fixture-git-isolation.py": (
+        "check_source.rel", "check_source.src", "main.argv", "main.exempt", "main.root",),
+    "fixture_git.py": ("env.extra",),
+    # backlog #364 (2026-10-27): the launcher's world runner. The world plumbing is EXEMPT with its
+    # reason (one built world per suite run); everything a case decides is varied.
+    "check-run-hook.py": (
+        "apply_mutant.m", "apply_mutant.text", "build.launcher", "build.x", "cases.w", "discard.w",
+        "kill_report.markers", "kill_report.mutants", "kill_report.real", "kill_report.w", "main.argv",
+        "main.launcher", "no_git_base.candidates", "red_names.results", "run_worlds.markers", "run_worlds.only",
+        "run_worlds.w", "verdict.got", "verdict.want",),
+    # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.
+    "check-hook-commands.py": (
+        "check.path", "check.root", "check.unregistered",
+        "field_problems.settings",
+        "main.argv", "main.root", "main.unregistered", "problems.commands", "problems.on_disk",
+        "problems.unregistered",),
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
     # ⟳ r1 fold: `read_transcripts.root` left — every checkout is read now, keyed in `replay`.
     "backfill-work-lines.py": (
@@ -323,18 +529,33 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "run.plan_dir",
         "run.root", "run.tdir", "run.write",
     ),
-    # The work-lines generator. Every parameter is varied by a case; none is exempt.
+    # The logged goal tree (backlog #363). Every parameter is varied by a case; none is exempt.
+    "goal-tree.py": (
+        "append_if_changed.path", "append_if_changed.snap", "changes.cur", "changes.prev",
+        "collect.root", "collect.run", "consolidate.items", "counts_conflict.item", "derive.goals",
+        "derive.now", "derive.src", "derive_thread.src", "derive_thread.t", "identity.text",
+        "main.argv", "main.now", "main.root", "main.run", "multiplicity.text",
+        "needs_from_backlog.text", "needs_from_dashboard.text", "needs_from_ledger.entries",
+        "needs_html.snap", "needs_lines.snap", "needs_owner.row", "needs_state.snap",
+        "parse_threads.text", "read_log.path", "render_page.built", "render_page.live",
+        "render_page.log", "render_text.snap", "segments.repo", "segments.text", "tree_lines.snap",
+        "write_page.built", "write_page.live", "write_page.log", "write_page.out",
+    ),
+    # Every generated page rebuilt on merge (owner decision D3). Every parameter varied; none exempt.
+    "regen-pages.py": (
+        "main.argv", "main.pages", "main.run", "main.stdin", "may_merge.cmd", "pages_for.pages",
+        "pages_for.payload", "regen.names", "regen.pages", "regen.run", "regen.timeout",
+        "registered_events.settings", "report.results", "report.wall",
+    ),
+    # The plan-file reader (the work-lines PAGE retired, backlog #389: `render.*` and `main.plan_dir`
+    # leave with the renderer and the page-writing main). `main.argv` is EXEMPT, with its reason.
     "gen-work-lines.py": (
         "build_forest.plans",
         "line_state.node",
         "main.argv",
-        "main.plan_dir",
         "parse_plan.name",
         "parse_plan.text",
         "parse_plan.touched",
-        "render.generated",
-        "render.orphans",
-        "render.roots",
     ),
     # The status grammar and its verdict. `main.argv` is exempted above (its second value
     # re-enters the suite); everything else is varied by a case.
@@ -447,8 +668,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⚠ `main.root` took one value until THIS guard refused the file ("3x `bad`"), which is
     # the second world existing at all. The key set is DERIVED by calling `analyse()`, not
     # typed from reading the source.
+    # ⟳ 2026-10-30, PR #442 r2: `violations.diff_text` RETIRES with the multi-file diff it parsed —
+    # the exemption now reads the base file per path, so `violations` takes one path's added lines
+    # and a budget, and the fetch is `scan`. Derived by calling `analyse()`; `scan.root`/`scan.base`
+    # are passed by unpacking a world, which the analyser does not examine.
     "check-reference-namespace.py": (
-        'main.argv', 'main.root', 'violations.diff_text', 'violations.scope',
+        'added_lines.one_path_diff', 'exemption_budget.base', 'exemption_budget.head',
+        'main.argv', 'main.root', 'scan.head', 'scan.scope',
+        'violations.added', 'violations.budget', 'violations.path', 'violations.scope',
     ),
     "check-rc-contract.py": (
         'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
@@ -1046,11 +1273,60 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
+    # backlog #457 (2026-11-01): check-agent-large-read.py's main() is driven from one helper.
+    "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
+    "check-agent-large-read.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
+    "check-agent-large-read.py:main.stdin_bytes": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
+    # backlog #455 (2026-11-01): check-agent-long-call.py's main() is driven from one helper.
+    "check-agent-long-call.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
+    "check-agent-long-call.py:main.env": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
+    "check-agent-long-call.py:main.stdin_text": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes four distinct payload texts",
+    "check-compaction-boundary.py:main.argv": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.env": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.now": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.snapshot": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    "check-compaction-boundary.py:main.stdin_fd": "main() has ONE call site (one call site keeps check-main-drivable fast); the parameters it decides on are varied at `hook`, `evaluate` and `decide`, which main only forwards to",
+    # backlog #410 (2026-10-30): check-stalled-work.py's main() is driven through one helper.
+    "check-stalled-work.py:main.argv": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    "check-stalled-work.py:main.now": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    "check-stalled-work.py:main.prs": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    "check-stalled-work.py:main.stdin_text": "main() has ONE call site, the suite's `_drive_main` helper (one call site keeps check-main-drivable fast); the variation is at the helper's three callers, which pass three different argv/stdin/prs/now worlds (hook stalled, hook clear, plain report)",
+    # PR #440 r2: the shared hostile-payload fixture's scratch directory.
+    "bounded_read.py:hostile_payloads.d": "a scratch directory the fixture writes its transcript files and FIFO into; the payloads' CONTENT is the variation, and any directory is equivalent",
+    # PR #440 r3 C4: the same fixture, filtered to its non-regular members — the same scratch directory.
+    "bounded_read.py:non_regular_payloads.d": "the scratch directory it hands to `hostile_payloads`, whose members it filters; the payloads' CONTENT is the variation, and any directory is equivalent",
+    # backlog #402 (2026-10-30): the scoped-mode cases are the first in the suite to call `audit`, and its
+    # two borrowed functions have ONE implementation each by design — the file imports them from
+    # check-plan-code rather than copying the rule, which is the defect its docstring refuses.
+    "check-selftest-counts.py:audit.count_drift": "the borrowed rule has one implementation by design (check-plan-code.count_drift); a second would be the copy this script exists not to make",
+    "check-selftest-counts.py:audit.child_env": "the borrowed HOME redirect has one implementation by design (check-plan-code.child_env); a second would be the copy this script exists not to make",
+    # backlog #389 (2026-10-28): the page-writing main retired; besides `--self-test` (which would re-enter
+    # the suite from inside itself) it has ONE path, the refusal, and the suite drives it.
+    "gen-work-lines.py:main.argv": "the retired main has one path besides `--self-test`, which re-enters the suite from inside itself; the refusal is driven by main([])",
+    # backlog #373 (2026-10-27).
+    "check-fixture-git-isolation.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the six main([]) cases",
+    # backlog #364 (2026-10-27): check-run-hook.py's world plumbing — one world per suite run.
+    "check-run-hook.py:build.x": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:build.launcher": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:cases.w": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:kill_report.w": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:discard.w": "one git world tree per suite run, built once from real `git init`/`worktree add`/`submodule add` (~1s); the variation is in the 31 cases' cwd, environment and arguments INSIDE it, and the launcher is varied end to end by main(launcher=…) over three launchers, each of which builds its own world",
+    "check-run-hook.py:run_worlds.markers": "a scratch directory for the probe's marker files, cleared before every run; any directory is equivalent",
+    "check-run-hook.py:kill_report.markers": "a scratch directory for the probe's marker files, cleared before every run; any directory is equivalent",
+    "check-run-hook.py:kill_report.real": "the launcher text the world was built with — every mutant is an edit OF it, so a second value would be a second launcher, which main(launcher=…) already varies",
+    "check-run-hook.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the three main([]) cases",
     # ⛔ argv has exactly two values and the suite cannot pass the second: `main(["--self-test"])`
     # re-enters `_self_test()` from inside itself and never terminates. Measured by writing it.
     # The dispatch IS covered — every `main([])` case reaches it and takes the other branch —
     # so what is unvaried here is a parameter whose second value is self-referential, not an
     # untested clause.
+    # ⚠ The suite drives `field_problems` through a local `fp()` wrapper — a case must not RAISE inside its arguments, or
+    # a mutated `_walk` crashes the table with no `[FAIL]` line (backlog #368 r1). Its ONE syntactic call site is that
+    # wrapper; the variation is at `fp`'s four call sites, each a different settings literal, and the CLI cases vary it
+    # again through `check()`.
+    "check-hook-commands.py:field_problems.settings": "driven through the suite's local fp() wrapper (a case must not raise); the variation is at fp's four call sites, each a different settings literal, and again through check()",
+    "check-hook-commands.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the three main([]) cases",
     "check-goal-status.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by every other case",
     # ⟳⟳ 2026-09-16 — TWO `peer-sites.py:changed_lines.*` EXEMPTIONS STOOD HERE AND ARE GONE,
     # because round 1's Codex half measured their premise FALSE. They claimed varying `ref` and
@@ -1136,10 +1412,6 @@ EXEMPT: dict[str, str] = {
                          "citation has drifted'. ⟳ REPLACES the dead `main.fetch_file_diff` row: "
                          "#291 deleted that parameter with the diff parsing it served, and this "
                          "guard refused the stale exemption, which is its own rule working",
-    "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
-                         "between its call sites is `name`, which is the parameter that "
-                         "selects the suite. A second directory would test the tempfile "
-                         "module, not this function",
 }
 
 
@@ -1519,6 +1791,13 @@ def _duplicate_ratchet_keys(source: str) -> "list[str]":
 
 
 def _self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     global EXEMPT, KNOWN_UNVARIED, EXAMINED_KEYS   # blocks below swap these
     ok = fail = 0
 

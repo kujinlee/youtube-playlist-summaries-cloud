@@ -57,3 +57,48 @@ metadata:
   [Frontend sub-project](frontend-subproject-design-state.md) · [Stage 2 autonomy](stage-2-batch-autonomy-plan.md) ·
   [1G](stage-1g-design-state.md) · [1F-c](stage-1f-c-design-state.md) · [1F-b](stage-1f-b-design-state.md) ·
   [1F-a](stage-1f-a-design-state.md) · [1D](stage-1d-merged-followups.md)
+
+## Moved out of the index 2026-10-28 (owner's decision L2: trim it mechanically) — VERBATIM
+
+### The index's header note
+
+> One line per memory. ⛔ **CORRECTED 2026-09-28: NOTHING DECIDES RELEVANCE.** This line used to say *"the hook decides relevance"* and that was never true — measured: no file in the `remember` plugin references `MEMORY.md` at all, and all **133** rows arrive every session, unfiltered. **So every row below is always in context and none of them is ever matched to the moment** — which is why recall fails here, and why the hook's title has to do the matching by itself. Write each hook as the SITUATION you would be in, not the subject it is about (backlog #191).
+
+### The index's former Slice-history section
+
+> ⛔ **NEW SLICE ROWS GO IN THAT FILE, NOT IN THIS INDEX.** This index is injected WHOLE on
+> every turn and the harness truncates it in silence once it passes 24,985 CHARACTERS — measured
+> 2026-10-19, it stood at 26,930 and **8 rows** had stopped arriving, with every other memory
+> signal green. ⟳ Both the unit and the count are corrections: this said "bytes" and "~30 rows",
+> and the real figures were established by reading the cut point out of a consuming agent's own
+> injected context. `scripts/check-memory-index-budget.py` now fails on that, so this is enforced
+> rather than remembered; a convention only catches what someone happens to read.
+
+- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19. ⛔ Reached by TRIGGER now, not always-loaded — verified by firing: ask for a PR number or SHA and it returns. The index was 26,930 of a 24,985-CHARACTER budget; the 28 rows are **4,912** chars without line endings, 4,940 with one newline each (the whole section 5,990). ⚠ Two earlier versions were wrong: "6,232 of 27,805 bytes" (wrong unit, and it charged the rows with the whole SECTION's cost), then "4,985" (r2 CODEX #6 — that joined 29 `- ` lines, counting the "Older slices" bullet as a 29th row)
+
+### Rows about finished slices
+
+- [⭐ RESUME: anchors + stable ids](anchor-name-and-stable-id-handoff.md) — M4 MERGED (#155); `0027` LIVE ON PROD. The stable-id roadmap **EXISTS** — I once re-derived it wrongly
+- [Serve-path bounding MERGED](serve-path-bounding-merged.md) — a single CONVERGED verdict was WRONG 4 of 5 times
+- [gh two-remotes footgun](gh-two-remotes-footgun.md) — ✅ RESOLVED; keep `--body-file`
+
+### Rows moved out of the index 2026-11-01
+
+Moved to bring `MEMORY.md` under 90% of its budget; each link still resolves.
+
+- [Detached dig retention](detached-dig-retention-decision.md) — retiring a rule dissolved a review High with zero code change
+- [CANDIDATE stopping rule](stopping-rule-defect-class-shift.md) — ⏳ untested and partly falsified
+- [check-main-drivable is slow PER main() CALL SITE](main-drivable-cost-is-per-call-site.md) — main([...]) inside a long _self_test: 50s → 209s, past the 120s shard timeout. One call in a small helper → 52s
+- [⭐ Scoped mutation run in 4s](scoped-mutation-run-in-four-seconds.md) — ⛔ DECIDED: PARTIAL locally (only manifests whose file MOVED — co-scoping an unchanged 183 cost 4h), FULL in CI shards. 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file. Prune a COPY of HARNESS_TREE's SIX paths. ⭐ The harness is structurally browserless (`typescript` only → ERR_MODULE_NOT_FOUND)
+- [Local manual-test env](local-manual-test-env.md) — `~/code/agentic-ai-docs/yps-sync-test/`; sync is ADDITIVE
+- [Staging Supabase](staging-supabase-project.md) — ⚠ throwaway `neeufoxdbgbpkjukzzuc`; DELETE when B3/B4 done
+- [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation
+
+## Moved out of the index 2026-11-02 (budget trim, 94% to under 88%) — VERBATIM
+
+- [⭐⭐ #191 — semantic recall REPLICATED](backlog-191-semantic-recall-replicated.md) — lexical **3/20** vs semantic **20/20**, 0 false fires in 60. Triggers GOOD, matcher was the problem. 2 branches, neither merged
+- [⭐⭐ A signal needs its BASE RATE](a-signal-needs-its-base-rate.md) — 3× in ONE day: thrashing armed on **67%** of the corpus, `converged()` false **12 of 12**, and a grep that reported a false zero. The signals were all CORRECT; the inference was not
+- [Passing for an AMBIENT reason](a-case-can-pass-for-an-ambient-reason.md) — ⭐⭐⭐ 4× then **5 MORE**; tell = NAME vs BODY. **Flip what the case names, check it reddens** — stating a falsifier is not running one
+- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **12×, SIX of them in one session (2026-09-26)**: a grep filter, a wrapped line, an off-by-one `tail`, a wrong CSS class, CSS-uppercased text, and `gh` check states — **check a KNOWN POSITIVE before trusting a negative**, and ⛔ a fix inside a heredoc is not a class fix. 5×. `splitlines()` where the subject uses `split("\n")`. ⭐ 2026-09-22: the RUN was right and the CONCLUSION was about a different subject — a synthetic fixture proved what the tool does to the FIXTURE; I never opened the real callee's signature
+- [A second implementation DRIFTS](a-second-implementation-of-one-rule-drifts.md) — ⭐⭐ **17×**, newest 2026-09-22: `awk -F'|'` then `split("|")` on a backlog row, TWICE, while `check-docs.CELL_SPLIT` owns the rule and `gen-backlog-page.py` imports it. A weaker stand-in passes what it'd REFUSE. ⭐ **Ask which PART is slow** — `--mutate .` refuses a bad manifest in **<1s**, so the real gate IS the cheap pre-check
+- [⭐ The apparatus outgrew its subject](the-apparatus-outgrew-its-subject.md) — guards+tests **4.4×** the product; repo budgets PROSE, never guards; a branch shipped 46 browser-visible lines of 2,633

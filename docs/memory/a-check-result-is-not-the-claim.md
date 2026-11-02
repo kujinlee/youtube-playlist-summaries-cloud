@@ -280,3 +280,24 @@ wrong: your own.
 - Same family as [[an-inference-stated-as-measured]] and
   [[measure-the-population-the-code-actually-sees]]: there the SET was wrong; here the set was
   right and the SENTENCE was wider than it.
+
+⟳ **2026-10-24 — TWICE IN ONE NIGHT I PRINTED `ds=1` AND COMMITTED ON THE NEXT LINE.** The pattern was
+`for c in …; do python3 $c; echo rc=$?; done; git add … && git commit …` — the guards' exit codes were
+*echoed*, never *gated*, so a red guard and the commit shared one tool call and the commit always ran. Both
+times it was `check-decision-scheme` (trigger 2 on an open unit; then trigger 4, a mechanism verdict).
+**How to apply:** guards and the commit go in SEPARATE tool calls, or the commit is chained with `&&` on
+the guards themselves (`python3 a && python3 b && git commit …`). An `echo rc=` is a report, not a gate.
+
+⛔ **2026-10-26 night, three more of the same family, each cost a cycle:**
+- **A watcher's exit code is not the CI verdict.** `gh run watch … --exit-status` returned 0 while `verify` was red
+  (it had watched a superseded run). Read `gh pr checks` / `check-merge-ready`, never the watcher's rc.
+- **A CI RE-RUN replays the FROZEN event payload.** Adding `NO-REVIEW:` to a PR body and running `gh run rerun` changes
+  nothing — `ci.yml` says so above the step. Only a PUSH (a new `pull_request` event) reads the edited body.
+- **A mutation's named case can pass for an AMBIENT reason inside the case itself:** `str.index()` RAISING crashed the
+  suite (no `[FAIL]` line, unattributable); a temp world missing the loader returned CANNOT RUN from the IMPORT, not the
+  path under test; a "NOT READ" assertion matched a different note's "NOT READ". Each surfaced as a survivor or an
+  unattributed kill — **the mutation run is what finds these; run it scoped after every case edit.**
+
+**2026-10-29: a gate scanned HEAD while a rebase had STOPPED on a conflict**, so HEAD was master and it said `hits: 0` over 0 lines; the push then sent the branch ref, unscanned. It was clean, but by luck. **Gate on the exact ref being pushed** (`--head $(git rev-parse <branch>)`), and never chain a push after a rebase without checking that it finished.
+
+**2026-10-30/31, another instance: a setting verified in a FRESH session is not live in the CURRENT one.** I reported autoCompactWindow=300000 as "live" because a test `claude -p` session honoured it. But settings files load at launch, and the coordinator session ran on at 592k/1000k until the owner saw it in the HUD. **How to apply:** for any config change, ask WHICH process reads it and WHEN; then verify in the process that matters (here: the HUD context %, or `/autocompact` for the running session).

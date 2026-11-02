@@ -53,5 +53,337 @@
       ]
     ],
     "expect": "a cell that starts like a delimiter and continues is not one"
+  },
+  {
+    "name": "only the first `(tag)` group of a cell is read, so a two-tag row loses its second tag",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        for g in TAG_GROUP.findall(s):",
+        "        for g in TAG_GROUP.findall(s)[:1]:"
+      ]
+    ],
+    "expect": "a cell with TWO tags assigns both, in cell order"
+  },
+  {
+    "name": "a comma between groups stops being a separator",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "(?:[\\s,]*\\(",
+        "(?:\\s*\\("
+      ]
+    ],
+    "expect": "a comma between groups separates them exactly as a space does"
+  },
+  {
+    "name": "a tag is no longer lowercased or space-collapsed, so two spellings stay two tags",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    parts = [\" \".join(x.lower().split()) for x in raw.strip()",
+        "    parts = [x.strip() for x in raw.strip()"
+      ]
+    ],
+    "expect": "a tag is normalised — case, runs of space, spaces around the slash"
+  },
+  {
+    "name": "two spellings of one tag in one cell are both kept",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if t not in out:\n                out.append(t)\n        return out, empty",
+        "            if True:\n                out.append(t)\n        return out, empty"
+      ]
+    ],
+    "expect": "two spellings of one tag in one cell are ONE tag, not two"
+  },
+  {
+    "name": "a malformed cell is DROPPED instead of read as one tag",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return ([t] if t else []), True",
+        "    return [], True"
+      ]
+    ],
+    "expect": "a malformed cell is read as ONE tag and flagged, never dropped"
+  },
+  {
+    "name": "the malformed-cell note never reaches the drift box",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    notes += malformed_tag_errors(rows)\n",
+        "    notes += []\n"
+      ]
+    ],
+    "expect": "drift_notes_for carries the malformed-cell note"
+  },
+  {
+    "name": "the FIRST claiming area wins instead of the nearest, so a money row lands under the `cloud` node",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "(best is None or len(a) > len(best))",
+        "best is None"
+      ]
+    ],
+    "expect": "the nearest claiming area wins, and an unclaimed leaf falls to its family"
+  },
+  {
+    "name": "a bare prefix counts as a family, so `cloudy` is claimed by `cloud`",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "tag.startswith(a + \" / \")",
+        "tag.startswith(a)"
+      ]
+    ],
+    "expect": "the nearest claiming area wins, and an unclaimed leaf falls to its family"
+  },
+  {
+    "name": "the filter tags take only the first leaf, so a two-tag row is counted under one tag",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    for leaf in cell_tags(raw)[0]:",
+        "    for leaf in cell_tags(raw)[0][:1]:"
+      ]
+    ],
+    "expect": "the filter lists a two-tag row under EACH of its tags, counts derived per tag"
+  },
+  {
+    "name": "a card draws only its last tag's chip again",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        for tg in cell_tags(r[\"bundle\"])[0])",
+        "        for tg in cell_tags(r[\"bundle\"])[0][-1:])"
+      ]
+    ],
+    "expect": "a two-tag card draws a chip per tag and carries every filter tag"
+  },
+  {
+    "name": "a `|` inside a tag group is accepted again, so the filter offers a tag that matches nothing",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "TAG_CELL = re.compile(r\"^\\(([^()|]*)\\)",
+        "TAG_CELL = re.compile(r\"^\\(([^()]*)\\)"
+      ]
+    ],
+    "expect": "a `|` inside a tag group, escaped or not, is MALFORMED"
+  },
+  {
+    "name": "the header schema check is dropped, so a misspelled Bundle column parses with every tag empty",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            why = header_error(header, section)\n            if why:",
+        "            why = header_error(header, section)\n            if False:"
+      ]
+    ],
+    "expect": "a six-column table whose header misspells Bundle REFUSES, naming the table"
+  },
+  {
+    "name": "the header schema check is LOOSENED to width only, so `Bundel` passes",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if tuple(\" \".join(c.split()) for c in header) in TABLE_SCHEMAS:",
+        "    if len(header) in {len(t) for t in TABLE_SCHEMAS}:"
+      ]
+    ],
+    "expect": "a six-column table whose header misspells Bundle REFUSES, naming the table"
+  },
+  {
+    "name": "the block-header check is dropped, so a table headed `| No |`, or none, hides its rows again",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if starts_block:\n            why = block_error(line, section)",
+        "        if False:\n            why = block_error(line, section)"
+      ]
+    ],
+    "expect": "a table headed `| No |` REFUSES — the r4 probe"
+  },
+  {
+    "name": "an undeclared non-`#` header is accepted as a legend, so `| No |` passes",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if cells in LEGEND_SCHEMAS:\n        return None",
+        "    if cells:\n        return None"
+      ]
+    ],
+    "expect": "a table headed `| No |` REFUSES — the r4 probe"
+  },
+  {
+    "name": "an empty tag group `()` is dropped in silence again, so master's gate is red and this one green",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "                empty = True\n                continue",
+        "                continue"
+      ]
+    ],
+    "expect": "an EMPTY group is MALFORMED, and the cell's other tags survive it"
+  },
+  {
+    "name": "#394: an unknown kind is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if kind not in KINDS:\n        raise ShapeError(f\"row {num}: unknown kind",
+        "    if False:\n        raise ShapeError(f\"row {num}: unknown kind"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: an UNKNOWN kind is refused, naming the row"
+    ]
+  },
+  {
+    "name": "#394: a marker need not start with kind:",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if not head.startswith(\"kind:\"):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a marker that does not START with kind: is refused, and says so"
+    ]
+  },
+  {
+    "name": "#394: a bare `part of: #N` is accepted as a parent",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "PARENT_FIELD = re.compile(r\"part of: backlog #(\\d+)|",
+        "PARENT_FIELD = re.compile(r\"part of: (?:backlog )?#(\\d+)|"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent field in any other shape is refused (a bare #N, a tag)"
+    ]
+  },
+  {
+    "name": "#394: a ⟦…⟧ that does not end the cell is read as no marker",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if \"⟦\" in item or \"⟧\" in item:\n            raise ShapeError(f\"row {num}: a ⟦…⟧ marker must END",
+        "        if False:\n            raise ShapeError(f\"row {num}: a ⟦…⟧ marker must END"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a ⟦…⟧ that does not END the cell, or a second one, is refused"
+    ]
+  },
+  {
+    "name": "#394: a second ⟦…⟧ marker in the cell is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if \"⟦\" in rest or \"⟧\" in rest:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a ⟦…⟧ that does not END the cell, or a second one, is refused"
+    ]
+  },
+  {
+    "name": "#394: a row with no kind is not reported",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "f\"Item cell\" for r in rows if r.get(\"kind\") is None]",
+        "f\"Item cell\" for r in rows if False]"
+      ]
+    ],
+    "expect": [
+      "#394: a row with NO kind is REPORTED, never guessed"
+    ]
+  },
+  {
+    "name": "#394: a self-parent is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            if k == \"backlog\" and v == r[\"num\"]:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row, the row itself or an unregistered anchor is refused"
+    ]
+  },
+  {
+    "name": "#394: a parent naming a missing row is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            elif k == \"backlog\" and v not in nums:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row, the row itself or an unregistered anchor is refused"
+    ]
+  },
+  {
+    "name": "#394: an epic naming an unregistered anchor is accepted",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            elif k == \"epic\" and v not in anchors:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ #394: a parent naming a missing row, the row itself or an unregistered anchor is refused"
+    ]
+  },
+  {
+    "name": "#394: the marker stays in the item's text",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return rest.rstrip(), kind, parents",
+        "    return item, kind, parents"
+      ]
+    ],
+    "expect": [
+      "#394: the marker is not part of the item's text — title and body never show it"
+    ]
+  },
+  {
+    "name": "#394: the card does not carry the row's kind",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "data-kind=\"{html.escape(r.get('kind') or 'none')}\"",
+        "data-kind=\"none\""
+      ]
+    ],
+    "expect": [
+      "#394: the card SHOWS the kind and LINKS each parent"
+    ]
+  },
+  {
+    "name": "#394: parse never reads the marker",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        item, kind, parents = kind_mark(item, num)\n",
+        "        kind, parents = None, []\n"
+      ]
+    ],
+    "expect": [
+      "#394: the kind and the parents are READ from the marker"
+    ]
   }
 ]

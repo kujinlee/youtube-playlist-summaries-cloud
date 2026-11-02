@@ -1,0 +1,22 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/scoped-count-check-r1-claude.md": "100644 bd42303d95708b90ef2f329b050cb6afc92fe86f",
+    "docs/reviews/codex/scoped-count-check-r1-codex.md": "100644 5681ea5fe256ce4ae65835d3b23780d15d370582",
+    "docs/reviews/verdicts/scoped-count-check-r1-codex.verdict.json": "100644 0492bd96ad12c1f8147c57f77c50dde0e53ec762"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d5b90f8defbb4d5e769d9adaeab8291592c162b4",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 7593 chars, names d5b90f8defbb",
+  "refused": false,
+  "review": "scoped-count-check-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-402",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

@@ -1,0 +1,295 @@
+[
+  {
+    "name": "an empty or stub review is recorded as a review",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if len(text) < _cx.MIN_REVIEW_CHARS:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an empty review file is refused",
+      "a stub under the minimum length is refused"
+    ]
+  },
+  {
+    "name": "a review stating no verdict is recorded — the finding-less file is credited",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if review_verdict(body) is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a review stating no verdict is refused — a finding-less file is a failed run"
+    ]
+  },
+  {
+    "name": "a review that never names the head is recorded against any head the coordinator types",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if declared is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a review that never names the head it was handed is refused",
+      "a head named in prose but not on the first line is not declared"
+    ]
+  },
+  {
+    "name": "an abbreviated head counts as declaring it (r2: the first line carries the FULL sha)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "r\"Reviewed head: ([0-9a-f]{40}|",
+        "r\"Reviewed head: ([0-9a-f]{7,40}|"
+      ]
+    ],
+    "expect": [
+      "...nor does an abbreviation, however long — the first line carries the FULL sha",
+      "a declaration of an ABBREVIATED head: refused as HEAD NOT NAMED, nothing written"
+    ]
+  },
+  {
+    "name": "a CODEX id is recorded here, testifying that a gate ran when nothing ran it",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if who != WRITER:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a CODEX id is refused — its verdict is written by the wrapper that ran it",
+      "a Codex id through this door: refused"
+    ]
+  },
+  {
+    "name": "an existing verdict is overwritten",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "exists=os.path.lexists(vpath)",
+        "exists=False"
+      ]
+    ],
+    "expect": [
+      "an existing verdict is NOT overwritten"
+    ]
+  },
+  {
+    "name": "a head that is not a commit is recorded as typed",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    return out if p.returncode == 0 and out else None",
+        "    return out if p.returncode == 0 and out else head"
+      ]
+    ],
+    "expect": [
+      "...and says it is not a commit"
+    ]
+  },
+  {
+    "name": "the overlay is written as unknown, so the consumer cannot use the Claude verdict",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "head=head, dirty=dirty, prompt=prompt, tree=tree)",
+        "head=head, dirty=None, prompt=prompt, tree=tree)"
+      ]
+    ],
+    "expect": [
+      "...and the overlay it was GIVEN, here a clean one",
+      "check-review-recorded: a Claude verdict on the FINAL tree satisfies it"
+    ]
+  },
+  {
+    "name": "the head is recorded as the abbreviation typed, not the commit it resolved to",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    rec = claude_record(review_id=args.review_id, head=head,",
+        "    rec = claude_record(review_id=args.review_id, head=args.head,"
+      ]
+    ],
+    "expect": [
+      "...under the FULL sha, though it was handed an abbreviation"
+    ]
+  },
+  {
+    "name": "the record says the gate did not run, so no consumer can use it",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    rec = _cx.verdict_record(gate_ran=True,",
+        "    rec = _cx.verdict_record(gate_ran=False,"
+      ]
+    ],
+    "expect": [
+      "...says the gate ran",
+      "check-review-recorded: a Claude verdict on the FINAL tree satisfies it"
+    ]
+  },
+  {
+    "name": "the recorder writes a clean overlay it never observed — the r11 Blocking reopened (PR #457 r1 H1)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "head=head, dirty=dirty, tree=root,",
+        "head=head, dirty={}, tree=root,"
+      ]
+    ],
+    "expect": [
+      "a half handed an uncommitted fix is recorded WITH that fix in its overlay",
+      "...so a fix reviewed and then REVERTED does not pass the final-tree gate"
+    ]
+  },
+  {
+    "name": "a --head the tree is not at is recorded, because only the review text was checked (r1 M1)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if seen != head:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a head the tree is NOT at is refused, though the review names it"
+    ]
+  },
+  {
+    "name": "a first line declaring ANOTHER commit is accepted (r1 Codex High)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    if declared != head:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...and naming a DIFFERENT commit does not count as naming this one",
+      "...and the head is the one ASKED about: the same review against another head is refused",
+      "...and a first line naming the OTHER full sha is a HEAD MISMATCH"
+    ]
+  },
+  {
+    "name": "a prefixed or quoted first line counts as the declaration (r1 M1; r2 H1)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "HEAD_LINE.fullmatch(",
+        "HEAD_LINE.search("
+      ]
+    ],
+    "expect": [
+      "a head named only inside a QUOTED line is refused",
+      "a declaration with a prefix: refused as HEAD NOT NAMED, nothing written",
+      "a declaration with anything after the sha: refused as HEAD NOT NAMED, nothing written"
+    ]
+  },
+  {
+    "name": "a declaration on ANY line counts — a comment, a lazy quote, a later line (r2 H1)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    m = HEAD_LINE.fullmatch(_lines(text)[0])",
+        "    m = next(filter(None, map(HEAD_LINE.fullmatch, _lines(text))), None)"
+      ]
+    ],
+    "expect": [
+      "...an HTML comment in the declaration form too: refused as HEAD NOT NAMED, nothing written",
+      "...a lazy continuation in the declaration form too: refused as HEAD NOT NAMED, nothing written",
+      "...the declaration form anywhere BUT the first line is not declared"
+    ]
+  },
+  {
+    "name": "a verdict PREFIX reads as the verdict (r2 M3)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    m = VERDICT_LINE.fullmatch(last)",
+        "    m = VERDICT_LINE.match(last)"
+      ]
+    ],
+    "expect": [
+      "...nor on the declaration line",
+      "...nor with anything after the word"
+    ]
+  },
+  {
+    "name": "a verdict line ANYWHERE is the verdict — a fenced example or a comment (r2 M2)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    last = next((line for line in reversed(_lines(text)) if line.strip()), \"\")",
+        "    last = next((line for line in _lines(text) if VERDICT_LINE.fullmatch(line)), \"\")"
+      ]
+    ],
+    "expect": [
+      "...and with the declaration form, the LAST line is the verdict, not the fenced example",
+      "...nor in the declaration form",
+      "...and a verdict line ABOVE the last line is not the verdict"
+    ]
+  },
+  {
+    "name": "a symlinked review or verdict path is followed (r1 L3, both halves)",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "        if linked:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a review that is a SYMLINK is refused",
+      "a verdicts DIRECTORY that is a symlink is refused, and nothing is written there"
+    ]
+  },
+  {
+    "name": "the parsed verdict is not recorded",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    rec[\"verdict\"] = verdict\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the verdict the review states",
+      "a NOT CONVERGED review is recorded as NOT CONVERGED"
+    ]
+  },
+  {
+    "name": "a Unicode line separator splits a line, so text Markdown renders on one line is read as two",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "for line in text.split(\"\\n\")]",
+        "for line in text.splitlines()]"
+      ]
+    ],
+    "expect": [
+      "...but a Unicode line separator does not make a new line",
+      "...but a Unicode line separator does not end the first line"
+    ]
+  },
+  {
+    "name": "the first line is read after the body is stripped, so a blank line 1 is skipped",
+    "file": "scripts/record-review-verdict.py",
+    "edits": [
+      [
+        "    declared = declared_head(body)",
+        "    declared = declared_head(text)"
+      ]
+    ],
+    "expect": [
+      "...nor is the first line read after the body is stripped: line 1 is line 1",
+      "a declaration under a blank first line: refused as HEAD NOT NAMED, nothing written"
+    ]
+  }
+]

@@ -1,0 +1,1353 @@
+[
+  {
+    "name": "the REFUSE threshold moves off 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "REFUSE_AT = 90.0",
+        "REFUSE_AT = 90.1"
+      ]
+    ],
+    "expect": [
+      "weekly 90 is REFUSE-SPAWN"
+    ]
+  },
+  {
+    "name": "the WARN threshold moves off 80",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "WARN_AT = 80.0",
+        "WARN_AT = 80.1"
+      ]
+    ],
+    "expect": [
+      "weekly 80 is WARN"
+    ]
+  },
+  {
+    "name": "REFUSE becomes strictly above 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= REFUSE_AT:",
+        "    if weekly > REFUSE_AT:"
+      ]
+    ],
+    "expect": [
+      "weekly 90 is REFUSE-SPAWN"
+    ]
+  },
+  {
+    "name": "WARN becomes strictly above 80",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= WARN_AT:",
+        "    if weekly > WARN_AT:"
+      ]
+    ],
+    "expect": [
+      "weekly 80 is WARN"
+    ]
+  },
+  {
+    "name": "the five-hour WARN becomes strictly above 90",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "five[0] >= FIVE_HOUR_WARN_AT",
+        "five[0] > FIVE_HOUR_WARN_AT"
+      ]
+    ],
+    "expect": [
+      "five-hour 90 is WARN"
+    ]
+  },
+  {
+    "name": "a five-hour window whose reset has arrived still warns",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "five[1] > now",
+        "five[1] >= now"
+      ]
+    ],
+    "expect": [
+      "a five-hour window whose reset passed adds nothing"
+    ]
+  },
+  {
+    "name": "a cache exactly 15 min old reads as stale",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age > MAX_AGE_S:",
+        "    if age >= MAX_AGE_S:"
+      ]
+    ],
+    "expect": [
+      "a cache exactly 15 min old is still read"
+    ]
+  },
+  {
+    "name": "the staleness rule is deleted, so an old cache reads as current",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age > MAX_AGE_S:\n        return cannot(f\"the cache at",
+        "    if False:\n        return cannot(f\"the cache at"
+      ]
+    ],
+    "expect": [
+      "a cache 15 min + 1 s old is CANNOT RUN (stale)"
+    ]
+  },
+  {
+    "name": "the future-cache rule is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if age < -FUTURE_SLACK_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a cache 6 s in the future is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a seven_day reset exactly now still reads as current",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if resets <= now:",
+        "    if resets < now:"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly now is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a MISSING cache reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if text is None:\n        return cannot(missing)",
+        "    if text is None:\n        return OK, \"\""
+      ]
+    ],
+    "expect": [
+      "a missing cache is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "no seven_day window reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if seven is None:\n        return cannot(\"the cache has no seven_day window\")",
+        "    if seven is None:\n        return OK, \"\""
+      ]
+    ],
+    "expect": [
+      "no seven_day window is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a boolean passes as a percentage",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(x, (int, float)) and not isinstance(x, bool) and",
+        "isinstance(x, (int, float)) and"
+      ]
+    ],
+    "expect": [
+      "a boolean percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "NaN passes as a percentage",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " and math.isfinite(x)",
+        ""
+      ]
+    ],
+    "expect": [
+      "a NaN percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a negative percentage passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not is_number(p) or p < 0:",
+        "if not is_number(p):"
+      ]
+    ],
+    "expect": [
+      "a negative percentage is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the override is ignored, so the owner cannot let a spawn through",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict != REFUSE or override[0]:",
+        "    if verdict != REFUSE:"
+      ]
+    ],
+    "expect": [
+      "gate: REFUSE with the override allows"
+    ]
+  },
+  {
+    "name": "a WARN also denies the spawn",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict != REFUSE or override[0]:\n        return None\n    return json.dumps({\"systemMessage\"",
+        "    if verdict not in (REFUSE, WARN) or override[0]:\n        return None\n    return json.dumps({\"systemMessage\""
+      ]
+    ],
+    "expect": [
+      "gate: WARN, CANNOT RUN and OK allow"
+    ]
+  },
+  {
+    "name": "any value of the override env var counts",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "env.get(OVERRIDE_ENV) == \"1\"",
+        "env.get(OVERRIDE_ENV) is not None"
+      ]
+    ],
+    "expect": [
+      "locate_override: env =0 is not"
+    ]
+  },
+  {
+    "name": "the override FILE is ignored",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    active, note = override_rule(*read_regular(path, CACHE_MAX_BYTES), now)",
+        "    active, note = False, \"\""
+      ]
+    ],
+    "expect": [
+      "locate_override: the MAIN checkout's file counts from a worktree"
+    ]
+  },
+  {
+    "name": "the prompt hook is silent on CANNOT RUN, so a missing cache reads as fine",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict == OK:\n        return None\n    context = ",
+        "    if verdict in (OK, CANNOT_RUN):\n        return None\n    context = "
+      ]
+    ],
+    "expect": [
+      "prompt: CANNOT RUN adds the notice to context"
+    ]
+  },
+  {
+    "name": "main's spawn path drops the override it computed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    override = locate_override(env, args.root, now) if verdict == REFUSE else (False, \"\")",
+        "    override = (False, \"\")"
+      ]
+    ],
+    "expect": [
+      "run-hook: the MAIN checkout's override lets a 95% spawn through from a worktree"
+    ]
+  },
+  {
+    "name": "main's hook mode returns the verdict's exit code",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if out:\n        print(out)\n    return 0\n",
+        "    if out:\n        print(out)\n    return RC[verdict]\n"
+      ]
+    ],
+    "expect": [
+      "main: spawn hook at 95% denies, rc 0"
+    ]
+  },
+  {
+    "name": "main ignores --cache and reads the live cache",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "read_regular(cache_path, CACHE_MAX_BYTES)",
+        "read_regular(os.path.expanduser(DEFAULT_CACHE), CACHE_MAX_BYTES)"
+      ]
+    ],
+    "expect": [
+      "main: the verdict's exit codes"
+    ]
+  },
+  {
+    "name": "the REFUSE message drops the reset time",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "subagent's report is allowed. Resets {local_time(resets)}.{five_note}\")",
+        "subagent's report is allowed.{five_note}\")"
+      ]
+    ],
+    "expect": [
+      "REFUSE, the whole message (fixed string; it names no override)"
+    ]
+  },
+  {
+    "name": "a bad --hook value is accepted, so a typo in the hook would print nothing and allow",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        elif a == \"--hook\" and v not in (\"prompt\", \"spawn\", \"wake\"):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "main: a bad --hook value is refused, rc 2"
+    ]
+  },
+  {
+    "name": "a flag with no value is silently dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if v is None:\n            raise ValueError(f\"{a} needs a value\")",
+        "        if v is None:\n            break"
+      ]
+    ],
+    "expect": [
+      "main: a flag with no value is refused, rc 2"
+    ]
+  },
+  {
+    "name": "the REFUSE message hands the override to the model it constrains (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "wake an agent, are REFUSED (at {pct(REFUSE_AT)});",
+        "wake an agent, are REFUSED (at {pct(REFUSE_AT)}; override: {OVERRIDE_ENV}=1);"
+      ]
+    ],
+    "expect": [
+      "the REFUSE message (the model's) names no override"
+    ]
+  },
+  {
+    "name": "local_time lets the platform's exception escape (r1 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except (OverflowError, OSError, ValueError) as e:\n        raise Malformed(f\"the time",
+        "    except ZeroDivisionError as e:\n        raise Malformed(f\"the time"
+      ]
+    ],
+    "expect": [
+      "local_time(1e+300) raises Malformed, never a bare exception"
+    ]
+  },
+  {
+    "name": "evaluate is no longer total: a Malformed time escapes (r1 M3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return _evaluate(text, now, missing, path)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path)\n    except ZeroDivisionError as e:"
+      ]
+    ],
+    "expect": [
+      "a seven_day resets_at of -1e300 at 95% is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the reset horizon is deleted, so a millisecond epoch reads as a reset",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if r > now + span + HORIZON_SLACK_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a seven_day resets_at of a millisecond epoch at 95% is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the reset horizon excludes its own boundary",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if r > now + span + HORIZON_SLACK_S:",
+        "if r >= now + span + HORIZON_SLACK_S:"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly 7 days + 1 h ahead is read"
+    ]
+  },
+  {
+    "name": "the seven-day window is held to the five-hour horizon",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "window(rl, \"seven_day\", now, SEVEN_DAY_S)",
+        "window(rl, \"seven_day\", now, FIVE_HOUR_S)"
+      ]
+    ],
+    "expect": [
+      "a seven_day reset exactly 7 days + 1 h ahead is read"
+    ]
+  },
+  {
+    "name": "the five-hour window is held to the seven-day horizon",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "window(rl, \"five_hour\", now, FIVE_HOUR_S)",
+        "window(rl, \"five_hour\", now, SEVEN_DAY_S)"
+      ]
+    ],
+    "expect": [
+      "a five-hour reset 1 s past its horizon is unreadable, never a reading"
+    ]
+  },
+  {
+    "name": "a malformed five-hour window disables the weekly verdict again (r1 M3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        five, five_note = None, f\" The five-hour window is unreadable ({e}): treat it as NOT RUN.\"",
+        "        return cannot(f\"the cache is malformed: {e}\")"
+      ]
+    ],
+    "expect": [
+      "weekly 95 with a five-hour resets_at 1e300 still REFUSES"
+    ]
+  },
+  {
+    "name": "a malformed five-hour window at a low weekly is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if five_note:\n        return WARN",
+        "    if False:\n        return WARN"
+      ]
+    ],
+    "expect": [
+      "weekly 10 with a malformed five-hour window is WARN, never silent"
+    ]
+  },
+  {
+    "name": "the future allowance is back to 60 s (r1 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "FUTURE_SLACK_S = 5",
+        "FUTURE_SLACK_S = 60"
+      ]
+    ],
+    "expect": [
+      "a cache 6 s in the future is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the cache is opened blocking, so a FIFO stalls the hook (r1 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "a FIFO cache is CANNOT RUN within 5 s, and says why"
+    ]
+  },
+  {
+    "name": "a non-regular file is read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(os.fstat(fd).st_mode):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_regular: a directory is not a regular file"
+    ]
+  },
+  {
+    "name": "the byte bound is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if n > limit:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "read_regular: one byte over the bound is refused"
+    ]
+  },
+  {
+    "name": "the byte bound refuses its own limit",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if n > limit:\n            return None, f\"{path} is over",
+        "        if n >= limit:\n            return None, f\"{path} is over"
+      ]
+    ],
+    "expect": [
+      "read_regular: exactly the bound is read"
+    ]
+  },
+  {
+    "name": "a missing file reads as unreadable, not absent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return None, \"\"",
+        "    except FileNotFoundError:\n        return None, \"x\""
+      ]
+    ],
+    "expect": [
+      "read_regular: no file is (None, '')"
+    ]
+  },
+  {
+    "name": "an exported GIT_DIR redirects the override's location",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not k.startswith(\"GIT_\")",
+        "if True"
+      ]
+    ],
+    "expect": [
+      "override_path: an exported GIT_DIR does not redirect it",
+      "main_checkout: an exported GIT_DIR moves raw git, and does not move it",
+      "main_checkout: an exported GIT_COMMON_DIR moves raw git, and does not move it",
+      "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
+      "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the override is read from the session's checkout, not the main one (r1 m1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return os.path.dirname(common), \"\"",
+        "    return root, \"\""
+      ]
+    ],
+    "expect": [
+      "override_path: from a WORKTREE it is the MAIN checkout's file"
+    ]
+  },
+  {
+    "name": "a git dir not named .git is taken as a checkout's",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if os.path.basename(common) != \".git\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_path: a git dir not named .git (a submodule's shape) is None, with a reason"
+    ]
+  },
+  {
+    "name": "the override never expires (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if expiry <= now:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: an expired file is not active, and says expired"
+    ]
+  },
+  {
+    "name": "the override is still valid at its expiry instant",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if expiry <= now:",
+        "if expiry < now:"
+      ]
+    ],
+    "expect": [
+      "override_rule: an expiry exactly now is NOT active"
+    ]
+  },
+  {
+    "name": "the 7-day cap on the override is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if expiry > now + OVERRIDE_MAX_S:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: more than 7 days ahead is NOT active"
+    ]
+  },
+  {
+    "name": "a non-finite expiry counts as an override",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if not math.isfinite(expiry):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "override_rule: 'nan' is not active"
+    ]
+  },
+  {
+    "name": "the deny REASON carries the owner's instructions to the model (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"permissionDecisionReason\": message}})",
+        "\"permissionDecisionReason\": f\"{message} {owner_text(override)}\"}})"
+      ]
+    ],
+    "expect": [
+      "gate: REFUSE without an override DENIES, the reason is the bare message"
+    ]
+  },
+  {
+    "name": "the deny tells the owner nothing (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "json.dumps({\"systemMessage\": f\"{message} {owner_text(override)}\".rstrip(),\n                       \"hookSpecificOutput\"",
+        "json.dumps({\"hookSpecificOutput\""
+      ]
+    ],
+    "expect": [
+      "gate: the deny tells the OWNER how to override"
+    ]
+  },
+  {
+    "name": "the prompt WARN reaches only the model (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if verdict == WARN:\n        out[\"systemMessage\"] = message",
+        "    if False:\n        out[\"systemMessage\"] = message"
+      ]
+    ],
+    "expect": [
+      "prompt: WARN also tells the OWNER (systemMessage)"
+    ]
+  },
+  {
+    "name": "the prompt REFUSE reaches only the model (r1 m4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    elif verdict == REFUSE:\n        out[\"systemMessage\"]",
+        "    elif False:\n        out[\"systemMessage\"]"
+      ]
+    ],
+    "expect": [
+      "prompt: REFUSE tells the OWNER how to override"
+    ]
+  },
+  {
+    "name": "the prompt context carries the owner's instructions to the model (r1 M2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"additionalContext\": context}}",
+        "\"additionalContext\": context + owner_text(override)}}"
+      ]
+    ],
+    "expect": [
+      "prompt: REFUSE's model context never carries the owner's instructions"
+    ]
+  },
+  {
+    "name": "an ACTIVE override is not named in the prompt context",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(ACTIVE_NOTE if verdict == REFUSE and override[0] else \"\")",
+        "(\"\")"
+      ]
+    ],
+    "expect": [
+      "prompt: an ACTIVE override is named in the context at REFUSE"
+    ]
+  },
+  {
+    "name": "a subagent's report is refused at 95%, stranding finished work",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(sent_by_subagent(payload) or is_control_message",
+        "(False or is_control_message"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% allows a subagent's report",
+      "run-hook: the wake hook allows a subagent's report at 95%"
+    ]
+  },
+  {
+    "name": "the payload bound is deleted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent",
+        "(sent_by_subagent"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% DENIES a payload over the bound, even a subagent's"
+    ]
+  },
+  {
+    "name": "the wake hook never denies (r1 M1 reverted)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        out = gate_output(verdict, message, override)",
+        "        out = None if args.hook == \"wake\" else gate_output(verdict, message, override)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% DENIES a message to an agent"
+    ]
+  },
+  {
+    "name": "the percentage is rounded, not floored (r1 m3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    s = repr(float(p))",
+        "    s = repr(round(float(p), 1))"
+      ]
+    ],
+    "expect": [
+      "pct(89.9999) is 89.9% (floored)"
+    ]
+  },
+  {
+    "name": "the zone abbreviation is dropped (r1 X4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"%a %m-%d %H:%M %Z\"",
+        "\"%a %m-%d %H:%M\""
+      ]
+    ],
+    "expect": [
+      "local_time: the SAME wall clock an hour later is PST"
+    ]
+  },
+  {
+    "name": "UTC is shown as local time (r1 m2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "time.strftime(\"%a %m-%d %H:%M %Z\", time.localtime(t))",
+        "time.strftime(\"%a %m-%d %H:%M %Z\", time.gmtime(t))"
+      ]
+    ],
+    "expect": [
+      "local_time: a PST instant"
+    ]
+  },
+  {
+    "name": "an astronomical count is printed in full",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return f\"{x:.0f}\" if abs(x) < 1e7 else",
+        "    return f\"{x:.0f}\" if True else"
+      ]
+    ],
+    "expect": [
+      "count: an astronomical one is short"
+    ]
+  },
+  {
+    "name": "an absent cache is said on every prompt again (the session is never recognised)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if text is not None and text.strip() == sid:\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "main: the 2nd absent-cache prompt in a session is silent"
+    ]
+  },
+  {
+    "name": "the session is never recorded",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        os.replace(tmp, state)",
+        "        os.remove(tmp)"
+      ]
+    ],
+    "expect": [
+      "main: the 2nd absent-cache prompt in a session is silent"
+    ]
+  },
+  {
+    "name": "any recorded session silences every later one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "text.strip() == sid:",
+        "text.strip() != \"\":"
+      ]
+    ],
+    "expect": [
+      "main: a NEW session is told again"
+    ]
+  },
+  {
+    "name": "a STALE cache is silenced like an absent one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if verdict == CANNOT_RUN and absent:",
+        "        if verdict == CANNOT_RUN:"
+      ]
+    ],
+    "expect": [
+      "main: a STALE cache warns on every prompt of a session"
+    ]
+  },
+  {
+    "name": "a payload with no session_id counts as already told",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if sid is None:\n        return False\n    main, _ = main_checkout(root)",
+        "    if sid is None:\n        return True\n    main, _ = main_checkout(root)"
+      ]
+    ],
+    "expect": [
+      "main: a payload with no session_id is LOUD every time"
+    ]
+  },
+  {
+    "name": "the notice state lives in the session's checkout, not the main one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    state = os.path.join(main, NOTICE_STATE_FILE)",
+        "    state = os.path.join(root, NOTICE_STATE_FILE)"
+      ]
+    ],
+    "expect": [
+      "told_this_session: the state lives in the MAIN checkout, written from a worktree"
+    ]
+  },
+  {
+    "name": "a session_id with a newline inside is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or \"\\n\" in sid:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "session_of: none, empty, not a string, a newline inside, too long, unparseable"
+    ]
+  },
+  {
+    "name": "the stale message drops the cache path",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "the cache at {path} is {count(age // 60)} min old",
+        "the cache is {count(age // 60)} min old"
+      ]
+    ],
+    "expect": [
+      "the stale message names the cache path"
+    ]
+  },
+  {
+    "name": "the stale message drops how the cache is written",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{STATUSLINE}, so check that the statusline is running\")",
+        "f\"check the statusline\")"
+      ]
+    ],
+    "expect": [
+      "the stale message says the statusline writes it, and where"
+    ]
+  },
+  {
+    "name": "main does not pass the cache path to the stale message",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "evaluate(text, now, reason, cache_path)",
+        "evaluate(text, now, reason)"
+      ]
+    ],
+    "expect": [
+      "main: the stale notice names the --cache path"
+    ]
+  },
+  {
+    "name": "the absent-cache notice drops how the cache is written",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "reason = f\"no cache at {cache_path}; {STATUSLINE}\"",
+        "reason = f\"no cache at {cache_path}\""
+      ]
+    ],
+    "expect": [
+      "main: the absent-cache notice names the path and says the statusline writes it"
+    ]
+  },
+  {
+    "name": "the wake gate trusts agent_type, so a --agent main session passes as a subagent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    aid = doc.get(\"agent_id\") if isinstance(doc, dict) else None",
+        "    aid = (doc.get(\"agent_id\") or doc.get(\"agent_type\")) if isinstance(doc, dict) else None"
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: a --agent main session (agent_type, no agent_id) is not",
+      "main: wake hook at 95% DENIES a --agent main session's message"
+    ]
+  },
+  {
+    "name": "the wake gate reads an agent_id the MODEL wrote into tool_input",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "doc.get(\"agent_id\") if isinstance(doc, dict)",
+        "(doc.get(\"agent_id\") or (doc.get(\"tool_input\") or {}).get(\"agent_id\")) if isinstance(doc, dict)"
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: an agent_id the MODEL wrote into tool_input is not"
+    ]
+  },
+  {
+    "name": "any truthy agent_id counts, a number or a blank included",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return isinstance(aid, str) and aid.strip() != \"\"",
+        "    return bool(aid)"
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: an empty, blank, non-string agent_id, unparseable or a non-object is not"
+    ]
+  },
+  {
+    "name": "a blank agent_id counts",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(aid, str) and aid.strip() != \"\"",
+        "isinstance(aid, str) and aid != \"\""
+      ]
+    ],
+    "expect": [
+      "sent_by_subagent: an empty, blank, non-string agent_id, unparseable or a non-object is not"
+    ]
+  },
+  {
+    "name": "the recipient's name is consulted again (the r1 exemption, the r2 X1 hole)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or is_control_message(payload)):",
+        "or is_control_message(payload) or '\"to\": \"main' in payload):"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% DENIES the MAIN SESSION's message to 'main' (r2 X1)",
+      "main: wake hook at 95% DENIES the MAIN SESSION's message to 'main [abcdef]' (r2 X1)",
+      "run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 95%"
+    ]
+  },
+  {
+    "name": "JSON integers are Python ints again, so 10**400 raises in math.isfinite (r2 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return json.loads(text, parse_int=float)",
+        "        return json.loads(text)"
+      ]
+    ],
+    "expect": [
+      "parse_json: 10**400 is inf, not an int",
+      "the r2 input: weekly 95 with a five-hour used_percentage of 10**400 still REFUSES",
+      "main: a cache with five-hour used 10**400 exits 0 from all three hooks (r2 X2: they exited 1)",
+      "a VALID weekly 95 REFUSES across every hostile five-hour used x reset"
+    ]
+  },
+  {
+    "name": "the cache is parsed by plain json.loads, around parse_json",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        doc = parse_json(text)\n    except ValueError as e:\n        return cannot(f\"the cache is not valid JSON",
+        "        doc = json.loads(text)\n    except ValueError as e:\n        return cannot(f\"the cache is not valid JSON"
+      ]
+    ],
+    "expect": [
+      "the r2 input: weekly 95 with a five-hour used_percentage of 10**400 still REFUSES",
+      "a weekly used_percentage of 10**400 is CANNOT RUN, never a crash"
+    ]
+  },
+  {
+    "name": "a parser RecursionError escapes (Python 3.12 on a 60 KB nested cache)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except RecursionError:\n        raise ValueError(\"it is nested too deeply to parse\")",
+        "    except ZeroDivisionError:\n        raise ValueError(\"it is nested too deeply to parse\")"
+      ]
+    ],
+    "expect": [
+      "a parser RecursionError is CANNOT RUN for the cache, None for a session, and gated for a wake"
+    ]
+  },
+  {
+    "name": "the read waits for its reader with no deadline (r2 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    worker.join(deadline)",
+        "    worker.join()"
+      ]
+    ],
+    "expect": [
+      "read_regular: a read slower than its deadline is (None, why) within the deadline",
+      "main: a stalled cache read is a loud CANNOT RUN within the 1 s deadline"
+    ]
+  },
+  {
+    "name": "the default deadline is far past a stalled read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "READ_DEADLINE_S = 1.0",
+        "READ_DEADLINE_S = 10.0"
+      ]
+    ],
+    "expect": [
+      "main: a stalled cache read is a loud CANNOT RUN within the 1 s deadline"
+    ]
+  },
+  {
+    "name": "a reader's exception loses its name",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "could not be read ({type(e).__name__}: {e})",
+        "could not be read"
+      ]
+    ],
+    "expect": [
+      "read_regular: a reader that raises is (None, why), never a bare exception or an empty box"
+    ]
+  },
+  {
+    "name": "only GIT_DIR is stripped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "not k.startswith(\"GIT_\")",
+        "k != \"GIT_DIR\""
+      ]
+    ],
+    "expect": [
+      "main_checkout: an exported GIT_COMMON_DIR moves raw git, and does not move it",
+      "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
+      "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the r1 list of relocating variables returns",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not k.startswith(\"GIT_\")}",
+        "if k not in (\"GIT_DIR\", \"GIT_WORK_TREE\", \"GIT_COMMON_DIR\")}"
+      ]
+    ],
+    "expect": [
+      "main_checkout: an exported GIT_CEILING_DIRECTORIES moves raw git, and does not move it",
+      "main_checkout: an exported GIT_OBJECT_DIRECTORY moves raw git, and does not move it"
+    ]
+  },
+  {
+    "name": "the reader thread is not a daemon, so the process outlives the deadline (r3 C2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "worker = threading.Thread(target=work, daemon=True)",
+        "worker = threading.Thread(target=work, daemon=False)"
+      ]
+    ],
+    "expect": [
+      "a CHILD whose cache read stalls 10 s EXITS within the 1 s deadline + 1.5 s (the process, r3 C2)"
+    ]
+  },
+  {
+    "name": "the wake gate ignores control messages (r3 C4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(sent_by_subagent(payload) or is_control_message(payload))",
+        "sent_by_subagent(payload)"
+      ]
+    ],
+    "expect": [
+      "main: wake hook at 95% ALLOWS the main session's shutdown_request (r3 C4)",
+      "main: wake hook at 95% ALLOWS the main session's plan approval (r3 C4)",
+      "run-hook: the wake hook allows the main session's shutdown_request at 95%"
+    ]
+  },
+  {
+    "name": "a control message escapes the payload bound",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "len(payload) <= PAYLOAD_MAX_BYTES and (sent_by_subagent(payload) or is_control_message(payload))",
+        "(len(payload) <= PAYLOAD_MAX_BYTES and sent_by_subagent(payload)) or is_control_message(payload)"
+      ]
+    ],
+    "expect": [
+      "main: a control message over the payload bound is DENIED"
+    ]
+  },
+  {
+    "name": "a control message may lack a required key",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not required <= set(msg) <= allowed:",
+        "if not set(msg) <= allowed:"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a plan approval with no request_id, or approve missing, is not"
+    ]
+  },
+  {
+    "name": "a control message may carry an extra key",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "required <= set(msg) <= allowed",
+        "required <= set(msg)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a shutdown_request with an extra key is not",
+      "is_control_message: a plan approval with an extra key is not",
+      "main: wake hook at 95% still DENIES the main session's shutdown_request with an extra key (r3 C4)"
+    ]
+  },
+  {
+    "name": "a blank request_id passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "isinstance(rid, str) and rid.strip() != \"\"",
+        "isinstance(rid, str)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a blank or non-string request_id is not"
+    ]
+  },
+  {
+    "name": "a non-boolean approve passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " and isinstance(msg.get(\"approve\", False), bool))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a non-boolean approve is not"
+    ]
+  },
+  {
+    "name": "a non-string reason or feedback passes",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "all(isinstance(msg.get(k, \"\"), str) for k in (\"reason\", \"feedback\"))",
+        "True"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a non-string reason or feedback is not"
+    ]
+  },
+  {
+    "name": "a control message is read from outside tool_input",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "msg = ti.get(\"message\") if isinstance(ti, dict) else None",
+        "msg = (doc.get(\"message\") if isinstance(doc, dict) and \"message\" in doc else ti.get(\"message\") if isinstance(ti, dict) else None)"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a control message OUTSIDE tool_input is not"
+    ]
+  },
+  {
+    "name": "the payload read stops AT the bound, not one byte past it (r4 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "b = os.read(0, limit + 1 - n)",
+        "b = os.read(0, limit - n)"
+      ]
+    ],
+    "expect": [
+      "run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 95% (r4 X2)",
+      "read_payload: exactly the bound is read, one byte over is None"
+    ]
+  },
+  {
+    "name": "a payload one byte over the bound is kept (r4 X2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "box.append(None if n > limit else",
+        "box.append(None if n > limit + 1 else"
+      ]
+    ],
+    "expect": [
+      "read_payload: exactly the bound is read, one byte over is None"
+    ]
+  },
+  {
+    "name": "the stdin reader is not a daemon, so a held-open writer holds the hook (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "reader = threading.Thread(target=take, daemon=True)",
+        "reader = threading.Thread(target=take, daemon=False)"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)",
+      "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
+    ]
+  },
+  {
+    "name": "an unread stdin is taken for a subagent's report (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return box[0] if box else None",
+        "return box[0] if box else '{\"agent_id\": \"a1\"}'"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)",
+      "read_payload: a writer that stays open is None, within its deadline"
+    ]
+  },
+  {
+    "name": "the wake gate's stdin read has no deadline again (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "payload = read_payload() or \"\"  # unusable stdin: neither",
+        "payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode(\"utf-8\", errors=\"replace\")  # unusable stdin: neither"
+      ]
+    ],
+    "expect": [
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)"
+    ]
+  },
+  {
+    "name": "the prompt hook's stdin read has no deadline again (r4 X1)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "payload = read_payload() or \"\"  # unusable stdin: no session",
+        "payload = sys.stdin.buffer.read(PAYLOAD_MAX_BYTES + 1).decode(\"utf-8\", errors=\"replace\")  # unusable stdin: no session"
+      ]
+    ],
+    "expect": [
+      "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
+    ]
+  },
+  {
+    "name": "a control message's type is looked up before it is known to be a string (r4 X3)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not isinstance(kind, str) or kind not in CONTROL_MESSAGES:",
+        "if kind not in CONTROL_MESSAGES:"
+      ]
+    ],
+    "expect": [
+      "is_control_message: a list or an object as `type` is False, not a crash (r4 X3)",
+      "main: wake hook at 95% DENIES a control message whose `type` is a list or an object (r4 X3)",
+      "run-hook: a control message whose `type` is a list or an object is DENIED at 95%, rc 0 (r4 X3)"
+    ]
+  },
+  {
+    "name": "the missing-cache case reads an EXISTING cache (r4 X4)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "absent_path = os.path.join(tmp, \"absent.json\")",
+        "absent_path = cpath"
+      ]
+    ],
+    "expect": [
+      "main: wake hook with a MISSING cache (and no --now) allows, silently, because it is absent"
+    ]
+  }
+]

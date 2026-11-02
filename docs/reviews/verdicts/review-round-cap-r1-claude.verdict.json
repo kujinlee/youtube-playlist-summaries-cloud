@@ -1,0 +1,17 @@
+{
+  "attempts": [],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "45858d37b9e58b1a472f2068d4de551ba0d85f4e",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 10179 chars, names 45858d37b9e5",
+  "refused": false,
+  "review": "review-round-cap-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/wt-reviewcap",
+  "writer": "claude"
+}

@@ -1,0 +1,625 @@
+[
+  {
+    "name": "the ceiling becomes exclusive: exactly 1.5 x W is still deferred",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if top <= w or ctx >= top:",
+        "    if top <= w or ctx > top:"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a stale sentinel delays past the ceiling: at 1.5W it ALLOWS"
+    ]
+  },
+  {
+    "name": "the ceiling factor drifts to 2 x W",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "CEILING_FACTOR = 1.5",
+        "CEILING_FACTOR = 2.0"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a stale sentinel delays past the ceiling: at 1.5W it ALLOWS",
+      "⭐ hook: a stale sentinel past the ceiling allows"
+    ]
+  },
+  {
+    "name": "idle becomes exclusive: exactly 5 min idle is still blocked",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if now - last_at >= IDLE_S:",
+        "    if now - last_at > IDLE_S:"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF an idle compaction is blocked: 5 min idle ALLOWS despite signals"
+    ]
+  },
+  {
+    "name": "idle is never a boundary",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        return \"allow-idle\"",
+        "        return \"allow-no-signal\" if not sigs else \"block-\" + \"+\".join(sigs)"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF an idle compaction is blocked: 5 min idle ALLOWS despite signals"
+    ]
+  },
+  {
+    "name": "a mid-work signal no longer blocks",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return \"block-\" + \"+\".join(sigs) if sigs else \"allow-no-signal\"",
+        "    return \"allow-no-signal\""
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a compaction runs below 1.5W, sentinel present, transcript < 5 min: it BLOCKS"
+    ]
+  },
+  {
+    "name": "a manual compaction goes through the signals",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if trigger != \"auto\":\n        return \"allow-manual\"",
+        "    if trigger == \"never\":\n        return \"allow-manual\""
+      ]
+    ],
+    "expect": [
+      "allow-manual whatever the signals"
+    ]
+  },
+  {
+    "name": "ctx drops the cached part of the prompt",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(\"input_tokens\", \"cache_read_input_tokens\", \"cache_creation_input_tokens\")",
+        "(\"input_tokens\", \"cache_creation_input_tokens\")"
+      ]
+    ],
+    "expect": [
+      "ctx is input + cache_read + cache_creation of the LAST assistant usage"
+    ]
+  },
+  {
+    "name": "a subagent's sidechain record is read as the session's",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        if d.get(\"isSidechain\"):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a sidechain record is ignored"
+    ]
+  },
+  {
+    "name": "a status-less event notice ends a task",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            if status is None:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "a notification with NO status (an event) does not end it"
+    ]
+  },
+  {
+    "name": "a `running` notice ends a task",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            if status == \"running\":\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "a `running` status does not end it"
+    ]
+  },
+  {
+    "name": "a notification's task id is not matched",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "ids = {_tag(block, \"tool-use-id\"), _tag(block, \"task-id\")} - {None}",
+        "ids = {_tag(block, \"tool-use-id\")} - {None}"
+      ]
+    ],
+    "expect": [
+      "a background agent ends by its task id (agentId), in a queued attachment"
+    ]
+  },
+  {
+    "name": "any teammate's idle ends every teammate",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "                    if st[\"name\"] == name:",
+        "                    if st[\"name\"]:"
+      ]
+    ],
+    "expect": [
+      "ANOTHER teammate's idle does not end it"
+    ]
+  },
+  {
+    "name": "an approved shutdown does not end a teammate",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "END_TYPES = (\"idle_notification\", \"shutdown_response\")",
+        "END_TYPES = (\"idle_notification\",)"
+      ]
+    ],
+    "expect": [
+      "a teammate ends at an approved shutdown"
+    ]
+  },
+  {
+    "name": "the model's own text is read as completion evidence",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "                                st[\"open\"] = False\n            continue\n",
+        "                                st[\"open\"] = False\n"
+      ]
+    ],
+    "expect": [
+      "the model QUOTING a notification is not one"
+    ]
+  },
+  {
+    "name": "a foreground agent's result does not end it",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "if x.get(\"is_error\") or not (aid or team):",
+        "if x.get(\"is_error\"):"
+      ]
+    ],
+    "expect": [
+      "a foreground Agent whose result came back is done"
+    ]
+  },
+  {
+    "name": "a TaskStop ends nothing",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "                            if st[\"task\"] is not None and st[\"task\"] == inp.get(\"task_id\"):\n                                st[\"open\"] = False",
+        "                            if st[\"task\"] is not None and st[\"task\"] == inp.get(\"task_id\"):\n                                pass"
+      ]
+    ],
+    "expect": [
+      "a TaskStop of the agent's task id ends it",
+      "a Monitor ends by TaskStop of its task"
+    ]
+  },
+  {
+    "name": "a Monitor's stated expiry is ignored",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "                        if mins and st[\"at\"] is not None:",
+        "                        if False:"
+      ]
+    ],
+    "expect": [
+      "a Monitor past the expiry its RESULT states (30m, not timeout_ms's 60m) is over"
+    ]
+  },
+  {
+    "name": "the env var no longer decides first",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if env_value is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "the env var decides first"
+    ]
+  },
+  {
+    "name": "the per-model setting is ignored",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        if isinstance(per_model, dict) and \"autoCompactWindow\" in per_model:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "modelSettings for THIS model beats the same file's top level"
+    ]
+  },
+  {
+    "name": "an unparseable higher file is skipped instead of CANNOT RUN",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            raise CannotRun(f\"{label} does not parse ({exc})\") from None",
+        "            continue"
+      ]
+    ],
+    "expect": [
+      "⭐ CANNOT RUN: a higher file that does not parse"
+    ]
+  },
+  {
+    "name": "the range check is widened to any positive value",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "W_RANGE = (100_000, 1_000_000)",
+        "W_RANGE = (1, 1_000_000)"
+      ]
+    ],
+    "expect": [
+      "CANNOT RUN: a value out of range"
+    ]
+  },
+  {
+    "name": "an error FAILS CLOSED: CANNOT RUN blocks",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        return \"allow-cannot-run\", rec",
+        "        return \"block-cannot-run\", rec"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: unreadable settings FAIL OPEN — allow, snapshot, CANNOT RUN logged with its reason"
+    ]
+  },
+  {
+    "name": "a block still runs the snapshot and prints no decision",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if verdict.startswith(\"block-\"):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: sentinel + young transcript + below ceiling prints a BLOCK decision and takes no snapshot"
+    ]
+  },
+  {
+    "name": "the project dir's plan is read instead of the session's own checkout's",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "read_regular((checkout or project) / \".claude/executing-plan\")",
+        "read_regular((project or checkout) / \".claude/executing-plan\")"
+      ]
+    ],
+    "expect": [
+      "hook: a plan armed in the session's WORKTREE blocks, and the log goes to the MAIN checkout",
+      "⭐ hook: the PROJECT dir's plan is not a worktree session's (r1 Claude F1 — teammates read the coordinator's)"
+    ]
+  },
+  {
+    "name": "a worktree's log goes to the worktree's gitdir, not the main checkout",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return common.parent if common.name == \".git\" else None",
+        "    return gitdir"
+      ]
+    ],
+    "expect": [
+      "hook: a plan armed in the session's WORKTREE blocks, and the log goes to the MAIN checkout"
+    ]
+  },
+  {
+    "name": "an uncut transcript loses its first record",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return lines[1:] if size > cap else lines",
+        "    return lines[1:]"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: sentinel + young transcript + below ceiling prints a BLOCK decision and takes no snapshot",
+      "read_tail drops the cut first line of a tail, and only of a cut one"
+    ]
+  },
+  {
+    "name": "the summary's share forgets idle compactions",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "v in (\"allow-ceiling\", \"allow-idle\", \"allow-no-signal\")",
+        "v in (\"allow-ceiling\", \"allow-no-signal\")"
+      ]
+    ],
+    "expect": [
+      "summary: counts, and the share the ceiling forced"
+    ]
+  },
+  {
+    "name": "an unreadable payload's reason is dropped from the log",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        if payload.get(\"cannot_run\"):\n            raise CannotRun",
+        "        if False:\n            raise CannotRun"
+      ]
+    ],
+    "expect": [
+      "hook: a payload that could not be read FAILS OPEN and logs WHY"
+    ]
+  },
+  {
+    "name": "a paused sentinel still counts as mid-work",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if \"paused\" in fields:\n        return False\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
+      "⭐ hook: a PAUSED sentinel does not block — the live shape, paused for two days"
+    ]
+  },
+  {
+    "name": "another session's sentinel counts as mid-work",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return not (armed_in and session and armed_in != session)",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ a sentinel armed in ANOTHER session is not mid-work",
+      "⭐ hook: a sentinel from ANOTHER session does not block"
+    ]
+  },
+  {
+    "name": "the ceiling is not clamped below the model's limit",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit",
+        "    return int(CEILING_FACTOR * w), limit"
+      ]
+    ],
+    "expect": [
+      "⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)",
+      "⭐ a 900k window at 999,999 tokens is past its ceiling — never deferred into the hard limit",
+      "hook: with no project dir in env, W comes from the HOME settings — 150k's ceiling is the 200k limit's 180k"
+    ]
+  },
+  {
+    "name": "the limit is taken as the first window ABOVE W, not one that holds it",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(n for n in CONTEXT_LIMITS if n >= w)",
+        "(n for n in CONTEXT_LIMITS if n > w)"
+      ]
+    ],
+    "expect": [
+      "⭐ the ceiling is 1.5W while that fits under 90% of the limit, else 90% of it (r1 Codex 2, Claude F2)"
+    ]
+  },
+  {
+    "name": "an agentId footer marks any result as a background launch",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        " if text.lstrip().startswith(LAUNCHED) else None",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a COMPLETED foreground result carries an agentId footer too — still done (r1 Codex 1)"
+    ]
+  },
+  {
+    "name": "an open agent never ages out",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "st[\"open\"] and (st[\"at\"] is None or now - st[\"at\"] < AGENT_LEASE_S)",
+        "st[\"open\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ an open background agent stops counting at its 3 h lease (r1 Codex 3, Claude F3)"
+    ]
+  },
+  {
+    "name": "the agent lease becomes inclusive: exactly 3 h still counts",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "now - st[\"at\"] < AGENT_LEASE_S",
+        "now - st[\"at\"] <= AGENT_LEASE_S"
+      ]
+    ],
+    "expect": [
+      "⭐ an open background agent stops counting at its 3 h lease (r1 Codex 3, Claude F3)"
+    ]
+  },
+  {
+    "name": "only an assistant record is activity",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "if d.get(\"type\") in ACTIVITY_TYPES and at is not None:",
+        "if d.get(\"type\") == \"assistant\" and at is not None:"
+      ]
+    ],
+    "expect": [
+      "⭐ last_at is the newest ACTIVITY: a tool result after the last assistant record counts (r1 Codex 4)",
+      "a queued notification (an attachment) is activity too",
+      "⭐ hook: a tool result arriving NOW is not idle, though the call was 10 min ago (r1 Codex 4)"
+    ]
+  },
+  {
+    "name": "a malformed record is skipped, not failed open on",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        if scanned[\"malformed\"]:\n            raise CannotRun(",
+        "        if False:\n            raise CannotRun("
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a record that does not parse FAILS OPEN, with the count (r1 Codex 5)"
+    ]
+  },
+  {
+    "name": "a malformed record is not counted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            out[\"malformed\"] += 1\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a record that is not a JSON object is COUNTED, never skipped; a blank line is not one",
+      "⭐ hook: a record that does not parse FAILS OPEN, with the count (r1 Codex 5)"
+    ]
+  },
+  {
+    "name": "a non-string cwd reaches Path()",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return Path(cwd) if isinstance(cwd, str) and cwd else Path(\".\")",
+        "    return Path(cwd) if cwd else Path(\".\")"
+      ]
+    ],
+    "expect": [
+      "⭐ log_path: a non-string cwd falls back to `.`, never raises (r1 Claude F6)"
+    ]
+  },
+  {
+    "name": "files are opened blocking",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "fd = os.open(path, flags | os.O_NONBLOCK | getattr(os, \"O_NOCTTY\", 0), 0o644)",
+        "fd = os.open(path, flags | getattr(os, \"O_NOCTTY\", 0), 0o644)"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a FIFO at the transcript is refused at once — allowed, snapshot taken (r1 Codex 6)",
+      "⭐ hook: a FIFO at the log is refused at once — the log is NOT written, compaction still allowed"
+    ]
+  },
+  {
+    "name": "undecodable snapshot output raises",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "errors=\"replace\", timeout=SNAPSHOT_TIMEOUT",
+        "timeout=SNAPSHOT_TIMEOUT"
+      ]
+    ],
+    "expect": [
+      "hook: undecodable snapshot output is passed through, not raised (it ran the snapshot TWICE, r1 Codex)"
+    ]
+  },
+  {
+    "name": "a report that quotes the launch phrase is read as a background launch",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "if text.lstrip().startswith(LAUNCHED) else None",
+        "if LAUNCHED in text else None"
+      ]
+    ],
+    "expect": [
+      "⭐ a completed foreground report that QUOTES the launch phrase is still done (r2 Claude R2-1)"
+    ]
+  },
+  {
+    "name": "the ceiling is floored at W again (r2), which put it at the hard limit",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit)), limit   # never above",
+        "    return max(w, min(int(CEILING_FACTOR * w), int(LIMIT_SHARE * limit))), limit   # never above"
+      ]
+    ],
+    "expect": [
+      "⭐ the ceiling is never above 90% of the limit — a window with no headroom does not raise it (r3 Codex 1)"
+    ]
+  },
+  {
+    "name": "a ceiling with no headroom is not labelled",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(\"no-headroom\" if top <= w else \"1.5W\"",
+        "(\"1.5W\""
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a ceiling with no room above W is logged `no-headroom`, so --summary can exclude it (r2 Claude R2-3)"
+    ]
+  },
+  {
+    "name": "a nested repo's checkout hides the project's plan and takes the log",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    return co if main_checkout(co) == main_checkout(project) else project",
+        "    return co"
+      ]
+    ],
+    "expect": [
+      "⭐ hook: a cwd in a NESTED repo (.remember) still sees the project's plan, and the log stays out of it (r2 Claude R2-2)"
+    ]
+  },
+  {
+    "name": "a window with no headroom defers again (the no-headroom allow is dropped)",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if top <= w or ctx",
+        "    if ctx"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a window with no headroom defers: W = 1M, 950k and 200k allow just below W (r3 Codex 1)"
+    ]
+  },
+  {
+    "name": "a log write error leaves the block decision standing",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        verdict = \"allow-log-failed\" if verdict.startswith(\"block-\") else verdict\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a log error changes the decision: an armed plan and an unwritable log still ALLOW, one snapshot (r3 Codex 2)"
+    ]
+  }
+]

@@ -393,6 +393,13 @@ def _tree(base: Path, canon_body: str, sites: dict[str, str]) -> list[str]:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_body()
+
+
+def _self_test_body() -> int:
     passed = failed = 0
 
     def case(label: str, got, want) -> None:

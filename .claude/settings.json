@@ -6,15 +6,32 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push*)",
-            "command": "bash .claude/hooks/block-default-branch-push.sh",
+            "if": "Bash(*push*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-default-branch-push.sh",
             "statusMessage": "Checking branch rule..."
           },
           {
             "type": "command",
             "if": "Bash(gh pr create*)",
-            "command": "bash .claude/hooks/suggest-explainer.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh suggest-explainer.sh",
             "statusMessage": "Checking whether this PR wants an explainer..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh agent-long-call.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh agent-large-read.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh agent-large-read.sh"
           }
         ]
       },
@@ -23,7 +40,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/block-implementation-before-plan-gate.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-implementation-before-plan-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-spawn.sh",
+            "statusMessage": "Checking the weekly usage limit..."
+          }
+        ]
+      },
+      {
+        "matcher": "SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-wake.sh",
+            "statusMessage": "Checking the weekly usage limit..."
           }
         ]
       },
@@ -32,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/enforce-handoff-path.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh enforce-handoff-path.sh",
             "statusMessage": "Checking the handoff save path..."
           }
         ]
@@ -42,7 +79,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/enforce-selection-card.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh enforce-selection-card.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh usage-pace-prompt.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh stalled-work.sh",
+            "statusMessage": "Checking for stalled work...",
+            "timeout": 30
           }
         ]
       }
@@ -54,8 +111,15 @@
           {
             "type": "command",
             "if": "Bash(*begin-plan.py*)",
-            "command": "bash .claude/hooks/surface-recall.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh surface-recall.sh",
             "statusMessage": "Any recorded lesson for this step?"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the generated pages...",
+            "timeout": 180
           }
         ]
       },
@@ -64,7 +128,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/check-plan-gate.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-plan-gate.sh"
           }
         ]
       },
@@ -73,28 +137,52 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/check-schema-gates.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-schema-gates.sh",
             "statusMessage": "Checking schema gate reminder..."
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/regen-backlog-page.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-backlog-page.sh",
             "statusMessage": "Refreshing the backlog view..."
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/regen-goals-page.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-goals-page.sh",
             "statusMessage": "Refreshing the goals view..."
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/regen-features-page.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-features-page.sh",
             "statusMessage": "Refreshing the features view..."
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/regen-dashboard.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-dashboard.sh",
             "statusMessage": "Refreshing the dashboard..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh check-memory-index-budget.sh",
+            "statusMessage": "Checking the memory index's load budget..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the goal tree if its threads changed..."
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh regen-pages.sh",
+            "statusMessage": "Rebuilding the generated pages...",
+            "timeout": 180
           }
         ]
       }
@@ -104,11 +192,68 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/block-idle-stop.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh block-idle-stop.sh",
             "statusMessage": "Checking whether a plan is still mid-execution..."
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh session-state.sh",
+            "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh ensure-plan-leak-hook.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh compaction-print.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh precompact-snapshot.sh",
+            "timeout": 15,
+            "statusMessage": "Saving a snapshot of in-flight state before compaction..."
+          }
+        ]
+      },
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/run-hook.sh compaction-boundary.sh",
+            "timeout": 20,
+            "statusMessage": "Checking for a work boundary before compaction..."
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh run watch *)",
+      "Bash(git check-ignore *)",
+      "Bash(docker buildx imagetools inspect *)"
     ]
   }
 }
