@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 314 cases
+    python3 scripts/check-plan-code.py --self-test          # 315 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -839,7 +839,7 @@ def edit_needs_full_run(src: str, find: str, repl: str) -> bool:
 
 def run_suite_early(d: pathlib.Path, name: str, wants: list[str], *,
                     timeout: "float | None" = None, grace: "float | None" = None,
-                    argv: "list[str] | None" = None) -> tuple[int, str, str, "str | None"]:
+                    ) -> tuple[int, str, str, "str | None"]:
     """`(rc, stdout, stderr, stop)` — `run_suite_parts`, stopped once every `wants` name is red.
 
     `stop` is None when the child ended by itself (its rc and output are a full run's), "sigint"
@@ -851,7 +851,7 @@ def run_suite_early(d: pathlib.Path, name: str, wants: list[str], *,
     """
     timeout = SUITE_TIMEOUT if timeout is None else timeout
     grace = STOP_GRACE if grace is None else grace
-    cmd = argv if argv is not None else [sys.executable, "-u", name, "--self-test"]
+    cmd = [sys.executable, "-u", name, "--self-test"]
     p = subprocess.Popen(cmd, cwd=d, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                          env=mutation_env(d), start_new_session=True)
     bufs: dict = {"out": [], "err": []}
@@ -4457,6 +4457,10 @@ def _self_test_body() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             _ok, _rep, _ev = mutate_delivered(_r)
             case("--mutate catches a mutation in the DELIVERED tree", _ok, True)
+            _okE, _repE, _evE = mutate_delivered(_r, early_stop=True)
+            case("#405 mutate_delivered hands early_stop down: every entry carries `stop`",
+                 (_okE, all("stop" in m for m in _evE.mutations), "stop" in _ev.mutations[0]),
+                 (True, True, False))
             case("...the sibling import survived the copy, so no control complaint",
                  any("control" in r.lower() for r in _rep), False)
             case("...and a complete run is TRUSTWORTHY, so the caller may print the tally",
@@ -7310,7 +7314,7 @@ def _self_test_body() -> int:
             'print("  [FAIL] other: got 1 want 2")\n'
             'print("1/2 passed")\n'
             'raise SystemExit(1)\n')
-        _rc, _so, _se, _st = run_suite_early(_d405, "never.py", ["named"])
+        _rc, _so, _se, _st = run_suite_early(_d405, "never.py", ["other", "named"])
         case("#405 a named case that never fails: the suite runs to its END, nothing stopped",
              (_rc, _st, "1/2 passed" in _so), (1, None, True))
         (_d405 / "crash.py").write_text('raise RuntimeError("boom before any case")\n')
@@ -7326,9 +7330,11 @@ def _self_test_body() -> int:
         _rc, _so, _se, _st = run_suite_early(_d405, "deaf.py", ["named"], grace=0.5)
         case("#405 a child that ignores SIGINT is ESCALATED to SIGKILL after the grace, and it is recorded",
              (_st, time.monotonic() - _t405 < 10), ("sigkill", True))
-        (_d405 / "hang.py").write_text('import time\ntime.sleep(20)\n')
+        _d405h = _d405 / "hung"
+        (_d405h / CHILD_HOME).mkdir(parents=True)
+        (_d405h / "hang.py").write_text('import time\ntime.sleep(20)\n')
         _t405 = time.monotonic()
-        _rc, _so, _se, _st = run_suite_early(_d405, "hang.py", ["named"], timeout=0.5)
+        _rc, _so, _se, _st = run_suite_early(_d405h, "hang.py", ["a", "b"], timeout=0.5)
         case("#405 a hung suite under early stop is rc 2, CANNOT RUN — never a kill",
              (_rc, "did not finish" in _se, time.monotonic() - _t405 < 10), (2, True, True))
         # THE LOOP. `slow.py` sleeps after its case, so a stop is observable as a stop.
