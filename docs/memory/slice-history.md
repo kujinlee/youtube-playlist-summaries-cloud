@@ -93,3 +93,12 @@ Moved to bring `MEMORY.md` under 90% of its budget; each link still resolves.
 - [Local manual-test env](local-manual-test-env.md) — `~/code/agentic-ai-docs/yps-sync-test/`; sync is ADDITIVE
 - [Staging Supabase](staging-supabase-project.md) — ⚠ throwaway `neeufoxdbgbpkjukzzuc`; DELETE when B3/B4 done
 - [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation
+
+## Moved out of the index 2026-11-02 (budget trim, 94% to under 88%) — VERBATIM
+
+- [⭐⭐ #191 — semantic recall REPLICATED](backlog-191-semantic-recall-replicated.md) — lexical **3/20** vs semantic **20/20**, 0 false fires in 60. Triggers GOOD, matcher was the problem. 2 branches, neither merged
+- [⭐⭐ A signal needs its BASE RATE](a-signal-needs-its-base-rate.md) — 3× in ONE day: thrashing armed on **67%** of the corpus, `converged()` false **12 of 12**, and a grep that reported a false zero. The signals were all CORRECT; the inference was not
+- [Passing for an AMBIENT reason](a-case-can-pass-for-an-ambient-reason.md) — ⭐⭐⭐ 4× then **5 MORE**; tell = NAME vs BODY. **Flip what the case names, check it reddens** — stating a falsifier is not running one
+- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **12×, SIX of them in one session (2026-09-26)**: a grep filter, a wrapped line, an off-by-one `tail`, a wrong CSS class, CSS-uppercased text, and `gh` check states — **check a KNOWN POSITIVE before trusting a negative**, and ⛔ a fix inside a heredoc is not a class fix. 5×. `splitlines()` where the subject uses `split("\n")`. ⭐ 2026-09-22: the RUN was right and the CONCLUSION was about a different subject — a synthetic fixture proved what the tool does to the FIXTURE; I never opened the real callee's signature
+- [A second implementation DRIFTS](a-second-implementation-of-one-rule-drifts.md) — ⭐⭐ **17×**, newest 2026-09-22: `awk -F'|'` then `split("|")` on a backlog row, TWICE, while `check-docs.CELL_SPLIT` owns the rule and `gen-backlog-page.py` imports it. A weaker stand-in passes what it'd REFUSE. ⭐ **Ask which PART is slow** — `--mutate .` refuses a bad manifest in **<1s**, so the real gate IS the cheap pre-check
+- [⭐ The apparatus outgrew its subject](the-apparatus-outgrew-its-subject.md) — guards+tests **4.4×** the product; repo budgets PROSE, never guards; a branch shipped 46 browser-visible lines of 2,633

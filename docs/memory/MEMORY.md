@@ -3,7 +3,6 @@
 > One line per memory. **Every row loads on every turn; nothing filters them** (measured 2026-09-28), so write each hook as the SITUATION you would be in, not the subject it is about (backlog #191). History about this index lives in [[slice-history]].
 
 - [⭐ Launch roadmap](launch-roadmap-state.md) — **START HERE.** M1+M2+M3 closed. Prod ops + `claude_ro` recipe
-- [⭐⭐ #191 — semantic recall REPLICATED](backlog-191-semantic-recall-replicated.md) — lexical **3/20** vs semantic **20/20**, 0 false fires in 60. Triggers GOOD, matcher was the problem. 2 branches, neither merged
 - [TWO deliverables](project-has-two-deliverables.md) — ⭐ the product AND a reusable harness (`docs/portable-practices.md`)
 
 ## How things go wrong here (⭐ = costly, recurring)
@@ -12,7 +11,6 @@
 - [⭐⭐ A guard can MANDATE the duplication it audits](a-guard-can-mandate-the-duplication-it-audits.md) — deleting the stale copy went RED; 4 rounds could only reword. Ask what a guard FORBIDS
 - [⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — green says nothing about the BASE (use `origin/master`); a red is a STOP, it hid a second failure. ⭐ **Never read `$?` after a PIPE**, and `grep | head || echo MISSING` can NEVER fire. ⭐⭐ **A restore verified against WHAT I DID lost a 32KB review** — diff the old tip BEFORE `reset --hard`
 - [A tool's mode may REPLAY, not read](a-tool-whose-mode-replays-must-be-called-with-the-mode-that-reads.md) — goal-tree `--print` without `--snapshot` replays the log; `parse` wants LINES. Each bit me twice on 10-28
-- [⭐⭐ A signal needs its BASE RATE](a-signal-needs-its-base-rate.md) — 3× in ONE day: thrashing armed on **67%** of the corpus, `converged()` false **12 of 12**, and a grep that reported a false zero. The signals were all CORRECT; the inference was not
 - [⭐⭐ A sweeping conclusion that ends the work early](a-sweeping-conclusion-that-ends-the-work-early.md) — **2× in one session**, each refuted by the NEXT round: "0 in the verdict logic" and "the property is untestable". Both honest, both CONVENIENT. Ask: does this conclusion mean I can stop?
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
@@ -31,16 +29,15 @@
 - [⭐⭐ Assert the emitted artifact PARSES](assert-the-emitted-artifact-parses.md) — 201 cases green over invalid JS; every control dead, and the browser's "0 flips" read as success. `}{` balances
 - [⭐ A test that cannot fail](a-test-that-cannot-fail.md) — what observation makes this FAIL? Removing a signal hollows out its falsifier
 - [⭐⭐ Ask an agent to REFUTE, not confirm](ask-an-agent-to-refute-not-confirm.md) — 4-for-4 on 2026-09-23: the refuting prompts caught a wrong correction I had ALREADY PUBLISHED; the confirming one shipped a summary contradicting its own table. ⚠ The gap is VERIFICATION/RESEARCH agents — review halves already have a mandate (33 docs); I claimed otherwise without grepping
+- [⛔ About to start a review loop? Rounds are CAPPED](review-rounds-capped-at-r3.md) — owner 10-31: both halves r1, alternate r2-r3, r4+ FILE unless BLOCKER; r1-r3 caught 83% of fixes
 - [⭐ Dual review: what it catches](dual-review-what-it-catches.md) — halves NOT redundant; the finding-reviewer right 3/3; ⭐ and **review is the wrong instrument for a SURFACE** — 6 rounds ≈ 7 edge cases, one corpus run ≈ 5,287
 - [⭐⭐ Running Codex](running-codex.md) — a "timeout" is MY `--timeout`: DOUBLE it (900s default, 2700-3600 for big reviews). Run from the coordinator
 - [It exists under a name I didn't search](it-already-exists-under-a-name-i-didnt-search.md) — ⭐ 3× in ONE day. Check before proposing to BUILD
 - [Parallel branches, ONE log](parallel-branches-append-to-one-log.md) — ⭐ 3 same-day PRs: #1 clean, rest CONFLICT
 - [A report format is a CONTRACT](a-report-format-is-a-contract.md) — ⭐ "0 red cases" over a shape the harness can't parse
 - [⭐⭐ Negatives by INTERCEPTION can't terminate](proving-a-negative-by-interception-cannot-terminate.md) — FIVE unearned passes. PRE-COMMIT the retreat
-- [Passing for an AMBIENT reason](a-case-can-pass-for-an-ambient-reason.md) — ⭐⭐⭐ 4× then **5 MORE**; tell = NAME vs BODY. **Flip what the case names, check it reddens** — stating a falsifier is not running one
 - [⭐⭐ Two DISTINCT inputs, in ONE case](exercise-the-producer-at-two-distinct-inputs.md) — a case is satisfied by the CONSTANT its own fixture supplies. 3 rounds, 9 survivors; pairwise-distinct FIXTURES are the weaker rule that already failed
 - […and a CORPUS](a-measurement-is-only-as-good-as-its-corpus.md) — ⭐ 4×. Code did what I measured; I measured the wrong SET
-- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **12×, SIX of them in one session (2026-09-26)**: a grep filter, a wrapped line, an off-by-one `tail`, a wrong CSS class, CSS-uppercased text, and `gh` check states — **check a KNOWN POSITIVE before trusting a negative**, and ⛔ a fix inside a heredoc is not a class fix. 5×. `splitlines()` where the subject uses `split("\n")`. ⭐ 2026-09-22: the RUN was right and the CONCLUSION was about a different subject — a synthetic fixture proved what the tool does to the FIXTURE; I never opened the real callee's signature
 - [The CONTROL refuted the premise](the-control-refuted-the-premise.md) — ⭐⭐ "red → fix → green" is NOT a cause
 - [A mock tests the contract you IMAGINED](a-mocked-boundary-tests-the-contract-you-imagined.md) — ⭐ 2,808 green tests, 500s on first live press
 - [A privilege ≠ a CAPABILITY](a-privilege-is-not-a-capability.md) — ⭐ `has_table_privilege` said granted
@@ -55,7 +52,6 @@
 - [Positional reads need a VERIFIED shape](a-positional-read-needs-a-verified-shape.md) — ⭐ `cells[-2]` hit the wrong cell, closed 2 open items
 - [A hang isn't a diagnosis](a-hang-is-not-a-diagnosis.md) — ⭐ `nc -z` proves a listener accepts, not that it answers
 - [Separate the RULE from the FETCH](separate-the-rule-from-the-fetch.md) — ⭐ 3 ratchets untestable 8 days: the ENTRY POINT needed docker
-- [A second implementation DRIFTS](a-second-implementation-of-one-rule-drifts.md) — ⭐⭐ **17×**, newest 2026-09-22: `awk -F'|'` then `split("|")` on a backlog row, TWICE, while `check-docs.CELL_SPLIT` owns the rule and `gen-backlog-page.py` imports it. A weaker stand-in passes what it'd REFUSE. ⭐ **Ask which PART is slow** — `--mutate .` refuses a bad manifest in **<1s**, so the real gate IS the cheap pre-check
 - [Mechanical edits damage what they PRESERVE](a-mechanical-edit-damages-what-it-preserves.md) — ⭐ an AST pruner broke surviving code 3×
 - [⭐ The answer may only be in the TRANSCRIPT](the-answer-may-only-exist-in-the-transcript.md) — "what was the conclusion?" → grep `~/.claude/projects/<slug>/*.jsonl`, not just the docs. I reported "none recorded" and invented 4 directions; the real answer was one grep away
 - [An escalation has no closer](an-escalation-has-no-closer.md) — ⭐ only a REPLY closes it; work that MOOTS it leaves it standing
@@ -79,7 +75,6 @@
 
 ## Design & guard lessons
 
-- [⭐ The apparatus outgrew its subject](the-apparatus-outgrew-its-subject.md) — guards+tests **4.4×** the product; repo budgets PROSE, never guards; a branch shipped 46 browser-visible lines of 2,633
 
 - [One rule, one place](one-rule-one-place.md) — duplicate vocabulary shadows a duplicate mechanism; de-duplicating DROPS the clause the signature can't see
 - [anon EXECUTE is the DEFAULT](anon-execute-is-the-default-not-a-decision.md) — ⭐ anon-callable unless someone remembers
@@ -101,6 +96,10 @@
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⛔ About to REUSE a teammate or PARK an agent?](usage-is-cache-rewrites-of-parked-agents.md) — reused teammates were ~70% of weighted usage (cache RE-WRITES after idling); fresh agent per slice+round, coordinator /clear only at natural pauses (owner 10-30)
 - [⛔ About to make the owner approve/run a COMMAND?](no-command-approval-ceremony.md) — never; it's ceremony. Sandbox off only for network/docker; dry-run first; a backup ref/.bak before anything destructive (owner 10-30)
+- [⛔ About to spawn an Agent? Pick its MODEL](route-agents-by-task-model.md) — Sonnet for mechanical work (merges, round records, test pins, HOLD checks, logs); Opus for builds, design folds, Claude review halves. Owner 10-30: weekly 26% after 17h
+- [⛔ Briefing an agent that waits on a long job?](agent-blocking-call-over-5-min-rewrites-its-cache.md) — no tool call over ~270 s: agent cache expires at 5 min; re-writes were **19.2% of ALL usage** (11-01 audit). Background + poll in <270 s chunks
+- [⛔ Near a usage stop?](a-budget-stop-is-soft-with-a-reserve.md) — SOFT stop + PACE LINE (owner 11-01): start% + 1.5×remaining÷days-to-reset, from START-OF-DAY meter; last day 97; token items first; only whole items; ⛔ ARM a CronCreate one-shot ~00:07 before stopping, or nothing wakes me
+- [⛔ Writing '⏳ Waiting on…' or briefing a long job?](a-waiting-line-must-measure-age.md) — 3 stalls on 10-30: agents promised to report after a background job and never did; my waiting line never checked AGE. Foreground + one report AS THE FINAL TEXT (no SendMessage, reversed 11-01); stall check (#410)
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
 - [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
 - [⛔ Parallel threads need a GOAL TREE](parallel-threads-need-a-thread-map.md) — root = user request; each thread tagged fix/blocker/bookkeeping/side, named by backlog row (never reused T1/T2); one-line banner carries the tag

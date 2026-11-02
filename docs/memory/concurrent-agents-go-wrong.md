@@ -243,3 +243,5 @@ NOTHING: twice on PR #424 (r1 ran 2h32m; r3 ignored a 20-min draft deadline and 
 early" and was not obeyed because each long Bash call blocks the agent. **Give the Claude half a NARROW, non-overlapping
 mandate (e.g. prose + one named attack class) and leave the exhaustive sweep to Codex; or run the sweep myself in the
 background and hand the reviewer its output.** Record the gap honestly (`REVIEW GAP: claude`) rather than wait.
+
+**2026-10-30, a fourth instance: a REPORT is not the end of an agent you have since MESSAGED.** `fold-443-r2` reported at 13:28. My SendMessage with a late addition (F9) woke it, and it committed again at 13:29. In that same minute I edited the same row in its tree, believing it done. Its `git add` took my half-written edit, which split the row into 8 cells. **How to apply:** after sending an agent anything, treat its tree as LIVE until it sends another report; put a late addition in the NEXT round instead of editing alongside it.

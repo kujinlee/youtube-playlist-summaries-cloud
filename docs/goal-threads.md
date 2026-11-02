@@ -72,6 +72,16 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 ## GOAL token-usage-first
 > 2026-10-30 18:50 "For now, let's enhance token usage features first. As when we hit the limit, other optimization doesn't matter."
 > 2026-10-31 04:38 "yes. measure it to confirm our assumptions"
+> 2026-11-01 14:22 "4% saving is still big saving. You said you had blind spots so that you missed the duplicates issue. Try to find real impacts without blind spots."
+> 2026-11-01 15:38 "it would be better to be a little aggresive earlier than later days to reset"
 - fix · PR #453 · hook output trimmed and ledger entries carry an explicit kind, so each turn re-reads less context
 - side · backlog #407, PR #454 · mutation runs skip compaction-state's real-deadline cases, so the CI sweep is faster
 - fix · backlog #359, PR #455 · the mutation total is derived from the per-file pins, so open PRs stop colliding on one line
+- fix · backlog #434, PR #457 · Claude review halves write verdicts; review rounds are capped at round 3
+- fix · PR #458 · the always-loaded process docs are cut from 48 KB to 25 KB by moving history out, not rules
+- bookkeeping · PR #464 · an optimization register records each saving with its risk, signal and revert path
+- bookkeeping · PR #466 · the optimization register names each row's evidence source and decision rule
+- fix · backlog #440, PR #463 · an auto compaction waits for a work boundary, up to 1.5 x the window
+- fix · backlog #438, PR #465 · one command runs the per-PR gate set in one call
+- side · backlog #402, PR #450 · the self-test count check runs only what a branch changed locally
+- bookkeeping · PR #467 · the usage audit's findings filed as backlog #455 to backlog #461 and register rows
