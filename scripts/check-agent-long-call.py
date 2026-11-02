@@ -11,8 +11,9 @@ THE DECISION, for a PreToolUse payload (the first that applies wins):
 
     allow        the tool is not Bash
     NOT CHECKED  `tool_input` is not an object
-    allow        `run_in_background: true`, unless `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` is set (non-empty): the
-                 harness then runs the call in the FOREGROUND (`Qp()`/`Wye()` make `Xt` false)
+    allow        `run_in_background: true`, unless `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` is TRUE (a trimmed,
+                 case-insensitive `1`, `true`, `yes` or `on`; `false`, `0`, `banana` are not): the harness then runs
+                 the call in the FOREGROUND (`Qp()`/`Wye()` make `Xt` false)
     allow        the caller is not a subagent: no non-empty top-level `agent_id`. The ONE reader of that field is
                  `check-usage-pace.sent_by_subagent`, imported, never re-derived. MEASURED here on Claude Code
                  2.1.309, 2026-11-01, with a marker hook dumping its stdin in a throwaway `claude -p`: the main
@@ -39,7 +40,7 @@ THE EFFECTIVE TIMEOUT, read from the 2.1.309 binary (`strings`; minified names, 
     fde()       BASH_DEFAULT_TIMEOUT_MS read by yu(); used if not NaN and > 0, else 120000
     gMe()       BASH_MAX_TIMEOUT_MS read by yu(); if not NaN and > 0, Math.max(it, fde()); else
                 Math.max(600000, fde())
-    yu(s)       s trimmed; at most 32 characters and exponent form (`1e6`) -> Number(s) if an integer, else
+    yu(s)       String(s).trim() (JavaScript's: the BOM U+FEFF is trimmed, U+0085 is not; see JS_WHITESPACE); at most 32 characters and exponent form (`1e6`) -> Number(s) if an integer, else
                 NaN; at most 32 and a thousands form (`300,000`, `_` or a no-break space) -> the digits;
                 otherwise parseInt(s, 10), so `300000ms` is 300000 and `inf` is NaN
     `timeout`   schema `v0(E().optional())`: v0 turns a trimmed `^[-+]?[0-9]+([.][0-9]+)?$` string into its number,
@@ -47,8 +48,10 @@ THE EFFECTIVE TIMEOUT, read from the 2.1.309 binary (`strings`; minified names, 
 
   So `timeout: 0` is the default (`Rt || kQ()`), a NEGATIVE timeout passes through Math.min and cannot block, and
   without a valid `BASH_MAX_TIMEOUT_MS` the cap is at least 600000, over 270000, so that cap cannot change a
-  verdict and is not modelled. A non-positive env value is the default in the harness; the hook does not test for
-  it, because a value at or below 0 is under 270000 either way. `maxTimeoutMs` (a per-session option) only lowers
+  verdict and is not modelled. A NON-POSITIVE env value is NOT valid in the harness (`!isNaN(t)&&t>0`): a
+  `BASH_MAX_TIMEOUT_MS` of 0 or -1 leaves the 600000 cap, it does not lower the cap to the default (r2 Codex 1), and a
+  non-positive `BASH_DEFAULT_TIMEOUT_MS` is 120000 (no verdict differs there, so no case pins it). Both readers test it. `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` is
+  `M.bool()` = `Ne()`: `String(v).toLowerCase().trim()` in [1, true, yes, on]. `maxTimeoutMs` (a per-session option) only lowers
   the bound, so the hook's figure is an upper bound.
 
 ⚠ NOT CHECKED, ALLOWED, AND SAID. A payload that is not a JSON object, a `tool_input` that is not one, or a
@@ -65,7 +68,7 @@ not captured; read statically from the binary (r1 review), its tool-use context 
 hook input builder copies to `agent_id`.
 
     python3 scripts/check-agent-long-call.py --hook < payload.json
-    python3 scripts/check-agent-long-call.py --self-test  # 37 cases
+    python3 scripts/check-agent-long-call.py --self-test  # 43 cases
 
 EXIT CODES: `--hook` 0 = allowed (silent) or denied (the decision on stdout as JSON) · 1 = NOT CHECKED.
 
@@ -98,6 +101,11 @@ THOUSANDS_FORM = re.compile(r"[+-]?\d{1,3}([_,   ])\d{3}(?:\1\d{3})*", re.ASC
 THOUSANDS_SEP = re.compile(r"[_,   ]")
 INT_PREFIX = re.compile(r"[+-]?\d+", re.ASCII)
 NUMERIC_STRING = re.compile(r"[-+]?\d+(\.\d+)?", re.ASCII)
+# JavaScript's String.prototype.trim: WhiteSpace + LineTerminator. Python's str.strip() differs both ways: it
+# trims U+001C-U+001F and U+0085, which JS does not, and it does not trim the BOM U+FEFF, which JS does.
+JS_WHITESPACE = ("\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+                 "\u2028\u2029\u202f\u205f\u3000\ufeff")
+TRUE_WORDS = ("1", "true", "yes", "on")
 
 ADVICE = (
     "An agent's prompt cache lives 5 minutes; a call that blocks past it makes your NEXT call re-write the "
@@ -111,9 +119,19 @@ class Unreadable(ValueError):
     """The call cannot be judged: the hook says NOT CHECKED and allows it."""
 
 
+def js_trim(s: str) -> str:
+    """JavaScript's `String.prototype.trim`."""
+    return s.strip(JS_WHITESPACE)
+
+
+def harness_bool(v) -> bool:
+    """The harness's `Ne()` (`M.bool()`): true only for a trimmed, case-insensitive 1, true, yes or on."""
+    return js_trim(str(v).lower()) in TRUE_WORDS if v else False
+
+
 def harness_int(s: str) -> float | None:
     """The harness's `yu()`: an env value as the number it uses, or None where it reads NaN."""
-    n = s.strip()
+    n = js_trim(s)
     if len(n) <= 32:
         if EXP_FORM.fullmatch(n):
             v = float(n)
@@ -125,21 +143,21 @@ def harness_int(s: str) -> float | None:
 
 
 def default_timeout_ms(env: dict) -> float:
-    """The harness's `fde()`."""
+    """The harness's `fde()`: a valid (not NaN, above 0) BASH_DEFAULT_TIMEOUT_MS, else 120000."""
     v = harness_int(env.get("BASH_DEFAULT_TIMEOUT_MS", ""))
-    return DEFAULT_TIMEOUT_MS if v is None else v
+    return v if v is not None and v > 0 else DEFAULT_TIMEOUT_MS
 
 
 def effective_timeout_ms(tool_input: dict, env: dict) -> float:
     """The longest this foreground call can block, in ms: `Math.min(Rt || fde(), gMe())`."""
     t = tool_input.get("timeout")
-    if isinstance(t, str) and NUMERIC_STRING.fullmatch(t.strip()):
-        t = float(t.strip())
+    if isinstance(t, str) and NUMERIC_STRING.fullmatch(js_trim(t)):
+        t = float(js_trim(t))
     if "timeout" in tool_input and not is_number(t):
         raise Unreadable(f"its timeout {tool_input['timeout']!r} is not a number of milliseconds")
     requested = t or default_timeout_ms(env)
     cap = harness_int(env.get("BASH_MAX_TIMEOUT_MS", ""))
-    return requested if cap is None else min(requested, max(cap, default_timeout_ms(env)))
+    return requested if cap is None or not cap > 0 else min(requested, max(cap, default_timeout_ms(env)))
 
 
 def decide(doc: dict, env: dict) -> str | None:
@@ -149,7 +167,8 @@ def decide(doc: dict, env: dict) -> str | None:
     ti = doc.get("tool_input")
     if not isinstance(ti, dict):
         raise Unreadable(f"its tool_input is not an object ({type(ti).__name__})")
-    if ti.get("run_in_background") is True and not env.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"):
+    if ti.get("run_in_background") is True and not harness_bool(
+            env.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")):
         return None
     if not sent_by_subagent(json.dumps(doc)):
         return None
@@ -244,6 +263,13 @@ def _self_test_body() -> int:
          verdict(p("make"), {"BASH_MAX_TIMEOUT_MS": "100000", "BASH_DEFAULT_TIMEOUT_MS": "300000"}), "deny")
     case("an env value is read by parseInt: '300000ms' is 300000", dflt("300000ms"), "deny")
     case("an env value is trimmed first: ' 300000' is 300000", dflt(" 300000"), "deny")
+    case("JS trim removes the BOM: '\\ufeff300000' is 300000", dflt("\ufeff300000"), "deny")
+    case("JS trim keeps U+0085: '\\x85300000' is NaN, so the default", dflt("\x85300000"), "allow")
+    case("a numeric-string timeout is trimmed as JS does: BOM trimmed, U+0085 refused",
+         [verdict(p("make", timeout="\ufeff300000")), verdict(p("make", timeout="\x85300000"))],
+         ["deny", "not checked"])
+    case("a non-positive BASH_MAX_TIMEOUT_MS is not valid: the 600000 cap stays (0, -1)",
+         [verdict(p("make", timeout=300000), {"BASH_MAX_TIMEOUT_MS": v}) for v in ("0", "-1")], ["deny"] * 2)
     case("an env value with no leading digits is NaN, so the default", dflt("inf"), "allow")
     case("an env value in exponent form is its number: '1e6'", dflt("1e6"), "deny")
     case("an exponent form that is not an integer is NaN, so the default", dflt("3.000001e5"), "allow")
@@ -255,6 +281,12 @@ def _self_test_body() -> int:
     case("run_in_background is ignored when CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is set",
          verdict(p("make", timeout=600000, run_in_background=True), {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}),
          "deny")
+    case("a false-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ('false', '0', 'banana') keeps the exemption",
+         [verdict(p("make", timeout=600000, run_in_background=True), {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": v})
+          for v in ("false", "0", "banana")], ["allow"] * 3)
+    case("a true-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is trimmed and case-insensitive",
+         [verdict(p("make", timeout=600000, run_in_background=True), {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": v})
+          for v in (" TRUE ", "Yes", "ON", "1\ufeff")], ["deny"] * 4)
     case("run_in_background: false is still gated", verdict(p("make", timeout=600000, run_in_background=False)),
          "deny")
     case("the MAIN session (no agent_id) is never denied", verdict(p("make", agent=False, timeout=600000)), "allow")

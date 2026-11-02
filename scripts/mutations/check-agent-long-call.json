@@ -30,7 +30,7 @@
     "file": "scripts/check-agent-long-call.py",
     "edits": [
       [
-        "    if isinstance(t, str) and NUMERIC_STRING.fullmatch(t.strip()):",
+        "    if isinstance(t, str) and NUMERIC_STRING.fullmatch(js_trim(t)):",
         "    if False:"
       ]
     ],
@@ -43,7 +43,7 @@
     "file": "scripts/check-agent-long-call.py",
     "edits": [
       [
-        "NUMERIC_STRING.fullmatch(t.strip())",
+        "NUMERIC_STRING.fullmatch(js_trim(t))",
         "NUMERIC_STRING.fullmatch(t)"
       ]
     ],
@@ -148,7 +148,7 @@
     "file": "scripts/check-agent-long-call.py",
     "edits": [
       [
-        "requested if cap is None else",
+        "requested if cap is None or not cap > 0 else",
         "requested if True else"
       ]
     ],
@@ -187,7 +187,7 @@
     "file": "scripts/check-agent-long-call.py",
     "edits": [
       [
-        "    n = s.strip()",
+        "    n = js_trim(s)",
         "    n = s"
       ]
     ],
@@ -278,8 +278,8 @@
     "file": "scripts/check-agent-long-call.py",
     "edits": [
       [
-        "and not env.get(\"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS\")",
-        "and True"
+        "and not harness_bool(\n            env.get(\"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS\")):",
+        "and True:"
       ]
     ],
     "expect": [
@@ -375,6 +375,97 @@
     ],
     "expect": [
       "the denial names the cause and the remedy"
+    ]
+  },
+  {
+    "name": "a non-positive BASH_MAX_TIMEOUT_MS is accepted as the cap",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "or not cap > 0 else",
+        "else"
+      ]
+    ],
+    "expect": [
+      "a non-positive BASH_MAX_TIMEOUT_MS is not valid: the 600000 cap stays (0, -1)"
+    ]
+  },
+  {
+    "name": "trimming is Python's strip(), not JavaScript's",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "    return s.strip(JS_WHITESPACE)",
+        "    return s.strip()"
+      ]
+    ],
+    "expect": [
+      "JS trim removes the BOM: '\\ufeff300000' is 300000"
+    ]
+  },
+  {
+    "name": "U+0085 is trimmed as Python does",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "\\u3000\\ufeff\")",
+        "\\u3000\\ufeff\\u0085\")"
+      ]
+    ],
+    "expect": [
+      "JS trim keeps U+0085: '\\x85300000' is NaN, so the default"
+    ]
+  },
+  {
+    "name": "a numeric-string timeout is trimmed with Python's strip",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "NUMERIC_STRING.fullmatch(js_trim(t)):\n        t = float(js_trim(t))",
+        "NUMERIC_STRING.fullmatch(t.strip()):\n        t = float(t.strip())"
+      ]
+    ],
+    "expect": [
+      "a numeric-string timeout is trimmed as JS does: BOM trimmed, U+0085 refused"
+    ]
+  },
+  {
+    "name": "any non-empty CLAUDE_CODE_DISABLE_BACKGROUND_TASKS disables the exemption",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "js_trim(str(v).lower()) in TRUE_WORDS if v else False",
+        "bool(v)"
+      ]
+    ],
+    "expect": [
+      "a false-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ('false', '0', 'banana') keeps the exemption"
+    ]
+  },
+  {
+    "name": "the disable flag is not trimmed",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "js_trim(str(v).lower()) in TRUE_WORDS",
+        "str(v).lower() in TRUE_WORDS"
+      ]
+    ],
+    "expect": [
+      "a true-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is trimmed and case-insensitive"
+    ]
+  },
+  {
+    "name": "a true word is dropped from the disable flag's set",
+    "file": "scripts/check-agent-long-call.py",
+    "edits": [
+      [
+        "TRUE_WORDS = (\"1\", \"true\", \"yes\", \"on\")",
+        "TRUE_WORDS = (\"1\", \"true\", \"yes\")"
+      ]
+    ],
+    "expect": [
+      "a true-valued CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is trimmed and case-insensitive"
     ]
   }
 ]

@@ -2165,7 +2165,7 @@ EXPECTED_MUTATIONS = {
     # backlog #455 (2026-11-01): a subagent's foreground Bash call that can block past 270 s is refused. Pinned in the
     # commit that creates it (21). ⟳ r1 fold: the sleep and watch rules removed, the effective timeout read the way
     # the harness reads it — one entry per clause of that reading, the exemptions, the deny JSON and NOT CHECKED: 29.
-    "scripts/check-agent-long-call.py": 29,
+    "scripts/check-agent-long-call.py": 36,
     "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
