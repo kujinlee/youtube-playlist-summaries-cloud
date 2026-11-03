@@ -1068,7 +1068,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #484 round-1 fold: 83 -> 102 — the fate is read only from a MARKER (r1 H1/M1: six entries
     # replaced by fourteen on the marker grammar, pointer, code span, `Previously:`, emphasis glyph, bold and
     # the Items table), plus each ref's own state (r1 M2/M3, Codex 4: ten) and a missing row (Codex 3).
-    "scripts/goal-tree.py": 102,
+    # ⟳ backlog #484 round-2 fold: 102 -> 112 — code spans by matching backtick runs, the cut at the FIRST
+    # `Previously:` and its order after the strip (r2 X1/X2: four), a fate beside an unlisted PR (r2 X3),
+    # and a later bold REOPENED cancelling a marker (r2 note: five). Five r1 entries were re-anchored.
+    "scripts/goal-tree.py": 112,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

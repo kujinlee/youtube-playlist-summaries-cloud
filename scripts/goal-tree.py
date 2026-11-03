@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 192 cases
+    python3 scripts/goal-tree.py --self-test                 # 200 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -127,12 +127,20 @@ GLYPH = {"merged": "✅", "open": "⏳", "inflight": "⏳", "next": "⬜", "bloc
 # a Status cell is append-only prose, and it quotes, negates and narrates the word (row 484's own cell does,
 # and an any-word read printed it ✖ withdrawn — r1 H1). A marker is `**SUPERSEDED` / `**WITHDRAWN`, bold and
 # in capitals, either LEADING the cell (after an optional glyph and `(was X)`) or led by a closing glyph ✅ /
-# ✖ — the form the 2026-10-26 audit APPENDED to rows 124, 125, 127, 189 and 213. A glyph-led marker after
-# `Previously: ` is history, not the row's state. Code spans are removed first, so a quoted marker is inert.
-# ⚠ BOUND: a row superseded by an appended marker and later REOPENED by an appended clause still reads as
-# superseded — the backlog's reopen convention moves the old state behind `Previously:`, which is honoured.
-FATE_RE = re.compile(r"(?:^\s*(?:[✅✖]\ufe0f?\s*)?|(?<!Previously: )[✅✖]\ufe0f?\s*)(?:\(was[^)]*\)\s*)?"
+# ✖ — the form the 2026-10-26 audit APPENDED to rows 124, 125, 127, 189 and 213. Markers are matched in
+# `fate_text(status)`, never the raw cell: code spans are removed FIRST (CommonMark: a run of N backticks
+# closes only on a run of exactly N, r2 X2), so a quoted marker — or a quoted `Previously:` — is inert; THEN
+# the cell is cut at its first `Previously:`, so everything after it is history (r2 X1). A marker is
+# cancelled by a LATER bold span that leads with REOPENED (optionally after a date and a dash) — row 327's
+# `⟳ **2026-10-25 — REOPENED BY THE OWNER…**` shape, appended after its supersession prose (r2 note).
+# ⚠ BOUND: a reopen written any other way (lowercase, unbolded, or not leading its bold span) is not seen,
+# and a backslash-escaped backtick is treated as a delimiter.
+FATE_RE = re.compile(r"(?:^\s*(?:[✅✖]\ufe0f?\s*)?|[✅✖]\ufe0f?\s*)(?:\(was[^)]*\)\s*)?"
                      r"\*\*(SUPERSEDED|WITHDRAWN)\b([^*]*)")
+CODE_SPAN_RE = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)", re.S)
+HISTORY_CUT = "Previously:"
+BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+REOPEN_RE = re.compile(r"\s*(?:\d{4}-\d{2}-\d{2}\s*[—–-]\s*)?REOPENED\b")
 # The forward pointer, read only INSIDE the marker's bold span: `by backlog #M`, or several (`#328/#329`).
 POINTER_RE = re.compile(r"\bby backlog (#\d+(?:\s*(?:/|,|and|&)\s*#\d+)*)")
 # The table a `backlog #N` ref names. The second table (`## Found during testing`) reuses Items' numbers (r1 L1).
@@ -581,6 +589,18 @@ def open_plans(plans: list[dict], wl) -> list[dict]:
     return sorted(out, key=lambda r: (r["touched"], r["plan"]), reverse=True)
 
 
+def fate_text(status: str) -> str:
+    """PURE. The part of a Status cell a fate marker is read from: code spans removed FIRST (matching backtick
+    runs, CommonMark-style), THEN cut at the first `Previously:` — everything after it is history (r2 X1, X2)."""
+    return CODE_SPAN_RE.sub("", status).split(HISTORY_CUT, 1)[0]
+
+
+def _reopened_after(t: str, m) -> bool:
+    """PURE. True when a bold span AFTER the marker `m` (its own closing `**` skipped) leads with REOPENED."""
+    start = m.end() + (2 if t.startswith("**", m.end()) else 0)
+    return any(REOPEN_RE.match(b.group(1)) for b in BOLD_RE.finditer(t, start))
+
+
 # ── reading the world (the only impure part) ──────────────────────────────────────────────────
 def row_fates(text: str) -> tuple[dict, list[str]]:
     """PURE. ({row: (state, detail) or None}, problems) for EVERY row of the Items table (backlog #484), read
@@ -594,7 +614,8 @@ def row_fates(text: str) -> tuple[dict, list[str]]:
     for r in gb.parse(text.split("\n"), unread):
         if r["section"] != ITEMS_SECTION:
             continue
-        marks = [m for m in FATE_RE.finditer(re.sub(r"`[^`]*`", "", r["status"]))]
+        t = fate_text(r["status"])
+        marks = [m for m in FATE_RE.finditer(t) if not _reopened_after(t, m)]
         sup = next((m for m in marks if m.group(1) == "SUPERSEDED"), None)
         if sup:
             ptr = POINTER_RE.search(sup.group(2))
@@ -1293,6 +1314,39 @@ def _self_test_body() -> int:
          [lead(s) for s in ("🟠 **OPEN** — reopened. Previously: ✅ **SUPERSEDED by backlog #12**",
                             "✅ **FIXED** — a cell like `✅ **SUPERSEDED by backlog #12**` prints ✖")],
          ["merged aaaa111"] * 2)
+    case("⛔ backlog #484 (r2 X1): the cell is CUT at its first `Previously:` — prose, spaces, several markers",
+         [lead(s) for s in ("🟠 **OPEN** — reopened. Previously: pending — ✅ **SUPERSEDED by backlog #12**",
+                            "🟠 **OPEN** — reopened. Previously:   ✅ **SUPERSEDED by backlog #12**",
+                            "🟠 **OPEN**. Previously: ✖ **WITHDRAWN 2026-10-01** — then ✅ **SUPERSEDED by backlog "
+                            "#12** — x",
+                            "🟠 **OPEN**. Previously: ✅ **SUPERSEDED by backlog #12**. Previously: pending")],
+         ["merged aaaa111"] * 4)
+    case("backlog #484 (r2 X1) adjacent: a marker BEFORE `Previously:` is still read",
+         lead("pending — ✅ **SUPERSEDED by backlog #12** — Previously: 🟠 **OPEN**"),
+         "superseded → backlog #12 · merged aaaa111")
+    case("⛔ backlog #484 (r2 X2): a code span of N backticks closes only on N — double, triple, an inner backtick",
+         [lead(s) for s in ("✅ **FIXED** — use ``✅ **SUPERSEDED by backlog #12**`` as an example",
+                            "✅ **FIXED** — use `` a`b ✅ **SUPERSEDED by backlog #12** `` as an example",
+                            "✅ **FIXED** — ```✖ **WITHDRAWN**``` x")],
+         ["merged aaaa111"] * 3)
+    case("backlog #484 (r2 X2) adjacent: an UNCLOSED run is literal, and two spans do not swallow what is between",
+         [lead(s) for s in ("✅ **FIXED** `` unclosed ✅ **SUPERSEDED by backlog #12** — and `x`",
+                            "`a` ✅ **SUPERSEDED by backlog #12** `b`")],
+         ["superseded → backlog #12 · merged aaaa111"] * 2)
+    case("backlog #484 (r2): code spans go FIRST — a QUOTED `Previously:` does not cut the cell",
+         lead("🟠 **OPEN** — the `Previously:` rule; ✅ **SUPERSEDED by backlog #12**"),
+         "superseded → backlog #12 · merged aaaa111")
+    case("⛔ backlog #484 (r2 note): a LATER bold span leading with REOPENED cancels the fate (row 327's shape)",
+         [lead(s) for s in ("deferred — ✅ **SUPERSEDED by backlog #328/#329** (x). ⟳ **2026-10-25 — REOPENED BY "
+                            "THE OWNER, and the question is now KEEP**",
+                            "✖ **WITHDRAWN 2026-11-01** — x. **REOPENED 2026-11-02** — y")],
+         ["merged aaaa111"] * 2)
+    case("backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing",
+         [lead(s) for s in ("⟳ **REOPENED 2026-10-25** — x ✅ **SUPERSEDED by backlog #12**",
+                            "✅ **SUPERSEDED by backlog #12** REOPENED in prose, then **FIXED**",
+                            "✅ **SUPERSEDED by backlog #12** — **owner: NOT REOPENED**",
+                            "✅ **SUPERSEDED by backlog #11** **REOPENED** ✅ **SUPERSEDED by backlog #12**")],
+         ["superseded → backlog #12 · merged aaaa111"] * 4)
     case("backlog #484: a marker led by an EMPHASIS glyph is not a fate (rows 48 and 213's other clauses)",
          [lead(s) for s in ("✅ **CLOSED 2026-08-21** ⟳⛔ **SUPERSEDED BY EVENTS 2026-08-24**",
                             "🔴 **OPEN** ⛔⟳ **SUPERSEDED AS THE REMEDY 2026-10-01**")],
@@ -1341,6 +1395,9 @@ def _self_test_body() -> int:
          [("superseded", "superseded → backlog #12 · no PR names it yet"), ("withdrawn", "withdrawn · no PR names it yet")])
     case("⛔ backlog #484 (r1 M3.4): an OPEN PR beats a fate — ⏳ stays, the fate is named",
          [multi("- fix · backlog #10, PR #21 · f\n", r10=f)[0] for f in (SUP, WD)], ["open", "open"])
+    case("⛔ backlog #484 (r2 X3): a PR gh did not list beats a fate — ❓ notfound stays, the fate is named",
+         [multi("- fix · backlog #10, PR #999 · f\n", r10=f) for f in (SUP, WD)],
+         [("notfound", f"{f[1]} · PR #999 is not among the {ALL_LIMIT} newest PRs gh listed") for f in (SUP, WD)])
     case("⛔ backlog #484: an IN-FLIGHT entry beats a fate — ⏳ stays, the fate is named",
          [one("- fix · backlog #10 · f\n", src(fates={10: f}, ledger=[{"what": "x (backlog #10)"}]))["state"]
           for f in (SUP, WD)], ["inflight", "inflight"])

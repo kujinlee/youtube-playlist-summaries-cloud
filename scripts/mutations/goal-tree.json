@@ -1052,8 +1052,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "re.sub(r\"`[^`]*`\", \"\", r[\"status\"])",
-        "r[\"status\"]"
+        "return CODE_SPAN_RE.sub(\"\", status).split",
+        "return status.split"
       ]
     ],
     "expect": [
@@ -1065,12 +1065,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(?<!Previously: )",
+        ".split(HISTORY_CUT, 1)[0]",
         ""
       ]
     ],
     "expect": [
-      "backlog #484: a marker after `Previously: `, or inside a code span, is history or quotation — not read"
+      "⛔ backlog #484 (r2 X1): the cell is CUT at its first `Previously:` — prose, spaces, several markers"
     ]
   },
   {
@@ -1078,8 +1078,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "|(?<!Previously: )[✅✖]",
-        "|(?<!Previously: )[✅✖⛔]"
+        "|[✅✖]",
+        "|[✅✖⛔]"
       ]
     ],
     "expect": [
@@ -1091,7 +1091,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "|(?<!Previously: )[✅✖]\\ufe0f?\\s*)(?:",
+        "|[✅✖]\\ufe0f?\\s*)(?:",
         ")(?:"
       ]
     ],
@@ -1130,8 +1130,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"\", r[\"status\"]))]",
-        "\"\", r[\"body\"] + \" \" + r[\"status\"]))]"
+        "fate_text(r[\"status\"])",
+        "fate_text(r[\"body\"] + \" \" + r[\"status\"])"
       ]
     ],
     "expect": [
@@ -1331,6 +1331,136 @@
     ],
     "expect": [
       "⛔ backlog #484: a partly unreadable backlog leaves no fates, so a backlog leaf is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a code span is a single-backtick pair, not a matching run (r2 X2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "re.compile(r\"(?<!`)(`+)(?!`)(.*?)(?<!`)\\1(?!`)\", re.S)",
+        "re.compile(r\"`[^`]*`\")"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X2): a code span of N backticks closes only on N — double, triple, an inner backtick"
+    ]
+  },
+  {
+    "name": "an opening backtick run may shorten to pair with a shorter closer",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(`+)(?!`)(.*?)",
+        "(`+)(.*?)"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 X2) adjacent: an UNCLOSED run is literal, and two spans do not swallow what is between"
+    ]
+  },
+  {
+    "name": "the cell is cut at Previously: BEFORE code spans are removed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return CODE_SPAN_RE.sub(\"\", status).split(HISTORY_CUT, 1)[0]",
+        "return CODE_SPAN_RE.sub(\"\", status.split(HISTORY_CUT, 1)[0])"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2): code spans go FIRST — a QUOTED `Previously:` does not cut the cell"
+    ]
+  },
+  {
+    "name": "the cell is cut at its LAST Previously:, not its first",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "status).split(HISTORY_CUT",
+        "status).rsplit(HISTORY_CUT"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X1): the cell is CUT at its first `Previously:` — prose, spaces, several markers"
+    ]
+  },
+  {
+    "name": "a fate hides a PR gh did not list (r2 X3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "live_rows and state in (\"merged\", \"next\", \"closed\"):",
+        "live_rows and state in (\"merged\", \"next\", \"closed\", \"notfound\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 X3): a PR gh did not list beats a fate — ❓ notfound stays, the fate is named"
+    ]
+  },
+  {
+    "name": "a later REOPENED bold span does not cancel the fate",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "FATE_RE.finditer(t) if not _reopened_after(t, m)]",
+        "FATE_RE.finditer(t)]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 note): a LATER bold span leading with REOPENED cancels the fate (row 327's shape)"
+    ]
+  },
+  {
+    "name": "a reopen with a leading date is not read (row 327's real shape)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?:\\d{4}-\\d{2}-\\d{2}\\s*[—–-]\\s*)?REOPENED",
+        "REOPENED"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r2 note): a LATER bold span leading with REOPENED cancels the fate (row 327's shape)"
+    ]
+  },
+  {
+    "name": "the marker's own closing ** opens the reopen scan",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "m.end() + (2 if t.startswith(\"**\", m.end()) else 0)",
+        "m.end()"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
+    ]
+  },
+  {
+    "name": "a reopen BEFORE the marker cancels it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "BOLD_RE.finditer(t, start)",
+        "BOLD_RE.finditer(t)"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
+    ]
+  },
+  {
+    "name": "REOPENED anywhere in a later bold span cancels the fate",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "REOPEN_RE.match(b.group(1))",
+        "REOPEN_RE.search(b.group(1))"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
     ]
   }
 ]
