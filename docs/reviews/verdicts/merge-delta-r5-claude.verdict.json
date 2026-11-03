@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 e68a1ab6332dded0d9e7c08373dce71e9e7c082d",
+    "docs/reviews/claude/merge-delta-r5-claude.md": "100644 d767ec8520c5ec11c18dd771775454ec5445bc71"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "c00590ea2dee27360d0a18ab9124cbf6ad2f4ba2",
+  "intrusions": [],
+  "model": null,
+  "prompt": "r5 final-tree Claude half, PR #491",
+  "reason": "claude half filed: 6203 chars, names c00590ea2dee",
+  "refused": false,
+  "review": "merge-delta-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-426",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
