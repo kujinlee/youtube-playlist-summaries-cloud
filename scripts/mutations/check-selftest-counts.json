@@ -241,8 +241,8 @@
     "file": "scripts/check-selftest-counts.py",
     "edits": [
       [
-        "        for name in sorted(pinned & found if only is None else pinned & found & only):",
-        "        for name in sorted(pinned & found):"
+        "    names = sorted(pinned & found if only is None else pinned & found & only)",
+        "    names = sorted(pinned & found)"
       ]
     ],
     "expect": [
@@ -300,6 +300,86 @@
     "expect": [
       "string and import edges are BOTH closed to a fixpoint",
       "helper -> (import) -> script loaded by path -> suite is reached"
+    ]
+  },
+  {
+    "name": "#487: the pool runs one suite at a time",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:",
+        "    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:"
+      ]
+    ],
+    "expect": [
+      "two suites run AT ONCE in a pool of two"
+    ]
+  },
+  {
+    "name": "#487: outcomes are returned in completion order",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return [outcomes[name] for name in names]",
+        "    return list(outcomes.values())"
+      ]
+    ],
+    "expect": [
+      "outcomes come back in the given order, not completion order"
+    ]
+  },
+  {
+    "name": "#487: a worker that raises reads as a pass",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "                outcomes[name] = (\"cannot\", f\"{name}: the check itself crashed \"",
+        "                outcomes[name] = None and (\"cannot\", f\"{name}: the check itself crashed \""
+      ]
+    ],
+    "expect": [
+      "a worker that RAISES is CANNOT RUN, never a pass",
+      "a suite that cannot START is CANNOT RUN, never a pass"
+    ]
+  },
+  {
+    "name": "#487: every suite shares one home",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "            return check_one(root / \"scripts\" / name, child_env(Path(td)), count_drift, run)",
+        "            return check_one(root / \"scripts\" / name, child_env(root), count_drift, run)"
+      ]
+    ],
+    "expect": [
+      "every suite runs under its OWN home, never a shared one"
+    ]
+  },
+  {
+    "name": "#487: the pool ignores the host's core count",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "    return max(1, min(want, cpus or 1))",
+        "    return max(1, want)"
+      ]
+    ],
+    "expect": [
+      "the pool never exceeds the host's cores",
+      "an unknown core count runs serially, never zero workers"
+    ]
+  },
+  {
+    "name": "#487: a timed-out suite is skipped as a pass",
+    "file": "scripts/check-selftest-counts.py",
+    "edits": [
+      [
+        "        return (\"cannot\", f\"{name}: --self-test did not finish. NOT CHECKED.\")",
+        "        return None"
+      ]
+    ],
+    "expect": [
+      "a TIMED-OUT suite in the pool is CANNOT RUN, never a pass"
     ]
   }
 ]

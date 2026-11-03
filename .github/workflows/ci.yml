@@ -708,8 +708,10 @@ jobs:
       # compares what it PRINTED with what its docstring DECLARES, the same way
       # check-test-counts.py treats the jest suite. Five of the nine declarations were stale on the
       # first run; it also caught a defect in itself, which is why it is in its own population.
+      # Backlog #487: the suites run four at a time (ubuntu-latest has 4 vCPUs; the script caps the
+      # pool at the host's cores). Serially this step took 167-197 s. It still RE-RUNS every suite.
       - name: Declared self-test counts match the suites
-        run: python3 scripts/check-selftest-counts.py
+        run: python3 scripts/check-selftest-counts.py --jobs 4
 
       - name: check-selftest-counts self-test
         run: python3 scripts/check-selftest-counts.py --self-test

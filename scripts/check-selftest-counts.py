@@ -52,7 +52,8 @@ FAILS IF
   * a declared count disagrees with the count the suite printed;
   * a pinned script no longer declares a count, or an unpinned script starts to;
   * a child suite exits non-zero (its own cases are red — the count means nothing);
-  * a child prints no parseable `N/M … passed` line  -> exit 2, CANNOT RUN, never a pass.
+  * a child prints no parseable `N/M … passed` line  -> exit 2, CANNOT RUN, never a pass;
+  * a child times out, or the check of one crashes inside the pool -> exit 2, CANNOT RUN.
 
 SCOPED MODE — THE LOCAL GATE (backlog #402)
 --------------------------------------------
@@ -74,18 +75,29 @@ eight days, while CI runs it on every PR anyway. So locally the gate is SCOPED:
 
 The unscoped run stays CI's (`.github/workflows/ci.yml`), unchanged.
 
+THE SUITES RUN IN A POOL (backlog #487)
+----------------------------------------
+Measured on docs-only CI runs, the serial loop took 167 s and 197 s of a 6–7 min `verify` job. The
+suites are independent subprocesses, so `--jobs N` (default 4, capped at the host's cores) runs them
+at once. It still RE-RUNS every suite — reusing `verify`'s results would cost the independence this
+script exists for (backlog #69). Each suite gets its OWN temp HOME, the report is in name order
+whatever finished first, and a worker that raises or a suite that times out is CANNOT RUN.
+
 Usage:
     python3 scripts/check-selftest-counts.py                       # every pinned suite (CI)
     python3 scripts/check-selftest-counts.py --changed             # the local gate
     python3 scripts/check-selftest-counts.py --changed --base <ref>
     python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
-    python3 scripts/check-selftest-counts.py --self-test  # 40 cases
+    python3 scripts/check-selftest-counts.py --jobs 1                # serially
+    python3 scripts/check-selftest-counts.py --self-test  # 50 cases
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import concurrent.futures
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -436,39 +448,89 @@ def printed_total(out: str) -> int | None:
     return total
 
 
+# ── the pool (backlog #487) ─────────────────────────────────────────────────────────────────────
+# MEASURED on docs-only CI runs: this step took 167 s and 197 s of a 6–7 min `verify` job, because it
+# ran every pinned suite ONE AFTER ANOTHER. The suites are independent subprocesses, so they now run
+# in a bounded pool. ⛔ It still RE-RUNS every suite; reusing `verify`'s own results would make this
+# a less independent observer, which is the whole of backlog #69.
+DEFAULT_JOBS = 4   # ubuntu-latest has 4 vCPUs; capped below by the host's count either way
+
+
+def pool_size(requested: int | None, cpus: int | None) -> int:
+    """How many suites run at once: the request (default DEFAULT_JOBS), never more than the host's
+    cores, never fewer than one. An UNKNOWN core count (`os.cpu_count()` is None) is one — serial is
+    slower, never wrong."""
+    want = DEFAULT_JOBS if requested is None else requested
+    return max(1, min(want, cpus or 1))
+
+
+def run_suites(names: list[str], job, jobs: int) -> list[tuple[str, str] | None]:
+    """`job(name)` for every name, at most `jobs` at once; the outcomes IN THE ORDER OF `names`.
+
+    ⚠ ORDER IS THE GIVEN ORDER, NEVER COMPLETION ORDER — so a report reads the same on every run
+    and a diff of two reports shows a real change, not a scheduling accident.
+
+    ⛔ A WORKER THAT RAISES IS CANNOT RUN, NEVER A PASS. Before the pool an exception in the loop
+    crashed the whole script loudly; inside a pool a future's exception is only seen if someone
+    asks for it, so a dropped one would read as a suite with nothing wrong."""
+    outcomes: dict[str, tuple[str, str] | None] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = {pool.submit(job, name): name for name in names}
+        for fut in concurrent.futures.as_completed(futures):
+            name = futures[fut]
+            try:
+                outcomes[name] = fut.result()
+            except Exception as exc:  # noqa: BLE001 — reported as CANNOT RUN, by name
+                outcomes[name] = ("cannot", f"{name}: the check itself crashed "
+                                            f"({type(exc).__name__}: {exc}). NOT CHECKED.")
+    return [outcomes[name] for name in names]
+
+
+def check_one(script: Path, env: dict[str, str], count_drift, run=None) -> tuple[str, str] | None:
+    """One suite's verdict: None (its count agrees), ("problem", why) or ("cannot", why)."""
+    name = script.name
+    try:
+        rc, out = (run or run_self_test)(script, env)
+    except subprocess.TimeoutExpired:
+        return ("cannot", f"{name}: --self-test did not finish. NOT CHECKED.")
+    if rc != 0:
+        return ("problem", f"{name}: --self-test exited {rc} — its own cases are red, so its "
+                           f"declared count proves nothing. Fix the suite first.")
+    total = printed_total(out)
+    if total is None:
+        return ("cannot", f"{name}: --self-test printed no `N/M … passed` line, so the count "
+                          f"could not be read. NOT CHECKED.")
+    doc = ast.get_docstring(ast.parse(script.read_text(encoding="utf-8"))) or ""
+    why = count_drift(doc, total)
+    return ("problem", f"{name}: {why}") if why else None
+
+
 def audit(root: Path, pinned: frozenset[str], count_drift, child_env,
-          only: frozenset[str] | None = None) -> tuple[list[str], list[str]]:
+          only: frozenset[str] | None = None, jobs: int = 1, run=None) -> tuple[list[str], list[str]]:
     """(problems, cannot_run). Kept separate so a cannot-run is never reported as a pass.
 
-    `only` scopes which suites RUN; the population ratchet always covers every script."""
+    `only` scopes which suites RUN; the population ratchet always covers every script. `jobs`
+    suites run at once (`run_suites`); `run` replaces `run_self_test`, for the self-test.
+
+    ⛔ EVERY SUITE GETS ITS OWN HOME. Serially, one shared temp HOME was harmless — one suite at a
+    time. Concurrently, two suites writing the same `~/…` path would collide, which is the
+    shared-directory shape backlog #388's flake had. TMPDIR is deliberately NOT redirected: every
+    suite takes a unique `mkdtemp` name in it, and `check-run-hook.world_base` chooses its worlds by
+    the properties of the real TMPDIR's ancestors (backlog #388), which a nested one would change."""
     problems: list[str] = []
     cannot: list[str] = []
 
     found = declaring_scripts(root, count_drift)
     problems.extend(population_errors(found, pinned))
 
-    with tempfile.TemporaryDirectory() as td:
-        env = child_env(Path(td))
-        for name in sorted(pinned & found if only is None else pinned & found & only):
-            script = root / "scripts" / name
-            try:
-                rc, out = run_self_test(script, env)
-            except subprocess.TimeoutExpired:
-                cannot.append(f"{name}: --self-test did not finish. NOT CHECKED.")
-                continue
-            if rc != 0:
-                problems.append(f"{name}: --self-test exited {rc} — its own cases are red, so its "
-                                f"declared count proves nothing. Fix the suite first.")
-                continue
-            total = printed_total(out)
-            if total is None:
-                cannot.append(f"{name}: --self-test printed no `N/M … passed` line, so the count "
-                              f"could not be read. NOT CHECKED.")
-                continue
-            doc = ast.get_docstring(ast.parse(script.read_text(encoding="utf-8"))) or ""
-            why = count_drift(doc, total)
-            if why:
-                problems.append(f"{name}: {why}")
+    def job(name: str) -> tuple[str, str] | None:
+        with tempfile.TemporaryDirectory() as td:
+            return check_one(root / "scripts" / name, child_env(Path(td)), count_drift, run)
+
+    names = sorted(pinned & found if only is None else pinned & found & only)
+    for outcome in run_suites(names, job, jobs):
+        if outcome is not None:
+            (problems if outcome[0] == "problem" else cannot).append(outcome[1])
     return problems, cannot
 
 
@@ -569,6 +631,13 @@ def changed_scope(root: Path, pinned: frozenset[str], base: str) -> frozenset[st
     return frozenset(n for n in pinned if f"scripts/{n}" in reach)
 
 
+def _positive(text: str) -> int:
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--jobs must be at least 1, got {n}")
+    return n
+
+
 def main() -> int:
     if "--self-test" in sys.argv:
         return self_test()
@@ -577,7 +646,10 @@ def main() -> int:
     mode.add_argument("--only", nargs="+", metavar="SCRIPT", help="check only these pinned suites")
     mode.add_argument("--changed", action="store_true", help="check only the suites this branch can move")
     ap.add_argument("--base", default="origin/master", help="the ref --changed diffs against")
+    ap.add_argument("--jobs", type=_positive, default=None, metavar="N",
+                    help=f"suites run at once (default {DEFAULT_JOBS}, capped at the host's cores)")
     args = ap.parse_args(sys.argv[1:])
+    jobs = pool_size(args.jobs, os.cpu_count())
 
     try:
         pc = _load_plan_code()
@@ -597,7 +669,7 @@ def main() -> int:
     scope = ("" if only is None else
              " (scope: --only)" if args.only else f" (scope: --changed against {args.base})")
 
-    problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only)
+    problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only, jobs)
 
     if cannot:
         print("CANNOT RUN — a declared count could not be read. Treat these as NOT CHECKED:\n",
@@ -613,7 +685,7 @@ def main() -> int:
 
     if only is None:
         print(f"self-test counts: {len(POPULATION)} script(s) declare a count, "
-              f"every one verified by running it")
+              f"every one verified by running it ({jobs} at a time)")
     elif not only:
         print(f"self-test counts: nothing to check{scope} — no changed file reaches a pinned suite; "
               f"the population ratchet passed over all {len(POPULATION)}. The full run is CI's.")
@@ -814,6 +886,62 @@ def _self_test_body() -> int:
         check("--changed outside a git checkout is CANNOT RUN, never an empty scope",
               str(result(lambda: changed_scope(other, frozenset({"ok.py"}), "HEAD"))).startswith(
                   "CannotScope: `git diff"), True)
+
+    # ── the pool (backlog #487) ──
+    check("the pool defaults to DEFAULT_JOBS on a host with more cores", pool_size(None, 16), DEFAULT_JOBS)
+    check("the pool never exceeds the host's cores", pool_size(8, 2), 2)
+    check("an unknown core count runs serially, never zero workers", pool_size(None, None), 1)
+
+    # `b` sets the event `a` waits for, so `a` can only see it if both run AT ONCE, and `b` always
+    # completes FIRST. The wait is bounded: a serial pool makes `a` report the miss, never hang.
+    import threading
+    b_ran = threading.Event()
+
+    def ordered_job(name: str):
+        if name == "a":
+            return ("problem", "a saw b") if b_ran.wait(10) else ("problem", "a ran alone")
+        b_ran.set()
+        return ("problem", "b")
+
+    got = run_suites(["a", "b"], ordered_job, 2)
+    check("two suites run AT ONCE in a pool of two", got[0], ("problem", "a saw b"))
+    check("outcomes come back in the given order, not completion order", [g[1] for g in got],
+          ["a saw b", "b"])
+
+    def crashing_job(name: str):
+        if name == "boom":
+            raise RuntimeError("worker died")
+        return None
+
+    got = run_suites(["boom", "fine"], crashing_job, 2)
+    check("a worker that RAISES is CANNOT RUN, never a pass",
+          got[0] is not None and got[0][0] == "cannot" and "worker died" in got[0][1], True)
+    check("…and the other suites are still checked", got[1], None)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "scripts").mkdir()
+        decl = '"""x\n\n    --self-test  # 1 cases\n"""\nimport os, sys\n'
+        homes = root / "homes"
+        homes.mkdir()
+        for n in ("h1.py", "h2.py"):
+            (root / "scripts" / n).write_text(
+                decl + f'open({str(homes / n)!r}, "w").write(os.environ["HOME"])\nprint("1/1 passed")\n')
+        pinned = frozenset({"h1.py", "h2.py"})
+        audit(root, pinned, cd, pc.child_env, jobs=2)
+        seen = {n: (homes / n).read_text() if (homes / n).exists() else None for n in pinned}
+        check("every suite runs under its OWN home, never a shared one",
+              None not in seen.values() and seen["h1.py"] != seen["h2.py"], True)
+
+        def fake(script: Path, env):
+            if script.name == "h1.py":
+                raise subprocess.TimeoutExpired("x", 600)
+            raise OSError("cannot start")
+        problems, cannot = audit(root, pinned, cd, pc.child_env, jobs=2, run=fake)
+        check("a TIMED-OUT suite in the pool is CANNOT RUN, never a pass",
+              problems == [] and any(c.startswith("h1.py: --self-test did not finish") for c in cannot), True)
+        check("a suite that cannot START is CANNOT RUN, never a pass",
+              any(c.startswith("h2.py: the check itself crashed") for c in cannot), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
