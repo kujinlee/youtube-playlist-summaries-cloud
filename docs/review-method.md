@@ -68,8 +68,9 @@ not by reading (`docs/memory/unit-coverage-does-not-compose.md`, R9-1). Seam: `d
 hit signals 1 and 4 (spec §2). ⛔ **Do NOT cite the observer-log / verdict-path round counts** —
 withdrawn 2026-09-26 ([`velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4).
 
-**FAILS IF:** a change Q0 sent to the normal loop later meets Q5's thrashing shape, or shows two or
-more of the four signals, in a component Q0 did not call a seam — or a corpus run or mutation sweep
+**FAILS IF:** a change Q0 sent to the normal loop later meets Q5's thrashing shape — judged by Q5's own
+causal test, not by a count of the four signals, which are prompts until calibrated — in a component Q0
+did not call a seam — or a corpus run or mutation sweep
 finds a class of defect on a change Q0 sent to review alone. Either way Q0 chose wrong: say so in that
 round's document. A round-1 coordinator document with no Q0 line means it was not asked.
 

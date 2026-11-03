@@ -946,11 +946,13 @@ everything upfront to catch what you might stumble into is waterfall. **The gap 
 entering AFTER the review inherits none of it**, while arriving on a branch that already looks
 approved.
 
-So when a side job is sized YES, ask of the side job itself: *does this move a seam — a new module,
-a change to who owns what, a new protocol or vocabulary — or is it logic inside an existing one?*
+So when a side job is sized YES, ask of the side job itself: *does this move a seam — change an EXISTING
+boundary (ownership, a contract between components, a second name or mechanism for an existing thing) — or
+is it logic inside one?* (the definition is `review-method.md` §0 Q0's; a new module that only calls existing
+contracts is logic)
 Seam work wants its design settled before it is built, on a branch of its own.
 
-⟳ **When backlog #177's Q0 lands in `review-method.md` §0, this is the moment that re-asks it** —
+⟳ **Backlog #177's Q0 is in `review-method.md` §0 (landed 2026-11-03), and this is the moment that re-asks it** —
 decided 2026-09-24 with the user, form recorded in that row. Until then the question above is asked
 by hand, and the four signals that say *seam* are in [`docs/superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md`](superpowers/specs/2026-09-25-development-velocity-RECONSTRUCTED-design.md) §2 — ⟳ *moved there 2026-09-25 when the spec became their single owner; they are unchanged* — **which are
 OBSERVATIONS, usable now** — *not built* meant **not mechanised**, never *not applicable*, and r1 (Low)
