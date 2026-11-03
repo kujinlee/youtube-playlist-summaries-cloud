@@ -1682,7 +1682,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, backlog #426 + its r1 fold, 68 -> 90: the master-delta clear (+9), then the r1
     #   fold (+13) — a failed HEAD `ls-tree` raising, the merged-tree lookup's failure branch, the
     #   shared `merge_onto`, and every merge-attribute source neutralised for `merge-tree`.
-    "scripts/check-review-recorded.py": 90,
+    # ⟳ 2026-11-03, r2 fold, 90 -> 94: the per-source `-c` flags and the `info/attributes` refusal
+    #   (-6) give way to running the merge in an ISOLATED repository (+10: its environment, its
+    #   GIT_DIR, its borrowed objects, its PATH, and its failure to build).
+    "scripts/check-review-recorded.py": 94,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone

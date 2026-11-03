@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 237 cases
+    python3 scripts/check-review-recorded.py --self-test  # 253 cases
 
 WHY THIS EXISTS
 ---------------
@@ -118,12 +118,16 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import importlib.util
 import json
+import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Callable
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -1099,73 +1103,111 @@ def merge_onto(base: str, git=None) -> "str | None":
 
 
 def merge_tree_argv(empty_tree: str, head: str, onto: str) -> list[str]:
-    """PURE. The `merge-tree` call, with every attribute source the BRANCH could control removed.
+    """PURE. The `merge-tree` call. It runs ONLY inside `isolated_env` — see `_isolated_git`.
 
-    ⛔ merge-delta r1 Claude M1. `merge-tree` applies gitattributes merge drivers, and it reads them
-    from the working tree — which in CI IS the branch. A `docs/.gitattributes` (prose, never
-    charged) holding `** merge=union` turned a real conflict on guarded gate code into a clean
-    merge, and the author's merge under the same attribute equalled it: trap 1 bypassed. So:
-    `--attr-source=<empty tree>` (no in-tree or worktree `.gitattributes`; git older than 2.42 does
-    not know it and exits 129, which `parse_merge_tree` reads as `None`, the strict rule),
-    `core.attributesFile=/dev/null` (no user-global file) and `merge.default=text` (no
-    repository-config default driver). `$GIT_DIR/info/attributes` is NOT covered by the flag —
-    measured — so `_master_side` refuses to build a merge while one is in force.
+    `--attr-source=<empty tree>` stays even there: a bare repository reads `HEAD:.gitattributes`,
+    and the flag says "no tree attributes" whatever HEAD becomes. Git older than 2.42 does not know
+    it and exits 129, which `parse_merge_tree` reads as `None`, the strict rule.
     """
-    return [f"--attr-source={empty_tree}", "-c", "core.attributesFile=/dev/null",
-            "-c", "merge.default=text",
+    return [f"--attr-source={empty_tree}",
             "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", head, onto]
 
 
-def attributes_in_force(text: "str | None") -> bool:
-    """PURE. Does an `info/attributes` file's text declare anything? `None` = no such file.
+def isolated_env(git_dir: str, home: str, path: "str | None") -> dict[str, str]:
+    """PURE. The WHOLE environment of the synthetic merge — built, never filtered from `os.environ`.
 
-    Blank lines and `#` comments declare nothing; any other line might name a merge driver, and
-    deciding which attributes are harmless is a second grammar this file has no business owning.
+    ⛔ merge-delta r1 Claude M1, r2 Codex M1 + M2: a merge driver reached `merge-tree` from the
+    branch's `.gitattributes`, then from `info/attributes`, then from a configured
+    `merge.text.driver` (repository config, an include, `GIT_CONFIG_COUNT`) and the SYSTEM
+    `gitattributes` — one more source per round, each closed by one more `-c`. The class is "git
+    reads configuration and attributes the branch, the host or the caller can set", so the merge
+    runs in a repository with NONE of its own: an empty `GIT_DIR` (see `_isolated_git`), no
+    inherited variable at all (`GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS`, `XDG_CONFIG_HOME`, ...),
+    no system or global config, no system attributes, and a `HOME` with nothing in it.
     """
-    if text is None:
-        return False
-    return any(ln.strip() and not ln.lstrip().startswith("#") for ln in text.splitlines())
+    env = {"GIT_DIR": git_dir, "HOME": home, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_ATTR_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
+    if path:
+        env["PATH"] = path
+    return env
 
 
-def _info_attributes(git) -> "str | None":
-    """The text of `$GIT_DIR/info/attributes`, `None` if absent. RAISES on a failed lookup."""
-    where = git("rev-parse", "--path-format=absolute", "--git-path", "info/attributes")
-    if where.returncode != 0:
-        raise RuntimeError("the info/attributes path could not be resolved")
-    f = pathlib.Path(where.stdout.strip())
-    return f.read_text(encoding="utf-8", errors="replace") if f.is_file() else None
+@contextlib.contextmanager
+def _isolated_git(git):
+    """Yield a `git` runner over an EMPTY repository that borrows the real one's objects, or `None`.
+
+    The temp `GIT_DIR` has no config, no attributes, no hooks (`--template=`) and NO REFS, and its
+    `objects/info/alternates` names the real object store, so every commit and blob is readable and
+    nothing else is. `merge-tree --write-tree` writes its result into the temp store, which is
+    deleted on exit. ⚠ NO REFS MEANS NO REPLACE REFS AND NO GRAFTS: the merge is of the objects the
+    SHAs name, not of what `refs/replace/` substitutes — measured in the self-test. Any failure to
+    build it (no temp dir, no common dir, init refused) is `None`, which `_master_side` reads as the
+    strict rule.
+    """
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir")
+    objects = pathlib.Path(common.stdout.strip(), "objects") if common.returncode == 0 else None
+    # ⚠ The empty-answer and `is_dir` checks, and `init`'s rc below, are SECOND LOCKS, not mutation
+    # targets: without them the alternates name nothing (or no repository exists), the merge cannot
+    # find the round's commit, and `parse_merge_tree` reads the failure as `None` — measured.
+    if objects is None or not common.stdout.strip() or not objects.is_dir():
+        yield None
+        return
+    try:
+        tmp = tempfile.mkdtemp(prefix="crr-merge-")
+    except OSError:
+        yield None
+        return
+    ok = False
+    try:
+        git_dir, home = os.path.join(tmp, "repo.git"), os.path.join(tmp, "home")
+        os.mkdir(home)
+        env = isolated_env(git_dir, home, os.environ.get("PATH"))
+
+        def run(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run(["git", *args], cwd=tmp, env=env, capture_output=True, text=True)
+
+        ok = run("init", "-q", "--bare", "--template=", git_dir).returncode == 0
+        if ok:
+            info = pathlib.Path(git_dir, "objects", "info")
+            info.mkdir(parents=True, exist_ok=True)
+            (info / "alternates").write_text(f"{objects}\n", encoding="utf-8")
+    except OSError:
+        ok = False
+    try:
+        yield run if ok else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _master_side(head: str, onto: "str | None", paths: list[str],
-                 git=None) -> "tuple[dict[str, str], frozenset[str]] | None":
+                 git=None, isolate=None) -> "tuple[dict[str, str], frozenset[str]] | None":
     """`(entries, conflicted)` of the round's commit merged with `onto`; `None` on ANY failure.
 
     `None` is the strict rule, so a merge that cannot be built leaves a round required (backlog
-    #426, the fail direction). `git` is injectable so a case can drive it over a real fixture
-    repository; `merge-tree --write-tree` writes objects but no ref, so the repository's history
-    is untouched. An `info/attributes` in force, or one that cannot be read, is `None` too — see
-    `merge_tree_argv`.
+    #426, the fail direction). `git` (the real repository) and `isolate` (the isolated runner's
+    factory, `_isolated_git`) are injectable so a case can drive it over a real fixture repository
+    and inject a failure into either. The merge and the `ls-tree` of its result run ISOLATED — see
+    `isolated_env`; the real repository is only asked where its objects are.
     """
     git = git or _git
+    isolate = isolate or _isolated_git
     if not onto or not paths:
         return None
-    try:
-        if attributes_in_force(_info_attributes(git)):
+    with isolate(git) as iso:
+        if iso is None:
             return None
-    except (RuntimeError, OSError):
-        return None
-    empty = git("hash-object", "-t", "tree", "/dev/null")
-    if empty.returncode != 0 or not empty.stdout.strip():
-        return None
-    mt = git(*merge_tree_argv(empty.stdout.strip(), head, onto))
-    parsed = parse_merge_tree(mt.stdout, mt.returncode)
-    if parsed is None:
-        return None
-    tree, conflicted = parsed
-    ls = git("ls-tree", "-z", tree, "--", *paths)
-    if ls.returncode != 0:
-        return None
-    return parse_ls_tree(ls.stdout), conflicted
+        empty = iso("hash-object", "-t", "tree", "/dev/null")
+        if empty.returncode != 0 or not empty.stdout.strip():
+            return None
+        mt = iso(*merge_tree_argv(empty.stdout.strip(), head, onto))
+        parsed = parse_merge_tree(mt.stdout, mt.returncode)
+        if parsed is None:
+            return None
+        tree, conflicted = parsed
+        ls = iso("ls-tree", "-z", tree, "--", *paths)
+        if ls.returncode != 0:
+            return None
+        return parse_ls_tree(ls.stdout), conflicted
 
 
 def _load_verdict(rel: str) -> "object | None":
@@ -2268,7 +2310,6 @@ def _self_test_body() -> int:
          _t10["a.verdict.json"], ["lib/x.ts"])
 
     # ── #426 over a REAL repository: PR #487's shape, a conflict resolution, an evil merge ──
-    import tempfile
     _tmp = tempfile.mkdtemp(prefix="crr426-")
 
     def _g(*a: str) -> subprocess.CompletedProcess:
@@ -2313,6 +2354,25 @@ def _self_test_body() -> int:
                 return subprocess.CompletedProcess(["git", *a], rc, out, "fatal: injected")
             return _g(*a)
         return g
+
+    # an `isolate` that answers exactly ONE call on the ISOLATED runner itself (the merge runs there)
+    def _iso_failing(prefix: tuple, rc: int = 128, out: str = "") -> object:
+        @contextlib.contextmanager
+        def iso(g):
+            with _isolated_git(g) as run:
+                def r(*a: str) -> subprocess.CompletedProcess:
+                    if a[:len(prefix)] == prefix:
+                        return subprocess.CompletedProcess(["git", *a], rc, out, "fatal: injected")
+                    return run(*a)
+                yield r if run else None
+        return iso
+
+    # a crash is a `[FAIL]` line naming this case, never a traceback the harness cannot attribute
+    def _or_raised(fn) -> object:
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — the case reports it
+            return f"raised {type(exc).__name__}"
 
     def _raises(fn) -> str:
         try:
@@ -2373,21 +2433,50 @@ def _self_test_body() -> int:
     case("merge-delta r1 Claude M2: an unresolvable base has no `onto`, never an empty one",
          merge_onto("no-such-ref", git=_g), None)
     _onto_good = merge_onto("master", git=_g)
+    case("merge-delta r2 control: the isolated merge of this conflict IS built, and names it",
+         (_master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g) or (None, None))[1],
+         frozenset({".github/workflows/ci.yml"}))
     case("merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None",
-         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
-                      git=_failing(("ls-tree", "-z"))), None)
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
+                      isolate=_iso_failing(("ls-tree", "-z"))), None)
     case("merge-delta r1 Claude M1: no empty tree to read attributes from builds no master side",
-         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
-                      git=_failing(("hash-object",))), None)
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
+                      isolate=_iso_failing(("hash-object",))), None)
     # ⚠ A SECOND LOCK, NOT A MUTATION TARGET: git 2.49 itself refuses `--attr-source=` with an
     # empty value (rc 128, "bad --attr-source") once a content merge reads attributes, and a merge
     # that reads none cannot be steered by them — so removing this check stays green (measured).
     case("merge-delta r1 Claude M1: ...nor does an empty answer with rc 0",
-         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
-                      git=_failing(("hash-object",), rc=0)), None)
-    case("merge-delta r1 Claude M1: an unresolvable info/attributes path builds no master side",
-         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
-                      git=_failing(("rev-parse", "--path-format=absolute"))), None)
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
+                      isolate=_iso_failing(("hash-object",), rc=0)), None)
+    case("merge-delta r2: an unresolvable object store builds no master side",
+         _or_raised(lambda: _master_side(
+             _review, _onto_good, [".github/workflows/ci.yml"],
+             git=_failing(("rev-parse", "--path-format=absolute", "--git-common-dir")))), None)
+    case("merge-delta r2: a common dir with no object store builds no master side",
+         _or_raised(lambda: _master_side(
+             _review, _onto_good, [".github/workflows/ci.yml"],
+             git=_failing(("rev-parse", "--path-format=absolute", "--git-common-dir"),
+                          rc=0, out=str(pathlib.Path(_tmp, "nowhere")) + "\n"))), None)
+    # the isolated repository's own `git` is reached through PATH, so a PATH holding a `git` that
+    # refuses everything fails `init`, and an empty one fails to launch it at all
+    _common = _g("rev-parse", "--path-format=absolute", "--git-common-dir").stdout
+    _bin = pathlib.Path(tempfile.mkdtemp(prefix="crr426-bin-"))    # outside the fixture's tree
+    _saved_path = os.environ["PATH"]
+    try:
+        os.environ["PATH"] = str(_bin)
+        _known = _failing(("rev-parse", "--path-format=absolute", "--git-common-dir"), rc=0,
+                          out=_common)
+        case("merge-delta r2: no `git` to build the isolated repository builds no master side",
+             _or_raised(lambda: _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                                             git=_known)), None)
+        (_bin / "git").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        (_bin / "git").chmod(0o755)
+        case("merge-delta r2: an isolated repository whose `init` fails builds no master side",
+             _or_raised(lambda: _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                                             git=_known)), None)
+    finally:
+        os.environ["PATH"] = _saved_path
+        shutil.rmtree(_bin, ignore_errors=True)
 
     # merge-delta r1 Codex H1 — master DELETES a file; the branch re-adds it after the round
     _g("reset", "-q", "--hard", _review)
@@ -2447,24 +2536,90 @@ def _self_test_body() -> int:
     case("merge-delta r1 Claude M1: a repository `merge.default` does not clear it",
          _tails_at(_review), [_GATE])
     _g("config", "--unset", "merge.default")
+    # ⛔ merge-delta r2: an `info/attributes` is no longer REFUSED (r1's fallback) — the isolated
+    # repository has its own, empty one, so the real one is simply not read: the conflict is BUILT
+    # and named, which is stronger than a `None`.
     _w(".git/info/attributes", "* merge=union\n")
-    case("merge-delta r1 Claude M1: an `info/attributes` in force falls back to the strict rule",
-         _master_side(_review, merge_onto("master", git=_g), [_GATE], git=_g), None)
+    _onto_m = merge_onto("master", git=_g)
+    # the CONTROL is r1's own command, in the real repository: what each source fooled before
+    _empty_t = _g("hash-object", "-t", "tree", "/dev/null").stdout.strip()
+    _real_mt = lambda: _g(f"--attr-source={_empty_t}", "-c", "core.attributesFile=/dev/null",
+                          "-c", "merge.default=text", "merge-tree", "--write-tree", "--name-only",
+                          "--no-messages", "-z", _review, _onto_m).returncode
+    case("merge-delta r2 control: r1's merge in the real repository honours its `info/attributes`",
+         _real_mt(), 0)
+    case("merge-delta r1 Claude M1: an `info/attributes` in force still names the conflict",
+         (_master_side(_review, _onto_m, [_GATE], git=_g) or ({}, frozenset()))[1], frozenset({_GATE}))
     case("merge-delta r1 Claude M1: ...and through the gatherer it is charged",
          _tails_at(_review), [_GATE])
-    _w(".git/info/attributes", "# only a comment\n\n")
-    case("merge-delta r1 Claude M1: an `info/attributes` declaring nothing still builds a master side",
-         _master_side(_review, merge_onto("master", git=_g), [_GATE], git=_g) is not None, True)
-    case("merge-delta r1 Claude M1 (pure): blank lines and comments declare no attribute",
-         attributes_in_force("# x\n\n   \n"), False)
-    case("merge-delta r1 Claude M1 (pure): any other line is in force", attributes_in_force(" * -diff\n"),
-         True)
-    case("merge-delta r1 Claude M1 (pure): no file is not in force", attributes_in_force(None), False)
-    case("merge-delta r1 Claude M1 (pure): merge-tree runs with no attribute source the branch owns",
+    pathlib.Path(_tmp, ".git/info/attributes").unlink()
+    # merge-delta r2 Codex M1 — the `text` driver itself, redefined in every config layer git reads.
+    # The driver copies the hand-typed union over the merge result, so the merge comes out EQUAL.
+    # Each layer sets `merge.default=text` TOO: r2 dropped that `-c`, and a driver nothing selects
+    # would leave these cases green with the isolation removed.
+    _drv = f"cp {pathlib.Path(_tmp, _GATE)} %A"
+    case("merge-delta r2 Codex M1 control: with no driver configured the real merge conflicts",
+         _real_mt(), 1)
+    _g("config", "merge.text.driver", _drv)
+    _g("config", "merge.default", "text")
+    case("merge-delta r2 Codex M1 control: the real merge honours a configured `merge.text.driver`",
+         _real_mt(), 0)
+    case("merge-delta r2 Codex M1: a repository `merge.text.driver` does not clear it",
+         _tails_at(_review), [_GATE])
+    _g("config", "--unset", "merge.text.driver")
+    _g("config", "--unset", "merge.default")
+    _w(".inc-driver", f"[merge]\n\tdefault = text\n[merge \"text\"]\n\tdriver = {_drv}\n")
+    # an `include.path`, not the review's `includeIf.gitdir:` — that condition did not match under
+    # this suite's temp path on git 2.49 (measured), and the layer is the same: an included file
+    _g("config", "include.path", str(pathlib.Path(_tmp, ".inc-driver")))
+    case("merge-delta r2 Codex M1 control: r1's merge honours a driver from an INCLUDED file",
+         _real_mt(), 0)
+    case("merge-delta r2 Codex M1: an included driver does not clear it", _tails_at(_review), [_GATE])
+    _g("config", "--unset", "include.path")
+    _saved = dict(os.environ)
+    try:
+        os.environ.update({"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "merge.text.driver",
+                           "GIT_CONFIG_VALUE_0": _drv, "GIT_CONFIG_KEY_1": "merge.default",
+                           "GIT_CONFIG_VALUE_1": "text"})
+        case("merge-delta r2 Codex M1 control: the real merge honours a driver injected by env",
+             _real_mt(), 0)
+        case("merge-delta r2 Codex M1: a `GIT_CONFIG_COUNT` driver does not clear it",
+             _tails_at(_review), [_GATE])
+        os.environ.clear()
+        os.environ.update(_saved)
+        os.environ.pop("GIT_CONFIG_NOSYSTEM", None)       # the fixture turns the system layer off
+        os.environ["GIT_CONFIG_SYSTEM"] = str(pathlib.Path(_tmp, ".inc-driver"))
+        case("merge-delta r2 control: the real merge honours a SYSTEM-config driver",
+             _real_mt(), 0)
+        case("merge-delta r2: a system-config driver does not clear it", _tails_at(_review), [_GATE])
+    finally:
+        os.environ.clear()
+        os.environ.update(_saved)
+    case("merge-delta r2 control: every layer removed, the real merge conflicts again", _real_mt(), 1)
+    # ⚠ merge-delta r2 — REPLACE REFS. The isolated repository has NO refs, so `refs/replace/` is
+    # not read: the merge is of the objects the SHAs name. Replacing the round's commit by HEAD
+    # makes the REAL merge HEAD's own tree (clean); the isolated one still names the conflict.
+    _g("replace", _review, "HEAD")
+    case("merge-delta r2 control: a replace ref makes the real merge clean", _real_mt(), 0)
+    case("merge-delta r2: a replace ref of the round's commit is not read by the isolated merge",
+         (_master_side(_review, _onto_m, [_GATE], git=_g) or ({}, frozenset()))[1], frozenset({_GATE}))
+    _g("replace", "-d", _review)
+    # merge-delta r2 Codex M2 — the SYSTEM gitattributes is `$(prefix)/etc/gitattributes`, a path no
+    # environment variable relocates, and this suite does not write outside its temp dir; so the
+    # system ATTRIBUTES layer is pinned here by the environment, and its live effect was measured by
+    # the review (`GIT_ATTR_NOSYSTEM=1` restored the conflict).
+    _env = isolated_env("/g", "/h", "/bin")
+    case("merge-delta r2 Codex M2 (pure): the isolated merge reads no system attributes",
+         _env.get("GIT_ATTR_NOSYSTEM"), "1")
+    case("merge-delta r2 (pure): the isolated environment inherits nothing from the caller",
+         sorted(_env), sorted(["GIT_DIR", "HOME", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
+                               "GIT_ATTR_NOSYSTEM", "GIT_TERMINAL_PROMPT", "PATH"]))
+    case("merge-delta r2 (pure): ...and no PATH is no PATH, never the caller's",
+         "PATH" in isolated_env("/g", "/h", None), False)
+    case("merge-delta r1 Claude M1 (pure): merge-tree runs with no tree attribute source",
          merge_tree_argv("e0", "h1", "o1"),
-         ["--attr-source=e0", "-c", "core.attributesFile=/dev/null", "-c", "merge.default=text",
+         ["--attr-source=e0",
           "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "h1", "o1"])
-    import shutil
     shutil.rmtree(_tmp, ignore_errors=True)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
