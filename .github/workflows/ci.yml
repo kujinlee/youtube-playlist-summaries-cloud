@@ -1122,7 +1122,10 @@ jobs:
         # reported at 1,668s. PREDICTED, not measured: with a 250-334s per-shard floor that does not
         # divide, N=18 gives a mean of ~1,000-1,030s and a slowest of ~1,330s at that 1.33x spread
         # (~1,490s at the worst 1.45x seen) — 1.21-1.35x inside `timeout-minutes: 30`, so less
-        # headroom than 24's. The paired measurement (both N on one base commit) is in backlog #415.
+        # headroom than 24's. MEASURED, paired on one master (1fef3d5d), quiet queue, backlog #415:
+        # N=18 run 41607028370 reported the required check at 1,194s (slowest shard 1,184s, mean
+        # 993s, no shard waited); N=24 run 41609884078 at 1,704s (slowest 1,001s, six waited up to
+        # 746s). N=18 is 30% faster end to end.
         # REOPEN #231 if any shard exceeds 1,500s.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
     steps:
