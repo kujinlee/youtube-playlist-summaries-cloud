@@ -135,8 +135,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if not seen:\n            return False\n        return (is_absent(seen) and is_absent(now)) or now == seen",
-        "        if not seen:\n            return False\n        return True"
+        "        if not seen:\n            return master_explains(p, master, now)\n        return (is_absent(seen) and is_absent(now)) or now == seen",
+        "        if not seen:\n            return master_explains(p, master, now)\n        return True"
       ]
     ],
     "expect": [
@@ -786,5 +786,104 @@
       "a LIST dirty is unusable too \u2014 a real head with an overlay nothing can read is the same vacuous comparison a NULL one is, and one record on disk actually carries it",
       "...as is a STRING dirty, so the rule is the TYPE and not a list of bad values"
     ]
+  },
+  {
+    "name": "#426: the master subtraction is reverted, so a master-only change is charged again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            return master_explains(p, master, now)",
+        "            return False"
+      ]
+    ],
+    "expect": "#426 FAILS IF (pure): a path whose only post-round change is master's is not charged"
+  },
+  {
+    "name": "#426: no merge could be built, and that reads as explained",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if master is None:\n        return False\n    entries, conflicted = master",
+        "    if master is None:\n        return True\n    entries, conflicted = master"
+      ]
+    ],
+    "expect": "#426: no merge could be built -> NOT explained, the round stays required"
+  },
+  {
+    "name": "#426: a CONFLICTED path is explained like a clean one",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if p in conflicted:\n        return False",
+        "    if False:\n        return False"
+      ]
+    ],
+    "expect": "#426 trap 1: a CONFLICTED path is never explained, even when HEAD equals the merge"
+  },
+  {
+    "name": "#426: HEAD deleting a file the merge keeps is explained",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return (is_absent(want) and is_absent(now)) or now == want",
+        "    return is_absent(now) or now == want"
+      ]
+    ],
+    "expect": "#426: a file HEAD deleted that the merge keeps is NOT explained"
+  },
+  {
+    "name": "#426: a merge-tree that did not run is parsed as a tree",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if rc not in (0, 1):\n        return None",
+        "    if rc not in (0, 1, 128):\n        return None"
+      ]
+    ],
+    "expect": "#426 trap 3: a merge-tree that did not run is None, never 'clean'"
+  },
+  {
+    "name": "#426: an empty merge-tree output is parsed as a tree named ''",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if not tree.strip():\n        return None",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": "#426 trap 3: ...and empty output on rc 0 is None, not a tree named ''"
+  },
+  {
+    "name": "#426: the conflict names are dropped, so every merge reads clean",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return tree.strip(), frozenset(p for p in rest if p)",
+        "    return tree.strip(), frozenset()"
+      ]
+    ],
+    "expect": "#426: a conflicted merge-tree still has a tree, and NAMES the conflicts"
+  },
+  {
+    "name": "#426: the gatherer never builds the master side",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "final_entries(guarded), master_side(head, onto, guarded))",
+        "final_entries(guarded), None)"
+      ]
+    ],
+    "expect": "#426 through the gatherer: a master-only change clears the round"
+  },
+  {
+    "name": "#426: the gatherer merges the round with itself instead of with master",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "master_side(head, onto, guarded))",
+        "master_side(head, head, guarded))"
+      ]
+    ],
+    "expect": "#426 through the gatherer: the round's head, `onto` and the guarded paths are passed"
   }
 ]

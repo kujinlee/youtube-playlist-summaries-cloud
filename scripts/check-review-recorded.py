@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 195 cases
+    python3 scripts/check-review-recorded.py --self-test  # 217 cases
 
 WHY THIS EXISTS
 ---------------
@@ -79,6 +79,18 @@ SCOPE, STATED RATHER THAN IMPLIED
     merge action by the author under CI's synthesised merge ref. A clean-merge SEMANTIC conflict is
     given up knowingly — `tsc --noEmit` and the unit suite are the instruments for that, and CI runs
     both on the same ref.
+  * ⛔ AND MASTER'S CHANGES ARE SUBTRACTED PER FILE, NOT JUST PER PATH (backlog #426). The path
+    scope above misses a file BOTH sides touched: the branch reviewed `ci.yml` at round 2, master
+    then changed `ci.yml` too, and re-merging master charged the round for master's hunk — PR #487
+    paid an extra round for exactly that. So a path the round's own commit did not hand over dirty
+    is cleared when HEAD's entry equals `merge-tree(round's commit, merge-base(base, HEAD))`: what
+    the reviewed tree becomes when master's changes since are added and NOTHING else. A TREE
+    comparison, not a commit walk, because a walk has to decide what a merge commit "did" — and a
+    conflict resolution or an evil merge lives inside one, invisible to any rule that skips merges.
+    Comparing against the synthesised merge catches both with no special case. A path that merge
+    CONFLICTED is never cleared, a dirty-overlay path keeps the strict rule (its blobs are not in
+    CI's object store), and if the merge cannot be built the rule falls back to strict — every
+    failure leaves a round REQUIRED, never cleared.
   * ⚠ IT RUNS ON `pull_request` ONLY (r1 High). The workflow also runs on push to `master`, where
     this step is skipped and neither question is asked. Direct pushes to the default branch are
     refused by `.claude/hooks/block-default-branch-push.sh`, so the path is closed by a different
@@ -125,6 +137,9 @@ VERDICT_DIR = "docs/reviews/verdicts/"
 # and comparing against this literal made a reviewed deletion falsely FAIL there. `is_absent` reads
 # the shape instead, so the constant stays a readable spelling rather than a hidden width check.
 ABSENT_ENTRY = "000000 " + "0" * 40
+# `(entries, conflicted)` of `merge-tree(<round's commit>, merge-base(base, HEAD))`, or `None` when
+# that merge could not be built — see `master_explains` (backlog #426).
+MasterSide = "tuple[dict[str, str], frozenset[str]] | None"
 
 
 def is_absent(entry: "str | None") -> bool:
@@ -889,12 +904,15 @@ def second_question(changed: list[str], waiver: "str | None") -> "tuple[bool, st
     return True, None
 
 
-def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]) -> list[str]:
+def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str],
+               master: "MasterSide" = None) -> list[str]:
     """PURE. The guarded paths one round cannot have seen.
 
     `after`    — paths changed between that round's commit and HEAD
     `reviewed` — path -> `"<mode> <object-id>"` the reviewer was handed UNCOMMITTED
     `final`    — path -> `"<mode> <object-id>"` in the tree that will merge
+    `master`   — the round's commit merged with master, for `master_explains` (backlog #426);
+                 `None` (no merge built) leaves the strict rule
 
     ⛔ THE COMPARISON IS THE TREE ENTRY, and it took two rounds to get there. r1: subtracting dirty
     PATHS let "review `lib/x.py` at v2, then edit it to v3 and commit" pass, because the name still
@@ -908,11 +926,47 @@ def round_tail(after: list[str], reviewed: dict[str, str], final: dict[str, str]
     def same(p: str) -> bool:
         seen, now = reviewed.get(p), final.get(p, ABSENT_ENTRY)
         if not seen:
-            return False
+            return master_explains(p, master, now)
         return (is_absent(seen) and is_absent(now)) or now == seen
 
     missed = [p for p in guarded_changes(after) if not same(p)]
     return sorted(set(missed))
+
+
+def master_explains(p: str, master: "MasterSide", now: str) -> bool:
+    """PURE. Is HEAD's entry for `p` exactly what the reviewed commit plus master's changes give?
+
+    `master` is `(entries, conflicted)` from `merge-tree(<round's commit>, merge-base(base, HEAD))`
+    — the reviewed tree with master's changes since added and nothing else (backlog #426). Equal
+    means everything in `p` after the round came from master, already reviewed on master's own PR.
+
+    ⛔ EVERY UNKNOWN IS "NOT EXPLAINED", i.e. a round stays required: no merge could be built
+    (`None`), or the merge CONFLICTED on `p` — the resolution is the branch's own code even when it
+    happens to equal what the synthesised tree holds (a modify/delete conflict keeps the modified
+    side, so equality there would credit the author's choice to keep it).
+    """
+    if master is None:
+        return False
+    entries, conflicted = master
+    if p in conflicted:
+        return False
+    want = entries.get(p, ABSENT_ENTRY)
+    return (is_absent(want) and is_absent(now)) or now == want
+
+
+def parse_merge_tree(out: str, rc: int) -> "tuple[str, frozenset[str]] | None":
+    """PURE. `git merge-tree --write-tree --name-only --no-messages -z` -> `(tree, conflicted)`.
+
+    rc 0 is a clean merge, rc 1 a conflicted one (the tree still exists, with markers in it);
+    anything else means the merge was NOT computed, and that is `None` — never an empty conflict
+    set, which would read as "clean".
+    """
+    if rc not in (0, 1):
+        return None
+    tree, *rest = out.split("\0")
+    if not tree.strip():
+        return None
+    return tree.strip(), frozenset(p for p in rest if p)
 
 
 def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
@@ -1022,6 +1076,29 @@ def parse_ls_tree(out: str) -> dict[str, str]:
     return entries
 
 
+def _master_side(head: str, onto: "str | None", paths: list[str],
+                 git=None) -> "tuple[dict[str, str], frozenset[str]] | None":
+    """`(entries, conflicted)` of the round's commit merged with `onto`; `None` on ANY failure.
+
+    `None` is the strict rule, so a merge that cannot be built leaves a round required (backlog
+    #426, the fail direction). `git` is injectable so a case can drive it over a real fixture
+    repository; `merge-tree --write-tree` writes objects but no ref, so the repository's history
+    is untouched.
+    """
+    git = git or _git
+    if not onto or not paths:
+        return None
+    mt = git("merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", head, onto)
+    parsed = parse_merge_tree(mt.stdout, mt.returncode)
+    if parsed is None:
+        return None
+    tree, conflicted = parsed
+    ls = git("ls-tree", "-z", tree, "--", *paths)
+    if ls.returncode != 0:
+        return None
+    return parse_ls_tree(ls.stdout), conflicted
+
+
 def _load_verdict(rel: str) -> "object | None":
     """Read one verdict record. `None` if the file is gone; RAISES if it is there and unreadable."""
     p = ROOT / rel
@@ -1054,7 +1131,8 @@ def _changed_since(head: str) -> list[str]:
 
 def round_tails(verdict_files: list[str], branch_delta: list[str], *,
                 load=None, is_ancestor=None, changed_since=None,
-                final_entries=None) -> tuple[dict[str, list[str]], int]:
+                final_entries=None, onto: "str | None" = None,
+                master_side=None) -> tuple[dict[str, list[str]], int]:
     """`(tails, unusable)` for `tail_verdict`. **I/O ONLY** — every decision here is a pure rule.
 
     ⚠ NO MERGE-BASE SKIP — r1 High. The first version also skipped a verdict whose head is an
@@ -1073,12 +1151,16 @@ def round_tails(verdict_files: list[str], branch_delta: list[str], *,
     are real, not decorative.
 
     `branch_delta` is `changed_paths(base)`, threaded in from `main` where it is already computed,
-    so scoping the candidate set costs no extra git call.
+    so scoping the candidate set costs no extra git call. `onto` is `merge-base(base, HEAD)` — the
+    master commit HEAD already contains — and `master_side` builds what the round's commit becomes
+    when merged with it (backlog #426); `onto=None` means it could not be resolved, so no round is
+    cleared by it.
     """
     load = load or _load_verdict
     is_ancestor = is_ancestor or _is_ancestor
     changed_since = changed_since or _changed_since
     final_entries = final_entries or _final_entries
+    master_side = master_side or _master_side
     tails: dict[str, list[str]] = {}
     unusable = 0
     for rel in verdict_files:
@@ -1094,8 +1176,9 @@ def round_tails(verdict_files: list[str], branch_delta: list[str], *,
             continue
         reviewed = reviewed_map(rec)
         cands = tail_candidates(changed_since(head), reviewed, branch_delta)
+        guarded = guarded_changes(cands)
         tails[pathlib.PurePosixPath(rel).name] = round_tail(
-            cands, reviewed, final_entries(guarded_changes(cands)))
+            cands, reviewed, final_entries(guarded), master_side(head, onto, guarded))
     return tails, unusable
 
 
@@ -1355,7 +1438,11 @@ def main(argv: list[str]) -> int:
             print("ok — " + waived)
         return 0
     try:
-        tails, unusable = round_tails(branch_verdicts(added), changed)
+        # ⛔ an unresolvable merge base is `None`, which clears nothing — backlog #426's fail
+        # direction. `changed_paths` above has already refused that case; this is the second lock.
+        _mb = _git("merge-base", args.base, "HEAD")
+        onto = _mb.stdout.strip() if _mb.returncode == 0 else None
+        tails, unusable = round_tails(branch_verdicts(added), changed, onto=onto)
         gap = declared_gap(review_added(added))
     except (RuntimeError, OSError) as exc:
         print(str(exc) if str(exc).startswith("CANNOT RUN") else f"CANNOT RUN — {exc}",
@@ -2061,6 +2148,141 @@ def _self_test_body() -> int:
     case("a deletion recorded at one sha width matches an absence at another",
          round_tail(["lib/x.ts"], {"lib/x.ts": "000000 " + "0" * 64}, {}), [])
     case("empty output is an empty answer, not an invented one", parse_ls_tree(""), {})
+
+    # ── backlog #426: master's changes since a round are subtracted per FILE, by a tree comparison ──
+    _M = "100644 " + "m" * 40
+    _B = "100644 " + "b" * 40
+    case("#426: no merge could be built -> NOT explained, the round stays required",
+         master_explains("lib/x.ts", None, _M), False)
+    case("#426: HEAD equal to the reviewed commit merged with master IS explained",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), _M), True)
+    case("#426: a branch edit on top of master's IS NOT explained",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), _B), False)
+    case("#426 trap 1: a CONFLICTED path is never explained, even when HEAD equals the merge",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset({"lib/x.ts"})), _M), False)
+    case("#426: a conflict on ANOTHER path does not block this one",
+         master_explains("lib/y.ts", ({"lib/y.ts": _M}, frozenset({"lib/x.ts"})), _M), True)
+    case("#426: a deletion master made, kept by HEAD, is explained",
+         master_explains("lib/z.ts", ({}, frozenset()), ABSENT_ENTRY), True)
+    case("#426: a file HEAD deleted that the merge keeps is NOT explained",
+         master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), ABSENT_ENTRY), False)
+    case("#426: a clean merge-tree is its tree and no conflicts",
+         parse_merge_tree("t1\0", 0), ("t1", frozenset()))
+    case("#426: a conflicted merge-tree still has a tree, and NAMES the conflicts",
+         parse_merge_tree("t2\0lib/a.ts\0lib/b.ts\0", 1),
+         ("t2", frozenset({"lib/a.ts", "lib/b.ts"})))
+    case("#426 trap 3: a merge-tree that did not run is None, never 'clean'",
+         parse_merge_tree("fatal: bad object\0", 128), None)
+    case("#426 trap 3: ...and empty output on rc 0 is None, not a tree named ''",
+         parse_merge_tree("", 0), None)
+    case("#426 FAILS IF (pure): a path whose only post-round change is master's is not charged",
+         round_tail(["lib/x.ts"], {}, {"lib/x.ts": _M}, ({"lib/x.ts": _M}, frozenset())), [])
+    case("#426: ...while one carrying a branch edit too still is",
+         round_tail(["lib/x.ts"], {}, {"lib/x.ts": _B}, ({"lib/x.ts": _M}, frozenset())),
+         ["lib/x.ts"])
+    case("#426: a DIRTY-overlay path keeps the strict rule — master cannot clear it",
+         round_tail(["lib/x.ts"], {"lib/x.ts": "100644 aaa"}, {"lib/x.ts": _M},
+                    ({"lib/x.ts": _M}, frozenset())), ["lib/x.ts"])
+    _onto_seen: list = []
+    _t9, _ = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                         changed_since=lambda h: ["lib/x.ts"],
+                         final_entries=lambda p: {"lib/x.ts": _M}, onto="m1",
+                         master_side=lambda h, o, p: (_onto_seen.append((h, o, p)) or
+                                                      ({"lib/x.ts": _M}, frozenset())))
+    case("#426 through the gatherer: a master-only change clears the round",
+         _t9["a.verdict.json"], [])
+    case("#426 through the gatherer: the round's head, `onto` and the guarded paths are passed",
+         _onto_seen, [("h1", "m1", ["lib/x.ts"])])
+    _t10, _ = round_tails(_V, ["lib/x.ts"], load=lambda r: _CLEAN, is_ancestor=lambda h: True,
+                          changed_since=lambda h: ["lib/x.ts"],
+                          final_entries=lambda p: {"lib/x.ts": _M}, onto=None)
+    case("#426 trap 3 through the gatherer: no merge base -> the round is charged",
+         _t10["a.verdict.json"], ["lib/x.ts"])
+
+    # ── #426 over a REAL repository: PR #487's shape, a conflict resolution, an evil merge ──
+    import tempfile
+    _tmp = tempfile.mkdtemp(prefix="crr426-")
+
+    def _g(*a: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", _tmp, "-c", "user.name=t", "-c",
+                               "user.email=t@example.com", "-c", "commit.gpgsign=false", *a],
+                              capture_output=True, text=True)
+
+    def _w(rel: str, text: str) -> None:
+        f = pathlib.Path(_tmp, rel)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+
+    def _commit(msg: str) -> str:
+        _g("add", "--", ".")
+        _g("commit", "-q", "-m", msg)
+        return _g("rev-parse", "HEAD").stdout.strip()
+
+    # the fixture's own `-z` split, NOT `split_nul`: a mutant of that rule must red ITS case, not
+    # crash this one with a NUL inside an argv
+    def _nul(out: str) -> list[str]:
+        return [x for x in out.split("\0") if x]
+
+    def _tails_at(review: str) -> list[str]:
+        onto = _g("merge-base", "master", "HEAD").stdout.strip()
+        delta = _nul(_g(*diff_argv(onto)).stdout)
+        t, _u = round_tails(
+            ["docs/reviews/verdicts/r.verdict.json"], delta,
+            load=lambda r: {"gate_ran": True, "head": review, "dirty": {}},
+            is_ancestor=lambda h: _g("merge-base", "--is-ancestor", h, "HEAD").returncode == 0,
+            changed_since=lambda h: _nul(_g(*diff_argv(h)).stdout),
+            final_entries=lambda p: parse_ls_tree(_g("ls-tree", "-z", "HEAD", "--", *p).stdout),
+            onto=onto, master_side=lambda h, o, p: _master_side(h, o, p, git=_g))
+        return t.get("r.verdict.json", ["<no usable round>"])
+
+    _g("init", "-q", "-b", "master")
+    _LINES = "".join(f"line {i}\n" for i in range(1, 21))
+    for _f in (".github/workflows/ci.yml", "scripts/plan.py", "scripts/drivable.py", "scripts/solo.py"):
+        _w(_f, _LINES)
+    _commit("base")
+    _g("checkout", "-q", "-b", "br")
+    _w(".github/workflows/ci.yml", _LINES.replace("line 2\n", "BRANCH 2\n"))
+    _w("scripts/plan.py", _LINES.replace("line 2\n", "BRANCH 2\n"))
+    _review = _commit("branch work, then the final review round")
+    _g("checkout", "-q", "master")
+    _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n"))
+    _w("scripts/plan.py", _LINES.replace("line 18\n", "MASTER 18\n"))
+    _commit("master moves on")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-edit", "master")
+    case("#426 FAILS IF, real git: a round followed ONLY by a merge of master is not charged",
+         _tails_at(_review), [])
+    _w("scripts/drivable.py", _LINES.replace("line 9\n", "BRANCH 9\n"))
+    _commit("a genuine branch change after the round")
+    case("#426, PR #487's shape: the genuine change is charged, master's two files are not",
+         _tails_at(_review), ["scripts/drivable.py"])
+    # trap 2 — an EVIL MERGE: master's merge commit also carries a branch edit nobody reviewed
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _w("scripts/solo.py", _LINES.replace("line 5\n", "MASTER 5\n"))
+    _commit("master again")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-commit", "master")
+    _w("scripts/plan.py", _LINES.replace("line 2\n", "BRANCH 2\n").replace(
+        "line 18\n", "MASTER 18\n").replace("line 10\n", "EVIL 10\n"))
+    _commit("merge master (evil)")
+    case("#426 trap 2: a branch edit hidden inside a merge commit is charged",
+         _tails_at(_review), ["scripts/plan.py"])
+    # trap 1 — a CONFLICT whose resolution is the branch's own code
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n").replace("line 2\n", "MASTER 2\n"))
+    _commit("master edits the branch's line")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-edit", "master")          # conflicts on ci.yml; resolve by hand
+    _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n").replace("line 2\n", "RESOLVED 2\n"))
+    _commit("merge master, resolving the conflict")
+    case("#426 trap 1: a merge whose conflict RESOLUTION edits a guarded file is charged",
+         _tails_at(_review), [".github/workflows/ci.yml"])
+    case("#426 trap 3, real git: an unknown commit to merge with builds no master side",
+         _master_side(_review, "f" * 40, [".github/workflows/ci.yml"], git=_g), None)
+    import shutil
+    shutil.rmtree(_tmp, ignore_errors=True)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness
     # attributes a kill by reading `l.strip().startswith("[FAIL] ")`, slicing `[7:]`, then

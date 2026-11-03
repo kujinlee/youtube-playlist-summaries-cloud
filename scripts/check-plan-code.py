@@ -1679,7 +1679,7 @@ EXPECTED_MUTATIONS = {
     #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
     #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
     #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
-    "scripts/check-review-recorded.py": 68,
+    "scripts/check-review-recorded.py": 77,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
