@@ -97,9 +97,14 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
 > 2026-11-02 09:09 "let's make development speed issues higher priority than others"
 > 2026-11-02 09:12 "If I cannot correctly understand what you are doing or how the project is progressing, dev speed in local sense doesn't have much meaning. It may be tactically fast, but heading to wrong direction (strategically incorrect or operationally sub-optimal)"
+> 2026-11-02 16:35 "Now we move our focus on dev speed improvement. we have http://127.0.0.1:7391/2026-10-29-topic-dev-speed-monitor.html#remedies Can we have a list of task items in higher impact to lower impact order?"
 - fix · backlog #384, PR #474 · direction lane: the comprehensibility suite's overarching design; the spec merged and its rows are filed as backlog #470 to backlog #479
 - fix · backlog #405, PR #476 · early stop's METHOD proven wrong in five review rounds and discarded; the same goal moves to backlog #481 (the suite exits at its own first named failure). PR #476 shipped only two CI fixes (a running master run is not cancelled, the changed-file diff sees renames)
 - fix · backlog #481 · REPLACES backlog #405 for the same goal: the suite itself exits with failure at its first named failure, so the harness infers nothing
 - bookkeeping · backlog #480, backlog #481, backlog #482 · filed from PR #476's rounds: the rename skip, the sound early-stop redesign, the pending master run replacement
+- fix · backlog #484, PR #480 · the goal tree prints ✖ for a thread whose backlog row is superseded or withdrawn, read from a bold marker in the row's Status cell, instead of ✅ because a PR merged
+- bookkeeping · PR #479 · backlog #405's status says its method was proven wrong and its goal moved to backlog #481; backlog #484 filed
+- bookkeeping · backlog #485 · filed from PR #480's round 3: six fate-reader gaps that fail back toward ✅, none on today's backlog
+- side · PR #481 · the token page gets a before/after chart; the dev-speed page gets its open work ranked by impact
 - bookkeeping · backlog #483 · filed from PR #475's CI: the backfill-work-lines F5 inode case is flaky
 - fix · PR #475 · the backlog page shows each row's detail with line breaks and indenting, same words
