@@ -1119,7 +1119,8 @@ EXPECTED_MUTATIONS = {
     # one-notice user-message rule.
     "scripts/backfill-work-lines.py": 108,
     # ⟳ 2026-11-03, backlog #470: 25 -> 28. goal-card id, qualified backlog chip, PR link (+3).
-    "scripts/gen-goals-page.py": 28,
+    # ⟳ 2026-11-03, backlog #470 review round 1: 28 -> 29. a chip naming a missing row is marked text (+1).
+    "scripts/gen-goals-page.py": 29,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
     # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
@@ -1130,7 +1131,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27, backlog #381 — 10 -> 15. Five on the per-tag match: the raw cell read as one
     # tag, the first tag only, un-normalised `areas:`, a row listed once per tag, and `collect`
     # bypassing `match_rows` at its CALL SITE.
-    "scripts/gen-features-page.py": 15,
+    # ⟳ 2026-11-03, backlog #470 review round 1: 15 -> 16. a linked row's text keeps its keys as text,
+    # so no `<a>` nests in the row's `<a>` (+1).
+    "scripts/gen-features-page.py": 16,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1156,7 +1159,8 @@ EXPECTED_MUTATIONS = {
     # reported, the three parent refusals, the marker stripped from the text, the card's kind, and
     # parse reading it.
     # ⟳ 2026-11-03, backlog #470: 64 -> 65. the word diff keeps a key whole (+1).
-    "scripts/gen-backlog-page.py": 65,
+    # ⟳ 2026-11-03, backlog #470 review round 1: 65 -> 67. publish_rows: the rows that exist, and its warning (+2).
+    "scripts/gen-backlog-page.py": 67,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1208,9 +1212,17 @@ EXPECTED_MUTATIONS = {
 
     # ⟳ 2026-11-03, backlog #470: 14 -> 23. key_link / link_keys / link_html: nine new decision
     # lines, incl. the PR-without-repo mutation MOVED here from goal-tree.json.
-    "scripts/page_markup.py": 23,
+    # ⟳ 2026-11-03, backlog #470 review round 1: 23 -> 36. link_html rebuilt on ONE html.parser tokenizer
+    # (stack across comments, exempt set, closing, the marked class, in_a, the open-at-end report,
+    # decoding, the raw tail), missing rows (no link, marked, scan's branch), the g- goal id,
+    # render_unlinked (+13).
+    "scripts/page_markup.py": 36,
     # ⟳ 2026-11-03, backlog #470: the key-link guard gets its manifest in the commit that creates it.
-    "scripts/check-page-links.py": 16,
+    # ⟳ 2026-11-03, backlog #470 review round 1: 16 -> 30. rule 2 read from the syntax tree (self-test
+    # BODIES only, docstrings, `+` chains, unparseable files); rule 1 through the shared tokenizer; rules
+    # 1b (no <a> in an <a>), 4 (unique ids) and 5 (scripts parse, no node = CANNOT RUN). 7 old regex-era
+    # entries rebound or replaced; the AST prefilter (+14).
+    "scripts/check-page-links.py": 30,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,

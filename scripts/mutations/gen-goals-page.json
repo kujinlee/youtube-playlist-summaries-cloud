@@ -279,7 +279,7 @@
     "file": "scripts/gen-goals-page.py",
     "edits": [
       [
-        "    parts = [f'<article class=\"goal{quiet}\" id=\"{esc(a[\"slug\"])}\">',",
+        "    parts = [f'<article class=\"goal{quiet}\" id=\"{esc(page_markup.goal_id(a[\"slug\"]))}\">',",
         "    parts = [f'<article class=\"goal{quiet}\">',"
       ]
     ],
@@ -305,12 +305,25 @@
     "file": "scripts/gen-goals-page.py",
     "edits": [
       [
-        "    return f'<a href=\"{esc(href)}\">{esc(text)}</a>' if href else esc(text)",
-        "    return esc(text)"
+        "    return page_markup.key_html(kind, n, esc(f\"{kind} #{n}\"), page_markup.REPO)",
+        "    return esc(f\"{kind} #{n}\")"
       ]
     ],
     "expect": [
       "a PR in a thread links to GitHub when the repo is known"
     ]
-  }
+  },
+ {
+  "name": "a backlog chip naming a missing row loses its marker, so it reads as a real row",
+  "file": "scripts/gen-goals-page.py",
+  "edits": [
+   [
+    "                parts.append(f'<span class=\"chip {page_markup.MISSING_CLASS}\" title=\"no such backlog row\">'",
+    "                parts.append(f'<span class=\"chip\">'"
+   ]
+  ],
+  "expect": [
+   "a backlog chip naming a row that does not exist is marked text, never a link"
+  ]
+ }
 ]

@@ -61,6 +61,8 @@ from __future__ import annotations
 import html as _html
 import re
 import sys
+from html.parser import HTMLParser
+from typing import NamedTuple
 
 # A URL inside prose. Trailing sentence punctuation is excluded by the final class so
 # `see https://x.ee/a.` does not link the full stop.
@@ -100,6 +102,12 @@ GITHUB_REMOTE = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?
 # Module state, set once by a generator's entry point (`use_repo`), because `render_inline` is
 # called from hundreds of sites that have no repo to hand; a self-test that sets it restores it.
 REPO: str | None = None
+
+# The backlog rows that exist, or None (not read: every `backlog #N` links). A key naming a row that
+# is not here renders as MARKED TEXT (`key_html`), never as a link to an id no page carries — the
+# 13 dangling links of round 1 were citations of rows that never existed. Set once by a generator's
+# entry point (`use_rows`), from the rows `gen-backlog-page.parse` reads.
+ROWS: frozenset[int] | None = None
 
 
 def _em_close(s: str, i: int) -> int:
@@ -153,6 +161,12 @@ def safe_href(url: str) -> str:
     return url if SAFE_HREF.match(url) else "#"
 
 
+def goal_id(slug: str) -> str:
+    """The goals page's element id for a goal card. Prefixed, like `thread_id`, so a goal slug can
+    never collide with the page chrome's own ids (`tray`, `qbox`, ...)."""
+    return f"g-{slug}"
+
+
 def thread_id(key: str) -> str:
     """The goal tree's element id for a thread key (`backlog-5`, `pr-20`). ONE rule for the id the
     tree EMITS and the fragment `key_link("thread", …)` LINKS to, so the two cannot disagree."""
@@ -169,11 +183,11 @@ def key_link(kind: str, key, repo: str | None = None) -> str | None:
     """
     key = str(key)
     if kind == "backlog":
-        return f"/backlog-table#i{key}" if key.isdigit() else None
+        return f"/backlog-table#i{key}" if key.isdigit() and not missing_row(kind, key) else None
     if kind == "PR":
         return f"https://github.com/{repo}/pull/{key}" if repo and key.isdigit() else None
     if kind == "goal":
-        return f"/goals#{key}" if SLUG.fullmatch(key) else None
+        return f"/goals#{goal_id(key)}" if SLUG.fullmatch(key) else None
     if kind == "feature":
         return f"/features#{key}" if SLUG.fullmatch(key) else None
     if kind == "dashboard":
@@ -181,6 +195,11 @@ def key_link(kind: str, key, repo: str | None = None) -> str | None:
     if kind == "thread":
         return f"/goal-tree#{thread_id(key)}" if re.fullmatch(r"(?:backlog|pr)-\d+", key) else None
     raise ValueError(f"key_link: unknown key kind {kind!r}")
+
+
+def missing_row(kind: str, key) -> bool:
+    """A `backlog` key whose row is not in `ROWS` (False while `ROWS` is unread)."""
+    return kind == "backlog" and ROWS is not None and str(key).isdigit() and int(key) not in ROWS
 
 
 def key_segments(text: str, repo: str | None) -> list[tuple[str, str | None]]:
@@ -197,16 +216,127 @@ def key_segments(text: str, repo: str | None) -> list[tuple[str, str | None]]:
 
 def link_keys(text: str, repo: str | None = None) -> str:
     """RAW text -> HTML: escaped, with every key rendered as a link to its home page."""
-    return "".join(f'<a href="{escape(h)}">{escape(t)}</a>' if h else escape(t)
-                   for t, h in key_segments(text, repo))
+    out, pos = [], 0
+    for m in KEY_REF.finditer(text):
+        out += [escape(text[pos:m.start()]), key_html(m.group(1), m.group(2), escape(m.group(0)), repo)]
+        pos = m.end()
+    return "".join(out) + escape(text[pos:])
 
 
-# Kept verbatim by `link_html`: comments, and elements whose body is not page prose or is
-# already a link. Cut out WHOLE before the tag split, so a `<` inside a script cannot read as a tag.
-VERBATIM = re.compile(r"<!--.*?-->|<(script|style|textarea|title)\b[^>]*>.*?</\1\s*>", re.S | re.I)
-TAG_SPLIT = re.compile(r"(<[^>]*>)")
-NO_LINK_OPEN = re.compile(r"<(a|code)\b", re.I)
-NO_LINK_CLOSE = re.compile(r"</(a|code)\s*>", re.I)
+# ── READING A BUILT PAGE: ONE tokenizer (backlog #470, review round 1).
+# `link_html` (which links keys) and `check-page-links.py` (which checks them) read a page through
+# `page_tokens` and nothing else, so the two cannot disagree about what is TEXT. It is
+# `html.parser`, never a regex: a regex over HTML was the cause of six round-1 findings — a quoted
+# `>` read as a tag's end, a comment that reset the "inside an <a>" state, an id inside a script
+# string read as a declaration.
+#
+# A text node is EXEMPT — never linked, never reported as unlinked — while any of these is open:
+# already a link (`a`), literal (`code`, `kbd`, `samp`), not page prose (`script`, `style`,
+# `textarea`, `title`, `template`), interactive (`button`, `select`, `option`: an `<a>` inside one
+# is invalid HTML), foreign (`svg`), or an element marked `MISSING_CLASS`.
+#
+# ⚠ BOUNDS, stated. A key is ONE text node: `backlog <b>#7</b>` is split across two and is neither
+# linked nor reported. `&#35;` and other references are DECODED first, so `backlog &#35;7` is a
+# key, linked with its raw spelling kept. A link inside `<summary>` is allowed: valid HTML, and a key
+# should open its home page (pressing it navigates instead of toggling the disclosure).
+NO_LINK = frozenset({"a", "code", "kbd", "samp", "script", "style", "textarea", "title", "template",
+                     "button", "select", "option", "svg"})
+MISSING_CLASS = "key-missing"
+
+
+class Tok(NamedTuple):
+    kind: str                 # start · startend · end · data · other (comment, doctype, pi)
+    start: int                # raw offsets into the page: page[start:end] is this token, verbatim
+    end: int
+    tag: str = ""
+    attrs: tuple = ()
+    text: str = ""            # a data token's DECODED text
+    exempt: bool = False      # a data token inside a `NO_LINK` / marked element
+    in_a: bool = False        # a start tag opened while an `<a>` is open
+
+
+class _Tokens(HTMLParser):
+    def __init__(self, page: str):
+        super().__init__(convert_charrefs=True)
+        self.lines = [0] + [m.end() for m in re.finditer("\n", page)]
+        self.events: list[tuple] = []
+
+    def _at(self) -> int:
+        line, col = self.getpos()
+        return self.lines[line - 1] + col
+
+    def handle_starttag(self, tag, attrs):
+        self.events.append(("start", self._at(), tag, tuple(attrs)))
+
+    def handle_startendtag(self, tag, attrs):
+        self.events.append(("startend", self._at(), tag, tuple(attrs)))
+
+    def handle_endtag(self, tag):
+        self.events.append(("end", self._at(), tag, ()))
+
+    def handle_data(self, data):
+        self.events.append(("data", self._at(), data, ()))
+
+    def handle_comment(self, data):
+        self.events.append(("other", self._at(), "", ()))
+
+    handle_decl = handle_pi = unknown_decl = handle_comment
+
+
+def _marked(attrs) -> bool:
+    return any(k == "class" and v and MISSING_CLASS in v.split() for k, v in attrs)
+
+
+def page_tokens(page: str) -> tuple[list[Tok], list[str]]:
+    """PURE. (every token of a built page, in order, partitioning it exactly; the elements still
+    open at the end that matter here — `a` and the exempt ones).
+
+    Each token's span runs to the next one's start, so `"".join(page[t.start:t.end])` is the page.
+    The open-element stack is the document's, carried across comments, scripts and styles."""
+    p = _Tokens(page)
+    p.feed(page)
+    p.close()
+    ev = p.events
+    out: list[Tok] = []
+    stack: list[str] = []
+    for i, (kind, start, tag_or_text, attrs) in enumerate(ev):
+        end = ev[i + 1][1] if i + 1 < len(ev) else len(page)
+        if kind == "data":
+            out.append(Tok("data", start, end, text=tag_or_text, exempt=bool(stack)))
+            continue
+        tag = tag_or_text
+        if kind == "start":
+            out.append(Tok("start", start, end, tag, attrs, in_a="a" in stack))
+            if tag in NO_LINK or _marked(attrs):
+                stack.append(tag)
+        elif kind == "end" and tag in stack:
+            out.append(Tok("end", start, end, tag))
+            del stack[len(stack) - 1 - stack[::-1].index(tag):]
+        else:
+            out.append(Tok(kind, start, end, tag, attrs, in_a=kind == "startend" and "a" in stack))
+    return out, stack
+
+
+def text_keys(t: Tok) -> list[re.Match]:
+    """The keys a data token shows the reader, or [] for an exempt one. The ONE answer to "is this a
+    key that should be a link?", for the linker and the checker alike."""
+    return [] if t.kind != "data" or t.exempt else list(KEY_REF.finditer(t.text))
+
+
+# One piece of raw text: a character reference (decoded on its own) or a single character.
+_RAW_PIECE = re.compile(r"&(?:#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[A-Za-z][A-Za-z0-9]*;?)|[\s\S]")
+
+
+def _decode_map(raw: str) -> tuple[str, list[int], list[int]]:
+    """(decoded text, raw start, raw end) per decoded character."""
+    text, starts, ends = [], [], []
+    for m in _RAW_PIECE.finditer(raw):
+        d = _html.unescape(m.group(0))
+        for ch in d:
+            text.append(ch)
+            starts.append(m.start())
+            ends.append(m.end())
+    return "".join(text), starts, ends
 
 
 def link_html(page: str, repo: str | None = None) -> str:
@@ -214,37 +344,43 @@ def link_html(page: str, repo: str | None = None) -> str:
 
     The pass a generator runs on its whole page before writing it, so a key reaches its home page
     whichever path rendered it — `render_inline`, a bare `html.escape`, a `<pre>` of raw detail.
-    Text inside `<a>` (already a link: no `<a>` in an `<a>`) and `<code>` (literal) is left alone,
-    and so are comments, scripts, styles, textareas and the title. Attribute values are never text.
-    It reads ESCAPED text, where a key has no character that escaping changes.
+    What is text, and which text is exempt, is `page_tokens` / `text_keys` — the checker's answer.
+    Every byte outside an inserted link is the input's own: a node is spliced, never re-serialised.
+    A node whose raw text does not decode to what the parser read is left alone — the checker then
+    reports its key, so the disagreement is loud.
     """
+    tokens, _ = page_tokens(page)
     out: list[str] = []
     pos = 0
-    for v in VERBATIM.finditer(page):
-        out.append(_link_text_nodes(page[pos:v.start()], repo))
-        out.append(v.group(0))
-        pos = v.end()
-    out.append(_link_text_nodes(page[pos:], repo))
+    for t in tokens:
+        keys = text_keys(t)
+        if not keys:
+            continue
+        raw = page[t.start:t.end]
+        text, starts, ends = _decode_map(raw)
+        if text != t.text:
+            continue
+        pieces, at = [], 0
+        for m in keys:
+            a, b = starts[m.start()], ends[m.end() - 1]
+            pieces += [raw[at:a], key_html(m.group(1), m.group(2), raw[a:b], repo)]
+            at = b
+        out += [page[pos:t.start], "".join(pieces), raw[at:]]
+        pos = t.end
+    out.append(page[pos:])
     return "".join(out)
 
 
-def _link_text_nodes(chunk: str, repo: str | None) -> str:
-    depth = 0
-    parts = TAG_SPLIT.split(chunk)
-    for i, part in enumerate(parts):
-        if i % 2:                                   # a tag
-            if NO_LINK_OPEN.match(part):
-                depth += 1
-            elif NO_LINK_CLOSE.match(part):
-                depth = max(0, depth - 1)
-        elif depth == 0 and part:
-            parts[i] = KEY_REF.sub(lambda m: _key_anchor(m, repo), part)
-    return "".join(parts)
-
-
-def _key_anchor(m: re.Match, repo: str | None) -> str:
-    href = key_link(m.group(1), m.group(2), repo)
-    return f'<a href="{href}">{m.group(0)}</a>' if href else m.group(0)
+def key_html(kind: str, key, text_html: str, repo: str | None = None) -> str:
+    """A key's HTML, given its ALREADY-ESCAPED text: a link to its home page; for a backlog row that
+    does not exist (`use_rows`), the text marked `MISSING_CLASS` and titled so — never a link to
+    nothing; else (a PR with no repo) the text alone."""
+    href = key_link(kind, key, repo)
+    if href:
+        return f'<a href="{escape(href)}">{text_html}</a>'
+    if missing_row(kind, key):
+        return f'<span class="{MISSING_CLASS}" title="no such backlog row">{text_html}</span>'
+    return text_html
 
 
 def origin_repo(root) -> str | None:
@@ -266,6 +402,19 @@ def repo_from_remote(url: str) -> str | None:
     """PURE. `owner/name` from a GitHub remote URL (https or ssh), else None."""
     m = GITHUB_REMOTE.search(url)
     return m.group(1) if m else None
+
+
+def use_rows(rows) -> None:
+    """Set the backlog rows that exist (an iterable of row numbers, or None). A generator's entry
+    point calls it once, from the rows `gen-backlog-page.parse` reads; nothing else should."""
+    global ROWS
+    ROWS = None if rows is None else frozenset(int(n) for n in rows)
+
+
+def render_unlinked(s: str) -> str:
+    """RAW text -> inline HTML with NO key links: for text that is itself the body of a link, where
+    a key link would put an `<a>` inside an `<a>`."""
+    return scan(escape(s), False)
 
 
 def use_repo(repo: str | None) -> None:
@@ -364,9 +513,8 @@ def scan(s: str, keys: bool = True) -> str:
         # character BEFORE (`xbacklog #4`), so no separate test is needed here.
         if keys and c in "bP":
             m = KEY_REF.match(s, i)
-            href = key_link(m.group(1), m.group(2), REPO) if m else None
-            if href:
-                out.append(f'<a href="{href}">{m.group(0)}</a>')
+            if m and (key_link(m.group(1), m.group(2), REPO) or missing_row(m.group(1), m.group(2))):
+                out.append(key_html(m.group(1), m.group(2), m.group(0), REPO))
                 i = m.end()
                 continue
 
@@ -578,7 +726,7 @@ def _self_test_body() -> int:
     case("key_link: backlog", key_link("backlog", 5), "/backlog-table#i5")
     case("key_link: PR with a repo", key_link("PR", 20, "o/r"), "https://github.com/o/r/pull/20")
     case("key_link: a PR with NO repo is no link, never a guessed URL", key_link("PR", 20, None), None)
-    case("key_link: goal", key_link("goal", "status-visibility"), "/goals#status-visibility")
+    case("key_link: goal", key_link("goal", "status-visibility"), "/goals#g-status-visibility")
     case("key_link: feature", key_link("feature", "wake-on-visit"), "/features#wake-on-visit")
     case("key_link: dashboard entry slug", key_link("dashboard", "2026-10-01-1"), "/dashboard#2026-10-01-1")
     case("key_link: thread", key_link("thread", "pr-20"), "/goal-tree#t-pr-20")
@@ -659,6 +807,64 @@ def _self_test_body() -> int:
     case("link_html: text between two verbatim blocks is still linked",
          L("<style>x</style>backlog #4<script>y</script>"),
          '<style>x</style><a href="/backlog-table#i4">backlog #4</a><script>y</script>')
+
+    # ── round 1's concrete inputs (Codex 2, 3, 6; Claude F5): the tokenizer, not a regex, reads them
+    case("link_html: a quoted `>` in an attribute is not a tag's end, and the attribute is untouched",
+         L('<p title="x > backlog #7">ok</p>'), '<p title="x > backlog #7">ok</p>')
+    case("link_html: a comment inside an <a> keeps the <a> open — no <a> in an <a>",
+         L('<a href="/x">before<!-- c -->backlog #7</a>'), '<a href="/x">before<!-- c -->backlog #7</a>')
+    case("link_html: a comment inside <code> keeps it literal",
+         L("<code>a<!-- c -->backlog #7</code>"), "<code>a<!-- c -->backlog #7</code>")
+    case("link_html: a <style> inside an <a> keeps the <a> open",
+         L('<a href="/x"><style>p{}</style>backlog #7</a>'), '<a href="/x"><style>p{}</style>backlog #7</a>')
+    case("link_html: an encoded `&#35;` is a key, linked with its raw spelling kept",
+         L("<p>backlog &#35;7</p>"), '<p><a href="/backlog-table#i7">backlog &#35;7</a></p>')
+    case("link_html: a key split across two elements is ONE key in neither node, so not linked",
+         L("<p>backlog <b>#7</b></p>"), "<p>backlog <b>#7</b></p>")
+    case("link_html: text inside a <button> is not linked (an <a> there is invalid)",
+         L("<button>backlog #7</button>"), "<button>backlog #7</button>")
+    case("link_html: text inside an <svg> is not linked", L("<svg><text>PR #3</text></svg>"),
+         "<svg><text>PR #3</text></svg>")
+    case("link_html: an exempt element closes — text after it is linked again",
+         L("<code>x</code> backlog #2"), '<code>x</code> <a href="/backlog-table#i2">backlog #2</a>')
+    case("link_html: two keys in one node, and the text around them, kept byte for byte",
+         L("<li>a &amp; backlog #1, then PR #2!</li>"),
+         '<li>a &amp; <a href="/backlog-table#i1">backlog #1</a>, then '
+         '<a href="https://github.com/o/r/pull/2">PR #2</a>!</li>')
+    _pg = '<!doctype html><p class="a">x &amp; y</p>\n<!-- c --><script>if(a<b){}</script>'
+    case("link_html: a page with no key is returned unchanged, byte for byte", L(_pg), _pg)
+    case("page_tokens: the tokens partition the page exactly",
+         "".join(_pg[t.start:t.end] for t in page_tokens(_pg)[0]), _pg)
+    case("page_tokens: a start tag opened inside an <a> is marked",
+         [t.in_a for t in page_tokens('<a href="/x"><a href="/y">z</a></a>')[0] if t.kind == "start"],
+         [False, True])
+    case("page_tokens: an unclosed <a> is reported open at the end",
+         page_tokens('<p><a href="/x">y</p>')[1], ["a"])
+    _saved_rows = ROWS
+    try:
+        use_rows([1, 2])
+        case("key_link: a backlog row that does not exist is no link", key_link("backlog", 3), None)
+        case("key_link: a backlog row that exists is a link", key_link("backlog", 2), "/backlog-table#i2")
+        case("link_html: a missing row is MARKED text, never a link to nothing",
+             L("<p>backlog #3</p>"),
+             f'<p><span class="{MISSING_CLASS}" title="no such backlog row">backlog #3</span></p>')
+        case("scan: a missing row in prose is marked text", r("see backlog #3"),
+             f'see <span class="{MISSING_CLASS}" title="no such backlog row">backlog #3</span>')
+        case("link_keys: a missing row is marked text", link_keys("backlog #3"),
+             f'<span class="{MISSING_CLASS}" title="no such backlog row">backlog #3</span>')
+        _m = L("<p>backlog #3</p>")
+        case("link_html: a marked missing row is not linked again", L(_m), _m)
+    finally:
+        use_rows(_saved_rows)
+    case("render_unlinked: a key stays text, the rest is still markup",
+         render_unlinked("**backlog #1** <x>"), "<strong>backlog #1</strong> &lt;x&gt;")
+    _saved_repo = REPO
+    try:
+        use_repo("o/r")
+        case("render_unlinked: a PR key in a link's body stays text even with a repo set",
+             render_unlinked("see PR #4 & `c`"), "see PR #4 &amp; <code>c</code>")
+    finally:
+        use_repo(_saved_repo)
 
     case("repo_from_remote: https", repo_from_remote("https://github.com/o/r.git"), "o/r")
     case("repo_from_remote: ssh", repo_from_remote("git@github.com:o/r.git"), "o/r")

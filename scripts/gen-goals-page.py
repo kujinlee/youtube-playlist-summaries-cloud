@@ -3,7 +3,7 @@
 
     python3 scripts/gen-goals-page.py              # -> ~/explainers/goals.html, served at /goals
     python3 scripts/gen-goals-page.py --fragment-only <path>
-    python3 scripts/gen-goals-page.py --self-test  # 81 cases, pure functions only
+    python3 scripts/gen-goals-page.py --self-test  # 83 cases, pure functions only
 
 WHY THIS EXISTS
 ---------------
@@ -200,9 +200,9 @@ inline_md = page_markup.render_inline
 
 
 def key_html(kind: str, n) -> str:
-    """`PR #N` / `backlog #N`, QUALIFIED, as a link to its home page when `key_link` gives one."""
-    href, text = page_markup.key_link(kind, n, page_markup.REPO), f"{kind} #{n}"
-    return f'<a href="{esc(href)}">{esc(text)}</a>' if href else esc(text)
+    """`PR #N` / `backlog #N`, QUALIFIED, as `page_markup.key_html` renders it: a link to its home
+    page, marked text for a backlog row that does not exist, plain text for a PR with no repo."""
+    return page_markup.key_html(kind, n, esc(f"{kind} #{n}"), page_markup.REPO)
 
 
 STEM_SUFFIX = re.compile(r"-(design|plan)$")
@@ -715,8 +715,8 @@ def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
 
 def render_goal(a: dict) -> str:
     quiet = "" if a["spine"] else " quiet"
-    # `id` = the goal's slug, the target of `key_link("goal", slug)` (backlog #470, spec §3).
-    parts = [f'<article class="goal{quiet}" id="{esc(a["slug"])}">',
+    # `id` = `goal_id(slug)`, the target of `key_link("goal", slug)` (backlog #470, spec §3).
+    parts = [f'<article class="goal{quiet}" id="{esc(page_markup.goal_id(a["slug"]))}">',
              '<div class="ghead">',
              f'<span class="slug">{esc(a["slug"])}</span>',
              f'<span class="meta">{len(a["docs"])} doc(s) · last touched '
@@ -770,7 +770,12 @@ def render_goal(a: dict) -> str:
         parts.append('<div class="band"><span class="blab">Backlog hanging off it</span>'
                      '<div class="chips">')
         for num, rel in sorted(a["backlog"]):
-            parts.append(f'<a class="chip" href="{esc(page_markup.key_link("backlog", num))}">'
+            href = page_markup.key_link("backlog", num)
+            if href is None:                # a row that does not exist: marked text, not a link to nothing
+                parts.append(f'<span class="chip {page_markup.MISSING_CLASS}" title="no such backlog row">'
+                             f'backlog #{esc(str(num))} · {esc(rel)}</span>')
+                continue
+            parts.append(f'<a class="chip" href="{esc(href)}">'
                          f'backlog #{esc(str(num))} · {esc(rel)}</a>')
         parts.append("</div></div>")
 
@@ -1278,13 +1283,24 @@ def _self_test_body() -> int:
     _g470 = render_goal({"spine": None, "slug": "alpha-goal", "docs": [], "touched": None, "goal": "G.",
                          "adrs": [], "backlog": [(7, "part of")], "threads": [], "head": "abc"})
     eq("a goal card carries its slug as its id, the target of /goals#<slug>",
-       '<article class="goal quiet" id="alpha-goal">' in _g470, True)
+       '<article class="goal quiet" id="g-alpha-goal">' in _g470, True)
     eq("a backlog chip is a QUALIFIED link to its row, never a bare #N",
        '<a class="chip" href="/backlog-table#i7">backlog #7 · part of</a>' in _g470, True)
     _g470b = render_goal({"spine": None, "slug": "beta", "docs": [], "touched": None, "goal": "H.",
                           "adrs": [], "backlog": [], "threads": [], "head": "abc"})
     eq("...and a second card carries ITS slug, with no backlog band when it has no rows",
-       ('id="beta"' in _g470b, "Backlog hanging off it" in _g470b), (True, False))
+       ('id="g-beta"' in _g470b, "Backlog hanging off it" in _g470b), (True, False))
+    _saved_rows = page_markup.ROWS
+    try:
+        page_markup.use_rows([8])
+        eq("a backlog chip naming a row that does not exist is marked text, never a link",
+           '<span class="chip key-missing" title="no such backlog row">backlog #7 · part of</span>'
+           in render_goal({"spine": None, "slug": "alpha-goal", "docs": [], "touched": None, "goal": "G.",
+                           "adrs": [], "backlog": [(7, "part of")], "threads": [], "head": "abc"}), True)
+        eq("a backlog key naming a row that does not exist is marked text", key_html("backlog", 7),
+           '<span class="key-missing" title="no such backlog row">backlog #7</span>')
+    finally:
+        page_markup.use_rows(_saved_rows)
     eq("a backlog key renders qualified, as a link to its row",
        key_html("backlog", 9), '<a href="/backlog-table#i9">backlog #9</a>')
     _saved_repo = page_markup.REPO
@@ -1325,6 +1341,15 @@ def main() -> int:
                          capture_output=True, text=True).stdout.strip() or "unknown"
     stamp = subprocess.run(["git", "log", "-1", "--format=%as"], cwd=ROOT,
                            capture_output=True, text=True).stdout.strip() or "unknown"
+
+    # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_gbp_rows", gen)
+    gbp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gbp)
+    warn = gbp.publish_rows(ROOT)
+    if warn:
+        print(warn, file=sys.stderr)
 
     anchors = collect(DOCS, gen.read_text())
     fragment = build(anchors, sha, stamp,

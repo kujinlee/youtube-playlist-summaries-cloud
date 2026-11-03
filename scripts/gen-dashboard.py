@@ -100,9 +100,9 @@ def _contrast(a: str, b: str) -> float:
 _inline = page_markup.render_inline
 
 
-def _inline_unlinked(s: str) -> str:
-    """Inline markup with NO key links — for text that is itself the body of a link."""
-    return page_markup.scan(page_markup.escape(s), False)
+# Inline markup with NO key links — for text that is itself the body of a link. ONE function,
+# shared with `gen-features-page`'s row links (backlog #470 round 1: the class, not the instance).
+_inline_unlinked = page_markup.render_unlinked
 
 
 def _prose(text: str, drop_headline: bool = False, settled: bool = False,
@@ -3490,6 +3490,14 @@ def main(argv: list[str]) -> int:
         return _self_test()
     # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
     page_markup.use_repo(page_markup.origin_repo(ROOT))
+    # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("_gbp_rows", ROOT / "scripts" / "gen-backlog-page.py")
+    _gbp = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_gbp)
+    _warn = _gbp.publish_rows(ROOT)
+    if _warn:
+        print(_warn, file=sys.stderr)
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2

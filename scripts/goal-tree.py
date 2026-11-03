@@ -1112,6 +1112,10 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         if not log:
             print(f"CANNOT RUN — {LOG_REL} holds no complete snapshot, so no page was rendered.")
             return 2
+        # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+        warn = _sibling("gen-backlog-page").publish_rows(root)
+        if warn:
+            print(warn)
         write_page(a.out, log, now, live)
         print(f"goal tree page -> {a.out}")
     if a.print_:

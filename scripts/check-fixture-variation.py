@@ -720,9 +720,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "check-memory-index-budget.py": ('budget_facts.label', 'budget_facts.limit', 'budget_facts.n_chars', 'budget_verdict.label', 'budget_verdict.limit', 'budget_verdict.n_chars', 'index_chars.path', 'main.argv', 'main.index', 'main.limit', 'render.f', 'unknown_args.argv', 'warn_threshold.limit'),
     # backlog #470 (2026-11-03): the key-link guard, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
-    "check-page-links.py": ("built_hrefs.name", "built_hrefs.text", "check_pages.d", "check_sources.root",
-                            "dangling.pages", "fragment_targets.own", "fragment_targets.page", "ids.page",
-                            "main.argv", "main.root", "unlinked_keys.page"),
+    # ⟳ review round 1: + rules 1b, 4, 5 and the page-set / node parameters of `check_pages`, re-derived.
+    "check-page-links.py": ("built_hrefs.name", "built_hrefs.text", "check_pages.d", "check_pages.names",
+                            "check_pages.node", "check_sources.root", "dangling.pages", "duplicate_ids.page",
+                            "fragment_targets.own", "fragment_targets.page", "ids.page", "inline_scripts.page",
+                            "main.argv", "main.root", "nested_anchors.page", "script_errors.node",
+                            "script_errors.pages", "unlinked_keys.page"),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script
@@ -1263,11 +1266,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'changed_lines.path', 'changed_lines.ref', 'containers.src',
         'parse_hunks.diff', 'report.src', 'report.touched',),
     # ⟳ backlog #470: + the key-link functions, re-derived by running `analyse()`.
+    # ⟳ review round 1: + `page_tokens`, `render_unlinked`, `use_rows`, re-derived.
     'page_markup.py': (
         'escape.s', 'key_link.key', 'key_link.kind', 'key_link.repo', 'key_segments.repo',
         'key_segments.text', 'link_html.page', 'link_html.repo', 'link_keys.repo', 'link_keys.text',
-        'repo_from_remote.url', 'safe_href.url', 'scan.keys', 'scan.s', 'thread_id.key',
-        'trim_url_tail.url', 'use_repo.repo',),
+        'page_tokens.page', 'render_unlinked.s', 'repo_from_remote.url', 'safe_href.url', 'scan.keys',
+        'scan.s', 'thread_id.key', 'trim_url_tail.url', 'use_repo.repo', 'use_rows.rows',),
     'prior-art.py': (
         'search.show_all', 'search.terms',),
     'subject_status.py': (

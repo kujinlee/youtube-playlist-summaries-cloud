@@ -806,5 +806,27 @@
     "expect": [
       "word_diff keeps a key whole, so no <del>/<ins> splits it away from any link"
     ]
+  },
+  {
+    "name": "publish_rows tells page_markup nothing, so a missing row links to an id no page carries",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    page_markup.use_rows(r[\"num\"] for r in rows)\n    return None",
+        "    return None"
+      ]
+    ],
+    "expect": "publish_rows: the rows THIS parser reads are the rows that exist (backlog #470)"
+  },
+  {
+    "name": "an unreadable backlog is swallowed: no warning, so the reader is not told keys may dangle",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        return (f\"⚠ backlog rows NOT READ ({exc.__class__.__name__}: {exc}) — every backlog key \"\n                \"links, a missing row included\")",
+        "        return None"
+      ]
+    ],
+    "expect": "publish_rows: an unreadable backlog WARNS and leaves every key linked, never an empty set"
   }
 ]

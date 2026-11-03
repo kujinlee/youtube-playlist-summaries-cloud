@@ -3,7 +3,7 @@
 
     python3 scripts/gen-features-page.py              # -> ~/explainers/features.html, served at /features
     python3 scripts/gen-features-page.py --fragment-only <path>
-    python3 scripts/gen-features-page.py --self-test  # 18 cases
+    python3 scripts/gen-features-page.py --self-test  # 19 cases
 
 WHY THIS EXISTS
 ---------------
@@ -83,6 +83,7 @@ parse_features, Node = check_features.parse_features, check_features.Node
 
 esc = page_markup.escape
 inline_md = page_markup.render_inline
+inline_unlinked = page_markup.render_unlinked
 
 ANCHOR_ROW = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|\s*([^|]*?)\s*\|")
 DOC_ANCHOR = re.compile(r"^>\s*\*\*Anchor:\*\*\s*`([a-z0-9-]+)`")
@@ -419,7 +420,9 @@ def render_fragments(f: dict) -> list[str]:
         parts.append(f'<div class="band"><span class="blab">{label}</span>')
         for e in shown:
             text, href = fragment_parts(e)
-            body = f'<a href="{esc(href)}">{inline_md(text)}</a>' if href else inline_md(text)
+            # The row text sits INSIDE the row's link, so a key in it stays text (`inline_unlinked`),
+            # or the page carries an `<a>` in an `<a>` — 29 rows did (backlog #470 review round 1).
+            body = f'<a href="{esc(href)}">{inline_unlinked(text)}</a>' if href else inline_md(text)
             parts.append(f'<div class="frag">{body}</div>')
         if extra or closed:
             bits = []
@@ -430,7 +433,7 @@ def render_fragments(f: dict) -> list[str]:
             parts.append(f'<details class="more"><summary>{" · ".join(bits)}</summary>')
             for e in extra + closed:
                 text, href = fragment_parts(e)
-                body = f'<a href="{esc(href)}">{inline_md(text)}</a>' if href else inline_md(text)
+                body = f'<a href="{esc(href)}">{inline_unlinked(text)}</a>' if href else inline_md(text)
                 parts.append(f'<div class="frag">{body}</div>')
             parts.append("</details>")
         parts.append("</div>")
@@ -585,6 +588,12 @@ def _self_test_body() -> int:
     check("an absent node is marked", "not built" in html, True)
     check("the absent reason is shown", "expected because" in html.lower(), True)
     check("a linked gap appears", "#139" in html, True)
+    # backlog #470 review round 1: a row whose title cites a key sits inside the row's own link.
+    _nest = render(nodes, {"wake-on-visit": {"backlog": [
+        {"label": "#45 residue left when backlog #7 merged", "href": "/backlog-table#i45"}], "adr": []}})
+    check("a key in a linked row's text is not a second <a> inside the row's link",
+          ([t.start for t in page_markup.page_tokens(_nest)[0] if t.kind == "start" and t.in_a],
+           "residue left when backlog #7 merged</a>" in _nest), ([], True))
     check("the absence count is shown", "1 declared absence" in html, True)
     # ⛔ DELIBERATE DEVIATION FROM THE BRIEF, AND THE MEASUREMENT THAT FORCED IT. The brief writes
     # this case as a bare `str(date.today().year) in html`. MEASURED: that case CANNOT FAIL in
@@ -744,6 +753,8 @@ def main() -> int:
               file=sys.stderr)
         return 2
     try:
+        # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+        page_markup.use_rows(r["num"] for r in backlog_rows())
         fragments, notes = collect(nodes)
     except Exception as e:                      # an unparseable backlog is CANNOT RUN, not empty
         print(f"CANNOT RUN — the fragments could not be derived ({e.__class__.__name__}: {e}). "

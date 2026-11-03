@@ -169,8 +169,8 @@
   "file": "scripts/page_markup.py",
   "edits": [
    [
-    "        return f\"/backlog-table#i{key}\" if key.isdigit() else None",
-    "        return f\"/backlog-table#i{key}\""
+    "        return f\"/backlog-table#i{key}\" if key.isdigit() and not missing_row(kind, key) else None",
+    "        return f\"/backlog-table#i{key}\" if not missing_row(kind, key) else None"
    ]
   ],
   "expect": "key_link: a non-numeric backlog key is no link"
@@ -251,5 +251,148 @@
    ]
   ],
   "expect": "repo_from_remote: https"
+ },
+ {
+  "name": "the open-element stack is reset at a comment, so text after it inside an <a> is linked (Codex r1 3)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        if kind == \"data\":\n            out.append(Tok(\"data\"",
+    "        if kind == \"other\":\n            stack.clear()\n        if kind == \"data\":\n            out.append(Tok(\"data\""
+   ]
+  ],
+  "expect": "link_html: a comment inside an <a> keeps the <a> open \u2014 no <a> in an <a>"
+ },
+ {
+  "name": "a <button> is no longer exempt, so an <a> is put inside one",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "\"button\", \"select\", \"option\", \"svg\"})",
+    "\"select\", \"option\", \"svg\"})"
+   ]
+  ],
+  "expect": "link_html: text inside a <button> is not linked (an <a> there is invalid)"
+ },
+ {
+  "name": "an exempt element never closes, so the text after it is never linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            del stack[len(stack) - 1 - stack[::-1].index(tag):]",
+    "            pass"
+   ]
+  ],
+  "expect": "link_html: an exempt element closes \u2014 text after it is linked again"
+ },
+ {
+  "name": "an element marked missing is not exempt, so its key is linked a second time",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if tag in NO_LINK or _marked(attrs):",
+    "            if tag in NO_LINK:"
+   ]
+  ],
+  "expect": "link_html: a marked missing row is not linked again"
+ },
+ {
+  "name": "a start tag inside an <a> is not marked, so a nested <a> is invisible",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            out.append(Tok(\"start\", start, end, tag, attrs, in_a=\"a\" in stack))",
+    "            out.append(Tok(\"start\", start, end, tag, attrs))"
+   ]
+  ],
+  "expect": "page_tokens: a start tag opened inside an <a> is marked"
+ },
+ {
+  "name": "an <a> left open is not reported at the end",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return out, stack\n",
+    "    return out, []\n"
+   ]
+  ],
+  "expect": "page_tokens: an unclosed <a> is reported open at the end"
+ },
+ {
+  "name": "character references are not decoded, so an encoded key is never linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        d = _html.unescape(m.group(0))",
+    "        d = m.group(0)"
+   ]
+  ],
+  "expect": "link_html: an encoded `&#35;` is a key, linked with its raw spelling kept"
+ },
+ {
+  "name": "the raw text after a node's last key is dropped",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        out += [page[pos:t.start], \"\".join(pieces), raw[at:]]",
+    "        out += [page[pos:t.start], \"\".join(pieces)]"
+   ]
+  ],
+  "expect": "link_html: two keys in one node, and the text around them, kept byte for byte"
+ },
+ {
+  "name": "a missing row is no longer missing, so it links to an id no page carries",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return kind == \"backlog\" and ROWS is not None and str(key).isdigit() and int(key) not in ROWS",
+    "    return False"
+   ]
+  ],
+  "expect": "key_link: a backlog row that does not exist is no link"
+ },
+ {
+  "name": "a missing row renders as bare text, unmarked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f'<span class=\"{MISSING_CLASS}\" title=\"no such backlog row\">{text_html}</span>'",
+    "        return text_html"
+   ]
+  ],
+  "expect": "link_html: a missing row is MARKED text, never a link to nothing"
+ },
+ {
+  "name": "scan drops a missing row's marker, leaving it bare text",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if m and (key_link(m.group(1), m.group(2), REPO) or missing_row(m.group(1), m.group(2))):",
+    "            if m and key_link(m.group(1), m.group(2), REPO):"
+   ]
+  ],
+  "expect": "scan: a missing row in prose is marked text"
+ },
+ {
+  "name": "the goal card id loses its g- prefix, so a slug can collide with the chrome's ids (Claude r1 F6)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return f\"g-{slug}\"",
+    "    return slug"
+   ]
+  ],
+  "expect": "key_link: goal"
+ },
+ {
+  "name": "render_unlinked links keys, so a key in a link's body is a second <a>",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return scan(escape(s), False)",
+    "    return scan(escape(s))"
+   ]
+  ],
+  "expect": "render_unlinked: a key stays text, the rest is still markup"
  }
 ]
