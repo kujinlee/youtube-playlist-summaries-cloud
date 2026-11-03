@@ -89,7 +89,7 @@ Usage:
     python3 scripts/check-selftest-counts.py --changed --base <ref>
     python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
     python3 scripts/check-selftest-counts.py --jobs 1                # serially
-    python3 scripts/check-selftest-counts.py --self-test  # 50 cases
+    python3 scripts/check-selftest-counts.py --self-test  # 51 cases
 """
 from __future__ import annotations
 
@@ -895,18 +895,24 @@ def _self_test_body() -> int:
     # `b` sets the event `a` waits for, so `a` can only see it if both run AT ONCE, and `b` always
     # completes FIRST. The wait is bounded: a serial pool makes `a` report the miss, never hang.
     import threading
-    b_ran = threading.Event()
 
-    def ordered_job(name: str):
-        if name == "a":
-            return ("problem", "a saw b") if b_ran.wait(10) else ("problem", "a ran alone")
-        b_ran.set()
-        return ("problem", "b")
+    def ordered(wait: float):
+        b_ran = threading.Event()
 
-    got = run_suites(["a", "b"], ordered_job, 2)
+        def job(name: str):
+            if name == "a":
+                return ("problem", "a saw b") if b_ran.wait(wait) else ("problem", "a ran alone")
+            b_ran.set()
+            return ("problem", "b")
+        return job
+
+    got = run_suites(["a", "b"], ordered(10), 2)
     check("two suites run AT ONCE in a pool of two", got[0], ("problem", "a saw b"))
     check("outcomes come back in the given order, not completion order", [g[1] for g in got],
           ["a saw b", "b"])
+    # The other value of `jobs`: a pool of one is serial, so `a` finishes before `b` starts.
+    check("a pool of one runs the suites one at a time",
+          [g[1] for g in run_suites(["a", "b"], ordered(0.3), 1)], ["a ran alone", "b"])
 
     def crashing_job(name: str):
         if name == "boom":
