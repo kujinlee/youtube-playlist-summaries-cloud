@@ -138,7 +138,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if flying and state in (\"next\", \"notfound\"):",
+        "    if flying and state in (\"next\", \"notfound\", \"superseded\", \"withdrawn\"):",
         "    if flying:"
       ]
     ],
@@ -983,16 +983,16 @@
     ]
   },
   {
-    "name": "a SUPERSEDED Status cell is not read as superseded",
+    "name": "a leading SUPERSEDED marker is not read as superseded",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        m = SUPERSEDED_RE.search(st)",
-        "        m = None"
+        "if m.group(1) == \"SUPERSEDED\"), None)",
+        "if False), None)"
       ]
     ],
     "expect": [
-      "⛔ backlog #484: a SUPERSEDED row whose PR merged prints ✖ and ITS forward pointer (two M, one case)"
+      "⛔ backlog #484: a LEADING SUPERSEDED marker whose PR merged prints ✖ and ITS forward pointer (two M)"
     ]
   },
   {
@@ -1000,47 +1000,138 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "f\"superseded → backlog #{m.group(1)} (method refuted",
-        "f\"superseded → backlog #481 (method refuted"
+        "re.findall(r\"#(\\d+)\", ptr.group(1))",
+        "[\"481\"]"
       ]
     ],
     "expect": [
-      "⛔ backlog #484: a SUPERSEDED row whose PR merged prints ✖ and ITS forward pointer (two M, one case)"
+      "⛔ backlog #484: a LEADING SUPERSEDED marker whose PR merged prints ✖ and ITS forward pointer (two M)"
     ]
   },
   {
-    "name": "a WITHDRAWN Status cell is not read as withdrawn",
+    "name": "only the first of several forward pointers is printed",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        elif WITHDRAWN_RE.search(st):",
+        "ptr.group(1))) if ptr else \"\"",
+        "ptr.group(1))[:1]) if ptr else \"\""
+      ]
+    ],
+    "expect": [
+      "backlog #484: several forward pointers in the marker are all printed, each as a backlog ref"
+    ]
+  },
+  {
+    "name": "a WITHDRAWN marker is not read as withdrawn",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif marks:",
         "        elif False:"
       ]
     ],
     "expect": [
-      "⛔ backlog #484: a WITHDRAWN row whose PR merged prints ✖ withdrawn"
+      "⛔ backlog #484: a leading WITHDRAWN marker prints ✖ withdrawn (glyph, and `(was X)`)"
     ]
   },
   {
-    "name": "a ✅ Status cell is read as withdrawn",
+    "name": "the word anywhere in the Status cell is a fate (r1 H1)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "WITHDRAWN_RE = re.compile(r\"\\bWITHDRAWN\\b\")",
-        "WITHDRAWN_RE = re.compile(r\"\\bWITHDRAWN\\b|✅\")"
+        "        marks = [m for m in FATE_RE.finditer(",
+        "        marks = [m for m in re.compile(r\"(SUPERSEDED|WITHDRAWN)\\b([^*]*)\").finditer("
       ]
     ],
     "expect": [
-      "backlog #484 adjacent negative: a ✅ Status with no SUPERSEDED or WITHDRAWN still prints ✅ merged"
+      "⛔ backlog #484 (r1 H1): the word in the cell's PROSE is not a fate — row 484's own cell, and a negation"
     ]
   },
   {
-    "name": "the title is read as part of the Status cell",
+    "name": "a marker inside a code span is read",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        st = r[\"status\"]",
-        "        st = r[\"title\"] + \" \" + r[\"status\"]"
+        "re.sub(r\"`[^`]*`\", \"\", r[\"status\"])",
+        "r[\"status\"]"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a marker after `Previously: `, or inside a code span, is history or quotation — not read"
+    ]
+  },
+  {
+    "name": "a marker after `Previously: ` is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?<!Previously: )",
+        ""
+      ]
+    ],
+    "expect": [
+      "backlog #484: a marker after `Previously: `, or inside a code span, is history or quotation — not read"
+    ]
+  },
+  {
+    "name": "a marker led by an emphasis glyph is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|(?<!Previously: )[✅✖]",
+        "|(?<!Previously: )[✅✖⛔]"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a marker led by an EMPHASIS glyph is not a fate (rows 48 and 213's other clauses)"
+    ]
+  },
+  {
+    "name": "only a marker LEADING the cell is read, not the audit's appended one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|(?<!Previously: )[✅✖]\\ufe0f?\\s*)(?:",
+        ")(?:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M1): the audit's APPENDED dated marker is read (rows 124 and 189's shapes)"
+    ]
+  },
+  {
+    "name": "an unbolded marker is read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "r\"\\*\\*(SUPERSEDED|WITHDRAWN)",
+        "r\"(?:\\*\\*)?(SUPERSEDED|WITHDRAWN)"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a LOWERCASE `superseded by` is not a marker (row 327's shape), nor `WITHDRAWN` unbolded"
+    ]
+  },
+  {
+    "name": "WITHDRAWN beats a later SUPERSEDED in one Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "sup = next((m for m in marks if",
+        "sup = next((m for m in marks[:1] if"
+      ]
+    ],
+    "expect": [
+      "backlog #484: a SUPERSEDED marker beats a WITHDRAWN one in the same cell, in either order"
+    ]
+  },
+  {
+    "name": "the item cell is read as part of the Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"\", r[\"status\"]))]",
+        "\"\", r[\"body\"] + \" \" + r[\"status\"]))]"
       ]
     ],
     "expect": [
@@ -1048,16 +1139,172 @@
     ]
   },
   {
-    "name": "WITHDRAWN beats SUPERSEDED in one Status cell",
+    "name": "the second table's rows are read as Items rows (r1 L1)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if m:\n            fates[r[\"num\"]]",
-        "        if m and not WITHDRAWN_RE.search(st):\n            fates[r[\"num\"]]"
+        "        if r[\"section\"] != ITEMS_SECTION:\n            continue",
+        "        if False:\n            continue"
       ]
     ],
     "expect": [
-      "backlog #484: SUPERSEDED beats an earlier WITHDRAWN in the same Status cell"
+      "⛔ backlog #484 (r1 L1): only the Items table's rows have fates — the second table's same number does not"
+    ]
+  },
+  {
+    "name": "a ✅ Status cell is read as withdrawn",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            fates[r[\"num\"]] = None",
+        "            fates[r[\"num\"]] = (\"withdrawn\", \"withdrawn\") if \"✅\" in r[\"status\"] else None"
+      ]
+    ],
+    "expect": [
+      "backlog #484 adjacent negative: a ✅ Status with no marker still prints ✅ merged"
+    ]
+  },
+  {
+    "name": "the first row's fate wins, not superseded over withdrawn (r1 M3.1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                state = \"superseded\" if any(f[0] == \"superseded\" for f in fated) else \"withdrawn\"",
+        "                state = fated[0][0]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M3.1): two fated rows — superseded beats withdrawn in either order"
+    ]
+  },
+  {
+    "name": "two rows with one fate print it twice (r1 M3.2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\" · \".join(dict.fromkeys(f[1] for f in fated))",
+        "\" · \".join(f[1] for f in fated)"
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r1 M3.2): two rows with the same fate name it once"
+    ]
+  },
+  {
+    "name": "a fate hides a LIVE row's state (r1 M2 / M3.3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if not live_rows and state in",
+        "            if state in"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M2, Codex 4): a fated row beside a LIVE row keeps the merge ✅, either order"
+    ]
+  },
+  {
+    "name": "a fate hides an OPEN PR (r1 M3.4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "state in (\"merged\", \"next\", \"closed\"):",
+        "state in (\"merged\", \"next\", \"closed\", \"open\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M3.4): an OPEN PR beats a fate — ⏳ stays, the fate is named"
+    ]
+  },
+  {
+    "name": "only the first backlog ref's fate is read (Codex 4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        fated = [fate_of[n] for n in rows if fate_of[n]]",
+        "        fated = [fate_of[n] for n in rows[:1] if fate_of[n]]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (r1 M2, Codex 4): a fated row beside a LIVE row keeps the merge ✅, either order"
+    ]
+  },
+  {
+    "name": "a fated row's merge subject counts as a live row's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "subj) for n in live_rows)), None)",
+        "subj) for n in rows)), None)"
+      ]
+    ],
+    "expect": [
+      "...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge"
+    ]
+  },
+  {
+    "name": "a fated row's open PR counts as a live row's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"\") for n in live_rows)]",
+        "\"\") for n in rows)]"
+      ]
+    ],
+    "expect": [
+      "...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge"
+    ]
+  },
+  {
+    "name": "a leaf whose rows are all fated, with no PR, stays ⬜ next",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"next\", \"closed\"):",
+        "\"closed\"):"
+      ]
+    ],
+    "expect": [
+      "...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge"
+    ]
+  },
+  {
+    "name": "a leaf whose rows are all fated, with a closed PR, stays ✖ closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"merged\", \"next\", \"closed\"",
+        "\"merged\", \"next\""
+      ]
+    ],
+    "expect": [
+      "backlog #484 (r1 M3.2): two rows with the same fate name it once"
+    ]
+  },
+  {
+    "name": "a ref to a row the backlog does not have falls back to the merge (Codex 3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif missing:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484 (Codex 3, r1 L2): a ref to a row the backlog does not have is CANNOT RUN, never ✅"
+    ]
+  },
+  {
+    "name": "a fate hides an in-flight entry",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"notfound\", \"superseded\", \"withdrawn\")",
+        "\"notfound\")"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: an IN-FLIGHT entry beats a fate — ⏳ stays, the fate is named"
     ]
   },
   {

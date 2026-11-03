@@ -1065,7 +1065,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #484: 75 -> 83 — a SUPERSEDED / WITHDRAWN Status cell beats the merge state: read at all,
     # its own forward pointer, the ✅-only negative, the title is not the Status cell, SUPERSEDED beats
     # WITHDRAWN, and an unread or partly unread backlog is CANNOT RUN, never ✅.
-    "scripts/goal-tree.py": 83,
+    # ⟳ backlog #484 round-1 fold: 83 -> 102 — the fate is read only from a MARKER (r1 H1/M1: six entries
+    # replaced by fourteen on the marker grammar, pointer, code span, `Previously:`, emphasis glyph, bold and
+    # the Items table), plus each ref's own state (r1 M2/M3, Codex 4: ten) and a missing row (Codex 3).
+    "scripts/goal-tree.py": 102,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
