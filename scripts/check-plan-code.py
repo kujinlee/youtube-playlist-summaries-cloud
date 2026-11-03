@@ -1688,7 +1688,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, r3 fold, 94 -> 102: both tree lookups list the WHOLE tree and select exact
     #   names (+7: each lookup as a pathspec again, `-r`, `-t`, the precompose `-c`, the exact
     #   selection, the isolated runner's decoding), and the temp dir removed on a crash (+1).
-    "scripts/check-review-recorded.py": 102,
+    # ⟳ 2026-11-03, r4 fold, 102 -> 109: every git read captured as BYTES (+6: the shared reader,
+    #   `_git`, the isolated runner, both branch-level diffs, `git_text`'s error handler), and the
+    #   absent == absent arm of `master_explains` restored (+1).
+    "scripts/check-review-recorded.py": 109,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone

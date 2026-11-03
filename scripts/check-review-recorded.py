@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 275 cases
+    python3 scripts/check-review-recorded.py --self-test  # 285 cases
 
 WHY THIS EXISTS
 ---------------
@@ -120,6 +120,7 @@ import argparse
 import ast
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -942,12 +943,22 @@ def master_explains(p: str, master: "MasterSide", now: str) -> bool:
 
     `master` is `(entries, conflicted)` from `merge-tree(<round's commit>, merge-base(base, HEAD))`
     — the reviewed tree with master's changes since added and nothing else (backlog #426). Equal
-    means everything in `p` after the round came from master, already reviewed on master's own PR.
+    means everything in `p` after the round came from master or from a clean textual merge of the
+    two. ⚠ STATED BOUND: when both touched `p`, the COMPOSITION was reviewed by nobody (master's
+    reviewer never saw the branch's hunk, the round never saw master's) — the same semantic waiver
+    `tail_candidates` states across files, here within one file.
 
     ⛔ EVERY UNKNOWN IS "NOT EXPLAINED", i.e. a round stays required: no merge could be built
     (`None`), or the merge CONFLICTED on `p` — the resolution is the branch's own code even when it
     happens to equal what the synthesised tree holds (a modify/delete conflict keeps the modified
     side, so equality there would credit the author's choice to keep it).
+
+    ⛔ AND ABSENT NEVER EXPLAINS — merge-delta r4, from the thrashing architecture review. "Both
+    absent" is unreachable for an honest lookup: `p` is here only if it changed since the round
+    (so the round's commit or HEAD holds it) and is in the branch delta (so `onto` differs from
+    HEAD); if HEAD lacks `p`, both merge sides hold it, and a clean merge of two sides that both
+    hold a path cannot drop it. So absent == absent only ever came from a lookup that LIED — r1's
+    failed `ls-tree`, r3's pathspec miss — and each read as a clear. Now any such lie charges.
     """
     if master is None:
         return False
@@ -955,7 +966,7 @@ def master_explains(p: str, master: "MasterSide", now: str) -> bool:
     if p in conflicted:
         return False
     want = entries.get(p, ABSENT_ENTRY)
-    return (is_absent(want) and is_absent(now)) or now == want
+    return not is_absent(now) and now == want
 
 
 def parse_merge_tree(out: str, rc: int) -> "tuple[str, frozenset[str]] | None":
@@ -1033,11 +1044,28 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
                f"  introduced by a FIX — code no round had seen.")
 
 
+def git_text(raw: bytes) -> str:
+    """PURE. Git's output bytes -> str, with every byte kept: a CR stays a CR, a non-UTF-8 byte
+    becomes the same lone surrogate in every reader, so two listings compare byte for byte."""
+    return raw.decode("utf-8", "surrogateescape")
+
+
+def _run_git(argv: list[str], **kw) -> subprocess.CompletedProcess:
+    """Run git and capture BYTES, decoded by `git_text`. EVERY git read in this file goes here.
+
+    ⛔ NEVER `text=True` — merge-delta r4 Codex BLOCKER, measured end to end. Text mode applies
+    universal newlines, so `lib/a\\r.py` came back as `lib/a\\n.py`; in a whole-tree listing the
+    unchanged CR-named entry then OVERWROTE the edited LF-named one under the same key, HEAD and the
+    synthetic merge agreed on the wrong entry, and the full CLI said `ok`, rc 0. `encoding=` and
+    `errors=` do not turn that translation off; only bytes do. Strict decoding was the second half
+    of the class (r4 Codex M2): `changed_paths`/`added_paths` raised on a `0xe9` path name.
+    """
+    p = subprocess.run(argv, capture_output=True, **kw)
+    return subprocess.CompletedProcess(p.args, p.returncode, git_text(p.stdout), git_text(p.stderr))
+
+
 def _git(*args: str) -> subprocess.CompletedProcess:
-    # `surrogateescape`, like the isolated runner: a path name that is not UTF-8 decodes to the SAME
-    # str in the changed-path list and in a tree listing, so the two compare byte for byte
-    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True,
-                          encoding="utf-8", errors="surrogateescape")
+    return _run_git(["git", "-C", str(ROOT), *args])
 
 
 def _final_entries(paths: list[str], git=None) -> dict[str, str]:
@@ -1192,8 +1220,7 @@ def _isolated_git(git):
             env = isolated_env(git_dir, home, os.environ.get("PATH"))
 
             def run(*args: str) -> subprocess.CompletedProcess:
-                return subprocess.run(["git", *args], cwd=tmp, env=env, capture_output=True,
-                                      text=True, encoding="utf-8", errors="surrogateescape")
+                return _run_git(["git", *args], cwd=tmp, env=env)
 
             ok = run("init", "-q", "--bare", "--template=", git_dir).returncode == 0
             if ok:
@@ -1416,17 +1443,14 @@ def changed_paths(base: str) -> list[str]:
     """
     if not (ROOT / ".git").exists():
         raise RuntimeError("CANNOT RUN — no .git directory. Treat this as NOT CHECKED.")
-    shallow = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--is-shallow-repository"],
-                             capture_output=True, text=True)
+    shallow = _git("rev-parse", "--is-shallow-repository")
     if shallow.stdout.strip() == "true":
         raise RuntimeError("CANNOT RUN — shallow clone; the diff would be confidently short.")
-    merge_base = subprocess.run(["git", "-C", str(ROOT), "merge-base", base, "HEAD"],
-                                capture_output=True, text=True)
+    merge_base = _git("merge-base", base, "HEAD")
     if merge_base.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}: "
                            f"{merge_base.stderr.strip()}")
-    diff = subprocess.run(["git", "-C", str(ROOT), *diff_argv(merge_base.stdout.strip())],
-                          capture_output=True, text=True)
+    diff = _git(*diff_argv(merge_base.stdout.strip()))
     if diff.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {diff.stderr.strip()}")
     return split_nul(diff.stdout)
@@ -1480,13 +1504,10 @@ def diff_argv(base_sha: str, *, added_only: bool = False) -> list[str]:
 
 def added_paths(base: str) -> list[str]:
     """Paths ADDED against `base` (status A). RAISES like `changed_paths`; shares `diff_argv`."""
-    mb = subprocess.run(["git", "-C", str(ROOT), "merge-base", base, "HEAD"],
-                        capture_output=True, text=True)
+    mb = _git("merge-base", base, "HEAD")
     if mb.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — cannot resolve a merge base with {base!r}")
-    out = subprocess.run(["git", "-C", str(ROOT),
-                          *diff_argv(mb.stdout.strip(), added_only=True)],
-                         capture_output=True, text=True)
+    out = _git(*diff_argv(mb.stdout.strip(), added_only=True))
     if out.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git diff failed: {out.stderr.strip()}")
     return split_nul(out.stdout)
@@ -2300,8 +2321,10 @@ def _self_test_body() -> int:
          master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset({"lib/x.ts"})), _M), False)
     case("#426: a conflict on ANOTHER path does not block this one",
          master_explains("lib/y.ts", ({"lib/y.ts": _M}, frozenset({"lib/x.ts"})), _M), True)
-    case("#426: a deletion master made, kept by HEAD, is explained",
-         master_explains("lib/z.ts", ({}, frozenset()), ABSENT_ENTRY), True)
+    case("merge-delta r4: absent in HEAD AND in the merge is charged (only a lying lookup gives it)",
+         master_explains("lib/z.ts", ({}, frozenset()), ABSENT_ENTRY), False)
+    case("merge-delta r4 control: ...while a present HEAD equal to the merge is still explained",
+         master_explains("lib/z.ts", ({"lib/z.ts": _B}, frozenset()), _B), True)
     case("#426: a file HEAD deleted that the merge keeps is NOT explained",
          master_explains("lib/x.ts", ({"lib/x.ts": _M}, frozenset()), ABSENT_ENTRY), False)
     case("#426: a clean merge-tree is its tree and no conflicts",
@@ -2340,11 +2363,15 @@ def _self_test_body() -> int:
     # ── #426 over a REAL repository: PR #487's shape, a conflict resolution, an evil merge ──
     _tmp = tempfile.mkdtemp(prefix="crr426-")
 
+    # BYTES, decoded here and NOT through `_run_git`: this runner feeds the production parsers in
+    # `_tails_at`, so it must keep a CR too, and a mutant of `_run_git` must not reach the fixture
     def _g(*a: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", _tmp, "-c", "user.name=t", "-c",
-                               "user.email=t@example.com", "-c", "commit.gpgsign=false", *a],
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="surrogateescape")
+        p = subprocess.run(["git", "-C", _tmp, "-c", "user.name=t", "-c",
+                            "user.email=t@example.com", "-c", "commit.gpgsign=false", *a],
+                           capture_output=True)
+        return subprocess.CompletedProcess(p.args, p.returncode,
+                                           p.stdout.decode("utf-8", "surrogateescape"),
+                                           p.stderr.decode("utf-8", "surrogateescape"))
 
     def _w(rel: str, text: str) -> None:
         f = pathlib.Path(_tmp, rel)
@@ -2565,7 +2592,8 @@ def _self_test_body() -> int:
     case("merge-delta r3 M1: the merged tree's lookup finds a decomposed name", _ms, {_nfd: _ENTRY})
     case("merge-delta r3 M1: an unreviewed decomposed-name file is charged", _tl, [_nfd])
     _g("config", "--unset", "core.precomposeunicode")
-    for _name, _tag in (("scripts/a\nb.py", "a newline"), ("scripts/caf\udce9.py", "non-UTF-8 bytes")):
+    for _name, _tag in (("scripts/a\nb.py", "a newline"), ("scripts/caf\udce9.py", "non-UTF-8 bytes"),
+                        ("scripts/a\rb.py", "a carriage return")):
         _fe, _ms, _tl = _lookups(_name)
         case(f"merge-delta r3 M1: HEAD's lookup finds a name holding {_tag}", _fe, {_name: _ENTRY})
         case(f"merge-delta r3 M1: the merged tree's lookup finds a name holding {_tag}",
@@ -2726,6 +2754,74 @@ def _self_test_body() -> int:
          merge_tree_argv("e0", "h1", "o1"),
          ["--attr-source=e0",
           "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "h1", "o1"])
+
+    # ⛔ merge-delta r4 Codex BLOCKER — the FULL CLI over a repository holding `lib/a\n.ts` AND
+    # `lib/a\r.ts`, only the LF one edited after the round. Text-mode capture read both as
+    # `lib/a\n.ts`, the unchanged CR entry won, and `main` said ok, rc 0. `main` runs in-process with
+    # `ROOT` pointed at the fixture; the gate's own inputs (`scripts/`, `docs/superpowers/`) are
+    # UNTRACKED links to this checkout's, so no diff the gate reads contains them. `lib/caf\xe9.ts`
+    # rides along for r4 Codex M2: the branch-level readers raised on it.
+    _cli = tempfile.mkdtemp(prefix="crr426-cli-")
+    _real_root = ROOT
+    _LF, _CR, _E9 = "lib/a\n.ts", "lib/a\r.ts", "lib/caf\udce9.ts"
+
+    def _c(*a: str) -> subprocess.CompletedProcess:
+        return _g("-C", _cli, *a)
+
+    def _blob_of(text: str) -> str:
+        return subprocess.run(["git", "-C", _cli, "hash-object", "-w", "--stdin"], input=text.encode(),
+                              capture_output=True).stdout.decode().strip()
+
+    def _verdict_at(head: str) -> None:
+        _vd = pathlib.Path(_cli, "docs/reviews/verdicts")
+        _vd.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(_cli, "docs/reviews/codex").mkdir(parents=True, exist_ok=True)
+        pathlib.Path(_cli, "docs/reviews/codex/m-r1-codex.md").write_text("VERDICT\n", encoding="utf-8")
+        (_vd / "m-r1-codex.verdict.json").write_text(
+            json.dumps({"gate_ran": True, "head": head, "dirty": {}}), encoding="utf-8")
+        _c("add", "--", "docs/reviews")
+        _c("commit", "-q", "-m", "the review round's record")
+
+    def _quiet(fn) -> object:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return _or_raised(fn)
+
+    try:
+        _c("init", "-q", "-b", "master")
+        pathlib.Path(_cli, "README.md").write_text("prose\n", encoding="utf-8")
+        _c("add", "--", "README.md")
+        _c("commit", "-q", "-m", "base")
+        _cli_base = _c("rev-parse", "HEAD").stdout.strip()
+        _c("checkout", "-q", "-b", "br")
+        os.symlink(_real_root / "scripts", pathlib.Path(_cli, "scripts"))
+        pathlib.Path(_cli, "docs").mkdir()
+        os.symlink(_real_root / "docs" / "superpowers", pathlib.Path(_cli, "docs", "superpowers"))
+        _ok = _blob_of("reviewed\n")
+        for _n in (_LF, _CR, _E9):
+            _c("update-index", "--add", "--cacheinfo", f"100644,{_ok},{_n}")
+        _c("commit", "-q", "-m", "the reviewed commit")
+        _cli_r = _c("rev-parse", "HEAD").stdout.strip()
+        _c("update-index", "--cacheinfo", f"100644,{_blob_of('UNREVIEWED')},{_LF}")
+        _c("commit", "-q", "-m", "an unreviewed edit to the LF-named file only")
+        _cli_e = _c("rev-parse", "HEAD").stdout.strip()
+        globals()["ROOT"] = pathlib.Path(_cli)
+        case("merge-delta r4 M2: `changed_paths` keeps a CR, an LF and a raw 0xe9 byte apart",
+             _or_raised(lambda: sorted(p for p in changed_paths(_cli_base) if p.startswith("lib/"))),
+             sorted([_LF, _CR, _E9]))
+        case("merge-delta r4 M2: ...and against the reviewed commit, only the edited LF name",
+             _or_raised(lambda: changed_paths(_cli_r)), [_LF])
+        case("merge-delta r4 M2: `added_paths` keeps a CR, an LF and a raw 0xe9 byte apart",
+             _or_raised(lambda: sorted(p for p in added_paths("master") if p.startswith("lib/"))),
+             sorted([_LF, _CR, _E9]))
+        case("merge-delta r4 M2: ...and against the reviewed commit, nothing was added",
+             _or_raised(lambda: added_paths(_cli_r)), [])
+        case("merge-delta r4 BLOCKER: the full CLI charges the edited LF name beside a CR twin",
+             _verdict_at(_cli_r) or _quiet(lambda: main(["--base", "master"])), 1)
+        case("merge-delta r4 BLOCKER control: a round at the edited commit clears the same tree",
+             _verdict_at(_cli_e) or _quiet(lambda: main(["--base", _cli_base])), 0)
+    finally:
+        globals()["ROOT"] = _real_root
+        shutil.rmtree(_cli, ignore_errors=True)
     shutil.rmtree(_tmp, ignore_errors=True)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT, NOT A STYLE CHOICE. `check-plan-code`'s mutation harness

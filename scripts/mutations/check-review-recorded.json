@@ -825,7 +825,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    return (is_absent(want) and is_absent(now)) or now == want",
+        "    return not is_absent(now) and now == want",
         "    return is_absent(now) or now == want"
       ]
     ],
@@ -1144,8 +1144,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "text=True, encoding=\"utf-8\", errors=\"surrogateescape\")\n\n            ok = run(",
-        "text=True)\n\n            ok = run("
+        "                return _run_git([\"git\", *args], cwd=tmp, env=env)",
+        "                return subprocess.run([\"git\", *args], cwd=tmp, env=env, capture_output=True, text=True)"
       ]
     ],
     "expect": "merge-delta r3 M1: the merged tree's lookup finds a name holding non-UTF-8 bytes"
@@ -1160,5 +1160,82 @@
       ]
     ],
     "expect": "merge-delta r3 L1: a crash in the isolated setup leaves no `crr-merge-*` dir"
+  },
+  {
+    "name": "merge-delta r4 BLOCKER: every git read is captured in TEXT mode again (universal newlines)",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    p = subprocess.run(argv, capture_output=True, **kw)\n    return subprocess.CompletedProcess(p.args, p.returncode, git_text(p.stdout), git_text(p.stderr))",
+        "    return subprocess.run(argv, capture_output=True, text=True, encoding=\"utf-8\", errors=\"surrogateescape\", **kw)"
+      ]
+    ],
+    "expect": "merge-delta r4 BLOCKER: the full CLI charges the edited LF name beside a CR twin"
+  },
+  {
+    "name": "merge-delta r4 BLOCKER: the repository reader `_git` alone is text mode again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return _run_git([\"git\", \"-C\", str(ROOT), *args])",
+        "    return subprocess.run([\"git\", \"-C\", str(ROOT), *args], capture_output=True, text=True, encoding=\"utf-8\", errors=\"surrogateescape\")"
+      ]
+    ],
+    "expect": "merge-delta r4 BLOCKER: the full CLI charges the edited LF name beside a CR twin"
+  },
+  {
+    "name": "merge-delta r4: the isolated runner alone is text mode again, CR read as LF",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "subprocess.CompletedProcess:\n                return _run_git([\"git\", *args], cwd=tmp, env=env)",
+        "subprocess.CompletedProcess:\n                return subprocess.run([\"git\", *args], cwd=tmp, env=env, capture_output=True, text=True, encoding=\"utf-8\", errors=\"surrogateescape\")"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: the merged tree's lookup finds a name holding a carriage return"
+  },
+  {
+    "name": "merge-delta r4 M2: `changed_paths`' diff decodes strictly in text mode again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    diff = _git(*diff_argv(merge_base.stdout.strip()))",
+        "    diff = subprocess.run([\"git\", \"-C\", str(ROOT), *diff_argv(merge_base.stdout.strip())], capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "merge-delta r4 M2: `changed_paths` keeps a CR, an LF and a raw 0xe9 byte apart"
+  },
+  {
+    "name": "merge-delta r4 M2: `added_paths`' diff decodes strictly in text mode again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    out = _git(*diff_argv(mb.stdout.strip(), added_only=True))",
+        "    out = subprocess.run([\"git\", \"-C\", str(ROOT), *diff_argv(mb.stdout.strip(), added_only=True)], capture_output=True, text=True)"
+      ]
+    ],
+    "expect": "merge-delta r4 M2: `added_paths` keeps a CR, an LF and a raw 0xe9 byte apart"
+  },
+  {
+    "name": "merge-delta r4 M2: `git_text` replaces a non-UTF-8 byte instead of keeping it",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return raw.decode(\"utf-8\", \"surrogateescape\")",
+        "    return raw.decode(\"utf-8\", \"replace\")"
+      ]
+    ],
+    "expect": "merge-delta r4 M2: `changed_paths` keeps a CR, an LF and a raw 0xe9 byte apart"
+  },
+  {
+    "name": "merge-delta r4: the absent == absent arm of `master_explains` is restored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    want = entries.get(p, ABSENT_ENTRY)\n    return not is_absent(now) and now == want",
+        "    want = entries.get(p, ABSENT_ENTRY)\n    return (is_absent(want) and is_absent(now)) or now == want"
+      ]
+    ],
+    "expect": "merge-delta r4: absent in HEAD AND in the merge is charged (only a lying lookup gives it)"
   }
 ]
