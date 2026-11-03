@@ -1224,7 +1224,10 @@ EXPECTED_MUTATIONS = {
     # the 3.12 AssertionError wrap, and link_html's refusal (+34); the real exempt stack (r2 5b) and the
     # `;`-terminated decode piece (r2 7) (+2). Two rules only 3.12's parser reaches are driven on either
     # Python by making the parser behave as 3.12's (the RCDATA set emptied; an AssertionError raised).
-    "scripts/page_markup.py": 72,
+    # ⟳ 2026-11-03, backlog #470 review round 3: 72 -> 79. A URL ending in half a reference (F1, +2), no link
+    # of any kind inside a link's text (F2 and its property, +2), the whole p-closer set, HTML whitespace
+    # and the button-scope list (F3, +3). The table-text anchor rebound to `x.strip(ASCII_WHITESPACE)`.
+    "scripts/page_markup.py": 79,
     # ⟳ 2026-11-03, backlog #470: the key-link guard gets its manifest in the commit that creates it.
     # ⟳ 2026-11-03, backlog #470 review round 1: 16 -> 30. rule 2 read from the syntax tree (self-test
     # BODIES only, docstrings, `+` chains, unparseable files); rule 1 through the shared tokenizer; rules
@@ -1233,7 +1236,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, backlog #470 review round 2: 30 -> 39. Rule 0 read and its page excluded from the
     # other rules (+2); rule 2 reads `%`, `.format` (positional, named), `"".join`, f-string constant
     # parts, and a literal's parts are not reported again alone (+7).
-    "scripts/check-page-links.py": 39,
+    # ⟳ 2026-11-03, backlog #470 review round 3: 39 -> 44. The generators' renderers property: a raise is
+    # reported, so is an <a> in an <a>, the corpus is seeded and holds the review's inputs, and every
+    # renderer in the table is read (+5).
+    "scripts/check-page-links.py": 44,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,

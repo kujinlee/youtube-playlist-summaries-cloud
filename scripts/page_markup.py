@@ -265,9 +265,15 @@ class Tok(NamedTuple):
 # from OUR generators, so the page is required to be in a subset where the two readers AGREE, and
 # anything outside it is REFUSED — `link_html` raises, `check-page-links.py` rule 0 fails the page.
 #
+# ⚠ "OLD 3.12" below means a 3.12 without the 2025 `html.parser` backports. MEASURED (review round 3,
+# F4): 3.12.9 has all four behaviours named here (an unterminated `<script>` swallowed, tags read inside
+# `<title>`/`<textarea>`, `--!>` not ending a comment, an `AssertionError` on `<![foo]>`); 3.12.12 and
+# 3.14.4 have none of them. CI runs 3.12.15, which was not available to measure; it is newer than
+# 3.12.12. The guards stay, because an old 3.12 still reads pages in this repo (a local `python3.12`).
+#
 # The subset, as `subset_problems` enforces it:
 #   * every token's raw bytes are exactly that token — nothing the parser skipped (`</>`), nothing a
-#     start tag swallowed (an unterminated `<script>` on 3.12), no literal `<` in text;
+#     start tag swallowed (an unterminated `<script>` on old 3.12), no literal `<` in text;
 #   * every non-void element is closed explicitly, in order, against one open-element stack; a void
 #     element (`VOID`) has no end tag; only a void element, or one inside `<svg>`/`<math>`, self-closes;
 #   * NO implied end tags: no start tag a browser would answer by closing an open element (`<div>`
@@ -284,14 +290,26 @@ class Tok(NamedTuple):
 VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
                   "track", "wbr"})
 RAW_TEXT = frozenset({"script", "style"})       # verbatim to html.parser and a browser alike
-RCDATA = frozenset({"textarea", "title"})       # text to a browser; 3.12's html.parser reads tags in them
+RCDATA = frozenset({"textarea", "title"})       # text to a browser; old 3.12's html.parser reads tags in them
 UNSUPPORTED = frozenset({"plaintext", "xmp", "noscript", "noembed", "noframes", "iframe"})
 FOREIGN = frozenset({"svg", "math"})
-_P_CLOSERS = frozenset({"address", "article", "aside", "blockquote", "details", "dialog", "div", "dl",
-                        "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5",
-                        "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol", "p", "pre", "search",
-                        "section", "table", "ul"})
-_BUTTON_SCOPE = frozenset({"button", "table", "td", "th", "caption", "template", "html", "svg", "math"})
+# Every start tag the HTML Standard's "in body" insertion mode answers with "if the stack of open
+# elements has a p element in button scope, then close a p element" (WHATWG HTML §13.2.6.4.7), taken
+# whole rather than name by name (review round 3, F3: `li`, `dd`, `dt`, `summary`, `center`, `dir` and
+# `listing` were missing, so `<p>a<li>b</li>c</p>` passed while a browser closed the `<p>`). `table`
+# closes it only outside quirks mode; these pages declare `<!DOCTYPE html>`.
+_P_CLOSERS = frozenset({"address", "article", "aside", "blockquote", "center", "details", "dialog", "dir",
+                        "div", "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main",
+                        "menu", "nav", "ol", "p", "search", "section", "summary", "ul",
+                        "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "form", "li", "dd", "dt",
+                        "plaintext", "table", "hr", "xmp"})
+# "Has an element in button scope" (§13.2.4.2): the scope list plus `button`. `svg`/`math` stand in for
+# the foreign elements the list names (`foreignObject`, `mi`, ...): foreign content is a stated bound.
+_BUTTON_SCOPE = frozenset({"applet", "caption", "html", "table", "td", "th", "marquee", "object", "template",
+                           "button", "svg", "math"})
+# HTML's whitespace: tab, LF, FF, CR and space ("ASCII whitespace", Infra Standard §4.6). Python's
+# `str.strip()` also strips U+00A0, which a browser foster-parents out of a table like any text (r3 F3).
+ASCII_WHITESPACE = " \t\n\f\r"
 _HEADINGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 # A table part's depth: a start tag of depth d closes any open part of depth >= d inside the same table.
 _TABLE_DEPTH = {"caption": 1, "colgroup": 1, "thead": 1, "tbody": 1, "tfoot": 1, "tr": 2, "td": 3, "th": 3}
@@ -356,7 +374,7 @@ class _Tokens(HTMLParser):
 @functools.lru_cache(maxsize=4)
 def _events(page: str) -> tuple[tuple, ...]:
     """PURE. html.parser's events over a page: (kind, raw offset, tag or text, attrs, raw start tag).
-    ⚠ 3.12's parser RAISES `AssertionError` on a marked section (`<![foo]>`); that is a page outside
+    ⚠ An old 3.12's parser RAISES `AssertionError` on a marked section (`<![foo]>`); that is a page outside
     the subset, and is raised as one — never let through as a crash, never swallowed as a pass."""
     p = _Tokens(page)
     try:
@@ -456,10 +474,10 @@ def subset_problems(page: str) -> list[str]:
                 out.append(f"{where}: a literal `<` in text: {span[span.index('<'):][:40]!r}")
             if _BARE_REF.search(span):
                 out.append(f"{where}: a character reference with no `;`: {_BARE_REF.search(span).group(0)!r}")
-            if top in _TABLE_CHILDREN and x.strip():
+            if top in _TABLE_CHILDREN and x.strip(ASCII_WHITESPACE):
                 out.append(f"{where}: text directly inside <{top}>, which a browser moves out of the table")
         elif kind == "comment":
-            # A browser also ends a comment at `--!>`, and at once on `<!-->` / `<!--->`; 3.12's
+            # A browser also ends a comment at `--!>`, and at once on `<!-->` / `<!--->`; old 3.12's
             # html.parser does neither, and would read the text after one as comment.
             if span != f"<!--{x}-->" or "--!>" in x or x.startswith((">", "->")):
                 out.append(f"{where}: a comment not closed by `-->`: {span[:40]!r}")
@@ -615,8 +633,8 @@ def use_rows(rows) -> None:
 
 
 def render_unlinked(s: str) -> str:
-    """RAW text -> inline HTML with NO key links: for text that is itself the body of a link, where
-    a key link would put an `<a>` inside an `<a>`."""
+    """RAW text -> inline HTML with NO links at all (no key, no bare URL, and `[x](y)` printed as
+    itself): for text that is itself the body of a link, where any link would put an `<a>` in an `<a>`."""
     return scan(escape(s), False)
 
 
@@ -643,6 +661,27 @@ def trim_url_tail(url: str) -> str:
     return url
 
 
+def drop_cut_reference(url: str) -> str:
+    """A cut URL with no half of a character reference at its end (review round 3, F1).
+
+    `scan` reads ESCAPED text, where every `&` begins a reference that ends in `;`. `INLINE_URL`'s
+    last character may not be `;`, so a URL the author closed with `"`, `'`, `>` or `&` matched up to
+    the `;` of `&quot;` / `&#x27;` / `&gt;` / `&amp;` and stopped there: an href and a link text ending
+    in `&quot`, which the subset refuses (`_BARE_REF`), so `link_html` raised inside every generator.
+    A `&` with no `;` after it in the URL can only be such a half, so the whole reference goes back
+    to the prose, and the punctuation it exposes is trimmed as any other tail is (`see "x.ee/a."`).
+
+    Why here and not by matching URLs against the DECODED text: a decoded match would see the
+    author's `"`, `'` and `>`, which `INLINE_URL` admits inside a URL today, so it would change which
+    URLs exist across the corpus to fix a cut that only ever lands at the end.
+    """
+    while True:
+        cut = trim_url_tail(re.sub(r"&[A-Za-z0-9#]*$", "", url))
+        if cut == url:
+            return url
+        url = cut
+
+
 def scan(s: str, keys: bool = True) -> str:
     """The scan itself, over ALREADY-ESCAPED text. Never call it on raw input.
 
@@ -653,6 +692,9 @@ def scan(s: str, keys: bool = True) -> str:
 
     Precedence, highest first: code span → link → bold → del → em → key → bare URL. Code
     first is what makes a code span literal.
+
+    `keys=False` is the scan of a link's OWN text, and it makes no link of any kind there: no key,
+    no bare URL, no `[x](y)` (review round 3, F2 and its property). The name predates the other two.
 
     Unpaired delimiters print as themselves. Dropping text to make tags balance would
     trade a cosmetic defect for content loss, and content loss is the worse of the two.
@@ -671,8 +713,10 @@ def scan(s: str, keys: bool = True) -> str:
                 i = close + 1
                 continue
 
-        # ── link: the TEXT is rendered, the TARGET is filtered
-        if c == "[":
+        # ── link: the TEXT is rendered, the TARGET is filtered. Not inside a link's own text, where
+        # `[x](y)` prints as itself (the property in `check-page-links.py`, review round 3: an
+        # `<a>` in the body `render_unlinked` writes inside a generator's own `<a>`).
+        if keys and c == "[":
             m = LINK_AT.match(s, i)
             if m and m.group(1) and m.group(2):
                 out.append(f'<a href="{safe_href(m.group(2))}">{scan(m.group(1), False)}</a>')
@@ -721,8 +765,9 @@ def scan(s: str, keys: bool = True) -> str:
                 i = m.end()
                 continue
 
-        # ── bare URL, considered LAST so markup wins a tie
-        m = INLINE_URL.match(s, i)
+        # ── bare URL, considered LAST so markup wins a tie. Not inside a link's own text either
+        # (review round 3, F2): `[https://a.com/x](https://b.com)` put an `<a>` inside an `<a>`.
+        m = INLINE_URL.match(s, i) if keys else None
         if m:
             url = m.group(0)
             # `[^\s<]+` will happily eat `**bold**` into the href. An author who writes
@@ -733,6 +778,7 @@ def scan(s: str, keys: bool = True) -> str:
             cuts = [p for p in (url.find(t) for t in URL_STOPPERS) if p != -1]
             if cuts:
                 url = trim_url_tail(url[:min(cuts)])
+            url = drop_cut_reference(url)
             if INLINE_URL.fullmatch(url):
                 out.append(f'<a href="{url}">{url}</a>')
                 i += len(url)
@@ -1057,7 +1103,7 @@ def _self_test_body() -> int:
             return "returned"
         except OutsideSubset as exc:
             return "refused" if exc.problems else "refused, naming nothing"
-        except Exception as exc:                 # 3.12's AssertionError on `<![foo]>`, let through
+        except Exception as exc:                 # old 3.12's AssertionError on `<![foo]>`, let through
             return type(exc).__name__
 
     case("subset: Codex r2 2 — elements inside a <textarea> are refused",
@@ -1126,13 +1172,60 @@ def _self_test_body() -> int:
     case("subset: a reference with no `;` in an ATTRIBUTE", len(_sub('<a href="?a=1&b=2">x</a>', "no `;`")), 1)
     case("subset: a reference with no `;` in text, numeric too", len(_sub("<p>&#35x</p>", "no `;`")), 1)
     case("subset: a reference WITH its `;` is fine", subset_problems("<p>&#35;7 &amp; &#x27;</p>"), [])
+
+    # ── round 3 (Claude r3). Each input is the review's own, verbatim.
+    # F1: a URL the author closed with a quote, `>` or `&` cut a reference in half, and the subset refused
+    # the page, so every generator raised. The whole reference now stays in the prose.
+    case("url: Claude r3 F1 — a URL in double quotes ends before `&quot;`", r('see "https://x.com/a" now'),
+         'see &quot;<a href="https://x.com/a">https://x.com/a</a>&quot; now')
+    case("url: Claude r3 F1 — a URL in quotes, apostrophes, angle brackets or before `&` is inside the subset",
+         [subset_problems(f"<p>{r(x)}</p>") for x in ('see "https://x.com/a" now', "see 'https://x.com/a' now",
+                                                      "see <https://x.com/a> now", "see https://x.com/a& now")],
+         [[], [], [], []])
+    case("url: Claude r3 F1 — the dashboard entry the review built is linked, not refused",
+         refused(f'<p>{r("The page is served at \"http://127.0.0.1:7391/dashboard\" now.")}</p>'), "returned")
+    case("url: a reference cut off a URL exposes punctuation, which is trimmed too", r('"https://x.ee/a."'),
+         '&quot;<a href="https://x.ee/a">https://x.ee/a</a>.&quot;')
+    # The class, over the escape table (the review's fix direction 2): each character `escape` rewrites,
+    # hard after the URL and hard before it.
+    case("url: no character `escape` rewrites can cut a reference at either end of a URL",
+         [ch for ch in "&<>\"'" for x in (f"x https://a.b/c{ch} y", f"x {ch}https://a.b/c y")
+          if subset_problems(f"<p>{r(x)}</p>")], [])
+    # F2: a link's own text makes no link of any kind.
+    case("scan: Claude r3 F2 — a URL as a link's text is not nested into a second link",
+         r("[https://a.com/x](https://b.com)"), '<a href="https://b.com">https://a.com/x</a>')
+    case("render_unlinked: a bare URL in a link body stays text", render_unlinked("see https://a.b/c"),
+         "see https://a.b/c")
+    case("render_unlinked: a markdown link in a link body prints as itself, never a second <a>",
+         render_unlinked("[x](https://b.c)"), "[x](https://b.c)")
+    # F3: the whole "close a p element" set, and HTML's own whitespace.
+    case("subset: Claude r3 F3 — each start tag the review found closing a <p> is an implied end tag",
+         [t for t in ("li", "dd", "dt", "summary", "center", "dir", "listing")
+          if not _sub(f"<p>a<{t}>b</{t}>c</p>", "implied")], [])
+    case("subset: Claude r3 F3 — `&nbsp;` directly inside a table is text a browser moves out",
+         len(_sub("<table>&nbsp;<tr><td>x</td></tr></table>", "out of the table")), 1)
+    case("subset: ASCII whitespace directly inside a table moves nothing",
+         subset_problems("<table> \t\n\f\r<tr><td>x</td></tr></table>"), [])
+    case("subset: a <p> outside an <object> is not in button scope, so a <div> in it closes nothing",
+         subset_problems("<p>a<object><div>x</div></object></p>"), [])
+    # F4: the comments' claim, measured on whatever interpreter runs this. The two guards an old 3.12
+    # needs are driven below on ANY Python; this pins WHICH parser the comments say has the behaviour.
+    _old_312 = not hasattr(HTMLParser, "RCDATA_CONTENT_ELEMENTS")
+    try:
+        HTMLParser().feed("<![foo]>x")
+        _raises = False
+    except AssertionError:
+        _raises = True
+    case("subset: Claude r3 F4 — a parser raises on `<![foo]>` exactly when it is an OLD 3.12 (no RCDATA set)",
+         _raises, _old_312)
     case("subset: the line a problem is on is named",
          (subset_problems("<p>a</p>\n\n<span/>") or ["none"])[0][:7], "line 3:")
-    # Two rules only 3.12's parser reaches on a real input; each is driven here on EITHER Python by making
-    # the parser behave as 3.12's does, so the rule is held wherever the suite runs.
+    # Two rules only an OLD 3.12's parser reaches on a real input (3.12.9, not 3.12.12: see the subset
+    # comment); each is driven here on ANY Python by making the parser behave as that one does, so the
+    # rule is held wherever the suite runs.
     _rc = getattr(_Tokens, "RCDATA_CONTENT_ELEMENTS", None)
     try:
-        _Tokens.RCDATA_CONTENT_ELEMENTS = ()          # 3.12: a tag inside <title> / <textarea> is a tag
+        _Tokens.RCDATA_CONTENT_ELEMENTS = ()          # old 3.12: a tag inside <title> / <textarea> is a tag
         _events.cache_clear()
         case("subset: a start tag inside <title>, as 3.12's html.parser reports it",
              _sub("<title><b>x</b></title>", "inside <title>"), ["line 1: <b> inside <title>, which a browser reads as text"])
@@ -1147,7 +1240,7 @@ def _self_test_body() -> int:
         raise AssertionError("unknown status keyword 'foo' in marked section")
     _hc = _Tokens.handle_comment
     try:
-        _Tokens.handle_comment = _assert                # 3.12 raises this on `<![foo]>`
+        _Tokens.handle_comment = _assert                # old 3.12 raises this on `<![foo]>`
         _events.cache_clear()
         try:
             _got = subset_problems("<!-- c -->")

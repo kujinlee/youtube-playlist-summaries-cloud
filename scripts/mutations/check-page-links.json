@@ -505,5 +505,70 @@
     "expect": [
       "rule 2: a PR href whose number is joined on is found"
     ]
+  },
+  {
+    "name": "a renderer that RAISES is swallowed as a pass by the property",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "                why = [f\"{type(exc).__name__}: {str(exc)[:120]}\"]",
+        "                why = []"
+      ]
+    ],
+    "expect": [
+      "property: a renderer outside the subset, nesting an <a>, or raising is each reported"
+    ]
+  },
+  {
+    "name": "the property no longer checks for an <a> in an <a>",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "                why = (page_markup.subset_problems(linked) + nested_anchors(linked)",
+        "                why = (page_markup.subset_problems(linked)"
+      ]
+    ],
+    "expect": [
+      "property: a renderer outside the subset, nesting an <a>, or raising is each reported"
+    ]
+  },
+  {
+    "name": "the corpus loses the review's verbatim inputs",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    return list(FUZZ_VERBATIM) + [\"\".join(",
+        "    return [] + [\"\".join("
+      ]
+    ],
+    "expect": [
+      "property: the corpus is the review's inputs plus the seeded draw, the same on every run"
+    ]
+  },
+  {
+    "name": "the corpus is no longer seeded, so two runs differ",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    rng = random.Random(seed)",
+        "    rng = random.Random()"
+      ]
+    ],
+    "expect": [
+      "property: the corpus is the review's inputs plus the seeded draw, the same on every run"
+    ]
+  },
+  {
+    "name": "the property reads one renderer per module, not each one in the table",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        fn = getattr(mods[script], attr)\n",
+        "        fn = getattr(mods[script], attr)\n        if any(n.startswith(script[:-3] + \".\") for n, _ in out):\n            continue\n"
+      ]
+    ],
+    "expect": [
+      "property: every generator renderer in GENERATOR_RENDERERS is read from its own module"
+    ]
   }
 ]

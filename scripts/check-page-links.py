@@ -5,7 +5,7 @@
     python3 scripts/check-page-links.py --build            # every rule: builds the five pages into a temp dir
     python3 scripts/check-page-links.py --build --ci       # every rule over what the CHECKOUT alone builds (CI)
     python3 scripts/check-page-links.py --dir ~/explainers # every rule, over pages already built
-    python3 scripts/check-page-links.py --self-test  # 88 cases
+    python3 scripts/check-page-links.py --self-test  # 94 cases
 
 WHY (backlog #470; spec `docs/superpowers/specs/2026-11-02-comprehensibility-suite-design.md` §3, §7).
 A key — `backlog #N`, `PR #N`, a goal, a feature, a dashboard entry, a goal-tree thread — has ONE home
@@ -63,6 +63,7 @@ import contextlib
 import functools
 import io
 import pathlib
+import random
 import re
 import shutil
 import subprocess
@@ -240,6 +241,75 @@ def nested_anchors(page: str) -> list[str]:
     tokens, open_at_end = _tokens(page)
     out = [f"line {_line(page, t.start)}" for t in tokens if t.tag == "a" and t.kind == "start" and t.in_a]
     return out + (["an <a> still open at the end"] if "a" in open_at_end else [])
+
+
+# ── THE GENERATORS' OWN TEXT IS INSIDE THE SUBSET (review round 3, F1 / F2). The subset is strict, and
+# r2 measured it only against what the generators happened to EMIT: a URL in quotes, which the renderer
+# cut into `&quot`, crashed all five. So each generator's renderer for author text is read here, by its
+# OWN name in its OWN module (not `page_markup`'s, which a generator could stop using), and its output,
+# placed where that generator places it, is linked and checked over a seeded fuzz corpus.
+# (script, attribute, how the page wraps it). goal-tree's `_html_line` takes the repo too.
+GENERATOR_RENDERERS = (
+    ("gen-dashboard.py", "_prose", "<div>{}</div>"),
+    ("gen-dashboard.py", "_inline", "<p>{}</p>"),
+    ("gen-dashboard.py", "_inline_unlinked", '<a href="#x">{}</a>'),
+    ("gen-backlog-page.py", "md", "<table><tbody><tr><td>{}</td></tr></tbody></table>"),
+    ("gen-goals-page.py", "inline_md", '<p class="sentence">{}</p>'),
+    ("gen-features-page.py", "inline_md", '<p class="purpose">{}</p>'),
+    ("gen-features-page.py", "inline_unlinked", '<li><a href="#x">{}</a></li>'),
+    ("goal-tree.py", "_html_line", '<pre class="tree">{}</pre>'),
+)
+# The alphabet: everything `escape` rewrites, URLs, keys, markdown delimiters, line and paragraph breaks,
+# and references written raw (`&nbsp;`, a `;`-less `&amp`) or as the character itself (U+00A0).
+FUZZ_TOKENS = ("<", ">", "&", '"', "'", " ", "\n", "\n\n", "\t", " ", "https://a.b/c", "http://x.y/",
+               "backlog #7", "PR #3", "[", "]", "(", ")", "](https://b.c)", "`", "*", "**", "_", "~~",
+               "&nbsp;", "&amp", "&#35;", ".", ",", ";", ":", "x", "word", "- ", "|", "#")
+# The review's concrete inputs, verbatim, so the corpus always holds them.
+FUZZ_VERBATIM = ('see "https://x.com/a" now', "see 'https://x.com/a' now", "see <https://x.com/a> now",
+                 "see https://x.com/a& now", 'The page is served at "http://127.0.0.1:7391/dashboard" now.',
+                 " See <https://example.com/x> and \"https://example.com/y\". ", "[https://a.com/x](https://b.com)")
+FUZZ_SEED, FUZZ_COUNT = 470, 3000
+
+
+def fuzz_inputs(seed: int = FUZZ_SEED, count: int = FUZZ_COUNT) -> list[str]:
+    """PURE. The review's inputs, then `count` strings of 1-24 tokens drawn from `FUZZ_TOKENS` by a
+    seeded generator: the same corpus on every run and every machine."""
+    rng = random.Random(seed)
+    return list(FUZZ_VERBATIM) + ["".join(rng.choice(FUZZ_TOKENS) for _ in range(rng.randint(1, 24)))
+                                  for _ in range(count)]
+
+
+def generator_renderers(root: pathlib.Path = ROOT) -> list[tuple[str, object]]:
+    """Each `GENERATOR_RENDERERS` entry as (`script.attribute`, raw text -> the wrapped page). A missing
+    script or attribute RAISES: a renderer this cannot read is not one whose output was checked."""
+    import importlib.util
+    mods, out = {}, []
+    for script, attr, wrap in GENERATOR_RENDERERS:
+        if script not in mods:
+            spec = importlib.util.spec_from_file_location(script[:-3].replace("-", "_") + "_r3", root / "scripts" / script)
+            mods[script] = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mods[script])
+        fn = getattr(mods[script], attr)
+        render = (lambda s, fn=fn: fn(s, "o/r")) if attr == "_html_line" else fn
+        out.append((f"{script[:-3]}.{attr}", lambda s, render=render, wrap=wrap: wrap.format(render(s))))
+    return out
+
+
+def renderer_problems(renderers, inputs) -> list[str]:
+    """`name: input -> problem` for each input on which a renderer's page, then `link_html`, RAISES (a
+    crash is a problem, never swallowed as a pass), is outside the subset, nests an `<a>` in an `<a>`,
+    or is not a fixed point of `link_html`. [] when every renderer is clean on every input."""
+    out = []
+    for name, render in renderers:
+        for s in inputs:
+            try:
+                linked = page_markup.link_html(render(s), "o/r")
+                why = (page_markup.subset_problems(linked) + nested_anchors(linked)
+                       + ([] if page_markup.link_html(linked, "o/r") == linked else ["not a fixed point"]))
+            except Exception as exc:
+                why = [f"{type(exc).__name__}: {str(exc)[:120]}"]
+            out += [f"{name}: {s!r} -> {w}" for w in why[:1]]
+    return out
 
 
 def _attrs(page: str):
@@ -640,9 +710,10 @@ def _self_test_body() -> int:
                 continue
             case(f"a page with {label} FAILS", check_pages(pathlib.Path(t))[0], BROKEN)
         # ── rule 0 (Codex r2 2-8): each review input, verbatim, fails the page. MEASURED with rule 0
-        # switched off: six of the eleven pass every other rule under 3.14, and five under 3.12, where
+        # switched off: six of the eleven pass every other rule under 3.14, and five under 3.12.9, where
         # `<![foo]>` crashes the parser instead — not the same ones, because the two parsers read them
-        # differently, which is the finding.
+        # differently, which is the finding. (3.12.9 is an OLD 3.12; 3.12.12 reads these as 3.14 does —
+        # `page_markup`'s subset comment, review round 3 F4.)
         for body, label in (('<a href="#fake">go</a><textarea><b id="fake">text</b></textarea>', "r2 2: a textarea"),
                             ("<script/>broken (</script>", "r2 3: a self-closed script"),
                             ("<script>broken (", "r2 3: an unterminated script"),
@@ -665,6 +736,42 @@ def _self_test_body() -> int:
         case("rule 0: a page outside the subset is named, and its other rules are NOT RUN",
              (rc, any(x.startswith("[FAIL] rule 0: /goals") and "NOT RUN" in x for x in lines),
               any(x.startswith("[FAIL] rule 1:") for x in lines)), (BROKEN, True, False))
+
+    # ── the property (Claude r3 F1 / F2): every generator's renderer, over the seeded corpus, then
+    # `link_html`, never raises, stays inside the subset, nests no `<a>`, and is a fixed point.
+    _saved = page_markup.REPO, page_markup.ROWS
+    try:
+        page_markup.use_repo("o/r")
+        page_markup.use_rows(None)
+        _renderers = generator_renderers()
+        case("property: every generator renderer in GENERATOR_RENDERERS is read from its own module",
+             len(_renderers), len(GENERATOR_RENDERERS))
+        _inputs = fuzz_inputs()
+        case("property: the corpus is the review's inputs plus the seeded draw, the same on every run",
+             (len(_inputs), _inputs == fuzz_inputs(), _inputs[:len(FUZZ_VERBATIM)] == list(FUZZ_VERBATIM)),
+             (len(FUZZ_VERBATIM) + FUZZ_COUNT, True, True))
+        case(f"property: Claude r3 F1/F2 — {len(_inputs)} inputs x {len(_renderers)} generator renderers, "
+             "linked, raise nothing and stay inside the subset", renderer_problems(_renderers, _inputs)[:3], [])
+        case("property: the seed and the count each move the draw, and the review's inputs lead it",
+             (fuzz_inputs(1, 5) != fuzz_inputs(2, 5), len(fuzz_inputs(1, 5)), len(fuzz_inputs(1, 9))),
+             (True, len(FUZZ_VERBATIM) + 5, len(FUZZ_VERBATIM) + 9))
+        with tempfile.TemporaryDirectory() as _empty:
+            try:
+                _missing = f"returned {len(generator_renderers(pathlib.Path(_empty)))}"
+            except OSError as exc:
+                _missing = type(exc).__name__
+        case("property: a root with no generators RAISES, never a corpus with no renderers in it",
+             _missing, "FileNotFoundError")
+        # The property's own falsifiers: each failure shape it claims to see, seen.
+        _bad = [("ref", lambda s: '<a href="https://x.com/a&quot">x</a>'),
+                ("nest", lambda s: '<a href="/a"><a href="/b">x</a></a>'),
+                ("raise", lambda s: 1 / 0)]
+        case("property: a renderer outside the subset, nesting an <a>, or raising is each reported",
+             [w.split(" -> ")[1].split(":")[0][:17] for w in renderer_problems(_bad, ["x"])],
+             ["OutsideSubset", "line 1", "ZeroDivisionError"])
+    finally:
+        page_markup.use_repo(_saved[0])
+        page_markup.use_rows(_saved[1])
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

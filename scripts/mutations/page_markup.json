@@ -569,7 +569,7 @@
   "file": "scripts/page_markup.py",
   "edits": [
    [
-    "            if top in _TABLE_CHILDREN and x.strip():",
+    "            if top in _TABLE_CHILDREN and x.strip(ASCII_WHITESPACE):",
     "            if False:"
    ]
   ],
@@ -861,6 +861,108 @@
   ],
   "expect": [
    "_decode_map: Codex r2 7 — a named reference with no `;` is not one piece"
+  ]
+ },
+ {
+  "name": "a URL closed by a quote, `>` or `&` cuts its reference in half again (Claude r3 F1)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            url = drop_cut_reference(url)\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "url: Claude r3 F1 — a URL in double quotes ends before `&quot;`",
+   "url: Claude r3 F1 — a URL in quotes, apostrophes, angle brackets or before `&` is inside the subset",
+   "url: no character `escape` rewrites can cut a reference at either end of a URL"
+  ]
+ },
+ {
+  "name": "the punctuation a dropped reference exposes is no longer trimmed",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        cut = trim_url_tail(re.sub(r\"&[A-Za-z0-9#]*$\", \"\", url))",
+    "        cut = re.sub(r\"&[A-Za-z0-9#]*$\", \"\", url)"
+   ]
+  ],
+  "expect": [
+   "url: a reference cut off a URL exposes punctuation, which is trimmed too"
+  ]
+ },
+ {
+  "name": "a bare URL inside a link's own text is linked again, nesting an <a> (Claude r3 F2)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        m = INLINE_URL.match(s, i) if keys else None",
+    "        m = INLINE_URL.match(s, i)"
+   ]
+  ],
+  "expect": [
+   "scan: Claude r3 F2 — a URL as a link's text is not nested into a second link",
+   "render_unlinked: a bare URL in a link body stays text"
+  ]
+ },
+ {
+  "name": "a markdown link inside an unlinked body is an <a> again",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        if keys and c == \"[\":",
+    "        if c == \"[\":"
+   ]
+  ],
+  "expect": [
+   "render_unlinked: a markdown link in a link body prints as itself, never a second <a>"
+  ]
+ },
+ {
+  "name": "the p-closers set loses the seven names r3 found missing (Claude r3 F3)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "\"blockquote\", \"center\", \"details\", \"dialog\", \"dir\",",
+    "\"blockquote\", \"details\", \"dialog\","
+   ],
+   [
+    "\"section\", \"summary\", \"ul\",",
+    "\"section\", \"ul\","
+   ],
+   [
+    "\"pre\", \"listing\", \"form\", \"li\", \"dd\", \"dt\",",
+    "\"pre\", \"form\","
+   ]
+  ],
+  "expect": [
+   "subset: Claude r3 F3 — each start tag the review found closing a <p> is an implied end tag"
+  ]
+ },
+ {
+  "name": "table whitespace is Python's again, so `&nbsp;` in a table passes (Claude r3 F3)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "x.strip(ASCII_WHITESPACE)",
+    "x.strip()"
+   ]
+  ],
+  "expect": [
+   "subset: Claude r3 F3 — `&nbsp;` directly inside a table is text a browser moves out"
+  ]
+ },
+ {
+  "name": "<object> leaves button scope, so a <p> outside it is closed by a <div> inside it",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "\"marquee\", \"object\", \"template\",",
+    "\"marquee\", \"template\","
+   ]
+  ],
+  "expect": [
+   "subset: a <p> outside an <object> is not in button scope, so a <div> in it closes nothing"
   ]
  }
 ]
