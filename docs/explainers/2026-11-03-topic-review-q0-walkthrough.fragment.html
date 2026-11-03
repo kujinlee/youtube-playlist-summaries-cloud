@@ -1,0 +1,286 @@
+<title>Review Q0 walkthrough — choose the review method by kind of change</title>
+
+<style>
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.rev{border:1px solid var(--rule);border-radius:7px;background:var(--panel);padding:4px 18px 14px;margin:20px 0}
+.rev h3{margin-top:14px}
+.chip{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;
+  border-radius:10px;border:1px solid var(--amber);color:var(--amber);margin-left:8px;vertical-align:middle}
+.chip.set{border-color:var(--verified-br);color:var(--verified)}
+.chip.ret{border-color:var(--red);color:var(--red)}
+.rev dl{margin:8px 0;display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:15px}
+.rev dt{color:var(--fg3);font-weight:600}
+.rev dd{margin:0}
+.ans{margin-top:12px;border:1px dashed var(--rule);border-radius:5px;padding:9px 12px;
+  color:var(--fg3);font-size:14.5px;background:var(--bg)}
+.ans b{color:var(--fg2)}
+@media (max-width:560px){ .rev dl{grid-template-columns:1fr} }
+</style>
+
+<div class="wrap ex-body">
+
+<h1>Review Q0 — choosing the review method by kind of change</h1>
+<p class="horizon">as of <code>1d3a0d62</code> (master) · 2026-11-03 00:41 PST · a DRAFT rule for you to walk through, not yet in force. Draft pull request on branch <code>draft-177-q0</code>; nothing merges until you answer the questions at the end.</p>
+
+<div class="reading">
+<b>The reading I chose:</b> <i>a walkthrough of the drafted change to <code>docs/review-method.md</code> section 0 (the step-by-step card that decides how a change gets reviewed). The draft adds a new first question, Q0, that picks the kind of check by the kind of change. You approved drafting it on 11-02 at 21:08; this page is for deciding whether it goes in as written.</i>
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page. This page: <code>http://127.0.0.1:7391/2026-11-03-topic-review-q0-walkthrough.html</code>
+<ol>
+<li><b>To ask or answer:</b> hover a heading (or select any sentence) → <b>ask</b> → type your question, or <i>approve</i> / your change → <b>Send</b>. Then say <i>“read my questions”</i> in the session; the answer is written into this page.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#why">The problem in one paragraph</a></li>
+<li><a href="#side">Today's first question vs. the draft Q0, side by side</a></li>
+<li><a href="#kinds">One section per kind of change</a></li>
+<li><a href="#practice">What changes in practice</a></li>
+<li><a href="#hybrid">Half of Q0 is judged, half is meant to be automatic — and that half is not built</a></li>
+<li><a href="#falsifier">How we would know Q0 chose wrong</a></li>
+<li><a href="#withdrawn">⚠ One piece of evidence I was asked to use, and did not</a></li>
+<li><a href="#notdecided">What is NOT decided by this draft</a></li>
+<li><a href="#questions">Your questions to answer</a></li>
+<li><a href="#measured">What was read vs. inferred</a></li>
+</ol>
+</div>
+
+<h2 id="why">The problem in one paragraph</h2>
+<p class="lede">Every review question in <code>review-method.md</code> section 0 asks <b>how much</b> adversarial review to run — one round or many, both reviewers or one, when to stop. None of them asks whether reading the diff is the <b>right kind of check</b> for this change. Some changes go wrong in ways a reviewer reading a diff is bad at finding: a design that fights itself, a parser meeting inputs nobody imagined, a guard that can never go red. Backlog #177 (the open item <i>"the review INSTRUMENT is never chosen, only its dosage"</i>) proposes a question asked first — Q0 — that picks the check by the kind of change.</p>
+<p>The repo's own one-line justification, quoted in the draft from <code>scripts/check-vocabulary-collisions.py</code>:</p>
+<blockquote><p>“every gate this project owns asks 'is this correct?', which is a LOCAL question and can always be answered yes by patching. A duplicated mechanism is never locally incorrect.”</p></blockquote>
+
+<h2 id="side">Today's first question vs. the draft Q0, side by side</h2>
+<div class="scroll"><table>
+<tr><th>Today — Q1 is the entry point</th><th>Draft — Q0 comes first, then Q1</th></tr>
+<tr><td><b>Q1 · Full loop, or one round?</b> Keyed on the <b>changed file paths</b>, not judgement. Anything that is not prose → full loop; prose only → one round. A script (<code>scripts/check-review-decision.py</code>) answers it.</td>
+<td><b>Q0 · Which instrument?</b> Keyed on <b>what kind of wrongness the change can have</b>. Seam move → design review before building; logic inside a seam → the normal loop; parsing surface → a corpus run; guard → the mutation sweep; prose → one round under the round cap. Then Q1 still decides how much review, from paths.</td></tr>
+<tr><td>Assumes adversarial diff review is always the instrument.</td><td>Names a <b>primary</b> instrument per kind, and what review still does for that kind.</td></tr>
+<tr><td>Entirely mechanical: paths in, answer out.</td><td>⚠ <b>Deliberately judged at the entry</b> — the draft says out loud this is the one exception to Q1's "paths, not judgement" stance, so nobody later "fixes" the order back. Reason: a path says <i>what</i> changed, not what kind of wrongness it can have.</td></tr>
+<tr><td>No record of which instrument was chosen.</td><td>One line in round 1's coordinator document: the kind, and the instrument run.</td></tr>
+</table></div>
+<p>The full drafted text is in the pull request diff; it sits directly above <code>### Q1</code> in <code>docs/review-method.md</code>.</p>
+
+<h2 id="kinds">One section per kind of change</h2>
+
+<h3 id="k-seam">1 · The change moves a seam</h3>
+<p><b>Seam</b> here means a boundary in the design: a new module, a change to who owns what, a new protocol or a new vocabulary (the wording is taken from <code>process-checklists.md</code> → <i>A side job inherits NO design approval</i>).</p>
+<p><b>Instrument:</b> an architecture review <b>before building</b> — the review <code>dev-process.md</code> calls Phase 6. Then the normal loop on what gets built.</p>
+<p><b>Evidence:</b> the <code>decision-card-soundness</code> branch is the repo's labelled example: it showed two of the four "this is a seam problem, not a logic problem" signals — three synonyms hid a trigger (<i>two names for one concept</i>), and four designs that were each locally correct never converged (<i>fixes locally correct but non-terminating</i>). Source: the velocity spec §2 and <code>docs/superpowers/specs/2026-09-25-decision-card-soundness-design.md</code>. A more recent case: <code>docs/reviews/architecture-review-2026-11-02-spec-status-facet.md</code> found that later review rounds attacked numbers typed into a spec rather than its design.</p>
+
+<h3 id="k-logic">2 · Logic inside an existing seam</h3>
+<p><b>Instrument:</b> the normal loop — Q1 onward, <b>unchanged</b>. This is most code changes. Q0 adds one line to the round-1 record and nothing else.</p>
+
+<h3 id="k-surface">3 · A parsing surface</h3>
+<p><b>Surface</b> means code that reads open-ended input — a parser, matcher or classifier — where the risk is inputs nobody thought of.</p>
+<p><b>Instrument:</b> a corpus run over real, unseen inputs. Review still checks the <i>claims</i> made about the code.</p>
+<p><b>Evidence</b> (<code>docs/memory/dual-review-what-it-catches.md</code>, the closing-table guard work): six review rounds yielded <b>about seven</b> lexical edge cases; <b>one</b> corpus run over <b>5,287</b> unseen inputs produced <b>456</b> fires and <b>2</b> discrepancies — both of which turned out to be bugs in the ground-truth rule, not in the code. The same note records what review caught that the corpus could not: a safety property stated in a comment and never tested. Hence "review for claims, corpus for surfaces".</p>
+
+<h3 id="k-guard">4 · A guard</h3>
+<p><b>Guard</b> means a check, gate or test whose job is to go red when something is wrong.</p>
+<p><b>Instrument:</b> the mutation sweep (<code>scripts/check-plan-code.py --mutate</code>: deliberately break the code and confirm a named test goes red), including mutating the <b>call site</b>, not only the functions. Review reads what the sweep cannot reach.</p>
+<p><b>Evidence</b> (<code>docs/memory/unit-coverage-does-not-compose.md</code>, finding R9-1 on <code>scripts/check-closing-table.py</code>): a mutation that reverted the <b>whole change</b> at the only place it took effect survived with the suite at 151/151 green. It was found by mutating, and the note says it could not have been found by reading.</p>
+
+<h3 id="k-prose">5 · Prose only</h3>
+<p><b>Instrument:</b> Q1's one round, inside the round cap (Q4c: from round 4, findings are filed, not fixed, unless a blocker). Stop at the "prose floor" — when findings shift from <i>this cannot work</i> to <i>this is under-specified</i>, the section <i>Non-convergence means different things on a DOCUMENT and on CODE</i> already says to stop reviewing and build.</p>
+<p><b>Evidence:</b> the round-cap measurement already in Q4c (over the 14 days to 2026-10-31, rounds 1–3 caught 83% of the fixed Blocking/High findings).</p>
+
+<p><b>A change of more than one kind</b> takes every instrument it earns, and a seam goes first because the rest review what it settles. <b>A side job</b> that turns up mid-slice re-asks Q0 — the <code>process-checklists.md</code> rule already says <i>"When backlog #177's Q0 lands in review-method.md §0, this is the moment that re-asks it"</i>, so that rule's dangling pointer is closed by this draft without editing it.</p>
+
+<h2 id="practice">What changes in practice</h2>
+<div class="scroll"><table>
+<tr><th>Kind of work</th><th>Before</th><th>After Q0</th></tr>
+<tr><td>Ordinary code fix in an existing module</td><td>normal loop</td><td>normal loop + one line in the round-1 record</td></tr>
+<tr><td>New module / ownership change / new protocol</td><td>normal loop; architecture review only once rounds thrash (Q5)</td><td>architecture review <b>before</b> building, then the normal loop</td></tr>
+<tr><td>Parser, matcher, classifier</td><td>review rounds keep finding one edge case each</td><td>a corpus run is the primary check; review covers the claims</td></tr>
+<tr><td>A new or changed guard</td><td>review, with the sweep run in CI</td><td>the sweep is the primary check, including mutating the call site</td></tr>
+<tr><td>Docs and process prose</td><td>one round</td><td>unchanged — one round, round cap, stop at the prose floor</td></tr>
+<tr><td>A side job joining a slice</td><td>"ask by hand whether it moves a seam"</td><td>re-ask Q0 for the side job itself</td></tr>
+</table></div>
+
+<h2 id="hybrid">Half of Q0 is judged, half is meant to be automatic — and that half is not built</h2>
+<p>You decided Q0's form on 2026-09-24: <b>HYBRID</b> (recorded in the velocity spec's <i>Decisions of record</i>, item 2). The <b>entry</b> — which kind is this change? — is judged, because no definition of "seam" exists that a script can read. The <b>escalation</b> — has this branch started behaving like a seam problem? — is meant to be mechanical, over four signals: fixes locally correct but never ending; each fix adds code; machinery that manages a problem instead of doing work; two names for one concept.</p>
+<div class="k warn"><b>The automatic half is not in this draft.</b> The spec (§3) requires a calibration run first — apply the four signals to finished branches and see whether they separate the ones that thrashed — and that run has not started. Until it reports, the draft says to read the four signals by hand each round, and Q5 (thrashing → architecture review) stays the trigger. If calibration comes back negative, Q0 stays judgement-only, which the spec calls a result, not a failure.</div>
+
+<h2 id="falsifier">How we would know Q0 chose wrong</h2>
+<p>The repo's gate rule asks every rule to name the observation that would show it failed. The draft's:</p>
+<ul>
+<li>a change Q0 sent to the normal loop later shows Q5's thrashing shape, or two or more of the four signals, in a component Q0 did not call a seam;</li>
+<li>a corpus run or mutation sweep finds a class of defect on a change Q0 sent to review alone;</li>
+<li>a round-1 coordinator document with no Q0 line — Q0 was not asked.</li>
+</ul>
+<p>Either of the first two is recorded in that round's document as "Q0 chose wrong".</p>
+
+<h2 id="withdrawn">⚠ One piece of evidence I was asked to use, and did not</h2>
+<div class="k red"><b>The observer-log vs. verdict-path comparison is withdrawn.</b> Backlog #177 and the velocity spec describe it as a controlled experiment: work with an upfront architecture review "converged by round 3"; an un-designed side job "thrashed three more rounds". <code>docs/velocity-evidence-2026-09-24.md</code> §4 <b>withdrew both round counts on 2026-09-26</b>: the designed arm's own round documents show rounds 1–5 with round 5 NOT CONVERGED, and the other arm has no review records to trace. The draft cites none of it and says not to.</div>
+<p>⚠ The same withdrawn figures still stand, uncorrected, in the backlog #177 row, the velocity spec §2, and the table in <code>process-checklists.md</code> → <i>A side job inherits NO design approval</i>. This draft does not touch them (keeping the diff to Q0); they need a separate fix.</p>
+
+<h2 id="notdecided">What is NOT decided by this draft</h2>
+<ul>
+<li>The <b>automatic escalation half</b> — not built, pending calibration (above).</li>
+<li><b>Whether a script checks</b> that round 1 records a Q0 line. Today nothing does; the "no Q0 line" falsifier is read by a person.</li>
+<li><b>Backlog #177 is not ticked</b>, and the roadmap's open <i>Q0</i> item is left open, until you approve and it merges.</li>
+<li>No change to <code>dev-process.md</code> or <code>plugins.md</code> — the spec settled that <code>dev-process.md</code> gets nothing, and no check required an edit.</li>
+<li>The "de-escalation" strand (stop when findings turn to wording) — still open on backlog #177; the draft only points at the existing prose-floor rule.</li>
+</ul>
+
+<h2 id="questions">Your questions to answer</h2>
+<ol>
+<li><b>Approve Q0 as drafted, change a row, or reject it?</b> (A) approve — I mark the pull request ready and it goes through review and merge; (B) change a row — tell me which kind and what instrument; (C) reject — I close the draft and record why on backlog #177.</li>
+<li><b>Is "seam" defined well enough?</b> The draft uses <i>a new module, a change to who owns what, a new protocol or vocabulary</i>. Too broad (most features add a module) or right?</li>
+<li><b>Should "architecture review before building" be required or recommended</b> for a seam change? The draft says it is the primary instrument but does not make anything refuse a branch without one.</li>
+<li><b>Fix the withdrawn figures</b> in the backlog row, spec and checklist now, as a separate small pull request? (My recommendation: yes.)</li>
+</ol>
+
+<h2 id="measured">What was read vs. inferred</h2>
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Basis</th></tr>
+<tr><td>§0 starts at Q1, keyed on paths</td><td><span class="tag m">read</span> <code>docs/review-method.md</code> §0 Q1</td></tr>
+<tr><td>Q0's five rows, the exception clause, HYBRID, calibration not started</td><td><span class="tag m">read</span> velocity spec §2, §3, <i>Decisions of record</i>; backlog #177 row</td></tr>
+<tr><td>5,287 inputs / 456 fires / 2 discrepancies; about seven edge cases in six rounds</td><td><span class="tag m">read</span> <code>docs/memory/dual-review-what-it-catches.md</code> (also <code>docs/reviews/claude/closing-table-r5-claude.md</code>, <code>-r6-</code>)</td></tr>
+<tr><td>R9-1 survived at 151/151</td><td><span class="tag m">read</span> <code>docs/memory/unit-coverage-does-not-compose.md</code></td></tr>
+<tr><td>decision-card-soundness hit signals 1 and 4</td><td><span class="tag m">read</span> velocity spec §2; decision-card-soundness spec</td></tr>
+<tr><td>observer-log round counts withdrawn</td><td><span class="tag m">read</span> <code>docs/velocity-evidence-2026-09-24.md</code> §4</td></tr>
+<tr><td>Q0 will reduce rework rounds</td><td><span class="tag i">inferred</span> — not measured; the spec's experiment for it was withdrawn and is deferred</td></tr>
+<tr><td>"Seam" can be judged consistently by different people</td><td><span class="tag i">inferred</span> — untested</td></tr>
+</table></div>
+
+</div>
