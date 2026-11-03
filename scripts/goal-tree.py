@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 165 cases
+    python3 scripts/goal-tree.py --self-test                 # 176 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -19,7 +19,9 @@ been armed since 2026-10-25, so it showed nothing of the work the owner was watc
     would print a plausible tree that is believed.
   * the STATES — merged (with its SHA), open (draft, mergeability, checks), in flight, closed — are
     DERIVED at snapshot time from `git log origin/master` subjects, `gh pr list` and
-    `.claude/inflight.jsonl`. A declared `waits on …` is shown as DECLARED, never as a derived state.
+    `.claude/inflight.jsonl`. A thread naming a backlog row whose Status cell says `SUPERSEDED by backlog
+    #M` or `WITHDRAWN` is ✖ superseded / withdrawn whatever its PR did (backlog #484); an unread backlog
+    makes such a leaf CANNOT RUN, never ✅. A declared `waits on …` is shown as DECLARED, never as a derived state.
 
 ⛔ CANNOT RUN IS NEVER A STATE THAT GETS LOGGED AS ONE. When `git fetch`, `git log` or `gh` fails, every
 leaf that needed it says CANNOT RUN in the tree that is printed, and the snapshot is NOT appended (exit
@@ -117,7 +119,11 @@ SUBJECT_PR_RE = re.compile(r"\(#(\d+)\)\s*$")
 LEDGER_NUM_RE = re.compile(r"(?:#|(?<=-))(\d+)\b")
 
 GLYPH = {"merged": "✅", "open": "⏳", "inflight": "⏳", "next": "⬜", "blocked": "❌",
-         "closed": "✖", "notfound": "❓", "cannot": "⚠"}
+         "closed": "✖", "superseded": "✖", "withdrawn": "✖", "notfound": "❓", "cannot": "⚠"}
+# backlog #484: a row's STATUS cell can say its work was replaced or dropped, and that beats the merge state —
+# a merged PR on a superseded row is not "delivered". Read from the Status cell only, never the title.
+SUPERSEDED_RE = re.compile(r"\bSUPERSEDED by backlog #(\d+)\b")
+WITHDRAWN_RE = re.compile(r"\bWITHDRAWN\b")
 # When a thread names several PRs, the one state shown is the first of these that any of them has:
 # a thread is merged only when ALL its PRs are, and an unreadable one makes the whole thread unread.
 PRECEDENCE = ("cannot", "open", "notfound", "closed", "merged")
@@ -260,6 +266,17 @@ def derive_thread(t: dict, src: dict) -> dict:
                                      + " · " + _SS.check_summary(p.get("statusCheckRollup")))
         else:
             state, detail = "next", "no PR names it yet"
+    if rows:
+        # backlog #484: the backlog row's own Status cell overrides the merge state. ⛔ An unread backlog
+        # is CANNOT RUN for every backlog ref — never a silent fall back to the merge (✅).
+        fates = src.get("fates")
+        if fates is None:
+            state, detail = "cannot", (f"CANNOT RUN — {src.get('fates_error') or BACKLOG_REL + ' was not read'}"
+                                       f", so a superseded or withdrawn row cannot be ruled out")
+        fated = [fates[n] for n in rows if n in (fates or {})]
+        if fated:
+            state = "superseded" if any(f[0] == "superseded" for f in fated) else "withdrawn"
+            detail = " · ".join(dict.fromkeys(f[1] for f in fated)) + " · " + detail
     nums = set(prs) | set(rows)
     flying = [_SS.clean(e.get("what", ""), 160) for e in src["ledger"] if _ledger_numbers(e) & nums]
     if flying and state in ("next", "notfound"):
@@ -538,6 +555,25 @@ def open_plans(plans: list[dict], wl) -> list[dict]:
 
 
 # ── reading the world (the only impure part) ──────────────────────────────────────────────────
+def row_fates(text: str) -> tuple[dict, list[str]]:
+    """PURE. ({row: (state, detail)}, problems) for every backlog row whose STATUS cell says SUPERSEDED or
+    WITHDRAWN (backlog #484), read by gen-backlog-page's ONE row parser (its `CELL_SPLIT` is check-docs').
+    `SUPERSEDED by backlog #M` beats `WITHDRAWN`: the forward pointer is what tells the reader where the goal
+    went. Any line the parser refused is a PROBLEM — that row may be the superseded one."""
+    gb = _sibling("gen-backlog-page")
+    unread: list[str] = []
+    fates = {}
+    for r in gb.parse(text.split("\n"), unread):
+        st = r["status"]
+        m = SUPERSEDED_RE.search(st)
+        if m:
+            fates[r["num"]] = ("superseded", f"superseded → backlog #{m.group(1)} (method refuted, goal moved)")
+        elif WITHDRAWN_RE.search(st):
+            fates[r["num"]] = ("withdrawn", "withdrawn")
+    problems = [f"{len(unread)} line(s) of {BACKLOG_REL} the row parser could not read"] if unread else []
+    return fates, problems
+
+
 def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
     """Read git, gh, the ledger and the plans. NEVER RAISES: a failure is recorded in `errors` by source.
 
@@ -615,6 +651,19 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
             errors[key] = "; ".join(problems) + " — NOT READ"
     needs += needs_from_ledger(src["ledger"])
     src["needs"] = consolidate(needs)
+    # backlog #484: which rows are SUPERSEDED or WITHDRAWN. Unread (or partly unread) leaves `fates` None,
+    # and every thread naming a backlog row then says CANNOT RUN.
+    src["fates"], src["fates_error"] = None, None
+    try:
+        fates, fproblems = row_fates((root / BACKLOG_REL).read_text(encoding="utf-8"))
+        if fproblems:
+            src["fates_error"] = "; ".join(fproblems)
+        else:
+            src["fates"] = fates
+    except Exception as exc:                      # noqa: BLE001 - CANNOT RUN, named, never ✅
+        src["fates_error"] = f"{BACKLOG_REL} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
+    # No second `errors["backlog"]` here: the NEEDS YOU read above reads the same file through the same
+    # parser and already names it NOT READ — a copy would mask that clause (X1's mutation measured it).
     # backlog #389: the plans of EVERY checkout, through the one plan reader. A main checkout with no
     # `.claude/plans/` holds no plan — a fact, said as a note; any other failure is NOT READ.
     src["plans"], src["plan_notes"] = [], []
@@ -875,7 +924,8 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
              '<p class="lede">Each thread hangs under the owner request it serves. The relation '
              '(fix, blocker, bookkeeping, side) is declared by hand; the state is read from git and gh '
              'when the snapshot is taken. ✅ merged · ⏳ open or in flight · ⬜ next · ❌ waits '
-             '(declared) · ✖ closed · ⚠ could not be read.</p>']
+             '(declared) · ✖ closed, superseded (→ where the goal went) or withdrawn · ⚠ could not be '
+             'read.</p>']
     if live is not None and live["cannot"]:
         parts.append('<p class="warn">⚠ The live read at ' + html.escape(live["at"]) + ' could NOT '
                      'run, so it was not logged: ' + html.escape("; ".join(live["cannot"])) +
@@ -1110,7 +1160,7 @@ def _self_test_body() -> int:
                          99: {"number": 99, "title": "old thing", "isDraft": False}},
                 "all": {20: "MERGED", 21: "OPEN", 22: "CLOSED", 23: "MERGED"},
                 "all_merge_sha": {23: "bbbb2222"}, "ledger": [], "ledger_problems": [],
-                "head": "aaaa111", "repo": "o/r", "errors": {}}
+                "head": "aaaa111", "repo": "o/r", "errors": {}, "fates": {}, "fates_error": None}
         base.update(kw)
         return base
 
@@ -1161,6 +1211,45 @@ def _self_test_body() -> int:
                                                merged_by_pr=None))["state"], "cannot")
     case("several PRs: merged only when ALL are, else the worst state",
          one("- fix · PR #20, PR #21 · f\n", src())["state"], "open")
+
+    # ── backlog #484: a backlog row's Status cell saying SUPERSEDED / WITHDRAWN beats the merge ──
+    def bl(*rows):
+        return ("# B\n\n## Items\n\n| # | Item | Touches | Size | Bundle | Status |\n|---|---|---|---|---|---|\n"
+                + "".join(f"| {n} | {item} | x | S | (t) | {status} |\n" for n, item, status in rows))
+
+    def fated_line(text):
+        fates, problems = row_fates(text)
+        snap = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10, PR #20 · f\n'),
+                      src(fates=fates), "t")
+        return [ln.split("└─ ")[-1] for ln in tree_lines(snap) if "backlog #10" in ln], problems
+
+    case("⛔ backlog #484: a SUPERSEDED row whose PR merged prints ✖ and ITS forward pointer (two M, one case)",
+         [fated_line(bl((10, "**Early stop**", f"✅ **SUPERSEDED by backlog #{m} (2026-11-02)** — moved")))
+          for m in (481, 37)],
+         [([f"✖ backlog #10, PR #20 · f — superseded → backlog #{m} (method refuted, goal moved) · merged aaaa111"],
+           []) for m in (481, 37)])
+    case("⛔ backlog #484: a WITHDRAWN row whose PR merged prints ✖ withdrawn",
+         fated_line(bl((10, "**Dropped**", "✖ **WITHDRAWN 2026-11-02** — refuted"), (11, "**Other**", "OPEN"))),
+         (["✖ backlog #10, PR #20 · f — withdrawn · merged aaaa111"], []))
+    case("backlog #484: SUPERSEDED beats an earlier WITHDRAWN in the same Status cell",
+         one("- fix · backlog #10, PR #20 · f\n", src(fates=row_fates(bl(
+             (10, "**Both**", "✅ SUPERSEDED by backlog #12. Previously: ✖ WITHDRAWN 2026-11-01")))[0]))["state"],
+         "superseded")
+    case("backlog #484 adjacent negative: a ✅ Status with no SUPERSEDED or WITHDRAWN still prints ✅ merged",
+         fated_line(bl((10, "**Fixed**", "✅ **FIXED 2026-11-02** — merged"))),
+         (["✅ backlog #10, PR #20 · f — merged aaaa111"], []))
+    case("⛔ backlog #484: SUPERSEDED / WITHDRAWN in the TITLE only is not the Status cell — still ✅",
+         fated_line(bl((10, "**SUPERSEDED by backlog #77 and WITHDRAWN, in the title only**", "✅ FIXED"))),
+         (["✅ backlog #10, PR #20 · f — merged aaaa111"], []))
+    case("⛔ backlog #484: an unreadable backlog makes a backlog-ref leaf CANNOT RUN, never ✅",
+         (lambda d: (GLYPH[d["state"]], d["detail"]))(one("- fix · backlog #10, PR #20 · f\n", src(
+             fates=None, fates_error="docs/backlog.md NOT READ (FileNotFoundError: gone)"))),
+         ("⚠", "CANNOT RUN — docs/backlog.md NOT READ (FileNotFoundError: gone), so a superseded or "
+               "withdrawn row cannot be ruled out"))
+    case("...while a PR-only leaf needs no backlog row and is still merged",
+         one("- fix · PR #20 · f\n", src(fates=None, fates_error="x"))["state"], "merged")
+    case("backlog #484: a line the row parser refuses is a fates PROBLEM (that row may be the superseded one)",
+         row_fates(BACKLOG_BAD), ({}, ["1 line(s) of docs/backlog.md the row parser could not read"]))
 
     case("derive_thread keeps the declared fields beside the derived ones",
          {k: v for k, v in derive_thread(goals[1]["threads"][0], src(merged_by_pr={})).items()
@@ -1581,6 +1670,18 @@ def _self_test_body() -> int:
         (r / BACKLOG_REL).write_text(BACKLOG_BAD)
         case("⛔ X1: a backlog line the parser refuses makes the backlog NOT READ",
              collect(r, run_ok)["errors"].get("backlog", "").endswith("NOT READ"), True)
+        _s_bad = collect(r, run_ok)
+        case("⛔ backlog #484: a partly unreadable backlog leaves no fates, so a backlog leaf is CANNOT RUN",
+             (_s_bad["fates"], _s_bad["fates_error"], one("- fix · backlog #10, PR #20 · f\n", _s_bad)["state"]),
+             (None, "1 line(s) of docs/backlog.md the row parser could not read", "cannot"))
+        (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE.replace("| OPEN |", "| ✖ WITHDRAWN 2026-11-02 |"))
+        case("backlog #484: collect reads each row's fate from the backlog it is given",
+             collect(r, run_ok)["fates"], {8: ("withdrawn", "withdrawn")})
+        (r / BACKLOG_REL).unlink()
+        _s_gone = collect(r, run_ok)
+        case("⛔ backlog #484: a missing backlog is CANNOT RUN for its rows, and named in the errors",
+             (_s_gone["fates"], _s_gone["fates_error"].startswith("docs/backlog.md NOT READ (FileNotFoundError"),
+              _s_gone["errors"].get("backlog", "").startswith("docs/backlog.md NOT READ")), (None, True, True))
         (r / DASHBOARD_REL).write_text(DASH_BAD)
         case("⛔ X1: an unreadable dashboard entry makes the dashboard NOT READ",
              collect(r, run_ok)["errors"].get("dashboard", "").endswith("NOT READ"), True)

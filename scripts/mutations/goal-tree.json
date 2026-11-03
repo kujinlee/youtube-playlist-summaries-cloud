@@ -981,5 +981,109 @@
     "expect": [
       "⭐ #389 r1 X4: two plans that DISPLAY alike stay two records, keyed by (checkout, slug)"
     ]
+  },
+  {
+    "name": "a SUPERSEDED Status cell is not read as superseded",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        m = SUPERSEDED_RE.search(st)",
+        "        m = None"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a SUPERSEDED row whose PR merged prints ✖ and ITS forward pointer (two M, one case)"
+    ]
+  },
+  {
+    "name": "the forward pointer is a constant, not the row's own M",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"superseded → backlog #{m.group(1)} (method refuted",
+        "f\"superseded → backlog #481 (method refuted"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a SUPERSEDED row whose PR merged prints ✖ and ITS forward pointer (two M, one case)"
+    ]
+  },
+  {
+    "name": "a WITHDRAWN Status cell is not read as withdrawn",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif WITHDRAWN_RE.search(st):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a WITHDRAWN row whose PR merged prints ✖ withdrawn"
+    ]
+  },
+  {
+    "name": "a ✅ Status cell is read as withdrawn",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "WITHDRAWN_RE = re.compile(r\"\\bWITHDRAWN\\b\")",
+        "WITHDRAWN_RE = re.compile(r\"\\bWITHDRAWN\\b|✅\")"
+      ]
+    ],
+    "expect": [
+      "backlog #484 adjacent negative: a ✅ Status with no SUPERSEDED or WITHDRAWN still prints ✅ merged"
+    ]
+  },
+  {
+    "name": "the title is read as part of the Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        st = r[\"status\"]",
+        "        st = r[\"title\"] + \" \" + r[\"status\"]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: SUPERSEDED / WITHDRAWN in the TITLE only is not the Status cell — still ✅"
+    ]
+  },
+  {
+    "name": "WITHDRAWN beats SUPERSEDED in one Status cell",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if m:\n            fates[r[\"num\"]]",
+        "        if m and not WITHDRAWN_RE.search(st):\n            fates[r[\"num\"]]"
+      ]
+    ],
+    "expect": [
+      "backlog #484: SUPERSEDED beats an earlier WITHDRAWN in the same Status cell"
+    ]
+  },
+  {
+    "name": "an unread backlog falls back to the merge state",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if fates is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: an unreadable backlog makes a backlog-ref leaf CANNOT RUN, never ✅"
+    ]
+  },
+  {
+    "name": "a backlog line the parser refused still yields fates",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if fproblems:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #484: a partly unreadable backlog leaves no fates, so a backlog leaf is CANNOT RUN"
+    ]
   }
 ]

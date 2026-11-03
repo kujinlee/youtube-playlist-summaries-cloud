@@ -1062,7 +1062,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ #389 round-1 fold: 72 -> 75 — a worktree's plans still read when the main checkout has no
     # .claude/plans/ (X3), and plans keyed by (checkout, slug) in the snapshot and timeline (X4, x2); the
     # missing-directory entry re-anchored on the rewrite.
-    "scripts/goal-tree.py": 75,
+    # ⟳ backlog #484: 75 -> 83 — a SUPERSEDED / WITHDRAWN Status cell beats the merge state: read at all,
+    # its own forward pointer, the ✅-only negative, the title is not the Status cell, SUPERSEDED beats
+    # WITHDRAWN, and an unread or partly unread backlog is CANNOT RUN, never ✅.
+    "scripts/goal-tree.py": 83,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

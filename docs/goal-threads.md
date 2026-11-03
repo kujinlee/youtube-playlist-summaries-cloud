@@ -14,6 +14,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - `- <relation> · <refs> · <what>` is a thread. `<relation>` is one of `fix` (serves the goal directly),
   `blocker` (stops a fix), `bookkeeping` (records findings, no new behaviour) or `side` (an aside).
   `<refs>` is one or more `backlog #N` / `PR #N`, joined by `, `. `<what>` is one line.
+- A thread naming `backlog #N` whose row's Status cell says `SUPERSEDED by backlog #M` or `WITHDRAWN` prints ✖
+  superseded (→ backlog #M) or ✖ withdrawn, overriding the merge state of its PR (backlog #484).
 - An optional last field `· waits on <what>` declares something a thread waits on that no tool can see
   (the owner's walkthrough, say). It is shown as DECLARED, never as a derived state.
 - Inside a goal, every non-blank line is one of those. Prose belongs above the first goal.
