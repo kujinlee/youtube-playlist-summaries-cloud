@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 5e7b9248a2b4bf7c68d7ff90fcfac252871f470c",
+    "docs/reviews/claude/goal-tree-superseded-r1-claude.md": "100644 4f2755c40ba2f9ad39478f34368a2a79173846ec",
+    "docs/reviews/codex/goal-tree-superseded-r1-codex.md": "100644 e76f67ca331a3b33067ccea1fb7f62bb8b1353fb",
+    "docs/reviews/verdicts/goal-tree-superseded-r1-codex.verdict.json": "100644 e54e56f1148512c33f5e0a212e529e860f4fd0e9"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "02795757f65a07ec4183c186f4418e1f6572105f",
+  "intrusions": [],
+  "model": null,
+  "prompt": "PR #480 r1 Claude half: refute row_fates / derive_thread superseded+withdrawn",
+  "reason": "claude half filed: 7860 chars, names 02795757f65a",
+  "refused": false,
+  "review": "goal-tree-superseded-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-484",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
