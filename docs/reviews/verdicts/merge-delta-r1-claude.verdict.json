@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 d1776a5576e4c09401e6f84d0afa9cfe36962b4f",
+    "docs/reviews/claude/merge-delta-r1-claude.md": "100644 cdd70392a733c363362bd19678f6045a1ac756e8",
+    "docs/reviews/codex/merge-delta-r1-codex.md": "100644 c6f479749fc32fce52e63716807356c159358ae1",
+    "docs/reviews/verdicts/merge-delta-r1-codex.verdict.json": "100644 7e8a63e3a1711140fe27fdbf7e4b3673bc35196b"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f84fce2bee53e8f8a55583b422def42c3a87df3d",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8539 chars, names f84fce2bee53",
+  "refused": false,
+  "review": "merge-delta-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-426",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

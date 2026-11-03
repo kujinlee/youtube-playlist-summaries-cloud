@@ -1716,7 +1716,19 @@ EXPECTED_MUTATIONS = {
     #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
     #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
     #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
-    "scripts/check-review-recorded.py": 68,
+    # ⟳ 2026-11-03, backlog #426 + its r1 fold, 68 -> 90: the master-delta clear (+9), then the r1
+    #   fold (+13) — a failed HEAD `ls-tree` raising, the merged-tree lookup's failure branch, the
+    #   shared `merge_onto`, and every merge-attribute source neutralised for `merge-tree`.
+    # ⟳ 2026-11-03, r2 fold, 90 -> 94: the per-source `-c` flags and the `info/attributes` refusal
+    #   (-6) give way to running the merge in an ISOLATED repository (+10: its environment, its
+    #   GIT_DIR, its borrowed objects, its PATH, and its failure to build).
+    # ⟳ 2026-11-03, r3 fold, 94 -> 102: both tree lookups list the WHOLE tree and select exact
+    #   names (+7: each lookup as a pathspec again, `-r`, `-t`, the precompose `-c`, the exact
+    #   selection, the isolated runner's decoding), and the temp dir removed on a crash (+1).
+    # ⟳ 2026-11-03, r4 fold, 102 -> 109: every git read captured as BYTES (+6: the shared reader,
+    #   `_git`, the isolated runner, both branch-level diffs, `git_text`'s error handler), and the
+    #   absent == absent arm of `master_explains` restored (+1).
+    "scripts/check-review-recorded.py": 109,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone

@@ -139,7 +139,6 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-memory-link.py",
     "scripts/check-python-pin.py",
     "scripts/check-review-decision.py",
-    "scripts/check-review-recorded.py",
     "scripts/check-review-rounds.py",
     "scripts/check-roadmap-consistency.py",
     "scripts/check-sentinel-meanings.py",
