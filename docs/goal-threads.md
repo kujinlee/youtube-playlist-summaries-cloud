@@ -122,3 +122,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #487, PR #487 · the self-test count check runs its suites four at a time, each under its own HOME
 - fix · backlog #177, PR #483 · Q0 drafted: the review method is chosen by kind of change; waits on the owner's walkthrough
 - fix · backlog #330 · approved 11-02 20:53: a PR sweeps only the manifests whose subject changed, and a scheduled full sweep on master is the safety net
+- fix · backlog #426, PR #491 · a merge of master after the final review round no longer forces another round; 5 rounds and a thrashing-armed architecture review
+- fix · backlog #470, PR #489 · every backlog row and PR mentioned on the five generated pages is a link; the page reading redesigned twice, 4 rounds and an architecture review
+- bookkeeping · backlog #491, backlog #493, backlog #494 · filed from PR #491's and PR #489's rounds: whitespace path names, the regen hooks' unseen failure channel, render-time key linking
+- side · backlog #492 · the owner's destructive-command recovery gate (11-03 14:20), filed to build after backlog #330 when the usage margin allows
