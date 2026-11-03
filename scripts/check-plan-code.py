@@ -1964,7 +1964,10 @@ EXPECTED_MUTATIONS = {
     # -1 ("string references are closed transitively too" is retired with its subject: closure is now the rule).
     # backlog #487: 23 -> 29, the suite pool — pool width, completion-order reporting, a raising
     # worker, a timed-out suite, a shared home, and the core-count cap.
-    "scripts/check-selftest-counts.py": 29,
+    # PR #487 r1 fold: 29 -> 36, a timeout kills the suite's whole process group (own session,
+    # SIGKILL after SIGTERM), a signal-killed suite is CANNOT RUN, a CANNOT RUN hides no red suite,
+    # and `main`'s --jobs wiring and its refusal of 0.
+    "scripts/check-selftest-counts.py": 36,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.

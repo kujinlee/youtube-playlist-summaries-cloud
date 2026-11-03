@@ -53,7 +53,9 @@ FAILS IF
   * a pinned script no longer declares a count, or an unpinned script starts to;
   * a child suite exits non-zero (its own cases are red — the count means nothing);
   * a child prints no parseable `N/M … passed` line  -> exit 2, CANNOT RUN, never a pass;
-  * a child times out, or the check of one crashes inside the pool -> exit 2, CANNOT RUN.
+  * a child times out (its whole process group is killed), is killed by a signal even after
+    printing a passing count, or the check of one crashes inside the pool -> exit 2, CANNOT RUN;
+    the red suites are still printed alongside.
 
 SCOPED MODE — THE LOCAL GATE (backlog #402)
 --------------------------------------------
@@ -89,7 +91,7 @@ Usage:
     python3 scripts/check-selftest-counts.py --changed --base <ref>
     python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
     python3 scripts/check-selftest-counts.py --jobs 1                # serially
-    python3 scripts/check-selftest-counts.py --self-test  # 51 cases
+    python3 scripts/check-selftest-counts.py --self-test  # 59 cases
 """
 from __future__ import annotations
 
@@ -99,9 +101,11 @@ import concurrent.futures
 import importlib.util
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -417,10 +421,43 @@ def population_errors(found: set[str], pinned: frozenset[str]) -> list[str]:
     return out
 
 
-def run_self_test(script: Path, env: dict[str, str]) -> tuple[int, str]:
-    proc = subprocess.run([sys.executable, str(script), "--self-test"],
-                          cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=600)
-    return proc.returncode, proc.stdout + proc.stderr
+def run_self_test(script: Path, env: dict[str, str], timeout: float = 600,
+                  grace: float = 2.0) -> tuple[int, str]:
+    """`script --self-test` in its OWN session, so a timeout reaches every process it started.
+
+    ⛔ `subprocess.run(timeout=…)` kills only the direct child. A suite that started a helper and
+    hung left that helper running after CANNOT RUN — holding a core the pool's other slots wanted,
+    and writing into a temp HOME that was being deleted (PR #487 r1). So the whole group gets
+    SIGTERM, then SIGKILL after `grace`. A descendant that leaves the group (`setsid`) is not
+    reached — the same stated bound as the repo's hooks."""
+    proc = subprocess.Popen([sys.executable, str(script), "--self-test"], cwd=str(ROOT), env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_group(proc, grace)
+        raise
+    return proc.returncode, out + err
+
+
+def kill_group(proc: subprocess.Popen, grace: float) -> None:
+    """SIGTERM to `proc`'s process group, SIGKILL to it after `grace`, then reap `proc`.
+
+    The leader is NOT reaped until after the SIGKILL, so the group id cannot be reused by an
+    unrelated process in between."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            break
+        if sig == signal.SIGTERM:
+            time.sleep(grace)
+    try:
+        proc.communicate(timeout=grace)
+    except subprocess.TimeoutExpired:   # a pipe held by a process that escaped the group
+        proc.kill()
+        proc.wait()
 
 
 def printed_total(out: str) -> int | None:
@@ -493,6 +530,9 @@ def check_one(script: Path, env: dict[str, str], count_drift, run=None) -> tuple
         rc, out = (run or run_self_test)(script, env)
     except subprocess.TimeoutExpired:
         return ("cannot", f"{name}: --self-test did not finish. NOT CHECKED.")
+    if rc < 0:
+        return ("cannot", f"{name}: --self-test was killed by signal {-rc} before it finished, "
+                          f"so whatever count it printed is not a verdict. NOT CHECKED.")
     if rc != 0:
         return ("problem", f"{name}: --self-test exited {rc} — its own cases are red, so its "
                            f"declared count proves nothing. Fix the suite first.")
@@ -638,8 +678,27 @@ def _positive(text: str) -> int:
     return n
 
 
-def main() -> int:
-    if "--self-test" in sys.argv:
+def report(problems: list[str], cannot: list[str]) -> int:
+    """Print every failure, and return 2 if any suite is CANNOT RUN, else 1 if any is red, else 0.
+
+    ⚠ BOTH LISTS ARE PRINTED. Returning after the CANNOT RUN list hid the red suites until the
+    CANNOT RUN was fixed and the run repeated (PR #487 r1)."""
+    if problems:
+        print("declared self-test counts disagree with what the suites printed:\n")
+        for p in problems:
+            print(f"  ✗ {p}")
+    if cannot:
+        print("CANNOT RUN — a declared count could not be read. Treat these as NOT CHECKED:\n",
+              file=sys.stderr)
+        for c in cannot:
+            print(f"  ? {c}", file=sys.stderr)
+        return 2
+    return 1 if problems else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if "--self-test" in argv:
         return self_test()
     ap = argparse.ArgumentParser(description="Every declared --self-test case count, checked by running it.")
     mode = ap.add_mutually_exclusive_group()
@@ -648,7 +707,7 @@ def main() -> int:
     ap.add_argument("--base", default="origin/master", help="the ref --changed diffs against")
     ap.add_argument("--jobs", type=_positive, default=None, metavar="N",
                     help=f"suites run at once (default {DEFAULT_JOBS}, capped at the host's cores)")
-    args = ap.parse_args(sys.argv[1:])
+    args = ap.parse_args(argv)
     jobs = pool_size(args.jobs, os.cpu_count())
 
     try:
@@ -671,17 +730,9 @@ def main() -> int:
 
     problems, cannot = audit(ROOT, POPULATION, pc.count_drift, pc.child_env, only, jobs)
 
-    if cannot:
-        print("CANNOT RUN — a declared count could not be read. Treat these as NOT CHECKED:\n",
-              file=sys.stderr)
-        for c in cannot:
-            print(f"  ? {c}", file=sys.stderr)
-        return 2
-    if problems:
-        print("declared self-test counts disagree with what the suites printed:\n")
-        for p in problems:
-            print(f"  ✗ {p}")
-        return 1
+    rc = report(problems, cannot)
+    if rc:
+        return rc
 
     if only is None:
         print(f"self-test counts: {len(POPULATION)} script(s) declare a count, "
@@ -948,6 +999,92 @@ def _self_test_body() -> int:
               problems == [] and any(c.startswith("h1.py: --self-test did not finish") for c in cannot), True)
         check("a suite that cannot START is CANNOT RUN, never a pass",
               any(c.startswith("h2.py: the check itself crashed") for c in cannot), True)
+
+    # ── PR #487 r1: a run that could not complete, and what `main` reports ──
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # The helper IGNORES SIGTERM, so only the SIGKILL that follows it can remove the helper.
+        pidfile = root / "helper.pid"
+        (root / "hangs.py").write_text(
+            "import subprocess, sys, time\n"
+            "h = subprocess.Popen([sys.executable, '-c', 'import signal, time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
+            f"open({str(pidfile)!r}, 'w').write(str(h.pid))\n"
+            "time.sleep(60)\n")
+        timed_out = False
+        try:
+            run_self_test(root / "hangs.py", dict(os.environ), timeout=3, grace=0.2)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        helper = int(pidfile.read_text()) if pidfile.exists() else None
+        gone = False
+        for _ in range(40):
+            try:
+                os.kill(helper, 0) if helper else None
+            except ProcessLookupError:
+                gone = True
+                break
+            time.sleep(0.05)
+        if helper and not gone:
+            os.kill(helper, signal.SIGKILL)   # never leave the probe's own helper behind
+        check("a TIMED-OUT suite's descendants are killed with it, never left running",
+              (timed_out, helper is not None, gone), (True, True, True))
+
+        (root / "dies.py").write_text(
+            "import os, signal\nprint('1/1 passed', flush=True)\nos.kill(os.getpid(), signal.SIGKILL)\n")
+        got = check_one(root / "dies.py", dict(os.environ), cd)
+        check("a suite KILLED BY A SIGNAL is CANNOT RUN even after printing a passing count",
+              got is not None and got[0] == "cannot" and got[1].startswith(
+                  "dies.py: --self-test was killed by signal 9"), True)
+
+        # The contrasting inputs: a suite that FINISHES returns its own rc and output, under the env
+        # it was given; and a count the docstring disagrees with is a named problem.
+        (root / "echo.py").write_text("import os, sys\nprint(os.environ['MARK'])\nsys.exit(3)\n")
+        check("a suite that finishes in time returns its rc and output, under the env it was given",
+              run_self_test(root / "echo.py", {**os.environ, "MARK": "m7"}, timeout=60, grace=1.0),
+              (3, "m7\n"))
+        (root / "drifts.py").write_text('"""x"""\n')
+        check("a printed count the docstring disagrees with is a problem, by name",
+              check_one(root / "drifts.py", {}, lambda doc, total: f"declares 2, printed {total}",
+                        run=lambda script, env: (0, "1/1 passed")),
+              ("problem", "drifts.py: declares 2, printed 1"))
+
+    import contextlib
+    import io
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = report(["red.py: drift"], ["hung.py: did not finish"])
+    check("with a CANNOT RUN suite the red suites are STILL printed, and rc is 2",
+          (rc, "red.py: drift" in out.getvalue(), "hung.py" in err.getvalue()), (2, True, True))
+    with contextlib.redirect_stdout(io.StringIO()):
+        alone = (report(["red.py: drift"], []), report([], []))
+    check("red suites alone are rc 1, nothing wrong is rc 0", alone, (1, 0))
+
+    # `main`'s own wiring: the audit and the plan-code import are replaced, the core count fixed.
+    seen_jobs: list[int] = []
+
+    def fake_audit(root, pinned, count_drift, child_env, only=None, jobs=1, run=None):
+        seen_jobs.append(jobs)
+        return [], []
+    import types
+    saved = (globals()["audit"], globals()["_load_plan_code"], os.cpu_count)
+    globals()["audit"] = fake_audit
+    globals()["_load_plan_code"] = lambda: types.SimpleNamespace(count_drift=cd, child_env=pc.child_env)
+    os.cpu_count = lambda: 8
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main(["--jobs", "3"])
+        check("`main` passes --jobs through to the pool", (rc, seen_jobs), (0, [3]))
+        seen_jobs.clear()
+        code = None
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                main(["--jobs", "0"])
+            except SystemExit as exc:
+                code = exc.code
+        check("--jobs 0 is refused before anything runs", (code, seen_jobs), (2, []))
+    finally:
+        globals()["audit"], globals()["_load_plan_code"], os.cpu_count = saved
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
