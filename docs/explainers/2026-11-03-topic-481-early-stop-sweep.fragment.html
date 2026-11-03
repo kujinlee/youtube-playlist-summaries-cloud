@@ -1,0 +1,279 @@
+<title>Backlog #481: one mutant through a sweep, today vs #405 vs #481</title>
+<style>
+.caveat{display:inline-block;margin:.2em 0;padding:.1em .5em;border-left:3px solid var(--amber);background:var(--amberbg);color:var(--fg2);font-size:.92em}
+code{overflow-wrap:anywhere}
+:root{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{--em:#2d4a7c;
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{--em:#9db8e8;
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h4{font-size:15px;margin:22px 0 6px;color:var(--fg2)}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+.bad{color:var(--red)} .warn{color:var(--amber)}
+.answer{border:1px dashed var(--rule);border-radius:6px;padding:.5em .8em;color:var(--fg3);margin:.4em 0 1.2em}
+.live{border-left:4px solid var(--amber);padding-left:.8em;margin:1em 0}
+.tag.c{color:var(--amber);border-color:var(--amber)} .tag.ad{color:var(--verified);border-color:var(--verified-br)} .tag.bu,.tag.st,.tag.tr{color:var(--link);border-color:var(--link)} .tag.rj{color:var(--red);border-color:var(--red)} .tag.pe{color:var(--amber);border-color:var(--amber)}
+.log td:first-child,.log th:first-child{white-space:normal;width:11em;max-width:11em;overflow-wrap:anywhere}
+</style>
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code>. It always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, then <b>ask</b>, type, and <b>Send</b>. Then say <i>"read my questions"</i> in the session, and the answer is written into this page under the section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code>. It is safe to run twice. A reboot stops it, and that is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine. It only loses <b>Send</b>.</li>
+</ol>
+</div>
+<div class="wrap ex-body">
+<h1>Backlog #481: one mutant walked through a sweep, three ways</h1>
+<p class="reading"><b>I read this as:</b> walk one mutant through a sweep, today vs backlog #405 vs backlog #481, and show each of the three reasons happening. Backlog #481 replaces backlog #405 (same goal, a faster mutation sweep; #405's method was refuted and withdrawn).</p>
+<p class="horizon">as of 2026-11-03 03:30, worktree <code>docs-goal-1103</code> at <code>ac50e0ee</code> (on top of master's <code>8552bf69</code>, PR #486). Labels: <span class="tag m">measured</span> = I ran it or quoted it from a committed file tonight; <span class="tag i">inferred</span> = reasoning, not run.</p>
+
+<div class="k warn"><b>One correction to the summary you were given, found while building this page.</b> Backlog #481's own row says the suite's reporter <i>"exits non-zero as soon as every named case has failed"</i>. Taken literally, that <b>repeats the round-5 defect</b>: I built the round-5 shape (a warn-only trailer that reads a staged doc) and an exit straight from the reporter recorded <b>KILLED</b> while the full run recorded <b>SURVIVED</b>. A stop that instead goes <b>through the suite's own exit decision</b> recorded SURVIVED, matching the full run. So #481 is sound only in that second form. Details in <a href="#case3">case 3</a>. <span class="tag m">measured</span> on a toy suite, not a real guard.</div>
+
+<div class="toc"><b>Contents</b><ol>
+<li><a href="#what">What a sweep is, and what the harness reads today</a></li>
+<li><a href="#timeline">One mutant, three timelines</a></li>
+<li><a href="#case1">Case 1: the suite stops but exits 0</a></li>
+<li><a href="#case2">Case 2: two named cases, and an unrelated one fails first</a></li>
+<li><a href="#case3">Case 3: the staged <code>.md</code> that turns the exit to 0</a></li>
+<li><a href="#precedent">The one suite-side stop that exists already (PR #486)</a></li>
+<li><a href="#unbuilt">What #481 does not do yet</a></li>
+<li><a href="#mi">Measured vs inferred</a></li>
+</ol></div>
+
+<h2 id="what">What a sweep is, and what the harness reads today</h2>
+<p class="lede">A <b>mutation sweep</b> checks that each guard's tests would notice a bug. A <b>manifest entry</b> (in <code>scripts/mutations/&lt;guard&gt;.json</code>) is one deliberate bug, an <i>edit</i>, plus the name of the test case that should catch it, its <i>expect</i>. For every entry the harness, <code>scripts/check-plan-code.py</code>, copies the tree, applies the edit, runs that guard's whole <code>--self-test</code>, and records a verdict: <b>killed</b> (the suite went red), <b>survived</b> (it stayed green), and whether the kill was <b>attributed</b> to the case the entry names.</p>
+<p>Apply the edit, run the whole suite, put the file back (<code>scripts/check-plan-code.py:3291-3293</code>):</p>
+<pre><code>        (d / fname).write_text(src)
+        rc, out = run_suite(d, fname)
+        (d / fname).write_text(orig)</code></pre>
+<p>The run itself waits for the suite to finish, all cases, and captures everything (<code>:751-753</code>):</p>
+<pre><code>        r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
+                           capture_output=True, text=True, timeout=SUITE_TIMEOUT,
+                           env=mutation_env(d))</code></pre>
+<p>Then the verdict. <b>Killed is the exit code and nothing else</b> (<code>:3320</code>); exit 2 is a timeout and counts as NOT CHECKED (<code>:3307</code>):</p>
+<pre><code>        caught = rc == 1</code></pre>
+<p><b>Attribution reads the text</b>: the <code>[FAIL] &lt;name&gt;</code> lines (<code>:3301</code>, <code>fails = parse_fail_names(out)</code>), and every name in <code>expect</code> must match exactly one red case (<code>:3338</code>, <code>:3352-3353</code>, <code>:3360</code>):</p>
+<pre><code>        want = mut.get("expect")
+        ...
+        unnamed = [(w, [f for f in fails if w == f]) for w in wants]
+        unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
+        ...
+                        "attributed": caught and not unnamed, "measured": True})</code></pre>
+<p>So today the harness reads exactly two things: <b>the exit code</b> (did it catch?) and <b>the <code>[FAIL]</code> lines</b> (which case caught it?). A kill that is not attributed fails the gate too, with <i>"it was caught by something else"</i>.</p>
+
+<h2 id="timeline">One mutant, three timelines</h2>
+<p>A real entry from <code>scripts/mutations/check-main-drivable.json</code>, named <i>"⭐ THE RESIDUE…"</i>: it edits <code>if path not in debt:</code> to <code>if False:</code> and its <code>expect</code> names <b>two</b> cases. I ran it tonight in a scratch copy of the tree <span class="tag m">measured</span>: the suite has <b>455 cases</b>, the two named ones are case <b>401</b> (A, <i>"assess names an unpinned guard that cannot be driven"</i>) and case <b>411</b> (B, <i>"main() driven over a constructed world reports the undriven guard, rc 1"</i>). Seven cases went red: 400, 401, 402, 403, 410, 411, 412. Exit 1, <code>448/455 passed</code>.</p>
+<div class="scroll"><table>
+<tr><th>Step</th><th>Today (full run)</th><th>Backlog #405 (withdrawn)</th><th>Backlog #481 (proposed)</th></tr>
+<tr><td>start</td><td>harness starts the suite, output captured in one buffer</td><td>harness starts it <b>unbuffered</b> and reads each line as it arrives</td><td>harness starts it with an env var naming the expected cases (A and B)</td></tr>
+<tr><td>cases 1-399</td><td>pass</td><td>pass</td><td>pass</td></tr>
+<tr><td>case 400</td><td>red (not named)</td><td>harness sees <code>[FAIL]</code>, not a named one, keeps going</td><td>reporter notes a failure; A and B have not both failed, keeps going</td></tr>
+<tr><td>case 401 (A)</td><td>red</td><td>harness ticks A</td><td>reporter ticks A</td></tr>
+<tr><td>case 411 (B)</td><td>red</td><td>harness ticks B; all named seen → <b>SIGINT to the process group</b></td><td>reporter ticks B; all named failed → <b>the suite stops itself</b> and leaves through its own exit decision</td></tr>
+<tr><td>cases 412-455</td><td>run (412 red, rest pass)</td><td>never run</td><td>never run</td></tr>
+<tr><td>exit code</td><td>1, from the suite</td><td>whatever SIGINT produced; harness <b>records a kill from the text</b></td><td>1, from the suite</td></tr>
+<tr><td>verdict</td><td>killed, attributed</td><td>killed, attributed (by inference)</td><td>killed, attributed (by the real exit)</td></tr>
+</table></div>
+<p>For this entry the stop saves 44 of 455 cases. The saving depends on where the named cases sit: for the memo mutant from PR #486 the named case is case 2 <span class="tag m">measured</span>.</p>
+<p>The difference that matters is the last two rows. Under #405 the harness <b>decided</b> that a printed <code>[FAIL]</code> meant the run would exit 1. Under #481 nobody decides: the exit the harness reads is the suite's own.</p>
+
+<h2 id="case1">Case 1: the suite stops but exits 0, so it is recorded SURVIVED (wrong)</h2>
+<p><b>Why the early exit must be a failure exit.</b> Take the timeline above, but suppose the stop path printed <code>STOPPED</code> and returned 0, the way a "we are done" path often does.</p>
+<ul>
+<li>The harness reads <code>caught = rc == 1</code> (<code>:3320</code>). rc is 0, so <code>caught</code> is False.</li>
+<li>The verdict is <b>"mutation SURVIVED — the suite stayed green"</b>, although A and B both printed <code>[FAIL]</code>. The text is ignored for the catch; it is only read for attribution.</li>
+<li>The full run would have exited 1 and recorded killed. So the early stop turned a real kill into a false survivor, and the gate goes red for a bug the tests did catch.</li>
+</ul>
+<p>It must be exactly <b>1</b>, not any non-zero: exit 2 is read as a timeout, NOT CHECKED (<code>:3307</code>). This direction of error is loud (a false red), not silent, but it would make every early-stopped mutant look like a coverage hole. <span class="tag i">inferred</span> from the quoted lines; not run.</p>
+
+<h2 id="case2">Case 2: two named cases, and an unrelated one fails first</h2>
+<p><b>Why the suite waits for ALL named cases.</b> Same real mutant: named A (401) and B (411), and case 400 is red first and is not named. <span class="tag m">measured</span> fail list from my run.</p>
+<div class="scroll"><table>
+<tr><th>Stop rule</th><th>Stops after</th><th><code>fails</code> the harness sees</th><th>Verdict</th></tr>
+<tr><td>first failure of any case</td><td>400</td><td>[400]</td><td>killed, but A and B match nothing → <i>"caught by something else"</i>, gate red. A full run says killed and attributed. <b>Wrong.</b></td></tr>
+<tr><td>first failure of any named case</td><td>401 (A)</td><td>[400, 401]</td><td>B never ran → B matches nothing → gate red. <b>Wrong.</b></td></tr>
+<tr><td>all named cases have failed (#481)</td><td>411 (B)</td><td>[400, 401, 402, 403, 410, 411]</td><td>killed, A and B each match once → attributed. <b>Same as full.</b></td></tr>
+</table></div>
+<p>With today's attribution check, the wrong rules produce a <b>false red</b>, not a false pass. They would become a false pass the moment someone loosened the harness to accept "the suite stopped with exit 1" as the catch: then case 400, a different behaviour, would count as the proof that A and B guard this line. <span class="tag i">inferred</span>.</p>
+<p><b>How common two-name entries are.</b> Across all 86 manifests (3,313 entries), <code>expect</code> is a list in 2,320 entries; <b>214</b> of those name two or more cases (175 name two, 39 name three or more) <span class="tag m">measured</span> tonight. The figure you were given, "19 entries name a list, 3 of them name two", does not match the repo; the closest match is <code>check-review-recorded.json</code> alone (68 entries, 19 lists, 2 with two names). <code>check-main-drivable.json</code> has 201 entries, all lists, one with two names (the one used here).</p>
+
+<h2 id="case3">Case 3: the staged <code>.md</code> that turns the exit to 0</h2>
+<p><b>Why the SUITE decides, not the harness.</b> This is the round-5 BLOCKER, finding C5-B1, in <code>docs/reviews/claude/mutation-early-stop-r5-claude.md</code> and recorded in <code>docs/reviews/coordinator/mutation-early-stop-r5-coordinator.md</code>. The reviewer built a suite whose end-of-run <b>trailer</b> reads <code>docs/policy.md</code> and returns 0 when it says <code>WARN-ONLY</code> (a warn-only switch). The mutant changes <code>return 1</code> to <code>return 2</code>; <code>expect</code> is <i>"value is one"</i>. Their recorded run:</p>
+<pre><code>R1 PR FULL  ok= False [(False, None, None)] survivors= ['value is two'] # FULL: SURVIVED
+R1 PR EARLY ok= True [(True, 'sigint', None)] survivors= []            # EARLY: KILLED, gate green</code></pre>
+<p>Under #405 the harness saw <code>[FAIL] value is one</code>, sent SIGINT, and recorded KILLED. The full run would reach the trailer, read the policy, exit 0, and record SURVIVED, which is the right answer: a warn-only suite catches nothing. A doc is not code, so every path rule in rounds 1-4 had let it through.</p>
+<p><b>Under #481, it depends on where the stop leaves.</b> I rebuilt that shape as a toy suite tonight and ran it three ways <span class="tag m">measured</span>:</p>
+<div class="scroll"><table>
+<tr><th>Mode</th><th>Cases run</th><th>Exit</th><th>Verdict</th></tr>
+<tr><td>full run</td><td>4</td><td>0</td><td>SURVIVED</td></tr>
+<tr><td>reporter calls <code>sys.exit(1)</code> the moment the named case fails</td><td>1</td><td>1</td><td><b>KILLED: the round-5 defect again</b></td></tr>
+<tr><td>reporter raises; the suite catches it where its tally is, then runs its normal exit decision (trailer included)</td><td>1</td><td>0</td><td>SURVIVED, same as full</td></tr>
+</table></div>
+<p>So the claim "under #481 the verdict equals the full run's" holds for the third form only. The reason it holds: the code that runs <b>after</b> the stop point in a full run is the remaining cases plus the exit decision. Later cases can only add failures, so skipping them cannot turn a 0 into a 1. The exit decision can, and the third form still runs it. And if a mutant breaks the stop path itself (say the reporter never notices the named failures), the suite simply runs to the end: a full run, the right verdict. <span class="tag i">inferred</span> beyond the toy run.</p>
+<p>One thing the third form still has to settle: a trailer check that assumes every case ran, such as a declared case count (<code>check-plan-code.py</code>'s own <code>count_drift</code>), would fire on a stopped run. It has to be skipped or adjusted under the env var, and that adjustment is itself a place where early and full could differ. <span class="tag i">inferred</span>, not built.</p>
+
+<h2 id="precedent">The one suite-side stop that exists already (PR #486)</h2>
+<p>PR #486 (merged <code>8552bf69</code>, backlog #427) made <code>scripts/check-main-drivable.py --self-test</code> run its two memo-lifetime cases first and stop if the second one fails (<code>scripts/check-main-drivable.py:2647-2652</code>):</p>
+<pre><code>    if fail &gt; _fail_before:
+        print("\n  STOPPED — a memo entry does not hold its arguments, so every later memoised "
+              "answer may be a dead tree's and every later case allocator noise (backlog #427). "
+              f"{ok}/{ok + fail} passed before the stop.")
+        return 1</code></pre>
+<p>It shows the two properties #481 needs: the stop is the suite's own, and it exits <b>1</b>. How it differs:</p>
+<ul>
+<li><b>Hard-coded, not driven by the harness.</b> It fires for one condition in one suite, on every run, mutation or not. #481 fires only when the harness names the expected cases in an env var, and only once all of them have failed.</li>
+<li><b>Its reason is correctness, not speed.</b> After that failure the later cases are noise (recycled memory addresses), so stopping is the right answer even in a plain run.</li>
+<li>It leaves by <code>return 1</code> from the suite body, which skips anything after it in that body. That is safe here because the stop is unconditional on a real defect; for #481 the same move would be the <code>sys.exit(1)</code> row in case 3.</li>
+</ul>
+
+<h2 id="unbuilt">What #481 does not do yet</h2>
+<ul>
+<li><b>Nothing is built.</b> Backlog #481 is 🟡 OPEN, filed 2026-11-02.</li>
+<li><b>The reporter change across suites is undecided.</b> The row says: <i>"Needs every suite on a shared reporter, or a per-suite opt-in."</i> Each guard defines its own <code>case()</code> today (for example <code>check-main-drivable.py:2575</code>), so either 86 printers change, or one shared reporter is adopted and suites move to it one at a time. An opted-out suite just runs in full, which is safe.</li>
+<li><b>The saving is not measured for this design.</b> The row says: <i>"Measure the saving first: the r1 build measured 18% to 72% faster on three of four guards."</i> I could not find the primary record of that measurement in the review docs, commits or PR #476's body; it is quoted in backlog #405, backlog #481 and the 10-29 dev-speed page only. Backlog #405's own earlier estimate was about 2,050 s, about 16% of the sweep, and it was marked INFERRED because about 70 guards print no <code>[ok]</code> lines. <span class="tag i">unverified source</span></li>
+<li><b>Backlog #330 (scoped PR sweep, approved) shrinks the base.</b> It runs only the mutants a PR's changes can affect, so per-PR there are fewer mutants for #481 to speed up. The two multiply rather than compete, but #481's percentage applies to a smaller number. <span class="tag i">inferred</span></li>
+<li><b>The falsifier is written:</b> backlog #481 FAILS IF <i>"a constructed suite whose exit a staged file controls records KILLED early where a FULL run records SURVIVED"</i>. The toy run in case 3 is that case; the <code>sys.exit(1)</code> form fails it.</li>
+</ul>
+
+<h2 id="mi">Measured vs inferred</h2>
+<div class="scroll"><table>
+<tr><th>Claim</th><th>Label</th><th>Source</th></tr>
+<tr><td>Killed = exit code 1 only; attribution from <code>[FAIL]</code> lines; exit 2 = NOT CHECKED</td><td><span class="tag m">measured</span></td><td><code>scripts/check-plan-code.py:3301, 3307, 3320, 3338, 3352-3353, 3360</code></td></tr>
+<tr><td>Today the suite runs to the end inside <code>subprocess.run</code></td><td><span class="tag m">measured</span></td><td><code>check-plan-code.py:751-753, 3291-3293</code></td></tr>
+<tr><td>check-main-drivable: 455 cases; named cases at 401 and 411; mutant reds 400-403, 410-412</td><td><span class="tag m">measured</span></td><td>run tonight in a <code>git archive</code> copy</td></tr>
+<tr><td>214 of 3,313 entries name two or more cases</td><td><span class="tag m">measured</span></td><td>count over <code>scripts/mutations/*.json</code></td></tr>
+<tr><td>#405 recorded KILLED where full recorded SURVIVED (staged <code>.md</code>)</td><td><span class="tag m">measured</span> by the round-5 reviewer</td><td><code>docs/reviews/claude/mutation-early-stop-r5-claude.md</code></td></tr>
+<tr><td>A reporter-side <code>sys.exit(1)</code> repeats that defect; a stop through the exit decision does not</td><td><span class="tag m">measured</span> on a toy suite only</td><td>constructed tonight; not a real guard</td></tr>
+<tr><td>Case 1's verdict (exit 0 → SURVIVED)</td><td><span class="tag i">inferred</span></td><td>reading of <code>:3320</code>; not run</td></tr>
+<tr><td>Skipping later cases cannot turn 0 into 1; only the exit decision can</td><td><span class="tag i">inferred</span></td><td>reasoning; holds for case functions that only count</td></tr>
+<tr><td>18%-72% faster on 3 of 4 guards</td><td><span class="tag i">unverified</span></td><td>quoted in backlog #405/#481; primary record not found</td></tr>
+<tr><td>Interaction with backlog #330</td><td><span class="tag i">inferred</span></td><td>reasoning</td></tr>
+</table></div>
+</div>

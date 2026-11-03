@@ -113,3 +113,10 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - side · PR #481 · the token page gets a before/after chart; the dev-speed page gets its open work ranked by impact
 - bookkeeping · backlog #483 · filed from PR #475's CI: the backfill-work-lines F5 inode case is flaky
 - fix · PR #475 · the backlog page shows each row's detail with line breaks and indenting, same words
+- bookkeeping · PR #482 · the owner's approvals of backlog #330 and backlog #177 recorded; the dev-speed page answers when the sweep is scoped and when it is full; backlog #231 and backlog #403 ticked
+- fix · backlog #415, PR #484 · the mutation sweep runs on 18 shards, one wave under the 20-job limit; paired CI runs on one commit: 1,194 s against 24 shards' 1,704 s
+- fix · backlog #483, backlog #427, PR #486 · two CI flakes fixed at the cause: F5 compares by an open handle, and the memo-lifetime cases run first and stop the suite
+- bookkeeping · backlog #486 · filed from PR #486's round 1: three Low leftovers of the flake fixes
+- fix · backlog #487, PR #487 · the self-test count check runs its suites four at a time, each under its own HOME
+- fix · backlog #177, PR #483 · Q0 drafted: the review method is chosen by kind of change; waits on the owner's walkthrough
+- fix · backlog #330 · approved 11-02 20:53: a PR sweeps only the manifests whose subject changed, and a scheduled full sweep on master is the safety net
