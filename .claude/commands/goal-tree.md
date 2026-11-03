@@ -33,7 +33,8 @@ It prints the NEEDS YOU block first: decisions only the owner can make, open now
 3. **Name each thread by its backlog row or PR, never `T1`/`T2`**: those numbers were reused across maps and
    confused the reader. The file's grammar refuses a thread that names neither.
 4. **States are the script's:** ✅ merged (SHA) · ⏳ open or in flight · ⬜ next · ❌ waits (declared) · ✖ closed ·
-   ⚠ CANNOT RUN. Never print a state the script did not just read.
+   ✖ superseded (→ backlog #M, where the goal went) or withdrawn, read from the backlog row's Status cell and
+   beating the merge · ⚠ CANNOT RUN. Never print a state the script did not just read.
 
 Format: a fenced box-drawing tree (`├─ │ └─`), the root on top, one line per leaf. Then a one-line
 **"What changed since the last tree"** (the page's newest timeline entry), and close with the CHECK/RESULT table.
