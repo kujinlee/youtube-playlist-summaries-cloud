@@ -18643,3 +18643,8 @@ Branch `build-405`, backlog #405 (now ✖ WITHDRAWN). `scripts/check-plan-code.p
 One flaky test is now on the backlog (row 483). A test of the plan-file backfill tool sometimes fails in CI for a reason unrelated to the change being tested, and when it does, one slice of the mutation check reports nothing. The goal tree now lists today's two merged pull requests and the rows filed from them. Nothing needs you.
 <!--tech-->
 Backlog #483 (kind task, area tooling): `backfill-work-lines.py` case F5 compares `st_ino` across writes, and a freed inode number can be reused (inferred; seen once on PR #475's shard 12, passed on re-run). `docs/goal-threads.md`: under dev-speed-first, backlog #405's thread records the withdrawal (PR #476), plus two bookkeeping threads for backlog #480 to #483.
+
+## 2026-11-02
+Backlog row 405 now says plainly what happened: its way of speeding up the mutation check was proven wrong and dropped, and the same goal moved to row 481, which uses a method that cannot give a false answer. Before, it said only "withdrawn", and the backlog page still counted it as open. The goal tree's leaf says the same. A new row (484) records that the tree still shows a green check for #405 because its pull request merged. Nothing needs you.
+<!--tech-->
+Backlog #405 status: ✅ SUPERSEDED by backlog #481 (the closed test is "the Status cell contains ✅", so ✖ WITHDRAWN had left it OPEN). Backlog #481 is titled as its replacement. `docs/goal-threads.md`: #405's leaf text rewritten, and a fix thread for #481 added. Backlog #484 (part of backlog #384): the goal tree derives ✅ from a PR merge and has no declared superseded/withdrawn state.
