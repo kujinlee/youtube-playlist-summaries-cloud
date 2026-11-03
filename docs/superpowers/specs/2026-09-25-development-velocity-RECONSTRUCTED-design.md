@@ -79,8 +79,8 @@ One branch, same reviewers, same gates, one variable:
 
 | Work | Upfront architecture review? | Outcome |
 |---|---|---|
-| observer-log | **yes** (`architecture-review-2026-09-22-observer-family.md`) | **converged by round 3**, CONVERGED Codex verdict |
-| verdict-path | **no** — entered as an un-designed side job mid-round-3 (`c3ad7727`) | **thrashed three further rounds** until it got a review of its own |
+| observer-log | **yes** (`architecture-review-2026-09-22-observer-family.md`) | ~~converged by round 3~~ ⛔ WITHDRAWN 2026-09-26 — the round documents contradict it ([`velocity-evidence-2026-09-24.md`](../../velocity-evidence-2026-09-24.md) §4): it reached r5 NOT CONVERGED |
+| verdict-path | **no** — entered as an un-designed side job mid-round-3 (`c3ad7727`) | ~~thrashed three further rounds~~ — untraceable (no review stem); it did get a review of its own |
 
 ⛔ **THE OBVIOUS READING IS WRONG, AND #177 SAYS SO ITSELF:** *"An upfront review would NOT have
 caught it — it was out of scope and untouched when the first review ran, and reviewing everything
@@ -279,8 +279,8 @@ supported them stays behind as a measurement**, in
 
 | trigger | instrument | the evidence for it |
 |---|---|---|
-| **seam work** | architecture review **BEFORE building** | asymmetric cost: a wrong seam cost 3 extra rounds; the review that resolved it took one sitting |
-| **logic inside an existing seam** | the normal adversarial loop, unchanged | the *designed* half of PR #342 converged by round 3 with a CONVERGED Codex verdict |
+| **seam work** | architecture review **BEFORE building** | asymmetric cost (⛔ the "3 extra rounds" figure is WITHDRAWN 2026-09-26, velocity-evidence §4); the review that resolved it took one sitting |
+| **logic inside an existing seam** | the normal adversarial loop, unchanged | ⛔ the cited "converged by round 3" is WITHDRAWN 2026-09-26 (velocity-evidence §4); no measured support is claimed |
 | **a side job entering mid-slice** | **RE-ASK Q0** | the missing moment, and the cheapest fix available. ⛔ the literal wording was NOT adopted in PR #345 — *"Q0 does not exist and a rule pointing at nothing cannot run"* |
 | **thrashing** | escalate, and **do not litigate the wording** | measured failure: the trigger said *two consecutive ROUNDS*, the situation was two halves of ONE round, and arguing that distinction cost three rounds of being technically right |
 | **findings shifting to wording** | **de-escalate — stop** | a document can be right forever |

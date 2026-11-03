@@ -933,12 +933,12 @@ a file, answering a question, a one-line correction: naming these costs more tha
 The name gets it a thread. It does **not** get it the review the parent work had.
 
 **Measured, one branch, same reviewers, same gates — the only variable was whether the work had a
-design** (backlog #177, [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4 — the controlled experiment):
+design** — ⛔ **the round counts below were WITHDRAWN 2026-09-26; the argument after the table does not depend on them** (backlog #177, [`docs/velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4 — the controlled experiment):
 
 | Work on PR #342 | Had a design? | Outcome |
 |---|---|---|
-| observer-log record | ✅ an architecture review filed beforehand | **CONVERGED by round 3** |
-| verdict path | ❌ opportunistic side job, entered mid-round-3 | **thrashed 3 rounds**, then needed its own architecture review |
+| observer-log record | ✅ an architecture review filed beforehand | ~~CONVERGED by round 3~~ ⛔ WITHDRAWN 2026-09-26 — the round documents contradict it ([`velocity-evidence-2026-09-24.md`](velocity-evidence-2026-09-24.md) §4): it reached r5 NOT CONVERGED |
+| verdict path | ❌ opportunistic side job, entered mid-round-3 | ~~thrashed 3 rounds~~ — untraceable (no review stem); it did need its own architecture review |
 
 ⚠ **The fix is NOT more upfront review.** The verdict path was out of scope and untouched when the
 first review ran, so no amount of reviewing at the start would have covered it — and reviewing
