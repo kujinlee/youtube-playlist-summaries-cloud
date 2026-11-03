@@ -1,0 +1,27 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 47fc00a37a83557934db77e7d125d774095472e8",
+    "docs/backlog.md": "100644 71ca8b8f66c1a8e243d14450a8b262608bd3b346",
+    "docs/reviews/claude/count-pool-r1-claude.md": "100644 1a3326fe3506bcda9d0942a4bfaa7adbc75cb1c0",
+    "docs/reviews/codex/count-pool-r1-codex.md": "100644 9245ddd88f2a1a239a1d9219cfe5074c55db6b4c",
+    "docs/reviews/verdicts/count-pool-r1-codex.verdict.json": "100644 4b5b3cb44d649d33d9abbf2681bdb067f9944da3",
+    "scripts/check-plan-code.py": "100644 8bbe80ee0e0ab719e4f10e965e8a2c53cd66a2f1",
+    "scripts/check-selftest-counts.py": "100644 2438480ec6be64e5188fdeae7bcbcc7d84e0c2c1",
+    "scripts/mutations/check-selftest-counts.json": "100644 c1cbecf707598513eb15862763beb2290b2c2dbd"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b39640824d51138fdee957c4eacdf922227a8176",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/r487/prompt.md",
+  "reason": "claude half filed: 5976 chars, names b39640824d51",
+  "refused": false,
+  "review": "count-pool-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a36bde61084830335",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
