@@ -793,5 +793,18 @@
     "expect": [
       "layout: the same-words check refuses a stray <li> and a mismatched closer (r3 Claude F2)"
     ]
+  },
+  {
+    "name": "the word diff splits a key into two tokens, so <del>/<ins> cut it away from its link",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    a, b = (WORD_OR_KEY.findall(re.sub(r\"[*`]\", \"\", t)) for t in (before, after))",
+        "    a, b = (re.sub(r\"[*`]\", \"\", t).split() for t in (before, after))"
+      ]
+    ],
+    "expect": [
+      "word_diff keeps a key whole, so no <del>/<ins> splits it away from any link"
+    ]
   }
 ]

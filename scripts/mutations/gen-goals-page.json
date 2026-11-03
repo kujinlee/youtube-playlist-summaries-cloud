@@ -273,5 +273,44 @@
       ]
     ],
     "expect": "front matter is NOT counted as an amendment"
+  },
+  {
+    "name": "a goal card loses its id, so /goals#<slug> links dangle",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    parts = [f'<article class=\"goal{quiet}\" id=\"{esc(a[\"slug\"])}\">',",
+        "    parts = [f'<article class=\"goal{quiet}\">',"
+      ]
+    ],
+    "expect": [
+      "a goal card carries its slug as its id, the target of /goals#<slug>"
+    ]
+  },
+  {
+    "name": "the backlog chip is a bare #N again",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "f'backlog #{esc(str(num))} · {esc(rel)}</a>')",
+        "f'#{esc(str(num))} · {esc(rel)}</a>')"
+      ]
+    ],
+    "expect": [
+      "a backlog chip is a QUALIFIED link to its row, never a bare #N"
+    ]
+  },
+  {
+    "name": "a thread's PR is never a link",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    return f'<a href=\"{esc(href)}\">{esc(text)}</a>' if href else esc(text)",
+        "    return esc(text)"
+      ]
+    ],
+    "expect": [
+      "a PR in a thread links to GitHub when the repo is known"
+    ]
   }
 ]

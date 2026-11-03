@@ -290,25 +290,12 @@
     ]
   },
   {
-    "name": "with no repo read, a PR link is guessed",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "(f\"https://github.com/{repo}/pull/{n}\" if repo else None)",
-        "f\"https://github.com/{repo}/pull/{n}\""
-      ]
-    ],
-    "expect": [
-      "with no repo read, a PR ref is plain text, never a guessed URL"
-    ]
-  },
-  {
     "name": "tree text is written into the page unescaped",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                   else html.escape(t) for t, h in segments(line, repo))",
-        "                   else t for t, h in segments(line, repo))"
+        "            out.append(html.escape(t))",
+        "            out.append(t)"
       ]
     ],
     "expect": [
@@ -1461,6 +1448,58 @@
     ],
     "expect": [
       "backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing"
+    ]
+  },
+  {
+    "name": "the live tree gives a key an id at EVERY occurrence, so ids collide",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if key in ids:\n        return \"\"\n",
+        "    if False:\n        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "the live tree gives a key its id at its FIRST occurrence only"
+    ]
+  },
+  {
+    "name": "the live tree emits no thread ids, so /goal-tree#t-… links dangle",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "render_tree_html(newest, ids=True)",
+        "render_tree_html(newest)"
+      ]
+    ],
+    "expect": [
+      "the page's ids are unique: the live tree has them, the timeline's trees do not"
+    ]
+  },
+  {
+    "name": "the timeline's past trees emit ids too, colliding with the live tree's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ '</ul>' + render_tree_html(snap) + '</details>'",
+        "+ '</ul>' + render_tree_html(snap, ids=True) + '</details>'"
+      ]
+    ],
+    "expect": [
+      "the page's ids are unique: the live tree has them, the timeline's trees do not"
+    ]
+  },
+  {
+    "name": "a PR with no repo loses its id, so its thread cannot be linked to",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif a:\n            out.append(f'<span{a}>{html.escape(t)}</span>')\n",
+        "        elif False:\n            out.append(f'<span{a}>{html.escape(t)}</span>')\n"
+      ]
+    ],
+    "expect": [
+      "a PR with no repo still carries its id, on plain text"
     ]
   }
 ]

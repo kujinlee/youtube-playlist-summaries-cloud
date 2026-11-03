@@ -152,5 +152,104 @@
    ]
   ],
   "expect": "url: abutting bold is markup, not URL"
+ },
+ {
+  "name": "with no repo read, a PR link is guessed",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f\"https://github.com/{repo}/pull/{key}\" if repo and key.isdigit() else None",
+    "        return f\"https://github.com/{repo}/pull/{key}\" if key.isdigit() else None"
+   ]
+  ],
+  "expect": "key_link: a PR with NO repo is no link, never a guessed URL"
+ },
+ {
+  "name": "a non-numeric backlog key becomes a link",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        return f\"/backlog-table#i{key}\" if key.isdigit() else None",
+    "        return f\"/backlog-table#i{key}\""
+   ]
+  ],
+  "expect": "key_link: a non-numeric backlog key is no link"
+ },
+ {
+  "name": "an unknown key kind is silently no link, so a caller can grow its own",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    raise ValueError(f\"key_link: unknown key kind {kind!r}\")",
+    "    return None"
+   ]
+  ],
+  "expect": "key_link: an unknown kind RAISES"
+ },
+ {
+  "name": "the thread id drops its t- prefix, so the tree and its links disagree with the spec",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return f\"t-{key}\"",
+    "    return key"
+   ]
+  ],
+  "expect": "key_link: thread"
+ },
+ {
+  "name": "keys in prose are no longer linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        if keys and c in \"bP\":",
+    "        if False and c in \"bP\":"
+   ]
+  ],
+  "expect": "scan: a backlog key in prose is a link"
+ },
+ {
+  "name": "a key inside a link's text is linked again, nesting an <a> in an <a>",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "{scan(m.group(1), False)}</a>')",
+    "{scan(m.group(1))}</a>')"
+   ]
+  ],
+  "expect": "scan: a key inside a link's text is not nested into a second link"
+ },
+ {
+  "name": "bold stops passing the key switch down, so a key in bold is plain",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "out.append(f\"<strong>{scan(body, keys)}</strong>\")",
+    "out.append(f\"<strong>{scan(body, False)}</strong>\")"
+   ]
+  ],
+  "expect": "scan: a key inside bold is still a link"
+ },
+ {
+  "name": "a key glued to a preceding word is linked",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "KEY_REF = re.compile(r\"\\b(backlog|PR) #(\\d+)\\b\")",
+    "KEY_REF = re.compile(r\"(backlog|PR) #(\\d+)\\b\")"
+   ]
+  ],
+  "expect": "scan: a word character before is not a key"
+ },
+ {
+  "name": "a GitHub remote is not recognised, so no page ever links a PR",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    m = GITHUB_REMOTE.search(url)\n    return m.group(1) if m else None",
+    "    return None"
+   ]
+  ],
+  "expect": "repo_from_remote: https"
  }
 ]

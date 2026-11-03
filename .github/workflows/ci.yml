@@ -806,6 +806,14 @@ jobs:
       - name: page_chrome self-test
         run: python3 scripts/page_chrome.py --self-test
 
+      # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
+      # home page is built in scripts/ outside page_markup.key_link. Rules 1 and 3 read BUILT pages,
+      # which need gh and the goal-tree log, so they run locally (`--build`), not here.
+      - name: check-page-links self-test
+        run: python3 scripts/check-page-links.py --self-test
+      - name: check-page-links (one link function)
+        run: python3 scripts/check-page-links.py --sources
+
       # ── The project dashboard: the page, its grammar, and the gate that feeds it ──
       #
       # A person who was away reads this page instead of the transcript. It is only worth

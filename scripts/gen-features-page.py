@@ -304,7 +304,7 @@ def collect(nodes: list[Node]) -> tuple[dict[str, dict], dict]:
             "label": f"#{r['num']} {glyphs.get(r['sev'], '·')}"
                      + (f" (was {r['was']})" if r["was"] else "")
                      + f" {r['title']}",
-            "href": f"/backlog-table#i{r['num']}",
+            "href": page_markup.key_link("backlog", r["num"]),
             "closed": r["closed"],
         } for r in mine]
 
@@ -673,7 +673,7 @@ def _self_test_body() -> int:
         placed = match_rows(ns, _real_rows)
         return [n.slug for n in ns
                 if sorted(e["href"] for e in frag[n.slug]["backlog"])
-                != sorted(f"/backlog-table#i{r['num']}" for r in placed[n.slug])]
+                != sorted(page_markup.key_link("backlog", r["num"]) for r in placed[n.slug])]
     check("the page's backlog band lists exactly the rows match_rows places, for every node",
           (_band_mismatch(_real_nodes, collect(_real_nodes)[0]),
            _band_mismatch(tagged, collect(tagged)[0])), ([], []))
@@ -730,6 +730,8 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
+    # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
+    page_markup.use_repo(page_markup.origin_repo(ROOT))
 
     for p in (DOCS / "features.md", DOCS / "anchors.md", DOCS / "backlog.md"):
         if not p.is_file():
@@ -759,6 +761,8 @@ def main() -> int:
     fragment = render(nodes, fragments, notes=notes, problems=problems,
                       generated_at=page_chrome.provenance(
                           _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), ROOT))
+    # Every key left as TEXT by whichever path rendered it becomes a link (backlog #470).
+    fragment = page_markup.link_html(fragment, page_markup.REPO)
 
     if args.fragment_only:
         page_chrome.assert_wired(fragment, "gen-features-page.py")

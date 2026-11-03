@@ -972,7 +972,8 @@ EXPECTED_MUTATIONS = {
     # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
     # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
     "scripts/check-closing-table.py": 52,
-    "scripts/gen-dashboard.py": 68,
+    # ⟳ 2026-11-03, backlog #470: 68 -> 70. the PR option link through key_link, and its un-nested text (+2).
+    "scripts/gen-dashboard.py": 70,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -1071,7 +1072,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #484 round-2 fold: 102 -> 112 — code spans by matching backtick runs, the cut at the FIRST
     # `Previously:` and its order after the strip (r2 X1/X2: four), a fate beside an unlisted PR (r2 X3),
     # and a later bold REOPENED cancelling a marker (r2 note: five). Five r1 entries were re-anchored.
-    "scripts/goal-tree.py": 112,
+    # ⟳ 2026-11-03, backlog #470: 112 -> 115. the PR-href mutation moved to page_markup.json (-1); four thread-id mutations (+4).
+    "scripts/goal-tree.py": 115,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1116,7 +1118,8 @@ EXPECTED_MUTATIONS = {
     # rebound onto the simplified lookup and the per-form notice rule; two added for the
     # one-notice user-message rule.
     "scripts/backfill-work-lines.py": 108,
-    "scripts/gen-goals-page.py": 25,
+    # ⟳ 2026-11-03, backlog #470: 25 -> 28. goal-card id, qualified backlog chip, PR link (+3).
+    "scripts/gen-goals-page.py": 28,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
     # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
@@ -1152,7 +1155,8 @@ EXPECTED_MUTATIONS = {
     # (unknown kind, `kind:` first, parent shape, must END the cell, one marker), missing kinds
     # reported, the three parent refusals, the marker stripped from the text, the card's kind, and
     # parse reading it.
-    "scripts/gen-backlog-page.py": 64,
+    # ⟳ 2026-11-03, backlog #470: 64 -> 65. the word diff keeps a key whole (+1).
+    "scripts/gen-backlog-page.py": 65,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1202,7 +1206,11 @@ EXPECTED_MUTATIONS = {
     # checks back, which is the shape `check-ratchet-contract` refuses by name (R4).
     "scripts/check-group-claims.py": 11,
 
-    "scripts/page_markup.py": 14,
+    # ⟳ 2026-11-03, backlog #470: 14 -> 23. key_link / link_keys / link_html: nine new decision
+    # lines, incl. the PR-without-repo mutation MOVED here from goal-tree.json.
+    "scripts/page_markup.py": 23,
+    # ⟳ 2026-11-03, backlog #470: the key-link guard gets its manifest in the commit that creates it.
+    "scripts/check-page-links.py": 16,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,
@@ -4876,6 +4884,7 @@ def _self_test_body() -> int:
                                       "scripts/check-memory-index-budget.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
+                                      "scripts/check-page-links.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement

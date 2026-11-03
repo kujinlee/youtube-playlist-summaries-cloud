@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 236 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 237 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1145,6 +1145,9 @@ def changes_from_versions(versions: Sequence[tuple[str, int, str]]) -> dict[int,
     return hist
 
 
+WORD_OR_KEY = re.compile(r"\b(?:backlog|PR) #\d+\S*|\S+")
+
+
 def word_diff(before: str, after: str) -> str:
     """Word-level diff as HTML — deletions struck through, insertions marked.
 
@@ -1153,7 +1156,9 @@ def word_diff(before: str, after: str) -> str:
     formatting for correctness, which is the right way round for something read only when someone
     already wants the detail."""
     import difflib
-    a, b = re.sub(r"[*`]", "", before).split(), re.sub(r"[*`]", "", after).split()
+    # A key (`PR #445`) is ONE token, so the diff never splits it across `<del>`/`<ins>` where no
+    # link can reach it (backlog #470: every key on a generated page is a link).
+    a, b = (WORD_OR_KEY.findall(re.sub(r"[*`]", "", t)) for t in (before, after))
     out = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag in ("delete", "replace"):
@@ -3307,6 +3312,7 @@ def _self_test_body() -> int:
             out = pathlib.Path(tmp) / "page.html"
             saved_backlog, saved_hist = globals()["BACKLOG"], globals()["attach_history"]
             saved_argv, saved_home = sys.argv, os.environ.get("HOME")
+            saved_repo = page_markup.REPO      # `main` sets it (backlog #470); later cases expect None
             buf = io.StringIO()
             try:
                 globals()["BACKLOG"] = src
@@ -3328,6 +3334,7 @@ def _self_test_body() -> int:
                 globals()["BACKLOG"] = saved_backlog
                 globals()["attach_history"] = saved_hist
                 sys.argv = saved_argv
+                page_markup.use_repo(saved_repo)
                 if saved_home is None:
                     os.environ.pop("HOME", None)
                 else:
@@ -3838,6 +3845,8 @@ def _self_test_body() -> int:
     case("word_diff marks a deletion and an insertion",
          lambda: "<del>old</del>" in word_diff("the old text", "the new text")
          and "<ins>new</ins>" in word_diff("the old text", "the new text"))
+    case("word_diff keeps a key whole, so no <del>/<ins> splits it away from any link",
+         lambda: "<del>PR #445),</del> <ins>PR #445;</ins>" in word_diff("see PR #445), x", "see PR #445; x"))
     case("word_diff leaves untouched words unmarked",
          lambda: word_diff("same words here", "same words here") == "same words here")
     case("word_diff escapes html in BOTH sides",
@@ -4198,6 +4207,8 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
+    # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
+    page_markup.use_repo(page_markup.origin_repo(REPO))
 
     def git(*a: str) -> str:
         return subprocess.run(["git", "-C", str(REPO), *a],
@@ -4225,6 +4236,8 @@ def main() -> int:
                          page_chrome.provenance(
                              _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), REPO),
                          unread=unread)
+        # Every key left as TEXT by whichever path rendered it becomes a link (backlog #470).
+        fragment = page_markup.link_html(fragment, page_markup.REPO)
         page_chrome.assert_wired(fragment, "gen-backlog-page.py")
     except ShapeError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)

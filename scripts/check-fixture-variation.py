@@ -274,8 +274,9 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     # about itself — it exits 0 while carrying it.
     'page_chrome.py': (
         'assert_wired.page',),
+    # ⟳ backlog #470: `scan.s` leaves — the key-link cases call `scan` on a second input.
     'page_markup.py': (
-        'escape.s', 'scan.s',),
+        'escape.s',),
     'prior-art.py': (
         'search.show_all',),
     'subject_status.py': (
@@ -539,7 +540,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "needs_from_backlog.text", "needs_from_dashboard.text", "needs_from_ledger.entries",
         "needs_html.snap", "needs_lines.snap", "needs_owner.row", "needs_state.snap",
         "parse_threads.text", "read_log.path", "render_page.built", "render_page.live",
-        "render_page.log", "render_text.snap", "row_fates.text", "segments.repo", "segments.text",
+        "render_page.log", "render_text.snap", "row_fates.text",
+        # ⟳ backlog #470: `segments.*` leave — `segments` moved into `page_markup.key_segments` (the
+        # name in goal-tree is now an alias, not a definition), and is examined by page_markup's suite.
         "tree_lines.snap",
         "write_page.built", "write_page.live", "write_page.log", "write_page.out",
     ),
@@ -715,6 +718,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # driving it that way immediately printed a CANNOT RUN naming `docs/memory/MEMORY.md`
     # about a temp fixture it had never opened. The pin and that defect have the same cause.
     "check-memory-index-budget.py": ('budget_facts.label', 'budget_facts.limit', 'budget_facts.n_chars', 'budget_verdict.label', 'budget_verdict.limit', 'budget_verdict.n_chars', 'index_chars.path', 'main.argv', 'main.index', 'main.limit', 'render.f', 'unknown_args.argv', 'warn_threshold.limit'),
+    # backlog #470 (2026-11-03): the key-link guard, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    "check-page-links.py": ("built_hrefs.name", "built_hrefs.text", "check_pages.d", "check_sources.root",
+                            "dangling.pages", "fragment_targets.own", "fragment_targets.page", "ids.page",
+                            "main.argv", "main.root", "unlinked_keys.page"),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script
@@ -1254,8 +1262,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     'peer-sites.py': (
         'changed_lines.path', 'changed_lines.ref', 'containers.src',
         'parse_hunks.diff', 'report.src', 'report.touched',),
+    # ⟳ backlog #470: + the key-link functions, re-derived by running `analyse()`.
     'page_markup.py': (
-        'escape.s', 'safe_href.url', 'scan.s', 'trim_url_tail.url',),
+        'escape.s', 'key_link.key', 'key_link.kind', 'key_link.repo', 'key_segments.repo',
+        'key_segments.text', 'link_html.page', 'link_html.repo', 'link_keys.repo', 'link_keys.text',
+        'repo_from_remote.url', 'safe_href.url', 'scan.keys', 'scan.s', 'thread_id.key',
+        'trim_url_tail.url', 'use_repo.repo',),
     'prior-art.py': (
         'search.show_all', 'search.terms',),
     'subject_status.py': (

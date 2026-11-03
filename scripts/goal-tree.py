@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 200 cases
+    python3 scripts/goal-tree.py --self-test                 # 205 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -92,6 +92,7 @@ import sys
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 import page_chrome  # noqa: E402
+import page_markup  # noqa: E402
 
 ROOT = SCRIPTS.parent
 THREADS_REL = "docs/goal-threads.md"
@@ -115,7 +116,7 @@ GOAL_RE = re.compile(r"^## GOAL ([a-z0-9]+(?:-[a-z0-9]+)*)$")
 REQUEST_RE = re.compile(r'^> (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "(.+)"$')
 THREAD_RE = re.compile(r"^- (\S+) · (.+?) · (.+?)(?: · waits on (.+))?$")
 REFS_RE = re.compile(r"(?:backlog|PR) #\d+(?:, (?:backlog|PR) #\d+)*")
-REF_RE = re.compile(r"\b(backlog|PR) #(\d+)\b")
+REF_RE = page_markup.KEY_REF      # one key grammar, owned by the link function
 # A merged subject ends `… (backlog #N) (#PR)` or `… (#PR)`; the PR number is the LAST parenthesis.
 SUBJECT_PR_RE = re.compile(r"\(#(\d+)\)\s*$")
 LEDGER_NUM_RE = re.compile(r"(?:#|(?<=-))(\d+)\b")
@@ -464,7 +465,7 @@ def needs_from_dashboard(text: str) -> tuple[list[dict], list[str]]:
     items = []
     for e in gd.unresolved(entries):
         whole = f"{e.get('title') or ''} {e.get('plain') or ''}"   # Z2: the whole entry, body included
-        items.append(_item("decision", "dashboard", e["id"], f"/dashboard#{gd._slug(e['id'])}",
+        items.append(_item("decision", "dashboard", e["id"], page_markup.key_link("dashboard", gd._slug(e["id"])),
                            _SS.clean(e.get("title") or "", 160), identity(whole), whole))
     bad = [e["id"] or e.get("would_be_id") or "an entry with no id" for e in entries if e["error"]]
     return items, ([f"{len(bad)} dashboard entr{'y' if len(bad) == 1 else 'ies'} the store's grammar "
@@ -503,7 +504,7 @@ def needs_from_backlog(text: str) -> tuple[list[dict], list[str]]:
         kind = "action" if tail.startswith(ACTION_SUFFIX) else "decision"
         tail = tail[len(ACTION_SUFFIX):] if kind == "action" else tail
         tail = tail.lstrip(" —-")
-        it = _item(kind, "backlog", f"backlog #{r['num']}", f"/backlog-table#i{r['num']}",
+        it = _item(kind, "backlog", f"backlog #{r['num']}", page_markup.key_link("backlog", r["num"]),
                    _SS.clean(html.unescape(gb.plain(r["title"])), 140) + " — " + _SS.clean(tail, 160),
                    full=f"{r['title']} {tail}")
         it["row"] = r["num"]
@@ -781,18 +782,9 @@ def append_if_changed(path: pathlib.Path, snap: dict) -> bool:
 
 
 # ── rendering ─────────────────────────────────────────────────────────────────────────────────
-def segments(text: str, repo: str | None) -> list[tuple[str, str | None]]:
-    """PURE. Text split into (piece, href) — every `PR #N` and `backlog #N` becomes a link."""
-    out, pos = [], 0
-    for m in REF_RE.finditer(text):
-        out.append((text[pos:m.start()], None))
-        kind, n = m.group(1), m.group(2)
-        href = (f"https://github.com/{repo}/pull/{n}" if repo else None) if kind == "PR" \
-            else f"/backlog-table#i{n}"
-        out.append((m.group(0), href))
-        pos = m.end()
-    out.append((text[pos:], None))
-    return [s for s in out if s[0]]
+# PURE. Text split into (piece, href) — every `PR #N` and `backlog #N` becomes a link. The ONE
+# implementation is `page_markup.key_segments` (backlog #470); this name is the tree's import of it.
+segments = page_markup.key_segments
 
 
 def tree_lines(snap: dict) -> list[str]:
@@ -946,13 +938,37 @@ def render_text(snap: dict) -> str:
     return "\n".join(needs_lines(snap) + [""] + tree_lines(snap))
 
 
-def _html_line(line: str, repo: str | None) -> str:
-    return "".join(f'<a href="{html.escape(h, quote=True)}">{html.escape(t)}</a>' if h
-                   else html.escape(t) for t, h in segments(line, repo))
+def _id_attr(t: str, ids: set | None) -> str:
+    """` id="t-<kind>-<N>"` at a key's FIRST occurrence when `ids` collects them, else "" (spec §3:
+    a key under several goals gets its id once, in render order; later ones are plain links)."""
+    m = page_markup.KEY_REF.fullmatch(t)
+    if ids is None or not m:
+        return ""
+    key = f"{m.group(1).lower()}-{m.group(2)}"
+    if key in ids:
+        return ""
+    ids.add(key)
+    return f' id="{page_markup.thread_id(key)}"'
 
 
-def render_tree_html(snap: dict) -> str:
-    return '<pre class="tree">' + "\n".join(_html_line(ln, snap.get("repo"))
+def _html_line(line: str, repo: str | None, ids: set | None = None) -> str:
+    out = []
+    for t, h in segments(line, repo):
+        a = _id_attr(t, ids)
+        if h:
+            out.append(f'<a{a} href="{html.escape(h, quote=True)}">{html.escape(t)}</a>')
+        elif a:
+            out.append(f'<span{a}>{html.escape(t)}</span>')
+        else:
+            out.append(html.escape(t))
+    return "".join(out)
+
+
+def render_tree_html(snap: dict, ids: bool = False) -> str:
+    """The tree as one `<pre>`. `ids=True` for the LIVE tree only: the timeline's past trees sit on the
+    same page, so their ids would collide with it (backlog #470)."""
+    seen = set() if ids else None
+    return '<pre class="tree">' + "\n".join(_html_line(ln, snap.get("repo"), seen)
                                             for ln in tree_lines(snap)) + "</pre>"
 
 
@@ -988,7 +1004,7 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
     # ⭐ NEEDS YOU FIRST, above the tree (owner decision D1): read from THIS run when there was one,
     # complete or not, because a decision that appeared since the newest snapshot is the one to see.
     parts.insert(6, needs_html(live if live is not None else newest))
-    parts += ['<h2>Now</h2>', render_tree_html(newest), '<h2>Timeline</h2>',
+    parts += ['<h2>Now</h2>', render_tree_html(newest, ids=True), '<h2>Timeline</h2>',
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed. Before this '
               f'page, the plan history was drawn by the work-lines page, now retired and FROZEN: '
               f'<a href="{WORK_LINES_ARCHIVE}">the work-lines archive</a> (backlog #389).</p>']
@@ -1041,7 +1057,8 @@ section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-fain
 
 
 def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None) -> None:
-    body = render_page(log, built, live)
+    # Every key left as TEXT (NEEDS YOU's prose, the lede) becomes a link too (backlog #470).
+    body = page_markup.link_html(render_page(log, built, live), log[-1].get("repo"))
     page = (f"<!doctype html><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>Goal tree</title>"
@@ -1746,8 +1763,22 @@ def _self_test_body() -> int:
     case("with no repo read, a PR ref is plain text, never a guessed URL",
          [h for _, h in segments("PR #20", None)], [None])
     case("text in the tree is escaped", "&lt;b&gt;" in _html_line("<b> PR #1", "o/r"), True)
+    # ── backlog #470: the live tree emits `t-<kind>-<N>` ids, ONCE per key, and past trees emit none.
+    _ids = set()
+    _two = _html_line("PR #20 and backlog #10", "o/r", _ids) + _html_line("PR #20 again", "o/r", _ids)
+    case("the live tree gives a key its id at its FIRST occurrence only",
+         (_two.count('id="t-pr-20"'), _two.count('id="t-backlog-10"')), (1, 1))
+    case("...and the id is on the link to that key",
+         '<a id="t-pr-20" href="https://github.com/o/r/pull/20">PR #20</a>' in _two, True)
+    case("a PR with no repo still carries its id, on plain text",
+         _html_line("PR #20", None, set()), '<span id="t-pr-20">PR #20</span>')
+    case("without an id set, no id is emitted (a timeline's past tree)",
+         'id=' in _html_line("PR #20 and backlog #10", "o/r"), False)
     log2 = [snap, flipped]
     page = render_page(log2, "2026-10-28 07:00")
+    case("the page's ids are unique: the live tree has them, the timeline's trees do not",
+         (page.count('id="t-pr-20"'), len(re.findall(r'id="(t-[^"]+)"', page))
+          == len(set(re.findall(r'id="(t-[^"]+)"', page)))), (1, True))
     case("the page states its build time and the newest snapshot's time",
          ("<time>2026-10-28 07:00</time>" in page,
           '<time class="newest">2026-10-28 06:00</time>' in page), (True, True))

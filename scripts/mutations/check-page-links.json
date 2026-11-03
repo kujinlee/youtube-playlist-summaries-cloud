@@ -1,0 +1,210 @@
+[
+  {
+    "name": "`refs/pull/` is read as a PR href",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "(?<!refs)/pull/",
+        "/pull/"
+      ]
+    ],
+    "expect": [
+      "rule 2: `refs/pull/` (a git ref, not a link) is not a PR href"
+    ]
+  },
+  {
+    "name": "the self-test exemption is dropped, so expected values read as built hrefs",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    body = text[:m.start()] if m else text",
+        "    body = text"
+      ]
+    ],
+    "expect": [
+      "rule 2: code after the self-test starts is test code and exempt"
+    ]
+  },
+  {
+    "name": "the one place is not exempt",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "EXEMPT_SOURCES = {\"page_markup.py\", \"check-page-links.py\"}",
+        "EXEMPT_SOURCES = {\"check-page-links.py\"}"
+      ]
+    ],
+    "expect": [
+      "rule 2: page_markup.py, the one place, is exempt"
+    ]
+  },
+  {
+    "name": "a key inside an <a> is reported as unlinked",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "(code|a|script|style|title)",
+        "(code|script|style|title)"
+      ]
+    ],
+    "expect": [
+      "rule 1: a key inside an <a> is fine"
+    ]
+  },
+  {
+    "name": "a key inside <code> is reported as unlinked",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "EXEMPT_ELEMENTS = re.compile(r\"<(code|a|",
+        "EXEMPT_ELEMENTS = re.compile(r\"<(a|"
+      ]
+    ],
+    "expect": [
+      "rule 1: a key inside <code> is fine"
+    ]
+  },
+  {
+    "name": "bare chips are read from the whole page, so a linked chip is reported",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    chips = [f\"chip {m.group(2)}\" for m in BARE_CHIP.finditer(outside)]",
+        "    chips = [f\"chip {m.group(2)}\" for m in BARE_CHIP.finditer(page)]"
+      ]
+    ],
+    "expect": [
+      "rule 1: a #N chip that IS a link is fine"
+    ]
+  },
+  {
+    "name": "bare chips are not looked for",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "for m in BARE_CHIP.finditer(outside)]",
+        "for m in BARE_CHIP.finditer(\"\")]"
+      ]
+    ],
+    "expect": [
+      "rule 1: a bare #N chip outside an <a> is found"
+    ]
+  },
+  {
+    "name": "tags are stripped to a space, so a key split by markup is missed",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    text = _html.unescape(TAG.sub(\"\", outside))",
+        "    text = _html.unescape(TAG.sub(\" \", outside))"
+      ]
+    ],
+    "expect": [
+      "rule 1: a key split by markup is still found"
+    ]
+  },
+  {
+    "name": "an unbuilt target's fragment is passed silently, not counted",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            if target is None:\n                unchecked += 1",
+        "            if target is None:\n                pass"
+      ]
+    ],
+    "expect": [
+      "rule 3: a fragment on a page this does not build is COUNTED, not passed silently"
+    ]
+  },
+  {
+    "name": "a dangling fragment is not reported",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "                bad.append(f\"{n} -> /{target}#{frag}\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "rule 3: a fragment with no id on its target page is dangling; one that resolves is not"
+    ]
+  },
+  {
+    "name": "an empty fragment is checked as a link",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if not sep or not frag:",
+        "        if not sep:"
+      ]
+    ],
+    "expect": [
+      "rule 3: an empty fragment (`#`, a neutralised href) is not a link to check"
+    ]
+  },
+  {
+    "name": "a missing page passes",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        return CANNOT, [f\"CANNOT RUN",
+        "        return OK, [f\"CANNOT RUN"
+      ]
+    ],
+    "expect": [
+      "a missing page is CANNOT RUN, never a pass"
+    ]
+  },
+  {
+    "name": "a page with an unlinked key does not fail",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            rc = BROKEN\n            lines.append(f\"[FAIL] rule 1:",
+        "            lines.append(f\"[FAIL] rule 1:"
+      ]
+    ],
+    "expect": [
+      "a page with an unlinked key FAILS"
+    ]
+  },
+  {
+    "name": "a dangling fragment does not fail the page check",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if bad:\n        rc = BROKEN\n",
+        "    if bad:\n"
+      ]
+    ],
+    "expect": [
+      "a page with a dangling fragment FAILS"
+    ]
+  },
+  {
+    "name": "main reads the real tree whatever root it is given",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    src = check_sources(root)",
+        "    src = check_sources(ROOT)"
+      ]
+    ],
+    "expect": [
+      "main --sources: a hand-built href FAILS, and the output names it"
+    ]
+  },
+  {
+    "name": "main drops the page verdict, so missing pages pass",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    return max(rc, prc) if prc != CANNOT else CANNOT",
+        "    return rc"
+      ]
+    ],
+    "expect": [
+      "main --dir: missing pages are CANNOT RUN"
+    ]
+  }
+]
