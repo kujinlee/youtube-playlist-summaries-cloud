@@ -885,5 +885,148 @@
       ]
     ],
     "expect": "#426 through the gatherer: the round's head, `onto` and the guarded paths are passed"
+  },
+  {
+    "name": "merge-delta r1 Codex H1: a failed HEAD ls-tree is 'every path absent' again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if got.returncode != 0:\n        raise RuntimeError(f\"CANNOT RUN \u2014 git ls-tree HEAD failed",
+        "    if got.returncode != 0:\n        return {}\n        raise RuntimeError(f\"CANNOT RUN \u2014 git ls-tree HEAD failed"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'"
+  },
+  {
+    "name": "merge-delta r1 Codex H1: the HEAD ls-tree failure check is deleted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if got.returncode != 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'"
+  },
+  {
+    "name": "merge-delta r1 Codex M2: a failed merged-tree ls-tree reads as an empty clean merge",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if ls.returncode != 0:\n        return None",
+        "    if ls.returncode != 0:\n        return {}, frozenset()"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None"
+  },
+  {
+    "name": "merge-delta r1 Claude L1: the merged-tree ls-tree failure check is deleted",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if ls.returncode != 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None"
+  },
+  {
+    "name": "merge-delta r1 Claude M2: onto is HEAD itself, not the merge base",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    mb = git(\"merge-base\", base, \"HEAD\")",
+        "    mb = git(\"rev-parse\", \"HEAD\")"
+      ]
+    ],
+    "expect": "#426, PR #487's shape: the genuine change is charged, master's two files are not"
+  },
+  {
+    "name": "merge-delta r1 Claude M2: a failed merge-base is read as its (empty) output",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return mb.stdout.strip() if mb.returncode == 0 else None",
+        "    return mb.stdout.strip() if True else None"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M2: an unresolvable base has no `onto`, never an empty one"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: merge-tree reads the branch's own .gitattributes again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [f\"--attr-source={empty_tree}\", \"-c\",",
+        "    return [\"-c\", \"core.quotePath=true\", \"-c\","
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1: a committed `merge=union` cannot turn a conflict into a clear"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: the user-global attributes file is honoured again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "\"core.attributesFile=/dev/null\",\n            \"-c\"",
+        "\"core.quotePath=true\",\n            \"-c\""
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1: a `core.attributesFile` does not clear it"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: a repository merge.default driver is honoured again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "\"merge.default=text\",\n            \"merge-tree\"",
+        "\"core.quotePath=true\",\n            \"merge-tree\""
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1: a repository `merge.default` does not clear it"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: an info/attributes in force is ignored",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        if attributes_in_force(_info_attributes(git)):",
+        "        if False and attributes_in_force(_info_attributes(git)):"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1: an `info/attributes` in force falls back to the strict rule"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: a comment line counts as an attribute",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return any(ln.strip() and not ln.lstrip().startswith(\"#\") for ln in text.splitlines())",
+        "    return any(ln.strip() for ln in text.splitlines())"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1 (pure): blank lines and comments declare no attribute"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: no info/attributes file is read as one in force",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if text is None:\n        return False\n    return any(ln.strip()",
+        "    if text is None:\n        return True\n    return any(ln.strip()"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1 (pure): no file is not in force"
+  },
+  {
+    "name": "merge-delta r1 Claude M1: an unresolvable info/attributes path reads as no file",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    if where.returncode != 0:\n        raise RuntimeError(\"the info/attributes path",
+        "    if False:\n        raise RuntimeError(\"the info/attributes path"
+      ]
+    ],
+    "expect": "merge-delta r1 Claude M1: an unresolvable info/attributes path builds no master side"
   }
 ]

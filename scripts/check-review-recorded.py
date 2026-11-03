@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 217 cases
+    python3 scripts/check-review-recorded.py --self-test  # 237 cases
 
 WHY THIS EXISTS
 ---------------
@@ -1033,7 +1033,7 @@ def _git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
 
 
-def _final_entries(paths: list[str]) -> dict[str, str]:
+def _final_entries(paths: list[str], git=None) -> dict[str, str]:
     """path -> `"<mode> <object-id>"` in the tree that will merge. Absent means it is not in HEAD.
 
     ⚠ MODE IS PART OF IT — r2 Blocking. `git rev-parse HEAD:<path>` answers with the object id
@@ -1046,11 +1046,20 @@ def _final_entries(paths: list[str]) -> dict[str, str]:
     SUBMODULE read as absent, so a reviewer who saw the path deleted credited a merge that puts a
     gitlink there. The mode already separates them (`160000` gitlink, `120000` symlink,
     `100644`/`100755` file), so the filter bought nothing and cost a false pass.
+
+    ⛔ A FAILED LOOKUP RAISES — merge-delta r1 Codex High. It returned `{}`, i.e. "every path is
+    absent from HEAD", and since backlog #426 an absent path EQUALS a deletion master made: the
+    reviewer injected a failure into this one call and a branch's unreviewed re-add of a file
+    master deleted was cleared, rc 0. An unknown HEAD is CANNOT RUN, never an empty tree.
     """
+    git = git or _git
     if not paths:
         return {}
-    got = _git("ls-tree", "-z", "HEAD", "--", *paths)
-    return parse_ls_tree(got.stdout) if got.returncode == 0 else {}
+    got = git("ls-tree", "-z", "HEAD", "--", *paths)
+    if got.returncode != 0:
+        raise RuntimeError(f"CANNOT RUN — git ls-tree HEAD failed ({got.stderr.strip()}), so "
+                           f"what is about to merge is UNKNOWN. Treat this as NOT CHECKED.")
+    return parse_ls_tree(got.stdout)
 
 
 def parse_ls_tree(out: str) -> dict[str, str]:
@@ -1076,6 +1085,57 @@ def parse_ls_tree(out: str) -> dict[str, str]:
     return entries
 
 
+def merge_onto(base: str, git=None) -> "str | None":
+    """`merge-base(base, HEAD)` — the master commit HEAD already contains — or `None`.
+
+    ⛔ ONE HELPER FOR `main` AND THE REAL-GIT FIXTURE — merge-delta r1 Claude M2. The fixture
+    recomputed this itself, so `main`'s copy was never run by any case: `rev-parse HEAD` in its
+    place left 217/217 green, and `merge-tree(round, HEAD)` is HEAD's own tree, which clears EVERY
+    post-review commit. Both now call this, so the fixture's red is `main`'s red.
+    """
+    git = git or _git
+    mb = git("merge-base", base, "HEAD")
+    return mb.stdout.strip() if mb.returncode == 0 else None
+
+
+def merge_tree_argv(empty_tree: str, head: str, onto: str) -> list[str]:
+    """PURE. The `merge-tree` call, with every attribute source the BRANCH could control removed.
+
+    ⛔ merge-delta r1 Claude M1. `merge-tree` applies gitattributes merge drivers, and it reads them
+    from the working tree — which in CI IS the branch. A `docs/.gitattributes` (prose, never
+    charged) holding `** merge=union` turned a real conflict on guarded gate code into a clean
+    merge, and the author's merge under the same attribute equalled it: trap 1 bypassed. So:
+    `--attr-source=<empty tree>` (no in-tree or worktree `.gitattributes`; git older than 2.42 does
+    not know it and exits 129, which `parse_merge_tree` reads as `None`, the strict rule),
+    `core.attributesFile=/dev/null` (no user-global file) and `merge.default=text` (no
+    repository-config default driver). `$GIT_DIR/info/attributes` is NOT covered by the flag —
+    measured — so `_master_side` refuses to build a merge while one is in force.
+    """
+    return [f"--attr-source={empty_tree}", "-c", "core.attributesFile=/dev/null",
+            "-c", "merge.default=text",
+            "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", head, onto]
+
+
+def attributes_in_force(text: "str | None") -> bool:
+    """PURE. Does an `info/attributes` file's text declare anything? `None` = no such file.
+
+    Blank lines and `#` comments declare nothing; any other line might name a merge driver, and
+    deciding which attributes are harmless is a second grammar this file has no business owning.
+    """
+    if text is None:
+        return False
+    return any(ln.strip() and not ln.lstrip().startswith("#") for ln in text.splitlines())
+
+
+def _info_attributes(git) -> "str | None":
+    """The text of `$GIT_DIR/info/attributes`, `None` if absent. RAISES on a failed lookup."""
+    where = git("rev-parse", "--path-format=absolute", "--git-path", "info/attributes")
+    if where.returncode != 0:
+        raise RuntimeError("the info/attributes path could not be resolved")
+    f = pathlib.Path(where.stdout.strip())
+    return f.read_text(encoding="utf-8", errors="replace") if f.is_file() else None
+
+
 def _master_side(head: str, onto: "str | None", paths: list[str],
                  git=None) -> "tuple[dict[str, str], frozenset[str]] | None":
     """`(entries, conflicted)` of the round's commit merged with `onto`; `None` on ANY failure.
@@ -1083,12 +1143,21 @@ def _master_side(head: str, onto: "str | None", paths: list[str],
     `None` is the strict rule, so a merge that cannot be built leaves a round required (backlog
     #426, the fail direction). `git` is injectable so a case can drive it over a real fixture
     repository; `merge-tree --write-tree` writes objects but no ref, so the repository's history
-    is untouched.
+    is untouched. An `info/attributes` in force, or one that cannot be read, is `None` too — see
+    `merge_tree_argv`.
     """
     git = git or _git
     if not onto or not paths:
         return None
-    mt = git("merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", head, onto)
+    try:
+        if attributes_in_force(_info_attributes(git)):
+            return None
+    except (RuntimeError, OSError):
+        return None
+    empty = git("hash-object", "-t", "tree", "/dev/null")
+    if empty.returncode != 0 or not empty.stdout.strip():
+        return None
+    mt = git(*merge_tree_argv(empty.stdout.strip(), head, onto))
     parsed = parse_merge_tree(mt.stdout, mt.returncode)
     if parsed is None:
         return None
@@ -1440,9 +1509,8 @@ def main(argv: list[str]) -> int:
     try:
         # ⛔ an unresolvable merge base is `None`, which clears nothing — backlog #426's fail
         # direction. `changed_paths` above has already refused that case; this is the second lock.
-        _mb = _git("merge-base", args.base, "HEAD")
-        onto = _mb.stdout.strip() if _mb.returncode == 0 else None
-        tails, unusable = round_tails(branch_verdicts(added), changed, onto=onto)
+        tails, unusable = round_tails(branch_verdicts(added), changed,
+                                      onto=merge_onto(args.base))
         gap = declared_gap(review_added(added))
     except (RuntimeError, OSError) as exc:
         print(str(exc) if str(exc).startswith("CANNOT RUN") else f"CANNOT RUN — {exc}",
@@ -2223,26 +2291,47 @@ def _self_test_body() -> int:
     def _nul(out: str) -> list[str]:
         return [x for x in out.split("\0") if x]
 
-    def _tails_at(review: str) -> list[str]:
-        onto = _g("merge-base", "master", "HEAD").stdout.strip()
-        delta = _nul(_g(*diff_argv(onto)).stdout)
+    # ⛔ `onto` and HEAD's entries come from the SAME helpers `main` calls (`merge_onto`,
+    # `_final_entries`), never a copy — r1 Claude M2: a copy here left `main`'s line unexercised.
+    def _tails_at(review: str, git=None) -> list[str]:
+        git = git or _g
+        onto = merge_onto("master", git=git)
+        delta = _nul(git(*diff_argv(onto)).stdout)
         t, _u = round_tails(
             ["docs/reviews/verdicts/r.verdict.json"], delta,
             load=lambda r: {"gate_ran": True, "head": review, "dirty": {}},
-            is_ancestor=lambda h: _g("merge-base", "--is-ancestor", h, "HEAD").returncode == 0,
-            changed_since=lambda h: _nul(_g(*diff_argv(h)).stdout),
-            final_entries=lambda p: parse_ls_tree(_g("ls-tree", "-z", "HEAD", "--", *p).stdout),
-            onto=onto, master_side=lambda h, o, p: _master_side(h, o, p, git=_g))
+            is_ancestor=lambda h: git("merge-base", "--is-ancestor", h, "HEAD").returncode == 0,
+            changed_since=lambda h: _nul(git(*diff_argv(h)).stdout),
+            final_entries=lambda p: _final_entries(p, git=git),
+            onto=onto, master_side=lambda h, o, p: _master_side(h, o, p, git=git))
         return t.get("r.verdict.json", ["<no usable round>"])
+
+    # a `git` that answers exactly ONE call itself, so a case can inject a failure into a real repo
+    def _failing(prefix: tuple, rc: int = 128, out: str = "") -> object:
+        def g(*a: str) -> subprocess.CompletedProcess:
+            if a[:len(prefix)] == prefix:
+                return subprocess.CompletedProcess(["git", *a], rc, out, "fatal: injected")
+            return _g(*a)
+        return g
+
+    def _raises(fn) -> str:
+        try:
+            fn()
+        except RuntimeError as exc:
+            return "CANNOT RUN" if str(exc).startswith("CANNOT RUN") else f"raised {exc}"
+        return "did not raise"
 
     _g("init", "-q", "-b", "master")
     _LINES = "".join(f"line {i}\n" for i in range(1, 21))
-    for _f in (".github/workflows/ci.yml", "scripts/plan.py", "scripts/drivable.py", "scripts/solo.py"):
+    _GATE = "docs/superpowers/specs/m4/gate.sql"     # guarded code under a prose directory
+    for _f in (".github/workflows/ci.yml", "scripts/plan.py", "scripts/drivable.py",
+               "scripts/solo.py", "scripts/gone.py", _GATE):
         _w(_f, _LINES)
-    _commit("base")
+    _base = _commit("base")
     _g("checkout", "-q", "-b", "br")
     _w(".github/workflows/ci.yml", _LINES.replace("line 2\n", "BRANCH 2\n"))
     _w("scripts/plan.py", _LINES.replace("line 2\n", "BRANCH 2\n"))
+    _w(_GATE, _LINES.replace("line 2\n", "BRANCH 2\n"))
     _review = _commit("branch work, then the final review round")
     _g("checkout", "-q", "master")
     _w(".github/workflows/ci.yml", _LINES.replace("line 18\n", "MASTER 18\n"))
@@ -2281,6 +2370,100 @@ def _self_test_body() -> int:
          _tails_at(_review), [".github/workflows/ci.yml"])
     case("#426 trap 3, real git: an unknown commit to merge with builds no master side",
          _master_side(_review, "f" * 40, [".github/workflows/ci.yml"], git=_g), None)
+    case("merge-delta r1 Claude M2: an unresolvable base has no `onto`, never an empty one",
+         merge_onto("no-such-ref", git=_g), None)
+    _onto_good = merge_onto("master", git=_g)
+    case("merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                      git=_failing(("ls-tree", "-z"))), None)
+    case("merge-delta r1 Claude M1: no empty tree to read attributes from builds no master side",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                      git=_failing(("hash-object",))), None)
+    # ⚠ A SECOND LOCK, NOT A MUTATION TARGET: git 2.49 itself refuses `--attr-source=` with an
+    # empty value (rc 128, "bad --attr-source") once a content merge reads attributes, and a merge
+    # that reads none cannot be steered by them — so removing this check stays green (measured).
+    case("merge-delta r1 Claude M1: ...nor does an empty answer with rc 0",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                      git=_failing(("hash-object",), rc=0)), None)
+    case("merge-delta r1 Claude M1: an unresolvable info/attributes path builds no master side",
+         _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                      git=_failing(("rev-parse", "--path-format=absolute"))), None)
+
+    # merge-delta r1 Codex H1 — master DELETES a file; the branch re-adds it after the round
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _g("reset", "-q", "--hard", _base)
+    _g("rm", "-q", "--", "scripts/gone.py")
+    _g("commit", "-q", "-m", "master deletes gone.py")
+    _g("checkout", "-q", "br")
+    _g("merge", "-q", "--no-edit", "master")
+    _w("scripts/gone.py", _LINES.replace("line 7\n", "UNREVIEWED 7\n"))
+    _commit("the branch brings gone.py back, unreviewed")
+    case("merge-delta r1 Codex H1 control: a re-add of a file master deleted is charged",
+         _tails_at(_review), ["scripts/gone.py"])
+    case("merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'",
+         _raises(lambda: _tails_at(_review, git=_failing(("ls-tree", "-z", "HEAD")))),
+         "CANNOT RUN")
+
+    # merge-delta r1 Claude M1 — a merge DRIVER the branch chose resolves a real conflict
+    _g("reset", "-q", "--hard", _review)
+    _g("checkout", "-q", "master")
+    _g("reset", "-q", "--hard", _base)
+    _w(_GATE, _LINES.replace("line 2\n", "MASTER 2\n"))
+    _commit("master edits the gate's line 2 too")
+    _g("checkout", "-q", "br")
+    _w("docs/.gitattributes", "** merge=union\n")    # prose: committing it is never charged
+    _commit("a prose-path attributes file")
+    _g("merge", "-q", "--no-edit", "master")          # clean, under the union driver
+    _union = pathlib.Path(_tmp, _GATE).read_text(encoding="utf-8")
+    case("merge-delta r1 Claude M1: a committed `merge=union` cannot turn a conflict into a clear",
+         _tails_at(_review), [_GATE])
+    # the same union content, typed by hand with no committed attributes, under each LOCAL source
+    _g("reset", "-q", "--hard", _review)
+    _g("merge", "-q", "--no-edit", "master")          # conflicts on the gate
+    _w(_GATE, _union)
+    _commit("merge master, resolving the gate by hand to the union")
+    case("merge-delta r1 Claude M1 control: the hand-typed union with no attributes is charged",
+         _tails_at(_review), [_GATE])
+    # Claude L2 — the shape where ONLY the conflict exclusion charges: HEAD commits the synthesised
+    # conflicted blob itself, markers and all, so HEAD's entry EQUALS the master side's
+    _ms_tree = _g(*merge_tree_argv(_g("hash-object", "-t", "tree", "/dev/null").stdout.strip(),
+                                   _review, merge_onto("master", git=_g))).stdout.split("\0")[0]
+    _w(_GATE, _g("cat-file", "-p", f"{_ms_tree}:{_GATE}").stdout)
+    _commit("the branch commits the conflicted blob as it stands")
+    case("merge-delta r1 Claude L2: HEAD EQUAL to a conflicted merge is still charged",
+         _tails_at(_review), [_GATE])
+    _g("reset", "-q", "--hard", "HEAD~1")             # back to the hand-typed union for the rest
+    _w("docs/.gitattributes", "** merge=union\n")    # uncommitted, in the working tree
+    case("merge-delta r1 Claude M1: a WORKTREE `.gitattributes` does not clear it",
+         _tails_at(_review), [_GATE])
+    pathlib.Path(_tmp, "docs/.gitattributes").unlink()
+    _w(".union-attrs", "* merge=union\n")
+    _g("config", "core.attributesFile", str(pathlib.Path(_tmp, ".union-attrs")))
+    case("merge-delta r1 Claude M1: a `core.attributesFile` does not clear it",
+         _tails_at(_review), [_GATE])
+    _g("config", "--unset", "core.attributesFile")
+    _g("config", "merge.default", "union")
+    case("merge-delta r1 Claude M1: a repository `merge.default` does not clear it",
+         _tails_at(_review), [_GATE])
+    _g("config", "--unset", "merge.default")
+    _w(".git/info/attributes", "* merge=union\n")
+    case("merge-delta r1 Claude M1: an `info/attributes` in force falls back to the strict rule",
+         _master_side(_review, merge_onto("master", git=_g), [_GATE], git=_g), None)
+    case("merge-delta r1 Claude M1: ...and through the gatherer it is charged",
+         _tails_at(_review), [_GATE])
+    _w(".git/info/attributes", "# only a comment\n\n")
+    case("merge-delta r1 Claude M1: an `info/attributes` declaring nothing still builds a master side",
+         _master_side(_review, merge_onto("master", git=_g), [_GATE], git=_g) is not None, True)
+    case("merge-delta r1 Claude M1 (pure): blank lines and comments declare no attribute",
+         attributes_in_force("# x\n\n   \n"), False)
+    case("merge-delta r1 Claude M1 (pure): any other line is in force", attributes_in_force(" * -diff\n"),
+         True)
+    case("merge-delta r1 Claude M1 (pure): no file is not in force", attributes_in_force(None), False)
+    case("merge-delta r1 Claude M1 (pure): merge-tree runs with no attribute source the branch owns",
+         merge_tree_argv("e0", "h1", "o1"),
+         ["--attr-source=e0", "-c", "core.attributesFile=/dev/null", "-c", "merge.default=text",
+          "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "h1", "o1"])
     import shutil
     shutil.rmtree(_tmp, ignore_errors=True)
 
