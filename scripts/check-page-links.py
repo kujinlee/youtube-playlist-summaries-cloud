@@ -5,7 +5,7 @@
     python3 scripts/check-page-links.py --build            # every rule: builds the five pages into a temp dir
     python3 scripts/check-page-links.py --build --ci       # every rule over what the CHECKOUT alone builds (CI)
     python3 scripts/check-page-links.py --dir ~/explainers # every rule, over pages already built
-    python3 scripts/check-page-links.py --self-test  # 68 cases
+    python3 scripts/check-page-links.py --self-test  # 88 cases
 
 WHY (backlog #470; spec `docs/superpowers/specs/2026-11-02-comprehensibility-suite-design.md` §3, §7).
 A key — `backlog #N`, `PR #N`, a goal, a feature, a dashboard entry, a goal-tree thread — has ONE home
@@ -14,6 +14,11 @@ hand-built in four places and the generated pages carried 0 PR links against 18-
 (MEASURED, inventory 2026-10-27). This guard is the spec's three falsifiers for that rule, as checks, and
 the page-validity rules review round 1 showed the linker needs:
 
+  0. THE PAGE IS IN THE SUPPORTED SUBSET — `page_markup.subset_problems` names a construct where
+     `html.parser` and a browser disagree about what is text (review round 2): a non-void self-closing
+     tag, an unterminated comment, CDATA or script, a tag inside a `<textarea>`, an end tag out of order,
+     an implied end tag, `&amp` with no `;`, ... A page outside it has its other rules NOT RUN, said so —
+     they would read a page no browser shows. `link_html` refuses to link such a page at all.
   1. EVERY KEY IS A LINK — a page shows `backlog #N` or `PR #N` in a text node that is not exempt, or a
      bare `#N` chip outside an `<a>`.
   1b. NO `<a>` IN AN `<a>` — a page opens an `<a>` while one is open, or ends with one open.
@@ -23,15 +28,17 @@ the page-validity rules review round 1 showed the linker needs:
   4. IDS ARE UNIQUE — a page declares one `id` twice.
   5. SCRIPTS PARSE — an inline `<script>` fails `node --check`. No `node` is CANNOT RUN, never a pass.
 
-⛔ ONE READING OF A PAGE. Rules 1, 1b, 3, 4 and 5 read a page through `page_markup.page_tokens` — the
+⛔ ONE READING OF A PAGE. Rules 0, 1, 1b, 3, 4 and 5 read a page through `page_markup.page_tokens` — the
 `html.parser` tokenizer the linker itself uses — so "what is text", "which text is exempt" and "which
 element is open" have one answer for the thing that links and the thing that checks. Ids and hrefs come
 from PARSED start tags: a string inside a script or a comment is not an element.
 
 ⚠ BOUNDS, stated.
-  * Rule 2 reads the SYNTAX TREE of each script: string literals, f-strings and `+` chains of them, so
-    `"/goals" + "#" + slug` is seen and a `# /goals#x` comment or a docstring is not. It does not see an
-    href assembled through variables that never spell the literal. Only the BODIES of the self-test
+  * Rule 2 reads the SYNTAX TREE of each script: string literals, f-strings (their constant `{'#'}`
+    parts too), `+` chains, `"…" % (…)`, `"…".format(…)` and `"…".join([…])` of them, so
+    `"/goals" + "#" + slug` and `"/goals#%s" % slug` are seen and a `# /goals#x` comment or a docstring
+    is not. It does not see an href assembled through VARIABLES or a `%` DICT that never spell the
+    literal in one expression. Only the BODIES of the self-test
     functions (`_self_test*` / `self_test*`) are exempt — expected VALUES, not built links.
   * The page rules read BUILT pages. `--build` needs a `gh` login, the Ask tray and the goal-tree log, so
     it runs locally. `--build --ci` builds what the checkout alone can: dashboard, goals and features as
@@ -104,17 +111,83 @@ JS_TYPES = {"", "text/javascript", "application/javascript", "module"}
 _tokens = functools.lru_cache(maxsize=16)(page_markup.page_tokens)
 
 
+# A `%` conversion: `%s`, `%(name)s`, `%-5d`, `%%`.
+_PCT = re.compile(r"%(?:\((?P<f>\w+)\))?[-#0 +]*(?:\*|\d+)?(?:\.(?:\*|\d+))?[a-zA-Z%]")
+# A `str.format` field: `{}`, `{0}`, `{name}`, `{0!r:>4}`; `{{` / `}}` are literal braces.
+_FIELD = re.compile(r"\{\{|\}\}|\{(?P<f>[^{}]*)\}")
+
+
+def _fill(template: str, spec: re.Pattern, args: list, kwargs: dict) -> str:
+    """`template` with each conversion replaced by the literal text of the argument it names, or `{}`
+    when that argument is not a string literal (or is not there)."""
+    pos = iter(args)
+
+    def one(m):
+        if m.group(0) in ("%%", "{{", "}}"):
+            return m.group(0)[0]
+        field = re.split(r"[!:.\[]", m.group("f") or "")[0]
+        if field.isdigit():
+            a = args[int(field)] if int(field) < len(args) else None
+        else:
+            a = kwargs.get(field) if field else next(pos, None)
+        t = _literal(a) if a is not None else None
+        return t if t is not None else "{}"
+    return spec.sub(one, template)
+
+
+def _call_parts(node):
+    """(template, positional args, keyword args) of `"…".format(…)` / `"…".join([…])` on a string
+    literal, else None."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("format", "join") and _literal(node.func.value) is not None):
+        if node.func.attr == "format":
+            return node.func.value, list(node.args), {k.arg: k.value for k in node.keywords if k.arg}
+        if len(node.args) == 1 and isinstance(node.args[0], (ast.List, ast.Tuple)):
+            return node.func.value, list(node.args[0].elts), {}
+    return None
+
+
 def _literal(node) -> str | None:
-    """The text a string expression spells, with `{}` for each interpolated part; None if not a string."""
+    """The text a string expression spells, with `{}` for each part that is not a string literal; None
+    if it is not a string expression. Reads a constant, an f-string (its constant `{'#'}` parts too), a
+    `+` chain, `"…" % (…)`, `"…".format(…)` and `"…".join([…])` (round 2, Codex 1)."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
-        return "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
+        out = []
+        for v in node.values:
+            t = _literal(v.value) if isinstance(v, ast.FormattedValue) and v.format_spec is None else None
+            out.append(v.value if isinstance(v, ast.Constant) else t if t is not None else "{}")
+        return "".join(out)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         left, right = _literal(node.left), _literal(node.right)
         if left is not None or right is not None:
             return (left if left is not None else "{}") + (right if right is not None else "{}")
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        template = _literal(node.left)
+        if template is not None:
+            args = list(node.right.elts) if isinstance(node.right, ast.Tuple) else [node.right]
+            return _fill(template, _PCT, args, {})
+    call = _call_parts(node)
+    if call:
+        template, args, kwargs = call
+        if node.func.attr == "join":
+            return _literal(template).join(t if (t := _literal(a)) is not None else "{}" for a in args)
+        return _fill(_literal(template), _FIELD, args, kwargs)
     return None
+
+
+def _parts(node) -> list:
+    """The sub-expressions `_literal(node)` read its text FROM — part of one literal, never reported alone."""
+    if isinstance(node, ast.JoinedStr):
+        return [*node.values, *(v.value for v in node.values if isinstance(v, ast.FormattedValue))]
+    if isinstance(node, ast.BinOp):
+        kids = [node.left, *(node.right.elts if isinstance(node.right, ast.Tuple) else [node.right])]
+        return [c for c in kids if _literal(c) is not None]
+    call = _call_parts(node)
+    if call:
+        return [node.func, call[0], *(a for a in [*call[1], *call[2].values()] if _literal(a) is not None)]
+    return []
 
 
 def built_hrefs(name: str, text: str) -> list[str]:
@@ -129,14 +202,15 @@ def built_hrefs(name: str, text: str) -> list[str]:
     tests = [(f.lineno, f.end_lineno) for f in ast.walk(tree)
              if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)) and TEST_FUNC.fullmatch(f.name)]
     docs = {id(s.value) for s in ast.walk(tree) if isinstance(s, ast.Expr)}
-    inner = {id(c) for n in ast.walk(tree) if isinstance(n, (ast.BinOp, ast.JoinedStr))
-             for c in ast.iter_child_nodes(n)}
+    inner: set[int] = set()
     out = []
-    for n in ast.walk(tree):
-        if id(n) in docs or id(n) in inner:
+    for n in ast.walk(tree):                     # breadth-first: an expression before its parts
+        if id(n) in docs:
             continue
         s = _literal(n)
-        if s is None or any(a <= n.lineno <= b for a, b in tests):
+        if s is not None:
+            inner.update(id(c) for c in _parts(n))
+        if id(n) in inner or s is None or any(a <= n.lineno <= b for a, b in tests):
             continue
         # `'` closes the literal: its end is a join point, as `"/pull/"` + n is (`HREF_LITERAL`'s tail).
         out += [f"{name}:{n.lineno}: {h.group(0)}" for h in HREF_LITERAL.finditer(s + "'")]
@@ -289,8 +363,17 @@ def check_pages(d: pathlib.Path, names=tuple(PAGES), node: str | None = "node") 
     if missing:
         return CANNOT, [f"CANNOT RUN — no {', '.join(m + '.html' for m in missing)} in {d}. "
                         f"Treat the page rules as NOT RUN."]
-    pages = {n: (d / f"{n}.html").read_text(encoding="utf-8", errors="replace") for n in names}
+    read = {n: (d / f"{n}.html").read_text(encoding="utf-8", errors="replace") for n in names}
     lines, rc = [], OK
+    pages = {}
+    for n, p in read.items():
+        outside = page_markup.subset_problems(p)
+        if outside:
+            rc = BROKEN
+            lines.append(f"[FAIL] rule 0: /{n} is outside the supported HTML subset ({len(outside)} construct(s)), "
+                         f"so its other rules are NOT RUN, e.g. " + "; ".join(outside[:6]))
+        else:
+            pages[n] = p
     for n, p in pages.items():
         for rule, found in (("1", unlinked_keys(p)), ("1b", nested_anchors(p)), ("4", duplicate_ids(p))):
             if found:
@@ -311,7 +394,8 @@ def check_pages(d: pathlib.Path, names=tuple(PAGES), node: str | None = "node") 
         rc = BROKEN
         lines.append(f"[FAIL] rule 5: {len(errs)} inline script(s) fail `node --check`: " + "; ".join(errs[:6]))
     checked = sum(len(fragment_targets(p, n)) for n, p in pages.items()) - unchecked
-    lines.append(f"rules 1, 1b, 3, 4, 5 read {len(pages)} page(s) ({', '.join(pages)}); "
+    lines.append(f"rule 0 read {len(read)} page(s); rules 1, 1b, 3, 4, 5 read the {len(pages)} inside the subset "
+                 f"({', '.join(pages)}); "
                  f"{n_scripts if errs is not None else 0} inline script(s) parsed; {checked} fragment link(s) "
                  f"checked; {unchecked} point at a page not built here and were NOT checked")
     return rc, lines
@@ -382,6 +466,23 @@ def _self_test_body() -> int:
     case("rule 2: a PR href whose number is joined on is found", len(built_hrefs("x.py", 'b = "/pull/" + n')), 1)
     case("rule 2: an href concatenated from pieces that never spell it alone is found (Codex r1 5)",
          built_hrefs("x.py", 'href = "/goals" + "#" + slug\n'), ["x.py:1: /goals#"])
+    # Codex r2 1: the review's own inputs, and the other literal-only assemblies it names
+    case("rule 2: Codex r2 1 — a `%`-formatted goals href is found",
+         built_hrefs("x.py", 'h = "/goals#%s" % slug'), ["x.py:1: /goals#"])
+    case("rule 2: Codex r2 1 — a `%`-formatted PR href is found", len(built_hrefs("x.py", 'h = "/pull/%s" % n')), 1)
+    case("rule 2: a `%` whose literal pieces are its ARGUMENTS is found",
+         built_hrefs("x.py", 'h = "%s#%s" % ("/goals", slug)'), ["x.py:1: /goals#"])
+    case("rule 2: a `.format` whose literal pieces are its arguments, positional or named, is found",
+         [built_hrefs("x.py", t) for t in ('h = "/goals{}{}".format("#", s)', 'h = "{0}#{1}".format("/goals", s)',
+                                           'h = "{a}#".format(a="/goals")')], [["x.py:1: /goals#"]] * 3)
+    case("rule 2: a `\"\".join` of constants is found",
+         built_hrefs("x.py", 'h = "".join(["/goals", "#", slug])'), ["x.py:1: /goals#"])
+    case("rule 2: an f-string whose CONSTANT parts spell the href is found",
+         built_hrefs("x.py", "h = f\"/goals{'#'}{slug}\""), ["x.py:1: /goals#"])
+    case("rule 2: an href inside a `.format` ARGUMENT is still found",
+         built_hrefs("x.py", 'h = "{}".format("/goals#" + s)'), ["x.py:1: /goals#"])
+    case("rule 2: `%%` and a join of other literals are not hrefs",
+         built_hrefs("x.py", 'h = "/goals %d%%" % n\nk = "/".join(["a", "b"])'), [])
     case("rule 2: a COMMENT naming an href is not a built href",
          built_hrefs("x.py", "# See /goals#slug\nx = 1\n"), [])
     case("rule 2: a DOCSTRING naming an href is not a built href",
@@ -445,16 +546,21 @@ def _self_test_body() -> int:
                "<p>backlog &#35;7</p>", "<p>backlog <b>#7</b></p>", "<textarea>backlog #7</textarea> PR #1",
                "<code>a<!-- c -->backlog #7</code>", '<a href="/x"><style>p{}</style>backlog #7</a>',
                "<button>backlog #1</button><svg><text>PR #3</text></svg>"]
+    def _linked(c):
+        try:
+            return page_markup.link_html(c, "o/r")
+        except page_markup.OutsideSubset as exc:     # a refusal is a red case below, never a crash
+            return f"<p>REFUSED backlog #0 {page_markup.escape(str(exc))}</p>"
     case("the linker and rule 1 AGREE: after link_html no input above has an unlinked key",
-         [unlinked_keys(page_markup.link_html(c, "o/r")) for c in _corpus], [[]] * len(_corpus))
+         [unlinked_keys(_linked(c)) for c in _corpus], [[]] * len(_corpus))
     case("...and link_html opens no <a> inside an <a> on any of them",
-         [nested_anchors(page_markup.link_html(c, "o/r")) for c in _corpus], [[]] * len(_corpus))
+         [nested_anchors(_linked(c)) for c in _corpus], [[]] * len(_corpus))
 
     # ── rule 1b
     _nest = '<div class="frag"><a href="/backlog-table#i45">#45 when <a href="https://x/pull/98">PR #98</a> merged</a></div>'
     case("rule 1b: the features row of round 1 — an <a> inside an <a> — is found", nested_anchors(_nest), ["line 1"])
     case("rule 1b: two sibling links are fine", nested_anchors('<a href="/a">x</a><a href="/b">y</a>'), [])
-    case("rule 1b: an <a> left open at the end is found", nested_anchors('<p><a href="/a">x</p>'),
+    case("rule 1b: an <a> left open at the end is found", nested_anchors('<p><a href="/a">x'),
          ["an <a> still open at the end"])
 
     # ── rule 3
@@ -533,6 +639,32 @@ def _self_test_body() -> int:
             if "script" in label and not _node:
                 continue
             case(f"a page with {label} FAILS", check_pages(pathlib.Path(t))[0], BROKEN)
+        # ── rule 0 (Codex r2 2-8): each review input, verbatim, fails the page. MEASURED with rule 0
+        # switched off: six of the eleven pass every other rule under 3.14, and five under 3.12, where
+        # `<![foo]>` crashes the parser instead — not the same ones, because the two parsers read them
+        # differently, which is the finding.
+        for body, label in (('<a href="#fake">go</a><textarea><b id="fake">text</b></textarea>', "r2 2: a textarea"),
+                            ("<script/>broken (</script>", "r2 3: a self-closed script"),
+                            ("<script>broken (", "r2 3: an unterminated script"),
+                            ('<a href="/x"><a/>backlog #7</a>', "r2 4: a self-closed anchor"),
+                            ('<p class="key-missing">x<div>backlog #7</div>', "r2 5: an implied </p>"),
+                            ("<!--backlog #7", "r2 6: an unterminated comment"),
+                            ("<![CDATA[backlog #7", "r2 6: an unterminated CDATA"),
+                            ("<plaintext>backlog #7", "r2 6: a plaintext"),
+                            ("<p>&ampbacklog #7</p>", "r2 7: a reference with no ;"),
+                            ("</>backlog #7", "r2 8: an empty end tag"),
+                            ("<![foo]>", "r2 8: a marked section")):
+            (pathlib.Path(t) / "goals.html").write_text(body)
+            try:                                     # a crash is a red case, never a dead suite
+                _rc = check_pages(pathlib.Path(t))[0]
+            except Exception as exc:
+                _rc = type(exc).__name__
+            case(f"rule 0: a page with {label} FAILS", _rc, BROKEN)
+        (pathlib.Path(t) / "goals.html").write_text("<p>backlog #1</p><span/>")
+        rc, lines = check_pages(pathlib.Path(t))
+        case("rule 0: a page outside the subset is named, and its other rules are NOT RUN",
+             (rc, any(x.startswith("[FAIL] rule 0: /goals") and "NOT RUN" in x for x in lines),
+              any(x.startswith("[FAIL] rule 1:") for x in lines)), (BROKEN, True, False))
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

@@ -1199,7 +1199,9 @@ EXPECTED_MUTATIONS = {
     # rule are REMOVED, so 6 entries are RETIRED WITH THEIR SUBJECT (per-state, `themed`, the
     # var-chain follow, the hex gate before contrast, `!important`, the ground). 2 added for
     # the literal-colour rule (prefix match, a var() admitted); 3 retargeted onto the new code.
-    "scripts/brief-compose.py": 45,
+    # ⟳ 2026-11-03, backlog #470 review round 2: 45 -> 46 — the tray markup is lifted CLOSED (a composed
+    # page left `#tray` open at `</body>`, outside the page subset).
+    "scripts/brief-compose.py": 46,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1216,13 +1218,22 @@ EXPECTED_MUTATIONS = {
     # (stack across comments, exempt set, closing, the marked class, in_a, the open-at-end report,
     # decoding, the raw tail), missing rows (no link, marked, scan's branch), the g- goal id,
     # render_unlinked (+13).
-    "scripts/page_markup.py": 36,
+    # ⟳ 2026-11-03, backlog #470 review round 2: 36 -> 72. The SUPPORTED SUBSET (`subset_problems`): one
+    # entry per rule — token spans, the strict stack, void and foreign self-closing, every implied end
+    # tag modelled, raw text / RCDATA, table and select, comments, declarations, `;`-less references,
+    # the 3.12 AssertionError wrap, and link_html's refusal (+34); the real exempt stack (r2 5b) and the
+    # `;`-terminated decode piece (r2 7) (+2). Two rules only 3.12's parser reaches are driven on either
+    # Python by making the parser behave as 3.12's (the RCDATA set emptied; an AssertionError raised).
+    "scripts/page_markup.py": 72,
     # ⟳ 2026-11-03, backlog #470: the key-link guard gets its manifest in the commit that creates it.
     # ⟳ 2026-11-03, backlog #470 review round 1: 16 -> 30. rule 2 read from the syntax tree (self-test
     # BODIES only, docstrings, `+` chains, unparseable files); rule 1 through the shared tokenizer; rules
     # 1b (no <a> in an <a>), 4 (unique ids) and 5 (scripts parse, no node = CANNOT RUN). 7 old regex-era
     # entries rebound or replaced; the AST prefilter (+14).
-    "scripts/check-page-links.py": 30,
+    # ⟳ 2026-11-03, backlog #470 review round 2: 30 -> 39. Rule 0 read and its page excluded from the
+    # other rules (+2); rule 2 reads `%`, `.format` (positional, named), `"".join`, f-string constant
+    # parts, and a literal's parts are not reported again alone (+7).
+    "scripts/check-page-links.py": 39,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,

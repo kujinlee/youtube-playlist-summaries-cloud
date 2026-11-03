@@ -121,8 +121,8 @@
     "file": "scripts/check-page-links.py",
     "edits": [
       [
-        "        if s is None or any(a <= n.lineno <= b for a, b in tests):",
-        "        if s is None:"
+        "        if id(n) in inner or s is None or any(a <= n.lineno <= b for a, b in tests):",
+        "        if id(n) in inner or s is None:"
       ]
     ],
     "expect": [
@@ -147,8 +147,8 @@
     "file": "scripts/check-page-links.py",
     "edits": [
       [
-        "        if id(n) in docs or id(n) in inner:",
-        "        if id(n) in inner:"
+        "        if id(n) in docs:\n            continue",
+        "        if False:\n            continue"
       ]
     ],
     "expect": [
@@ -387,6 +387,123 @@
     ],
     "expect": [
       "rule 2: a file naming no home page is not read at all"
+    ]
+  },
+  {
+    "name": "rule 0 is not read",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        outside = page_markup.subset_problems(p)",
+        "        outside = []"
+      ]
+    ],
+    "expect": [
+      "rule 0: a page with r2 3: a self-closed script FAILS"
+    ]
+  },
+  {
+    "name": "a page outside the subset still has its other rules run",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        else:\n            pages[n] = p",
+        "        if True:\n            pages[n] = p"
+      ]
+    ],
+    "expect": [
+      "rule 0: a page outside the subset is named, and its other rules are NOT RUN"
+    ]
+  },
+  {
+    "name": "a `%` format is not read (r2 1)",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "rule 2: Codex r2 1 — a `%`-formatted PR href is found"
+    ]
+  },
+  {
+    "name": "a conversion's literal argument is not substituted",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        t = _literal(a) if a is not None else None",
+        "        t = None"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `%` whose literal pieces are its ARGUMENTS is found"
+    ]
+  },
+  {
+    "name": "a named format field is not looked up",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            a = kwargs.get(field) if field else next(pos, None)",
+        "            a = None if field else next(pos, None)"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `.format` whose literal pieces are its arguments, positional or named, is found"
+    ]
+  },
+  {
+    "name": "`.format` on a literal is not read",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            and node.func.attr in (\"format\", \"join\") and _literal(node.func.value) is not None):",
+        "            and node.func.attr in (\"join\",) and _literal(node.func.value) is not None):"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `.format` whose literal pieces are its arguments, positional or named, is found"
+    ]
+  },
+  {
+    "name": "a join of constants is not read",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "        if len(node.args) == 1 and isinstance(node.args[0], (ast.List, ast.Tuple)):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "rule 2: a `\"\".join` of constants is found"
+    ]
+  },
+  {
+    "name": "an f-string's constant parts read as `{}`",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            t = _literal(v.value) if isinstance(v, ast.FormattedValue) and v.format_spec is None else None",
+        "            t = None"
+      ]
+    ],
+    "expect": [
+      "rule 2: an f-string whose CONSTANT parts spell the href is found"
+    ]
+  },
+  {
+    "name": "the parts of a literal are reported again on their own",
+    "file": "scripts/check-page-links.py",
+    "edits": [
+      [
+        "            inner.update(id(c) for c in _parts(n))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "rule 2: a PR href whose number is joined on is found"
     ]
   }
 ]

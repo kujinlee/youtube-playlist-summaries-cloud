@@ -17,8 +17,8 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "    return css, div.group(0), html[idx:end + len(\"</script>\")]",
-        "    return css, div.group(0), html[idx:]"
+        "    return css, markup, html[idx:end + len(\"</script>\")]",
+        "    return css, markup, html[idx:]"
       ]
     ],
     "expect": [
@@ -560,6 +560,19 @@
     ],
     "expect": [
       "⛔ r3 X1: a var() alias for --em, redefined by a LATER rule, is refused — not literal"
+    ]
+  },
+  {
+    "name": "the tray markup is lifted one </div> short again (r2, rule 0 on composed pages)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    markup += \"</div>\" * (len(re.findall(r\"<div\\b\", markup)) - markup.count(\"</div>\"))\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a tray whose inner div nests another is extracted CLOSED, every div it opens (r2)"
     ]
   }
 ]

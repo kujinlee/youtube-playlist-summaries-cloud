@@ -29,7 +29,8 @@ IT IS ALSO THE ONE LINK FUNCTION (backlog #470). `key_link` is the only place an
 home page is built — a backlog row, a PR, a goal, a feature, a dashboard entry, a goal-tree thread —
 and `scan` / `link_html` render every `backlog #N` and `PR #N` they meet as that link.
 `scripts/check-page-links.py` is the guard: no such href built anywhere else in `scripts/`, no key
-left unlinked on a built page, no internal fragment without its id.
+left unlinked on a built page, no internal fragment without its id. Both read a page only inside the
+SUPPORTED SUBSET (`subset_problems`, review round 2): outside it `link_html` raises `OutsideSubset`.
 
 WHAT THIS IS NOT. It is a PEER of the generators, never a gate. The documented
 generator → gate arrow (`gen-dashboard.py:402-408`) governs a page importing the guard
@@ -58,6 +59,8 @@ the self-test cannot go vacuous without `--mutate .` reporting a survivor.
 """
 from __future__ import annotations
 
+import bisect
+import functools
 import html as _html
 import re
 import sys
@@ -245,7 +248,7 @@ MISSING_CLASS = "key-missing"
 
 
 class Tok(NamedTuple):
-    kind: str                 # start · startend · end · data · other (comment, doctype, pi)
+    kind: str                 # start · startend · end · data · comment · decl · pi · unknown_decl
     start: int                # raw offsets into the page: page[start:end] is this token, verbatim
     end: int
     tag: str = ""
@@ -253,6 +256,66 @@ class Tok(NamedTuple):
     text: str = ""            # a data token's DECODED text
     exempt: bool = False      # a data token inside a `NO_LINK` / marked element
     in_a: bool = False        # a start tag opened while an `<a>` is open
+
+
+# ── THE SUPPORTED SUBSET (backlog #470, review round 2). `html.parser` is not a browser's HTML5 tree
+# builder: on MALFORMED markup the two disagree about what is text — a tag inside a `<textarea>`, a
+# `<script/>`, an implied `</p>`, an unterminated comment. Round 2 found eight such inputs. Chasing
+# browser parity case by case is the surface trap (`docs/review-method.md` §0 Q0); these pages come
+# from OUR generators, so the page is required to be in a subset where the two readers AGREE, and
+# anything outside it is REFUSED — `link_html` raises, `check-page-links.py` rule 0 fails the page.
+#
+# The subset, as `subset_problems` enforces it:
+#   * every token's raw bytes are exactly that token — nothing the parser skipped (`</>`), nothing a
+#     start tag swallowed (an unterminated `<script>` on 3.12), no literal `<` in text;
+#   * every non-void element is closed explicitly, in order, against one open-element stack; a void
+#     element (`VOID`) has no end tag; only a void element, or one inside `<svg>`/`<math>`, self-closes;
+#   * NO implied end tags: no start tag a browser would answer by closing an open element (`<div>`
+#     inside a `<p>`, `<li>` inside an `<li>`, a heading inside a heading, `<td>` inside a `<td>`, ...);
+#   * no start tag inside `<script>`, `<style>`, `<textarea>`, `<title>` (a browser reads those as
+#     text); no element or text a browser would move out of a table, or out of a `<select>`;
+#   * comments closed by `-->`; no CDATA, marked section, processing instruction, or declaration
+#     other than `<!DOCTYPE html>`; no `UNSUPPORTED` element;
+#   * every character reference ends with `;` — `&amp` before letters is decoded differently by a
+#     browser and by `html.parser`, in text and in attribute values alike.
+# ⚠ BOUNDS, stated. Not modelled, so neither refused nor emulated: HTML elements that break out of
+# `<svg>`/`<math>` foreign content, the implied `<html>`/`<head>`/`<body>` wrappers (they move no
+# text), and the adoption agency for an `<a>` inside an `<a>` — that is rule 1b's to report.
+VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+                  "track", "wbr"})
+RAW_TEXT = frozenset({"script", "style"})       # verbatim to html.parser and a browser alike
+RCDATA = frozenset({"textarea", "title"})       # text to a browser; 3.12's html.parser reads tags in them
+UNSUPPORTED = frozenset({"plaintext", "xmp", "noscript", "noembed", "noframes", "iframe"})
+FOREIGN = frozenset({"svg", "math"})
+_P_CLOSERS = frozenset({"address", "article", "aside", "blockquote", "details", "dialog", "div", "dl",
+                        "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5",
+                        "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol", "p", "pre", "search",
+                        "section", "table", "ul"})
+_BUTTON_SCOPE = frozenset({"button", "table", "td", "th", "caption", "template", "html", "svg", "math"})
+_HEADINGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+# A table part's depth: a start tag of depth d closes any open part of depth >= d inside the same table.
+_TABLE_DEPTH = {"caption": 1, "colgroup": 1, "thead": 1, "tbody": 1, "tfoot": 1, "tr": 2, "td": 3, "th": 3}
+# What may sit DIRECTLY inside a table part without a browser moving it out (`tr` straight in a `table`
+# and `td` straight in a `tbody` get an implied wrapper, which moves no text).
+_TABLE_CHILDREN = {
+    "table": frozenset({"caption", "colgroup", "thead", "tbody", "tfoot", "tr", "td", "th", "script", "template"}),
+    "thead": frozenset({"tr", "td", "th", "script", "template"}),
+    "tbody": frozenset({"tr", "td", "th", "script", "template"}),
+    "tfoot": frozenset({"tr", "td", "th", "script", "template"}),
+    "tr": frozenset({"td", "th", "script", "template"}),
+}
+_SELECT_CHILDREN = frozenset({"option", "optgroup", "hr", "script", "template"})
+# A character reference with no `;`: `&amp` before a letter, `&#35` before a digit's end.
+_BARE_REF = re.compile(r"&(?:[A-Za-z][A-Za-z0-9]*(?![A-Za-z0-9;])|#[0-9]+(?![0-9;])|#[xX][0-9a-fA-F]+(?![0-9a-fA-F;]))")
+
+
+class OutsideSubset(ValueError):
+    """A page outside the supported subset. `.problems` lists each construct, with its line."""
+
+    def __init__(self, problems: list[str]):
+        self.problems = problems
+        super().__init__(f"the page is outside the supported HTML subset ({len(problems)} problem(s)): "
+                         + "; ".join(problems[:5]))
 
 
 class _Tokens(HTMLParser):
@@ -266,21 +329,155 @@ class _Tokens(HTMLParser):
         return self.lines[line - 1] + col
 
     def handle_starttag(self, tag, attrs):
-        self.events.append(("start", self._at(), tag, tuple(attrs)))
+        self.events.append(("start", self._at(), tag, tuple(attrs), self.get_starttag_text()))
 
     def handle_startendtag(self, tag, attrs):
-        self.events.append(("startend", self._at(), tag, tuple(attrs)))
+        self.events.append(("startend", self._at(), tag, tuple(attrs), self.get_starttag_text()))
 
     def handle_endtag(self, tag):
-        self.events.append(("end", self._at(), tag, ()))
+        self.events.append(("end", self._at(), tag, (), ""))
 
     def handle_data(self, data):
-        self.events.append(("data", self._at(), data, ()))
+        self.events.append(("data", self._at(), data, (), ""))
 
     def handle_comment(self, data):
-        self.events.append(("other", self._at(), "", ()))
+        self.events.append(("comment", self._at(), data, (), ""))
 
-    handle_decl = handle_pi = unknown_decl = handle_comment
+    def handle_decl(self, data):
+        self.events.append(("decl", self._at(), data, (), ""))
+
+    def handle_pi(self, data):
+        self.events.append(("pi", self._at(), data, (), ""))
+
+    def unknown_decl(self, data):
+        self.events.append(("unknown_decl", self._at(), data, (), ""))
+
+
+@functools.lru_cache(maxsize=4)
+def _events(page: str) -> tuple[tuple, ...]:
+    """PURE. html.parser's events over a page: (kind, raw offset, tag or text, attrs, raw start tag).
+    ⚠ 3.12's parser RAISES `AssertionError` on a marked section (`<![foo]>`); that is a page outside
+    the subset, and is raised as one — never let through as a crash, never swallowed as a pass."""
+    p = _Tokens(page)
+    try:
+        p.feed(page)
+        p.close()
+    except AssertionError as exc:
+        raise OutsideSubset([f"html.parser could not read the page: {exc}"]) from None
+    return tuple(p.events)
+
+
+def _implied_close(tag: str, stack: list[str]) -> str | None:
+    """The open element a browser would close, implicitly, on meeting `<tag>` — or None."""
+    def find(want, stop):
+        for t in reversed(stack):
+            if t in want:
+                return t
+            if t in stop:
+                return None
+        return None
+    if tag in _P_CLOSERS and find({"p"}, _BUTTON_SCOPE):
+        return "p"
+    if tag == "li":
+        return find({"li"}, {"ul", "ol", "menu", "table", "td", "th"})
+    if tag in ("dt", "dd"):
+        return find({"dt", "dd"}, {"dl", "table", "td", "th"})
+    if tag in _HEADINGS and stack and stack[-1] in _HEADINGS:
+        return stack[-1]
+    if tag in ("option", "optgroup") and stack and stack[-1] == "option":
+        return "option"
+    if tag == "optgroup" and stack and stack[-1] == "optgroup":
+        return "optgroup"
+    if tag in ("button", "form"):
+        return find({tag}, set())
+    if tag in _TABLE_DEPTH:
+        for t in reversed(stack):
+            if t == "table":
+                return None
+            if t in _TABLE_DEPTH and _TABLE_DEPTH[t] >= _TABLE_DEPTH[tag]:
+                return t
+    return None
+
+
+def subset_problems(page: str) -> list[str]:
+    """PURE. `line N: <construct>` for everything on the page outside the supported subset; [] when it
+    is inside. The ONE definition: `link_html` refuses on it and `check-page-links.py` rule 0 reports it."""
+    try:
+        ev = _events(page)
+    except OutsideSubset as exc:
+        return exc.problems
+    out: list[str] = []
+    nl = [m.start() for m in re.finditer("\n", page)]
+    if page and (not ev or ev[0][1] != 0):
+        out.append(f"line 1: {page[:ev[0][1] if ev else 40][:40]!r} was read as no token at all")
+    stack: list[str] = []
+    for i, (kind, at, x, _attrs, raw) in enumerate(ev):
+        span = page[at:ev[i + 1][1] if i + 1 < len(ev) else len(page)]
+        where = f"line {bisect.bisect_right(nl, at) + 1}"
+        top = stack[-1] if stack else None
+        if kind in ("start", "startend"):
+            if span != raw:
+                out.append(f"{where}: <{x}> is followed by bytes read as no token: {span[len(raw):][:40]!r}")
+            if _BARE_REF.search(raw):
+                out.append(f"{where}: <{x}> has a character reference with no `;`: "
+                           f"{_BARE_REF.search(raw).group(0)!r}")
+            if top in RAW_TEXT | RCDATA:
+                out.append(f"{where}: <{x}> inside <{top}>, which a browser reads as text")
+            if x in UNSUPPORTED:
+                out.append(f"{where}: <{x}> is not a supported element")
+            if top in _TABLE_CHILDREN and x not in _TABLE_CHILDREN[top]:
+                out.append(f"{where}: <{x}> directly inside <{top}>, which a browser moves out of the table")
+            if top == "select" and x not in _SELECT_CHILDREN:
+                out.append(f"{where}: <{x}> inside <select>, which a browser drops")
+            closes = _implied_close(x, stack)
+            if closes:
+                out.append(f"{where}: <{x}> would close the open <{closes}> (an implied end tag)")
+            if kind == "startend":
+                if x not in VOID and not any(t in FOREIGN for t in stack):
+                    out.append(f"{where}: <{x}/> self-closes, which only a void element may")
+            elif x not in VOID:
+                stack.append(x)
+        elif kind == "end":
+            if not re.fullmatch(rf"</{re.escape(x)}\s*>", span, re.I):
+                out.append(f"{where}: </{x}> is followed by bytes read as no token: {span[:40]!r}")
+            if x in VOID:
+                out.append(f"{where}: </{x}> ends a void element")
+            elif top == x:
+                stack.pop()
+            else:
+                out.append(f"{where}: </{x}> while " + (f"<{top}> is open" if top else "nothing is open")
+                           + " — every element is closed explicitly, in order")
+                if x in stack:
+                    del stack[len(stack) - 1 - stack[::-1].index(x):]
+        elif kind == "data":
+            if top in RAW_TEXT:
+                continue
+            if "<" in span:
+                out.append(f"{where}: a literal `<` in text: {span[span.index('<'):][:40]!r}")
+            if _BARE_REF.search(span):
+                out.append(f"{where}: a character reference with no `;`: {_BARE_REF.search(span).group(0)!r}")
+            if top in _TABLE_CHILDREN and x.strip():
+                out.append(f"{where}: text directly inside <{top}>, which a browser moves out of the table")
+        elif kind == "comment":
+            # A browser also ends a comment at `--!>`, and at once on `<!-->` / `<!--->`; 3.12's
+            # html.parser does neither, and would read the text after one as comment.
+            if span != f"<!--{x}-->" or "--!>" in x or x.startswith((">", "->")):
+                out.append(f"{where}: a comment not closed by `-->`: {span[:40]!r}")
+        elif kind == "decl":
+            if not re.fullmatch(r"<!doctype\s+html\s*>", span, re.I):
+                out.append(f"{where}: a declaration other than <!DOCTYPE html>: {span[:40]!r}")
+        else:
+            out.append(f"{where}: a {kind.replace('_', ' ')} (CDATA, a marked section or a processing "
+                       f"instruction): {span[:40]!r}")
+    out += [f"end of page: <{t}> is never closed" for t in reversed(stack)]
+    return out
+
+
+def require_subset(page: str) -> None:
+    """Raise `OutsideSubset` unless the page is in the supported subset."""
+    problems = subset_problems(page)
+    if problems:
+        raise OutsideSubset(problems)
 
 
 def _marked(attrs) -> bool:
@@ -288,34 +485,34 @@ def _marked(attrs) -> bool:
 
 
 def page_tokens(page: str) -> tuple[list[Tok], list[str]]:
-    """PURE. (every token of a built page, in order, partitioning it exactly; the elements still
-    open at the end that matter here — `a` and the exempt ones).
+    """PURE. (every token of a page, in order; the elements still open at the end, outermost first).
 
     Each token's span runs to the next one's start, so `"".join(page[t.start:t.end])` is the page.
-    The open-element stack is the document's, carried across comments, scripts and styles."""
-    p = _Tokens(page)
-    p.feed(page)
-    p.close()
-    ev = p.events
+    ONE open-element stack: every non-void element is pushed and an end tag pops to its match, carried
+    across comments, scripts and styles. On a page in the supported subset (`subset_problems`) that
+    stack is the document's; outside it, this is a best effort, which is why `link_html` refuses there."""
+    ev = _events(page)
     out: list[Tok] = []
-    stack: list[str] = []
-    for i, (kind, start, tag_or_text, attrs) in enumerate(ev):
+    stack: list[tuple[str, bool]] = []          # (tag, whether it makes its text exempt)
+    for i, (kind, start, tag_or_text, attrs, _raw) in enumerate(ev):
         end = ev[i + 1][1] if i + 1 < len(ev) else len(page)
         if kind == "data":
-            out.append(Tok("data", start, end, text=tag_or_text, exempt=bool(stack)))
+            out.append(Tok("data", start, end, text=tag_or_text, exempt=any(e for _, e in stack)))
             continue
         tag = tag_or_text
+        in_a = any(t == "a" for t, _ in stack)
         if kind == "start":
-            out.append(Tok("start", start, end, tag, attrs, in_a="a" in stack))
-            if tag in NO_LINK or _marked(attrs):
-                stack.append(tag)
-        elif kind == "end" and tag in stack:
+            out.append(Tok("start", start, end, tag, attrs, in_a=in_a))
+            if tag not in VOID:
+                stack.append((tag, tag in NO_LINK or _marked(attrs)))
+        elif kind == "end":
             out.append(Tok("end", start, end, tag))
-            del stack[len(stack) - 1 - stack[::-1].index(tag):]
+            tags = [t for t, _ in stack]
+            if tag in tags:
+                del stack[len(tags) - 1 - tags[::-1].index(tag):]
         else:
-            out.append(Tok(kind, start, end, tag, attrs, in_a=kind == "startend" and "a" in stack))
-    return out, stack
-
+            out.append(Tok(kind, start, end, tag, attrs, in_a=kind == "startend" and in_a))
+    return out, [t for t, _ in stack]
 
 def text_keys(t: Tok) -> list[re.Match]:
     """The keys a data token shows the reader, or [] for an exempt one. The ONE answer to "is this a
@@ -324,7 +521,10 @@ def text_keys(t: Tok) -> list[re.Match]:
 
 
 # One piece of raw text: a character reference (decoded on its own) or a single character.
-_RAW_PIECE = re.compile(r"&(?:#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[A-Za-z][A-Za-z0-9]*;?)|[\s\S]")
+# ⚠ A NAMED reference needs its `;` (round 2, Codex 7): with `;?` the name ran on through any letters
+# after it, so `&ampbacklog` became ONE piece and every decoded character got the whole run's raw
+# interval — the link swallowed the `&`. The subset refuses `&amp` with no `;` anyway (`_BARE_REF`).
+_RAW_PIECE = re.compile(r"&(?:#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[A-Za-z][A-Za-z0-9]*;)|[\s\S]")
 
 
 def _decode_map(raw: str) -> tuple[str, list[int], list[int]]:
@@ -348,7 +548,10 @@ def link_html(page: str, repo: str | None = None) -> str:
     Every byte outside an inserted link is the input's own: a node is spliced, never re-serialised.
     A node whose raw text does not decode to what the parser read is left alone — the checker then
     reports its key, so the disagreement is loud.
+    ⛔ A page outside the supported subset (`subset_problems`) RAISES `OutsideSubset`, never returns:
+    there `html.parser` and a browser disagree about what is text, so no splice could be trusted.
     """
+    require_subset(page)
     tokens, _ = page_tokens(page)
     out: list[str] = []
     pos = 0
@@ -784,7 +987,12 @@ def _self_test_body() -> int:
         use_repo(_saved)
 
     # ── link_html: the whole-page pass
-    L = lambda pg: link_html(pg, "o/r")
+    def L(pg):
+        """`link_html`, with a refusal as a VALUE — a wrongly refused page is then a red case, not a crash."""
+        try:
+            return link_html(pg, "o/r")
+        except OutsideSubset as exc:
+            return f"REFUSED: {exc}"
     case("link_html: a key in plain page text is linked",
          L("<p>see backlog #5.</p>"), '<p>see <a href="/backlog-table#i5">backlog #5</a>.</p>')
     case("link_html: a PR key is linked when there is a repo",
@@ -838,8 +1046,118 @@ def _self_test_body() -> int:
     case("page_tokens: a start tag opened inside an <a> is marked",
          [t.in_a for t in page_tokens('<a href="/x"><a href="/y">z</a></a>')[0] if t.kind == "start"],
          [False, True])
-    case("page_tokens: an unclosed <a> is reported open at the end",
-         page_tokens('<p><a href="/x">y</p>')[1], ["a"])
+    case("page_tokens: an unclosed <a> is reported open at the end, with what holds it",
+         page_tokens('<p><a href="/x">y')[1], ["p", "a"])
+
+    # ── round 2 (Codex 2-8): the SUPPORTED SUBSET. Each input is the review's own, verbatim; outside
+    # the subset `link_html` RAISES and `subset_problems` names the construct — never a splice.
+    def refused(pg):
+        try:
+            link_html(pg, "o/r")
+            return "returned"
+        except OutsideSubset as exc:
+            return "refused" if exc.problems else "refused, naming nothing"
+        except Exception as exc:                 # 3.12's AssertionError on `<![foo]>`, let through
+            return type(exc).__name__
+
+    case("subset: Codex r2 2 — elements inside a <textarea> are refused",
+         refused('<a href="#fake">go</a><textarea><b id="fake">text</b></textarea>'), "refused")
+    case("subset: Codex r2 3 — a self-closed <script/> is refused",
+         refused("<script/>broken (</script>"), "refused")
+    case("subset: Codex r2 3 — an unterminated <script> is refused", refused("<script>broken ("), "refused")
+    case("subset: Codex r2 4 — a self-closed <a/> is refused",
+         refused('<a href="/x"><a/>backlog #7</a>'), "refused")
+    case("subset: Codex r2 5a — a <div> that would close a marked <p> is refused",
+         refused('<p class="key-missing">x<div>backlog #7</div>'), "refused")
+    case("subset: Codex r2 6 — an unterminated comment is refused", refused("<!--backlog #7"), "refused")
+    case("subset: Codex r2 6 — an unterminated CDATA section is refused", refused("<![CDATA[backlog #7"), "refused")
+    case("subset: Codex r2 6 — <plaintext> is refused", refused("<plaintext>backlog #7"), "refused")
+    case("subset: Codex r2 7 — `&amp` with no `;` before letters is refused", refused("&ampbacklog #7"), "refused")
+    case("subset: Codex r2 8 — `</>` is refused", refused("</>backlog #7"), "refused")
+    case("subset: Codex r2 8 — `<![foo]>` is refused, never raised as the parser's AssertionError",
+         refused("<![foo]>"), "refused")
+    _inner = '<span class="key-missing"><span>x</span>backlog #7</span>'
+    case("page_tokens: Codex r2 5b — an UNMARKED inner element's close does not pop the marked outer one",
+         (subset_problems(_inner), L(_inner)), ([], _inner))
+    case("_decode_map: Codex r2 7 — a named reference with no `;` is not one piece",
+         _decode_map("&ampb")[1], [0, 1, 2, 3, 4])
+    case("_decode_map: `&amp;` and a numeric reference each map to their own raw interval",
+         _decode_map("a&amp;b&#35;c"), ("a&b#c", [0, 1, 6, 7, 12], [1, 6, 7, 12, 13]))
+    # one case per rule, each on an input only that rule refuses
+    _sub = lambda pg, what: [p for p in subset_problems(pg) if what in p]
+    case("subset: a page of our own shape is inside it",
+         subset_problems('<!DOCTYPE html>\n<p class="a">x &amp; y<br><img src="i"/></p><!-- c -->'
+                         '<svg><path d="z"/></svg><script>if(a<b){}</script>'
+                         '<table><tbody><tr><td>1</td></tr></tbody></table><ul><li>a</li><li>b</li></ul>'), [])
+    case("subset: a non-void element that self-closes", _sub("<p><span/></p>", "self-closes"),
+         ["line 1: <span/> self-closes, which only a void element may"])
+    case("subset: an end tag out of order", len(_sub("<b><i>x</b></i>", "in order")), 2)
+    case("subset: an element never closed", _sub("<p>x", "never closed"), ["end of page: <p> is never closed"])
+    case("subset: an end tag on a void element", len(_sub("<p>a</br></p>", "void element")), 1)
+    case("subset: a literal `<` in text", len(_sub("<p>a < b</p>", "literal `<`")), 1)
+    case("subset: a declaration other than the HTML doctype", len(_sub("<!DOCTYPE foo>", "declaration")), 1)
+    case("subset: a processing instruction", len(_sub("<?xml x?>", "processing")), 1)
+    case("subset: a comment not closed by -->, read as a comment", len(_sub("<!-- x -- >", "comment not")), 1)
+    case("subset: a comment a browser ends at `--!>`, which 3.12 reads on through", refused("<!--a--!>b-->"), "refused")
+    case("subset: an unsupported element", len(_sub("<noscript>x</noscript>", "not a supported")), 1)
+    case("subset: a start tag inside <style>, <title> or <textarea>",
+         len(_sub("<title><b>x</b></title>", "inside <title>") or _sub("<title><b>x</b></title>", "literal `<`")), 1)
+    case("subset: text a browser moves out of a table", len(_sub("<table>x</table>", "out of the table")), 1)
+    case("subset: an element a browser moves out of a table",
+         len(_sub("<table><div></div></table>", "out of the table")), 1)
+    case("subset: an element a browser drops from a <select>",
+         len(_sub("<select><b>x</b></select>", "drops")), 1)
+    case("subset: an implied </p>", _sub("<p>x<div>y</div></p>", "implied")[:1],
+         ["line 1: <div> would close the open <p> (an implied end tag)"])
+    case("subset: an implied </li>", len(_sub("<ul><li>a<li>b</li></li></ul>", "open <li>")), 1)
+    case("subset: an <li> in a NESTED list closes nothing", subset_problems("<ul><li><ol><li>a</li></ol></li></ul>"), [])
+    case("subset: an implied </dd>", len(_sub("<dl><dd>a<dt>b</dt></dd></dl>", "open <dd>")), 1)
+    case("subset: an implied heading end", len(_sub("<h2>a<h3>b</h3></h2>", "open <h2>")), 1)
+    case("subset: an implied </option>", len(_sub("<select><option>a<option>b</option></option></select>",
+                                                   "open <option>")), 1)
+    case("subset: an implied </button>", len(_sub("<button>a<button>b</button></button>", "open <button>")), 1)
+    case("subset: an implied </td>", len(_sub("<table><tr><td>a<td>b</td></td></tr></table>", "open <td>")), 1)
+    case("subset: a table NESTED in a cell closes nothing",
+         subset_problems("<table><tr><td><table><tr><td>a</td></tr></table></td></tr></table>"), [])
+    case("subset: bytes a start tag swallowed", len(_sub("<p></>x</p>", "<p> is followed")), 1)
+    case("subset: bytes after an end tag", len(_sub("<p>x</p></>", "</p> is followed")), 1)
+    case("subset: bytes before the first token", _sub("</>x", "no token at all"),
+         ["line 1: '</>' was read as no token at all"])
+    case("subset: a reference with no `;` in an ATTRIBUTE", len(_sub('<a href="?a=1&b=2">x</a>', "no `;`")), 1)
+    case("subset: a reference with no `;` in text, numeric too", len(_sub("<p>&#35x</p>", "no `;`")), 1)
+    case("subset: a reference WITH its `;` is fine", subset_problems("<p>&#35;7 &amp; &#x27;</p>"), [])
+    case("subset: the line a problem is on is named",
+         (subset_problems("<p>a</p>\n\n<span/>") or ["none"])[0][:7], "line 3:")
+    # Two rules only 3.12's parser reaches on a real input; each is driven here on EITHER Python by making
+    # the parser behave as 3.12's does, so the rule is held wherever the suite runs.
+    _rc = getattr(_Tokens, "RCDATA_CONTENT_ELEMENTS", None)
+    try:
+        _Tokens.RCDATA_CONTENT_ELEMENTS = ()          # 3.12: a tag inside <title> / <textarea> is a tag
+        _events.cache_clear()
+        case("subset: a start tag inside <title>, as 3.12's html.parser reports it",
+             _sub("<title><b>x</b></title>", "inside <title>"), ["line 1: <b> inside <title>, which a browser reads as text"])
+    finally:
+        if _rc is None:
+            del _Tokens.RCDATA_CONTENT_ELEMENTS
+        else:
+            _Tokens.RCDATA_CONTENT_ELEMENTS = _rc
+        _events.cache_clear()
+
+    def _assert(self, data):
+        raise AssertionError("unknown status keyword 'foo' in marked section")
+    _hc = _Tokens.handle_comment
+    try:
+        _Tokens.handle_comment = _assert                # 3.12 raises this on `<![foo]>`
+        _events.cache_clear()
+        try:
+            _got = subset_problems("<!-- c -->")
+        except Exception as exc:
+            _got = type(exc).__name__
+        case("subset: an AssertionError from inside html.parser is a refusal, never a crash",
+             _got, ["html.parser could not read the page: unknown status keyword 'foo' in marked section"])
+    finally:
+        _Tokens.handle_comment = _hc
+        _events.cache_clear()
     _saved_rows = ROWS
     try:
         use_rows([1, 2])
