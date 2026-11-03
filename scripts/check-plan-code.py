@@ -1962,7 +1962,12 @@ EXPECTED_MUTATIONS = {
     # sources, the --only refusal, and `only` scoping the runs but never the population ratchet.
     # PR #450 r1 fold: 21 -> 23. +3 (a rename counts both names at two diff sources; propagation reaches a fixed point),
     # -1 ("string references are closed transitively too" is retired with its subject: closure is now the rule).
-    "scripts/check-selftest-counts.py": 23,
+    # backlog #487: 23 -> 29, the suite pool — pool width, completion-order reporting, a raising
+    # worker, a timed-out suite, a shared home, and the core-count cap.
+    # PR #487 r1 fold: 29 -> 36, a timeout kills the suite's whole process group (own session,
+    # SIGKILL after SIGTERM), a signal-killed suite is CANNOT RUN, a CANNOT RUN hides no red suite,
+    # and `main`'s --jobs wiring and its refusal of 0.
+    "scripts/check-selftest-counts.py": 36,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
@@ -2594,7 +2599,7 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON IS STALE, BUT THE SAVING IS STILL A LATENCY ONE.
     backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
     sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
-    `needs: null` and `matrix: {shard: [1..N]}` (N=24 since 2026-10-30, backlog #231; 12 from 2026-10-24).
+    `needs: null` and `matrix: {shard: [1..N]}` (N=18 since 2026-11-03, backlog #415; 24 from 2026-10-30, backlog #231; 12 from 2026-10-24).
 
     ⛔⛔ AND HERE IS A CLAIM I WROTE AND r5 CODEX REFUTED BY MEASUREMENT — recorded because the
     error is more instructive than the number. I wrote that the sweep therefore costs *"~48 runner-

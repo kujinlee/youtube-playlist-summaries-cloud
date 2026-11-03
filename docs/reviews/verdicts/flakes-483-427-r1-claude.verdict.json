@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 43ca8139ac839e2aa562963d0791e61d3b950e1b",
+    "docs/reviews/claude/flakes-483-427-r1-claude.md": "100644 bb2336dbac99de3390b600435815a2de71e2d4ac",
+    "docs/reviews/codex/flakes-483-427-r1-codex.md": "100644 bcf8fc85a281d83ce87e658cd6ce3abbf607de25",
+    "docs/reviews/coordinator/flakes-483-427-r1-coordinator.md": "100644 56aee81225536f9ee39dea0680b342dfd42f299d",
+    "docs/reviews/verdicts/flakes-483-427-r1-codex.verdict.json": "100644 42835b6d19508b9277d842a6f44428e6a6a2e6bc"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "9c2078bd30f11cbe92d283b0a21bc2c87ddc8f70",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/rfl/prompt.md",
+  "reason": "claude half filed: 5722 chars, names 9c2078bd30f1",
+  "refused": false,
+  "review": "flakes-483-427-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-a2f828ebdf7e2ef82",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}

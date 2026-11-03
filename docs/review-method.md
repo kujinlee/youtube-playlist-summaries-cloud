@@ -35,12 +35,16 @@ answered yes by patching. A duplicated mechanism is never locally incorrect."*
 
 | The change… | Its wrongness looks like | PRIMARY instrument | Review's part |
 |---|---|---|---|
-| **moves a seam** — a new module, a change to who owns what, a new protocol or vocabulary | a design that fights itself; each fix locally correct | an **architecture review BEFORE building** (`dev-process.md` Phase 6) | Q1 onward, on what is then built |
+| **moves a seam** — changes an EXISTING boundary: who owns a piece of data or a decision moves, a contract between two components changes, or a second name or mechanism appears for something that already exists. A new module that only calls existing contracts is *logic* | a design that fights itself; each fix locally correct | an **architecture review BEFORE building** (`dev-process.md` Phase 6) | Q1 onward, on what is then built |
 | is **logic inside an existing seam** | a wrong branch, a missed case | **the normal loop** — Q1 onward, unchanged | all of it |
 | is a **surface** — a parser, matcher or classifier over open-ended input | inputs nobody thought of | a **corpus run** over real, unseen inputs | the CLAIMS made about it (a safety property in a comment) |
 | is a **guard** — a check, gate or test whose job is to go red | a check that cannot fail; wiring nothing asserts | the **mutation sweep** (`scripts/check-plan-code.py --mutate`), mutating the CALL SITE too | what the sweep cannot reach |
 | is **prose only** | under-specified forever — the *prose floor* | Q1's **one round**, inside the round cap (Q4c) | stop at the prose floor (*Non-convergence means different things on a DOCUMENT and on CODE*) |
 
+- **An approved spec counts as the seam's design review** — Phase 1's human gate already examined the boundary;
+  the round-1 Q0 line names the spec instead of a fresh architecture review.
+- **Recommended, not enforced** — *seam* is judged, so nothing refuses a branch without the review; the Q0 line
+  records the call and the FAILS-IF below catches a wrong one afterwards (owner, 2026-11-03).
 - **More than one kind** → each instrument it earns; a seam goes first, because the rest review what
   it settles.
 - **Re-asked when a side job enters mid-slice** — [`process-checklists.md`](process-checklists.md) →

@@ -142,7 +142,6 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-review-recorded.py",
     "scripts/check-review-rounds.py",
     "scripts/check-roadmap-consistency.py",
-    "scripts/check-selftest-counts.py",
     "scripts/check-sentinel-meanings.py",
     "scripts/check-storage-independence.py",
     "scripts/check-test-counts.py",
@@ -2603,6 +2602,54 @@ def _self_test_body() -> int:                                      # noqa: C901 
         except Exception as exc:                    # noqa: BLE001 — reporting IS the point
             return f"RAISED {type(exc).__name__}"
 
+    import gc
+    import weakref
+    # ── THE MEMO'S LIFETIME CONTRACT, FIRST, AND A BROKEN ONE STOPS THE SUITE (backlog #427) ────
+    # Every case below asks memoised helpers (`_memo_by_node`), whose `id` keys are sound only while
+    # each entry holds the nodes it names. With that contract broken, a freed tree's id is reused and
+    # ANY later answer may be a dead tree's: measured under the mutant `(None, out)`, 13 distinct
+    # failing sets in 100 runs on 3.14 (14 in 100 on Linux 3.12), and on CI (run 41194535294) a run
+    # that never reached these two cases at all. So they run here, while every memo is still empty,
+    # and when the entry does not hold its node the suite STOPS: what follows would be allocator
+    # noise, not evidence.
+    # ⛔ THE CACHE ANSWERS FOR THIS NODE AND THIS NAME, NEVER A PREVIOUS ONE (backlog #401). Each
+    # tree here is dropped as soon as its call returns — the answer is strings, so nothing of the
+    # tree outlives it — and CPython hands the next, same-shaped tree the freed addresses. Measured
+    # with the entry NOT holding its arguments: 9 to 58 of 64 answers were a previous tree's, on
+    # 3.14 and 3.12. A key coarser than identity answers the first tree's `g0` every time.
+    # ⚠ `_bound_values` CANNOT witness this: `_own_scope`'s answer contains `fn` itself, which keeps
+    # the node alive and its id unique whatever the entry holds — measured, 0 of 64 wrong.
+    case("⛔ a memoised helper answers for THIS tree, though every tree before it is gone and its "
+         "address is reused (backlog #401)",
+         [sorted(note_globals_imports(ast.parse(f"from builtins import globals as g{i}\n")))
+          for i in range(256)],
+         [[f"g{i}"] for i in range(256)])
+    # ⛔ DIRECT, NOT BY ALLOCATOR CHURN (r1 Codex Minor): the 256-tree case above goes red only if
+    # CPython happens to reuse a freed address, and under an instrument that retains every tree it
+    # cannot. This asks the entry itself whether it holds the node its key names.
+    # ⚠ A FRESH MEMO, so this case is red for ONE defect only — an entry that does not hold its
+    # arguments — and the stop below cannot fire for a coarser KEY (which the 256-tree case and
+    # its own named case catch, further on).
+    _fresh = _memo_by_node(lambda t: len(t.body))
+    _held = ast.parse("from builtins import globals as g\n")
+    _held_ref = weakref.ref(_held)
+    _fresh(_held)
+    del _held
+    gc.collect()
+    _alive = _held_ref()
+    _fail_before = fail
+    case("⛔ a memo ENTRY keeps alive the node its key names, so that id cannot be reused while "
+         "the entry exists — asserted on the node, not on what the allocator does (backlog #401)",
+         (_alive is not None,
+          any(isinstance(a, tuple) and a and a[0] is _alive for a, _ in _fresh.memo.values())),
+         (True, True))
+    del _alive, _fresh
+    if fail > _fail_before:
+        print("\n  STOPPED — a memo entry does not hold its arguments, so every later memoised "
+              "answer may be a dead tree's and every later case allocator noise (backlog #427). "
+              f"{ok}/{ok + fail} passed before the stop.")
+        return 1
+
     # ── the vocabulary a case can build on ───────────────────────────────────────────────────
     NO_MAIN = "def check(x):\n    return []\n"
     PLAIN = (
@@ -4544,19 +4591,9 @@ def _self_test_body() -> int:                                      # noqa: C901 
              "def f():\n    with first() as td:\n        pass\n"
              "    td = second()\n    for td in third():\n        pass\n").body[0])],
          [2, 4, 5])
-    # ⛔ THE CACHE ANSWERS FOR THIS NODE AND THIS NAME, NEVER A PREVIOUS ONE (backlog #401). Each
-    # tree here is dropped as soon as its call returns — the answer is strings, so nothing of the
-    # tree outlives it — and CPython hands the next, same-shaped tree the freed addresses. Measured
-    # with the entry NOT holding its arguments: 9 to 58 of 64 answers were a previous tree's, on
-    # 3.14 and 3.12. A key coarser than identity answers the first tree's `g0` every time.
-    # ⚠ `_bound_values` CANNOT witness this: `_own_scope`'s answer contains `fn` itself, which keeps
-    # the node alive and its id unique whatever the entry holds — measured, 0 of 64 wrong.
-    case("⛔ a memoised helper answers for THIS tree, though every tree before it is gone and its "
-         "address is reused (backlog #401)",
-         [sorted(note_globals_imports(ast.parse(f"from builtins import globals as g{i}\n")))
-          for i in range(256)],
-         [[f"g{i}"] for i in range(256)])
-    _two = ast.parse("def f():\n    td = first()\n    p = second()\n").body[0]
+    # ⟳ backlog #427: the two lifetime cases that stood here — "a memoised helper answers for THIS
+    # tree" and "a memo ENTRY keeps alive the node its key names" — now run FIRST in the suite.
+    _two =ast.parse("def f():\n    td = first()\n    p = second()\n").body[0]
     case("...and for THIS name: one function, two names, two answers",
          ([ast.unparse(v) for _, v in _bound_values("td", _two)],
           [ast.unparse(v) for _, v in _bound_values("p", _two)]),
@@ -4575,24 +4612,6 @@ def _self_test_body() -> int:                                      # noqa: C901 
          "reuse kept every answer right, lost the whole speedup, and survived 441/441)",
          (_counted(_once), _counted(_once), len(_built)), (2, 2, 1))
 
-    import gc
-    import weakref
-    # ⛔ DIRECT, NOT BY ALLOCATOR CHURN (r1 Codex Minor): the 256-tree case above goes red only if
-    # CPython happens to reuse a freed address, and under an instrument that retains every tree it
-    # cannot. This asks the entry itself whether it holds the node its key names.
-    _held = ast.parse("from builtins import globals as g\n")
-    _held_ref = weakref.ref(_held)
-    note_globals_imports(_held)
-    del _held
-    gc.collect()
-    _alive = _held_ref()
-    case("⛔ a memo ENTRY keeps alive the node its key names, so that id cannot be reused while "
-         "the entry exists — asserted on the node, not on what the allocator does (backlog #401)",
-         (_alive is not None,
-          any(isinstance(a, tuple) and a and a[0] is _alive
-              for a, _ in note_globals_imports.memo.values())),
-         (True, True))
-    del _alive
     # ⚠ `_kept` IS TOUCHED BEFORE EVERY INSERT, so a cap that evicts by insertion order rather
     # than by use loses it on the second eviction; `_MEMO_MAX` fresh trees force exactly two. Touched
     # AFTER, an evicted `_kept` is simply re-inserted, and the first draft survived that way.
