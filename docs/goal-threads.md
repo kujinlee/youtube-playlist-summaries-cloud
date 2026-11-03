@@ -117,6 +117,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #415, PR #484 · the mutation sweep runs on 18 shards, one wave under the 20-job limit; paired CI runs on one commit: 1,194 s against 24 shards' 1,704 s
 - fix · backlog #483, backlog #427, PR #486 · two CI flakes fixed at the cause: F5 compares by an open handle, and the memo-lifetime cases run first and stop the suite
 - bookkeeping · backlog #486 · filed from PR #486's round 1: three Low leftovers of the flake fixes
+- bookkeeping · PR #488 · backlog #481 corrected (the early stop must run the suite's own exit check), backlog #489 filed (the goal tree misattaches ledger entries), the early-stop explainer
+- bookkeeping · backlog #488, backlog #490 · filed from PR #487's rounds: a self-test writes into the real ci-unwatched log; main()'s scoping is untested
 - fix · backlog #487, PR #487 · the self-test count check runs its suites four at a time, each under its own HOME
 - fix · backlog #177, PR #483 · Q0 drafted: the review method is chosen by kind of change; waits on the owner's walkthrough
 - fix · backlog #330 · approved 11-02 20:53: a PR sweeps only the manifests whose subject changed, and a scheduled full sweep on master is the safety net
