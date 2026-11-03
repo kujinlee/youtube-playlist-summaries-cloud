@@ -1034,8 +1034,8 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "    except OSError:\n        ok = False",
-        "    except ZeroDivisionError:\n        ok = False"
+        "        except OSError:\n            ok = False",
+        "        except ZeroDivisionError:\n            ok = False"
       ]
     ],
     "expect": "merge-delta r2: no `git` to build the isolated repository builds no master side"
@@ -1072,5 +1072,93 @@
       ]
     ],
     "expect": "merge-delta r2 (pure): ...and no PATH is no PATH, never the caller's"
+  },
+  {
+    "name": "merge-delta r3 M1: HEAD's lookup passes the paths as a pathspec again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    got = git(*ls_tree_argv(\"HEAD\"))\n",
+        "    got = git(\"ls-tree\", \"-z\", \"HEAD\", \"--\", *paths)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: HEAD's lookup finds a `:/` name by its exact bytes"
+  },
+  {
+    "name": "merge-delta r3 M1: the merged tree's lookup passes the paths as a pathspec again",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        ls = iso(*ls_tree_argv(tree))\n",
+        "        ls = iso(\"ls-tree\", \"-z\", tree, \"--\", *paths)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: the merged tree's lookup finds a `:/` name too"
+  },
+  {
+    "name": "merge-delta r3 M1: the listing does not recurse",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "            \"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n",
+        "            \"ls-tree\", \"-t\", \"-z\", \"--full-tree\", tree]\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: HEAD's lookup finds a `:/` name by its exact bytes"
+  },
+  {
+    "name": "merge-delta r3 M1: the listing drops the trees on the way",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "\"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n",
+        "\"ls-tree\", \"-r\", \"-z\", \"--full-tree\", tree]\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1: a path that is a DIRECTORY in HEAD still has an entry, as before"
+  },
+  {
+    "name": "merge-delta r3 M1: the listing leaves precomposition to the repository",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return [\"-c\", \"core.precomposeunicode=false\",\n            \"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n",
+        "    return [\n            \"ls-tree\", \"-r\", \"-t\", \"-z\", \"--full-tree\", tree]\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1 (pure): the lookup lists the whole tree, with no path in its argv"
+  },
+  {
+    "name": "merge-delta r3 M1: the selection returns the whole listing",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "    return {p: listing[p] for p in paths if p in listing}\n",
+        "    return dict(listing)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 M1 (pure): only the EXACT names asked for are selected"
+  },
+  {
+    "name": "merge-delta r3 M1: the isolated runner decodes strictly",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "text=True, encoding=\"utf-8\", errors=\"surrogateescape\")\n\n            ok = run(",
+        "text=True)\n\n            ok = run("
+      ]
+    ],
+    "expect": "merge-delta r3 M1: the merged tree's lookup finds a name holding non-UTF-8 bytes"
+  },
+  {
+    "name": "merge-delta r3 L1: the temp dir is removed only on the normal path",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "        yield run if ok else None\n    finally:\n        shutil.rmtree(tmp, ignore_errors=True)\n",
+        "        yield run if ok else None\n    except BaseException:\n        raise\n    shutil.rmtree(tmp, ignore_errors=True)\n"
+      ]
+    ],
+    "expect": "merge-delta r3 L1: a crash in the isolated setup leaves no `crr-merge-*` dir"
   }
 ]

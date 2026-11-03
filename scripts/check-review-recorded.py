@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 253 cases
+    python3 scripts/check-review-recorded.py --self-test  # 275 cases
 
 WHY THIS EXISTS
 ---------------
@@ -1034,7 +1034,10 @@ def tail_verdict(tails: dict[str, list[str]], unusable: int = 0,
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
+    # `surrogateescape`, like the isolated runner: a path name that is not UTF-8 decodes to the SAME
+    # str in the changed-path list and in a tree listing, so the two compare byte for byte
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True,
+                          encoding="utf-8", errors="surrogateescape")
 
 
 def _final_entries(paths: list[str], git=None) -> dict[str, str]:
@@ -1059,11 +1062,32 @@ def _final_entries(paths: list[str], git=None) -> dict[str, str]:
     git = git or _git
     if not paths:
         return {}
-    got = git("ls-tree", "-z", "HEAD", "--", *paths)
+    got = git(*ls_tree_argv("HEAD"))
     if got.returncode != 0:
         raise RuntimeError(f"CANNOT RUN — git ls-tree HEAD failed ({got.stderr.strip()}), so "
                            f"what is about to merge is UNKNOWN. Treat this as NOT CHECKED.")
-    return parse_ls_tree(got.stdout)
+    return select_entries(parse_ls_tree(got.stdout), paths)
+
+
+def ls_tree_argv(tree: str) -> list[str]:
+    """PURE. List the WHOLE tree, NUL-separated, with no path argument at all.
+
+    ⛔ merge-delta r3 Claude M1. Both lookups passed the changed paths after `--`, and git reads
+    that as a PATHSPEC: `:/evil.sh`, `:(top)evil.sh` and `:(literal)x/evil.sh` were looked up
+    under ANOTHER name, missing from HEAD and from the merge alike, and absent == absent CLEARED an
+    unreviewed file. A decomposed-Unicode name did the same under `core.precomposeunicode=true`
+    (the macOS default), because git precomposes its argv and not a tree's names. With no path in
+    the argv there is nothing for git to reinterpret; `select_entries` matches exact names.
+    `-r -t` lists every leaf AND the trees on the way, so a path that is a directory in the tree
+    still has an entry, as the pathspec form gave it. The `-c` is a belt: nothing here is argv.
+    """
+    return ["-c", "core.precomposeunicode=false",
+            "ls-tree", "-r", "-t", "-z", "--full-tree", tree]
+
+
+def select_entries(listing: dict[str, str], paths: list[str]) -> dict[str, str]:
+    """PURE. The entries of `listing` whose name is EXACTLY one of `paths` — no pattern, no magic."""
+    return {p: listing[p] for p in paths if p in listing}
 
 
 def parse_ls_tree(out: str) -> dict[str, str]:
@@ -1157,23 +1181,27 @@ def _isolated_git(git):
     except OSError:
         yield None
         return
-    ok = False
+    # ⛔ THE `finally` OPENS RIGHT AFTER `mkdtemp` — merge-delta r3 Claude L1. The setup used to sit
+    # before it, so any exception but `OSError` (a missing `git` under a mutant, an interrupt)
+    # left `crr-merge-*/home` behind in `$TMPDIR`; the mutation sweep leaked one per run.
     try:
-        git_dir, home = os.path.join(tmp, "repo.git"), os.path.join(tmp, "home")
-        os.mkdir(home)
-        env = isolated_env(git_dir, home, os.environ.get("PATH"))
-
-        def run(*args: str) -> subprocess.CompletedProcess:
-            return subprocess.run(["git", *args], cwd=tmp, env=env, capture_output=True, text=True)
-
-        ok = run("init", "-q", "--bare", "--template=", git_dir).returncode == 0
-        if ok:
-            info = pathlib.Path(git_dir, "objects", "info")
-            info.mkdir(parents=True, exist_ok=True)
-            (info / "alternates").write_text(f"{objects}\n", encoding="utf-8")
-    except OSError:
         ok = False
-    try:
+        try:
+            git_dir, home = os.path.join(tmp, "repo.git"), os.path.join(tmp, "home")
+            os.mkdir(home)
+            env = isolated_env(git_dir, home, os.environ.get("PATH"))
+
+            def run(*args: str) -> subprocess.CompletedProcess:
+                return subprocess.run(["git", *args], cwd=tmp, env=env, capture_output=True,
+                                      text=True, encoding="utf-8", errors="surrogateescape")
+
+            ok = run("init", "-q", "--bare", "--template=", git_dir).returncode == 0
+            if ok:
+                info = pathlib.Path(git_dir, "objects", "info")
+                info.mkdir(parents=True, exist_ok=True)
+                (info / "alternates").write_text(f"{objects}\n", encoding="utf-8")
+        except OSError:
+            ok = False
         yield run if ok else None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1204,10 +1232,10 @@ def _master_side(head: str, onto: "str | None", paths: list[str],
         if parsed is None:
             return None
         tree, conflicted = parsed
-        ls = iso("ls-tree", "-z", tree, "--", *paths)
+        ls = iso(*ls_tree_argv(tree))
         if ls.returncode != 0:
             return None
-        return parse_ls_tree(ls.stdout), conflicted
+        return select_entries(parse_ls_tree(ls.stdout), paths), conflicted
 
 
 def _load_verdict(rel: str) -> "object | None":
@@ -2315,7 +2343,8 @@ def _self_test_body() -> int:
     def _g(*a: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", "-C", _tmp, "-c", "user.name=t", "-c",
                                "user.email=t@example.com", "-c", "commit.gpgsign=false", *a],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="surrogateescape")
 
     def _w(rel: str, text: str) -> None:
         f = pathlib.Path(_tmp, rel)
@@ -2438,7 +2467,7 @@ def _self_test_body() -> int:
          frozenset({".github/workflows/ci.yml"}))
     case("merge-delta r1 Codex M2 / Claude L1: a failed `ls-tree` of the merged tree is None",
          _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
-                      isolate=_iso_failing(("ls-tree", "-z"))), None)
+                      isolate=_iso_failing(tuple(ls_tree_argv("")[:3]))), None)
     case("merge-delta r1 Claude M1: no empty tree to read attributes from builds no master side",
          _master_side(_review, _onto_good, [".github/workflows/ci.yml"], git=_g,
                       isolate=_iso_failing(("hash-object",))), None)
@@ -2491,8 +2520,85 @@ def _self_test_body() -> int:
     case("merge-delta r1 Codex H1 control: a re-add of a file master deleted is charged",
          _tails_at(_review), ["scripts/gone.py"])
     case("merge-delta r1 Codex H1: a failed HEAD `ls-tree` is CANNOT RUN, never 'all absent'",
-         _raises(lambda: _tails_at(_review, git=_failing(("ls-tree", "-z", "HEAD")))),
+         _raises(lambda: _tails_at(_review, git=_failing(tuple(ls_tree_argv("HEAD"))))),
          "CANNOT RUN")
+
+    # ⛔ merge-delta r3 Claude M1 — a NAME git would read as a pathspec, or normalise. Each file is
+    # added after the round through the index alone (no checkout: some of these names cannot exist
+    # on this filesystem), and the round's own commit stays the reviewed head. The CONTROL is the
+    # pathspec form both lookups used, which misses the name in this very repository.
+    _blob = _g("rev-parse", f"{_review}:scripts/solo.py").stdout.strip()
+    _ENTRY = f"100644 {_blob}"
+
+    def _add_raw(name: str) -> str:
+        _g("reset", "-q", "--hard", _review)
+        _g("-c", "core.precomposeunicode=false", "update-index", "--add", "--cacheinfo",
+           f"100644,{_blob},{name}")
+        _g("commit", "-q", "-m", "a post-round file under an odd name")
+        return _g("rev-parse", "HEAD").stdout.strip()
+
+    def _lookups(name: str) -> tuple:
+        head = _add_raw(name)
+        ms = _or_raised(lambda: _master_side(head, merge_onto("master", git=_g), [name], git=_g))
+        return (_or_raised(lambda: _final_entries([name], git=_g)),
+                ms[0] if isinstance(ms, tuple) else ms,
+                _or_raised(lambda: _tails_at(_review)))
+
+    for _name, _tag in ((":/evil.sh", "`:/`"), (":(top)evil.sh", "`:(top)`")):
+        _fe, _ms, _tl = _lookups(_name)
+        case(f"merge-delta r3 M1 control: the pathspec lookup misses a {_tag} name",
+             _g("ls-tree", "-z", "HEAD", "--", _name).stdout, "")
+        case(f"merge-delta r3 M1: HEAD's lookup finds a {_tag} name by its exact bytes",
+             _fe, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: the merged tree's lookup finds a {_tag} name too",
+             _ms, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: an unreviewed {_tag} file is charged, never absent == absent",
+             _tl, [_name])
+    # a DECOMPOSED name under `core.precomposeunicode=true`, the macOS default. Git precomposes its
+    # argv only on macOS, so the control's want is the platform's own answer.
+    _nfd = "scripts/cafe\u0301.py"
+    _g("config", "core.precomposeunicode", "true")
+    _fe, _ms, _tl = _lookups(_nfd)
+    case("merge-delta r3 M1 control: under precomposition the pathspec lookup of an NFD name",
+         bool(_g("ls-tree", "-z", "HEAD", "--", _nfd).stdout), sys.platform != "darwin")
+    case("merge-delta r3 M1: HEAD's lookup finds a decomposed name", _fe, {_nfd: _ENTRY})
+    case("merge-delta r3 M1: the merged tree's lookup finds a decomposed name", _ms, {_nfd: _ENTRY})
+    case("merge-delta r3 M1: an unreviewed decomposed-name file is charged", _tl, [_nfd])
+    _g("config", "--unset", "core.precomposeunicode")
+    for _name, _tag in (("scripts/a\nb.py", "a newline"), ("scripts/caf\udce9.py", "non-UTF-8 bytes")):
+        _fe, _ms, _tl = _lookups(_name)
+        case(f"merge-delta r3 M1: HEAD's lookup finds a name holding {_tag}", _fe, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: the merged tree's lookup finds a name holding {_tag}",
+             _ms, {_name: _ENTRY})
+        case(f"merge-delta r3 M1: an unreviewed file whose name holds {_tag} is charged",
+             _tl, [_name])
+    _g("reset", "-q", "--hard", _review)
+    case("merge-delta r3 M1: a path that is a DIRECTORY in HEAD still has an entry, as before",
+         _final_entries(["scripts"], git=_g).get("scripts", "").split()[:1], ["040000"])
+    case("merge-delta r3 M1 (pure): the lookup lists the whole tree, with no path in its argv",
+         ls_tree_argv("t1"),
+         ["-c", "core.precomposeunicode=false", "ls-tree", "-r", "-t", "-z", "--full-tree", "t1"])
+    case("merge-delta r3 M1 (pure): only the EXACT names asked for are selected",
+         select_entries({":/a": "e1", "a": "e2", "b": "e3"}, [":/a", "c"]), {":/a": "e1"})
+    # ⛔ merge-delta r3 Claude L1 — a crash inside the isolated repository's setup leaves NO temp
+    # dir. Counted in a PRIVATE `TMPDIR`, so another run's leftovers cannot answer for this one.
+    _priv = tempfile.mkdtemp(prefix="crr426-tmpdir-")
+    _saved_tempdir, _saved_env = tempfile.tempdir, isolated_env
+    try:
+        tempfile.tempdir = _priv
+
+        def _crash(*_a, **_k):
+            raise ValueError("injected")
+        globals()["isolated_env"] = _crash
+        _r = _or_raised(lambda: _master_side(_review, _onto_good, [".github/workflows/ci.yml"],
+                                             git=_g))
+        case("merge-delta r3 L1: a crash in the isolated setup leaves no `crr-merge-*` dir",
+             (_r, sorted(x.name for x in pathlib.Path(_priv).glob("crr-merge-*"))),
+             ("raised ValueError", []))
+    finally:
+        globals()["isolated_env"] = _saved_env
+        tempfile.tempdir = _saved_tempdir
+        shutil.rmtree(_priv, ignore_errors=True)
 
     # merge-delta r1 Claude M1 — a merge DRIVER the branch chose resolves a real conflict
     _g("reset", "-q", "--hard", _review)

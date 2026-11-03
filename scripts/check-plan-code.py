@@ -1685,7 +1685,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-03, r2 fold, 90 -> 94: the per-source `-c` flags and the `info/attributes` refusal
     #   (-6) give way to running the merge in an ISOLATED repository (+10: its environment, its
     #   GIT_DIR, its borrowed objects, its PATH, and its failure to build).
-    "scripts/check-review-recorded.py": 94,
+    # ⟳ 2026-11-03, r3 fold, 94 -> 102: both tree lookups list the WHOLE tree and select exact
+    #   names (+7: each lookup as a pathspec again, `-r`, `-t`, the precompose `-c`, the exact
+    #   selection, the isolated runner's decoding), and the temp dir removed on a crash (+1).
+    "scripts/check-review-recorded.py": 102,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone

@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 d1776a5576e4c09401e6f84d0afa9cfe36962b4f",
+    "docs/reviews/claude/merge-delta-r3-claude.md": "100644 ebb5d2a53f98ef097db31c5efb9929f344249a2d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "5f8b270fbd01ec51b8c1b3345b52e7821173520e",
+  "intrusions": [],
+  "model": null,
+  "prompt": "Claude half r3 of PR #491: refute no-false-clear in the isolated merge-delta clear path",
+  "reason": "claude half filed: 9314 chars, names 5f8b270fbd01",
+  "refused": false,
+  "review": "merge-delta-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-426",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
