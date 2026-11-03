@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 165 cases
+    python3 scripts/goal-tree.py --self-test                 # 200 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -19,7 +19,11 @@ been armed since 2026-10-25, so it showed nothing of the work the owner was watc
     would print a plausible tree that is believed.
   * the STATES — merged (with its SHA), open (draft, mergeability, checks), in flight, closed — are
     DERIVED at snapshot time from `git log origin/master` subjects, `gh pr list` and
-    `.claude/inflight.jsonl`. A declared `waits on …` is shown as DECLARED, never as a derived state.
+    `.claude/inflight.jsonl`. A thread whose backlog rows ALL carry a fate MARKER in their Status cell — a
+    bold, capital SUPERSEDED or WITHDRAWN leading the cell, or led by a closing glyph — prints ✖ instead of
+    the merge's ✅ (backlog #484; the word anywhere else in the cell is prose, not a fate). An unread
+    backlog, or a row it does not have, makes such a leaf CANNOT RUN, never ✅. A declared `waits on …` is
+    shown as DECLARED, never as a derived state.
 
 ⛔ CANNOT RUN IS NEVER A STATE THAT GETS LOGGED AS ONE. When `git fetch`, `git log` or `gh` fails, every
 leaf that needed it says CANNOT RUN in the tree that is printed, and the snapshot is NOT appended (exit
@@ -117,7 +121,30 @@ SUBJECT_PR_RE = re.compile(r"\(#(\d+)\)\s*$")
 LEDGER_NUM_RE = re.compile(r"(?:#|(?<=-))(\d+)\b")
 
 GLYPH = {"merged": "✅", "open": "⏳", "inflight": "⏳", "next": "⬜", "blocked": "❌",
-         "closed": "✖", "notfound": "❓", "cannot": "⚠"}
+         "closed": "✖", "superseded": "✖", "withdrawn": "✖", "notfound": "❓", "cannot": "⚠"}
+# backlog #484: a row's STATUS cell can say its work was replaced or dropped, and that beats the merge state —
+# a merged PR on a superseded row is not "delivered". ⛔ Read ONLY from a fate MARKER, never from the word:
+# a Status cell is append-only prose, and it quotes, negates and narrates the word (row 484's own cell does,
+# and an any-word read printed it ✖ withdrawn — r1 H1). A marker is `**SUPERSEDED` / `**WITHDRAWN`, bold and
+# in capitals, either LEADING the cell (after an optional glyph and `(was X)`) or led by a closing glyph ✅ /
+# ✖ — the form the 2026-10-26 audit APPENDED to rows 124, 125, 127, 189 and 213. Markers are matched in
+# `fate_text(status)`, never the raw cell: code spans are removed FIRST (CommonMark: a run of N backticks
+# closes only on a run of exactly N, r2 X2), so a quoted marker — or a quoted `Previously:` — is inert; THEN
+# the cell is cut at its first `Previously:`, so everything after it is history (r2 X1). A marker is
+# cancelled by a LATER bold span that leads with REOPENED (optionally after a date and a dash) — row 327's
+# `⟳ **2026-10-25 — REOPENED BY THE OWNER…**` shape, appended after its supersession prose (r2 note).
+# ⚠ BOUND: a reopen written any other way (lowercase, unbolded, or not leading its bold span) is not seen,
+# and a backslash-escaped backtick is treated as a delimiter.
+FATE_RE = re.compile(r"(?:^\s*(?:[✅✖]\ufe0f?\s*)?|[✅✖]\ufe0f?\s*)(?:\(was[^)]*\)\s*)?"
+                     r"\*\*(SUPERSEDED|WITHDRAWN)\b([^*]*)")
+CODE_SPAN_RE = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)", re.S)
+HISTORY_CUT = "Previously:"
+BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+REOPEN_RE = re.compile(r"\s*(?:\d{4}-\d{2}-\d{2}\s*[—–-]\s*)?REOPENED\b")
+# The forward pointer, read only INSIDE the marker's bold span: `by backlog #M`, or several (`#328/#329`).
+POINTER_RE = re.compile(r"\bby backlog (#\d+(?:\s*(?:/|,|and|&)\s*#\d+)*)")
+# The table a `backlog #N` ref names. The second table (`## Found during testing`) reuses Items' numbers (r1 L1).
+ITEMS_SECTION = "Items"
 # When a thread names several PRs, the one state shown is the first of these that any of them has:
 # a thread is merged only when ALL its PRs are, and an unreadable one makes the whole thread unread.
 PRECEDENCE = ("cannot", "open", "notfound", "closed", "merged")
@@ -241,6 +268,11 @@ def derive_thread(t: dict, src: dict) -> dict:
     """PURE. One declared thread + the read sources -> the thread with `state` and `detail`."""
     prs = [n for k, n in t["refs"] if k == "PR"]
     rows = [n for k, n in t["refs"] if k == "backlog"]
+    # backlog #484: each backlog ref has its OWN fate (None = live). `fates` is None when the backlog was not
+    # read, and holds EVERY Items row (fated or None) when it was, so a row absent from it does not exist.
+    fates = src.get("fates")
+    fate_of = {n: (fates or {}).get(n) for n in rows}
+    live_rows = [n for n in rows if fate_of[n] is None]
     if prs:
         found = [_pr_state(n, src) for n in prs]
         state = next(s for s in PRECEDENCE if any(f[0] == s for f in found))
@@ -249,9 +281,9 @@ def derive_thread(t: dict, src: dict) -> dict:
         state, detail = "cannot", f"CANNOT RUN — {src['errors'].get('merged') or src['errors'].get('gh')}"
     else:
         hit = next(((sha, pr) for sha, pr, subj in src["merged_rows"]
-                    if any(re.search(rf"\(backlog #{n}\)", subj) for n in rows)), None)
+                    if any(re.search(rf"\(backlog #{n}\)", subj) for n in live_rows)), None)
         opened = [p for p in src["open"].values()
-                  if any(re.search(rf"\bbacklog #{n}\b", p.get("title") or "") for n in rows)]
+                  if any(re.search(rf"\bbacklog #{n}\b", p.get("title") or "") for n in live_rows)]
         if hit:
             state, detail = "merged", f"merged {hit[0]} via PR #{hit[1]}"
         elif opened:
@@ -260,9 +292,29 @@ def derive_thread(t: dict, src: dict) -> dict:
                                      + " · " + _SS.check_summary(p.get("statusCheckRollup")))
         else:
             state, detail = "next", "no PR names it yet"
+    if rows:
+        # backlog #484 — THE PRECEDENCE, exactly. Each ref contributes its own state and the leaf shows the worst:
+        #   1. ⚠ CANNOT RUN — the backlog was not read, or a named row is not in its Items table. Never ✅.
+        #   2. ⏳ an open PR, ⏳ an in-flight entry (below), ❓ a PR gh did not list — kept; a fate never hides them.
+        #   3. ✖ superseded / withdrawn — ONLY when EVERY backlog ref is fated, and it replaces ONLY the merge ✅
+        #      (and the ⬜ / ✖ closed of a leaf whose rows are all fated). An unfated ref is live work, so its
+        #      state stands. Across fated rows, superseded beats withdrawn: the pointer says where the goal went.
+        #   4. otherwise the state above. Every fate is still NAMED in the detail, whatever the glyph.
+        fated = [fate_of[n] for n in rows if fate_of[n]]
+        missing = [n for n in rows if n not in (fates or {})]
+        if fates is None:
+            state, detail = "cannot", (f"CANNOT RUN — {src.get('fates_error') or BACKLOG_REL + ' was not read'}"
+                                       f", so a superseded or withdrawn row cannot be ruled out")
+        elif missing:
+            state, detail = "cannot", ("CANNOT RUN — " + ", ".join(f"backlog #{n}" for n in missing)
+                                       + f" is not a row of the {ITEMS_SECTION} table in {BACKLOG_REL}")
+        elif fated:
+            if not live_rows and state in ("merged", "next", "closed"):
+                state = "superseded" if any(f[0] == "superseded" for f in fated) else "withdrawn"
+            detail = " · ".join(dict.fromkeys(f[1] for f in fated)) + " · " + detail
     nums = set(prs) | set(rows)
     flying = [_SS.clean(e.get("what", ""), 160) for e in src["ledger"] if _ledger_numbers(e) & nums]
-    if flying and state in ("next", "notfound"):
+    if flying and state in ("next", "notfound", "superseded", "withdrawn"):
         state = "inflight"
     if flying:
         detail += " · in flight: " + "; ".join(flying)
@@ -537,7 +589,46 @@ def open_plans(plans: list[dict], wl) -> list[dict]:
     return sorted(out, key=lambda r: (r["touched"], r["plan"]), reverse=True)
 
 
+def fate_text(status: str) -> str:
+    """PURE. The part of a Status cell a fate marker is read from: code spans removed FIRST (matching backtick
+    runs, CommonMark-style), THEN cut at the first `Previously:` — everything after it is history (r2 X1, X2)."""
+    return CODE_SPAN_RE.sub("", status).split(HISTORY_CUT, 1)[0]
+
+
+def _reopened_after(t: str, m) -> bool:
+    """PURE. True when a bold span AFTER the marker `m` (its own closing `**` skipped) leads with REOPENED."""
+    start = m.end() + (2 if t.startswith("**", m.end()) else 0)
+    return any(REOPEN_RE.match(b.group(1)) for b in BOLD_RE.finditer(t, start))
+
+
 # ── reading the world (the only impure part) ──────────────────────────────────────────────────
+def row_fates(text: str) -> tuple[dict, list[str]]:
+    """PURE. ({row: (state, detail) or None}, problems) for EVERY row of the Items table (backlog #484), read
+    by gen-backlog-page's ONE row parser (its `CELL_SPLIT` is check-docs'). None is a live row; a key that is
+    absent is a row that does not exist. Only a fate MARKER counts (`FATE_RE`); a SUPERSEDED marker beats a
+    WITHDRAWN one, and its pointer is printed only when the marker's own bold span states it — nothing the row
+    does not say. Any line the parser refused is a PROBLEM — that row may be the superseded one."""
+    gb = _sibling("gen-backlog-page")
+    unread: list[str] = []
+    fates: dict = {}
+    for r in gb.parse(text.split("\n"), unread):
+        if r["section"] != ITEMS_SECTION:
+            continue
+        t = fate_text(r["status"])
+        marks = [m for m in FATE_RE.finditer(t) if not _reopened_after(t, m)]
+        sup = next((m for m in marks if m.group(1) == "SUPERSEDED"), None)
+        if sup:
+            ptr = POINTER_RE.search(sup.group(2))
+            to = ", ".join(f"backlog #{n}" for n in re.findall(r"#(\d+)", ptr.group(1))) if ptr else ""
+            fates[r["num"]] = ("superseded", "superseded" + (f" → {to}" if to else ""))
+        elif marks:
+            fates[r["num"]] = ("withdrawn", "withdrawn")
+        else:
+            fates[r["num"]] = None
+    problems = [f"{len(unread)} line(s) of {BACKLOG_REL} the row parser could not read"] if unread else []
+    return fates, problems
+
+
 def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
     """Read git, gh, the ledger and the plans. NEVER RAISES: a failure is recorded in `errors` by source.
 
@@ -615,6 +706,19 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
             errors[key] = "; ".join(problems) + " — NOT READ"
     needs += needs_from_ledger(src["ledger"])
     src["needs"] = consolidate(needs)
+    # backlog #484: which rows are SUPERSEDED or WITHDRAWN. Unread (or partly unread) leaves `fates` None,
+    # and every thread naming a backlog row then says CANNOT RUN.
+    src["fates"], src["fates_error"] = None, None
+    try:
+        fates, fproblems = row_fates((root / BACKLOG_REL).read_text(encoding="utf-8"))
+        if fproblems:
+            src["fates_error"] = "; ".join(fproblems)
+        else:
+            src["fates"] = fates
+    except Exception as exc:                      # noqa: BLE001 - CANNOT RUN, named, never ✅
+        src["fates_error"] = f"{BACKLOG_REL} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
+    # No second `errors["backlog"]` here: the NEEDS YOU read above reads the same file through the same
+    # parser and already names it NOT READ — a copy would mask that clause (X1's mutation measured it).
     # backlog #389: the plans of EVERY checkout, through the one plan reader. A main checkout with no
     # `.claude/plans/` holds no plan — a fact, said as a note; any other failure is NOT READ.
     src["plans"], src["plan_notes"] = [], []
@@ -875,7 +979,8 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
              '<p class="lede">Each thread hangs under the owner request it serves. The relation '
              '(fix, blocker, bookkeeping, side) is declared by hand; the state is read from git and gh '
              'when the snapshot is taken. ✅ merged · ⏳ open or in flight · ⬜ next · ❌ waits '
-             '(declared) · ✖ closed · ⚠ could not be read.</p>']
+             '(declared) · ✖ closed, superseded (→ where the goal went) or withdrawn · ⚠ could not be '
+             'read.</p>']
     if live is not None and live["cannot"]:
         parts.append('<p class="warn">⚠ The live read at ' + html.escape(live["at"]) + ' could NOT '
                      'run, so it was not logged: ' + html.escape("; ".join(live["cannot"])) +
@@ -1110,7 +1215,8 @@ def _self_test_body() -> int:
                          99: {"number": 99, "title": "old thing", "isDraft": False}},
                 "all": {20: "MERGED", 21: "OPEN", 22: "CLOSED", 23: "MERGED"},
                 "all_merge_sha": {23: "bbbb2222"}, "ledger": [], "ledger_problems": [],
-                "head": "aaaa111", "repo": "o/r", "errors": {}}
+                "head": "aaaa111", "repo": "o/r", "errors": {}, "fates_error": None,
+                "fates": {n: None for n in range(1, 100)}}   # rows 1-99 exist, none fated
         base.update(kw)
         return base
 
@@ -1161,6 +1267,154 @@ def _self_test_body() -> int:
                                                merged_by_pr=None))["state"], "cannot")
     case("several PRs: merged only when ALL are, else the worst state",
          one("- fix · PR #20, PR #21 · f\n", src())["state"], "open")
+
+    # ── backlog #484: a fate MARKER in a backlog row's Status cell beats the merge ──────────────────────
+    def bl(*rows, testing=""):
+        return ("# B\n\n## Items\n\n| # | Item | Touches | Size | Bundle | Status |\n|---|---|---|---|---|---|\n"
+                + "".join(f"| {n} | {item} | x | S | (t) | {status} |\n" for n, item, status in rows)
+                + (f"\n## Found during testing\n\n| # | Item | Status |\n|---|---|---|\n{testing}" if testing else ""))
+
+    def fated_line(text):
+        fates, problems = row_fates(text)
+        snap = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10, PR #20 · f\n'),
+                      src(fates=fates), "t")
+        return [ln.split("└─ ")[-1] for ln in tree_lines(snap) if "backlog #10" in ln], problems
+
+    def lead(status):
+        """The rendered leaf for `backlog #10, PR #20` (PR #20 merged) whose row 10 has this Status cell."""
+        return fated_line(bl((10, "**T**", status)))[0][0].split(" — ", 1)[1]
+
+    # Row 484's REAL Status cell at this fold — the cell an any-word read printed ✖ withdrawn (r1 H1).
+    ROW_484 = ("✅ **FIXED 2026-11-02, PR #480** — the leaf's state is DERIVED from the row's Status cell (no second "
+               "declaration): `SUPERSEDED by backlog #M` prints ✖ superseded → backlog #M, `WITHDRAWN` prints ✖ "
+               "withdrawn, both beating the merge; an unread backlog is CANNOT RUN. Backlog #405's leaf now prints ✖.")
+    case("⛔ backlog #484: a LEADING SUPERSEDED marker whose PR merged prints ✖ and ITS forward pointer (two M)",
+         [fated_line(bl((10, "**Early stop**", f"✅ **SUPERSEDED by backlog #{m} (2026-11-02)** — moved")))
+          for m in (481, 37)],
+         [([f"✖ backlog #10, PR #20 · f — superseded → backlog #{m} · merged aaaa111"], []) for m in (481, 37)])
+    case("backlog #484: several forward pointers in the marker are all printed, each as a backlog ref",
+         [lead(f"✅ **SUPERSEDED by backlog {p} (2026-11-02)**") for p in ("#328/#329", "#40, #41 and #42")],
+         ["superseded → backlog #328, backlog #329 · merged aaaa111",
+          "superseded → backlog #40, backlog #41, backlog #42 · merged aaaa111"])
+    case("⛔ backlog #484: a leading marker WITHOUT a pointer prints a bare `superseded` — a ref outside it is not read",
+         [lead(s) for s in ("✅ **SUPERSEDED 2026-11-02** — goal moved to backlog #481", "**SUPERSEDED**")],
+         ["superseded · merged aaaa111"] * 2)
+    case("⛔ backlog #484: a leading WITHDRAWN marker prints ✖ withdrawn (glyph, and `(was X)`)",
+         [fated_line(bl((10, "**Dropped**", s), (11, "**Other**", "OPEN")))
+          for s in ("✖ **WITHDRAWN 2026-11-02** — refuted", "✅ (was 🟠) **WITHDRAWN**")],
+         [(["✖ backlog #10, PR #20 · f — withdrawn · merged aaaa111"], [])] * 2)
+    case("⛔ backlog #484 (r1 H1): the word in the cell's PROSE is not a fate — row 484's own cell, and a negation",
+         [lead(s) for s in (ROW_484, "🟠 **OPEN** — a **WITHDRAWN** row prints ✖; this one is NOT WITHDRAWN")],
+         ["merged aaaa111"] * 2)
+    case("⛔ backlog #484 (r1 M1): the audit's APPENDED dated marker is read (rows 124 and 189's shapes)",
+         [lead(s) for s in ("pending — found 2026-09-15 by PR #295 r5 ✅ **SUPERSEDED 2026-10-26 (audit)** — gone",
+                            "🟡 **OPEN — filed 2026-09-26.** Remains: x. ✅ **SUPERSEDED 2026-10-26 (audit)** — y")],
+         ["superseded · merged aaaa111"] * 2)
+    case("backlog #484: a marker after `Previously: `, or inside a code span, is history or quotation — not read",
+         [lead(s) for s in ("🟠 **OPEN** — reopened. Previously: ✅ **SUPERSEDED by backlog #12**",
+                            "✅ **FIXED** — a cell like `✅ **SUPERSEDED by backlog #12**` prints ✖")],
+         ["merged aaaa111"] * 2)
+    case("⛔ backlog #484 (r2 X1): the cell is CUT at its first `Previously:` — prose, spaces, several markers",
+         [lead(s) for s in ("🟠 **OPEN** — reopened. Previously: pending — ✅ **SUPERSEDED by backlog #12**",
+                            "🟠 **OPEN** — reopened. Previously:   ✅ **SUPERSEDED by backlog #12**",
+                            "🟠 **OPEN**. Previously: ✖ **WITHDRAWN 2026-10-01** — then ✅ **SUPERSEDED by backlog "
+                            "#12** — x",
+                            "🟠 **OPEN**. Previously: ✅ **SUPERSEDED by backlog #12**. Previously: pending")],
+         ["merged aaaa111"] * 4)
+    case("backlog #484 (r2 X1) adjacent: a marker BEFORE `Previously:` is still read",
+         lead("pending — ✅ **SUPERSEDED by backlog #12** — Previously: 🟠 **OPEN**"),
+         "superseded → backlog #12 · merged aaaa111")
+    case("⛔ backlog #484 (r2 X2): a code span of N backticks closes only on N — double, triple, an inner backtick",
+         [lead(s) for s in ("✅ **FIXED** — use ``✅ **SUPERSEDED by backlog #12**`` as an example",
+                            "✅ **FIXED** — use `` a`b ✅ **SUPERSEDED by backlog #12** `` as an example",
+                            "✅ **FIXED** — ```✖ **WITHDRAWN**``` x")],
+         ["merged aaaa111"] * 3)
+    case("backlog #484 (r2 X2) adjacent: an UNCLOSED run is literal, and two spans do not swallow what is between",
+         [lead(s) for s in ("✅ **FIXED** `` unclosed ✅ **SUPERSEDED by backlog #12** — and `x`",
+                            "`a` ✅ **SUPERSEDED by backlog #12** `b`")],
+         ["superseded → backlog #12 · merged aaaa111"] * 2)
+    case("backlog #484 (r2): code spans go FIRST — a QUOTED `Previously:` does not cut the cell",
+         lead("🟠 **OPEN** — the `Previously:` rule; ✅ **SUPERSEDED by backlog #12**"),
+         "superseded → backlog #12 · merged aaaa111")
+    case("⛔ backlog #484 (r2 note): a LATER bold span leading with REOPENED cancels the fate (row 327's shape)",
+         [lead(s) for s in ("deferred — ✅ **SUPERSEDED by backlog #328/#329** (x). ⟳ **2026-10-25 — REOPENED BY "
+                            "THE OWNER, and the question is now KEEP**",
+                            "✖ **WITHDRAWN 2026-11-01** — x. **REOPENED 2026-11-02** — y")],
+         ["merged aaaa111"] * 2)
+    case("backlog #484 (r2 note) adjacent: a reopen BEFORE the marker, unbolded, or not LEADING its span cancels nothing",
+         [lead(s) for s in ("⟳ **REOPENED 2026-10-25** — x ✅ **SUPERSEDED by backlog #12**",
+                            "✅ **SUPERSEDED by backlog #12** REOPENED in prose, then **FIXED**",
+                            "✅ **SUPERSEDED by backlog #12** — **owner: NOT REOPENED**",
+                            "✅ **SUPERSEDED by backlog #11** **REOPENED** ✅ **SUPERSEDED by backlog #12**")],
+         ["superseded → backlog #12 · merged aaaa111"] * 4)
+    case("backlog #484: a marker led by an EMPHASIS glyph is not a fate (rows 48 and 213's other clauses)",
+         [lead(s) for s in ("✅ **CLOSED 2026-08-21** ⟳⛔ **SUPERSEDED BY EVENTS 2026-08-24**",
+                            "🔴 **OPEN** ⛔⟳ **SUPERSEDED AS THE REMEDY 2026-10-01**")],
+         ["merged aaaa111"] * 2)
+    case("backlog #484: a LOWERCASE `superseded by` is not a marker (row 327's shape), nor `WITHDRAWN` unbolded",
+         [lead(s) for s in ("deferred 2026-10-20 by the owner — superseded by backlog #328/#329",
+                            "✖ WITHDRAWN 2026-11-02 — refuted")],
+         ["merged aaaa111"] * 2)
+    case("backlog #484: a SUPERSEDED marker beats a WITHDRAWN one in the same cell, in either order",
+         [lead(s) for s in ("✖ **WITHDRAWN 2026-11-01** — x ✅ **SUPERSEDED by backlog #12** — y",
+                            "✅ **SUPERSEDED by backlog #12** — y ✖ **WITHDRAWN 2026-11-01** — x")],
+         ["superseded → backlog #12 · merged aaaa111"] * 2)
+    case("backlog #484 adjacent negative: a ✅ Status with no marker still prints ✅ merged",
+         fated_line(bl((10, "**Fixed**", "✅ **FIXED 2026-11-02** — merged"))),
+         (["✅ backlog #10, PR #20 · f — merged aaaa111"], []))
+    case("⛔ backlog #484: SUPERSEDED / WITHDRAWN in the TITLE only is not the Status cell — still ✅",
+         fated_line(bl((10, "✅ **SUPERSEDED by backlog #77 and WITHDRAWN, in the title only**", "✅ FIXED"))),
+         (["✅ backlog #10, PR #20 · f — merged aaaa111"], []))
+    case("⛔ backlog #484 (r1 L1): only the Items table's rows have fates — the second table's same number does not",
+         [row_fates(bl((10, "**T**", "OPEN"), testing=f"| {n} | **t** | ✖ **WITHDRAWN** |\n"))[0] for n in (10, 12)],
+         [{10: None}, {10: None}])
+
+    # Several refs: each contributes its own state (the precedence comment in `derive_thread`).
+    SUP, WD = ("superseded", "superseded → backlog #12"), ("withdrawn", "withdrawn")
+
+    def multi(t, **f):
+        d = one(t, src(fates={n: None for n in range(1, 100)} | {int(k[1:]): v for k, v in f.items()}))
+        return d["state"], d["detail"]
+
+    case("⛔ backlog #484 (r1 M3.1): two fated rows — superseded beats withdrawn in either order",
+         [multi("- fix · backlog #10, backlog #11, PR #20 · f\n", r10=a, r11=b) for a, b in ((WD, SUP), (SUP, WD))],
+         [("superseded", "withdrawn · superseded → backlog #12 · merged aaaa111"),
+          ("superseded", "superseded → backlog #12 · withdrawn · merged aaaa111")])
+    case("backlog #484 (r1 M3.2): two rows with the same fate name it once",
+         [multi(f"- fix · backlog #10, backlog #11, PR #{p} · f\n", r10=WD, r11=WD) for p in (20, 22)],
+         [("withdrawn", "withdrawn · merged aaaa111"), ("withdrawn", "withdrawn · PR #22 closed without merging")])
+    case("⛔ backlog #484 (r1 M2, Codex 4): a fated row beside a LIVE row keeps the merge ✅, either order",
+         [multi("- fix · backlog #10, backlog #11, PR #20 · f\n", **{k: SUP}) for k in ("r10", "r11")],
+         [("merged", "superseded → backlog #12 · merged aaaa111")] * 2)
+    case("⛔ backlog #484 (r1 M2): with no PR, a live row's own state stands beside a fated one (⬜ next, ⏳ open)",
+         [multi(f"- fix · backlog #10, backlog #{n} · f\n", r10=SUP) for n in (12, 11)],
+         [("next", "superseded → backlog #12 · no PR names it yet"),
+          ("open", "superseded → backlog #12 · PR #30 open · NO CHECKS")])
+    case("...and a leaf whose rows are ALL fated, with no PR, is ✖ — not ⬜ next, and not the fated row's merge",
+         [multi(f"- fix · backlog #{n} · f\n", **{f"r{n}": f}) for n, f in ((10, SUP), (11, WD))],
+         [("superseded", "superseded → backlog #12 · no PR names it yet"), ("withdrawn", "withdrawn · no PR names it yet")])
+    case("⛔ backlog #484 (r1 M3.4): an OPEN PR beats a fate — ⏳ stays, the fate is named",
+         [multi("- fix · backlog #10, PR #21 · f\n", r10=f)[0] for f in (SUP, WD)], ["open", "open"])
+    case("⛔ backlog #484 (r2 X3): a PR gh did not list beats a fate — ❓ notfound stays, the fate is named",
+         [multi("- fix · backlog #10, PR #999 · f\n", r10=f) for f in (SUP, WD)],
+         [("notfound", f"{f[1]} · PR #999 is not among the {ALL_LIMIT} newest PRs gh listed") for f in (SUP, WD)])
+    case("⛔ backlog #484: an IN-FLIGHT entry beats a fate — ⏳ stays, the fate is named",
+         [one("- fix · backlog #10 · f\n", src(fates={10: f}, ledger=[{"what": "x (backlog #10)"}]))["state"]
+          for f in (SUP, WD)], ["inflight", "inflight"])
+    case("⛔ backlog #484 (Codex 3, r1 L2): a ref to a row the backlog does not have is CANNOT RUN, never ✅",
+         [multi(f"- fix · backlog #{n}, PR #20 · f\n") for n in (500, 777)],
+         [("cannot", f"CANNOT RUN — backlog #{n} is not a row of the Items table in docs/backlog.md")
+          for n in (500, 777)])
+    case("⛔ backlog #484: an unreadable backlog makes a backlog-ref leaf CANNOT RUN, never ✅",
+         (lambda d: (GLYPH[d["state"]], d["detail"]))(one("- fix · backlog #10, PR #20 · f\n", src(
+             fates=None, fates_error="docs/backlog.md NOT READ (FileNotFoundError: gone)"))),
+         ("⚠", "CANNOT RUN — docs/backlog.md NOT READ (FileNotFoundError: gone), so a superseded or "
+               "withdrawn row cannot be ruled out"))
+    case("...while a PR-only leaf needs no backlog row and is still merged",
+         one("- fix · PR #20 · f\n", src(fates=None, fates_error="x"))["state"], "merged")
+    case("backlog #484: a line the row parser refuses is a fates PROBLEM (that row may be the superseded one)",
+         row_fates(BACKLOG_BAD), ({n: None for n in range(5, 12)},
+                                  ["1 line(s) of docs/backlog.md the row parser could not read"]))
 
     case("derive_thread keeps the declared fields beside the derived ones",
          {k: v for k, v in derive_thread(goals[1]["threads"][0], src(merged_by_pr={})).items()
@@ -1581,6 +1835,18 @@ def _self_test_body() -> int:
         (r / BACKLOG_REL).write_text(BACKLOG_BAD)
         case("⛔ X1: a backlog line the parser refuses makes the backlog NOT READ",
              collect(r, run_ok)["errors"].get("backlog", "").endswith("NOT READ"), True)
+        _s_bad = collect(r, run_ok)
+        case("⛔ backlog #484: a partly unreadable backlog leaves no fates, so a backlog leaf is CANNOT RUN",
+             (_s_bad["fates"], _s_bad["fates_error"], one("- fix · backlog #10, PR #20 · f\n", _s_bad)["state"]),
+             (None, "1 line(s) of docs/backlog.md the row parser could not read", "cannot"))
+        (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE.replace("| OPEN |", "| ✖ **WITHDRAWN 2026-11-02** |"))
+        case("backlog #484: collect reads each row's fate from the backlog it is given",
+             collect(r, run_ok)["fates"], {n: (("withdrawn", "withdrawn") if n == 8 else None) for n in range(5, 12)})
+        (r / BACKLOG_REL).unlink()
+        _s_gone = collect(r, run_ok)
+        case("⛔ backlog #484: a missing backlog is CANNOT RUN for its rows, and named in the errors",
+             (_s_gone["fates"], _s_gone["fates_error"].startswith("docs/backlog.md NOT READ (FileNotFoundError"),
+              _s_gone["errors"].get("backlog", "").startswith("docs/backlog.md NOT READ")), (None, True, True))
         (r / DASHBOARD_REL).write_text(DASH_BAD)
         case("⛔ X1: an unreadable dashboard entry makes the dashboard NOT READ",
              collect(r, run_ok)["errors"].get("dashboard", "").endswith("NOT READ"), True)
