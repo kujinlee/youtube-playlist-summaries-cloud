@@ -1,15 +1,16 @@
 [
   {
-    "name": "the REFUSE threshold moves off 90",
+    "name": "the reserve per day moves off 5",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "REFUSE_AT = 90.0",
-        "REFUSE_AT = 90.1"
+        "RESERVE_PER_DAY = 5.0",
+        "RESERVE_PER_DAY = 4.9"
       ]
     ],
     "expect": [
-      "weekly 90 is REFUSE-SPAWN"
+      "weekly 90 is REFUSE-SPAWN",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
     ]
   },
   {
@@ -26,12 +27,12 @@
     ]
   },
   {
-    "name": "REFUSE becomes strictly above 90",
+    "name": "REFUSE becomes strictly above the stop",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if weekly >= REFUSE_AT:",
-        "    if weekly > REFUSE_AT:"
+        "    if weekly >= stop:",
+        "    if weekly > stop:"
       ]
     ],
     "expect": [
@@ -269,7 +270,7 @@
       ]
     ],
     "expect": [
-      "run-hook: the MAIN checkout's override lets a 95% spawn through from a worktree"
+      "run-hook: the MAIN checkout's override lets a 98.5% spawn through from a worktree"
     ]
   },
   {
@@ -282,7 +283,7 @@
       ]
     ],
     "expect": [
-      "main: spawn hook at 95% denies, rc 0"
+      "main: spawn hook at 98.5% denies, rc 0"
     ]
   },
   {
@@ -303,8 +304,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "subagent's report is allowed. Resets {local_time(resets)}.{five_note}\")",
-        "subagent's report is allowed.{five_note}\")"
+        "subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}\")",
+        "subagent's report is allowed.{stop_note}{line_note}{five_note}\")"
       ]
     ],
     "expect": [
@@ -342,8 +343,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "wake an agent, are REFUSED (at {pct(REFUSE_AT)});",
-        "wake an agent, are REFUSED (at {pct(REFUSE_AT)}; override: {OVERRIDE_ENV}=1);"
+        "wake an agent, are REFUSED (at {pct_up(stop)});",
+        "wake an agent, are REFUSED (at {pct_up(stop)}; override: {OVERRIDE_ENV}=1);"
       ]
     ],
     "expect": [
@@ -368,12 +369,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return _evaluate(text, now, missing, path)\n    except Malformed as e:",
-        "        return _evaluate(text, now, missing, path)\n    except ZeroDivisionError as e:"
+        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except ZeroDivisionError as e:"
       ]
     ],
     "expect": [
-      "a seven_day resets_at of -1e300 at 95% is CANNOT RUN"
+      "a seven_day resets_at of -1e300 at 98.5% is CANNOT RUN"
     ]
   },
   {
@@ -386,7 +387,7 @@
       ]
     ],
     "expect": [
-      "a seven_day resets_at of a millisecond epoch at 95% is CANNOT RUN"
+      "a seven_day resets_at of a millisecond epoch at 98.5% is CANNOT RUN"
     ]
   },
   {
@@ -438,7 +439,7 @@
       ]
     ],
     "expect": [
-      "weekly 95 with a five-hour resets_at 1e300 still REFUSES"
+      "weekly 98.5 with a five-hour resets_at 1e300 still REFUSES"
     ]
   },
   {
@@ -715,8 +716,8 @@
       ]
     ],
     "expect": [
-      "main: wake hook at 95% allows a subagent's report",
-      "run-hook: the wake hook allows a subagent's report at 95%"
+      "main: wake hook at 98.5% allows a subagent's report",
+      "run-hook: the wake hook allows a subagent's report at 98.5%"
     ]
   },
   {
@@ -729,7 +730,7 @@
       ]
     ],
     "expect": [
-      "main: wake hook at 95% DENIES a payload over the bound, even a subagent's"
+      "main: wake hook at 98.5% DENIES a payload over the bound, even a subagent's"
     ]
   },
   {
@@ -742,7 +743,7 @@
       ]
     ],
     "expect": [
-      "main: wake hook at 95% DENIES a message to an agent"
+      "main: wake hook at 98.5% DENIES a message to an agent"
     ]
   },
   {
@@ -919,8 +920,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "evaluate(text, now, reason, cache_path)",
-        "evaluate(text, now, reason)"
+        "evaluate(text, now, reason, cache_path, meter_text, meter_why)",
+        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why)"
       ]
     ],
     "expect": [
@@ -951,7 +952,7 @@
     ],
     "expect": [
       "sent_by_subagent: a --agent main session (agent_type, no agent_id) is not",
-      "main: wake hook at 95% DENIES a --agent main session's message"
+      "main: wake hook at 98.5% DENIES a --agent main session's message"
     ]
   },
   {
@@ -1003,9 +1004,9 @@
       ]
     ],
     "expect": [
-      "main: wake hook at 95% DENIES the MAIN SESSION's message to 'main' (r2 X1)",
-      "main: wake hook at 95% DENIES the MAIN SESSION's message to 'main [abcdef]' (r2 X1)",
-      "run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 95%"
+      "main: wake hook at 98.5% DENIES the MAIN SESSION's message to 'main' (r2 X1)",
+      "main: wake hook at 98.5% DENIES the MAIN SESSION's message to 'main [abcdef]' (r2 X1)",
+      "run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 98.5%"
     ]
   },
   {
@@ -1019,9 +1020,9 @@
     ],
     "expect": [
       "parse_json: 10**400 is inf, not an int",
-      "the r2 input: weekly 95 with a five-hour used_percentage of 10**400 still REFUSES",
+      "the r2 input: weekly 98.5 with a five-hour used_percentage of 10**400 still REFUSES",
       "main: a cache with five-hour used 10**400 exits 0 from all three hooks (r2 X2: they exited 1)",
-      "a VALID weekly 95 REFUSES across every hostile five-hour used x reset"
+      "a VALID weekly 98.5 REFUSES across every hostile five-hour used x reset"
     ]
   },
   {
@@ -1034,7 +1035,7 @@
       ]
     ],
     "expect": [
-      "the r2 input: weekly 95 with a five-hour used_percentage of 10**400 still REFUSES",
+      "the r2 input: weekly 98.5 with a five-hour used_percentage of 10**400 still REFUSES",
       "a weekly used_percentage of 10**400 is CANNOT RUN, never a crash"
     ]
   },
@@ -1143,9 +1144,9 @@
       ]
     ],
     "expect": [
-      "main: wake hook at 95% ALLOWS the main session's shutdown_request (r3 C4)",
-      "main: wake hook at 95% ALLOWS the main session's plan approval (r3 C4)",
-      "run-hook: the wake hook allows the main session's shutdown_request at 95%"
+      "main: wake hook at 98.5% ALLOWS the main session's shutdown_request (r3 C4)",
+      "main: wake hook at 98.5% ALLOWS the main session's plan approval (r3 C4)",
+      "run-hook: the wake hook allows the main session's shutdown_request at 98.5%"
     ]
   },
   {
@@ -1186,7 +1187,7 @@
     "expect": [
       "is_control_message: a shutdown_request with an extra key is not",
       "is_control_message: a plan approval with an extra key is not",
-      "main: wake hook at 95% still DENIES the main session's shutdown_request with an extra key (r3 C4)"
+      "main: wake hook at 98.5% still DENIES the main session's shutdown_request with an extra key (r3 C4)"
     ]
   },
   {
@@ -1251,7 +1252,7 @@
       ]
     ],
     "expect": [
-      "run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 95% (r4 X2)",
+      "run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 98.5% (r4 X2)",
       "read_payload: exactly the bound is read, one byte over is None"
     ]
   },
@@ -1278,7 +1279,7 @@
       ]
     ],
     "expect": [
-      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)",
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 98.5% (r4 X1)",
       "run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says CANNOT RUN on an absent cache (r4 X1)"
     ]
   },
@@ -1292,7 +1293,7 @@
       ]
     ],
     "expect": [
-      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)",
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 98.5% (r4 X1)",
       "read_payload: a writer that stays open is None, within its deadline"
     ]
   },
@@ -1306,7 +1307,7 @@
       ]
     ],
     "expect": [
-      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 95% (r4 X1)"
+      "run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at 98.5% (r4 X1)"
     ]
   },
   {
@@ -1333,8 +1334,8 @@
     ],
     "expect": [
       "is_control_message: a list or an object as `type` is False, not a crash (r4 X3)",
-      "main: wake hook at 95% DENIES a control message whose `type` is a list or an object (r4 X3)",
-      "run-hook: a control message whose `type` is a list or an object is DENIED at 95%, rc 0 (r4 X3)"
+      "main: wake hook at 98.5% DENIES a control message whose `type` is a list or an object (r4 X3)",
+      "run-hook: a control message whose `type` is a list or an object is DENIED at 98.5%, rc 0 (r4 X3)"
     ]
   },
   {
@@ -1348,6 +1349,309 @@
     ],
     "expect": [
       "main: wake hook with a MISSING cache (and no --now) allows, silently, because it is absent"
+    ]
+  },
+  {
+    "name": "#500: the stop is not capped at 97",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return min(STOP_CAP, 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
+        "return 100 - RESERVE_PER_DAY * days_after_today(now, resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
+    ]
+  },
+  {
+    "name": "#500: the reset's time of day is dropped, so days are whole days",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)",
+        " + 0)"
+      ]
+    ],
+    "expect": [
+      "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
+      "⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end"
+    ]
+  },
+  {
+    "name": "#500: the line itself is not capped at 97",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return min(LINE_CAP, start[1] + LINE_FRONT_LOAD",
+        "return (start[1] + LINE_FRONT_LOAD"
+      ]
+    ],
+    "expect": [
+      "#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)"
+    ]
+  },
+  {
+    "name": "#500 r3 C2/C3: the days are counted in SECONDS between midnights, so a DST day is 23/24 or 25/24",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    whole = (datetime.date(b.tm_year, b.tm_mon, b.tm_mday) - datetime.date(a.tm_year, a.tm_mon, a.tm_mday)).days - 1\n",
+        "    whole = (local_midnight(resets) - local_midnight(now)) / 86400 - 1\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end"
+    ]
+  },
+  {
+    "name": "#500: the verdict ignores the computed stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    stop, days = refuse_at(now, resets), days_after_today(now, resets)\n",
+        "    stop, days = 90.0, days_after_today(now, resets)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+      "⭐ #500: early in the week the reserve bites below WARN (6 days after today → 70; 69.9 OK, 70 refuses)"
+    ]
+  },
+  {
+    "name": "#500: the front-load factor is lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "LINE_FRONT_LOAD = 1.5",
+        "LINE_FRONT_LOAD = 1.0"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the pace line is start% + 1.5 × (100 − start%) ÷ days-to-reset"
+    ]
+  },
+  {
+    "name": "#500: start% is the LATEST reading, not the value at midnight",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    start = before or after\n",
+        "    start = after or before\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: start% is the value AT midnight, not the latest reading (83 at midnight, 88 now)"
+    ]
+  },
+  {
+    "name": "#500: the window filter is dropped, so last week's rows set the line",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        " or not 0 <= p <= 100 or r != resets or at > now:",
+        " or not 0 <= p <= 100 or at > now:"
+      ]
+    ],
+    "expect": [
+      "#500: last week's rows and future rows never set the line, and garbage lines are skipped"
+    ]
+  },
+  {
+    "name": "#500: future rows are read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or not 0 <= p <= 100 or r != resets or at > now:",
+        "or not 0 <= p <= 100 or r != resets:"
+      ]
+    ],
+    "expect": [
+      "#500: last week's rows and future rows never set the line, and garbage lines are skipped"
+    ]
+  },
+  {
+    "name": "#500: an unreadable line is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "else f\" Today's pace line cannot be read ({why}): treat it as NOT RUN.\" if why else \"\")",
+        "else \"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: an unreadable line is SAID, and the stop is unchanged"
+    ]
+  },
+  {
+    "name": "#500: main() never reads the meter log",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)",
+        "    verdict, message = evaluate(text, now, reason, cache_path)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: main() reads --meter: its message names the 92.5 line from that file"
+    ]
+  },
+  {
+    "name": "#500 r1 X2: a negative meter reading is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or not 0 <= p <= 100 or r",
+        "or not p <= 100 or r"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
+    ]
+  },
+  {
+    "name": "#500 r1 C3: a meter reading over 100 is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "<= 100 or r != resets",
+        "<= 1000 or r != resets"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
+    ]
+  },
+  {
+    "name": "#500 r1 C3: a non-number meter reading is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not (is_number(at) and is_number(p) and is_number(r)) or",
+        "if not (is_number(at) and is_number(r)) or"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
+    ]
+  },
+  {
+    "name": "#500 r1 C1: the default meter path is wrong",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "METER_LOG = os.path.join(\"~\", \".claude\", \"meter\", \"log.jsonl\")",
+        "METER_LOG = os.path.join(\"~\", \".claude\", \"meter\", \"log.json\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use"
+    ]
+  },
+  {
+    "name": "#500 r1 C1: the meter path's ~ is not expanded",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES)",
+        "read_regular(args.meter, METER_MAX_BYTES)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use"
+    ]
+  },
+  {
+    "name": "#500 r1 C2: the suite reads the real HOME",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "tempfile.mkdtemp(prefix=\"usage-pace-home-\")\n    os.environ[\"HOME\"] = fake_home\n",
+        "tempfile.mkdtemp(prefix=\"usage-pace-home-\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C2: the suite's HOME is redirected, so the DEFAULT meter path is absent for every case"
+    ]
+  },
+  {
+    "name": "#500 r1 C5: the read's reason is dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"the meter log is unreadable: {why}\" if why else ",
+        "\"\" if False else "
+      ]
+    ],
+    "expect": [
+      "#500 r1 C5: a meter log that cannot be read says WHY, from the read"
+    ]
+  },
+  {
+    "name": "#500: the pace line moves the stop again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n",
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n    stop = line if line is not None else stop\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter"
+    ]
+  },
+  {
+    "name": "#500: the WARN message omits the stop's reserve",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}\")",
+        "f\"Resets {local_time(resets)}.{line_note}{five_note}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the message states the stop's reserve, and names the line as a guide"
+    ]
+  },
+  {
+    "name": "#500 r3 C7: days after today can go negative",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return max(0.0, whole + ",
+        "return (0.0 + whole + "
+      ]
+    ],
+    "expect": [
+      "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)"
+    ]
+  },
+  {
+    "name": "#500 r3 C1: the blank-line skip is removed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if '\"seven_day\"' not in line:  #",
+        "        if False:  #"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)"
+    ]
+  },
+  {
+    "name": "#500 r3 C5: the WARN message shows the stop rounded DOWN",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{pct_up(stop)} new spawns",
+        "f\"{pct(stop)} new spawns"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C5: the stop is shown rounded UP — 94.55% under a 94.58 stop warns 'at 94.6%'"
     ]
   }
 ]

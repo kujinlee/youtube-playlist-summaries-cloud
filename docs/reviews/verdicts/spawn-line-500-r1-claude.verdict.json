@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 9ef2f4417934022610a67ea95d97211bdaf708a2",
+    "docs/reviews/claude/spawn-line-500-r1-claude.md": "100644 6b992dfdedfbbc4b8c0c8fb5b8f0c7f2457661a8",
+    "docs/reviews/codex/spawn-line-500-r1-codex.md": "100644 749dc64e4e12c4ecf82d40742871c90589021e44",
+    "docs/reviews/verdicts/spawn-line-500-r1-codex.verdict.json": "100644 dd88fd04693f4d9f00923450b6d0365c2ab65197"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "8b602d55b5059f972fb057eb141ecb12b09b4197",
+  "intrusions": [],
+  "model": null,
+  "prompt": "Claude half r1, adversarial refute mandate on backlog #500 stop=max(90,min(97,line))",
+  "reason": "claude half filed: 10228 chars, names 8b602d55b505",
+  "refused": false,
+  "review": "spawn-line-500-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-500",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

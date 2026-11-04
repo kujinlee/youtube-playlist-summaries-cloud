@@ -18747,3 +18747,17 @@ guard that walks the folder it lives in, and every module that imports it), and 
 `check-plan-code.py` or the workflow, an unreadable diff, a module most guards import). Every master push and a new
 daily schedule still run the full sweep, and a red one opens or comments on a GitHub issue labelled `sweep-red`, which every session start lists; a
 green one only comments, and never closes it, so closing is a deliberate act after reading it.
+
+## 2026-11-04
+New agents are now refused once usage leaves less than 5% of the week for each day left after
+today, and never above 97%; before, the refusal was always 90%. Today (Wednesday, reset Friday
+02:00) the stop is 94.6%; just after a reset it is about 70%; on the last day it is 97%. The reserve
+rises by 5 at each midnight, so a reserve you did not need is never lost. You set this rule at
+09:29. Your pace line still appears in the message as a guide, but it no longer moves the stop.
+The last 3 points are kept so that work already running can finish.
+<!--tech-->
+Backlog #500, `scripts/check-usage-pace.py`: `refuse_at(now, resets)` = min(97, 100 − 5 ×
+`days_after_today()`), counted in calendar dates from the coming local midnight plus the
+reset's time of day, so a DST day is one day; the pace line from
+`~/.claude/meter/log.jsonl` is text only; the self-test redirects `HOME` so no case reads the live
+meter. 304 self-test cases, 125 mutations.

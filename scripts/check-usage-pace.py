@@ -17,7 +17,7 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
-    REFUSE-SPAWN  weekly 90% or more — a NEW subagent spawn, and a message from the MAIN SESSION that
+    REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
     CANNOT RUN    the cache is missing, not a regular file, not read within 1 s, over 64 KiB, unparseable
@@ -83,7 +83,7 @@ this PR was built in, all 107 senders of a teammate message are `in_process_team
 `meta.json`, and every entry of their transcripts carries `agentId`; no transcript on this machine holds a
 cross-session message. INFERRED, not measured: an in-process teammate's hook input carries `agent_id`, like the
 plain subagents measured above (the docs say so too), so its report is allowed. A teammate running as a SEPARATE
-Claude process is that process's own main session, so its hook input probably has NO `agent_id`: at 90% or more
+Claude process is that process's own main session, so its hook input probably has NO `agent_id`: at the stop or over
 its report to the lead is DENIED, and needs the owner's override. If an in-process teammate's input lacked
 `agent_id` too, every report in such a session would be denied at REFUSE; that fails toward the refusal, and is
 the first thing to measure if reports stall.
@@ -126,7 +126,7 @@ The hook verdict travels as JSON on stdout at exit 0. A crash is any other exit,
 as non-blocking, and the hooks map every non-zero exit to 1 so that even an argparse error (exit 2) can
 never block a prompt.
 
-FAILS IF (backlog #399's falsifier): with the cache at 90% or more, a new subagent spawns, or the MAIN SESSION
+FAILS IF (backlog #399's falsifier, at backlog #500's stop): with the cache at the stop or over, a new subagent spawns, or the MAIN SESSION
 wakes an agent with anything but a control message above, without an override; or a missing cache reads as fine.
 (A subagent waking a sibling is backlog #404's falsifier, not this one.)
 
@@ -141,10 +141,11 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 279 cases
+    python3 scripts/check-usage-pace.py --self-test  # 304 cases
 """
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import os
@@ -155,7 +156,19 @@ import time
 import types
 
 WARN_AT = 80.0
-REFUSE_AT = 90.0
+# backlog #500 (the owner, 2026-11-04 09:29): the stop is a RESERVE, not a pace — "emergency reserve is set to 5% and
+# remaining days are 3 days(excluding today), max usage for today can be 100 - 3×5 = 85". So the stop is
+# 100 − RESERVE_PER_DAY × the days left AFTER today (fractional: a reset at 02:00 leaves 2 h, not a whole day), never
+# above STOP_CAP. Unused reserve is never lost: each midnight the stop rises by RESERVE_PER_DAY, and on the last day
+# all of it is spendable. The last 3 points (STOP_CAP) let work IN FLIGHT finish and cover a cache up to MAX_AGE_S
+# old. The owner's PACE LINE (11-01 15:38) keeps the day-to-day pace steady; it is a GUIDE, named in the message,
+# and never moves the stop — so the meter log it is read from cannot move the stop either.
+RESERVE_PER_DAY = 5.0
+STOP_CAP = 97.0
+LINE_CAP = 97.0
+LINE_FRONT_LOAD = 1.5
+METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
+METER_MAX_BYTES = 4 * 1024 * 1024
 FIVE_HOUR_WARN_AT = 90.0
 MAX_AGE_S = 15 * 60
 # The statusline and this hook read the same clock, so a cache from the future is a broken writer, not skew.
@@ -211,6 +224,13 @@ def pct(p: float) -> str:
     return f"{whole}%" if frac[:1] in ("", "0") else f"{whole}.{frac[:1]}%"
 
 
+def pct_up(p: float) -> str:
+    """A STOP for a message, rounded UP to 0.1, so the text never names a stop the verdict has not reached
+    (r3 C5: at 94.55% under a 94.58 stop, `pct` showed "94.5%" in a WARN that did not refuse)."""
+    shown = pct(p)
+    return shown if float(shown[:-1]) >= p else f"{(round(float(shown[:-1]) * 10) + 1) / 10:g}%"
+
+
 def count(x: float) -> str:
     """A count for a message, kept short when a hostile epoch makes it astronomical."""
     return f"{x:.0f}" if abs(x) < 1e7 else f"{x:.3g}"
@@ -248,22 +268,78 @@ def window(rate_limits: dict, key: str, now: float, span: float) -> tuple[float,
     return float(p), float(r)
 
 
+def local_midnight(now: float) -> float:
+    lt = time.localtime(now)
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+
+
+def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tuple[float | None, str]:
+    """The RULE (backlog #500): today's pace line from the meter log's text, or (None, why) when it cannot be
+    read. The owner's 11-01 15:38 rule: start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at
+    97; the last day before the reset is 97. start% is the weekly value AT local midnight — the last row at or
+    before it — or, when the window began after midnight, the window's first row. Only rows of THIS window
+    (same `resets_at`) count, so last week's numbers never set this week's line; a reading outside 0..100 is
+    skipped, so start% is at most 100 and the last day's line is the cap (r1 X2/C3/C6). `why` is the read's own
+    reason when it failed (r1 C5). No I/O."""
+    if text is None:
+        return None, f"the meter log is unreadable: {why}" if why else "the meter log is missing or unreadable"
+    midnight = local_midnight(now)
+    before = after = None
+    for line in text.splitlines():
+        if '"seven_day"' not in line:  # every row carries it; a C-speed skip of blank and garbage lines (r3 C1)
+            continue
+        try:
+            row = parse_json(line)
+            w = row["rate_limits"]["seven_day"]
+            at, p, r = row["at"], w["used_percentage"], w["resets_at"]
+        except (ValueError, KeyError, TypeError):
+            continue
+        if not (is_number(at) and is_number(p) and is_number(r)) or not 0 <= p <= 100 or r != resets or at > now:
+            continue
+        if at <= midnight and (before is None or at >= before[0]):
+            before = (at, p)
+        elif at > midnight and (after is None or at < after[0]):
+            after = (at, p)
+    start = before or after
+    if start is None:
+        return None, "the meter log has no reading of this week's window"
+    days = (resets - midnight) / 86400
+    # No last-day branch: at days <= 1 the formula is >= 150 - start/2 >= 100, so the cap already gives 97.
+    return min(LINE_CAP, start[1] + LINE_FRONT_LOAD * (100 - start[1]) / days), ""
+
+
+def days_after_today(now: float, resets: float) -> float:
+    """The days from the coming local midnight to the reset, never negative (0 on the last day): the CALENDAR
+    days between tomorrow and the reset's date, plus the reset's wall-clock time as a fraction of a day (a 02:00
+    reset adds 1/12). Counted in dates, not seconds, so a day with a DST change is one day, not 23/24 or 25/24
+    (r3 C2/C3), and no `isdst` guess can move the stop."""
+    a, b = time.localtime(now), time.localtime(resets)
+    whole = (datetime.date(b.tm_year, b.tm_mon, b.tm_mday) - datetime.date(a.tm_year, a.tm_mon, a.tm_mday)).days - 1
+    return max(0.0, whole + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)
+
+
+def refuse_at(now: float, resets: float) -> float:
+    """The hard stop (backlog #500): 100 − RESERVE_PER_DAY × the days left after today, never above STOP_CAP."""
+    return min(STOP_CAP, 100 - RESERVE_PER_DAY * days_after_today(now, resets))
+
+
 def cannot(reason: str) -> tuple[str, str]:
     return CANNOT_RUN, (f"⚠ usage pace: CANNOT RUN — {reason}. The weekly usage is UNKNOWN: treat this as "
                         f"NOT RUN, never as fine. Spawns are not blocked.")
 
 
 def evaluate(text: str | None, now: float, missing: str = "the cache is missing",
-             path: str = DEFAULT_CACHE) -> tuple[str, str]:
+             path: str = DEFAULT_CACHE, meter: str | None | bool = False, meter_why: str = "") -> tuple[str, str]:
     """The RULE: (verdict, one-line message) from the cache's text (None = no file) at `now`. No I/O, and
     TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3)."""
     try:
-        return _evaluate(text, now, missing, path)
+        return _evaluate(text, now, missing, path, meter, meter_why)
     except Malformed as e:
         return cannot(f"the cache is malformed: {e}")
 
 
-def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[str, str]:
+def _evaluate(text: str | None, now: float, missing: str, path: str,
+              meter: str | None | bool = False, meter_why: str = "") -> tuple[str, str]:
     if text is None:
         return cannot(missing)
     try:
@@ -301,14 +377,21 @@ def _evaluate(text: str | None, now: float, missing: str, path: str) -> tuple[st
     if five is not None and five[1] > now and five[0] >= FIVE_HOUR_WARN_AT:
         five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
                      f"resets {local_time(five[1])}.")
-    if weekly >= REFUSE_AT:
+    stop, days = refuse_at(now, resets), days_after_today(now, resets)
+    stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < STOP_CAP
+                 else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.")
+    # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
+    line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
+    line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
+                 else f" Today's pace line cannot be read ({why}): treat it as NOT RUN." if why else "")
+    if weekly >= stop:
         return REFUSE, (f"⛔ usage pace: weekly usage is {pct(weekly)} — new subagent spawns, and messages that "
-                        f"wake an agent, are REFUSED (at {pct(REFUSE_AT)}); work in flight continues, and a "
-                        f"subagent's report is allowed. Resets {local_time(resets)}.{five_note}")
+                        f"wake an agent, are REFUSED (at {pct_up(stop)}); work in flight continues, and a "
+                        f"subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if weekly >= WARN_AT:
         return WARN, (f"⚠ usage pace: weekly usage is {pct(weekly)} (WARN at {pct(WARN_AT)}; at "
-                      f"{pct(REFUSE_AT)} new spawns and agent wake-ups are refused). "
-                      f"Resets {local_time(resets)}.{five_note}")
+                      f"{pct_up(stop)} new spawns and agent wake-ups are refused). "
+                      f"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if five_note:
         return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{five_note}"
     return OK, ""
@@ -353,11 +436,13 @@ def read_payload(limit: int = PAYLOAD_MAX_BYTES, deadline: float = READ_DEADLINE
     """The hook's stdin, bounded like the cache read (r4 X1): a DAEMON thread reads fd 0 to EOF, and this returns
     within `deadline` whatever the writer does. None means UNUSABLE: not at EOF in time (a producer that keeps
     the pipe open held the hook past 3 s), over `limit` bytes, or unreadable. `main` reads None as "", which
-    fails toward each gate: a 95% wake is still DENIED and an absent cache is still said.
+    fails toward each gate: a wake at the stop is still DENIED and an absent cache is still said.
 
     `os.read`, not `sys.stdin.buffer`: a daemon thread blocked inside the buffered reader holds its lock, and
     the interpreter's shutdown then aborts on it (`could not acquire lock for <stdin>`) with no deny printed.
-    With the cache read, the hook's worst case is two deadlines."""
+    With the cache read and the meter-log read (made only after a cache read succeeds), the hook's worst case
+    is three deadlines for the READS, plus the meter log's parse: MEASURED 1.8 s for a 4 MiB log whose every line
+    carries `"seven_day"` and fails to parse, the worst the r3 C1 skip leaves (blank lines: 0.2 s, was 19.3)."""
     box: list = []
 
     def take() -> None:
@@ -585,21 +670,21 @@ def gate_output(verdict: str, message: str, override: tuple[bool, str]) -> str |
                                               "permissionDecisionReason": message}})
 
 
-USAGE = ("usage: check-usage-pace.py [--self-test] [--cache PATH] [--now EPOCH] [--root DIR] "
+USAGE = ("usage: check-usage-pace.py [--self-test] [--cache PATH] [--meter PATH] [--now EPOCH] [--root DIR] "
          "[--hook prompt|spawn|wake]")
 
 
 def parse_args(argv: list[str]) -> "types.SimpleNamespace":
     """A hand parser, not argparse: on Python 3.14 `import argparse` pulls in `_colorize` and `dataclasses`,
     measured at ~33 ms of a hook that runs on EVERY prompt. Raises ValueError with the reason."""
-    args = {"self_test": False, "cache": DEFAULT_CACHE, "now": None, "hook": None,
+    args = {"self_test": False, "cache": DEFAULT_CACHE, "meter": METER_LOG, "now": None, "hook": None,
             "root": os.path.dirname(os.path.dirname(os.path.abspath(__file__)))}
     it = iter(argv)
     for a in it:
         if a == "--self-test":
             args["self_test"] = True
             continue
-        if a not in ("--cache", "--now", "--root", "--hook"):
+        if a not in ("--cache", "--meter", "--now", "--root", "--hook"):
             raise ValueError(f"unknown argument {a!r}")
         v = next(it, None)
         if v is None:
@@ -631,7 +716,10 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
     absent = text is None and not reason
     if absent:
         reason = f"no cache at {cache_path}; {STATUSLINE}"
-    verdict, message = evaluate(text, now, reason, cache_path)
+    # The meter matters only beside a readable cache, so a stalled cache costs ONE deadline, not two (r1 C4).
+    meter_text, meter_why = ((None, "") if text is None else
+                             read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES))
+    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)
     if args.hook is None:
         print(f"{verdict}: {message}" if message else f"{verdict}: weekly usage is below {pct(WARN_AT)}")
         return RC[verdict]
@@ -688,6 +776,10 @@ def _self_test_body() -> int:
     old_tz = os.environ.get("TZ")
     os.environ["TZ"] = "PST8PDT,M3.2.0,M11.1.0"
     time.tzset()
+    # backlog #500: `main()` defaults --meter to ~/.claude/meter/log.jsonl, so a case that omits it would read
+    # the OWNER's live meter. HOME is an empty directory for the whole suite, so the default is absent.
+    old_home, fake_home = os.environ.get("HOME"), tempfile.mkdtemp(prefix="usage-pace-home-")
+    os.environ["HOME"] = fake_home
 
     NOW = 1_800_000_000.0                 # Fri 01-15 00:00 PST
     WEEK_RESET = NOW + 3 * 86400          # Mon 01-18 00:00 PST
@@ -715,7 +807,127 @@ def _self_test_body() -> int:
     def kind(text: str | None) -> str:
         return ev(text)[0]
 
+    def meter(*rows: tuple, garbage: bool = False) -> str:
+        """A meter log: one (at, weekly%, resets_at) row per line, as the statusline appends them."""
+        lines = [json.dumps({"at": a, "rate_limits": {"seven_day": {"used_percentage": p, "resets_at": r}}})
+                 for a, p, r in rows]
+        return "\n".join((["not json", "{}"] if garbage else []) + lines) + "\n"
+
+    def evm(text: str | None, m: str | None, now: float = NOW) -> tuple[str, str]:
+        try:
+            return evaluate(text, now, meter=m)
+        except Exception as e:  # noqa: BLE001
+            return f"raised {type(e).__name__}", str(e)
+
     try:
+        # ── backlog #500: the stop follows the owner's pace line when it is higher ─────────────────
+        # NOW is local midnight and the reset is 3 days later: start 85 → 85 + 1.5 × 15 ÷ 3 = 92.5.
+        m85 = meter((NOW - 3600, 85, WEEK_RESET))
+        check("⭐ #500: the pace line is start% + 1.5 × (100 − start%) ÷ days-to-reset",
+              pace_line(m85, NOW + 60, WEEK_RESET), (92.5, ""))
+        # NOW is Fri 00:00; the next midnight is Sat 00:00; WEEK_RESET is Mon 00:00 → 2 days after today → 90.
+        check("⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
+              (refuse_at(NOW, NOW + 4 * 86400), refuse_at(NOW, WEEK_RESET), refuse_at(NOW, NOW + 86400 + 7200), refuse_at(NOW, NOW + 3 * 86400 + 7200),
+               refuse_at(NOW, NOW + 7 * 86400)), (85.0, 90.0, 97.0, 100 - 5 * (2 + 7200 / 86400), 70.0))
+        check("⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+              (refuse_at(NOW, NOW + 20 * 3600), evm(cache(96.9, week_reset=NOW + 20 * 3600), m85)[0],
+               evm(cache(97, week_reset=NOW + 20 * 3600), m85)[0]), (97.0, WARN, REFUSE))
+        check("⭐ #500: early in the week the reserve bites below WARN (6 days after today → 70; 69.9 OK, 70 refuses)",
+              (kind(cache(69.9, week_reset=NOW + 7 * 86400)), kind(cache(70, week_reset=NOW + 7 * 86400))), (OK, REFUSE))
+        check("⭐ #500: the reserve rises at local midnight — 23:59 Thu keeps 2 days, 00:00 Fri keeps 1",
+              (refuse_at(NOW - 60, NOW + 2 * 86400), refuse_at(NOW, NOW + 2 * 86400)), (90.0, 95.0))
+        check("#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
+              (days_after_today(NOW, NOW + 3600), days_after_today(NOW, NOW + 86400 + 7200)), (0.0, 7200 / 86400))
+        check("#500: the hour of NOW does not change the count — 00:00, 13:00 and 23:59 Fri all keep 1 day",
+              [days_after_today(NOW + h, NOW + 2 * 86400) for h in (0, 13 * 3600, 86400 - 60)], [1.0, 1.0, 1.0])
+        check("#500: pace_line names the read's own reason, and a generic one without it",
+              (pace_line(None, NOW, WEEK_RESET, "/m was not read within 1 s"), pace_line(None, NOW, WEEK_RESET)),
+              ((None, "the meter log is unreadable: /m was not read within 1 s"),
+               (None, "the meter log is missing or unreadable")))
+        def lt(*ymdh):  # a local time in the suite's PST8PDT zone
+            return time.mktime((*ymdh, 0, 0, 0, 0, -1))
+        check("⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end",
+              (refuse_at(lt(2026, 10, 31, 12), lt(2026, 11, 2, 0)), refuse_at(lt(2026, 3, 7, 12), lt(2026, 3, 9, 0)),
+               refuse_at(lt(2026, 7, 10, 0), lt(2026, 7, 13, 0)), refuse_at(lt(2026, 7, 31, 10), lt(2026, 8, 3, 2))),
+              (95.0, 95.0, 90.0, 100 - 5 * (2 + 2 / 24)))
+        check("⭐ #500 r3 C5: the stop is shown rounded UP — 94.55% under a 94.58 stop warns 'at 94.6%'",
+              (evm(cache(94.55, week_reset=NOW + 2 * 86400 + 7200), m85)[0],
+               "at 94.6% new spawns" in evm(cache(94.55, week_reset=NOW + 2 * 86400 + 7200), m85)[1],
+               pct_up(90.0), pct_up(97.0), pct_up(94.5000001)), (WARN, True, "90%", "97%", "94.6%"))
+        t0 = time.monotonic()
+        blank_line = pace_line("\n" * (METER_MAX_BYTES - 1), NOW, WEEK_RESET)
+        check("⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)",
+              (blank_line[0], time.monotonic() - t0 < 2.0), (None, True))
+        check("⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter",
+              [evm(cache(89.9), m)[0] + "/" + evm(cache(90), m)[0]
+               for m in (m85, meter((NOW - 60, 20, WEEK_RESET)), None, meter((NOW - 60, 99, WEEK_RESET)))],
+              ["WARN/REFUSE-SPAWN"] * 4)
+        check("⭐ #500: the message states the stop's reserve, and names the line as a guide",
+              ("at 90% new spawns" in evm(cache(85), m85)[1],
+               "The stop keeps 5% for each of the 2.0 days after today." in evm(cache(85), m85)[1],
+               "Today's pace line is 92.5% — a guide, not a stop." in evm(cache(85), m85)[1],
+               "The stop is the 97% cap: the rest is for work in flight." in
+               evm(cache(85, week_reset=NOW + 3600), m85)[1]), (True, True, True, True))
+        check("#500: the pace line on the last day is its 97 cap by the formula alone (50 at midnight)",
+              pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0], 97.0)
+        check("#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)",
+              pace_line(meter((NOW - 60, 96, WEEK_RESET)), NOW, WEEK_RESET)[0], 97.0)
+        check("⭐ #500: start% is the value AT midnight, not the latest reading (83 at midnight, 88 now)",
+              pace_line(meter((NOW - 900, 80, WEEK_RESET), (NOW - 100, 83, WEEK_RESET),
+                              (NOW + 3000, 88, WEEK_RESET)), NOW + 3600, WEEK_RESET)[0], 83 + 1.5 * 17 / 3)
+        check("#500: a window that began after midnight starts at its FIRST row",
+              pace_line(meter((NOW + 7200, 4, WEEK_RESET), (NOW + 9000, 9, WEEK_RESET)), NOW + 9999,
+                        WEEK_RESET)[0], 4 + 1.5 * 96 / 3)
+        check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line",
+              (pace_line(meter((NOW - 60, -100, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               pace_line(meter((NOW - 60, 150, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               pace_line(meter((NOW - 60, 110, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0],
+               pace_line(meter((NOW - 60, 100, WEEK_RESET), (NOW - 30, 0, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               pace_line(meter((NOW - 60, True, WEEK_RESET)), NOW, WEEK_RESET)[0]),
+              (None, None, None, 0 + 1.5 * 100 / 3, None))
+        check("#500 r1 C5: a meter log that cannot be read says WHY, from the read",
+              "the meter log is unreadable: /m was not read within 1 s" in evaluate(cache(91), NOW, meter=None,
+                                                                                meter_why="/m was not read within 1 s")[1],
+              True)
+        check("#500: last week's rows and future rows never set the line, and garbage lines are skipped",
+              (pace_line(meter((NOW - 60, 85, WEEK_RESET - 7 * 86400)), NOW, WEEK_RESET),
+               pace_line(meter((NOW + 600, 85, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               pace_line(meter((NOW - 60, 85, WEEK_RESET), garbage=True), NOW, WEEK_RESET)[0]),
+              ((None, "the meter log has no reading of this week's window"), None, 92.5))
+        check("⭐ #500: an unreadable line is SAID, and the stop is unchanged",
+              (evm(cache(90), None)[0], "Today's pace line cannot be read (the meter log is missing or unreadable): "
+               "treat it as NOT RUN." in evm(cache(85), None)[1]), (REFUSE, True))
+        check("#500: not consulting the meter names no line",
+              (kind(cache(90)), "pace line" in ev(cache(85))[1]), (REFUSE, False))
+        with tempfile.TemporaryDirectory() as td:
+            cp, mp = os.path.join(td, "c.json"), os.path.join(td, "m.jsonl")
+            with open(cp, "w") as f:
+                f.write(cache(85))
+            with open(mp, "w") as f:
+                f.write(m85)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_line = main(["--cache", cp, "--meter", mp, "--now", str(NOW)], env={}, payload="")
+        check("⭐ #500 r1 C2: the suite's HOME is redirected, so the DEFAULT meter path is absent for every case",
+              (os.environ.get("HOME") == fake_home, os.path.exists(os.path.expanduser(METER_LOG))), (True, False))
+        with tempfile.TemporaryDirectory() as home2:
+            os.makedirs(os.path.join(home2, ".claude", "meter"))
+            with open(os.path.join(home2, ".claude", "meter", "log.jsonl"), "w") as f:
+                f.write(m85)
+            with open(os.path.join(home2, "c.json"), "w") as f:
+                f.write(cache(85))
+            os.environ["HOME"] = home2
+            try:
+                buf2 = io.StringIO()
+                with contextlib.redirect_stdout(buf2):
+                    rc_default = main(["--cache", os.path.join(home2, "c.json"), "--now", str(NOW)], env={}, payload="")
+            finally:
+                os.environ["HOME"] = fake_home
+        check("⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use",
+              (rc_default, "Today's pace line is 92.5%" in buf2.getvalue()), (RC[WARN], True))
+        check("⭐ #500: main() reads --meter: its message names the 92.5 line from that file",
+              (rc_line, "Today's pace line is 92.5%" in buf.getvalue()), (RC[WARN], True))
+
         # ── the weekly boundaries ──────────────────────────────────────────────────────────────────
         check("weekly 0 is OK", kind(cache(0)), OK)
         check("weekly 79.9 is OK", kind(cache(79.9)), OK)
@@ -726,15 +938,15 @@ def _self_test_body() -> int:
         check("OK carries no message", ev(cache(79.9))[1], "")
         check("WARN, the whole message (fixed string, zone included)", ev(cache(83))[1],
               "⚠ usage pace: weekly usage is 83% (WARN at 80%; at 90% new spawns and agent wake-ups are "
-              "refused). Resets Mon 01-18 00:00 PST.")
-        check("REFUSE, the whole message (fixed string; it names no override)", ev(cache(92.5))[1],
-              "⛔ usage pace: weekly usage is 92.5% — new subagent spawns, and messages that wake an agent, are "
+              "refused). Resets Mon 01-18 00:00 PST. The stop keeps 5% for each of the 2.0 days after today.")
+        check("REFUSE, the whole message (fixed string; it names no override)", ev(cache(98.5))[1],
+              "⛔ usage pace: weekly usage is 98.5% — new subagent spawns, and messages that wake an agent, are "
               "REFUSED (at 90%); work in flight continues, and a subagent's report is allowed. "
-              "Resets Mon 01-18 00:00 PST.")
+              "Resets Mon 01-18 00:00 PST. The stop keeps 5% for each of the 2.0 days after today.")
         check("WARN at 89.9999 shows 89.9%, never 90%", ev(cache(89.9999))[1].startswith(
             "⚠ usage pace: weekly usage is 89.9% (WARN"), True)
         check("every message is ONE line", all("\n" not in ev(t)[1] for t in
-                                                (cache(83), cache(95, 95), None, "{", cache(10, 95))), True)
+                                                (cache(83), cache(98.5, 95), None, "{", cache(10, 95))), True)
 
         # ── the display: fixed strings, a fixed TZ (r1 X4/m2/m3) ───────────────────────────────────
         check("local_time: a PDT instant", local_time(1793521800), "Sun 11-01 01:30 PDT")
@@ -782,18 +994,18 @@ def _self_test_body() -> int:
         check("a cache 15 min + 1 s old is CANNOT RUN (stale)", kind(cache(85, age=MAX_AGE_S + 1)), CANNOT_RUN)
         check("the SAME cache read 15 min + 1 s later is CANNOT RUN", ev(cache(85), NOW + MAX_AGE_S + 1)[0],
               CANNOT_RUN)
-        check("a stale cache at 95% is CANNOT RUN, never REFUSE", kind(cache(95, age=3600)), CANNOT_RUN)
+        check("a stale cache at 98.5% is CANNOT RUN, never REFUSE", kind(cache(98.5, age=3600)), CANNOT_RUN)
         check("a cache 5 s in the future is still read", kind(cache(85, age=-5)), WARN)
         check("a cache 6 s in the future is CANNOT RUN", kind(cache(85, age=-6)), CANNOT_RUN)
         check("a cache 60 s in the future is CANNOT RUN (r1 X3)", kind(cache(85, age=-60)), CANNOT_RUN)
-        check("a seven_day reset in the past is CANNOT RUN", kind(cache(95, week_reset=NOW - 1)), CANNOT_RUN)
-        check("a seven_day reset exactly now is CANNOT RUN", kind(cache(95, week_reset=NOW)), CANNOT_RUN)
-        check("a seven_day reset 1 s ahead is read", kind(cache(95, week_reset=NOW + 1)), REFUSE)
+        check("a seven_day reset in the past is CANNOT RUN", kind(cache(98.5, week_reset=NOW - 1)), CANNOT_RUN)
+        check("a seven_day reset exactly now is CANNOT RUN", kind(cache(98.5, week_reset=NOW)), CANNOT_RUN)
+        check("a seven_day reset 1 s ahead is read", kind(cache(98.5, week_reset=NOW + 1)), REFUSE)
         check("a string percentage is CANNOT RUN", kind(cache("95")), CANNOT_RUN)
         check("a boolean percentage is CANNOT RUN", kind(cache(True)), CANNOT_RUN)
         check("a negative percentage is CANNOT RUN", kind(cache(-1)), CANNOT_RUN)
         check("a NaN percentage is CANNOT RUN", kind(cache(float("nan"))), CANNOT_RUN)
-        check("a string resets_at is CANNOT RUN", kind(cache(95, week_reset="soon")), CANNOT_RUN)
+        check("a string resets_at is CANNOT RUN", kind(cache(98.5, week_reset="soon")), CANNOT_RUN)
         check("a non-object seven_day window is CANNOT RUN",
               kind(json.dumps({"at": NOW, "rate_limits": {"seven_day": 95}})), CANNOT_RUN)
 
@@ -802,16 +1014,16 @@ def _self_test_body() -> int:
         for label, r in (("1e300", 1e300), ("a nanosecond epoch", (NOW + 86400) * 1e9),
                          ("a millisecond epoch", (NOW + 86400) * 1e3), ("-1", -1.0), ("-1e300", -1e300),
                          ("NaN", float("nan")), ("Infinity", float("inf"))):
-            check(f"a seven_day resets_at of {label} at 95% is CANNOT RUN", kind(cache(95, week_reset=r)),
+            check(f"a seven_day resets_at of {label} at 98.5% is CANNOT RUN", kind(cache(98.5, week_reset=r)),
                   CANNOT_RUN)
-        check("a seven_day reset exactly 7 days + 1 h ahead is read", kind(cache(95, week_reset=horizon)), REFUSE)
-        check("a seven_day reset 1 s past that is CANNOT RUN", kind(cache(95, week_reset=horizon + 1)), CANNOT_RUN)
+        check("a seven_day reset exactly 7 days + 1 h ahead is read", kind(cache(98.5, week_reset=horizon)), REFUSE)
+        check("a seven_day reset 1 s past that is CANNOT RUN", kind(cache(98.5, week_reset=horizon + 1)), CANNOT_RUN)
         check("the millisecond reset's message says why", "more than one window ahead" in
-              ev(cache(95, week_reset=(NOW + 86400) * 1e3))[1], True)
+              ev(cache(98.5, week_reset=(NOW + 86400) * 1e3))[1], True)
         check("an unformattable past reset says it is malformed", "cannot be shown" in
-              ev(cache(95, week_reset=-1e300))[1], True)
+              ev(cache(98.5, week_reset=-1e300))[1], True)
         for label, a in (("1e300", 1e300), ("-1e300", -1e300)):
-            v, msg = ev(cache(95, at=a))
+            v, msg = ev(cache(98.5, at=a))
             check(f"an 'at' of {label} is CANNOT RUN, in a SHORT message", (v, len(msg) < 400), (CANNOT_RUN, True))
 
         # ── the five-hour window: WARN only, and never able to disable the weekly verdict ──────────
@@ -821,14 +1033,14 @@ def _self_test_body() -> int:
               "⚠ usage pace: weekly usage is 10%. Five-hour usage is 90% (WARN at 90%), resets Fri 01-15 02:00 PST.")
         check("a five-hour window whose reset passed adds nothing", kind(cache(10, five=99, five_reset=NOW)), OK)
         check("five-hour 100 never REFUSES", kind(cache(10, five=100)), WARN)
-        check("five-hour 95 never downgrades a weekly REFUSE", kind(cache(95, five=95)), REFUSE)
+        check("five-hour 95 never downgrades a weekly REFUSE", kind(cache(98.5, five=95)), REFUSE)
         check("no five-hour window is fine", kind(cache(50)), OK)
         five_horizon = NOW + FIVE_HOUR_S + HORIZON_SLACK_S
         for label, five, fr in (("resets_at 1e300", 50, 1e300), ("a nanosecond resets_at", 50, NOW * 1e9),
                                 ("a millisecond resets_at", 50, NOW * 1e3), ("resets_at -1e300", 50, -1e300),
                                 ("resets_at NaN", 50, float("nan")), ("used_percentage 'n/a'", "n/a", FIVE_RESET),
                                 ("a resets_at 1 s past its horizon", 95, five_horizon + 1)):
-            check(f"weekly 95 with a five-hour {label} still REFUSES", kind(cache(95, five=five, five_reset=fr)),
+            check(f"weekly 98.5 with a five-hour {label} still REFUSES", kind(cache(98.5, five=five, five_reset=fr)),
                   REFUSE)
         check("a five-hour reset 1 s past its horizon is unreadable, never a reading", "unreadable" in
               ev(cache(10, five=95, five_reset=five_horizon + 1))[1], True)
@@ -842,12 +1054,12 @@ def _self_test_body() -> int:
               kind(cache(10, five=99, five_reset=-1e300)), OK)
         hostile = (1e300, -1e300, 1.8e18, float("nan"), float("inf"), -1.0, "x", None, True, [], {})
         raised = [(a, b) for a in hostile for b in hostile
-                  if ev(cache(95, five=95, week_reset=a, five_reset=b))[0].startswith("raised")]
+                  if ev(cache(98.5, five=95, week_reset=a, five_reset=b))[0].startswith("raised")]
         check("evaluate is TOTAL over hostile seven-day x five-hour resets", raised, [])
 
         # ── no integer can raise; a bad window is that window's NOT RUN (r2 X2/X4) ──────────────────
         # Raw JSON text, because `json.dumps` itself refuses an int past 4,300 digits.
-        def raw(week_p: str = "95", week_r: str = str(int(WEEK_RESET)), five_p: str | None = None,
+        def raw(week_p: str = "98.5", week_r: str = str(int(WEEK_RESET)), five_p: str | None = None,
                 five_r: str = str(int(FIVE_RESET)), at: str = str(int(NOW))) -> str:
             five = "" if five_p is None else f', "five_hour": {{"used_percentage": {five_p}, "resets_at": {five_r}}}'
             return (f'{{"at": {at}, "rate_limits": {{"seven_day": {{"used_percentage": {week_p}, '
@@ -866,12 +1078,12 @@ def _self_test_body() -> int:
               (parse_json('{"a": "b"}'), parse_json('[1.5, {"c": null}]')), ({"a": "b"}, [1.5, {"c": None}]))
         check("parse_json: 10**400 is inf, not an int", val(parse_json, huge), math.inf)
         check("parse_json: a 5,000-digit integer (past int's digit limit) is inf", val(parse_json, vast), math.inf)
-        check("the r2 input: weekly 95 with a five-hour used_percentage of 10**400 still REFUSES",
+        check("the r2 input: weekly 98.5 with a five-hour used_percentage of 10**400 still REFUSES",
               kind(raw(five_p=huge, five_r=str(int(FIVE_RESET)))), REFUSE)
         check("... and the five-hour window is said to be NOT RUN", "NOT RUN" in ev(raw(five_p=huge))[1], True)
-        check("weekly 95 with a five-hour resets_at of 10**400 still REFUSES", kind(raw(five_p="50", five_r=huge)),
+        check("weekly 98.5 with a five-hour resets_at of 10**400 still REFUSES", kind(raw(five_p="50", five_r=huge)),
               REFUSE)
-        check("weekly 95 with a five-hour resets_at of -10**400 still REFUSES",
+        check("weekly 98.5 with a five-hour resets_at of -10**400 still REFUSES",
               kind(raw(five_p="50", five_r="-" + huge)), REFUSE)
         check("a weekly used_percentage of 10**400 is CANNOT RUN, never a crash", kind(raw(week_p=huge)), CANNOT_RUN)
         check("a weekly resets_at of 10**400 is CANNOT RUN", kind(raw(week_r=huge)), CANNOT_RUN)
@@ -886,7 +1098,7 @@ def _self_test_body() -> int:
 
         json.loads = recurse  # the 3.12 parser's behaviour on `deep`, injected so every Python witnesses it
         try:
-            injected = (kind(cache(95)), val(session_of, json.dumps({"session_id": "s"})),
+            injected = (kind(cache(98.5)), val(session_of, json.dumps({"session_id": "s"})),
                         val(sent_by_subagent, json.dumps({"agent_id": "a1"})))
         finally:
             json.loads = real_loads
@@ -896,7 +1108,7 @@ def _self_test_body() -> int:
                         "[]", "{}", huge, "-" + huge, vast)
         not_refused = [(a[:12], b[:12]) for a in five_hostile for b in five_hostile
                        if ev(raw(five_p=a, five_r=b))[0] != REFUSE]
-        check("a VALID weekly 95 REFUSES across every hostile five-hour used x reset", not_refused, [])
+        check("a VALID weekly 98.5 REFUSES across every hostile five-hour used x reset", not_refused, [])
         check("... the cross-product is really reaching the five-hour window (a valid one there WARNs at 10%)",
               kind(raw(week_p="10", five_p="95")), WARN)
 
@@ -1105,7 +1317,7 @@ def _self_test_body() -> int:
             os.remove(os.path.join(wt, OVERRIDE_FILE))
 
             # ── the hook outputs: two readers ───────────────────────────────────────────────────────
-            r95 = ev(cache(95))[1]
+            r95 = ev(cache(98.5))[1]
             closed = (False, "To override, do X.")
             check("prompt: OK is silent", prompt_output(OK, ""), None)
             for v in (WARN, REFUSE, CANNOT_RUN):
@@ -1237,21 +1449,21 @@ def _self_test_body() -> int:
                 except ValueError:
                     return {}
 
-            check("main: the verdict's exit codes", [drive(cache(t))[0] for t in (10, 85, 95)] + [drive(None)[0]],
+            check("main: the verdict's exit codes", [drive(cache(t))[0] for t in (10, 85, 98.5)] + [drive(None)[0]],
                   [0, 1, 3, 2])
-            rc, out = drive(cache(95), "--hook", "spawn")
-            check("main: spawn hook at 95% denies, rc 0",
+            rc, out = drive(cache(98.5), "--hook", "spawn")
+            check("main: spawn hook at 98.5% denies, rc 0",
                   (rc, hso(out).get("hookSpecificOutput", {}).get("permissionDecision")), (0, "deny"))
             check("main: spawn hook with a missing cache allows", drive(None, "--hook", "spawn"), (0, ""))
-            check("main: spawn hook with env =1 allows", drive(cache(95), "--hook", "spawn", env={OVERRIDE_ENV: "1"}),
+            check("main: spawn hook with env =1 allows", drive(cache(98.5), "--hook", "spawn", env={OVERRIDE_ENV: "1"}),
                   (0, ""))
             rc, out = drive(None, "--hook", "prompt")
             check("main: prompt hook with a missing cache is LOUD", (rc, "CANNOT RUN" in out), (0, True))
             check("main: prompt hook at 50% is silent", drive(cache(50), "--hook", "prompt"), (0, ""))
-            rc, out = drive(cache(95), "--hook", "prompt", env={OVERRIDE_ENV: "1"})
+            rc, out = drive(cache(98.5), "--hook", "prompt", env={OVERRIDE_ENV: "1"})
             check("main: an ACTIVE override is named in the prompt notice at REFUSE",
                   ACTIVE_NOTE in hso(out).get("hookSpecificOutput", {}).get("additionalContext", ""), True)
-            rc, out = drive(cache(95), "--hook", "prompt", root=wt)
+            rc, out = drive(cache(98.5), "--hook", "prompt", root=wt)
             check("main: prompt hook at REFUSE gives the owner the main checkout's one-liner",
                   "date +%s" in hso(out).get("systemMessage", "") and
                   "date +%s" not in hso(out).get("hookSpecificOutput", {}).get("additionalContext", "x"), True)
@@ -1259,54 +1471,54 @@ def _self_test_body() -> int:
             check("main: prompt hook at WARN tells the owner", "85%" in hso(out).get("systemMessage", ""), True)
             to_agent = sm("b2-implementer")
             to_main = from_sub
-            rc, out = drive(cache(95), "--hook", "wake", payload=to_agent)
-            check("main: wake hook at 95% DENIES a message to an agent",
+            rc, out = drive(cache(98.5), "--hook", "wake", payload=to_agent)
+            check("main: wake hook at 98.5% DENIES a message to an agent",
                   (rc, hso(out).get("hookSpecificOutput", {}).get("permissionDecision")), (0, "deny"))
-            check("main: wake hook at 95% allows a subagent's report", drive(cache(95), "--hook", "wake",
+            check("main: wake hook at 98.5% allows a subagent's report", drive(cache(98.5), "--hook", "wake",
                                                                              payload=to_main), (0, ""))
             for to in ("main", "main [abcdef]", "team-lead", "*"):
-                check(f"main: wake hook at 95% DENIES the MAIN SESSION's message to {to!r} (r2 X1)",
-                      hso(drive(cache(95), "--hook", "wake", payload=sm(to))[1]).get("hookSpecificOutput", {})
+                check(f"main: wake hook at 98.5% DENIES the MAIN SESSION's message to {to!r} (r2 X1)",
+                      hso(drive(cache(98.5), "--hook", "wake", payload=sm(to))[1]).get("hookSpecificOutput", {})
                       .get("permissionDecision"), "deny")
-            check("main: wake hook at 95% DENIES a --agent main session's message",
-                  hso(drive(cache(95), "--hook", "wake", payload=sm("probe", agent_type="Explore"))[1])
+            check("main: wake hook at 98.5% DENIES a --agent main session's message",
+                  hso(drive(cache(98.5), "--hook", "wake", payload=sm("probe", agent_type="Explore"))[1])
                   .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
             for label, text in (("five-hour used 10**400", raw(five_p=huge)), ("at 10**400", raw(at=huge))):
                 outs = [drive(text, "--hook", h, payload=sm("x"))[0] for h in ("prompt", "spawn", "wake")]
                 check(f"main: a cache with {label} exits 0 from all three hooks (r2 X2: they exited 1)", outs,
                       [0, 0, 0])
-            check("main: weekly 95 beside a five-hour used 10**400 DENIES a spawn",
+            check("main: weekly 98.5 beside a five-hour used 10**400 DENIES a spawn",
                   hso(drive(raw(five_p=huge), "--hook", "spawn")[1]).get("hookSpecificOutput", {})
                   .get("permissionDecision"), "deny")
-            check("main: weekly 95 beside a five-hour used 10**400 DENIES a wake",
+            check("main: weekly 98.5 beside a five-hour used 10**400 DENIES a wake",
                   hso(drive(raw(five_p=huge), "--hook", "wake", payload=sm("x"))[1]).get("hookSpecificOutput", {})
                   .get("permissionDecision"), "deny")
-            check("main: wake hook at 95% DENIES an unparseable payload",
-                  hso(drive(cache(95), "--hook", "wake", payload="{")[1]).get("hookSpecificOutput", {})
+            check("main: wake hook at 98.5% DENIES an unparseable payload",
+                  hso(drive(cache(98.5), "--hook", "wake", payload="{")[1]).get("hookSpecificOutput", {})
                   .get("permissionDecision"), "deny")
-            check("main: wake hook at 95% DENIES a payload over the bound, even a subagent's",
-                  hso(drive(cache(95), "--hook", "wake", payload=to_main + " " * PAYLOAD_MAX_BYTES)[1])
+            check("main: wake hook at 98.5% DENIES a payload over the bound, even a subagent's",
+                  hso(drive(cache(98.5), "--hook", "wake", payload=to_main + " " * PAYLOAD_MAX_BYTES)[1])
                   .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
             for label, payload in (("shutdown_request", shut), ("plan approval", plan_yes),
                                    ("plan rejection with feedback", plan_no)):
-                check(f"main: wake hook at 95% ALLOWS the main session's {label} (r3 C4)",
-                      drive(cache(95), "--hook", "wake", payload=payload), (0, ""))
+                check(f"main: wake hook at 98.5% ALLOWS the main session's {label} (r3 C4)",
+                      drive(cache(98.5), "--hook", "wake", payload=payload), (0, ""))
             for label, payload in (("free text", sm("b2-implementer")),
                                    ("shutdown_request with an extra key",
                                     smc({"type": "shutdown_request", "then": "run step 3"})),
                                    ("shutdown_response", smc({"type": "shutdown_response", "request_id": "r1",
                                                                 "approve": True}))):
-                check(f"main: wake hook at 95% still DENIES the main session's {label} (r3 C4)",
-                      hso(drive(cache(95), "--hook", "wake", payload=payload)[1]).get("hookSpecificOutput", {})
+                check(f"main: wake hook at 98.5% still DENIES the main session's {label} (r3 C4)",
+                      hso(drive(cache(98.5), "--hook", "wake", payload=payload)[1]).get("hookSpecificOutput", {})
                       .get("permissionDecision"), "deny")
             check("main: a control message over the payload bound is DENIED",
-                  hso(drive(cache(95), "--hook", "wake", payload=shut + " " * PAYLOAD_MAX_BYTES)[1])
+                  hso(drive(cache(98.5), "--hook", "wake", payload=shut + " " * PAYLOAD_MAX_BYTES)[1])
                   .get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
-            check("main: wake hook at 95% DENIES a control message whose `type` is a list or an object (r4 X3)",
-                  [hso(drive(cache(95), "--hook", "wake", payload=b)[1]).get("hookSpecificOutput", {})
+            check("main: wake hook at 98.5% DENIES a control message whose `type` is a list or an object (r4 X3)",
+                  [hso(drive(cache(98.5), "--hook", "wake", payload=b)[1]).get("hookSpecificOutput", {})
                    .get("permissionDecision") for b in bad_kinds], ["deny", "deny"])
-            check("main: wake hook at 95% with env =1 allows",
-                  drive(cache(95), "--hook", "wake", env={OVERRIDE_ENV: "1"}, payload=to_agent), (0, ""))
+            check("main: wake hook at 98.5% with env =1 allows",
+                  drive(cache(98.5), "--hook", "wake", env={OVERRIDE_ENV: "1"}, payload=to_agent), (0, ""))
             check("main: wake hook at 85% allows", drive(cache(85), "--hook", "wake", payload=to_agent), (0, ""))
             check("main: an unknown argument is refused, rc 2", drive(cache(50), "--bogus")[0], 2)
             check("main: a bad --hook value is refused, rc 2", drive(cache(50), "--hook", "agent")[0], 2)
@@ -1412,50 +1624,50 @@ def _self_test_body() -> int:
             def decision(out: str) -> object:
                 return hso(out).get("hookSpecificOutput", {}).get("permissionDecision")
 
-            rc, out = hook("usage-pace-spawn.sh", 95)
-            check("run-hook: the spawn hook DENIES at 95%", (rc, decision(out)), (0, "deny"))
-            check("run-hook: the spawn hook's denial names the %", "95%" in out, True)
+            rc, out = hook("usage-pace-spawn.sh", 98.5)
+            check("run-hook: the spawn hook DENIES at 98.5%", (rc, decision(out)), (0, "deny"))
+            check("run-hook: the spawn hook's denial names the %", "98.5%" in out, True)
             check("run-hook: the spawn hook's deny REASON names no override",
                   OVERRIDE_ENV in hso(out).get("hookSpecificOutput", {}).get("permissionDecisionReason", OVERRIDE_ENV),
                   False)
             check("run-hook: the spawn hook's systemMessage names the MAIN checkout's file",
                   os.path.realpath(main_co) in hso(out).get("systemMessage", ""), True)
             check("run-hook: the spawn hook allows at 50%", hook("usage-pace-spawn.sh", 50), (0, ""))
-            check("run-hook: ALLOW_SPAWN_OVER_LIMIT=1 lets a 95% spawn through",
-                  hook("usage-pace-spawn.sh", 95, **{OVERRIDE_ENV: "1"}), (0, ""))
+            check("run-hook: ALLOW_SPAWN_OVER_LIMIT=1 lets a 98.5% spawn through",
+                  hook("usage-pace-spawn.sh", 98.5, **{OVERRIDE_ENV: "1"}), (0, ""))
             with open(os.path.join(wt, OVERRIDE_FILE), "w") as fh:
                 fh.write(str(int(time.time() + 7200)))
-            check("run-hook: an override in the WORKTREE only does not let a 95% spawn through",
-                  decision(hook("usage-pace-spawn.sh", 95)[1]), "deny")
+            check("run-hook: an override in the WORKTREE only does not let a 98.5% spawn through",
+                  decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
             os.remove(os.path.join(wt, OVERRIDE_FILE))
             with open(os.path.join(main_co, OVERRIDE_FILE), "w") as fh:
                 fh.write(str(int(time.time() + 7200)))
-            check("run-hook: the MAIN checkout's override lets a 95% spawn through from a worktree",
-                  hook("usage-pace-spawn.sh", 95), (0, ""))
-            check("run-hook: ... and a 95% wake", hook("usage-pace-wake.sh", 95, stdin=to_agent), (0, ""))
+            check("run-hook: the MAIN checkout's override lets a 98.5% spawn through from a worktree",
+                  hook("usage-pace-spawn.sh", 98.5), (0, ""))
+            check("run-hook: ... and a 98.5% wake", hook("usage-pace-wake.sh", 98.5, stdin=to_agent), (0, ""))
             with open(os.path.join(main_co, OVERRIDE_FILE), "w") as fh:
                 fh.write("")
-            check("run-hook: an EMPTY override file (the old touch) does not let a 95% spawn through",
-                  decision(hook("usage-pace-spawn.sh", 95)[1]), "deny")
+            check("run-hook: an EMPTY override file (the old touch) does not let a 98.5% spawn through",
+                  decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
             os.remove(os.path.join(main_co, OVERRIDE_FILE))
             check("run-hook: the spawn hook allows on a missing cache", hook("usage-pace-spawn.sh", None), (0, ""))
-            check("run-hook: the wake hook DENIES a message to an agent at 95%",
-                  decision(hook("usage-pace-wake.sh", 95, stdin=to_agent)[1]), "deny")
-            check("run-hook: the wake hook allows a subagent's report at 95%",
-                  hook("usage-pace-wake.sh", 95, stdin=to_main), (0, ""))
-            check("run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 95%",
-                  decision(hook("usage-pace-wake.sh", 95, stdin=sm("main [abcdef]"))[1]), "deny")
-            check("run-hook: the wake hook allows the main session's shutdown_request at 95%",
-                  hook("usage-pace-wake.sh", 95, stdin=shut), (0, ""))
+            check("run-hook: the wake hook DENIES a message to an agent at 98.5%",
+                  decision(hook("usage-pace-wake.sh", 98.5, stdin=to_agent)[1]), "deny")
+            check("run-hook: the wake hook allows a subagent's report at 98.5%",
+                  hook("usage-pace-wake.sh", 98.5, stdin=to_main), (0, ""))
+            check("run-hook: the wake hook DENIES the main session's message to `main [abcdef]` at 98.5%",
+                  decision(hook("usage-pace-wake.sh", 98.5, stdin=sm("main [abcdef]"))[1]), "deny")
+            check("run-hook: the wake hook allows the main session's shutdown_request at 98.5%",
+                  hook("usage-pace-wake.sh", 98.5, stdin=shut), (0, ""))
             check("run-hook: the wake hook allows at 50%", hook("usage-pace-wake.sh", 50, stdin=to_agent), (0, ""))
             # The bound is on real stdin, so these go through it: in-process, `main()` gets the string whole (r4 X2).
-            check("run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 95% (r4 X2)",
-                  decision(hook("usage-pace-wake.sh", 95, stdin=shut + " " * (PAYLOAD_MAX_BYTES + 16))[1]), "deny")
-            check("run-hook: a control message whose `type` is a list or an object is DENIED at 95%, rc 0 (r4 X3)",
-                  [(lambda r: (r[0], decision(r[1])))(hook("usage-pace-wake.sh", 95, stdin=b)) for b in bad_kinds],
+            check("run-hook: a shutdown_request followed by over 1 MiB of spaces on stdin is DENIED at 98.5% (r4 X2)",
+                  decision(hook("usage-pace-wake.sh", 98.5, stdin=shut + " " * (PAYLOAD_MAX_BYTES + 16))[1]), "deny")
+            check("run-hook: a control message whose `type` is a list or an object is DENIED at 98.5%, rc 0 (r4 X3)",
+                  [(lambda r: (r[0], decision(r[1])))(hook("usage-pace-wake.sh", 98.5, stdin=b)) for b in bad_kinds],
                   [(0, "deny"), (0, "deny")])
             # A writer that never closes stdin (r4 X1): Codex measured the hook alive at 3 s. It must exit within
-            # the deadline plus a margin, and still DENY a 95% wake.
+            # the deadline plus a margin, and still DENY a 98.5% wake.
             def held_open(name: str, weekly: float | None, payload: str) -> tuple[object, float, str]:
                 """The shipped hook with `payload` written and its stdin writer left OPEN: (rc, seconds, stdout)."""
                 p = subprocess.Popen(["bash", os.path.join(wt, ".claude", "hooks", "run-hook.sh"), name], cwd=wt,
@@ -1481,10 +1693,10 @@ def _self_test_body() -> int:
                         if f is not None:
                             f.close()
 
-            rc_h, took_h, out_h = held_open("usage-pace-wake.sh", 95,
+            rc_h, took_h, out_h = held_open("usage-pace-wake.sh", 98.5,
                                             json.dumps({"tool_input": {"to": "worker", "message": "run echo awake"}}))
             check("run-hook: a wake whose stdin writer stays OPEN exits within the deadline + 1.5 s and DENIES at "
-                  "95% (r4 X1)", (rc_h, took_h < READ_DEADLINE_S + 1.5, decision(out_h)), (0, True, "deny"))
+                  "98.5% (r4 X1)", (rc_h, took_h < READ_DEADLINE_S + 1.5, decision(out_h)), (0, True, "deny"))
             fresh()
             rc_h, took_h, out_h = held_open("usage-pace-prompt.sh", None, sess("s-held"))
             check("run-hook: a prompt whose stdin writer stays OPEN exits within the deadline + 1.5 s and still says "
@@ -1533,9 +1745,9 @@ def _self_test_body() -> int:
             check("run-hook: a checker exiting 2 never blocks the prompt (exit 1, not 2)",
                   hook("usage-pace-prompt.sh", 85)[0], 1)
             check("run-hook: a checker exiting 2 never blocks a spawn (exit 1, not 2)",
-                  hook("usage-pace-spawn.sh", 95)[0], 1)
+                  hook("usage-pace-spawn.sh", 98.5)[0], 1)
             check("run-hook: a checker exiting 2 never blocks a wake (exit 1, not 2)",
-                  hook("usage-pace-wake.sh", 95, stdin=to_agent)[0], 1)
+                  hook("usage-pace-wake.sh", 98.5, stdin=to_agent)[0], 1)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     finally:
@@ -1544,6 +1756,11 @@ def _self_test_body() -> int:
         else:
             os.environ["TZ"] = old_tz
         time.tzset()
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home
+        shutil.rmtree(fake_home, ignore_errors=True)
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0
