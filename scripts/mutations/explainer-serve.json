@@ -213,7 +213,7 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "            return self._send(504, (f\"{script} did not finish in {REGEN_TIMEOUT}s — the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
+        "            return self._send(504, (f\"{script} did not finish in {limit}s — the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
         "            return self._send(200, json.dumps({\"ok\": True, \"page\": want}).encode(),\n                              \"application/json\")"
       ]
     ],
