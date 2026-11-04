@@ -641,8 +641,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "ledger_path=str(main[0] / LEDGER_REL))",
-        "ledger_path=\"\")"
+        "ledger_path=str(main[0] / LEDGER_REL), sweep",
+        "ledger_path=\"\", sweep"
       ]
     ],
     "expect": [

@@ -1826,12 +1826,12 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        out.add(base[:-3])",
-        "        pass"
+        " | ({base[:-3]} if base[:-3].isidentifier() else set())",
+        " | set()"
       ]
     ],
     "expect": [
-      "an importable module is selected through its IMPORT name too"
+      "...and a target that merely MENTIONS an importable stem is selected too — a deliberate over-approximation"
     ]
   },
   {

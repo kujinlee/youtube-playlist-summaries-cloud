@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 291 cases
+    python3 scripts/check-plan-code.py --self-test          # 303 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -6831,6 +6831,10 @@ def _self_test_body() -> int:
     case("an importable module is selected through its IMPORT name too",
          _sel(["scripts/fixture_lib.py"]),
          frozenset({"scripts/fixture_lib.py", "scripts/check-a.py"}))
+    case("...and a target that merely MENTIONS an importable stem is selected too — a deliberate over-approximation",
+         _sel(["scripts/fixture_lib.py"], src={"scripts/check-k.py": "# see fixture_lib.helper\n",
+                                               "scripts/fixture_lib.py": ""}),
+         frozenset({"scripts/fixture_lib.py", "scripts/check-k.py"}))
     case("⛔ a change to the harness itself -> the WHOLE manifest",
          [_sel([p]) for p in sorted(_H)], [None, None, None])
     case("⛔ an UNDETERMINED diff -> the WHOLE manifest, and the reason is the caller's",
