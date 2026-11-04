@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook on Agent — pace work before the weekly usage limit halts it (backlog #399).
 #
-# It denies a NEW subagent spawn at REFUSE-SPAWN (weekly at the stop: max(90%, the pace line), never above 97%) unless overridden (ALLOW_SPAWN_OVER_LIMIT=1,
+# It denies a NEW subagent spawn at REFUSE-SPAWN (weekly at the stop: 100% − 5% × the days left after today, never above 97%) unless overridden (ALLOW_SPAWN_OVER_LIMIT=1,
 #   or an unexpired .claude/allow-spawn-over-limit in the MAIN checkout); otherwise allows, silently. Work in
 #   flight continues. Its sibling usage-pace-wake.sh gates SendMessage the same way.
 # The rules, the cache format, the override and the bounds are described ONCE, in scripts/check-usage-pace.py.

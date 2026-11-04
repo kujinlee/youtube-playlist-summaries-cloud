@@ -104,7 +104,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #465, PR #471 · a subagent's ;/&& list of file reads is summed against the 300-line limit
 - bookkeeping · PR #472 · work follows the budget situation (TIGHT / AMPLE), reassessed at each weekly reset
 - bookkeeping · PR #473 · backlog #466 to backlog #468 filed: destructive commands measured, stale agents, AFK sleep stalls
-- fix · backlog #500 · new agents are refused at max(90%, today's pace line), never above 97%, so the reserve is spent as the reset nears
+> 2026-11-04 09:29 "emergency reserve is set to 5% and remaining days are 3 days(excluding today), max usage for today can be 100 - 3×5 = 85"
+- fix · backlog #500 · new agents are refused at 100% − 5% × the days left after today, never above 97% (09:29), so each later day keeps a reserve and the rest is spent
 - bookkeeping · backlog #501 · the usage guard should read only the tail of a large meter log (filed from backlog #500's round-1 review)
 
 ## GOAL dev-speed-first

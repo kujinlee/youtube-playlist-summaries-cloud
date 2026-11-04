@@ -1,15 +1,16 @@
 [
   {
-    "name": "the REFUSE threshold moves off 90",
+    "name": "the reserve per day moves off 5",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "REFUSE_AT = 90.0",
-        "REFUSE_AT = 90.1"
+        "RESERVE_PER_DAY = 5.0",
+        "RESERVE_PER_DAY = 4.9"
       ]
     ],
     "expect": [
-      "weekly 90 is REFUSE-SPAWN"
+      "weekly 90 is REFUSE-SPAWN",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
     ]
   },
   {
@@ -303,8 +304,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "subagent's report is allowed. Resets {local_time(resets)}.{line_note}{five_note}\")",
-        "subagent's report is allowed.{line_note}{five_note}\")"
+        "subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}\")",
+        "subagent's report is allowed.{stop_note}{line_note}{five_note}\")"
       ]
     ],
     "expect": [
@@ -1351,30 +1352,31 @@
     ]
   },
   {
-    "name": "#500: the line LOWERS the stop (min instead of max)",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "return REFUSE_AT if line is None else max(REFUSE_AT, min(LINE_CAP, line))",
-        "return REFUSE_AT if line is None else min(LINE_CAP, line)"
-      ]
-    ],
-    "expect": [
-      "⭐ #500: many days out, a line below 90 keeps the 90 reserve (start 20 → line 60; 89.9 warns, 90 refuses)",
-      "#500: refuse_at — the floor, the line, the cap, and None"
-    ]
-  },
-  {
     "name": "#500: the stop is not capped at 97",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "max(REFUSE_AT, min(LINE_CAP, line))",
-        "max(REFUSE_AT, line)"
+        "return min(STOP_CAP, 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
+        "return 100 - RESERVE_PER_DAY * days_after_today(now, resets)"
       ]
     ],
     "expect": [
-      "#500: refuse_at — the floor, the line, the cap, and None"
+      "⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
+    ]
+  },
+  {
+    "name": "#500: days after today are whole days, not fractional",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(resets - nxt) / 86400)",
+        "(resets - nxt) // 86400)"
+      ]
+    ],
+    "expect": [
+      "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
     ]
   },
   {
@@ -1387,21 +1389,21 @@
       ]
     ],
     "expect": [
-      "#500: a formula above 97 is capped, and so is the stop (start 96 → 98 → 97; 97 refuses)"
+      "#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)"
     ]
   },
   {
-    "name": "#500: an unreadable line refuses at the cap instead of the floor",
+    "name": "#500: the days are counted from NOW, not from the coming midnight",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "return REFUSE_AT if line is None else",
-        "return LINE_CAP if line is None else"
+        "max(0.0, (resets - nxt)",
+        "max(0.0, (resets - now)"
       ]
     ],
     "expect": [
-      "⭐ #500: an unreadable line falls back to the 90 floor and SAYS so",
-      "#500: refuse_at — the floor, the line, the cap, and None"
+      "⭐ #500: the reserve rises at local midnight — 23:59 Thu keeps 2 days, 00:00 Fri keeps 1",
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
     ]
   },
   {
@@ -1409,13 +1411,13 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    stop = refuse_at(line)\n",
-        "    stop = REFUSE_AT\n"
+        "    stop, days = refuse_at(now, resets), days_after_today(now, resets)\n",
+        "    stop, days = 90.0, days_after_today(now, resets)\n"
       ]
     ],
     "expect": [
-      "⭐ #500: a line above 90 IS the stop — 92.4 warns, 92.5 refuses, and the message names it",
-      "⭐ #500: the last day before the reset spends to 97 by the formula alone (50 at midnight; 96.9 warns, 97 refuses)"
+      "⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+      "⭐ #500: early in the week the reserve bites below WARN (6 days after today → 70; 69.9 OK, 70 refuses)"
     ]
   },
   {
@@ -1475,12 +1477,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "                 else f\" Today's pace line cannot be read ({why}), so the stop is the {pct(REFUSE_AT)} floor.\" if why\n",
-        "                 else \"\" if why\n"
+        "else f\" Today's pace line cannot be read ({why}): treat it as NOT RUN.\" if why else \"\")",
+        "else \"\")"
       ]
     ],
     "expect": [
-      "⭐ #500: an unreadable line falls back to the 90 floor and SAYS so"
+      "⭐ #500: an unreadable line is SAID, and the stop is unchanged"
     ]
   },
   {
@@ -1493,7 +1495,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500: main() reads --meter: 91% under a 92.5 line WARNS; with no meter log it REFUSES"
+      "⭐ #500: main() reads --meter: its message names the 92.5 line from that file"
     ]
   },
   {
@@ -1506,7 +1508,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop"
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
     ]
   },
   {
@@ -1514,12 +1516,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "or not 0 <= p <= 100 or r",
-        "or not 0 <= p or r"
+        "<= 100 or r != resets",
+        "<= 1000 or r != resets"
       ]
     ],
     "expect": [
-      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop"
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
     ]
   },
   {
@@ -1532,7 +1534,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop"
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
     ]
   },
   {
@@ -1585,6 +1587,32 @@
     ],
     "expect": [
       "#500 r1 C5: a meter log that cannot be read says WHY, from the read"
+    ]
+  },
+  {
+    "name": "#500: the pace line moves the stop again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n",
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n    stop = line if line is not None else stop\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter"
+    ]
+  },
+  {
+    "name": "#500: the WARN message omits the stop's reserve",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}\")",
+        "f\"Resets {local_time(resets)}.{line_note}{five_note}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: the message states the stop's reserve, and names the line as a guide"
     ]
   }
 ]

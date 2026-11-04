@@ -17,7 +17,7 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
-    REFUSE-SPAWN  weekly at or over the stop: max(90%, today's pace line), never above 97% (backlog #500) — a NEW subagent spawn, and a message from the MAIN SESSION that
+    REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
     CANNOT RUN    the cache is missing, not a regular file, not read within 1 s, over 64 KiB, unparseable
@@ -126,7 +126,7 @@ The hook verdict travels as JSON on stdout at exit 0. A crash is any other exit,
 as non-blocking, and the hooks map every non-zero exit to 1 so that even an argparse error (exit 2) can
 never block a prompt.
 
-FAILS IF (backlog #399's falsifier, at backlog #500's stop): with the cache at the stop or over (90% with no meter log), a new subagent spawns, or the MAIN SESSION
+FAILS IF (backlog #399's falsifier, at backlog #500's stop): with the cache at the stop or over, a new subagent spawns, or the MAIN SESSION
 wakes an agent with anything but a control message above, without an override; or a missing cache reads as fine.
 (A subagent waking a sibling is backlog #404's falsifier, not this one.)
 
@@ -141,7 +141,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 295 cases
+    python3 scripts/check-usage-pace.py --self-test  # 299 cases
 """
 from __future__ import annotations
 
@@ -155,13 +155,15 @@ import time
 import types
 
 WARN_AT = 80.0
-# backlog #500 (the owner, 2026-11-04 08:47): the stop is max(REFUSE_AT, today's PACE LINE), never above LINE_CAP.
-# "when there are many days to reset, leaving some reserve for emergency work make sense. If it is only one day
-# difference, the reserve may be ignored and capped at 97%." Early in the week the line is below 90, so 90 keeps a
-# 10-point reserve; as the reset nears the line rises to 97, so the allowance is spent rather than lost at the reset.
-# The last 3 points are never refused-into: they let work IN FLIGHT finish and cover a cache up to MAX_AGE_S old.
-# An unreadable line fails toward the 90 floor, and says so.
-REFUSE_AT = 90.0
+# backlog #500 (the owner, 2026-11-04 09:29): the stop is a RESERVE, not a pace — "emergency reserve is set to 5% and
+# remaining days are 3 days(excluding today), max usage for today can be 100 - 3×5 = 85". So the stop is
+# 100 − RESERVE_PER_DAY × the days left AFTER today (fractional: a reset at 02:00 leaves 2 h, not a whole day), never
+# above STOP_CAP. Unused reserve is never lost: each midnight the stop rises by RESERVE_PER_DAY, and on the last day
+# all of it is spendable. The last 3 points (STOP_CAP) let work IN FLIGHT finish and cover a cache up to MAX_AGE_S
+# old. The owner's PACE LINE (11-01 15:38) keeps the day-to-day pace steady; it is a GUIDE, named in the message,
+# and never moves the stop — so the meter log it is read from cannot move the stop either.
+RESERVE_PER_DAY = 5.0
+STOP_CAP = 97.0
 LINE_CAP = 97.0
 LINE_FRONT_LOAD = 1.5
 METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
@@ -296,10 +298,17 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tup
     return min(LINE_CAP, start[1] + LINE_FRONT_LOAD * (100 - start[1]) / days), ""
 
 
-def refuse_at(line: float | None) -> float:
-    """The hard stop: the pace line when it is above REFUSE_AT, never above LINE_CAP; REFUSE_AT otherwise,
-    including when the line cannot be read (fail toward the stricter stop)."""
-    return REFUSE_AT if line is None else max(REFUSE_AT, min(LINE_CAP, line))
+def days_after_today(now: float, resets: float) -> float:
+    """The days from the coming local midnight to the reset, fractional, never negative (0 on the last day).
+    The next midnight comes from `mktime` with the day + 1, which normalises month ends and DST days."""
+    lt = time.localtime(now)
+    nxt = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday + 1, 0, 0, 0, 0, 0, -1))
+    return max(0.0, (resets - nxt) / 86400)
+
+
+def refuse_at(now: float, resets: float) -> float:
+    """The hard stop (backlog #500): 100 − RESERVE_PER_DAY × the days left after today, never above STOP_CAP."""
+    return min(STOP_CAP, 100 - RESERVE_PER_DAY * days_after_today(now, resets))
 
 
 def cannot(reason: str) -> tuple[str, str]:
@@ -356,21 +365,21 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     if five is not None and five[1] > now and five[0] >= FIVE_HOUR_WARN_AT:
         five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
                      f"resets {local_time(five[1])}.")
-    # `meter` False = the line was not consulted (the fixed stop); None or text = the meter log's read.
+    stop, days = refuse_at(now, resets), days_after_today(now, resets)
+    stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < STOP_CAP
+                 else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.")
+    # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
     line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
-    stop = refuse_at(line)
-    line_note = (f" The stop is today's pace line ({pct(stop)}), above the {pct(REFUSE_AT)} floor." if stop > REFUSE_AT
-                 else f" Today's pace line is {pct(line)}, so the stop is the {pct(REFUSE_AT)} floor." if line is not None
-                 else f" Today's pace line cannot be read ({why}), so the stop is the {pct(REFUSE_AT)} floor." if why
-                 else "")
+    line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
+                 else f" Today's pace line cannot be read ({why}): treat it as NOT RUN." if why else "")
     if weekly >= stop:
         return REFUSE, (f"⛔ usage pace: weekly usage is {pct(weekly)} — new subagent spawns, and messages that "
                         f"wake an agent, are REFUSED (at {pct(stop)}); work in flight continues, and a "
-                        f"subagent's report is allowed. Resets {local_time(resets)}.{line_note}{five_note}")
+                        f"subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if weekly >= WARN_AT:
         return WARN, (f"⚠ usage pace: weekly usage is {pct(weekly)} (WARN at {pct(WARN_AT)}; at "
                       f"{pct(stop)} new spawns and agent wake-ups are refused). "
-                      f"Resets {local_time(resets)}.{line_note}{five_note}")
+                      f"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if five_note:
         return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{five_note}"
     return OK, ""
@@ -803,41 +812,46 @@ def _self_test_body() -> int:
         m85 = meter((NOW - 3600, 85, WEEK_RESET))
         check("⭐ #500: the pace line is start% + 1.5 × (100 − start%) ÷ days-to-reset",
               pace_line(m85, NOW + 60, WEEK_RESET), (92.5, ""))
-        check("⭐ #500: a line above 90 IS the stop — 92.4 warns, 92.5 refuses, and the message names it",
-              (evm(cache(92.4), m85)[0], evm(cache(92.5), m85)[0], "(at 92.5%)" in evm(cache(92.5), m85)[1],
-               "The stop is today's pace line (92.5%), above the 90% floor." in evm(cache(91), m85)[1]),
-              (WARN, REFUSE, True, True))
-        check("⭐ #500: many days out, a line below 90 keeps the 90 reserve (start 20 → line 60; 89.9 warns, 90 refuses)",
-              (pace_line(meter((NOW - 60, 20, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               evm(cache(89.9), meter((NOW - 60, 20, WEEK_RESET)))[0],
-               evm(cache(90), meter((NOW - 60, 20, WEEK_RESET)))[0],
-               "Today's pace line is 60%, so the stop is the 90% floor."
-               in evm(cache(85), meter((NOW - 60, 20, WEEK_RESET)))[1]), (60.0, WARN, REFUSE, True))
-        check("⭐ #500: the last day before the reset spends to 97 by the formula alone (50 at midnight; 96.9 warns, 97 refuses)",
-              (pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0],
-               evm(cache(96.9, week_reset=NOW + 20 * 3600), meter((NOW - 60, 50, NOW + 20 * 3600)))[0],
-               evm(cache(97, week_reset=NOW + 20 * 3600), meter((NOW - 60, 50, NOW + 20 * 3600)))[0]),
-              (97.0, WARN, REFUSE))
-        check("#500: a formula above 97 is capped, and so is the stop (start 96 → 98 → 97; 97 refuses)",
-              (pace_line(meter((NOW - 60, 96, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               evm(cache(97), meter((NOW - 60, 96, WEEK_RESET)))[0]), (97.0, REFUSE))
-        check("#500: refuse_at — the floor, the line, the cap, and None",
-              (refuse_at(60.0), refuse_at(92.5), refuse_at(150.0), refuse_at(None)), (90.0, 92.5, 97.0, 90.0))
+        # NOW is Fri 00:00; the next midnight is Sat 00:00; WEEK_RESET is Mon 00:00 → 2 days after today → 90.
+        check("⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
+              (refuse_at(NOW, NOW + 4 * 86400), refuse_at(NOW, WEEK_RESET), refuse_at(NOW, NOW + 86400 + 7200), refuse_at(NOW, NOW + 3 * 86400 + 7200),
+               refuse_at(NOW, NOW + 7 * 86400)), (85.0, 90.0, 97.0, 100 - 5 * (2 + 7200 / 86400), 70.0))
+        check("⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+              (refuse_at(NOW, NOW + 20 * 3600), evm(cache(96.9, week_reset=NOW + 20 * 3600), m85)[0],
+               evm(cache(97, week_reset=NOW + 20 * 3600), m85)[0]), (97.0, WARN, REFUSE))
+        check("⭐ #500: early in the week the reserve bites below WARN (6 days after today → 70; 69.9 OK, 70 refuses)",
+              (kind(cache(69.9, week_reset=NOW + 7 * 86400)), kind(cache(70, week_reset=NOW + 7 * 86400))), (OK, REFUSE))
+        check("⭐ #500: the reserve rises at local midnight — 23:59 Thu keeps 2 days, 00:00 Fri keeps 1",
+              (refuse_at(NOW - 60, NOW + 2 * 86400), refuse_at(NOW, NOW + 2 * 86400)), (90.0, 95.0))
+        check("#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
+              (days_after_today(NOW, NOW + 3600), days_after_today(NOW, NOW + 86400 + 7200)), (0.0, 7200 / 86400))
+        check("⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter",
+              [evm(cache(89.9), m)[0] + "/" + evm(cache(90), m)[0]
+               for m in (m85, meter((NOW - 60, 20, WEEK_RESET)), None, meter((NOW - 60, 99, WEEK_RESET)))],
+              ["WARN/REFUSE-SPAWN"] * 4)
+        check("⭐ #500: the message states the stop's reserve, and names the line as a guide",
+              ("at 90% new spawns" in evm(cache(85), m85)[1],
+               "The stop keeps 5% for each of the 2.0 days after today." in evm(cache(85), m85)[1],
+               "Today's pace line is 92.5% — a guide, not a stop." in evm(cache(85), m85)[1],
+               "The stop is the 97% cap: the rest is for work in flight." in
+               evm(cache(85, week_reset=NOW + 3600), m85)[1]), (True, True, True, True))
+        check("#500: the pace line on the last day is its 97 cap by the formula alone (50 at midnight)",
+              pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0], 97.0)
+        check("#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)",
+              pace_line(meter((NOW - 60, 96, WEEK_RESET)), NOW, WEEK_RESET)[0], 97.0)
         check("⭐ #500: start% is the value AT midnight, not the latest reading (83 at midnight, 88 now)",
               pace_line(meter((NOW - 900, 80, WEEK_RESET), (NOW - 100, 83, WEEK_RESET),
                               (NOW + 3000, 88, WEEK_RESET)), NOW + 3600, WEEK_RESET)[0], 83 + 1.5 * 17 / 3)
         check("#500: a window that began after midnight starts at its FIRST row",
               pace_line(meter((NOW + 7200, 4, WEEK_RESET), (NOW + 9000, 9, WEEK_RESET)), NOW + 9999,
                         WEEK_RESET)[0], 4 + 1.5 * 96 / 3)
-        check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop",
+        check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line",
               (pace_line(meter((NOW - 60, -100, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               evm(cache(91), meter((NOW - 60, -100, WEEK_RESET)))[0],
                pace_line(meter((NOW - 60, 150, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               evm(cache(91), meter((NOW - 60, 150, WEEK_RESET)))[0],
                pace_line(meter((NOW - 60, 110, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0],
                pace_line(meter((NOW - 60, 100, WEEK_RESET), (NOW - 30, 0, WEEK_RESET)), NOW, WEEK_RESET)[0],
                pace_line(meter((NOW - 60, True, WEEK_RESET)), NOW, WEEK_RESET)[0]),
-              (None, REFUSE, None, REFUSE, None, 0 + 1.5 * 100 / 3, None))
+              (None, None, None, 0 + 1.5 * 100 / 3, None))
         check("#500 r1 C5: a meter log that cannot be read says WHY, from the read",
               "the meter log is unreadable: /m was not read within 1 s" in evaluate(cache(91), NOW, meter=None,
                                                                                 meter_why="/m was not read within 1 s")[1],
@@ -847,23 +861,20 @@ def _self_test_body() -> int:
                pace_line(meter((NOW + 600, 85, WEEK_RESET)), NOW, WEEK_RESET)[0],
                pace_line(meter((NOW - 60, 85, WEEK_RESET), garbage=True), NOW, WEEK_RESET)[0]),
               ((None, "the meter log has no reading of this week's window"), None, 92.5))
-        check("⭐ #500: an unreadable line falls back to the 90 floor and SAYS so",
-              (evm(cache(90), None)[0], "pace line cannot be read (the meter log is missing or unreadable), so the "
-               "stop is the 90% floor." in evm(cache(90), None)[1],
-               evm(cache(91), meter((NOW - 60, 85, WEEK_RESET - 7 * 86400)))[0]), (REFUSE, True, REFUSE))
-        check("#500: not consulting the meter keeps the fixed 90 and names no line",
-              (kind(cache(90)), "pace line" in ev(cache(91))[1]), (REFUSE, False))
+        check("⭐ #500: an unreadable line is SAID, and the stop is unchanged",
+              (evm(cache(90), None)[0], "Today's pace line cannot be read (the meter log is missing or unreadable): "
+               "treat it as NOT RUN." in evm(cache(85), None)[1]), (REFUSE, True))
+        check("#500: not consulting the meter names no line",
+              (kind(cache(90)), "pace line" in ev(cache(85))[1]), (REFUSE, False))
         with tempfile.TemporaryDirectory() as td:
             cp, mp = os.path.join(td, "c.json"), os.path.join(td, "m.jsonl")
             with open(cp, "w") as f:
-                f.write(cache(91))
+                f.write(cache(85))
             with open(mp, "w") as f:
                 f.write(m85)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc_line = main(["--cache", cp, "--meter", mp, "--now", str(NOW)], env={}, payload="")
-            rc_none = main(["--cache", cp, "--meter", os.path.join(td, "absent"), "--now", str(NOW)],
-                           env={}, payload="")
         check("⭐ #500 r1 C2: the suite's HOME is redirected, so the DEFAULT meter path is absent for every case",
               (os.environ.get("HOME") == fake_home, os.path.exists(os.path.expanduser(METER_LOG))), (True, False))
         with tempfile.TemporaryDirectory() as home2:
@@ -871,7 +882,7 @@ def _self_test_body() -> int:
             with open(os.path.join(home2, ".claude", "meter", "log.jsonl"), "w") as f:
                 f.write(m85)
             with open(os.path.join(home2, "c.json"), "w") as f:
-                f.write(cache(91))
+                f.write(cache(85))
             os.environ["HOME"] = home2
             try:
                 buf2 = io.StringIO()
@@ -880,9 +891,9 @@ def _self_test_body() -> int:
             finally:
                 os.environ["HOME"] = fake_home
         check("⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use",
-              (rc_default, "today's pace line (92.5%)" in buf2.getvalue()), (RC[WARN], True))
-        check("⭐ #500: main() reads --meter: 91% under a 92.5 line WARNS; with no meter log it REFUSES",
-              (rc_line, "today's pace line (92.5%)" in buf.getvalue(), rc_none), (RC[WARN], True, RC[REFUSE]))
+              (rc_default, "Today's pace line is 92.5%" in buf2.getvalue()), (RC[WARN], True))
+        check("⭐ #500: main() reads --meter: its message names the 92.5 line from that file",
+              (rc_line, "Today's pace line is 92.5%" in buf.getvalue()), (RC[WARN], True))
 
         # ── the weekly boundaries ──────────────────────────────────────────────────────────────────
         check("weekly 0 is OK", kind(cache(0)), OK)
@@ -894,11 +905,11 @@ def _self_test_body() -> int:
         check("OK carries no message", ev(cache(79.9))[1], "")
         check("WARN, the whole message (fixed string, zone included)", ev(cache(83))[1],
               "⚠ usage pace: weekly usage is 83% (WARN at 80%; at 90% new spawns and agent wake-ups are "
-              "refused). Resets Mon 01-18 00:00 PST.")
+              "refused). Resets Mon 01-18 00:00 PST. The stop keeps 5% for each of the 2.0 days after today.")
         check("REFUSE, the whole message (fixed string; it names no override)", ev(cache(98.5))[1],
               "⛔ usage pace: weekly usage is 98.5% — new subagent spawns, and messages that wake an agent, are "
               "REFUSED (at 90%); work in flight continues, and a subagent's report is allowed. "
-              "Resets Mon 01-18 00:00 PST.")
+              "Resets Mon 01-18 00:00 PST. The stop keeps 5% for each of the 2.0 days after today.")
         check("WARN at 89.9999 shows 89.9%, never 90%", ev(cache(89.9999))[1].startswith(
             "⚠ usage pace: weekly usage is 89.9% (WARN"), True)
         check("every message is ONE line", all("\n" not in ev(t)[1] for t in
