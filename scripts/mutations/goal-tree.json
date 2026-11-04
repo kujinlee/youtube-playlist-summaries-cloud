@@ -2015,8 +2015,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if cur and cur[-1][\"replaced\"] is None:",
-        "        if False:"
+        "        if cur:\n            prev = cur[-1]",
+        "        if False:\n            prev = cur[-1]"
       ]
     ],
     "expect": [
@@ -2041,8 +2041,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if steps[n - 1][\"refs\"]:\n        raise Malformed",
-        "    if False:\n        raise Malformed"
+        "        if steps[n - 1][\"refs\"]:\n            raise Malformed",
+        "        if False:\n            raise Malformed"
       ]
     ],
     "expect": [
@@ -2093,7 +2093,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src)",
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, declared)",
         "live[\"agenda\"] = None"
       ]
     ],
@@ -2112,6 +2112,97 @@
     ],
     "expect": [
       "⭐ main records an agenda, ticks it, and --print shows it under NEEDS YOU, before the tree"
+    ]
+  },
+  {
+    "name": "a step takes no `waits` from the declared thread with its refs (backlog #499, r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"waits\": waits.get(tuple(map(tuple, st[\"refs\"])))}",
+        "\"waits\": None}"
+      ]
+    ],
+    "expect": [
+      "⭐ a step whose row the tree declares `waits on` reads ❌ blocked, as the leaf does (r1 Codex H1)"
+    ]
+  },
+  {
+    "name": "main lends the snapshot's agenda no declared threads (backlog #499, r1 Codex H1, the call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, declared)",
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, [])"
+      ]
+    ],
+    "expect": [
+      "⭐ main lends a step the `waits on` its row's declared thread carries (r1 Codex H1, the call site)"
+    ]
+  },
+  {
+    "name": "a replay record is attached to the last agenda whatever it names (backlog #499, r1 Codex H2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not out or rec.get(\"of\") != out[-1][\"id\"] or out[-1][\"replaced\"] is not None:\n            raise Malformed",
+        "        if not out:\n            raise Malformed"
+      ]
+    ],
+    "expect": [
+      "⛔ a replay record naming a closed or absent agenda is MALFORMED, never dropped or misattributed (r1 Codex H2)"
+    ]
+  },
+  {
+    "name": "a step can be ticked twice (backlog #499, r1 Codex M4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if n in cur[-1][\"ticked\"]:\n            raise Malformed",
+        "        if False:\n            raise Malformed"
+      ]
+    ],
+    "expect": [
+      "⛔ a step already ticked is refused, not ticked twice (r1 Codex M4)"
+    ]
+  },
+  {
+    "name": "`--tick-agenda 0` is read as absent (backlog #499, r1 Codex M5)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if a.tick_agenda is not None:",
+        "        if a.tick_agenda:"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing agenda file is CANNOT RUN (2), and `--tick-agenda 0` is a refused tick (1), never the default run (r1 Codex M3, M5)"
+    ]
+  },
+  {
+    "name": "a missing agenda file escapes as a traceback (backlog #499, r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            except OSError as exc:\n                print(f\"CANNOT RUN — the agenda file",
+        "            except KeyError as exc:\n                print(f\"CANNOT RUN — the agenda file"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing agenda file is CANNOT RUN (2), and `--tick-agenda 0` is a refused tick (1), never the default run (r1 Codex M3, M5)"
+    ]
+  },
+  {
+    "name": "a second `window:` line silently overwrites the first (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if (window if key == \"window\" else change_if) is not None:\n                problems.append",
+        "            if False:\n                problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ a second `window:` line is refused, not silently overwritten"
     ]
   }
 ]
