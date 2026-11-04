@@ -2277,9 +2277,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 73 -> 85 (context floor r3): `--add` stores what the text looks like; the compact block is CAPPED (owner entries
     # accepted against a reserved notice, waits first, the PR list and the problems bounded, the overflow named and counted,
     # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
-    # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 93, the open `sweep-red` issues in the block — the CANNOT READ arm, its
-    # mark, the names, the cap, collect()'s wiring, and the reader's command, failure and element checks.
-    "scripts/session-state.py": 93,
+    # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 94, the open `sweep-red` issues in the block — the CANNOT READ arm, its
+    # mark, the names, the cap, collect()'s wiring, and the reader's command, directory, failure and element checks.
+    "scripts/session-state.py": 94,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real

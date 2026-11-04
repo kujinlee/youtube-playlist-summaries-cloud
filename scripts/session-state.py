@@ -986,11 +986,11 @@ def _self_test_body() -> int:
          (SWEEP_RED_SHOWN, True))
     case("...and a caller that did not read the issues prints no issue line at all",
          "SWEEP-RED" in render([], None, [], [], "T"), False)
-    case("⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, within ISSUE_TIMEOUT",
-         (lambda seen_i: (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (seen_i.append((c, timeout)), (0, "[]"))[1]),
+    case("⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT",
+         (lambda seen_i: (fetch_sweep_red(Path("/r1"), lambda c, w, timeout=TIMEOUT: (seen_i.append((c, w, timeout)), (0, "[]"))[1]),
                           seen_i))([]),
          (([], None), [(["gh", "issue", "list", "--label", "sweep-red", "--state", "open", "--json", "number,title,url"],
-                        ISSUE_TIMEOUT)]))
+                        Path("/r1"), ISSUE_TIMEOUT)]))
     case("...a gh failure is (None, why), and a malformed element is unparseable, never a crash",
          (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (1, "HTTP 502\n")),
           (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (0, '[{"number": 1}]'))[1] or "").startswith("gh output unparseable")),

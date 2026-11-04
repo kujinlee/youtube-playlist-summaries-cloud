@@ -1206,7 +1206,20 @@
       ]
     ],
     "expect": [
-      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, within ISSUE_TIMEOUT"
+      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the issue reader asks gh in the wrong directory",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                  root, ISSUE_TIMEOUT)",
+        "                  Path(\".\"), ISSUE_TIMEOUT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
     ]
   }
 ]
