@@ -1699,16 +1699,16 @@
     ]
   },
   {
-    "name": "goal blocks: goals are numbered from 0, not by their 1-based place in the threads file",
+    "name": "goal blocks: goals are numbered from 0, not 1-based by their first request's time",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    for n, g in enumerate(snap[\"goals\"], 1):",
-        "    for n, g in enumerate(snap[\"goals\"]):"
+        "    rank = {i: r for r, i in enumerate(order, 1)}",
+        "    rank = {i: r for r, i in enumerate(order)}"
       ]
     ],
     "expect": [
-      "⛔ goal blocks: --print numbers each goal by its place in docs/goal-threads.md, `GOAL n · slug`"
+      "⛔ goal blocks: --print numbers each goal by its first request's time, `GOAL n · slug`"
     ]
   },
   {
@@ -1721,7 +1721,7 @@
       ]
     ],
     "expect": [
-      "⛔ goal blocks: --print numbers each goal by its place in docs/goal-threads.md, `GOAL n · slug`"
+      "⛔ goal blocks: --print numbers each goal by its first request's time, `GOAL n · slug`"
     ]
   },
   {
@@ -1729,8 +1729,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    anchor = f' id=\"goal-{n}\"' if seen is not None else \"\"",
-        "    anchor = f' id=\"goal-{n}\"'"
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"' if seen is not None else \"\"",
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"'"
       ]
     ],
     "expect": [
@@ -1761,6 +1761,201 @@
     ],
     "expect": [
       "goal blocks: the heading colour is the common look's --accent (gold), declared in all four palettes"
+    ]
+  },
+  {
+    "name": "review r1 X1: in-flight ledger work no longer lifts a landed thread to NOW, so it folds away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"inflight\", \" · in flight: \" in str(t.get(\"detail\", \"\"))):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X1: in-flight ledger work on a MERGED thread is NOW — in --print, and outside every page fold"
+    ]
+  },
+  {
+    "name": "review r1 X1: an open PR mentioned in any thread's detail text counts as represented, so it leaves UNDECLARED",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    named_prs |= {t[\"open_pr\"] for g in out_goals for t in g[\"threads\"] if t.get(\"open_pr\") is not None}",
+        "    named_prs |= {int(m) for g in out_goals for t in g[\"threads\"] for m in re.findall(r\"PR #(\\d+)\", t[\"detail\"])}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X1: an open PR mentioned only in a ledger entry's text is still UNDECLARED, never hidden"
+    ]
+  },
+  {
+    "name": "review r1 X1: the open PR a backlog row resolved to by its title is not recorded, so it shows as undeclared",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            open_pr = int(p[\"number\"])\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "review r1 X1 adjacent: a backlog-only thread resolved to an open PR by its TITLE still represents that PR"
+    ]
+  },
+  {
+    "name": "review r1 X2: master's committer date wins over GitHub's mergedAt",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if gh:\n        return gh\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X2: a merged leaf's time is GitHub's mergedAt, not the commit date, and stays RECENT"
+    ]
+  },
+  {
+    "name": "review r1 X2: a backlog-only thread's merge time ignores GitHub's mergedAt",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
+        "            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
+      ]
+    ],
+    "expect": [
+      "review r1 X2 adjacent: with no mergedAt, the commit date is the fallback (backlog-only path too)"
+    ]
+  },
+  {
+    "name": "review r1 X3: goals are numbered by their place in the file, so a prepended goal renumbers the rest",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    order = sorted(range(len(goals)), key=lambda i: (goals[i][\"requests\"][0][\"when\"], i))",
+        "    order = list(range(len(goals)))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or "
+    ]
+  },
+  {
+    "name": "review r1 X3: goal anchors use the number, so they move with it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"' if seen is not None else \"\"",
+        "    anchor = f' id=\"goal-{n}\"' if seen is not None else \"\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or "
+    ]
+  },
+  {
+    "name": "review r1 C2: an unstarted fix or blocker is LATER again, folded under 'later'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return \"queued\" if t.get(\"relation\") in QUEUED_RELATIONS else \"later\"",
+        "        return \"later\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C2: an unstarted fix or blocker is QUEUED (planned), drawn open and labelled; "
+    ]
+  },
+  {
+    "name": "review r1 C2: the later fold says 'nothing plans it' again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"later ({len(later)}) — not started, bookkeeping or an aside\"",
+        "f\"later ({len(later)}) — not started, and nothing plans it\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C2: the `later` fold no longer claims 'nothing plans it' — it says what it holds"
+    ]
+  },
+  {
+    "name": "review r1 C3: a negated 'NOT PARKED' parks the thread",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    text = PARKED_NOT_RE.sub(\" \", str(entry.get(\"what\", \"\")))",
+        "    text = str(entry.get(\"what\", \"\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, "
+    ]
+  },
+  {
+    "name": "review r1 C3: a lower-case 'parked:' leading the entry no longer parks",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            or bool(PARKED_LEAD_RE.search(text)))",
+        "            or False)"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, "
+    ]
+  },
+  {
+    "name": "review r1 C5: the fold summary is --ink-faint again (below AA in the light theme)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);",
+        "details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C5: fold summaries, goal counts and the goal quote's time are --ink-soft, never --ink-faint"
+    ]
+  },
+  {
+    "name": "review r1 C5: the goal counts are --ink-faint again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".goal-counts{color:var(--ink-soft)}",
+        ".goal-counts{color:var(--ink-faint)}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C5: fold summaries, goal counts and the goal quote's time are --ink-soft, never --ink-faint"
+    ]
+  },
+  {
+    "name": "review r1 C6: a closed PR is OLDER at any age again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if state in (\"merged\", \"closed\"):",
+        "    if state == \"merged\":"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
+    ]
+  },
+  {
+    "name": "review r1 C6: a closed PR's close time is not read into its leaf",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out[\"closed_at\"] = max(closes) if closes and all(closes) else None",
+        "        out[\"closed_at\"] = None"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
     ]
   }
 ]

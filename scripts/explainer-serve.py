@@ -116,7 +116,8 @@ REPO = SCRIPTS.parent
 REGEN_TIMEOUT = 300
 # A page whose rebuild is pressed while the owner watches gets a tighter bound than the
 # default. Backlog #497, the owner 2026-11-04 01:07: the goal tree refreshes on a click, so
-# a click must answer within a minute (a real rebuild measured 10-11 s), never hang for five.
+# a click must answer within a minute, never hang for five. MEASURED 2026-11-04: `goal-tree.py --page`
+# took 7.08, 7.95 and 6.41 s, so the bound is max(60, 2 x the slowest = 15.9) = 60 s.
 REGEN_TIMEOUTS = {"goal-tree": 60}
 # ⚠ The ONLY pages `POST /regenerate` may rebuild. A dict of LITERALS, deliberately: the
 # caller names a key, never a path or an argument, so nothing it sends reaches the

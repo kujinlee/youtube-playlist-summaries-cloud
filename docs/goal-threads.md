@@ -9,6 +9,8 @@ merged, open, red or in flight is DERIVED by `python3 scripts/goal-tree.py --sna
 Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it fails the snapshot loudly:
 
 - `## GOAL <slug>` opens a goal. The slug is lowercase words joined by `-`, unique in this file.
+  The page numbers goals `GOAL n` by their first request's time (ties in file order), and anchors each as
+  `#goal-<slug>`, so a goal added with a later first request renumbers none; deleting one, or adding one dated earlier, can.
 - `> YYYY-MM-DD HH:MM "<the owner's words>"` is a request that set or widened the goal, in the owner's
   local time, quoted exactly. The first one is the goal; a goal has at least one.
 - `- <relation> · <refs> · <what>` is a thread. `<relation>` is one of `fix` (serves the goal directly),
