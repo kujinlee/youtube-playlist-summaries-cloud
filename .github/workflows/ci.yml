@@ -16,6 +16,12 @@ on:
     branches: [master]
   push:
     branches: [master]
+  # backlog #330: THE FULL SWEEP'S BACKSTOP. A pull request runs only the manifests its diff selects,
+  # and a text-bound defect in an UNSELECTED manifest (backlog #109's orphaned anchor) is seen only by
+  # running the whole manifest — which every master push does, and this does daily even when nothing
+  # merges. A red one opens (or comments on) a `sweep-red` issue: see `mutation-sweep-complete`.
+  schedule:
+    - cron: '23 7 * * *'
 
 # A new push to the same PR cancels the previous run. ⛔ A PUSH TO MASTER IS NEVER CANCELLED
 # (backlog #405 r1): cancelling it let a later docs-only merge (whose own sweep is skipped) erase an
@@ -1194,213 +1200,45 @@ jobs:
       # not a canonical ASCII `I/N` (bounded to four digits, no Unicode digits, no leading zeros, no
       # surrounding whitespace), refuses `0 <= I < N` violations, and refuses an empty value — each
       # with a CANNOT RUN sentence and a case in `check-plan-code.py`'s own suite.
-      # ── backlog #173, raised by the owner TWICE and measured rather than estimated ──────
-      # "this sweep time become quite a drag as it happens every merge even for small changes".
-      # MEASURED on run 35889056587: the sweep was 8m12s of a 10m22s job — 79% of the gate — and
-      # three of the five pull requests merged that week changed no code at all. When no
-      # `scripts/**` file changed, the sweep mutates UNCHANGED code against UNCHANGED suites, so
-      # it can only reproduce the previous result: skipping it loses nothing BY CONSTRUCTION.
-      #
-      # ⛔⛔ A STEP-LEVEL `if:`, NEVER A WORKFLOW-LEVEL `paths:` FILTER — backlog #137 already paid
-      # for that distinction. A `paths:` filter means the context never appears on a docs-only pull
-      # request, and *a required check that never reports leaves a pull request pending for ever*.
-      # A step conditional keeps the job running and reporting, so the check stays required.
-      #
-      # ⛔ AND IT FAILS TOWARD RUNNING. If the base ref cannot be resolved the answer is `true`,
-      # because an undetermined diff must not silently skip a gate — "cannot run is a failure,
-      # never a pass" applies to the DECISION to skip just as much as to the sweep itself.
-      - name: Did any mutated code or manifest change?
-        id: mutated_code
-        run: |
-          set -u
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.base_ref }}"
-          else
-            BASE="HEAD^"
-          fi
-          if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
-            echo "base '$BASE' does not resolve — running the sweep rather than guessing"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # `scripts/` covers both the delivered guards and `scripts/mutations/**`, which is the
-          # whole of what the sweep reads. Anything else cannot change a mutation verdict.
-          # ⛔ THE DECISION IS NOT MADE HERE. This block collects the diff and calls
-          # `check-plan-code.sweep_needed`, which is pure, has seven cases and a mutation entry.
-          # A `run:` block has none of those, and that is exactly how the shard rule shipped wrong
-          # in three consecutive rounds with every gate green — see the comment on that step.
-          #
-          # ⛔⛔ AND THE ANSWER IS READ FROM STDOUT, NOT FROM AN EXIT CODE — MEASURED, because the
-          # first version of this block used `if python3 - <<EOF` and would have DISABLED THE GATE
-          # ENTIRELY. `check-plan-code.py` cannot be imported under a custom module name: a frozen
-          # dataclass needs the module registered in `sys.modules`, so `exec_module` raises. A
-          # raise is a non-zero exit, `if` reads that as false, and the sweep would have been
-          # skipped on EVERY run while the job stayed green. Printing the verdict separates "the
-          # answer is no" from "the question could not be asked" — the distinction the exit code
-          # silently collapsed.
-          # ⛔⛔ THE DIFF'S EXIT STATUS IS CHECKED, AND `|| true` IS GONE — r4, found independently
-          # by BOTH review halves and the coordinator, the only three-way overlap of the round.
-          # `|| true` made "the diff could not be taken" indistinguishable from "nothing changed":
-          # the redirect had already truncated the file, so Python read `[]`, and `sweep_needed([])`
-          # is False -> SKIP. MEASURED with a `git` shim that resolves `rev-parse --verify` and
-          # fails `diff` (the shape of a missing merge base): `changed=false`, exit 0, and a log
-          # line asserting *"no scripts/ file changed"* — a FALSE STATEMENT ABOUT THE WORLD rather
-          # than an error, so the `::warning::` arm below was never reached and nothing in the log
-          # told a reader the gate had been skipped.
-          #
-          # ⛔ `[]` IS NOT `None`, AND THAT WAS THE WHOLE BUG. `sweep_needed` has always had a
-          # `None` arm for exactly this condition, with a case pinning it — but the shell could
-          # express "no paths changed" and had NO WAY to express "I could not find out", so that
-          # arm was UNREACHABLE FROM ITS ONLY CALL SITE. The callee was correct and the guarantee
-          # was still absent: *unit coverage does not compose — mutate the CALL SITE*.
-          # ⚠ The only thing protecting this today is `fetch-depth: 0` on this job's checkout, and
-          # that setting's own comment says it is there "for parity with `verify`, not because the
-          # sweep reads history" — an incidental guard that invites its own removal.
-          # ⛔ `-z` IS LOAD-BEARING (r6 CODEX finding 2). Without it `git` C-QUOTES any non-ASCII
-          # path — measured in a real repo: `"scripts/\303\251.py"` — which does not start with a
-          # staged root, so `sweep_needed` returned False and the WHOLE GATE was skipped while a
-          # `scripts/` file had changed. That is a VERDICT defect, and it refutes three rounds of
-          # my own claim that this component's logic was undented while only its log was wrong.
-          # ⚠ `changed_from_nul` REFUSES newline-delimited input, so dropping `-z` here produces
-          # `None` and RUNS the sweep rather than silently reinstating the bug.
-          # ⟳ backlog #405 r3 (CLAUDE C3-L2): `--no-renames` lists a rename's SOURCE path too. With
-          # rename detection on, renaming a staged file into `docs/` listed only the `docs/` path,
-          # which `sweep_needed` skips (backlog #480: nothing yet holds this flag).
-          if git diff --name-only -z --no-renames "$BASE"...HEAD > /tmp/changed.txt; then
-            DIFF_TAKEN=1
-          else
-            DIFF_TAKEN=0
-            echo "::warning::git diff against $BASE failed — the changed-file set is UNDETERMINED,"
-            echo "::warning::so the sweep RUNS. An unanswered question must never skip a gate."
-          fi
-          # ⛔ THE VERDICT AND THE EVIDENCE COME FROM THE SAME OWNER. The first version of the log
-          # line below re-listed the staged roots as a `grep -E` alternation here in YAML, which is
-          # a SECOND IMPLEMENTATION of `SWEEP_RELEVANT_ROOTS` — the drift class this repo has paid
-          # for 17 times, and one a weaker stand-in passes what the real rule would refuse. So the
-          # module prints the verdict on line 1 and the matching paths after it; the shell reports
-          # what it is given and decides nothing.
-          VERDICT_OUT=$(DIFF_TAKEN="$DIFF_TAKEN" python3 - <<'PYEOF' || echo "ERROR"
-          import importlib.util, os, pathlib, sys
-          spec = importlib.util.spec_from_file_location("cpc", "scripts/check-plan-code.py")
-          mod = importlib.util.module_from_spec(spec)
-          sys.modules["cpc"] = mod                     # a frozen dataclass needs this
-          spec.loader.exec_module(mod)
-          # `None` means the diff could not be taken, which `sweep_needed` answers with True.
-          # This is the line that makes that arm reachable; before it, nothing could produce None.
-          # ⛔ NOT `splitlines()` — that is what passed C-quoted paths straight into the
-          # predicate (r6 CODEX finding 2). `changed_from_nul` owns the parse and REFUSES input it
-          # cannot trust, returning None, which `sweep_needed` answers by running the sweep.
-          changed = (mod.changed_from_nul(pathlib.Path("/tmp/changed.txt").read_text())
-                     if os.environ["DIFF_TAKEN"] == "1" else None)
-          # ⛔⛔ THE DECISION IS NOT MADE HERE — AND FOR AN HOUR IT WAS. The three-way
-          # classification was written inline in this block, twenty lines under the comment above
-          # that forbids exactly that, and it is now `check-plan-code.sweep_verdict`: pure, nine
-          # cases, three mutation entries. The rule is not a style point — ALL 1,655 mutation
-          # entries in this repository target `scripts/`, and `.github/` has ZERO, so logic living
-          # here is unmeasurable by construction. Every significant finding on this branch landed
-          # in the unmeasured areas while the covered code held under three rounds.
-          verdict = mod.sweep_verdict(changed, os.environ["DIFF_TAKEN"] == "1")
-          print(verdict)
-          need = verdict != "SKIP"
-          # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
-          # paths that forced it; for SKIP, the staged-but-unswept paths that fell in the measured
-          # hole (r5 CLAUDE M1). Both come from the module, so the shell owns no copy of either set.
-          if need and changed is not None:
-              for p in [c for c in changed
-                        if c.strip() and c.startswith(mod.SWEEP_RELEVANT_ROOTS)][:20]:
-                  print(p)
-          elif not need:
-              for p in mod.sweep_skipped_hole(changed)[:20]:
-                  print(p)
-          PYEOF
-          )
-          VERDICT=$(printf '%s\n' "$VERDICT_OUT" | head -1)
-          MATCHED=$(printf '%s\n' "$VERDICT_OUT" | tail -n +2)
-          # On the SKIP path the same lines are the skipped-set paths, not the matched ones.
-          HOLE=""
-          [ "$VERDICT" = "SKIP" ] && HOLE="$MATCHED"
-          case "$VERDICT" in
-            SKIP)
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              # ⛔⛔ THIS MESSAGE HAS BEEN WRONG TWICE, AND BOTH WORDINGS ARE RECORDED BECAUSE THE
-              # SHAPE REPEATS. v1 claimed "no scripts/ file changed" on a path where the diff had
-              # FAILED — a false statement about the world rather than an error. v2 claimed
-              # "nothing the harness stages changed" while `docs` IS staged, and asserted
-              # "unchanged suites" one line above its own warning that a docs change can alter a
-              # suite result (r5 CLAUDE M1: self-contradicting in adjacent lines, and byte-identical
-              # whether the hole was crossed or not). v3 DISCRIMINATES, and the discrimination is
-              # computed by `check-plan-code.sweep_skipped_hole` — not by a grep alternation here,
-              # which would be a second implementation of SWEEP_SKIP_ROOTS.
-              if [ -n "$HOLE" ]; then
-                echo "no path under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE,"
-                echo "⚠ BUT these changed paths are STAGED and NOT swept — the measured hole:"
-                printf '%s\n' "$HOLE"
-                echo "⚠ So this skip is NOT free: a change in that set CAN alter a suite result"
-                echo "(measured — check-anon-exposure 74/74 -> exit 1). backlog #173 pinned the"
-                echo "decision to skip it; backlog #330 is the selector that would remove the trade."
-              else
-                echo "nothing under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE, and"
-                echo "nothing in the skipped set either — the sweep would mutate unchanged code"
-                echo "against unchanged suites, so it can only reproduce the previous result."
-              fi
-              ;;
-            RUN-UNPARSED)
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "::warning::the diff was taken but its paths could not be trusted —"
-              # ⛔ NO BACKTICKS IN A DOUBLE-QUOTED STRING. The first version of this line wrote
-              # the flag as `-z` in backticks and bash ran it as COMMAND SUBSTITUTION: the log read
-              # "-z: command not found" and the sentence lost the very word it was about. That is
-              # the exact footgun docs/dev-process.md records ("any backtick inside a double-quoted
-              # bash string is command substitution, and it has silently skipped a review gate"),
-              # committed by the person citing it, in a warning about dishonest log lines.
-              echo "::warning::not NUL-delimited, so the -z flag is missing or git quoted a path."
-              echo "the changed-file set is UNDETERMINED, so the sweep runs rather than"
-              echo "skipping a gate on an unanswered question. No path list is shown"
-              echo "BECAUSE THERE IS NONE — saying otherwise is what r6 CLAUDE M1 caught."
-              ;;
-            RUN)
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              # ⛔ THE REASON IS REPORTED, NOT ASSUMED. This arm used to print "scripts/ changed"
-              # unconditionally, so on the undetermined-diff path it asserted a changed file set it
-              # had just failed to read — a smaller instance of the very defect above, where the
-              # SKIP arm's "no scripts/ file changed" was a false statement rather than an error.
-              # A log line must never claim to know something this step could not determine.
-              if [ "$DIFF_TAKEN" = "0" ]; then
-                echo "the diff could not be taken, so the sweep runs without a changed-file list."
-              else
-                echo "a staged path changed, so the sweep runs:"
-                printf '%s\n' "$MATCHED"
-              fi
-              ;;
-            *)
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "::warning::could not decide whether the sweep is needed ($VERDICT) —"
-              echo "::warning::running it rather than skipping a gate on an unanswered question"
-              ;;
-          esac
-
+      # ── backlog #330 (approved by the owner 2026-11-02): a PULL REQUEST runs only the manifests
+      # whose SUBJECT changed; a master push and the schedule run the WHOLE manifest. ─────────────
+      # It replaces backlog #173's binary skip, every one of whose error modes was TOTAL (a failed
+      # diff, an unrecognised staged path and every `docs/` change each skipped the whole gate).
+      # ⛔ THE DECISION IS NOT MADE HERE. `check-plan-code.select_manifests` makes it — pure, with
+      # cases and mutation entries; a `run:` block has neither, which is how the shard rule shipped
+      # wrong in three consecutive rounds with every gate green. This block collects the diff and
+      # passes the event; it interprets nothing.
+      # ⛔ IT FAILS TOWARD MORE. A diff that fails leaves NO list, and a missing, unreadable or
+      # untrusted list selects the WHOLE manifest — never a skip. The selection, with the changed
+      # path that selected each manifest (or "full: <why>"), is the first thing the step prints.
+      # ⛔ A STEP, NEVER A `paths:` FILTER (backlog #137): every shard always runs and reports, and a
+      # shard holding none of the selection says "nothing to do" and passes, so the REQUIRED
+      # `mutation-sweep-complete` reports on every pull request, one that selects nothing included.
+      # ⚠ `-z` is load-bearing (r6 CODEX finding 2): without it git C-QUOTES non-ASCII paths, and
+      # `changed_from_nul` refuses such a list (-> the whole manifest). `--no-renames` lists a
+      # rename's SOURCE too (backlog #480), so renaming a guard away still selects its readers.
+      # ⚠ The shard flag needs no arithmetic here: `--shard0` takes the matrix's 0-based index, and
+      # the shards split the SELECTED entries round-robin (`shard_slice`, unchanged).
       - name: Mutation manifest against the delivered scripts (one shard)
-        if: steps.mutated_code.outputs.changed == 'true'
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          # ⛔ NO LOGIC LIVES HERE ANY MORE — ROUND 6 M1, AND IT IS WHY THIS ONE GUARD SHIPPED
-          # WRONG IN THREE CONSECUTIVE ROUNDS WITH EVERY GATE GREEN. `grep -rln SHARD_INDEX` over
-          # `scripts/ tests/ .claude/` returned NOTHING: a `run:` block has no self-test, no
-          # mutation entry and no caller, and `check-ratchet-contract`'s population is
-          # `scripts/*.{py,sh}` plus `.claude/hooks/*` — never `.github/workflows/`. So every
-          # version of the rule written here was unmeasurable by construction:
-          #   v1  no I-side check at all -> an absent index became a valid shard 1, all N jobs
-          #       measuring one slice and all reporting green      (round 1 M2a, round 5 L2)
-          #   v2  a bash `case` on `*[!0-9]*` -> bash arithmetic is FIXED WIDTH, so
-          #       18446744073709551616 wrapped to 1                (round 5 codex Low)
-          #   v3  a Python parser using `isdigit()` -> UNICODE-WIDE, so `٠` became shard 1
-          #                                                        (round 6 L1)
-          # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
-          # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+          set -u
+          CHANGED="$RUNNER_TEMP/changed.txt"
+          rm -f "$CHANGED"
+          if [ "$EVENT" = "pull_request" ]; then
+            if ! git diff --name-only -z --no-renames "origin/$BASE_REF"...HEAD > "$CHANGED"; then
+              rm -f "$CHANGED"
+              echo "::warning::git diff against origin/$BASE_REF failed, so there is no changed-file list"
+              echo "::warning::and the WHOLE manifest runs. An unanswered question never narrows a gate."
+            fi
+          fi
           python3 scripts/check-plan-code.py --mutate . \
-            --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL" \
+            --event "$EVENT" --changed "$CHANGED"
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
@@ -1416,6 +1254,10 @@ jobs:
     # reports red and does NOT block the merge button. Nothing in this file can do that for
     # you; say it in the pull request.
     needs: mutation-sweep
+    # backlog #330: `issues: write` for the alert step below, and nothing else — no step here
+    # checks code out, so the job needs no `contents` scope.
+    permissions:
+      issues: write
     # ⚠ `always()`, so a failed or cancelled matrix still REPORTS. Without it this job is
     # SKIPPED when a shard fails, and a skipped required check is the pending-forever shape
     # this job exists to avoid.
@@ -1443,3 +1285,37 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # ── backlog #330: A RED FULL SWEEP ON MASTER MUST BE SEEN BY SOMEONE WHO WAS AWAY ──────────
+      # A pull request's sweep is diff-scoped, so what it does not select is measured only here,
+      # AFTER merge — and a red master run that nobody opens is the silent failure the owner's
+      # approval was conditional on ("as long as there are full sweep to detect error eventually").
+      # So it opens an issue labelled `sweep-red`, or comments on the open one rather than piling up
+      # duplicates. Pull requests never reach this step: their red is on the PR itself.
+      # ⚠ `failure()` is true when any earlier step failed — here, only the aggregate check above.
+      - name: A red FULL sweep on master opens (or comments on) a sweep-red issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          SWEEP: ${{ needs.mutation-sweep.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          BODY="The FULL mutation sweep reported '$SWEEP' on master ($EVENT, $SHA): $RUN_URL
+          Pull requests run only the manifests their diff selects (backlog #330), so this run is where
+          a defect in an unselected manifest surfaces. Read the red shard's log for the survivor or the
+          CANNOT RUN line; treat the mutation evidence for this commit as NOT CHECKED until it is green."
+          gh label create sweep-red --color B60205 --force \
+            --description "The full mutation sweep went red on master (backlog #330)"
+          OPEN=$(gh issue list --label sweep-red --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$OPEN" ]; then
+            gh issue comment "$OPEN" --body "$BODY"
+            echo "commented on the open sweep-red issue #$OPEN"
+          else
+            gh issue create --label sweep-red --body "$BODY" \
+              --title "Full mutation sweep red on master ($EVENT, ${SHA:0:8})"
+            echo "opened a sweep-red issue"
+          fi

@@ -18729,3 +18729,11 @@ The last NEEDS YOU decision is done. In a grilling session the owner named the r
 `CONTEXT.md` → *Recall (Repo Tooling)*: **lesson**, **trigger**, **lesson index**, **situation**, **arm**, **fire**,
 **recall**, **already embodied** and **unreadable plan**. One answer changed backlog #307: the always-loaded index line
 is the first clause of each lesson's trigger, not a second hand-written field.
+
+## 2026-11-04
+
+Backlog #330 is built, as the owner approved it on 2026-11-02. A pull request's mutation sweep now runs only the
+manifests whose subject the diff touched: a guard's own change selects a median of 5 of the 87 manifests, the handoff
+canon alone selects 3, and anything the selector cannot place selects more, up to all of them (a change to
+`check-plan-code.py` or the workflow, an unreadable diff, a module most guards import). Every master push and a new
+daily schedule still run the full sweep, and a red one opens or comments on a GitHub issue labelled `sweep-red`.
