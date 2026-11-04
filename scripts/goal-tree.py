@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 235 cases
+    python3 scripts/goal-tree.py --self-test                 # 239 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1822,6 +1822,21 @@ def _self_test_body() -> int:
     case("⛔ backlog #497 (#363's rule): each page fold's count equals the --print count line it replaces",
          [int(re.search(r"\((\d+)\)", sm).group(1)) for c, _, sm in _fp.folds if c != "fold goal"],
          [int(re.search(r"… (\d+)", ln).group(1)) for ln in _bt if "(collapsed on the page)" in ln])
+    case("backlog #497: merge_when and is_parked called directly on two distinct inputs each",
+         (merge_when("2026-12-31 23:59"), merge_when(None),
+          is_parked({"kind": "owner-wait", "what": "w"}), is_parked({"kind": "routine", "what": "w"})),
+         ("12-31 23:59", TIME_UNREAD, True, False))
+    case("⭐ backlog #497: --print's tree is tree_lines at the SAME drawing time, and another time draws another tree",
+         (render_text(_bsnap, "2026-11-08 19:09").endswith("\n".join(tree_lines(_bsnap, "2026-11-08 19:09"))),
+          render_text(_bsnap, "2026-11-08 19:09") == render_text(_bsnap)), (True, False))
+    case("backlog #497: tree_blocks folds by the drawing time it is given, and a tree with no old leaf folds nothing",
+         ([bk[1] for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "fold"],
+          [bk[1] for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "fold"],
+          [bk[0] for bk in tree_blocks(snap)]),
+         (["older", "later", "goal"], ["older", "later", "goal"], ["pre"]))
+    case("backlog #497: the folded tree emits thread ids only when asked, inside a fold too",
+         ('id="t-pr-24"' in render_tree_html(_bsnap, ids=True, at="2026-11-08 19:09"),
+          "id=" in render_tree_html(snap, at="2026-10-28 04:00")), (True, False))
     _np = render_page([_bsnap], "2026-11-05 19:09")
     case("backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run",
          ('<details class="fold older"><summary>├─ older (2)' in _np,
