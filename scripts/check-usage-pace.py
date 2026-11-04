@@ -141,7 +141,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 279 cases
+    python3 scripts/check-usage-pace.py --self-test  # 291 cases
 """
 from __future__ import annotations
 
