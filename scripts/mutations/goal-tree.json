@@ -1507,8 +1507,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        return \"older\" if age is not None and age > RECENT_HOURS else \"recent\"",
-        "        return \"older\" if age is not None and age >= RECENT_HOURS else \"recent\""
+        "a > RECENT_HOURS for a in ages",
+        "a >= RECENT_HOURS for a in ages"
       ]
     ],
     "expect": [
@@ -1946,16 +1946,42 @@
     ]
   },
   {
-    "name": "review r1 C6: a closed PR's close time is not read into its leaf",
+    "name": "review r1 C6: a closed PR's close time is not read, so an old closure never folds",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        out[\"closed_at\"] = max(closes) if closes and all(closes) else None",
-        "        out[\"closed_at\"] = None"
+        "        closes = [(src.get(\"all_closed_at\") or {}).get(n) for n, f in zip(prs, found) if f[0] == \"closed\"]",
+        "        closes = [None for n, f in zip(prs, found) if f[0] == \"closed\"]"
       ]
     ],
     "expect": [
       "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
+    ]
+  },
+  {
+    "name": "recency is judged only by the time the aggregate state carries, so a recent merge beside an old closure folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out[\"ended_at\"] = whens + closes",
+        "        out[\"ended_at\"] = closes if state == \"closed\" else whens"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2 X1: a thread is RECENT when ANY of its PRs merged or closed within the window — a merge 3 h ago is not folded because the thread also names a PR closed a month ago"
+    ]
+  },
+  {
+    "name": "an unread ref time counts as old, so a thread whose merge minute was never read is folded away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a is not None and a >",
+        "a is None or a >"
+      ]
+    ],
+    "expect": [
+      "review r2 X1 adjacent: every ref old -> still OLDER and folded; one ref's time unread -> RECENT"
     ]
   }
 ]

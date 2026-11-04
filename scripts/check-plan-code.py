@@ -1082,7 +1082,9 @@ EXPECTED_MUTATIONS = {
     # the title-resolved PR (X1: 3), mergedAt first on both paths (X2: 2), numbering by time and slug anchors
     # (X3: 2), queued fix/blocker and the later wording (C2: 2), negation and clause-leading `parked` (C3: 2),
     # --ink-soft on the fold summary and counts (C5: 2), and the closed PR's age (C6: 2).
-    "scripts/goal-tree.py": 150,
+    # ⟳ same day, review round 2's fold: 150 -> 152 — recency judged across EVERY ref, not the aggregate's time,
+    # and an unread ref time never folds (X1: 2).
+    "scripts/goal-tree.py": 152,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1999,7 +2001,8 @@ EXPECTED_MUTATIONS = {
     # raw-containment entry is re-anchored onto the helper's call.
     # ⟳ backlog #497 (the owner 2026-11-04 01:07, refresh on a click): 62 -> 64 — the goal tree's own
     # 60 s rebuild bound, and the timeout reply naming the bound it actually waited.
-    "scripts/explainer-serve.py": 64,
+    # ⟳ same day, review round 2's fold: 64 -> 65 — the rebuild gets only what is LEFT of the click's bound (X2).
+    "scripts/explainer-serve.py": 65,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a

@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 261 cases
+    python3 scripts/goal-tree.py --self-test                 # 263 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -318,7 +318,8 @@ def bucket(t: dict, at) -> str:
       now            — ⛔ FIRST, whatever its state: a ledger entry that is not parked names it (`inflight`,
                        review r1 X1 — work in flight on a thread that already landed is current, never folded);
       recent / older — merged (or closed, `closed_at`) within RECENT_HOURS of `at`, or before that; superseded and
-                       withdrawn are older. ⛔ A time (or `at`) that cannot be read is RECENT: an age never read never
+                       withdrawn are older. ⛔ review r2 X1: with `ended_at` (every ref's merge or close minute) the
+                       leaf is RECENT when ANY ref ended within the window, whatever the aggregate state says. ⛔ A time (or `at`) that cannot be read is RECENT: an age never read never
                        folds a leaf. A closed leaf with NO `closed_at` key was logged before close times were read: older;
       parked         — a parked ledger entry names it (`is_parked`) and it has not landed;
       queued         — unstarted and planned: a declared `waits on` (state blocked), or an unstarted `fix`/`blocker`
@@ -330,11 +331,13 @@ def bucket(t: dict, at) -> str:
     if t.get("inflight", " · in flight: " in str(t.get("detail", ""))):
         return "now"
     if state in ("merged", "closed"):
-        when = t.get("merged_at") if state == "merged" else t.get("closed_at")
         if state == "closed" and "closed_at" not in t:
             return "older"
-        age = _age_hours(when, at)
-        return "older" if age is not None and age > RECENT_HOURS else "recent"
+        # ⛔ review r2 X1: every ref's end (`ended_at`); a snapshot logged before it was stored has only the
+        # aggregate's own time. OLDER only when EVERY end was read and is past the window.
+        ends = t.get("ended_at", [t.get("merged_at") if state == "merged" else t.get("closed_at")])
+        ages = [_age_hours(w, at) for w in ends]
+        return "older" if ages and all(a is not None and a > RECENT_HOURS for a in ages) else "recent"
     if state in LANDED:
         return "older"
     if t.get("parked"):
@@ -447,6 +450,10 @@ def derive_thread(t: dict, src: dict) -> dict:
                open_pr=open_pr)
     if state == "closed":
         out["closed_at"] = max(closes) if closes and all(closes) else None
+    if whens or closes:
+        # ⛔ review r2 X1: EVERY ref's merge or close minute (None = unread), so recency is judged across all refs —
+        # never only by the time the aggregate state happens to carry.
+        out["ended_at"] = whens + closes
     return out
 
 
@@ -2075,6 +2082,20 @@ def _self_test_body() -> int:
          "times were read stays OLDER",
          [bucket(one("- fix · PR #22 · shut\n", src()), "2026-11-04 12:00"),
           bucket({"state": "closed", "merged_at": None}, "2026-11-04 12:00")], ["recent", "older"])
+    # r2 X1 (Codex's input): a recent MERGE beside an old CLOSURE — the aggregate is `closed`, recency is not.
+    def r2x1(merged, closed):
+        s = src(all_merged_at={20: merged} if merged else {}, all_closed_at={22: closed})
+        sn = derive(parse_threads('## GOAL alpha\n> 2026-11-01 00:00 "ship"\n- fix · PR #20, PR #22 · retry\n'),
+                    s, "2026-11-04 12:00")
+        t = sn["goals"][0]["threads"][0]
+        return (t["state"], bucket(t, "2026-11-04 12:00"),
+                [ln for ln in tree_lines(sn, "2026-11-04 12:00") if "older" in ln])
+    case("⛔ review r2 X1: a thread is RECENT when ANY of its PRs merged or closed within the window — a merge 3 h "
+         "ago is not folded because the thread also names a PR closed a month ago",
+         r2x1("2026-11-04 09:00", "2026-10-01 12:00"), ("closed", "recent", []))
+    case("review r2 X1 adjacent: every ref old -> still OLDER and folded; one ref's time unread -> RECENT",
+         [r2x1("2026-10-02 09:00", "2026-10-01 12:00")[:2], r2x1(None, "2026-10-01 12:00")[:2]],
+         [("closed", "older"), ("closed", "recent")])
     # ── the log: only changes are kept ───────────────────────────────────────────────────────
     with tempfile.TemporaryDirectory() as d:
         lp = pathlib.Path(d) / "log.jsonl"
