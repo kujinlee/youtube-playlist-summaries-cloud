@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 281 cases
+    python3 scripts/check-plan-code.py --self-test          # 308 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -83,6 +83,7 @@ import argparse
 import ast
 import dataclasses
 import contextlib
+import functools
 import io
 import json
 import os
@@ -289,53 +290,293 @@ HARNESS_TREE = (
     ".githooks",
 )
 
-# ── Which changed paths can move a mutation verdict? (backlog #173; FIXED 2026-10-21, r4) ───────
-# ⛔ DERIVED FROM `HARNESS_TREE`, NEVER RE-TYPED. `sweep_needed` tested `startswith("scripts/")`,
-# and `HARNESS_TREE` is the list of what the harness actually STAGES — so the predicate disagreed
-# with the tree it was predicting about, for six of its seven roots.
+# ── WHICH MANIFESTS A PULL REQUEST RUNS (backlog #330, approved by the owner 2026-11-02) ───────
+# ⛔ THIS REPLACES A BINARY SKIP, AND THE SHAPE IS THE FIX. backlog #173's `sweep_needed` answered
+# one all-or-nothing question, so every error mode was TOTAL: a diff that failed skipped the whole
+# gate (r4 F1), a staged path it did not recognise skipped the whole gate (r4 finding 2,
+# `.agents/skills/shared/handoff-path.md`: a staged suite went 25/25 -> 24/25 while the skip hid
+# it), and `docs` was excluded on purpose although a docs CONTENT change was MEASURED to flip a
+# suite (r5: `check-anon-exposure` 74/74 -> exit 1). A per-manifest selector has no total failure
+# mode: whatever it cannot place selects MORE — up to the whole manifest — never fewer.
 #
-# ⛔⛔ THE DEFECT THIS CLOSES WAS PROVED BY EXECUTION, not argued (r4 CODEX finding 2). A branch
-# changing ONLY `.agents/skills/shared/handoff-path.md` skipped the whole sweep, while a manifested
-# suite reads that file: staged tree, control green at `25/25`, then that canon's contents replaced
-# -> `24/25` with a real `[FAIL]` the skip would have hidden. So *"unchanged scripts/ means the
-# sweep can only reproduce the previous result"* was FALSE. ⚠ A dozen-odd guards resolve their
-# subject from the repo root — `check-handoff-path` reads `.agents/skills/handoff/SKILL.md`,
-# `check-python-pin` reads `.github/workflows/`, `check-banner-armed` reads `.claude/hooks/` — and
-# `CLAUDE.md` already records this exact class from 2026-09-07: *"the harness stages HARNESS_TREE,
-# not scripts/ alone — four guards resolve their SUBJECT from the repo root, so a scripts-only tree
-# gave each a red control and left them unmanifested for weeks."* The scripts-only assumption that
-# cost four guards once was reintroduced here, with the correct tuple in the same module.
-# ⭐ AND THE CHANGE THAT INTRODUCED IT IS AN INSTANCE OF IT: this branch touched
-# `.github/workflows/ci.yml` and `.claude/hooks/block-idle-stop.sh`, both staged, neither matched.
+# THE RULES, in order, for each changed path (`select_manifests` is the only implementation):
+#   1. not a pull request (a master push, the schedule) ............ the WHOLE manifest
+#   2. the changed-file list is undetermined ......................... the WHOLE manifest
+#   3. a harness file (`harness_files`: this script, the modules it
+#      imports, the workflow that runs it) ........................... the WHOLE manifest
+#   4. `package.json` / `package-lock.json` (`DEPENDENCY_MANIFESTS`) — they change the staged
+#      `node_modules/typescript` without changing any staged path (r1 C3) .. the WHOLE manifest
+#   5. outside every `HARNESS_TREE` root — it is never staged, so no suite can read it: nothing
+#   6. a target, or `scripts/mutations/<stem>.json` .................. that manifest
+#      (a manifest whose target does not exist ....................... the WHOLE manifest)
+#   7. every target whose source NAMES the path (full path, file name, import name, or the
+#      QUOTED stem a hyphenated sibling is loaded by — r1 X1), every target that IMPORTS one of
+#      those modules, transitively (r1 C5), and every target QUOTING a directory between the path
+#      and its staged root — the root itself included, unless it is in `IMPORT_ROOTS` (r1 C2), where
+#      only a target that WALKS the root (`_walks_dir`, a structural test) is selected (r2 X2)
+#      (a path more than half the targets name is SHARED .............. the WHOLE manifest)
+#   8. none of the above: the targets quoting its staged ROOT; if none .. the WHOLE manifest
 #
-# ⛔ `docs` IS DELIBERATELY EXCLUDED, AND THAT IS A PINNED DECISION, NOT AN OVERSIGHT. backlog #173
-# exists because three of five PRs merged that week changed no code; a starred case (*"⭐ a docs-only
-# branch SKIPS"*) and a mutation entry written to forbid the opposite both guard it. Deriving the
-# predicate from the whole tuple would revert that decision and redden the case and the entry that
-# protect it — this repo's recorded trap of a guard MANDATING what it audits.
-# ⛔⛔ THE RESIDUAL IS NO LONGER UNMEASURED — r5 CODEX MEASURED IT, AND IT DISPROVES THE SAFETY
-# RATIONALE ABOVE FOR `docs`. This comment used to say that whether a docs CONTENT change can flip a
-# mutation verdict was "NOT MEASURED", with no claim either way. It can. In an isolated `stage_tree`
-# copy, `check-anon-exposure.py --self-test` passed 74/74; replacing `ASSERTION FAILED` with
-# `ASSERTION REMOVED` in the staged `docs/.../schema/05_*.sql` drove it to exit 1 through
-# `read_spec EXCLUDES 05_assert.sql` — while `sweep_needed([that docs path])` returns False.
-#
-# So "unchanged code against unchanged suites" is FALSE for `docs`, and this exclusion is a KNOWN,
-# MEASURED COVERAGE HOLE rather than a safe optimisation. It is retained ON PURPOSE and only because
-# the alternative is worse in a specific way: `docs` is where this project does most of its work, so
-# including it reverts backlog #173 for the population that row exists for, and the case + mutation
-# entry pinning the docs-only skip would both redden. ⚠ WHAT IS NOT CLAIMED: that the hole is
-# harmless. It is a deliberate trade with a measured cost, and backlog #330's per-manifest selector
-# is the fix that removes the trade instead of choosing a side of it — a changed `docs/` file would
-# select the manifests that READ it and nothing else.
-# ⛔ THE EXCLUSION HAS ITS OWN NAME BECAUSE IT IS A DECISION, NOT AN EXPRESSION. It was written
-# inline as `if root != "docs"`, and the mutation harness then REFUSED the entry guarding it —
-# *"repeats the edit anchors of an earlier entry — it measures nothing new"* — because the collapse
-# to `scripts/` only and the dropping of the exclusion are two different defects on one line. A
-# decision that cannot be mutated independently of its neighbour cannot be guarded independently.
-SWEEP_SKIP_ROOTS = ("docs",)
-SWEEP_RELEVANT_ROOTS = tuple(f"{root}/" for root in HARNESS_TREE
-                             if root not in SWEEP_SKIP_ROOTS)
+# ⚠ WHAT THIS DOES NOT SEE, AND WHY THE FULL SWEEP STAYS: "names" is a TEXT test. A suite that
+# reads a file without naming it or any directory above it (a bare walk of the repo root), or
+# that walks `scripts/` through a directory only its CALLER names (a lister applied to a bare
+# parameter, which `_walks_dir` cannot follow), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
+# only executing that manifest sees. So the full sweep still runs on every master push and on a
+# schedule, and a red one opens an issue (`ci.yml`, `mutation-sweep-complete`). The owner accepted
+# that such a defect is found after merge. What a scoped run does NOT give up: every whole-
+# manifest check (`pin_drift`, `anchor_problems`, the home-escape scan) still runs in every shard
+# over EVERY manifest, because they are file reads, not suites.
+# ⚠ The harness's own source is never a NAMER: it lists every target in `EXPECTED_MUTATIONS`, so
+# counting that would select `check-plan-code`'s 149 entries for every change in the repository.
+SWEEP_WORKFLOW = ".github/workflows/ci.yml"
+SWEEP_HARNESS = "scripts/check-plan-code.py"
+SHARED_FULL_FRACTION = 0.5
+# r1 C3: `node_modules/typescript` is staged but untracked, so no diff ever names a path under it;
+# it changes when one of these does. Exact repository paths, never a file name anywhere.
+DEPENDENCY_MANIFESTS = frozenset({"package.json", "package-lock.json"})
+# r1 C2: the staged root whose files a target reaches by IMPORT NAME (rule 7 and its closure),
+# not by QUOTING it. Measured 2026-11-04: 54 of 87 targets quote `scripts`, nearly all to build the
+# path of one sibling, so treating every quoter as a walker would select ~54 for every script change.
+# ⟳ PR #496 r2 X2: a target that really WALKS it (`check-canonical-source`, `check-ratchet-contract`)
+# reads every file under it, so `_walks_dir` — a STRUCTURAL test, not a quote — selects it.
+IMPORT_ROOTS = frozenset({"scripts"})
+# The calls that LIST a directory rather than open one file in it. `ls-files` is `git ls-files`.
+WALK_CALLS = frozenset({"glob", "rglob", "iglob", "iterdir", "walk", "listdir", "scandir"})
+MANIFEST_PATH = re.compile(r"scripts/mutations/([^/]+)\.json")
+
+
+def harness_files(own_src: str, script_stems) -> frozenset:
+    """PURE. The files whose change makes every verdict suspect: this script, the sibling modules
+    it imports at top level (derived from `own_src`, never re-typed — today `coverage_verdict`),
+    and the workflow that runs it."""
+    mods = set()
+    for node in ast.parse(own_src).body:
+        if isinstance(node, ast.Import):
+            mods |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            mods.add(node.module.split(".")[0])
+    return frozenset({SWEEP_HARNESS, SWEEP_WORKFLOW}
+                     | {f"scripts/{m}.py" for m in mods if m in script_stems})
+
+
+def _staged_root(path: str, roots) -> "str | None":
+    """The `HARNESS_TREE` root `path` is under — by PREFIX, never substring — or None."""
+    under = [r for r in roots if path.startswith(r + "/")]
+    return max(under, key=len) if under else None
+
+
+def _quotes_dir(src: str, d: str) -> bool:
+    """Does `src` quote directory `d` — as a path (`'docs/reviews'`, `"docs/reviews/x"`) or as the
+    component a `ROOT / 'docs' / 'reviews'` join would spell?"""
+    return any(re.search(r"""["']""" + re.escape(form) + r"""["'/]""", src)
+               for form in {d, d.rsplit("/", 1)[-1]})
+
+
+@functools.lru_cache(maxsize=None)   # one parse per source, however many paths ask
+def _walks_dir(src: str, d: str) -> bool:
+    """PURE. Does `src` WALK directory `d` (r2 X2)? True when a `WALK_CALLS` lister (or a call
+    carrying `ls-files`) is applied to an expression that CARRIES `d`: a string naming it as a
+    whole directory (`'scripts'`, `'scripts/'`, a glob under it like `'scripts/*.py'`), or a name
+    assigned from one — through a join, a loop over a tuple, a comprehension, a `with` — in the same
+    function or at module level (`for sub in ('docs', 'scripts'): (root / sub).rglob(...)`). A path
+    to ONE file (`'scripts/x.py'`) is not a walk. ⚠ Toward MORE: a walk of a directory BELOW `d`
+    (`root / 'scripts' / 'mutations'`) counts, and unparseable source is a walker. ⚠ NOT SEEN: a
+    lister applied to a bare PARAMETER, whose directory only a caller knows — the full sweep's."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return True
+    depth = len(d.split("/"))
+    def names_d(v) -> bool:
+        return isinstance(v, str) and (v.rstrip("/") == d or (
+            v.startswith(d + "/") and any(c in v.split("/")[depth] for c in "*?[")))
+    def carries(expr, tainted) -> bool:
+        return any((isinstance(n, ast.Constant) and names_d(n.value))
+                   or (isinstance(n, ast.Name) and n.id in tainted) for n in ast.walk(expr))
+    def taint(nodes, seed) -> set:
+        out, grew = set(seed), True
+        while grew:
+            grew = False
+            for n in nodes:
+                if isinstance(n, ast.Assign):
+                    pairs = [(t, n.value) for t in n.targets]
+                elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
+                    pairs = [(n.target, n.value)]
+                elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
+                    pairs = [(n.target, n.iter)]
+                elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+                    pairs = [(n.optional_vars, n.context_expr)]
+                else:
+                    continue
+                for tg, val in pairs:
+                    if carries(val, out):
+                        new = {m.id for m in ast.walk(tg) if isinstance(m, ast.Name)} - out
+                        grew |= bool(new)
+                        out |= new
+        return out
+    defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+    top = [n for st in tree.body if not isinstance(st, defs + (ast.ClassDef,)) for n in ast.walk(st)]
+    module = taint(top, set())
+    for nodes in [top] + [list(ast.walk(f)) for f in ast.walk(tree) if isinstance(f, defs)]:
+        tainted = taint(nodes, module)
+        for n in nodes:
+            if not isinstance(n, ast.Call):
+                continue
+            args = list(n.args) + [k.value for k in n.keywords]
+            name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", None)
+            ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for a in args for m in ast.walk(a))
+            if not (name in WALK_CALLS or ls):
+                continue
+            subject = args + ([n.func.value] if isinstance(n.func, ast.Attribute) else [])
+            if any(carries(x, tainted) for x in subject):
+                return True
+    return False
+
+
+def _names_of(path: str) -> set:
+    """The spellings a reader of `path` would carry: the path, its file name, and — for a
+    `scripts/` module — its import name, or its QUOTED stem when it is hyphenated (r1 X1: this
+    repository loads `gen-work-lines.py` as `_sibling("gen-work-lines")`, never by file name)."""
+    base = path.rsplit("/", 1)[-1]
+    out = {path, base}
+    if path.startswith("scripts/") and path.endswith(".py"):
+        out |= _import_spellings(base[:-3]) | ({base[:-3]} if base[:-3].isidentifier() else set())
+    return out
+
+
+def _import_spellings(stem: str) -> set:
+    """The spellings that IMPORT module `stem`: its stem quoted (`_sibling`, `import_module`, a
+    `_load` wrapper) and, for an identifier, `import stem` / `from stem import`. Prose that only
+    MENTIONS a module is not among them — the import graph is closed over these alone (r1 C5)."""
+    out = {f'"{stem}"', f"'{stem}'"}
+    if stem.isidentifier():
+        out |= {f"import {stem}\n", f"import {stem} ", f"import {stem},", f", {stem}\n",
+                f"from {stem} import"}
+    return out
+
+
+def _importers(start: set, modules: dict) -> set:
+    """The modules that import any of `start`, directly or through one another (r1 C5:
+    `m4_base_db` reaches `check-live-schema` only through `m4_catalog`). PURE; a fixpoint."""
+    reach, todo = set(), list(start)
+    while todo:
+        ks = _import_spellings(todo.pop().rsplit("/", 1)[-1][:-3])
+        for m, src in modules.items():
+            if m not in reach and m not in start and any(k in src for k in ks):
+                reach.add(m)
+                todo.append(m)
+    return reach
+
+
+def select_manifests(event: str, changed: "list[str] | None", why: str, sources: dict,
+                     harness: frozenset, roots=HARNESS_TREE,
+                     modules: "dict | None" = None) -> "tuple[frozenset | None, list[str]]":
+    """PURE. The targets whose manifests a run executes — None means the WHOLE manifest — and the
+    log lines saying why. `sources` maps every manifest target to its text; `modules` adds the
+    importable modules no manifest targets, for the import closure. Rules: the block above.
+    """
+    if event != "pull_request":
+        return None, [f"full: the event is {event!r}, not a pull request — a master push and "
+                      f"the schedule run the WHOLE manifest"]
+    if changed is None:
+        return None, [f"full: {why}"]
+    readers = {t: s for t, s in sources.items() if t not in harness}
+    mods = {**{m: s for m, s in (modules or {}).items() if m not in harness}, **readers}
+    picked: dict = {}
+    outside = 0
+    for path in (p.strip() for p in changed):
+        if not path:
+            continue
+        if path in harness:
+            return None, [f"full: {path} is the sweep harness itself"]
+        if path in DEPENDENCY_MANIFESTS:
+            return None, [f"full: {path} changes what is installed under a staged root "
+                          f"(`node_modules/typescript`) without changing any staged path"]
+        root = _staged_root(path, roots)
+        if root is None:
+            outside += 1
+            continue
+        hit = set()
+        if path in sources:
+            hit.add(path)
+        own = MANIFEST_PATH.fullmatch(path)
+        if own:
+            target = f"scripts/{own.group(1)}.py"
+            if target not in sources:
+                return None, [f"full: {path} is a manifest with no target this tree loads"]
+            hit.add(target)
+        names = _names_of(path)
+        namers = {m for m, s in mods.items() if any(k in s for k in names)}
+        start = namers | ({path} if path in mods else set())
+        named = {t for t in namers | _importers({m for m in start if m.endswith(".py")}, mods)
+                 if t in readers}
+        if len(named) > len(readers) * SHARED_FULL_FRACTION:
+            return None, [f"full: {path} is named by {len(named)} of {len(readers)} targets — "
+                          f"a shared module"]
+        parts = path.split("/")
+        # r1 C2: a reader that walks the staged ROOT itself (`ROOT / 'docs'`, then `rglob`) reads
+        # every file under it, so it is selected by any change there — not only when nothing else
+        # names the path. Except a root in `IMPORT_ROOTS`, reached by import name instead.
+        lo = len(root.split("/")) + (root in IMPORT_ROOTS)
+        between = ["/".join(parts[:i]) for i in range(lo, len(parts))]
+        hit |= named | {t for t, s in readers.items() if any(_quotes_dir(s, d) for d in between)}
+        # r2 X2: ...but a target that WALKS an import root is selected by any change under it.
+        if root in IMPORT_ROOTS:
+            hit |= {t for t, s in readers.items() if _walks_dir(s, root)}
+        if not hit:
+            hit = {t for t, s in readers.items() if _quotes_dir(s, root)}
+        if not hit:
+            return None, [f"full: {path} is staged, and no target names it or quotes a directory "
+                          f"above it — an unrecognised path selects MORE, never fewer"]
+        for t in hit:
+            picked.setdefault(t, []).append(path)
+    head = (f"diff-scoped: {len(picked)} of {len(sources)} manifest(s) selected from the changed "
+            f"path(s), {outside} outside the staged tree")
+    return frozenset(picked), [head] + [f"  {t} <- {', '.join(picked[t][:5])}"
+                                        + (" …" if len(picked[t]) > 5 else "")
+                                        for t in sorted(picked)]
+
+
+def changed_or_why(raw: "str | None", label: str) -> "tuple[list[str] | None, str]":
+    """PURE. The changed-file list read from `label`, or None and WHY it is undetermined — two
+    causes, reported differently (r6 CLAUDE M1): the list could not be read (the diff failed, so
+    it was never written), or it was read and cannot be trusted (`changed_from_nul`)."""
+    if raw is None:
+        return None, (f"the changed-file list {label} could not be read — the diff failed or "
+                      f"was never written, so the changed set is UNDETERMINED")
+    paths = changed_from_nul(raw)
+    if paths is None:
+        return None, (f"the changed-file list {label} is not NUL-delimited or holds a C-quoted "
+                      f"path, so it cannot be trusted")
+    return paths, ""
+
+
+def sweep_sources(root: pathlib.Path) -> "tuple[dict, frozenset]":
+    """IO. Every manifest target's text under `root` (unreadable -> empty, which can only make a
+    selection go to its fallback or to FULL), and the harness files."""
+    sources = {}
+    for man in sorted((root / MANIFEST_DIR).glob("*.json")):
+        target = f"scripts/{man.stem}.py"
+        try:
+            sources[target] = (root / target).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            sources[target] = ""
+    stems = {p.stem for p in (root / "scripts").glob("*.py")}
+    # The harness is the one RUNNING — `root` is only the tree it measures (a fixture has none).
+    own = pathlib.Path(__file__).read_text(encoding="utf-8")
+    return sources, harness_files(own, stems)
+
+
+def module_sources(root: pathlib.Path) -> dict:
+    """IO. Every `scripts/*.py` module's text under `root` — the import graph a selection is closed
+    over (r1 C5), including the modules no manifest targets. Unreadable -> empty."""
+    out = {}
+    for p in sorted((root / "scripts").glob("*.py")):
+        try:
+            out[f"scripts/{p.name}"] = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            out[f"scripts/{p.name}"] = ""
+    return out
 
 
 def changed_from_nul(raw: str) -> "list[str] | None":
@@ -349,17 +590,17 @@ def changed_from_nul(raw: str) -> "list[str] | None":
         $ git diff --name-only -z HEAD~1 HEAD   ->  scripts/é.py
 
     The quoted form does not start with `scripts/` — it starts with a double quote — so
-    `sweep_needed(['"scripts/\\303\\251.py"'])` returned **False** and the entire mutation gate was
-    skipped while a `scripts/` file had genuinely changed. Verified both directions.
+    the (since retired, backlog #330) `sweep_needed(['"scripts/\\303\\251.py"'])` returned **False**
+    and the entire mutation gate was skipped while a `scripts/` file had genuinely changed.
 
     ⛔ SO THE FIX IS TWO-SIDED, and the second side is the one that matters. `ci.yml` now passes
     `-z`, AND this parser REFUSES input that is not NUL-delimited instead of trusting it. A `-z`
-    dropped in a later edit must therefore produce `None` — which `sweep_needed` answers by RUNNING
-    the sweep — rather than silently resurrecting this defect. *"Cannot run is a failure, never a
+    dropped in a later edit must therefore produce `None` — which `select_manifests` answers with
+    the WHOLE manifest — rather than silently resurrecting this defect. *"Cannot run is a failure, never a
     pass"* applies to parsing the input exactly as it applies to the measurement.
 
     ⚠ ENCODING, stated because r6 CLAUDE L1 found the bound missing: the subject is BYTES and this
-    takes a `str`, so a filename that is not valid UTF-8 raises in the caller's `read_text()` before
+    takes a `str`, so a filename that is not valid UTF-8 raises in the caller's read before
     reaching here. That FAILS THE STEP rather than skipping the gate — loud, not silent, which is
     the right direction — but it is a crash and not a diagnosed refusal, and no case covers it
     because the harness cannot create such a name portably. Reading bytes and decoding with
@@ -378,68 +619,6 @@ def changed_from_nul(raw: str) -> "list[str] | None":
     if any(p.startswith('"') for p in parts):
         return None          # C-quoted survived anyway — refuse rather than mis-prefix
     return parts
-
-
-SWEEP_VERDICTS = ("RUN", "SKIP", "RUN-UNPARSED")
-
-
-def sweep_verdict(changed: "list[str] | None", diff_taken: bool) -> str:
-    """PURE. The whole three-way decision: `RUN`, `SKIP`, or `RUN-UNPARSED`.
-
-    ⛔ THIS EXISTS BECAUSE I PUT THE THIRD STATE IN `ci.yml`'s `run:` BLOCK, TWENTY LINES UNDER THE
-    COMMENT IN THAT SAME FILE FORBIDDING IT: *"THE DECISION IS NOT MADE HERE … A `run:` block has
-    none of those, and that is exactly how the shard rule shipped wrong in three consecutive rounds
-    with every gate green."* Measured, and it is not a style point — ALL 1,655 mutation entries in
-    this repository target `scripts/`; `.github/` and `.claude/hooks/` have **ZERO**. So logic in a
-    workflow is unmeasurable by construction, and every significant finding on this branch landed in
-    exactly those unmeasured areas (`|| true`, the transcript guard's call site, the C-quoted path,
-    the RUN-arm log line) while the case-and-mutation-covered code held under three rounds.
-
-    ⭐ THE TWO INPUTS ARE NOT INTERCHANGEABLE, and conflating them is the bug this shape prevents.
-    `changed is None` has TWO causes that need OPPOSITE reporting:
-
-        diff_taken=False, changed=None  -> the diff itself failed      -> RUN
-        diff_taken=True,  changed=None  -> the diff was taken but its
-                                           paths could not be trusted -> RUN-UNPARSED
-
-    Both RUN the sweep — an unanswered question must never skip a gate — but a reader needs to know
-    WHICH, and the shell had no way to say so (r6 CLAUDE M1: the RUN arm asserted "a staged path
-    changed" with an empty evidence list, the fourth instance on this branch of a log line claiming
-    more than its step knows).
-
-    ⚠ NO STATE RETURNS A SKIP ON AN UNDETERMINED ANSWER. `SKIP` is reachable only from a parsed,
-    trusted path list that contains nothing under `SWEEP_RELEVANT_ROOTS`.
-    """
-    # ⛔ TWO LINES, NOT ONE, AND THE HARNESS IS WHY — the same constraint that gave
-    # `SWEEP_SKIP_ROOTS` its own name. Written as a single `if diff_taken and changed is None`,
-    # the two distinct defects (losing the state entirely; conflating the two causes of a None
-    # change-set) share one anchor, and the mutation harness refuses a second entry that repeats
-    # an earlier one's anchors — *"it measures nothing new"*. A decision that cannot be mutated
-    # independently of its neighbour cannot be GUARDED independently of it.
-    untrusted = diff_taken and changed is None
-    if untrusted:
-        return "RUN-UNPARSED"
-    return "RUN" if sweep_needed(changed) else "SKIP"
-
-
-def sweep_skipped_hole(changed: "list[str] | None") -> list[str]:
-    """PURE. The changed paths that fall in the MEASURED hole — staged, but not swept. r5 CLAUDE M1.
-
-    ⛔ WHY THE CALLER CANNOT COMPUTE THIS ITSELF. `ci.yml`'s SKIP message was byte-identical whether
-    the hole had been crossed or not, AND asserted *"unchanged code against unchanged suites"* one
-    line above a warning that a docs change CAN alter a suite result — a self-contradiction in
-    adjacent lines, and the third instance on this branch of a log line claiming more than the step
-    knows. Discriminating needs `SWEEP_SKIP_ROOTS`, and a `grep` alternation in YAML would be a
-    second implementation of it; that drift is already an 18-instance class here.
-
-    ⚠ NOT A SAFETY MECHANISM — it changes no verdict. It only lets the log say which of two
-    different situations produced the same `changed=false`: nothing staged changed at all, or
-    something changed inside the hole backlog #330 exists to close.
-    """
-    if not changed:
-        return []
-    roots = tuple(f"{root}/" for root in SWEEP_SKIP_ROOTS)
-    return [p for p in changed if p.strip() and p.startswith(roots)]
 
 
 def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
@@ -579,7 +758,8 @@ def control_is_green(rc: int, out: str) -> bool:
     return rc == 0 and "passed" in out
 
 
-def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None, only=None) -> str:
+def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None, only=None,
+                      scope=None) -> str:
     """The ONE sentence that says a run produced no coverage verdict.
 
     ⟳ backlog #217: it now also names WHICH SLICE of the manifest produced no verdict, through
@@ -618,7 +798,7 @@ def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None, o
     AttributeError on `.reason`, which is the point: the sentence is only ever true of one
     variant, and the type says so instead of a comment saying so.
     """
-    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only)}"
+    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only, scope)}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1537,7 +1717,14 @@ EXPECTED_MUTATIONS = {
     # resolved instead of refused, and the display-versus-held comparison inverted to refuse only a RISE.
     # (An inversion that refuses AGREEING pins is stopped by the top-of-suite refusal, which is CANNOT
     # RUN, and the harness rightly does not count a cannot-run as a catch — measured on the first sweep.)
-    "scripts/check-plan-code.py": 149,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-04, backlog #330: 149 -> 168. The binary skip is RETIRED with its nine entries
+    # (`sweep_needed`, `SWEEP_RELEVANT_ROOTS`/`SWEEP_SKIP_ROOTS`, `sweep_skipped_hole`, `sweep_verdict`);
+    # 28 added for the per-manifest selector, its log, select-then-shard, the empty-selected-shard
+    # pass, and main()'s --event/--changed wiring. Seven anchors REBOUND to the edited lines.
+    # ⟳ 2026-11-04, PR #496 r1: 168 -> 174, one per selector fix (X1, C2 twice, C3, C5 twice).
+    # ⟳ PR #496 r2 X2: 174 -> 177 — a walker of `scripts/` is selected: the rule, the loop-variable
+    # dataflow, and the one-file-path negative.
+    "scripts/check-plan-code.py": 177,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2176,7 +2363,14 @@ EXPECTED_MUTATIONS = {
     # ⟳ 73 -> 85 (context floor r3): `--add` stores what the text looks like; the compact block is CAPPED (owner entries
     # accepted against a reserved notice, waits first, the PR list and the problems bounded, the overflow named and counted,
     # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
-    "scripts/session-state.py": 85,
+    # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 94, the open `sweep-red` issues in the block — the CANNOT READ arm, its
+    # mark, the names, the cap, collect()'s wiring, and the reader's command, directory, failure and element checks.
+    "scripts/session-state.py": 94,
+    # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
+    # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
+    # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
+    # only the first issue, or is handled as red; the marker dropped; a second red opens another issue; gh swallowed.
+    "scripts/sweep-red-alert.py": 6,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -2641,66 +2835,6 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
 SHARD_SPEC = re.compile(r"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$")
 
 
-def sweep_needed(changed: "list[str] | None") -> bool:
-    """PURE. Should the mutation sweep run, given the paths a branch changed? Backlog #173.
-
-    ⛔ THIS LIVES HERE AND NOT IN `ci.yml` FOR THE REASON THAT FILE RECORDS ABOUT ITSELF: a `run:`
-    block has no self-test, no mutation entry and no caller, and `check-ratchet-contract`'s
-    population is `scripts/*.{py,sh}` plus `.claude/hooks/*` — never `.github/workflows/`. Every
-    version of the shard rule written in YAML was unmeasurable by construction and shipped wrong in
-    THREE consecutive rounds with every gate green. The workflow collects the diff and calls this;
-    it decides nothing.
-
-    WHY IT IS SAFE TO SKIP: with nothing the harness STAGES changed, the sweep mutates unchanged
-    code against unchanged suites, so it can only reproduce the previous result. ⛔ THE SET IS
-    `SWEEP_RELEVANT_ROOTS`, DERIVED FROM `HARNESS_TREE` — read that constant's note before touching
-    this. It used to read `startswith("scripts/")`, which was FALSE for six of the seven staged
-    roots and was proved so by execution (r4 CODEX finding 2: `.agents/skills/shared/handoff-path.md`
-    alone took a staged suite from `25/25` to `24/25`, a real `[FAIL]` the skip hid). `docs` is
-    excluded by a PINNED decision, with its residual stated in that note.
-
-    ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON IS STALE, BUT THE SAVING IS STILL A LATENCY ONE.
-    backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
-    sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
-    `needs: null` and `matrix: {shard: [1..N]}` (N=18 since 2026-11-03, backlog #415; 24 from 2026-10-30, backlog #231; 12 from 2026-10-24).
-
-    ⛔⛔ AND HERE IS A CLAIM I WROTE AND r5 CODEX REFUTED BY MEASUREMENT — recorded because the
-    error is more instructive than the number. I wrote that the sweep therefore costs *"~48 runner-
-    minutes and close to ZERO wall-clock"*, reasoning from `needs: null` to concurrency to zero
-    latency. That is an INFERENCE STATED AS MEASURED. Measured over three CONSECUTIVE SUCCESSFUL
-    runs (39359868562, 39353987366, 39330490473) via `gh api .../jobs`:
-
-        verify             3.3m    3.2m    5.2m
-        slowest shard     26.2m   23.9m   24.3m
-        verify -> mutation-sweep-complete   23.1m   20.9m   19.3m
-
-    `mutation-sweep-complete` DEPENDS on the matrix, so it aggregates and lands ~19-23 MINUTES after
-    `verify`. ⛔ AND IT IS A REQUIRED STATUS CHECK — `gh api .../branches/master/protection` returns
-    `["verify", "schema-gates", "mutation-sweep-complete"]` — so that is MERGE latency, not merely
-    workflow latency. The sweep is the critical path, not a free passenger; skipping it saves real
-    time, which makes backlog #173's cheap half worth MORE than my first correction claimed.
-    ⚠ PROVENANCE: those three runs are `baseline-surveys` (`23e5a349`, `5e22e9b8`, `e805b88e`) at a
-    1,545-entry manifest, against 1,649 here — so they bound the shape, not this branch's exact
-    cost. backlog #333 holds the open question.
-
-    ⭐ AND THE MEASUREMENT FOUND SOMETHING THE ARITHMETIC DID NOT: the shards are IMBALANCED in
-    wall-clock by ~1.9-2.2x (slowest 24-26m against fastest 11-12m), while `ci.yml:729` predicts a
-    1.15x round-robin spread. That prediction is over MODELLED WORK from per-suite costs; it is not
-    a wall-clock measurement, and the two disagree by ~2x. All eight shards start within one second
-    of each other, so queueing is not the cause. Since the sweep's critical path IS its slowest
-    shard, balance is worth more than a larger N — the ~153s control floor is paid twice per shard
-    and does not divide by N. backlog #333 owns that; backlog #330 owns the diff-scoped selector,
-    which this measurement makes MORE valuable rather than less.
-
-    ⛔ `None` MEANS THE DIFF COULD NOT BE TAKEN, AND THAT RUNS THE SWEEP. An undetermined answer
-    must not silently skip a gate: "cannot run is a failure, never a pass" applies to the DECISION
-    to skip exactly as it applies to the measurement.
-    """
-    if changed is None:
-        return True
-    return any(path.startswith(SWEEP_RELEVANT_ROOTS) for path in changed if path.strip())
-
-
 def parse_shard(spec: str, *, zero_based: bool = False,
                 flag: str = "--shard") -> tuple[tuple[int, int] | None, str | None]:
     """`"2/5"` -> `((2, 5), None)`; anything else -> `(None, why)`. PURE.
@@ -2858,7 +2992,8 @@ def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None",
     return None
 
 
-def shard_label(shard: "tuple[int, int] | None", only: "frozenset | None" = None) -> str:
+def shard_label(shard: "tuple[int, int] | None", only: "frozenset | None" = None,
+                scope: "tuple[int, int] | None" = None) -> str:
     """Which SLICE of the manifest a verdict line is about. PURE.
 
     The docstring's "the final line of STDOUT names the mode" is too weak once the execution
@@ -2868,9 +3003,12 @@ def shard_label(shard: "tuple[int, int] | None", only: "frozenset | None" = None
     """
     if only:
         return f"ONLY {', '.join(sorted(only))} — a DIAGNOSTIC slice, not the gate"
-    if shard is None:
-        return "the WHOLE manifest"
-    return f"shard {shard[0]} of {shard[1]} (round-robin)"
+    # backlog #330: a pull request's selection is a slice too, and must never read as the whole.
+    if scope is None:
+        return "the WHOLE manifest" if shard is None else f"shard {shard[0]} of {shard[1]} (round-robin)"
+    picked = (f"the DIFF-SCOPED selection, {scope[0]} of {scope[1]} manifest(s) — the full sweep "
+              f"runs on master")
+    return picked if shard is None else f"shard {shard[0]} of {shard[1]} (round-robin) of {picked}"
 
 
 def sweep_estimate(control_seconds: dict, muts: list) -> float:
@@ -3105,8 +3243,14 @@ def mutate_delivered(root: pathlib.Path,
                      shard: "tuple[int, int] | None" = None,
                      budget: "float | None" = None,
                      only: "frozenset | None" = None,
+                     select: "frozenset | None" = None,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
+
+    `select` (backlog #330) is a pull request's diff-scoped selection of TARGETS, None for the
+    whole manifest. It is applied BEFORE the shard, so the shards split the SELECTED entries
+    round-robin; a shard left with none of them is a clean pass over nothing (`declared = 0`),
+    because under a selection an empty slice is the expected outcome, not a misconfigured N.
 
     The whole `scripts/` tree is copied because these scripts import each other as
     siblings and resolve a repo root from their own path; copying only the targeted
@@ -3188,11 +3332,15 @@ def mutate_delivered(root: pathlib.Path,
     # slice, one global invariant would quietly become N local ones and coverage could shrink
     # with every shard still green, which is this repository's definition of a false green.
     # ONLY THE EXECUTION BELOW IS SHARDED.
-    if shard is not None:
+    pool = muts if select is None else [m for m in muts if m["file"] in select]
+    if shard is not None and select is None:
         why = shard_refusal(shard[0], shard[1], len(muts))
         if why:
             return False, [why], NotMeasured.from_counts([], None, ev_files)
-    shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts
+    shard_muts = shard_slice(pool, shard[0], shard[1]) if shard is not None else pool
+    if select is not None and not shard_muts:
+        return True, [], Measured(files={}, declared=0, mutations=[], survivors=[],
+                                  controls_green=True)
     # `--only` (backlog #208): like a shard, it narrows EXECUTION only — every global check above
     # has already run over the whole manifest, so a narrowed run cannot hide a coverage drop.
     if only is not None:
@@ -3513,7 +3661,8 @@ def _entries_of(v) -> list:
     return v.mutations if isinstance(v, Measured) else v.entries
 
 
-def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=None) -> str:
+def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=None,
+               scope=None) -> str:
     """The one-line summary of a `--mutate` run. PURE.
 
     ⟳ backlog #217: AND WHICH SLICE OF THE MANIFEST IT IS ABOUT. A sharded run's numbers are a
@@ -3538,7 +3687,7 @@ def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=N
               f"{len(verdict.mutations)} mutation(s), {killed} killed, "
               f"{attributed} attributed to the case each names, "
               f"{len(verdict.survivors)} survivor(s)"
-            + f" — measured over {shard_label(shard, only)}")
+            + f" — measured over {shard_label(shard, only, scope)}")
 
 
 # One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
@@ -3661,17 +3810,22 @@ def _suite_owns_the_pins():
 
 
 def _budget_wiring(root: pathlib.Path) -> dict:
-    """`main()` over the fixture ROOT under each CI / flag / --only setting: {key: (rc, stdout)}.
+    """`main()` over the fixture ROOT under each CI / flag / --only / --event setting: {key: (rc, stdout)}.
 
     ⛔ A SMALL FUNCTION ON PURPOSE (PR #400 r1 H1, measured): `check-main-drivable` analyses every
     `main()` call site against its ENCLOSING function, and inside the long `_self_test` this one
     call cost its suite ~30s and pushed it past `SUITE_TIMEOUT`. Here it costs nothing."""
     saved = os.environ.pop("CI", None)
     out = {}
+    (root / "changed.txt").write_text("scripts/thing.py\0")
+    scoped = ["--event", "pull_request", "--changed", str(root / "changed.txt")]
     try:
         for key, ci, extra, bud in (("local", None, [], 0), ("flag", None, ["--allow-long-local"], 0),
                                     ("cifalse", "false", [], 0), ("ci", "true", [], 0),
-                                    ("only", None, ["--only", "scripts/thing.py"], 3600)):
+                                    ("only", None, ["--only", "scripts/thing.py"], 3600),
+                                    ("scoped1", "true", scoped + ["--shard0", "0/2"], 0),
+                                    ("scoped2", "true", scoped + ["--shard0", "1/2"], 0),
+                                    ("push", "true", ["--event", "push"], 0)):
             os.environ.pop("CI", None)
             if ci is not None:
                 os.environ["CI"] = ci
@@ -3927,9 +4081,10 @@ def _self_test_body() -> int:
     import contextlib as _cl2, io as _io2
 
     def _main_rc(argv):
-        with _cl2.redirect_stdout(_io2.StringIO()) as buf, _cl2.redirect_stderr(_io2.StringIO()):
+        with _cl2.redirect_stdout(_io2.StringIO()) as buf, \
+                _cl2.redirect_stderr(_io2.StringIO()) as ebuf:
             rc = main(argv)
-        return rc, buf.getvalue()
+        return rc, buf.getvalue(), ebuf.getvalue()
 
     with tempfile.TemporaryDirectory() as td4:
         # ⚠ THE CONTENT IS DELIBERATELY INERT, and saying so is the point. These used
@@ -3959,7 +4114,7 @@ def _self_test_body() -> int:
                              ([str(g), "--verify-evidence"], "--verify-evidence"),
                              ([str(g), "--compare", str(td4)], "--compare"),
                              ([str(r)], "a FAILING plan — still NOT MEASURED, not failed")):
-            _rc, _out = _main_rc(_argv)
+            _rc, _out, _ = _main_rc(_argv)
             case(f"retired: {_what} refuses with rc=2, measuring nothing", _rc, 2)
         # The sentence, once — on stderr, where a CANNOT RUN belongs.
         with _cl2.redirect_stdout(_io2.StringIO()), \
@@ -3977,6 +4132,15 @@ def _self_test_body() -> int:
              _main_rc(["--mutate", "/nonexistent-root"])[0], 2)
         case("...and a bare invocation still exits 2, never 0",
              _main_rc([])[0], 2)
+        # backlog #330's flags: each misuse is refused BY NAME, before any tree is read. The root
+        # does not exist, so a dropped refusal still fails fast — on the WRONG sentence.
+        for _argv, _says in ((["--event", "pull_request"], "only mean something with --mutate"),
+                             (["--mutate", "/nonexistent-root", "--changed", "x.txt"],
+                              "--changed without --event"),
+                             (["--mutate", "/nonexistent-root", "--event", "push", "--only",
+                               "scripts/a.py"], "--only and --event are two different slices")):
+            _rc, _, _err3 = _main_rc(_argv)
+            case(f"refused by name, rc=2: {' '.join(_argv[:4])}", (_rc, _says in _err3), (2, True))
 
 
 
@@ -4396,6 +4560,17 @@ def _self_test_body() -> int:
             case("⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0",
                  (_rc_only, "measured over ONLY scripts/thing.py — a DIAGNOSTIC slice" in _out_only.getvalue()),
                  (0, True))
+            _sc1, _sc2, _push = _wired["scoped1"], _wired["scoped2"], _wired["push"]
+            case("⭐ main() logs a pull request's SELECTION and labels the verdict DIFF-SCOPED, rc=0",
+                 (_sc1[0], "SELECTION — diff-scoped: 1 of 1 manifest(s)" in _sc1[1],
+                  "1 mutation(s)" in _sc1[1],
+                  "shard 1 of 2 (round-robin) of the DIFF-SCOPED selection, 1 of 1" in _sc1[1]),
+                 (0, True, True, True))
+            case("⭐ ...a shard holding none of the selection says so and PASSES, rc=0",
+                 (_sc2[0], "nothing to do" in _sc2[1], "0 mutation(s)" in _sc2[1]), (0, True, True))
+            case("⭐ ...and a master push logs FULL and measures the WHOLE manifest, rc=0",
+                 (_push[0], "SELECTION — full: the event is 'push'" in _push[1],
+                  "measured over the WHOLE manifest" in _push[1]), (0, True, True))
             case("⭐ main() off CI REFUSES a run past the local budget, rc=2", _rc_local, 2)
             case("...--allow-long-local lets THAT run through, rc=0", _rc_flag, 0)
             case("...and on CI the budget never applies, rc=0", _rc_ci, 0)
@@ -4425,6 +4600,25 @@ def _self_test_body() -> int:
             _evs = mutate_delivered(_r, only=frozenset({"scripts/other.py"}))[2]
             case("--only narrows execution to its target (of two, one ran)",
                  sorted(m["name"] for m in getattr(_evs, "mutations", [])), ["two is three"])
+            # backlog #330: a SELECTION narrows execution the same way, and is applied BEFORE the
+            # shard — shard-then-filter would leave shard 1 of 2 with nothing of `thing`'s.
+            _evq = mutate_delivered(_r, select=frozenset({"scripts/other.py"}))[2]
+            case("⭐ a selection narrows execution to the selected targets (of two, one ran)",
+                 sorted(m["name"] for m in getattr(_evq, "mutations", [])), ["two is three"])
+            _evq = mutate_delivered(_r, shard=(1, 2), select=frozenset({"scripts/thing.py"}))[2]
+            case("⭐ SELECT, THEN SHARD: the shards split the selected entries round-robin",
+                 sorted(m["name"] for m in getattr(_evq, "mutations", [])), ["value is two"])
+            # Shard 3 of 3 is EMPTY over the whole manifest too, so the unscoped refusal would fire here.
+            _okq, _repq, _evq = mutate_delivered(_r, shard=(3, 3), select=frozenset({"scripts/thing.py"}))
+            case("⭐ a shard holding none of the selection PASSES over nothing — not an EMPTY refusal",
+                 (_okq, _repq, getattr(_evq, "declared", None)), (True, [], 0))
+            EXPECTED_MUTATIONS["scripts/other.py"] = 2
+            _gq = [mutate_delivered(_r, select=_sq)[:2] for _sq in (frozenset({"scripts/thing.py"}),
+                                                                       frozenset())]
+            EXPECTED_MUTATIONS["scripts/other.py"] = 1
+            case("⛔ the whole-manifest checks still run under ANY selection, an empty one included",
+                 [(_o, any("expected 2" in r for r in _rp)) for _o, _rp in _gq],
+                 [(False, True), (False, True)])
             # Control, then the mutation, then re-control — the three phases a reader waits
             # through. Asserting the SEQUENCE, not a count: a count survives losing the
             # re-control loop and gaining a duplicate control.
@@ -5005,7 +5199,9 @@ def _self_test_body() -> int:
                                       # ⟳ 2026-10-31, the review-round cap: a Claude half's verdict.
                                       "scripts/record-review-verdict.py",
                                       "scripts/regen-pages.py",
-                                      "scripts/session-state.py"])
+                                      "scripts/session-state.py",
+                                      # ⟳ PR #496 r2 X1: the sweep-red alert, out of shell into a tested helper.
+                                      "scripts/sweep-red-alert.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -6700,94 +6896,201 @@ def _self_test_body() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    # ── backlog #173: should the sweep run at all? ──────────────────────────────────────
-    case("a branch touching a guard runs the sweep",
-         sweep_needed(["scripts/check-docs.py", "docs/backlog.md"]), True)
-    case("a branch touching a MANIFEST runs it too — a manifest changes verdicts",
-         sweep_needed(["scripts/mutations/check-docs.json"]), True)
-    case("⭐ a docs-only branch SKIPS — unchanged code against unchanged suites",
-         sweep_needed(["docs/backlog.md", "docs/roadmap-to-launch.md"]), False)
-    case("an empty diff skips", sweep_needed([]), False)
-    # ⛔ the fail-toward-running arm: an undetermined diff must never skip a gate.
-    case("⛔ a diff that could NOT be taken runs the sweep rather than guessing",
-         sweep_needed(None), True)
-    case("a blank path is not a change", sweep_needed(["", "  "]), False)
-    case("a path merely CONTAINING scripts/ does not count — it must be the prefix",
-         sweep_needed(["docs/explainers/about-scripts/x.md"]), False)
-    # ── r4 CODEX finding 2: the predicate must cover what the harness STAGES, not `scripts/` ──
-    # ⛔ THE FIRST CASE IS THE ONE CODEX PROVED BY EXECUTION — staged tree, control green at
-    # `25/25`, that canon's contents replaced -> `24/25` and a real `[FAIL]` the skip hid. It is
-    # named for the FILE rather than for the root, because the file is what was measured.
-    case("⭐ `.agents/skills/shared/handoff-path.md` alone RUNS the sweep — a manifested suite "
-         "reads it, measured 25/25 -> 24/25",
-         sweep_needed([".agents/skills/shared/handoff-path.md"]), True)
-    case("a hook change runs it — `check-banner-armed` resolves its subject from the repo root",
-         sweep_needed([".claude/hooks/block-idle-stop.sh"]), True)
-    case("a workflow change runs it — `check-ratchet-contract` reads ci.yml for ratchet callers",
-         sweep_needed([".github/workflows/ci.yml"]), True)
-    case("a migration runs it — `check-storage-grant-pin`'s whole subject is under supabase/",
-         sweep_needed(["supabase/migrations/0027_x.sql"]), True)
-    case("the typescript oracle runs it — 20 of check-paid-caller-arrival's 32 cases need it",
-         sweep_needed(["node_modules/typescript/lib/typescript.js"]), True)
-    case("PRODUCT code still skips — it is staged by nothing and mutated by nothing",
-         sweep_needed(["app/page.tsx", "lib/gemini.ts", "components/Pane.tsx"]), False)
-    # ⛔ AN INDEPENDENT COPY, NOT A LOOP OVER THE SET UNDER TEST. Asserting membership by iterating
-    # `HARNESS_TREE` would make this case LIST SHRINK when a root is dropped rather than REDDEN —
-    # the shape `a-class-fix-needs-an-independent-copy-and-an-identity-case` records. So the roots
-    # are written out here, and adding or removing one must come here and be DECIDED.
-    case("SWEEP_RELEVANT_ROOTS is HARNESS_TREE minus `docs`, written out independently",
-         SWEEP_RELEVANT_ROOTS,
-         ("scripts/", "supabase/", "node_modules/typescript/", ".claude/hooks/",
-          ".github/workflows/", ".agents/skills/",
-          # ⟳ 2026-10-29, backlog #393: decided — a change to the git pre-push hook can move
-          # `check-plan-leak.py`'s verdicts, whose suite runs the shipped hook.
-          ".githooks/"))
-    case("⛔ `docs/` is EXCLUDED — backlog #173's pinned decision, and the whole saving",
-         "docs/" in SWEEP_RELEVANT_ROOTS, False)
-    # ── r5 CLAUDE M1: the SKIP log must DISCRIMINATE, so the hole is reportable ───────────────
-    case("a docs-only change names the measured hole it fell into",
-         sweep_skipped_hole(["docs/backlog.md", "docs/x/y.sql"]),
-         ["docs/backlog.md", "docs/x/y.sql"])
-    case("a change outside every staged root falls into NO hole — it is simply irrelevant",
-         sweep_skipped_hole(["app/page.tsx", "README.md"]), [])
-    case("a staged non-docs path is not a hole either — the sweep RUNS for it",
-         sweep_skipped_hole([".agents/skills/x.md"]), [])
-    case("an undetermined diff has no hole to report (the sweep runs anyway)",
-         sweep_skipped_hole(None), [])
-    case("blank paths are not holes", sweep_skipped_hole(["", "  "]), [])
-    # ⛔ PREFIX, NEVER SUBSTRING — the same rule `sweep_needed` pins, asserted here because this
-    # reporter has its own copy of the test. ⚠ AND THIS CASE EXISTS BECAUSE THE BLANK-PATH CASE
-    # ABOVE CANNOT BE MUTATED: `p.strip()` is redundant (a whitespace-only path fails
-    # `startswith("docs/")` regardless), so two mutations aimed at it SURVIVED over a green
-    # control before I measured why. A case with no reachable mutation is coverage on paper.
-    case("a path merely CONTAINING a skipped root is not a hole — it must be the prefix",
-         sweep_skipped_hole(["app/docs/readme.md", "x/docs/y.sql"]), [])
-    # ── `sweep_verdict`: the THREE-WAY decision, moved out of ci.yml's run: block ──────────────
-    # ⛔ The third state lived in YAML for an hour, under that file's own rule forbidding it. All
-    # 1,655 mutation entries target `scripts/`; `.github/` has ZERO — so the decision was
-    # unmeasurable where it was. These cases are what a `NO-REVIEW:` declaration can defer to.
-    case("⭐ a diff that was TAKEN but could not be TRUSTED is RUN-UNPARSED, not RUN",
-         sweep_verdict(None, True), "RUN-UNPARSED")
-    case("⭐ ...and a diff that FAILED is plain RUN — the two causes of None report differently",
-         sweep_verdict(None, False), "RUN")
-    case("a staged path changed -> RUN", sweep_verdict(["scripts/a.py"], True), "RUN")
-    case("a non-staged path changed -> SKIP", sweep_verdict(["docs/a.md"], True), "SKIP")
-    case("an empty parsed diff -> SKIP", sweep_verdict([], True), "SKIP")
-    case("a staged NON-scripts path still runs it", sweep_verdict([".agents/skills/x.md"], True),
-         "RUN")
-    # ⛔ NO UNDETERMINED INPUT MAY EVER YIELD `SKIP` — the property the whole step exists for,
-    # asserted over every shape that can produce one rather than at a single input.
-    case("⛔ no undetermined answer can SKIP a gate",
-         [sweep_verdict(c, d) for c, d in ((None, True), (None, False))], ["RUN-UNPARSED", "RUN"])
-    # An INDEPENDENT copy of the state set — a loop over SWEEP_VERDICTS would shrink, not redden.
-    case("the three verdicts are exactly these", SWEEP_VERDICTS, ("RUN", "SKIP", "RUN-UNPARSED"))
-    case("every verdict the function can return is a declared one",
-         sorted({sweep_verdict(c, d)
-                 for c in (None, [], ["scripts/a.py"], ["docs/a.md"], [".claude/hooks/h.sh"])
-                 for d in (True, False)}) == sorted(set(SWEEP_VERDICTS)), True)
-    # ── r6 CODEX finding 2: git C-QUOTES non-ASCII paths without `-z`, and the quoted form
-    # does not start with a staged root, so the gate was SKIPPED while scripts/ had changed.
-    # Measured in a real repo: `"scripts/\303\251.py"` -> sweep_needed False. A VERDICT defect.
+    # ── backlog #330: WHICH manifests a pull request runs ─────────────────────────────────
+    # The binary skip (backlog #173) is gone: every error mode of an all-or-nothing answer was
+    # total. These pin the per-manifest selector, and above all its DIRECTION — anything it
+    # cannot place selects MORE, up to the whole manifest, never fewer.
+    _H = frozenset({"scripts/check-plan-code.py", "scripts/coverage_verdict.py",
+                    ".github/workflows/ci.yml"})
+    _SRC = {"scripts/check-a.py": "import fixture_lib\nCANON = '.agents/skills/shared/canon.md'\n",
+            "scripts/check-b.py": "R = ROOT / 'docs' / 'reviews'\n# cites check-a.py\n",
+            "scripts/check-c.py": "x = 1\n",
+            "scripts/check-d.py": "HOOKS = ROOT / '.claude/hooks'\n",
+            "scripts/check-e.py": "LOG = 'docs/reviews/r1.md'\n",
+            "scripts/fixture_lib.py": "",
+            # The harness names every target in its pins; that must not select them.
+            "scripts/check-plan-code.py": "'scripts/check-c.py': 3, 'docs', 'reviews'"}
+
+    def _sel(changed, event="pull_request", why="w", src=_SRC):
+        return select_manifests(event, changed, why, src, _H)[0]
+    case("⭐ a changed guard selects itself and the targets that NAME it — not the rest",
+         _sel(["scripts/check-a.py"]), frozenset({"scripts/check-a.py", "scripts/check-b.py"}))
+    case("a guard nobody else names selects only itself — the harness's pin list is not a reader",
+         _sel(["scripts/check-c.py"]), frozenset({"scripts/check-c.py"}))
+    case("a MANIFEST change selects its target",
+         _sel(["scripts/mutations/check-c.json"]), frozenset({"scripts/check-c.py"}))
+    case("⛔ a manifest with no target it can load is unrecognised -> the WHOLE manifest",
+         _sel(["scripts/mutations/check-zz.json"]), None)
+    case("an importable module is selected through its IMPORT name too",
+         _sel(["scripts/fixture_lib.py"]),
+         frozenset({"scripts/fixture_lib.py", "scripts/check-a.py"}))
+    case("...and a target that merely MENTIONS an importable stem is selected too — a deliberate over-approximation",
+         _sel(["scripts/fixture_lib.py"], src={"scripts/check-k.py": "# see fixture_lib.helper\n",
+                                               "scripts/fixture_lib.py": ""}),
+         frozenset({"scripts/fixture_lib.py", "scripts/check-k.py"}))
+    case("⛔ a change to the harness itself -> the WHOLE manifest",
+         [_sel([p]) for p in sorted(_H)], [None, None, None])
+    case("⛔ an UNDETERMINED diff -> the WHOLE manifest, and the reason is the caller's",
+         select_manifests("pull_request", None, "the diff failed", _SRC, _H),
+         (None, ["full: the diff failed"]))
+    case("⛔ a master push and the schedule run the WHOLE manifest whatever changed",
+         [_sel(["app/page.tsx"], event=e) for e in ("push", "schedule", "workflow_dispatch")],
+         [None, None, None])
+    case("a path outside every staged root reaches no suite and selects nothing",
+         _sel(["app/page.tsx", "README.md", "lib/gemini.ts"]), frozenset())
+    case("an empty diff selects nothing", _sel([]), frozenset())
+    case("a blank path is not a change", _sel(["", "  "]), frozenset())
+    case("a path merely CONTAINING a staged root is not under it — PREFIX, never substring",
+         _sel(["app/docs/readme.md", "x/scripts/y.py"]), frozenset())
+    case("a doc is selected by the guards naming it AND by those quoting a directory above it",
+         _sel(["docs/reviews/r1.md"]), frozenset({"scripts/check-b.py", "scripts/check-e.py"}))
+    case("a canon file selects the guard that names it",
+         _sel([".agents/skills/shared/canon.md"]), frozenset({"scripts/check-a.py"}))
+    case("a file nothing names falls back to the guards quoting its staged ROOT",
+         _sel([".claude/hooks/new-hook.sh"]), frozenset({"scripts/check-d.py"}))
+    case("⛔ a staged file that nothing names, under a root nothing quotes -> the WHOLE manifest",
+         _sel(["supabase/migrations/0099_x.sql"]), None)
+    _SHARED = {f"scripts/check-{i}.py": "import fixture_lib\n" for i in range(3)}
+    _SHARED.update({"scripts/check-9.py": "", "scripts/fixture_lib.py": ""})
+    case("⛔ a module more than half the targets name is SHARED -> the WHOLE manifest",
+         _sel(["scripts/fixture_lib.py"], src=_SHARED), None)
+    _SHARED["scripts/check-8.py"] = ""
+    case("...and at exactly half it is still a selection, not the whole",
+         len(_sel(["scripts/fixture_lib.py"], src=_SHARED) or ()), 4)
+    _why = select_manifests("pull_request", ["docs/reviews/r1.md", "app/x.ts"], "w", _SRC, _H)[1]
+    case("the log names each selected manifest and the changed path that selected it",
+         [l for l in _why if l.startswith("  ")],
+         ["  scripts/check-b.py <- docs/reviews/r1.md", "  scripts/check-e.py <- docs/reviews/r1.md"])
+    case("...and its header counts the selection against the whole and the unreachable paths",
+         _why[0].startswith("diff-scoped: 2 of 7 manifest(s)") and "1 outside" in _why[0], True)
+    case("the harness's own files are derived from its imports, never re-typed",
+         harness_files("import json\nfrom coverage_verdict import X\n", {"coverage_verdict"}),
+         frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml",
+                    "scripts/coverage_verdict.py"}))
+    case("...and a module the tree does not hold is not a harness file, whatever it imports",
+         harness_files("import observer_log\nimport json\n", {"observer_log", "x"}),
+         frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml", "scripts/observer_log.py"}))
+    case("the staged roots are a parameter: a path under a root passed in is staged",
+         (select_manifests("pull_request", ["lib/x.py"], "w", {"scripts/check-q.py": "'lib'"}, _H,
+                           roots=("lib",))[0],
+          select_manifests("pull_request", ["lib/x.py"], "w", {"scripts/check-q.py": "'lib'"}, _H)[0]),
+         (frozenset({"scripts/check-q.py"}), frozenset()))
+    case("the selection names itself in every label it reaches",
+         (shard_label((2, 3), None, (4, 87)), shard_label(None, None, (0, 9))),
+         ("shard 2 of 3 (round-robin) of the DIFF-SCOPED selection, 4 of 87 manifest(s) — the full "
+          "sweep runs on master",
+          "the DIFF-SCOPED selection, 0 of 9 manifest(s) — the full sweep runs on master"))
+    case("...the tally line and the NOT-MEASURED line included",
+         (tally_line(True, Measured(files={}, declared=0, mutations=[], survivors=[],
+                                    controls_green=True), None, None, (1, 2)).endswith(
+             "measured over the DIFF-SCOPED selection, 1 of 2 manifest(s) — the full sweep runs on master"),
+          "DIFF-SCOPED selection, 3 of 4" in not_measured_line(
+              NotMeasured.from_counts([], None, {}), (1, 2), None, (3, 4))), (True, True))
+    case("a reason names the list it is about", "/y" in changed_or_why(None, "/y")[1], True)
+    with tempfile.TemporaryDirectory() as _tds:
+        _ts = pathlib.Path(_tds)
+        (_ts / "scripts" / "mutations").mkdir(parents=True)
+        (_ts / "scripts" / "check-q.py").write_text("Q = 'docs'\n")
+        (_ts / "scripts" / "mutations" / "check-q.json").write_text("[]")
+        case("the sources are every manifest's target under the ROOT given, and the harness is this file's",
+             sweep_sources(_ts), ({"scripts/check-q.py": "Q = 'docs'\n"},
+                                  frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml"})))
+    # ⭐ THE FALSIFIER OF backlog #330, ON THE REAL TREE: r4 Codex proved a change to this canon
+    # alone moves a manifested suite (check-canonical-source's real-repo case goes red); the binary
+    # skip hid it. Here it must select that suite AND check-handoff-path's.
+    _real = pathlib.Path(__file__).resolve().parent.parent
+    _rs, _rh = sweep_sources(_real)
+    _hp = select_manifests("pull_request", [".agents/skills/shared/handoff-path.md"], "w", _rs, _rh)[0]
+    case("⭐ the handoff canon alone selects check-handoff-path AND check-canonical-source",
+         {"scripts/check-handoff-path.py", "scripts/check-canonical-source.py"} <= (_hp or set())
+         and len(_hp) < len(_rs), True)
+    case("...and on the real tree the harness is the WHOLE manifest",
+         select_manifests("pull_request", ["scripts/check-plan-code.py"], "w", _rs, _rh)[0], None)
+    # ── PR #496 r1: four real kinds of dependency carried no quotable name in the form rule 7
+    # looked for. Each case is the reviewer's own input; the fixtures are independent of the tree.
+    # X1 = C1: a hyphenated sibling is loaded by its bare STEM, never by its file name.
+    _HY = {"scripts/check-g.py": '_SS = _sibling("gen-lines")\n',
+           "scripts/check-h.py": "m = importlib.import_module('gen-lines')\n",
+           "scripts/check-i.py": "# gen-lines builds the work lines\n",
+           "scripts/gen-lines.py": ""}
+    case("⭐ r1 X1: a hyphenated sibling selects the targets that load it by its quoted STEM",
+         _sel(["scripts/gen-lines.py"], src=_HY),
+         frozenset({"scripts/gen-lines.py", "scripts/check-g.py", "scripts/check-h.py"}))
+    _rm = module_sources(_real)
+    _rsel = lambda p: select_manifests("pull_request", [p], "w", _rs, _rh, modules=_rm)[0]  # noqa: E731
+    case("⭐ r1 X1 on the real tree: gen-work-lines.py selects goal-tree, which loads it by stem",
+         "scripts/goal-tree.py" in (_rsel("scripts/gen-work-lines.py") or {"scripts/goal-tree.py"}),
+         True)
+    # C2: a reader that walks a whole staged root is selected by ANY change under it.
+    _WK = {"scripts/check-w.py": "for p in (ROOT / 'docs').rglob('*.md'): pass\n",
+           "scripts/check-n.py": "IDX = 'docs/memory/MEMORY.md'\n",
+           "scripts/check-x.py": "y = 2\n"}
+    case("⭐ r1 C2: a ROOT walker is selected even when another target names the changed path",
+         _sel(["docs/memory/MEMORY.md"], src=_WK),
+         frozenset({"scripts/check-w.py", "scripts/check-n.py"}))
+    case("...and on the real tree MEMORY.md selects the docs walkers check-docs and check-plan-file-tags",
+         {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}
+         <= (_rsel("docs/memory/MEMORY.md") or {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}),
+         True)
+    case("a directory below the root is matched as the COMPONENT a join spells, not only as a whole path",
+         _sel(["docs/reviews/r1.md"], src={"scripts/check-r.py": "R = DOCS_DIR / 'reviews'\n",
+                                           "scripts/check-x.py": "y = 2\n"}),
+         frozenset({"scripts/check-r.py"}))
+    case("...and a file under `scripts` that nothing names falls back to the targets quoting `scripts`",
+         _sel(["scripts/notes.txt"], src={"scripts/check-s.py": "S = ROOT / 'scripts'\n",
+                                          "scripts/check-x.py": "y = 2\n"}),
+         frozenset({"scripts/check-s.py"}))
+    case("...but `scripts` is reached by import name, not walked: a script change does not select "
+         "every target that quotes the directory",
+         _sel(["scripts/check-x.py"], src=dict(_WK, **{"scripts/check-s.py": "S = ROOT / 'scripts'\n"})),
+         frozenset({"scripts/check-x.py"}))
+    # PR #496 r2 X2: a target that WALKS `scripts/` reads every file under it, so excluding the
+    # import root dropped one (`check-canonical-source` walks it through a loop variable).
+    _SW = {"scripts/check-cw.py": ("def files(root):\n    for sub in ('docs', 'scripts'):\n"
+                                   "        d = root / sub\n        yield from d.rglob('*.py')\n"),
+           "scripts/check-gw.py": "import glob\nALL = glob.glob('scripts/*.py')\n",
+           "scripts/check-q.py": ("import glob\nP = ROOT / 'scripts/x.py'\nONE = glob.glob('scripts/x.py')\n"
+                                  "for q in (ROOT / 'docs').glob('*'): pass\n"),
+           "scripts/check-x.py": "y = 2\n"}
+    case("⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is "
+         "selected by any script change",
+         _sel(["scripts/check-x.py"], src=_SW),
+         frozenset({"scripts/check-x.py", "scripts/check-cw.py", "scripts/check-gw.py"}))
+    case("...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob "
+         "call — and walks another directory, is not a walker of it",
+         "scripts/check-q.py" in (_sel(["scripts/check-x.py"], src=_SW) or _SW), False)
+    case("⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/",
+         "scripts/check-canonical-source.py" in (_rsel("scripts/check-usage-pace.py") or set()), True)
+    # C3: the dependency manifests change staged `node_modules` without any staged path changing.
+    case("⭐ r1 C3: package.json and package-lock.json select the WHOLE manifest",
+         [_sel([p]) for p in ("package.json", "package-lock.json")], [None, None])
+    case("...and a file merely NAMED like one, elsewhere, is not a dependency manifest",
+         _sel(["app/package.json"]), frozenset())
+    # C5: imports are followed transitively — a module reaches the targets that import an importer.
+    _TR = {"scripts/check-t.py": "import m_cat\n",
+           "scripts/check-u.py": "# m_cat is described in the spec\n",
+           "scripts/check-v.py": "z = 0\n"}
+    _TM = {"scripts/m_base.py": "CONTAINER = 'x'\n",
+           "scripts/m_cat.py": "from m_base import CONTAINER\n"}
+    case("⭐ r1 C5: a module reaches a target through an importer it does not name",
+         select_manifests("pull_request", ["scripts/m_base.py"], "w", _TR, _H, modules=_TM)[0],
+         frozenset({"scripts/check-t.py"}))
+    case("...through an IMPORT, never through prose that mentions the importer",
+         "scripts/check-u.py" in (select_manifests("pull_request", ["scripts/m_base.py"], "w", _TR, _H,
+                                                   modules=_TM)[0] or _TR), False)
+    case("...and on the real tree m4_base_db reaches check-live-schema and check-catalog-coverage",
+         {"scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"}
+         <= (_rsel("scripts/m4_base_db.py")
+             or {"scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"}), True)
+    with tempfile.TemporaryDirectory() as _tdm:
+        (pathlib.Path(_tdm) / "scripts").mkdir()
+        (pathlib.Path(_tdm) / "scripts" / "m_a.py").write_text("import m_b\n")
+        (pathlib.Path(_tdm) / "notes.py").write_text("")
+        case("the module sources are every scripts/*.py under the ROOT given",
+             module_sources(pathlib.Path(_tdm)), {"scripts/m_a.py": "import m_b\n"})
+    # ── the changed-file list: NUL-delimited, or it is not trusted ────────────────────────
+    # r6 CODEX finding 2: git C-QUOTES non-ASCII paths without `-z`, and the quoted form does not
+    # start with a staged root. Measured in a real repo: `"scripts/\303\251.py"`.
     case("NUL-delimited output parses to the real paths",
          changed_from_nul("scripts/a.py\0docs/b.md\0"), ["scripts/a.py", "docs/b.md"])
     case("an empty diff is an empty list, not an unparseable one", changed_from_nul(""), [])
@@ -6795,13 +7098,16 @@ def _self_test_body() -> int:
          changed_from_nul("scripts/a.py\n"), None)
     case("⛔ a C-quoted path that arrives anyway is REFUSED, never mis-prefixed",
          changed_from_nul('"scripts/\\303\\251.py"\0'), None)
-    case("...and a refusal RUNS the sweep rather than guessing — the two compose",
-         sweep_needed(changed_from_nul("scripts/a.py\n")), True)
-    case("⭐ the quoted form would otherwise SKIP the sweep — the defect, pinned",
-         sweep_needed(['"scripts/\\303\\251.py"']), False)
-    case("every relevant root is a real HARNESS_TREE member — no root invented here",
-         sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
-         sorted(set(HARNESS_TREE) - {"docs"}), True)
+    case("⛔ a list that could not be READ is undetermined, and says so",
+         changed_or_why(None, "/x")[0] is None and "could not be read" in changed_or_why(None, "/x")[1],
+         True)
+    case("⛔ ...and so is one that is not NUL-delimited — the two causes report differently",
+         changed_or_why("scripts/a.py\n", "/x")[0] is None
+         and "not NUL-delimited" in changed_or_why("scripts/a.py\n", "/x")[1], True)
+    case("a readable NUL list is the paths, with no reason", changed_or_why("a\0", "/x"), (["a"], ""))
+    case("...and the refusal composes: an untrusted list selects the WHOLE manifest",
+         select_manifests("pull_request", *changed_or_why("scripts/check-c.py\n", "/x"), _SRC, _H)[0],
+         None)
     # ─── THE TOTAL IS DERIVED, NEVER TYPED (backlog #359) ─────────────────────────────────
     # ⛔ A literal total stood here, and 41 of the 43 merged commits that touched this file from
     # 2026-10-17 edited it — so any two open PRs that added a mutation anywhere collided on ONE
@@ -7113,6 +7419,12 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
                          "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
     ap.add_argument("--allow-long-local", action="store_true",
                     help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
+    ap.add_argument("--event", metavar="NAME",
+                    help="With --mutate: the CI event (backlog #330). `pull_request` runs only the "
+                         "manifests --changed selects; any other event runs the WHOLE manifest.")
+    ap.add_argument("--changed", metavar="FILE",
+                    help="With --event: the pull request's `git diff --name-only -z` output. "
+                         "Unreadable or untrusted -> the WHOLE manifest, never fewer.")
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -7224,6 +7536,18 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         print("CANNOT RUN — --only and --allow-long-local only mean something with --mutate ROOT. "
               "NOTHING WAS MEASURED.", file=sys.stderr)
         return 2
+    if (a.event is not None or a.changed is not None) and not a.mutate:
+        print("CANNOT RUN — --event and --changed only mean something with --mutate ROOT. "
+              "NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
+    if a.changed is not None and a.event is None:
+        print("CANNOT RUN — --changed without --event: whether a diff may narrow the run depends "
+              "on the event. NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
+    if a.only and a.event is not None:
+        print("CANNOT RUN — --only and --event are two different slices; pass one. NOTHING WAS "
+              "MEASURED.", file=sys.stderr)
+        return 2
     if a.only and shard is not None:
         print("CANNOT RUN — --only and a shard are two different slices; pass one. NOTHING WAS "
               "MEASURED.", file=sys.stderr)
@@ -7249,7 +7573,25 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # ⚠ ONLY WHEN THE MANIFEST ITSELF LOADS. Over a broken manifest `len(muts)` is a
         # shortfall, and "shard 4 of 4 is empty" would then be a confident answer to the wrong
         # question — the manifest's own problems belong to `mutate_delivered`'s report.
-        if shard is not None:
+        # backlog #330: THE SELECTION, decided once by `select_manifests` and LOGGED before any
+        # suite runs — which manifests, and the changed path that selected each, or "full: why".
+        select = scope = None
+        if a.event is not None:
+            raw = None
+            if a.changed is not None:
+                try:
+                    raw = pathlib.Path(a.changed).read_text(encoding="utf-8", errors="surrogateescape")
+                except OSError:
+                    raw = None
+            changed, why = (changed_or_why(raw, a.changed) if a.changed is not None
+                            else (None, "no --changed list was given"))
+            sources, harness = sweep_sources(mroot)
+            select, lines = select_manifests(a.event, changed, why, sources, harness,
+                                             modules=module_sources(mroot))
+            print("SELECTION — " + "\n".join(lines))
+            if select is not None:
+                scope = (len(select), len(sources))
+        if shard is not None and select is None:
             _muts, _problems = load_manifests(mroot)
             why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))
             if why:
@@ -7265,7 +7607,8 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
         only = frozenset(a.only) if a.only else None
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
-                                               shard=shard, budget=budget, only=only)
+                                               shard=shard, budget=budget, only=only,
+                                               select=select)
         if report and report[0].startswith(LOCAL_REFUSAL):
             print(report[0], file=sys.stderr)
             return 2
@@ -7302,7 +7645,10 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # rather than the gate: the gate is defended by the type; the refusal is the part a
         # one-line edit can still get wrong quietly.
         if isinstance(verdict, Measured):
-            print(tally_line(ok, verdict, shard, only))
+            if select is not None and verdict.declared == 0:
+                print(f"nothing to do — none of the selected mutations falls in "
+                      f"{shard_label(shard, only, scope)}; every whole-manifest check ran and passed")
+            print(tally_line(ok, verdict, shard, only, scope))
         else:
             # NO tally — and that includes the FILE count. On a control-failure run
             # `ev["files"]` holds the CONTROL runs, so "7 file(s)" asserts work that measured
@@ -7313,7 +7659,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             # line above — printing "(162 of 162 … produced a verdict)" next to "produced no
             # coverage verdict" contradicts itself. Measured 2026-09-03: the first run of
             # F2-S4 emitted exactly that sentence.
-            print(not_measured_line(verdict, shard, only))
+            print(not_measured_line(verdict, shard, only, scope))
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
     # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts

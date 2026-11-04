@@ -240,8 +240,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(not_measured_line(verdict, shard, only))\n        return 0 if ok else 1",
-        "            print(not_measured_line(verdict, shard, only)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
+        "            print(not_measured_line(verdict, shard, only, scope))\n        return 0 if ok else 1",
+        "            print(not_measured_line(verdict, shard, only, scope)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -514,8 +514,8 @@
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only)",
-        "mutate_delivered(mroot, shard=shard, budget=budget, only=only)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only,",
+        "mutate_delivered(mroot,\n                                               shard=shard, budget=budget, only=only,"
       ]
     ],
     "expect": [
@@ -1015,8 +1015,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts",
-        "    shard_muts = muts"
+        "    shard_muts = shard_slice(pool, shard[0], shard[1]) if shard is not None else pool",
+        "    shard_muts = pool"
       ]
     ],
     "expect": [
@@ -1068,8 +1068,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return f\"shard {shard[0]} of {shard[1]} (round-robin)\"",
-        "    return f\"shard {shard[1]} of {shard[0]} (round-robin)\""
+        "    return \"the WHOLE manifest\" if shard is None else f\"shard {shard[0]} of {shard[1]} (round-robin)\"",
+        "    return \"the WHOLE manifest\" if shard is None else f\"shard {shard[1]} of {shard[0]} (round-robin)\""
       ]
     ],
     "expect": [
@@ -1083,7 +1083,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only)}\")",
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only, scope)}\")",
         "              f\"{len(verdict.survivors)} survivor(s)\")"
       ]
     ],
@@ -1097,7 +1097,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only)}\"",
+        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only, scope)}\"",
         "    return f\"NOT MEASURED — {nm.reason}\""
       ]
     ],
@@ -1291,84 +1291,6 @@
     "expect": "a SHARD_FLAGS key colliding with an existing option is refused by name — r8 codex Low"
   },
   {
-    "name": "backlog #173: an undetermined diff SKIPS the sweep instead of running it, so a branch whose changed-file set could not be read silently loses its mutation gate",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    if changed is None:\n        return True",
-        "    if changed is None:\n        return False"
-      ]
-    ],
-    "expect": [
-      "⛔ a diff that could NOT be taken runs the sweep rather than guessing"
-    ]
-  },
-  {
-    "name": "backlog #173: the prefix test becomes a SUBSTRING test, so a docs path merely mentioning a staged root forces the sweep and the saving disappears — ANCHOR RE-POINTED 2026-10-21, when r4 replaced the literal \"scripts/\" with SWEEP_RELEVANT_ROOTS and orphaned this entry (count=0). The RULE it tests is unchanged: prefix, never substring.",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    return any(path.startswith(SWEEP_RELEVANT_ROOTS) for path in changed if path.strip())",
-        "    return any(any(r in path for r in SWEEP_RELEVANT_ROOTS) for path in changed if path.strip())"
-      ]
-    ],
-    "expect": [
-      "a path merely CONTAINING scripts/ does not count — it must be the prefix"
-    ]
-  },
-  {
-    "name": "⭐ r4 CODEX finding 2: SWEEP_RELEVANT_ROOTS collapses back to scripts/ only, so a branch changing a STAGED non-scripts path silently loses its whole mutation gate — the hole proved by execution with .agents/skills/shared/handoff-path.md (25/25 -> 24/25)",
-    "edits": [
-      [
-        "SWEEP_RELEVANT_ROOTS = tuple(f\"{root}/\" for root in HARNESS_TREE\n                             if root not in SWEEP_SKIP_ROOTS)",
-        "SWEEP_RELEVANT_ROOTS = (\"scripts/\",)"
-      ]
-    ],
-    "expect": [
-      "⭐ `.agents/skills/shared/handoff-path.md` alone RUNS the sweep — a manifested suite reads it, measured 25/25 -> 24/25"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
-    "name": "r4: the `docs` exclusion is dropped, so every docs-only PR runs the 8-shard sweep and backlog #173's measured saving disappears — its PINNED decision, reverted",
-    "edits": [
-      [
-        "SWEEP_SKIP_ROOTS = (\"docs\",)",
-        "SWEEP_SKIP_ROOTS = ()"
-      ]
-    ],
-    "expect": [
-      "⛔ `docs/` is EXCLUDED — backlog #173's pinned decision, and the whole saving"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
-    "name": "r5 CLAUDE M1: the skipped-hole reporter reads SWEEP_RELEVANT_ROOTS instead of SWEEP_SKIP_ROOTS, so the CI log reports the SWEPT paths as the hole and a reader is told the opposite of what was skipped",
-    "edits": [
-      [
-        "    roots = tuple(f\"{root}/\" for root in SWEEP_SKIP_ROOTS)\n    return [p for p in changed if p.strip() and p.startswith(roots)]",
-        "    roots = SWEEP_RELEVANT_ROOTS\n    return [p for p in changed if p.strip() and p.startswith(roots)]"
-      ]
-    ],
-    "expect": [
-      "a docs-only change names the measured hole it fell into"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
-    "name": "r5 CLAUDE M1: the hole reporter's prefix test becomes a SUBSTRING test, so `app/docs/readme.md` is reported to a CI reader as a staged-but-unswept path when it is neither. ⟳ THIS ENTRY REPLACES TWO DEAD ONES: both earlier attempts aimed at the blank-path guard and SURVIVED over a green control, because `p.strip()` is redundant — a whitespace-only path fails `startswith` anyway. Measured, not assumed; a mutation that changes no behaviour is fake coverage and was removed rather than relabelled.",
-    "edits": [
-      [
-        "    return [p for p in changed if p.strip() and p.startswith(roots)]",
-        "    return [p for p in changed if p.strip() and any(r in p for r in roots)]"
-      ]
-    ],
-    "expect": [
-      "a path merely CONTAINING a skipped root is not a hole — it must be the prefix"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
     "name": "⭐ r6 CODEX finding 2: newline-delimited git output is TRUSTED instead of refused, so dropping `-z` silently reinstates the skipped gate — git C-quotes non-ASCII paths, the quoted form misses every staged root, and the sweep was skipped while scripts/ changed",
     "edits": [
       [
@@ -1391,45 +1313,6 @@
     ],
     "expect": [
       "⛔ a C-quoted path that arrives anyway is REFUSED, never mis-prefixed"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
-    "name": "⭐ r6 CLAUDE M1: the RUN-UNPARSED arm is removed, so a diff that was TAKEN but whose paths could not be TRUSTED reports as an ordinary RUN — the reader is told a staged path changed when the step could not read one, which is the fourth instance on this branch of a log line claiming more than its step knows",
-    "edits": [
-      [
-        "    if untrusted:\n        return \"RUN-UNPARSED\"",
-        "    if False:\n        return \"RUN-UNPARSED\""
-      ]
-    ],
-    "expect": [
-      "⭐ a diff that was TAKEN but could not be TRUSTED is RUN-UNPARSED, not RUN"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
-    "name": "⛔ the verdict INVERTS for a parsed diff, so a branch touching a staged path SKIPS the whole mutation gate and a docs-only branch pays for it — the property every case in this family exists to protect",
-    "edits": [
-      [
-        "    return \"RUN\" if sweep_needed(changed) else \"SKIP\"",
-        "    return \"SKIP\" if sweep_needed(changed) else \"RUN\""
-      ]
-    ],
-    "expect": [
-      "a staged path changed -> RUN"
-    ],
-    "file": "scripts/check-plan-code.py"
-  },
-  {
-    "name": "r6 CLAUDE M1: the `diff_taken` half is dropped, so a diff that FAILED is reported as UNPARSEABLE. Both still RUN the sweep — an unanswered question must never skip a gate — but the two causes of a None change-set are conflated and the warning names the wrong one. ⚠ Its own anchor, because a shared one is refused as measuring nothing new.",
-    "edits": [
-      [
-        "    untrusted = diff_taken and changed is None",
-        "    untrusted = changed is None"
-      ]
-    ],
-    "expect": [
-      "⭐ ...and a diff that FAILED is plain RUN — the two causes of None report differently"
     ],
     "file": "scripts/check-plan-code.py"
   },
@@ -1597,8 +1480,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(tally_line(ok, verdict, shard, only))",
-        "            print(tally_line(ok, verdict, shard))"
+        "            print(tally_line(ok, verdict, shard, only, scope))",
+        "            print(tally_line(ok, verdict, shard, scope=scope))"
       ]
     ],
     "expect": [
@@ -1833,5 +1716,487 @@
       ]
     ],
     "expect": "⛔ r1 (Claude S2): a later `-= 4` write outside the display is REFUSED, naming the key"
+  },
+  {
+    "name": "backlog #330: only `push` runs the whole manifest, so the SCHEDULE is diff-scoped like a pull request",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if event != \"pull_request\":\n        return None, [f\"full: the event is",
+        "    if event == \"push\":\n        return None, [f\"full: the event is"
+      ]
+    ],
+    "expect": [
+      "⛔ a master push and the schedule run the WHOLE manifest whatever changed"
+    ]
+  },
+  {
+    "name": "backlog #330: an UNDETERMINED diff selects NOTHING instead of the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if changed is None:\n        return None, [f\"full: {why}\"]",
+        "    if changed is None:\n        return frozenset(), [f\"full: {why}\"]"
+      ]
+    ],
+    "expect": [
+      "⛔ an UNDETERMINED diff -> the WHOLE manifest, and the reason is the caller's"
+    ]
+  },
+  {
+    "name": "backlog #330: a change to the harness itself no longer forces the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if path in harness:\n            return None",
+        "        if path in ():\n            return None"
+      ]
+    ],
+    "expect": [
+      "⛔ a change to the harness itself -> the WHOLE manifest"
+    ]
+  },
+  {
+    "name": "backlog #330: the staged-root test becomes a SUBSTRING test",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    under = [r for r in roots if path.startswith(r + \"/\")]",
+        "    under = [r for r in roots if (r + \"/\") in path]"
+      ]
+    ],
+    "expect": [
+      "a path merely CONTAINING a staged root is not under it — PREFIX, never substring"
+    ]
+  },
+  {
+    "name": "backlog #330: a changed target no longer selects its OWN manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if path in sources:\n            hit.add(path)",
+        "        if path in ():\n            hit.add(path)"
+      ]
+    ],
+    "expect": [
+      "a guard nobody else names selects only itself — the harness's pin list is not a reader"
+    ]
+  },
+  {
+    "name": "backlog #330: a manifest whose target is missing is selected instead of forcing the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if target not in sources:\n                return None",
+        "            if target in ():\n                return None"
+      ]
+    ],
+    "expect": [
+      "⛔ a manifest with no target it can load is unrecognised -> the WHOLE manifest"
+    ]
+  },
+  {
+    "name": "backlog #330: a changed manifest no longer selects its target",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            hit.add(target)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "a MANIFEST change selects its target"
+    ]
+  },
+  {
+    "name": "backlog #330: the harness counts as a NAMER, so its pin list selects every target",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    readers = {t: s for t, s in sources.items() if t not in harness}",
+        "    readers = dict(sources)"
+      ]
+    ],
+    "expect": [
+      "a guard nobody else names selects only itself — the harness's pin list is not a reader"
+    ]
+  },
+  {
+    "name": "backlog #330: a module's IMPORT name is no longer a name it is read by",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        " | ({base[:-3]} if base[:-3].isidentifier() else set())",
+        " | set()"
+      ]
+    ],
+    "expect": [
+      "...and a target that merely MENTIONS an importable stem is selected too — a deliberate over-approximation"
+    ]
+  },
+  {
+    "name": "backlog #330: the shared threshold becomes >=, so a module named by exactly half goes FULL",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if len(named) > len(readers) * SHARED_FULL_FRACTION:",
+        "        if len(named) >= len(readers) * SHARED_FULL_FRACTION:"
+      ]
+    ],
+    "expect": [
+      "...and at exactly half it is still a selection, not the whole"
+    ]
+  },
+  {
+    "name": "backlog #330: the shared rule is dropped, so a module most targets import selects only its namers",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "len(named) > len(readers) * SHARED_FULL_FRACTION",
+        "len(named) > len(readers)"
+      ]
+    ],
+    "expect": [
+      "⛔ a module more than half the targets name is SHARED -> the WHOLE manifest"
+    ]
+  },
+  {
+    "name": "backlog #330: the directories between a path and its root stop selecting the guards that quote them",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        hit |= named | {t for t, s in readers.items() if any(_quotes_dir(s, d) for d in between)}",
+        "        hit |= named"
+      ]
+    ],
+    "expect": [
+      "a doc is selected by the guards naming it AND by those quoting a directory above it"
+    ]
+  },
+  {
+    "name": "backlog #330: a directory is matched only as a whole path, never as the component a ROOT / join spells",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "               for form in {d, d.rsplit(\"/\", 1)[-1]})",
+        "               for form in {d})"
+      ]
+    ],
+    "expect": [
+      "a directory below the root is matched as the COMPONENT a join spells, not only as a whole path"
+    ]
+  },
+  {
+    "name": "backlog #330: the staged-ROOT fallback is dropped",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not hit:\n            hit = {t for t, s in readers.items() if _quotes_dir(s, root)}",
+        "        if not hit:\n            hit = set()"
+      ]
+    ],
+    "expect": [
+      "...and a file under `scripts` that nothing names falls back to the targets quoting `scripts`"
+    ]
+  },
+  {
+    "name": "backlog #330: an unrecognised staged path selects NOTHING instead of the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not hit:\n            return None, [f\"full: {path} is staged",
+        "        if not hit:\n            continue\n            return None, [f\"full: {path} is staged"
+      ]
+    ],
+    "expect": [
+      "⛔ a staged file that nothing names, under a root nothing quotes -> the WHOLE manifest"
+    ]
+  },
+  {
+    "name": "backlog #330: the selection log stops naming the path that selected each manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return frozenset(picked), [head] + [f\"  {t} <- {', '.join(picked[t][:5])}\"",
+        "    return frozenset(picked), [head] + [f\"  {t}\""
+      ]
+    ],
+    "expect": [
+      "the log names each selected manifest and the changed path that selected it"
+    ]
+  },
+  {
+    "name": "backlog #330: the harness's files stop including the modules it imports",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                     | {f\"scripts/{m}.py\" for m in mods if m in script_stems})",
+        "                     )"
+      ]
+    ],
+    "expect": [
+      "the harness's own files are derived from its imports, never re-typed"
+    ]
+  },
+  {
+    "name": "backlog #330: an UNREADABLE changed list reads as an empty diff",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if raw is None:\n        return None, (f\"the changed-file list {label} could not be read",
+        "    if raw is None:\n        return [], (f\"the changed-file list {label} could not be read"
+      ]
+    ],
+    "expect": [
+      "⛔ a list that could not be READ is undetermined, and says so"
+    ]
+  },
+  {
+    "name": "backlog #330: the selection is never applied, so a pull request runs the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    pool = muts if select is None else [m for m in muts if m[\"file\"] in select]",
+        "    pool = muts"
+      ]
+    ],
+    "expect": [
+      "⭐ a selection narrows execution to the selected targets (of two, one ran)"
+    ]
+  },
+  {
+    "name": "backlog #330: the shard is taken BEFORE the selection, so its slice of the selected entries is lost",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "shard_slice(pool, shard[0], shard[1])",
+        "[m for m in shard_slice(muts, shard[0], shard[1]) if m in pool]"
+      ]
+    ],
+    "expect": [
+      "⭐ SELECT, THEN SHARD: the shards split the selected entries round-robin"
+    ]
+  },
+  {
+    "name": "backlog #330: a shard holding none of the selection is refused as EMPTY instead of passing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if shard is not None and select is None:\n        why = shard_refusal",
+        "    if shard is not None:\n        why = shard_refusal"
+      ]
+    ],
+    "expect": [
+      "⭐ a shard holding none of the selection PASSES over nothing — not an EMPTY refusal"
+    ]
+  },
+  {
+    "name": "backlog #330: main() computes the selection and never passes it to the run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                                               select=select)",
+        "                                               select=None)"
+      ]
+    ],
+    "expect": [
+      "⭐ ...a shard holding none of the selection says so and PASSES, rc=0"
+    ]
+  },
+  {
+    "name": "backlog #330: main() stops LOGGING the selection",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            print(\"SELECTION — \" + \"\\n\".join(lines))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ main() logs a pull request's SELECTION and labels the verdict DIFF-SCOPED, rc=0"
+    ]
+  },
+  {
+    "name": "backlog #330: the tally line forgets the DIFF-SCOPED label, so a selection reads as a whole-manifest pass",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "{shard_label(shard, only, scope)}\")\n\n\n# One terminal row",
+        "{shard_label(shard, only)}\")\n\n\n# One terminal row"
+      ]
+    ],
+    "expect": [
+      "⭐ main() logs a pull request's SELECTION and labels the verdict DIFF-SCOPED, rc=0"
+    ]
+  },
+  {
+    "name": "backlog #330: an empty shard of a selection passes WITHOUT saying it had nothing to do",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                print(f\"nothing to do — none of the selected mutations falls in \"",
+        "                print(f\"none of the selected mutations falls in \""
+      ]
+    ],
+    "expect": [
+      "⭐ ...a shard holding none of the selection says so and PASSES, rc=0"
+    ]
+  },
+  {
+    "name": "backlog #330: --event / --changed without --mutate are not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if (a.event is not None or a.changed is not None) and not a.mutate:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "refused by name, rc=2: --event pull_request"
+    ]
+  },
+  {
+    "name": "backlog #330: --changed without --event is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.changed is not None and a.event is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "refused by name, rc=2: --mutate /nonexistent-root --changed x.txt"
+    ]
+  },
+  {
+    "name": "backlog #330: --only beside --event is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.only and a.event is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "refused by name, rc=2: --mutate /nonexistent-root --event push"
+    ]
+  },
+  {
+    "name": "PR #496 r1 X1: a hyphenated sibling's quoted stem is not a name",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    out = {f'\"{stem}\"', f\"'{stem}'\"}",
+        "    out = set()"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X1: a hyphenated sibling selects the targets that load it by its quoted STEM"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C2: a staged ROOT walker is selected only when nothing names the path",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        lo = len(root.split(\"/\")) + (root in IMPORT_ROOTS)",
+        "        lo = len(root.split(\"/\")) + 1"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C2: a ROOT walker is selected even when another target names the changed path"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C2: `scripts` is treated as a walked root",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "IMPORT_ROOTS = frozenset({\"scripts\"})",
+        "IMPORT_ROOTS = frozenset()"
+      ]
+    ],
+    "expect": [
+      "...but `scripts` is reached by import name, not walked: a script change does not select every target that quotes the directory"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C3: a dependency manifest change selects nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if path in DEPENDENCY_MANIFESTS:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C3: package.json and package-lock.json select the WHOLE manifest"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C5: imports are not followed transitively",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        named = {t for t in namers | _importers({m for m in start if m.endswith(\".py\")}, mods)",
+        "        named = {t for t in namers"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C5: a module reaches a target through an importer it does not name"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C5: the import closure follows prose mentions too",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        ks = _import_spellings(todo.pop().rsplit(\"/\", 1)[-1][:-3])",
+        "        ks = _names_of(todo.pop())"
+      ]
+    ],
+    "expect": [
+      "...through an IMPORT, never through prose that mentions the importer"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X2: a walker of an import root is not selected",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if root in IMPORT_ROOTS:\n            hit |=",
+        "        if root in IMPORT_ROOTS and False:\n            hit |="
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is selected by any script change",
+      "⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X2: a loop variable over the directory names does not carry the directory",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    pairs = [(n.target, n.iter)]",
+        "                    pairs = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is selected by any script change"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X2: a path to ONE file under the root counts as a walk of it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            v.startswith(d + \"/\") and any(c in v.split(\"/\")[depth] for c in \"*?[\")))",
+        "            v.startswith(d + \"/\")))"
+      ]
+    ],
+    "expect": [
+      "...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob call — and walks another directory, is not a walker of it"
+    ]
   }
 ]

@@ -160,7 +160,7 @@ copy that drifts. One line per row; each row's measurements and history are in
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
 | `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` |
 | `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited |
-| `scripts/check-plan-code.py` | `--mutate .`: every mutation in `scripts/mutations/*.json` goes red via the case it names. FULL sweep is CI's; locally PARTIAL (`--only <script>`) — open a DRAFT PR at slice start |
+| `scripts/check-plan-code.py` | `--mutate .`: every mutation in `scripts/mutations/*.json` goes red via the case it names. On a PR CI runs only the manifests the diff selects (unplaceable → MORE, harness → FULL); master pushes + a daily schedule run the FULL sweep, a red one opens a `sweep-red` issue. Locally PARTIAL (`--only <script>`) — open a DRAFT PR at slice start |
 | `scripts/check-plan-file-tags.py` | no document under `docs/` embeds code through a retired plan-mode tag |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
 | `.github/workflows/schema-gates.yml` | the schema gates in CI on every PR (no path filter, so it can be required — land the workflow BEFORE the required-check setting); `prod-drift` is the scheduled gate |

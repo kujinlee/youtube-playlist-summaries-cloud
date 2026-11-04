@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 c46477f3839fa79236aaac061fe70107b8d518f1",
+    "docs/reviews/claude/scoped-sweep-r1-claude.md": "100644 fad8c65915f6b780dce1eb19c8a46ae100ce3359",
+    "docs/reviews/codex/scoped-sweep-r1-codex.md": "100644 6c9bdb1720a9378ae303e8b3e6674191a2e378d5",
+    "docs/reviews/verdicts/scoped-sweep-r1-codex.verdict.json": "100644 f9bf640c7469ee20901a230cb9c5794669027d0d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f6c770741d9f31a5eb8beb8def79b3024e85296d",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/r330/prompt.md",
+  "reason": "claude half filed: 10542 chars, names f6c770741d9f",
+  "refused": false,
+  "review": "scoped-sweep-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-330",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

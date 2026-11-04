@@ -18739,3 +18739,11 @@ counts in the heading. Parked items that belong to no goal are listed in their o
 <!--tech-->
 Branch `goal-tree-recency-497`. `bucket()` is computed at draw time and never stored, so the fingerprint is unchanged by the
 48 h boundary moving. `tree_blocks()` is the one structure both `--print` and the page are drawn from.
+
+## 2026-11-04
+Backlog #330 is built, as the owner approved it on 2026-11-02. A pull request's mutation sweep now runs only the
+manifests whose subject the diff touched: a guard's own change selects a median of about 15 of the 88 manifests (it also selects every
+guard that walks the folder it lives in, and every module that imports it), and anything the selector cannot place selects more, up to all of them (a change to
+`check-plan-code.py` or the workflow, an unreadable diff, a module most guards import). Every master push and a new
+daily schedule still run the full sweep, and a red one opens or comments on a GitHub issue labelled `sweep-red`, which every session start lists; a
+green one only comments, and never closes it, so closing is a deliberate act after reading it.

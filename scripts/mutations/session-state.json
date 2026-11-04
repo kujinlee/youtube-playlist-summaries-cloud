@@ -641,8 +641,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "ledger_path=str(main[0] / LEDGER_REL))",
-        "ledger_path=\"\")"
+        "ledger_path=str(main[0] / LEDGER_REL), sweep",
+        "ledger_path=\"\", sweep"
       ]
     ],
     "expect": [
@@ -1103,6 +1103,123 @@
     ],
     "expect": [
       "⭐ r3 R3-5: an --override with no '=', naming no entry, or naming an already-declared entry is REFUSED (rc 2) with a message, and a flag outside its mode is refused; a valid override still proposes (rc 0); nothing was written"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: a gh failure on the issue list reads as none open",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if issues is None:",
+        "        if issues is None and False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: gh failing on the issue list prints CANNOT READ, marked — never silence, never 'none'"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the open issues are counted but not named",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            for i in issues[:SWEEP_RED_SHOWN]:",
+        "            for i in issues[:0]:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: an open sweep-red issue is in the block, by number, title and url"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: collect() does not read the sweep-red issues",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                  ledger_path=str(main[0] / LEDGER_REL), sweep_red=fetch_sweep_red(root, run))",
+        "                  ledger_path=str(main[0] / LEDGER_REL))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: collect() — the hook's entry — prints CANNOT READ when only the issue list fails, beside the PRs"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: a gh failure on the issue list is an empty list",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        return None, f\"gh exited {rc}: {out.strip()[:160]}\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": [
+      "...a gh failure is (None, why), and a malformed element is unparseable, never a crash"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: an issue element missing its fields is accepted",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "isinstance(i, dict) and {\"number\", \"title\", \"url\"} <= i.keys()",
+        "isinstance(i, dict)"
+      ]
+    ],
+    "expect": [
+      "...a gh failure is (None, why), and a malformed element is unparseable, never a crash"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the CANNOT READ line is not marked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"CHECKED, never as green.\" + mark)",
+        "\"CHECKED, never as green.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: gh failing on the issue list prints CANNOT READ, marked — never silence, never 'none'"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: a long issue list drops the rest without a count",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if len(issues) > SWEEP_RED_SHOWN:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "...a long issue list names SWEEP_RED_SHOWN and counts the rest"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the issue list includes closed issues",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "\"--label\", \"sweep-red\", \"--state\", \"open\", \"--json\", \"number,title,url\"],\n                  root, ISSUE_TIMEOUT)",
+        "\"--label\", \"sweep-red\", \"--json\", \"number,title,url\"],\n                  root, ISSUE_TIMEOUT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C4: the issue reader asks gh in the wrong directory",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                  root, ISSUE_TIMEOUT)",
+        "                  Path(\".\"), ISSUE_TIMEOUT)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
     ]
   }
 ]
