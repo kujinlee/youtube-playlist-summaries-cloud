@@ -1073,7 +1073,10 @@ EXPECTED_MUTATIONS = {
     # `Previously:` and its order after the strip (r2 X1/X2: four), a fate beside an unlisted PR (r2 X3),
     # and a later bold REOPENED cancelling a marker (r2 note: five). Five r1 entries were re-anchored.
     # ⟳ 2026-11-03, backlog #470: 112 -> 115. the PR-href mutation moved to page_markup.json (-1); four thread-id mutations (+4).
-    "scripts/goal-tree.py": 115,
+    # ⟳ 2026-11-04, backlog #497: 115 -> 130 — merge time (blank/unread, zone, latest-of-several, git and gh reads: 5),
+    # the buckets (48 h edge, unread age, parked: 3), parked not in flight and landed-parked grouping (2), and the
+    # folds (nothing folds, text lists leaves, goal not folded, fold drawn open, page bucketed at snapshot time: 5).
+    "scripts/goal-tree.py": 130,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

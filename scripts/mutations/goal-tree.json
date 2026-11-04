@@ -1468,8 +1468,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "render_tree_html(newest, ids=True)",
-        "render_tree_html(newest)"
+        "render_tree_html(newest, ids=True,",
+        "render_tree_html(newest, ids=False,"
       ]
     ],
     "expect": [

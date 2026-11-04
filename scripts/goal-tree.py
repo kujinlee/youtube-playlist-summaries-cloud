@@ -281,8 +281,8 @@ def local_minute(iso, tz=None):
 
 def _merge_time(n: int, src: dict):
     """The stored merge minute of a MERGED PR #n, from the source that said it merged; None when unread."""
-    merged = src["merged_by_pr"]
-    if merged is not None and n in merged:
+    merged = src["merged_by_pr"] or {}
+    if n in merged:
         return (src.get("merged_at") or {}).get(merged[n])
     return (src.get("all_merged_at") or {}).get(n)
 
