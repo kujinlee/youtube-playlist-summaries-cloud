@@ -1659,6 +1659,174 @@ def _self_test_body() -> int:
     case("a failed source is named in the snapshot's CANNOT RUN list",
          derive(goals, gh_down, "t")["cannot"], ["gh: gh pr list: exited 1: no network"])
 
+    # ── backlog #497: WHEN a thread merged, its recency bucket, and the folds ─────────────────────────────
+    case("backlog #497: a stored minute prints as the owner's `mm-dd hh:mm`, anything else as TIME UNREAD",
+         [merge_when(x) for x in ("2026-11-03 19:09", "2026-01-05 07:00", None, "", "11-03 19:09", "soon")],
+         ["11-03 19:09", "01-05 07:00"] + [TIME_UNREAD] * 4)
+    _utc = _dt.timezone.utc
+    _kst = _dt.timezone(_dt.timedelta(hours=9))
+    case("backlog #497: gh's mergedAt is converted to the given zone; no zone or no parse is None, never a guess",
+         [local_minute("2026-11-03T10:09:00Z", _utc), local_minute("2026-11-03T10:09:00Z", _kst),
+          local_minute("2026-11-03T23:30:00+00:00", _kst), local_minute("2026-11-03T10:09:00", _utc),
+          local_minute("nope", _utc), local_minute(None, _utc)],
+         ["2026-11-03 10:09", "2026-11-03 19:09", "2026-11-04 08:30", None, None, None])
+    _ts = src(merged_at={"aaaa111": "2026-11-03 19:09", "dddd444": "2026-11-01 08:00"},
+              merged_by_pr={20: "aaaa111", 21: "dddd444"}, all_merged_at={23: "2026-10-30 12:00"})
+    case("⛔ backlog #497: a merged leaf carries its merge TIME before its SHA — PR, backlog-only, and off-log",
+         [one("- fix · PR #20 · f\n", _ts)["detail"], one("- fix · backlog #10 · f\n", dict(_ts, open={}))["detail"],
+          one("- side · PR #23 · c\n", _ts)["detail"]],
+         ["merged 11-03 19:09 · aaaa111", "merged 11-03 19:09 · aaaa111 via PR #20",
+          "merged 10-30 12:00 · bbbb2222 — not on master's log"])
+    case("⛔ backlog #497: an unread merge minute says TIME UNREAD, never a blank or a guessed time",
+         [one("- fix · PR #20 · f\n", src())["detail"], one("- side · PR #23 · c\n", src())["detail"]],
+         ["merged time unread · aaaa111", "merged time unread · bbbb2222 — not on master's log"])
+    case("backlog #497: a thread's merged_at is its LATEST merge; one unread minute makes it unread; unmerged is None",
+         [one("- fix · PR #20, PR #21 · f\n", _ts)["merged_at"],
+          one("- fix · PR #20, PR #21 · f\n", dict(_ts, merged_at={"aaaa111": "2026-11-03 19:09"}))["merged_at"],
+          one("- fix · backlog #10 · f\n", dict(_ts, open={}))["merged_at"], one("- side · PR #21 · a\n", src())["merged_at"],
+          one("- side · PR #23 · c\n", _ts)["merged_at"]],
+         ["2026-11-03 19:09", None, "2026-11-03 19:09", None, "2026-10-30 12:00"])
+
+    def bk(state, merged_at=None, parked=False):
+        return bucket({"state": state, "merged_at": merged_at, "parked": parked}, "2026-11-05 19:09")
+    case("⛔ backlog #497: a merge is RECENT up to exactly 48 h before the drawing, OLDER one minute past it",
+         [bk("merged", "2026-11-03 19:09"), bk("merged", "2026-11-03 19:08"), bk("merged", "2026-11-05 19:00")],
+         ["recent", "older", "recent"])
+    case("⛔ backlog #497: a merge whose age cannot be read is RECENT — an unread time never folds a leaf away",
+         [bk("merged"), bk("merged", "garbage"),
+          bucket({"state": "merged", "merged_at": "2026-01-01 00:00"}, "t")], ["recent"] * 3)
+    case("backlog #497: closed, superseded and withdrawn are OLDER; next is LATER; blocked (declared wait) is QUEUED",
+         [bk(s) for s in ("closed", "superseded", "withdrawn", "next", "blocked")],
+         ["older", "older", "older", "later", "queued"])
+    case("⛔ backlog #497: open, in flight, CANNOT RUN and NOT FOUND are all NOW — never folded",
+         [bk(s) for s in ("open", "inflight", "cannot", "notfound")], ["now"] * 4)
+    case("⛔ backlog #497: a parked leaf that has not landed is PARKED; one that merged or closed is aged instead",
+         [bk(s, parked=True) for s in ("next", "blocked", "open", "inflight")]
+         + [bk("merged", "2026-11-05 10:00", True), bk("merged", "2026-10-01 10:00", True), bk("closed", parked=True)],
+         ["parked"] * 4 + ["recent", "older", "older"])
+    case("backlog #497: a parked entry is one DECLARED owner-wait or one saying PARKED (a capital word, whole)",
+         [is_parked(e) for e in ({"kind": "owner-wait", "what": "x"}, {"kind": "routine", "what": "PR #3 PARKED"},
+                                 {"what": "PARKED: later"}, {"kind": "routine", "what": "parked it"},
+                                 {"kind": "owner-instruction", "what": "UNPARKEDNESS"}, {"what": "w"})],
+         [True, True, True, False, False, False])
+    _pk = one("- fix · backlog #12 · f\n", src(ledger=[{"id": "park-12", "what": "backlog #12 PARKED till 11-10"}]))
+    case("⛔ backlog #497: a parked entry does NOT make an unstarted leaf in flight — it is shown as parked",
+         (_pk["state"], _pk["parked"], _pk["detail"]),
+         ("next", True, "no PR names it yet · parked: backlog #12 PARKED till 11-10"))
+    _pk2 = one("- fix · backlog #12 · f\n", src(ledger=[{"id": "park-12", "what": "w", "kind": "owner-wait"},
+                                                      {"id": "build-12", "what": "building"}]))
+    case("backlog #497 adjacent: a routine entry beside the parked one still makes it in flight, and both are named",
+         (_pk2["state"], _pk2["parked"], _pk2["detail"]),
+         ("inflight", True, "no PR names it yet · in flight: building · parked: w"))
+    _lp = derive(goals, src(ledger=[{"id": "park-77", "what": "PR #77 PARKED", "kind": "owner-wait"},
+                                    {"id": "loose-7", "what": "unrelated job"}]), "2026-10-28 04:00")
+    case("⛔ backlog #497: a parked entry naming NO thread is its own group, and not 'in flight under no goal'",
+         (_lp["parked_loose"], _lp["inflight_loose"]),
+         ([{"id": "park-77", "what": "PR #77 PARKED"}], [{"id": "loose-7", "what": "unrelated job"}]))
+    _lpl = derive(goals, src(ledger=[{"id": "park-20", "what": "PR #20 PARKED"}]), "2026-10-28 04:00")
+    case("⛔ backlog #497: a parked entry naming only LANDED threads joins that group, naming them — never hidden in a fold",
+         (_lpl["parked_loose"], [t["parked"] for g in _lpl["goals"] for t in g["threads"]],
+          "└─ park-20 · PR #20 PARKED · names only LANDED threads: fix · backlog #10, PR #20; bookkeeping · PR #20"
+          in tree_lines(_lpl)),
+         ([{"id": "park-20", "what": "PR #20 PARKED", "landed": ["fix · backlog #10, PR #20", "bookkeeping · PR #20"]}],
+          [True, False, False, True], True))
+    case("backlog #497 adjacent: a parked entry naming a LIVE thread stays on that thread, not in the group",
+         derive(goals, src(ledger=[{"id": "park-21", "what": "PR #21 PARKED"}]), "t")["parked_loose"], [])
+    _lpt = "\n".join(tree_lines(_lp))
+    case("backlog #497: ...and that group is printed, after the in-flight one, never dropped",
+         (_lpt.index("IN FLIGHT, UNDER NO GOAL") < _lpt.index("PARKED / QUEUED — NO GOAL"),
+          "└─ park-77 · PR #77 PARKED" in _lpt), (True, True))
+
+    # The bucketed tree, drawn at 2026-11-05 19:09: one goal with every bucket, one with only older/later.
+    _bg = parse_threads('## GOAL mix\n> 2026-11-01 00:00 "q"\n'
+                        "- fix · PR #21 · open one\n- fix · PR #20 · new merge\n- fix · PR #24 · old merge\n"
+                        "- side · backlog #12 · unplanned\n- side · backlog #13 · waiting · waits on backlog #21\n"
+                        "- side · backlog #14 · parked one\n- bookkeeping · PR #22 · shut\n"
+                        '## GOAL done\n> 2026-10-01 00:00 "r"\n- fix · PR #25 · ancient\n- side · backlog #15 · someday\n')
+    _bs = src(merged_by_pr={20: "aaaa111", 24: "eeee555", 25: "ffff666"},
+              merged_at={"aaaa111": "2026-11-05 08:00", "eeee555": "2026-11-01 08:00", "ffff666": "2026-10-02 08:00"},
+              ledger=[{"id": "park-14", "what": "backlog #14 waits for the owner", "kind": "owner-wait"}])
+    _bsnap = derive(_bg, _bs, "2026-11-05 19:09")
+    _bt = tree_lines(_bsnap)
+    case("⛔ backlog #497: --print shows now, recent, queued and parked leaves, labelled, and folds the rest to counts",
+         _bt[:11],
+         ['GOAL mix (2026-11-01 00:00) "q"',
+          "├─ fix",
+          "│  ├─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
+          "│  └─ ✅ PR #20 · new merge — merged 11-05 08:00 · aaaa111",
+          "├─ side",
+          "│  ├─ ❌ queued · backlog #13 · waiting — no PR names it yet · waits on backlog #21 (declared)",
+          "│  └─ ⬜ parked · backlog #14 · parked one — no PR names it yet · parked: backlog #14 waits for the owner",
+          "├─ … 2 older merged or closed (collapsed on the page)",
+          "└─ … 1 later (collapsed on the page)",
+          "",
+          'GOAL done (2026-10-01 00:00) "r"'])
+    case("⛔ backlog #497: a goal with NOTHING current prints its header and its two counts only",
+         _bt[11:13], ["├─ … 1 older merged (collapsed on the page)", "└─ … 1 later (collapsed on the page)"])
+    case("⛔ backlog #497: the folded leaves are NOT in the text — the count stands for them",
+         [any(w in ln for ln in _bt) for w in ("old merge", "shut", "unplanned", "ancient", "someday")], [False] * 5)
+    case("⭐ backlog #497: the bucket moves with the DRAWING time, not the snapshot — the same tree drawn 3 days on",
+         tree_lines(_bsnap, "2026-11-08 19:09")[:5],
+         ['GOAL mix (2026-11-01 00:00) "q"', "├─ fix", "│  └─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
+          "├─ side", "│  ├─ ❌ queued · backlog #13 · waiting — no PR names it yet · waits on backlog #21 (declared)"])
+    with tempfile.TemporaryDirectory() as d:
+        _lp497 = pathlib.Path(d) / "log.jsonl"
+        case("⭐ backlog #497: crossing the 48 h line with nothing else changed is NOT a new snapshot",
+             [append_if_changed(_lp497, _bsnap), append_if_changed(_lp497, dict(_bsnap, at="2026-11-09 19:09"))],
+             [True, False])
+
+    import html.parser as _hp
+
+    class _Folds(_hp.HTMLParser):
+        """Every `<details>` (class, summary, OPEN or not) and every text run with the classes of the details
+        it sits inside — what a reader sees without clicking is text inside no closed `<details>`."""
+        def __init__(self):
+            super().__init__()
+            self.stack, self.folds, self.texts, self._sum = [], [], [], None
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "details":
+                self.stack.append((a.get("class") or "", "open" in a))
+                self.folds.append([a.get("class") or "", "open" in a, ""])
+            elif tag == "summary":
+                self._sum = self.folds[-1]
+
+        def handle_endtag(self, tag):
+            if tag == "details":
+                self.stack.pop()
+            elif tag == "summary":
+                self._sum = None
+
+        def handle_data(self, data):
+            if self._sum is not None:
+                self._sum[2] += data
+            else:
+                self.texts.append((data, [c for c, op in self.stack if not op]))
+
+    _fp = _Folds()
+    _tree_html = render_tree_html(_bsnap, at="2026-11-05 19:09")
+    _fp.feed(_tree_html)
+    case("⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal "
+         "with nothing current",
+         [(c, op, sm.split(" — ")[0]) for c, op, sm in _fp.folds],
+         [("fold older", False, "├─ older (2)"), ("fold later", False, "└─ later (1)"),
+          ("fold goal", False, "GOAL done"), ("fold older", False, "├─ older (1)"),
+          ("fold later", False, "└─ later (1)")])
+    case("⛔ backlog #497 FAILS IF: a now, recent, queued or parked leaf is inside a closed fold",
+         [w for w in ("open one", "new merge", "waiting", "parked one")
+          if not any(w in t and not cl for t, cl in _fp.texts)], [])
+    case("backlog #497: ...and every folded leaf IS on the page, inside its fold",
+         [w for w in ("old merge", "shut", "unplanned", "ancient", "someday")
+          if not any(w in t and cl for t, cl in _fp.texts)], [])
+    case("⛔ backlog #497 (#363's rule): each page fold's count equals the --print count line it replaces",
+         [int(re.search(r"\((\d+)\)", sm).group(1)) for c, _, sm in _fp.folds if c != "fold goal"],
+         [int(re.search(r"… (\d+)", ln).group(1)) for ln in _bt if "(collapsed on the page)" in ln])
+    _np = render_page([_bsnap], "2026-11-05 19:09")
+    case("backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run",
+         ('<details class="fold older"><summary>├─ older (2)' in _np,
+          '<details class="fold older"><summary>├─ older (3)' in render_page([_bsnap], "2026-11-08 19:09")),
+         (True, True))
     # ── the log: only changes are kept ───────────────────────────────────────────────────────
     with tempfile.TemporaryDirectory() as d:
         lp = pathlib.Path(d) / "log.jsonl"
@@ -2001,174 +2169,6 @@ def _self_test_body() -> int:
     case("a failed live read is announced above the tree, with its reason",
          "could NOT run, so it was not logged: gh: gh pr list" in
          render_page(log2, "t", derive(goals, gh_down, "2026-10-28 08:00")), True)
-    # ── backlog #497: WHEN a thread merged, its recency bucket, and the folds ─────────────────────────────
-    case("backlog #497: a stored minute prints as the owner's `mm-dd hh:mm`, anything else as TIME UNREAD",
-         [merge_when(x) for x in ("2026-11-03 19:09", "2026-01-05 07:00", None, "", "11-03 19:09", "soon")],
-         ["11-03 19:09", "01-05 07:00"] + [TIME_UNREAD] * 4)
-    _utc = _dt.timezone.utc
-    _kst = _dt.timezone(_dt.timedelta(hours=9))
-    case("backlog #497: gh's mergedAt is converted to the given zone; no zone or no parse is None, never a guess",
-         [local_minute("2026-11-03T10:09:00Z", _utc), local_minute("2026-11-03T10:09:00Z", _kst),
-          local_minute("2026-11-03T23:30:00+00:00", _kst), local_minute("2026-11-03T10:09:00", _utc),
-          local_minute("nope", _utc), local_minute(None, _utc)],
-         ["2026-11-03 10:09", "2026-11-03 19:09", "2026-11-04 08:30", None, None, None])
-    _ts = src(merged_at={"aaaa111": "2026-11-03 19:09", "dddd444": "2026-11-01 08:00"},
-              merged_by_pr={20: "aaaa111", 21: "dddd444"}, all_merged_at={23: "2026-10-30 12:00"})
-    case("⛔ backlog #497: a merged leaf carries its merge TIME before its SHA — PR, backlog-only, and off-log",
-         [one("- fix · PR #20 · f\n", _ts)["detail"], one("- fix · backlog #10 · f\n", dict(_ts, open={}))["detail"],
-          one("- side · PR #23 · c\n", _ts)["detail"]],
-         ["merged 11-03 19:09 · aaaa111", "merged 11-03 19:09 · aaaa111 via PR #20",
-          "merged 10-30 12:00 · bbbb2222 — not on master's log"])
-    case("⛔ backlog #497: an unread merge minute says TIME UNREAD, never a blank or a guessed time",
-         [one("- fix · PR #20 · f\n", src())["detail"], one("- side · PR #23 · c\n", src())["detail"]],
-         ["merged time unread · aaaa111", "merged time unread · bbbb2222 — not on master's log"])
-    case("backlog #497: a thread's merged_at is its LATEST merge; one unread minute makes it unread; unmerged is None",
-         [one("- fix · PR #20, PR #21 · f\n", _ts)["merged_at"],
-          one("- fix · PR #20, PR #21 · f\n", dict(_ts, merged_at={"aaaa111": "2026-11-03 19:09"}))["merged_at"],
-          one("- fix · backlog #10 · f\n", dict(_ts, open={}))["merged_at"], one("- side · PR #21 · a\n", src())["merged_at"],
-          one("- side · PR #23 · c\n", _ts)["merged_at"]],
-         ["2026-11-03 19:09", None, "2026-11-03 19:09", None, "2026-10-30 12:00"])
-
-    def bk(state, merged_at=None, parked=False):
-        return bucket({"state": state, "merged_at": merged_at, "parked": parked}, "2026-11-05 19:09")
-    case("⛔ backlog #497: a merge is RECENT up to exactly 48 h before the drawing, OLDER one minute past it",
-         [bk("merged", "2026-11-03 19:09"), bk("merged", "2026-11-03 19:08"), bk("merged", "2026-11-05 19:00")],
-         ["recent", "older", "recent"])
-    case("⛔ backlog #497: a merge whose age cannot be read is RECENT — an unread time never folds a leaf away",
-         [bk("merged"), bk("merged", "garbage"),
-          bucket({"state": "merged", "merged_at": "2026-01-01 00:00"}, "t")], ["recent"] * 3)
-    case("backlog #497: closed, superseded and withdrawn are OLDER; next is LATER; blocked (declared wait) is QUEUED",
-         [bk(s) for s in ("closed", "superseded", "withdrawn", "next", "blocked")],
-         ["older", "older", "older", "later", "queued"])
-    case("⛔ backlog #497: open, in flight, CANNOT RUN and NOT FOUND are all NOW — never folded",
-         [bk(s) for s in ("open", "inflight", "cannot", "notfound")], ["now"] * 4)
-    case("⛔ backlog #497: a parked leaf that has not landed is PARKED; one that merged or closed is aged instead",
-         [bk(s, parked=True) for s in ("next", "blocked", "open", "inflight")]
-         + [bk("merged", "2026-11-05 10:00", True), bk("merged", "2026-10-01 10:00", True), bk("closed", parked=True)],
-         ["parked"] * 4 + ["recent", "older", "older"])
-    case("backlog #497: a parked entry is one DECLARED owner-wait or one saying PARKED (a capital word, whole)",
-         [is_parked(e) for e in ({"kind": "owner-wait", "what": "x"}, {"kind": "routine", "what": "PR #3 PARKED"},
-                                 {"what": "PARKED: later"}, {"kind": "routine", "what": "parked it"},
-                                 {"kind": "owner-instruction", "what": "UNPARKEDNESS"}, {"what": "w"})],
-         [True, True, True, False, False, False])
-    _pk = one("- fix · backlog #12 · f\n", src(ledger=[{"id": "park-12", "what": "backlog #12 PARKED till 11-10"}]))
-    case("⛔ backlog #497: a parked entry does NOT make an unstarted leaf in flight — it is shown as parked",
-         (_pk["state"], _pk["parked"], _pk["detail"]),
-         ("next", True, "no PR names it yet · parked: backlog #12 PARKED till 11-10"))
-    _pk2 = one("- fix · backlog #12 · f\n", src(ledger=[{"id": "park-12", "what": "w", "kind": "owner-wait"},
-                                                      {"id": "build-12", "what": "building"}]))
-    case("backlog #497 adjacent: a routine entry beside the parked one still makes it in flight, and both are named",
-         (_pk2["state"], _pk2["parked"], _pk2["detail"]),
-         ("inflight", True, "no PR names it yet · in flight: building · parked: w"))
-    _lp = derive(goals, src(ledger=[{"id": "park-77", "what": "PR #77 PARKED", "kind": "owner-wait"},
-                                    {"id": "loose-7", "what": "unrelated job"}]), "2026-10-28 04:00")
-    case("⛔ backlog #497: a parked entry naming NO thread is its own group, and not 'in flight under no goal'",
-         (_lp["parked_loose"], _lp["inflight_loose"]),
-         ([{"id": "park-77", "what": "PR #77 PARKED"}], [{"id": "loose-7", "what": "unrelated job"}]))
-    _lpl = derive(goals, src(ledger=[{"id": "park-20", "what": "PR #20 PARKED"}]), "2026-10-28 04:00")
-    case("⛔ backlog #497: a parked entry naming only LANDED threads joins that group, naming them — never hidden in a fold",
-         (_lpl["parked_loose"], [t["parked"] for g in _lpl["goals"] for t in g["threads"]],
-          "└─ park-20 · PR #20 PARKED · names only LANDED threads: fix · backlog #10, PR #20; bookkeeping · PR #20"
-          in tree_lines(_lpl)),
-         ([{"id": "park-20", "what": "PR #20 PARKED", "landed": ["fix · backlog #10, PR #20", "bookkeeping · PR #20"]}],
-          [True, False, False, True], True))
-    case("backlog #497 adjacent: a parked entry naming a LIVE thread stays on that thread, not in the group",
-         derive(goals, src(ledger=[{"id": "park-21", "what": "PR #21 PARKED"}]), "t")["parked_loose"], [])
-    _lpt = "\n".join(tree_lines(_lp))
-    case("backlog #497: ...and that group is printed, after the in-flight one, never dropped",
-         (_lpt.index("IN FLIGHT, UNDER NO GOAL") < _lpt.index("PARKED / QUEUED — NO GOAL"),
-          "└─ park-77 · PR #77 PARKED" in _lpt), (True, True))
-
-    # The bucketed tree, drawn at 2026-11-05 19:09: one goal with every bucket, one with only older/later.
-    _bg = parse_threads('## GOAL mix\n> 2026-11-01 00:00 "q"\n'
-                        "- fix · PR #21 · open one\n- fix · PR #20 · new merge\n- fix · PR #24 · old merge\n"
-                        "- side · backlog #12 · unplanned\n- side · backlog #13 · waiting · waits on backlog #21\n"
-                        "- side · backlog #14 · parked one\n- bookkeeping · PR #22 · shut\n"
-                        '## GOAL done\n> 2026-10-01 00:00 "r"\n- fix · PR #25 · ancient\n- side · backlog #15 · someday\n')
-    _bs = src(merged_by_pr={20: "aaaa111", 24: "eeee555", 25: "ffff666"},
-              merged_at={"aaaa111": "2026-11-05 08:00", "eeee555": "2026-11-01 08:00", "ffff666": "2026-10-02 08:00"},
-              ledger=[{"id": "park-14", "what": "backlog #14 waits for the owner", "kind": "owner-wait"}])
-    _bsnap = derive(_bg, _bs, "2026-11-05 19:09")
-    _bt = tree_lines(_bsnap)
-    case("⛔ backlog #497: --print shows now, recent, queued and parked leaves, labelled, and folds the rest to counts",
-         _bt[:11],
-         ['GOAL mix (2026-11-01 00:00) "q"',
-          "├─ fix",
-          "│  ├─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
-          "│  └─ ✅ PR #20 · new merge — merged 11-05 08:00 · aaaa111",
-          "├─ side",
-          "│  ├─ ❌ queued · backlog #13 · waiting — no PR names it yet · waits on backlog #21 (declared)",
-          "│  └─ ⬜ parked · backlog #14 · parked one — no PR names it yet · parked: backlog #14 waits for the owner",
-          "├─ … 2 older merged or closed (collapsed on the page)",
-          "└─ … 1 later (collapsed on the page)",
-          "",
-          'GOAL done (2026-10-01 00:00) "r"'])
-    case("⛔ backlog #497: a goal with NOTHING current prints its header and its two counts only",
-         _bt[11:13], ["├─ … 1 older merged (collapsed on the page)", "└─ … 1 later (collapsed on the page)"])
-    case("⛔ backlog #497: the folded leaves are NOT in the text — the count stands for them",
-         [any(w in ln for ln in _bt) for w in ("old merge", "shut", "unplanned", "ancient", "someday")], [False] * 5)
-    case("⭐ backlog #497: the bucket moves with the DRAWING time, not the snapshot — the same tree drawn 3 days on",
-         tree_lines(_bsnap, "2026-11-08 19:09")[:5],
-         ['GOAL mix (2026-11-01 00:00) "q"', "├─ fix", "│  └─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
-          "├─ side", "│  ├─ ❌ queued · backlog #13 · waiting — no PR names it yet · waits on backlog #21 (declared)"])
-    with tempfile.TemporaryDirectory() as d:
-        _lp497 = pathlib.Path(d) / "log.jsonl"
-        case("⭐ backlog #497: crossing the 48 h line with nothing else changed is NOT a new snapshot",
-             [append_if_changed(_lp497, _bsnap), append_if_changed(_lp497, dict(_bsnap, at="2026-11-09 19:09"))],
-             [True, False])
-
-    import html.parser as _hp
-
-    class _Folds(_hp.HTMLParser):
-        """Every `<details>` (class, summary, OPEN or not) and every text run with the classes of the details
-        it sits inside — what a reader sees without clicking is text inside no closed `<details>`."""
-        def __init__(self):
-            super().__init__()
-            self.stack, self.folds, self.texts, self._sum = [], [], [], None
-
-        def handle_starttag(self, tag, attrs):
-            a = dict(attrs)
-            if tag == "details":
-                self.stack.append((a.get("class") or "", "open" in a))
-                self.folds.append([a.get("class") or "", "open" in a, ""])
-            elif tag == "summary":
-                self._sum = self.folds[-1]
-
-        def handle_endtag(self, tag):
-            if tag == "details":
-                self.stack.pop()
-            elif tag == "summary":
-                self._sum = None
-
-        def handle_data(self, data):
-            if self._sum is not None:
-                self._sum[2] += data
-            else:
-                self.texts.append((data, [c for c, op in self.stack if not op]))
-
-    _fp = _Folds()
-    _tree_html = render_tree_html(_bsnap, at="2026-11-05 19:09")
-    _fp.feed(_tree_html)
-    case("⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal "
-         "with nothing current",
-         [(c, op, sm.split(" — ")[0]) for c, op, sm in _fp.folds],
-         [("fold older", False, "├─ older (2)"), ("fold later", False, "└─ later (1)"),
-          ("fold goal", False, "GOAL done"), ("fold older", False, "├─ older (1)"),
-          ("fold later", False, "└─ later (1)")])
-    case("⛔ backlog #497 FAILS IF: a now, recent, queued or parked leaf is inside a closed fold",
-         [w for w in ("open one", "new merge", "waiting", "parked one")
-          if not any(w in t and not cl for t, cl in _fp.texts)], [])
-    case("backlog #497: ...and every folded leaf IS on the page, inside its fold",
-         [w for w in ("old merge", "shut", "unplanned", "ancient", "someday")
-          if not any(w in t and cl for t, cl in _fp.texts)], [])
-    case("⛔ backlog #497 (#363's rule): each page fold's count equals the --print count line it replaces",
-         [int(re.search(r"\((\d+)\)", sm).group(1)) for c, _, sm in _fp.folds if c != "fold goal"],
-         [int(re.search(r"… (\d+)", ln).group(1)) for ln in _bt if "(collapsed on the page)" in ln])
-    _np = render_page([_bsnap], "2026-11-05 19:09")
-    case("backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run",
-         ('<details class="fold older"><summary>├─ older (2)' in _np,
-          '<details class="fold older"><summary>├─ older (3)' in render_page([_bsnap], "2026-11-08 19:09")),
-         (True, True))
     with tempfile.TemporaryDirectory() as d:
         out = pathlib.Path(d) / "p.html"
         write_page(out, log2, "2026-10-28 07:00")
