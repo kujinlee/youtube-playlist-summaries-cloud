@@ -1197,11 +1197,14 @@ RELOAD_JS = """
   // handler (page_chrome.py) writes "rebuilding…" into this span, and render() blanked it on the
   // next 2 s poll. MEASURED 2026-11-04 in Chrome: blank at 0.85 s, reload at 7.9 s, so the click
   // looked dead and the owner clicked twice. The button's text is the answer to what the reader
-  // just DID, so it outranks both polls; the handler marks it with `data-refresh`, and a reload
-  // (the only way a rebuild ends well) clears the mark with the page.
+  // just DID, so it outranks the stale warning; the handler marks it with `data-refresh`, and a
+  // reload (the only way a rebuild ends well) clears the mark with the page.
+  // ⚠ BUT NOT THE OUTAGE — r1 CODEX MEDIUM. The first version put the claim FIRST, and a claim
+  // never expires: a rebuild left hanging, or one that failed, then hid "server not responding"
+  // for as long as the page stayed open. An unreachable server outranks everything, as above.
   function render() {
     var s = document.getElementById('chrome-refresh-say');
-    say((s && s.getAttribute('data-refresh')) || serverMsg || staleMsg);
+    say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);
   }
   var misses = 0;
   // ⛔ NOT 1. A single failed poll is a blip — a laptop waking, a restart mid-request — and
@@ -1567,9 +1570,10 @@ def _self_test_body() -> int:
     ok = 0
     cases: list[tuple[str, Callable[[], object]]] = []
 
-    def _run_reload_js(claimed: bool, stale: bool) -> str:
+    def _run_reload_js(claimed: bool, stale: bool, down: bool = False) -> str:
         """Run RELOAD_JS on a stub page whose span reads "rebuilding…"; return the span's text
-        after both polls settle, or a CANNOT RUN string (never equal to any expected value)."""
+        after both polls settle, or a CANNOT RUN string (never equal to any expected value).
+        `down`: every fetch rejects and the interval fires twice more, so three polls miss."""
         import json as _j
         js = RELOAD_JS.strip().removeprefix("<script>").removesuffix("</script>")
         stub = ("var span={textContent:'rebuilding\\u2026',a:{},getAttribute:function(k){return k in this.a?this.a[k]:null;},"
@@ -1577,13 +1581,13 @@ def _self_test_body() -> int:
                 "if(CLAIMED)span.setAttribute('data-refresh','rebuilding\\u2026');"
                 "var G=globalThis;G.document={getElementById:function(i){return i==='chrome-refresh-say'?span:null;},"
                 "querySelectorAll:function(){return [];},addEventListener:function(){},activeElement:null,visibilityState:'visible'};"
-                "G.window=G;G.scrollY=0;G.scrollTo=function(){};G.addEventListener=function(){};G.setInterval=function(){};"
+                "G.window=G;G.scrollY=0;G.scrollTo=function(){};G.addEventListener=function(){};G.setInterval=function(f){G.tick=f;};"
                 "Object.defineProperty(G,'location',{configurable:true,value:{pathname:'/x.html',reload:function(){}}});"
                 "G.sessionStorage={getItem:function(){return null;},setItem:function(){},removeItem:function(){}};"
-                "G.fetch=function(u){var t=u.indexOf('/_stale')===0?(STALE?'stale docs/x.md':'fresh'):'r1';"
+                "G.fetch=function(u){if(DOWN)return Promise.reject(new Error('down'));var t=u.indexOf('/_stale')===0?(STALE?'stale docs/x.md':'fresh'):'r1';"
                 "return Promise.resolve({ok:true,text:function(){return Promise.resolve(t);}});};"
-                ).replace("CLAIMED", _j.dumps(claimed)).replace("STALE", _j.dumps(stale))
-        prog = stub + js + "\nsetTimeout(function(){console.log(JSON.stringify(span.textContent));},50);"
+                ).replace("CLAIMED", _j.dumps(claimed)).replace("STALE", _j.dumps(stale)).replace("DOWN", _j.dumps(down))
+        prog = stub + js + ("\nif(%s){G.tick();G.tick();}" % _j.dumps(down)) + "\nsetTimeout(function(){console.log(JSON.stringify(span.textContent));},50);"
         try:
             r = subprocess.run(["node", "-e", prog], capture_output=True, text=True, timeout=30)
             if r.returncode != 0:
@@ -1941,7 +1945,9 @@ def _self_test_body() -> int:
              lambda: _run_reload_js(claimed=True, stale=False) == "rebuilding\u2026"
                      and _run_reload_js(claimed=True, stale=True) == "rebuilding\u2026"
                      and _run_reload_js(claimed=False, stale=False) == ""
-                     and _run_reload_js(claimed=False, stale=True).startswith("docs/x.md has changed"))
+                     and _run_reload_js(claimed=False, stale=True).startswith("docs/x.md has changed")
+                     # r1 CODEX MEDIUM: the claim must NOT outrank an unreachable server
+                     and _run_reload_js(claimed=True, stale=True, down=True).startswith("server not responding"))
         case("no poll clears the whole status line; each owns its own state",
              lambda: "say('')" not in _js_code_only(RELOAD_JS)
                      and "serverMsg" in RELOAD_JS and "staleMsg" in RELOAD_JS)

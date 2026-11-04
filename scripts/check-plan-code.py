@@ -2189,7 +2189,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #497 (the owner 2026-11-04 01:07, refresh on a click): 62 -> 64 — the goal tree's own
     # 60 s rebuild bound, and the timeout reply naming the bound it actually waited.
     # ⟳ same day, review round 2's fold: 64 -> 65 — the rebuild gets only what is LEFT of the click's bound (X2).
-    "scripts/explainer-serve.py": 67,
+    "scripts/explainer-serve.py": 68,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
