@@ -11,12 +11,12 @@ findings:
   - {id: X1, severity: Medium, aim: deliverable, fix_induced: false, component: line-note, disposition: declined}
   - {id: X2, severity: Medium, aim: deliverable, fix_induced: false, component: pace-line, disposition: fixed}
   - {id: X3, severity: Low, aim: deliverable, fix_induced: false, component: docstring, disposition: fixed}
-  - {id: C1, severity: Major, aim: deliverable, fix_induced: false, component: meter-read, disposition: fixed}
-  - {id: C2, severity: Minor, aim: deliverable, fix_induced: false, component: self-test, disposition: fixed}
-  - {id: C3, severity: Minor, aim: deliverable, fix_induced: false, component: pace-line, disposition: fixed}
-  - {id: C4, severity: Minor, aim: deliverable, fix_induced: false, component: meter-read, disposition: fixed}
-  - {id: C5, severity: Minor, aim: deliverable, fix_induced: false, component: meter-read, disposition: fixed}
-  - {id: C6, severity: Minor, aim: deliverable, fix_induced: false, component: pace-line, disposition: fixed}
+  - {id: C1, severity: High, aim: deliverable, fix_induced: false, component: meter-read, disposition: fixed}
+  - {id: C2, severity: Low, aim: deliverable, fix_induced: false, component: self-test, disposition: fixed}
+  - {id: C3, severity: Low, aim: deliverable, fix_induced: false, component: pace-line, disposition: fixed}
+  - {id: C4, severity: Low, aim: deliverable, fix_induced: false, component: meter-read, disposition: fixed}
+  - {id: C5, severity: Low, aim: deliverable, fix_induced: false, component: meter-read, disposition: fixed}
+  - {id: C6, severity: Low, aim: deliverable, fix_induced: false, component: pace-line, disposition: fixed}
 ```
 
 Both halves reviewed `8b602d55`. **Both held:** the stop never leaves [90, 97] on any meter content they tried; ≥ 97% is
