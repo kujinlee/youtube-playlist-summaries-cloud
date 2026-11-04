@@ -18708,7 +18708,7 @@ Backlog #470, PR #489, branch `build-470-key-link`. `scripts/page_markup.py`: `k
 
 
 ## 2026-11-03 [resolved: 2026-10-31/4]
-Three of the six decisions the goal tree said were waiting on you were already settled, and one action is moot; they
+Four of the six decisions the goal tree said were waiting on you were already settled, and one action is moot; they
 are cleared here, and one new answer is recorded. You went through the list on 2026-11-03 at 18:40.
 
 - `2026-10-31/4` — resolved: the trimmed always-loaded docs were walked and merged on your 2026-11-01 AFK card
@@ -18717,5 +18717,8 @@ are cleared here, and one new answer is recorded. You went through the list on 2
 - backlog #306 — already decided 2026-10-29 (back-author the five round headers); its marker had been left in place.
 - backlog #86 — moot while the `commit-commands` plugin stays disabled; re-open if it is re-enabled.
 
-Still waiting on you, each a working session: backlog #198 (recall vocabulary), backlog #307 (the hook keying, at your
-desk) and backlog #384 (the roles walkthrough).
+- backlog #384 — already walked through on 2026-11-02 (spec merged in PR #474); its marker had been left in place.
+  Backlog #496 is filed for the pattern: three of the six were settled decisions the marker still asked.
+
+Still waiting on you, each a working session: backlog #198 (recall vocabulary) and backlog #307 (the hook keying, at
+your desk).

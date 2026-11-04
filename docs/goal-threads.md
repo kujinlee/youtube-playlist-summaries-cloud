@@ -55,6 +55,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #384 · the suite's overarching design · waits on the owner's walkthrough of the design ideas
 - fix · backlog #363 · the goal tree as a logged, generated page
 - bookkeeping · PR #423 · backlog #384, backlog #385 and backlog #386 filed; the design-ideas section
+- bookkeeping · backlog #496 · filed 2026-11-03 from the owner's NEEDS YOU pass: four of six items were settled decisions whose marker still asked (backlog #2 answered, backlog #306 and backlog #384 already decided, backlog #86 moot)
 - side · PR #423 · the tag-vocabulary survey page and the suite inventory page
 - fix · backlog #389, PR #434 · the work-lines page retires into the goal tree, its history archived (the owner's decision D2)
 
