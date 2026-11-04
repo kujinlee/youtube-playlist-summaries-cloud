@@ -475,6 +475,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "worktrees.root",
         "worktrees.run",
     ),
+    # PR #496 r2 X1 (2026-11-04): the sweep-red alert helper, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
+    "sweep-red-alert.py": ("green_actions.covers", "green_actions.green_sha", "green_actions.issues",
+                           "recorded_shas.issue", "red_body.event", "red_body.run_url", "red_body.sha",
+                           "red_body.sweep", "step_run_block.workflow_text"),
     # backlog #362 (2026-10-26; re-pinned at the r2 REDESIGN and again at the r3 SPLIT, which removed the branch reads).
     "session-state.py": (
         "check_summary.rollup",

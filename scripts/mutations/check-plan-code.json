@@ -2158,5 +2158,45 @@
     "expect": [
       "...through an IMPORT, never through prose that mentions the importer"
     ]
+  },
+  {
+    "name": "PR #496 r2 X2: a walker of an import root is not selected",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if root in IMPORT_ROOTS:\n            hit |=",
+        "        if root in IMPORT_ROOTS and False:\n            hit |="
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is selected by any script change",
+      "⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X2: a loop variable over the directory names does not carry the directory",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    pairs = [(n.target, n.iter)]",
+        "                    pairs = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is selected by any script change"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X2: a path to ONE file under the root counts as a walk of it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            v.startswith(d + \"/\") and any(c in v.split(\"/\")[depth] for c in \"*?[\")))",
+        "            v.startswith(d + \"/\")))"
+      ]
+    ],
+    "expect": [
+      "...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob call — and walks another directory, is not a walker of it"
+    ]
   }
 ]

@@ -1,0 +1,70 @@
+[
+  {
+    "name": "PR #496 r2 X1: a green that does not descend from the failing commit closes the issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        elif older:\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X1 (Codex's input): a green RERUN of A after descendant B went red leaves the issue OPEN",
+      "⭐ r2 X1: an OLDER green (A, after descendant B went red) leaves the issue open, with a comment"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X1: git's 'not an ancestor' is read as an ancestor",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            return r.returncode == 0\n",
+        "            return r.returncode in (0, 1)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 X1 (Codex's input): a green RERUN of A after descendant B went red leaves the issue OPEN"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X1: the red run does not record the failing SHA",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "            f\"{MARKER.format(sha=sha)}\")",
+        "            f\"\")"
+      ]
+    ],
+    "expect": [
+      "the red body carries ITS OWN failing SHA as a marker",
+      "a red run at B opens ONE issue recording B"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X1: an unreadable ancestry closes the issue",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "        if unread:\n",
+        "        if False and unread:\n"
+      ]
+    ],
+    "expect": [
+      "an unreadable ancestry is left open",
+      "a recorded SHA git cannot find, even after a fetch, leaves the issue open"
+    ]
+  },
+  {
+    "name": "PR #496 r2 X1: a failed gh call is not raised",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        raise RuntimeError",
+        "    if False:\n        raise RuntimeError"
+      ]
+    ],
+    "expect": [
+      "a gh failure makes the step RED, never a silent pass"
+    ]
+  }
+]

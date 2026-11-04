@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 305 cases
+    python3 scripts/check-plan-code.py --self-test          # 308 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -83,6 +83,7 @@ import argparse
 import ast
 import dataclasses
 import contextlib
+import functools
 import io
 import json
 import os
@@ -311,13 +312,15 @@ HARNESS_TREE = (
 #   7. every target whose source NAMES the path (full path, file name, import name, or the
 #      QUOTED stem a hyphenated sibling is loaded by — r1 X1), every target that IMPORTS one of
 #      those modules, transitively (r1 C5), and every target QUOTING a directory between the path
-#      and its staged root — the root itself included, unless it is in `IMPORT_ROOTS` (r1 C2)
+#      and its staged root — the root itself included, unless it is in `IMPORT_ROOTS` (r1 C2), where
+#      only a target that WALKS the root (`_walks_dir`, a structural test) is selected (r2 X2)
 #      (a path more than half the targets name is SHARED .............. the WHOLE manifest)
 #   8. none of the above: the targets quoting its staged ROOT; if none .. the WHOLE manifest
 #
 # ⚠ WHAT THIS DOES NOT SEE, AND WHY THE FULL SWEEP STAYS: "names" is a TEXT test. A suite that
 # reads a file without naming it or any directory above it (a bare walk of the repo root), or
-# that walks `scripts/` (an `IMPORT_ROOTS` root, reached by import name), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
+# that walks `scripts/` through a directory only its CALLER names (a lister applied to a bare
+# parameter, which `_walks_dir` cannot follow), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
 # only executing that manifest sees. So the full sweep still runs on every master push and on a
 # schedule, and a red one opens an issue (`ci.yml`, `mutation-sweep-complete`). The owner accepted
 # that such a defect is found after merge. What a scoped run does NOT give up: every whole-
@@ -332,10 +335,13 @@ SHARED_FULL_FRACTION = 0.5
 # it changes when one of these does. Exact repository paths, never a file name anywhere.
 DEPENDENCY_MANIFESTS = frozenset({"package.json", "package-lock.json"})
 # r1 C2: the staged root whose files a target reaches by IMPORT NAME (rule 7 and its closure),
-# not by walking it. Measured 2026-11-04: 54 of 87 targets quote `scripts`, nearly all to build the
-# path of one sibling, so treating every one as a walker would select ~54 for every script change.
-# A real walker of `scripts/` (`check-ratchet-contract`) is therefore seen only by the full sweep.
+# not by QUOTING it. Measured 2026-11-04: 54 of 87 targets quote `scripts`, nearly all to build the
+# path of one sibling, so treating every quoter as a walker would select ~54 for every script change.
+# ⟳ PR #496 r2 X2: a target that really WALKS it (`check-canonical-source`, `check-ratchet-contract`)
+# reads every file under it, so `_walks_dir` — a STRUCTURAL test, not a quote — selects it.
 IMPORT_ROOTS = frozenset({"scripts"})
+# The calls that LIST a directory rather than open one file in it. `ls-files` is `git ls-files`.
+WALK_CALLS = frozenset({"glob", "rglob", "iglob", "iterdir", "walk", "listdir", "scandir"})
 MANIFEST_PATH = re.compile(r"scripts/mutations/([^/]+)\.json")
 
 
@@ -364,6 +370,67 @@ def _quotes_dir(src: str, d: str) -> bool:
     component a `ROOT / 'docs' / 'reviews'` join would spell?"""
     return any(re.search(r"""["']""" + re.escape(form) + r"""["'/]""", src)
                for form in {d, d.rsplit("/", 1)[-1]})
+
+
+@functools.lru_cache(maxsize=None)   # one parse per source, however many paths ask
+def _walks_dir(src: str, d: str) -> bool:
+    """PURE. Does `src` WALK directory `d` (r2 X2)? True when a `WALK_CALLS` lister (or a call
+    carrying `ls-files`) is applied to an expression that CARRIES `d`: a string naming it as a
+    whole directory (`'scripts'`, `'scripts/'`, a glob under it like `'scripts/*.py'`), or a name
+    assigned from one — through a join, a loop over a tuple, a comprehension, a `with` — in the same
+    function or at module level (`for sub in ('docs', 'scripts'): (root / sub).rglob(...)`). A path
+    to ONE file (`'scripts/x.py'`) is not a walk. ⚠ Toward MORE: a walk of a directory BELOW `d`
+    (`root / 'scripts' / 'mutations'`) counts, and unparseable source is a walker. ⚠ NOT SEEN: a
+    lister applied to a bare PARAMETER, whose directory only a caller knows — the full sweep's."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return True
+    depth = len(d.split("/"))
+    def names_d(v) -> bool:
+        return isinstance(v, str) and (v.rstrip("/") == d or (
+            v.startswith(d + "/") and any(c in v.split("/")[depth] for c in "*?[")))
+    def carries(expr, tainted) -> bool:
+        return any((isinstance(n, ast.Constant) and names_d(n.value))
+                   or (isinstance(n, ast.Name) and n.id in tainted) for n in ast.walk(expr))
+    def taint(nodes, seed) -> set:
+        out, grew = set(seed), True
+        while grew:
+            grew = False
+            for n in nodes:
+                if isinstance(n, ast.Assign):
+                    pairs = [(t, n.value) for t in n.targets]
+                elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
+                    pairs = [(n.target, n.value)]
+                elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
+                    pairs = [(n.target, n.iter)]
+                elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+                    pairs = [(n.optional_vars, n.context_expr)]
+                else:
+                    continue
+                for tg, val in pairs:
+                    if carries(val, out):
+                        new = {m.id for m in ast.walk(tg) if isinstance(m, ast.Name)} - out
+                        grew |= bool(new)
+                        out |= new
+        return out
+    defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+    top = [n for st in tree.body if not isinstance(st, defs + (ast.ClassDef,)) for n in ast.walk(st)]
+    module = taint(top, set())
+    for nodes in [top] + [list(ast.walk(f)) for f in ast.walk(tree) if isinstance(f, defs)]:
+        tainted = taint(nodes, module)
+        for n in nodes:
+            if not isinstance(n, ast.Call):
+                continue
+            args = list(n.args) + [k.value for k in n.keywords]
+            name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", None)
+            ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for a in args for m in ast.walk(a))
+            if not (name in WALK_CALLS or ls):
+                continue
+            subject = args + ([n.func.value] if isinstance(n.func, ast.Attribute) else [])
+            if any(carries(x, tainted) for x in subject):
+                return True
+    return False
 
 
 def _names_of(path: str) -> set:
@@ -453,6 +520,9 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
         lo = len(root.split("/")) + (root in IMPORT_ROOTS)
         between = ["/".join(parts[:i]) for i in range(lo, len(parts))]
         hit |= named | {t for t, s in readers.items() if any(_quotes_dir(s, d) for d in between)}
+        # r2 X2: ...but a target that WALKS an import root is selected by any change under it.
+        if root in IMPORT_ROOTS:
+            hit |= {t for t, s in readers.items() if _walks_dir(s, root)}
         if not hit:
             hit = {t for t, s in readers.items() if _quotes_dir(s, root)}
         if not hit:
@@ -1641,7 +1711,9 @@ EXPECTED_MUTATIONS = {
     # 28 added for the per-manifest selector, its log, select-then-shard, the empty-selected-shard
     # pass, and main()'s --event/--changed wiring. Seven anchors REBOUND to the edited lines.
     # ⟳ 2026-11-04, PR #496 r1: 168 -> 174, one per selector fix (X1, C2 twice, C3, C5 twice).
-    "scripts/check-plan-code.py": 174,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ PR #496 r2 X2: 174 -> 177 — a walker of `scripts/` is selected: the rule, the loop-variable
+    # dataflow, and the one-file-path negative.
+    "scripts/check-plan-code.py": 177,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2280,6 +2352,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 94, the open `sweep-red` issues in the block — the CANNOT READ arm, its
     # mark, the names, the cap, collect()'s wiring, and the reader's command, directory, failure and element checks.
     "scripts/session-state.py": 94,
+    # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
+    # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
+    "scripts/sweep-red-alert.py": 5,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -5108,7 +5183,9 @@ def _self_test_body() -> int:
                                       # ⟳ 2026-10-31, the review-round cap: a Claude half's verdict.
                                       "scripts/record-review-verdict.py",
                                       "scripts/regen-pages.py",
-                                      "scripts/session-state.py"])
+                                      "scripts/session-state.py",
+                                      # ⟳ PR #496 r2 X1: the sweep-red alert, out of shell into a tested helper.
+                                      "scripts/sweep-red-alert.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -6951,6 +7028,23 @@ def _self_test_body() -> int:
          "every target that quotes the directory",
          _sel(["scripts/check-x.py"], src=dict(_WK, **{"scripts/check-s.py": "S = ROOT / 'scripts'\n"})),
          frozenset({"scripts/check-x.py"}))
+    # PR #496 r2 X2: a target that WALKS `scripts/` reads every file under it, so excluding the
+    # import root dropped one (`check-canonical-source` walks it through a loop variable).
+    _SW = {"scripts/check-cw.py": ("def files(root):\n    for sub in ('docs', 'scripts'):\n"
+                                   "        d = root / sub\n        yield from d.rglob('*.py')\n"),
+           "scripts/check-gw.py": "import glob\nALL = glob.glob('scripts/*.py')\n",
+           "scripts/check-q.py": ("import glob\nP = ROOT / 'scripts/x.py'\nONE = glob.glob('scripts/x.py')\n"
+                                  "for q in (ROOT / 'docs').glob('*'): pass\n"),
+           "scripts/check-x.py": "y = 2\n"}
+    case("⭐ r2 X2: a target that WALKS `scripts/` — through a loop variable, or a glob pattern — is "
+         "selected by any script change",
+         _sel(["scripts/check-x.py"], src=_SW),
+         frozenset({"scripts/check-x.py", "scripts/check-cw.py", "scripts/check-gw.py"}))
+    case("...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob "
+         "call — and walks another directory, is not a walker of it",
+         "scripts/check-q.py" in (_sel(["scripts/check-x.py"], src=_SW) or _SW), False)
+    case("⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/",
+         "scripts/check-canonical-source.py" in (_rsel("scripts/check-usage-pace.py") or set()), True)
     # C3: the dependency manifests change staged `node_modules` without any staged path changing.
     case("⭐ r1 C3: package.json and package-lock.json select the WHOLE manifest",
          [_sel([p]) for p in ("package.json", "package-lock.json")], [None, None])

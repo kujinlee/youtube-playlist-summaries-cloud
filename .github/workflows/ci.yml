@@ -1254,9 +1254,10 @@ jobs:
     # reports red and does NOT block the merge button. Nothing in this file can do that for
     # you; say it in the pull request.
     needs: mutation-sweep
-    # backlog #330: `issues: write` for the alert step below, and nothing else — no step here
-    # checks code out, so the job needs no `contents` scope.
+    # backlog #330: `issues: write` for the alert step below, and nothing else. ⟳ PR #496 r2 X1:
+    # `contents: read` for the checkout the alert reads ancestry from — read, never write.
     permissions:
+      contents: read
       issues: write
     # ⚠ `always()`, so a failed or cancelled matrix still REPORTS. Without it this job is
     # SKIPPED when a shard fails, and a skipped required check is the pending-forever shape
@@ -1265,6 +1266,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # ⟳ PR #496 r2 X1: the alert step runs `scripts/sweep-red-alert.py`, which asks git whether a
+      # green commit DESCENDS from the failing one — so the whole history, and Python. Both come
+      # BEFORE the aggregate step: that step exits 1 on a red sweep, which skips every later step
+      # without its own `if:`, and the red path is exactly when the alert must run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The same pin as every other job in this file. `check-python-pin.py` asks it of every job,
+      # and `EXEMPT_JOBS` is deliberately EMPTY — an empty allow-list is the strongest form.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # `needs.<job>.result` over a matrix is the AGGREGATE — `success` only when every shard
       # succeeded — so this cannot pass while a shard is red, cancelled or skipped.
       - name: Every shard of the mutation sweep reported green
@@ -1279,23 +1294,17 @@ jobs:
           fi
           echo "the mutation sweep is green in every shard"
 
-      # The same pin as every other job in this file. `check-python-pin.py` asks it of jobs
-      # that run no Python too, and `EXEMPT_JOBS` is deliberately EMPTY — an empty allow-list
-      # is the strongest form, so this is two lines of YAML instead of the first entry in it.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       # ── backlog #330: A RED FULL SWEEP ON MASTER MUST BE SEEN BY SOMEONE WHO WAS AWAY ──────────
       # A pull request's sweep is diff-scoped, so what it does not select is measured only here,
       # AFTER merge — and a red master run that nobody opens is the silent failure the owner's
       # approval was conditional on ("as long as there are full sweep to detect error eventually").
       # So it opens an issue labelled `sweep-red`, or comments on the open one rather than piling up
       # duplicates; `session-state.py` lists the open ones at every SessionStart (PR #496 r1 C4).
-      # A GREEN full sweep closes the open one with a comment naming its run, so a later red opens a
-      # FRESH issue instead of commenting on a stale one. Pull requests never reach this step: their
-      # red is on the PR itself. Master runs are serialised (`concurrency`, never cancelled), so a
-      # green that closes always swept a tree at least as new as the red it closes.
+      # A GREEN full sweep closes the open one, so a later red opens a FRESH issue instead of
+      # commenting on a stale one — but ⟳ PR #496 r2 X1 only when the green SHA equals or DESCENDS
+      # from every failing SHA the issue records: a RERUN of an older commit keeps its old SHA, and
+      # serialised runs do not make it newer. The rule and its cases: `scripts/sweep-red-alert.py`.
+      # Pull requests never reach this step: their red is on the PR itself.
       # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor closes (backlog #482, r1 C6).
       # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
       - name: The FULL sweep on master opens, comments on, or closes the sweep-red issue
@@ -1307,33 +1316,4 @@ jobs:
           SHA: ${{ github.sha }}
           SWEEP: ${{ needs.mutation-sweep.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -eu
-          if [ "$SWEEP" = "success" ]; then
-            OPEN=$(gh issue list --label sweep-red --state open --json number --jq '.[].number')
-            if [ -z "$OPEN" ]; then
-              echo "the full sweep is green and no sweep-red issue is open"
-              exit 0
-            fi
-            for N in $OPEN; do
-              gh issue close "$N" --comment "The FULL mutation sweep is green on master ($EVENT, $SHA): $RUN_URL
-          Closed by that run. A later red opens a fresh issue."
-              echo "closed the sweep-red issue #$N"
-            done
-            exit 0
-          fi
-          BODY="The FULL mutation sweep reported '$SWEEP' on master ($EVENT, $SHA): $RUN_URL
-          Pull requests run only the manifests their diff selects (backlog #330), so this run is where
-          a defect in an unselected manifest surfaces. Read the red shard's log for the survivor or the
-          CANNOT RUN line; treat the mutation evidence for this commit as NOT CHECKED until it is green."
-          gh label create sweep-red --color B60205 --force \
-            --description "The full mutation sweep went red on master (backlog #330)"
-          OPEN=$(gh issue list --label sweep-red --state open --limit 1 --json number --jq '.[0].number // empty')
-          if [ -n "$OPEN" ]; then
-            gh issue comment "$OPEN" --body "$BODY"
-            echo "commented on the open sweep-red issue #$OPEN"
-          else
-            gh issue create --label sweep-red --body "$BODY" \
-              --title "Full mutation sweep red on master ($EVENT, ${SHA:0:8})"
-            echo "opened a sweep-red issue"
-          fi
+        run: python3 scripts/sweep-red-alert.py
