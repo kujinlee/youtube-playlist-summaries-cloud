@@ -18722,3 +18722,10 @@ are cleared here, and one new answer is recorded. You went through the list on 2
 
 Still waiting on you, each a working session: backlog #198 (recall vocabulary) and backlog #307 (the hook keying, at
 your desk).
+
+## 2026-11-03
+
+The last NEEDS YOU decision is done. In a grilling session the owner named the recall subsystem's terms, now in
+`CONTEXT.md` → *Recall (Repo Tooling)*: **lesson**, **trigger**, **lesson index**, **situation**, **arm**, **fire**,
+**recall**, **already embodied** and **unreadable plan**. One answer changed backlog #307: the always-loaded index line
+is the first clause of each lesson's trigger, not a second hand-written field.
