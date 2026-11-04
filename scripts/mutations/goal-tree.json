@@ -1838,7 +1838,7 @@
       ]
     ],
     "expect": [
-      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or "
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or inserting a newer goal moves no number and no anchor"
     ]
   },
   {
@@ -1851,7 +1851,7 @@
       ]
     ],
     "expect": [
-      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or "
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or inserting a newer goal moves no number and no anchor"
     ]
   },
   {
@@ -1864,7 +1864,7 @@
       ]
     ],
     "expect": [
-      "⛔ review r1 C2: an unstarted fix or blocker is QUEUED (planned), drawn open and labelled; "
+      "⛔ review r1 C2: an unstarted fix or blocker is QUEUED (planned), drawn open and labelled; unstarted bookkeeping and side stay LATER"
     ]
   },
   {
@@ -1890,7 +1890,7 @@
       ]
     ],
     "expect": [
-      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, "
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, and a negated one parks nothing"
     ]
   },
   {
@@ -1903,7 +1903,7 @@
       ]
     ],
     "expect": [
-      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, "
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, and a negated one parks nothing"
     ]
   },
   {
