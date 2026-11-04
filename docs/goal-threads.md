@@ -104,7 +104,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #465, PR #471 · a subagent's ;/&& list of file reads is summed against the 300-line limit
 - bookkeeping · PR #472 · work follows the budget situation (TIGHT / AMPLE), reassessed at each weekly reset
 - bookkeeping · PR #473 · backlog #466 to backlog #468 filed: destructive commands measured, stale agents, AFK sleep stalls
-- fix · backlog #500 · new agents are refused only at 97% weekly, every day; the pace line is shown as a guide, never a stop
+- fix · backlog #500 · new agents are refused at max(90%, today's pace line), never above 97%, so the reserve is spent as the reset nears
 
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"

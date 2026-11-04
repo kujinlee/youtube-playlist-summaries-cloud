@@ -18749,12 +18749,14 @@ daily schedule still run the full sweep, and a red one opens or comments on a Gi
 green one only comments, and never closes it, so closing is a deliberate act after reading it.
 
 ## 2026-11-04
-New agents are now refused only when weekly usage reaches 97%, on every day of the week; before, the
-refusal sat at 90%. You asked for this at 08:37, so the allowance gets used today rather than held
-back for a day you may be busy. Each warning also shows your pace line for the day (95.2% today)
-as a guide, but it never blocks anything. The last 3 points are kept so that work already running can
-finish instead of stopping halfway at the hard limit.
+New agents are now refused at your pace line for the day, never below 90% and never above 97%;
+before, the refusal was always 90%. While the weekly reset is still days away, the 90% floor keeps
+a reserve for emergencies. As the reset gets close, the line rises toward 97%, so the allowance is
+used instead of expiring unused (today the stop is 95.2%). You set this rule at 08:47. The last
+3 points are kept so that work already running can finish instead of stopping halfway at the hard
+limit.
 <!--tech-->
-Backlog #500, `scripts/check-usage-pace.py`: `REFUSE_AT` is 97; `pace_line()` reads
-`~/.claude/meter/log.jsonl` (this window's rows; start% = the reading at local midnight); the self-test
-redirects `HOME` so no case reads the live meter. 291 self-test cases, 111 mutations.
+Backlog #500, `scripts/check-usage-pace.py`: `refuse_at(line)` = max(`REFUSE_AT` 90, min(97, line));
+`pace_line()` reads `~/.claude/meter/log.jsonl` (this window's rows; start% = the reading at local
+midnight); an unreadable meter falls back to 90 and says so; the self-test redirects `HOME` so no
+case reads the live meter. 291 self-test cases, 113 mutations.

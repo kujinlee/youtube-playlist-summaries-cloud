@@ -1,16 +1,15 @@
 [
   {
-    "name": "the REFUSE threshold moves off 97 (back to the old 90)",
+    "name": "the REFUSE threshold moves off 90",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "REFUSE_AT = 97.0",
-        "REFUSE_AT = 90.0"
+        "REFUSE_AT = 90.0",
+        "REFUSE_AT = 90.1"
       ]
     ],
     "expect": [
-      "weekly 96.9 is WARN",
-      "⭐ #500: the pace line is ADVISORY — 93% above a 92.5 line WARNS, and the message names the line"
+      "weekly 90 is REFUSE-SPAWN"
     ]
   },
   {
@@ -27,16 +26,16 @@
     ]
   },
   {
-    "name": "REFUSE becomes strictly above 97",
+    "name": "REFUSE becomes strictly above the stop",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if weekly >= REFUSE_AT:",
-        "    if weekly > REFUSE_AT:"
+        "    if weekly >= stop:",
+        "    if weekly > stop:"
       ]
     ],
     "expect": [
-      "weekly 97 is REFUSE-SPAWN"
+      "weekly 90 is REFUSE-SPAWN"
     ]
   },
   {
@@ -343,8 +342,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "wake an agent, are REFUSED (at {pct(REFUSE_AT)});",
-        "wake an agent, are REFUSED (at {pct(REFUSE_AT)}; override: {OVERRIDE_ENV}=1);"
+        "wake an agent, are REFUSED (at {pct(stop)});",
+        "wake an agent, are REFUSED (at {pct(stop)}; override: {OVERRIDE_ENV}=1);"
       ]
     ],
     "expect": [
@@ -1352,7 +1351,34 @@
     ]
   },
   {
-    "name": "#500: the 97 cap on the line is dropped",
+    "name": "#500: the line LOWERS the stop (min instead of max)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return REFUSE_AT if line is None else max(REFUSE_AT, min(LINE_CAP, line))",
+        "return REFUSE_AT if line is None else min(LINE_CAP, line)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: many days out, a line below 90 keeps the 90 reserve (start 20 → line 60; 89.9 warns, 90 refuses)",
+      "#500: refuse_at — the floor, the line, the cap, and None"
+    ]
+  },
+  {
+    "name": "#500: the stop is not capped at 97",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "max(REFUSE_AT, min(LINE_CAP, line))",
+        "max(REFUSE_AT, line)"
+      ]
+    ],
+    "expect": [
+      "#500: refuse_at — the floor, the line, the cap, and None"
+    ]
+  },
+  {
+    "name": "#500: the line itself is not capped at 97",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
@@ -1361,7 +1387,35 @@
       ]
     ],
     "expect": [
-      "#500: a formula above 97 is capped (start 96 → 98 → 97)"
+      "#500: a formula above 97 is capped, and so is the stop (start 96 → 98 → 97; 97 refuses)"
+    ]
+  },
+  {
+    "name": "#500: an unreadable line refuses at the cap instead of the floor",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return REFUSE_AT if line is None else",
+        "return LINE_CAP if line is None else"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: an unreadable line falls back to the 90 floor and SAYS so",
+      "#500: refuse_at — the floor, the line, the cap, and None"
+    ]
+  },
+  {
+    "name": "#500: the verdict ignores the computed stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    stop = refuse_at(line)\n",
+        "    stop = REFUSE_AT\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500: a line above 90 IS the stop — 92.4 warns, 92.5 refuses, and the message names it",
+      "⭐ #500: the last day before the reset spends to 97 by the formula alone (50 at midnight; 96.9 warns, 97 refuses)"
     ]
   },
   {
@@ -1375,19 +1429,6 @@
     ],
     "expect": [
       "⭐ #500: the pace line is start% + 1.5 × (100 − start%) ÷ days-to-reset"
-    ]
-  },
-  {
-    "name": "#500: the last-day rule is dropped",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "    if days <= 1:\n        return LINE_CAP, \"\"\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "#500: the last day before the reset is the 97 cap"
     ]
   },
   {
@@ -1434,25 +1475,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "f\" Today's pace line cannot be read ({why}): treat it as NOT RUN.\" if why else \"\")",
-        "\"\")"
+        "                 else f\" Today's pace line cannot be read ({why}), so the stop is the {pct(REFUSE_AT)} floor.\" if why\n",
+        "                 else \"\" if why\n"
       ]
     ],
     "expect": [
-      "⭐ #500: an unreadable line is SAID, and the stop is still 97"
-    ]
-  },
-  {
-    "name": "#500: the line is not named in the message",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "f\" Today's pace line is {pct(line)} — a guide, not a stop.\" if line is not None else",
-        "\"\" if line is not None else"
-      ]
-    ],
-    "expect": [
-      "⭐ #500: the pace line is ADVISORY — 93% above a 92.5 line WARNS, and the message names the line"
+      "⭐ #500: an unreadable line falls back to the 90 floor and SAYS so"
     ]
   },
   {
@@ -1465,7 +1493,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500: main() reads --meter: its message names the 92.5 line from that file"
+      "⭐ #500: main() reads --meter: 91% under a 92.5 line WARNS; with no meter log it REFUSES"
     ]
   }
 ]

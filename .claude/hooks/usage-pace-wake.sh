@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook on SendMessage — pace work before the weekly usage limit halts it (backlog #399, PR #446 r1 M1).
 #
-# It denies a message the MAIN SESSION sends at REFUSE-SPAWN (weekly 97% or more) unless overridden; a message
+# It denies a message the MAIN SESSION sends at REFUSE-SPAWN (weekly at the stop: max(90%, the pace line), never above 97%) unless overridden; a message
 # a SUBAGENT sends (its hook input carries `agent_id`) is a report and always allowed. The recipient's name is
 # never consulted (PR #446 r2 X1). Otherwise allows, silently. Waking an idle agent is the measured expensive
 # case (docs/process-checklists.md -> *Agent lifetime*).
