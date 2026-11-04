@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 285 cases
+    python3 scripts/check-plan-code.py --self-test          # 291 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -6804,6 +6804,34 @@ def _self_test_body() -> int:
          harness_files("import json\nfrom coverage_verdict import X\n", {"coverage_verdict"}),
          frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml",
                     "scripts/coverage_verdict.py"}))
+    case("...and a module the tree does not hold is not a harness file, whatever it imports",
+         harness_files("import observer_log\nimport json\n", {"observer_log", "x"}),
+         frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml", "scripts/observer_log.py"}))
+    case("the staged roots are a parameter: a path under a root passed in is staged",
+         (select_manifests("pull_request", ["lib/x.py"], "w", {"scripts/check-q.py": "'lib'"}, _H,
+                           roots=("lib",))[0],
+          select_manifests("pull_request", ["lib/x.py"], "w", {"scripts/check-q.py": "'lib'"}, _H)[0]),
+         (frozenset({"scripts/check-q.py"}), frozenset()))
+    case("the selection names itself in every label it reaches",
+         (shard_label((2, 3), None, (4, 87)), shard_label(None, None, (0, 9))),
+         ("shard 2 of 3 (round-robin) of the DIFF-SCOPED selection, 4 of 87 manifest(s) — the full "
+          "sweep runs on master",
+          "the DIFF-SCOPED selection, 0 of 9 manifest(s) — the full sweep runs on master"))
+    case("...the tally line and the NOT-MEASURED line included",
+         (tally_line(True, Measured(files={}, declared=0, mutations=[], survivors=[],
+                                    controls_green=True), None, None, (1, 2)).endswith(
+             "measured over the DIFF-SCOPED selection, 1 of 2 manifest(s) — the full sweep runs on master"),
+          "DIFF-SCOPED selection, 3 of 4" in not_measured_line(
+              NotMeasured.from_counts([], None, {}), (1, 2), None, (3, 4))), (True, True))
+    case("a reason names the list it is about", "/y" in changed_or_why(None, "/y")[1], True)
+    with tempfile.TemporaryDirectory() as _tds:
+        _ts = pathlib.Path(_tds)
+        (_ts / "scripts" / "mutations").mkdir(parents=True)
+        (_ts / "scripts" / "check-q.py").write_text("Q = 'docs'\n")
+        (_ts / "scripts" / "mutations" / "check-q.json").write_text("[]")
+        case("the sources are every manifest's target under the ROOT given, and the harness is this file's",
+             sweep_sources(_ts), ({"scripts/check-q.py": "Q = 'docs'\n"},
+                                  frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml"})))
     # ⭐ THE FALSIFIER OF backlog #330, ON THE REAL TREE: r4 Codex proved a change to this canon
     # alone moves a manifested suite (check-canonical-source's real-repo case goes red); the binary
     # skip hid it. Here it must select that suite AND check-handoff-path's.

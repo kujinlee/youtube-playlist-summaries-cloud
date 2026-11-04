@@ -252,14 +252,18 @@ def job_level_gates(workflow: str) -> list[str]:
 # so it is recorded rather than mechanised — but an allow-list reason is a claim with an
 # expiry date, and the expiry is not in the key.
 ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
-    # ⟳ 2026-10-20, backlog #173. The mutation sweep now skips when no `scripts/**` file changed,
-    # and the step that decides needs the BASE REF — which differs by event: `origin/<base_ref>`
-    # on a pull request, `HEAD^` on a push. ⚠ THIS IS NOT A PR-ONLY GATE and must not be read as
-    # one: the step runs on EVERY event and the sweep step it gates runs on every event too. The
-    # mention is a base-ref selection inside a shell block, not a conditional on the step.
-    ("ci.yml", 'if [ "${{ github.event_name }}" = "pull_request" ]; then'):
-        (1, "backlog #173's base-ref selection — picks origin/<base_ref> vs HEAD^ for the "
-            "changed-file diff; it gates nothing and runs on every event"),
+    # ⟳ 2026-11-04, backlog #330 (replaces backlog #173's base-ref selection). The mutation sweep's
+    # shard step passes the event to `check-plan-code.py --event`, and takes a diff only on a pull
+    # request. ⚠ NOT A PR-ONLY GATE: the step runs on EVERY event; on a push or the schedule it runs
+    # the WHOLE manifest. Two `EVENT:` env lines because the alert step reads the event too.
+    ("ci.yml", 'if [ "$EVENT" = "pull_request" ]; then'):
+        (1, "backlog #330's shard step: collects the PR diff for the selector; the step itself "
+            "runs on every event, and gates nothing"),
+    ("ci.yml", "EVENT: ${{ github.event_name }}"):
+        (2, "the event handed to the sweep's selector and to the sweep-red alert — gates no step"),
+    # backlog #330: the alert runs on everything EXCEPT a pull request — the opposite of PR-only.
+    ("ci.yml", "if: failure() && github.event_name != 'pull_request'"):
+        (1, "the sweep-red alert, which runs on a master push or the schedule and never on a PR"),
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
     ("ci.yml", "if: github.event_name == 'pull_request'"):
