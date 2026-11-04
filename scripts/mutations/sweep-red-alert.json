@@ -1,29 +1,43 @@
 [
   {
-    "name": "PR #496 r2 X1: a green that does not descend from the failing commit closes the issue",
+    "name": "PR #496 r3: a green full sweep closes the open sweep-red issue",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "        elif older:\n",
-        "        elif False:\n"
+        "            gh(\"issue\", \"comment\", str(i[\"number\"]), \"--body\",\n",
+        "            gh(\"issue\", \"close\", str(i[\"number\"]), \"--comment\",\n"
       ]
     ],
     "expect": [
-      "⭐ r2 X1 (Codex's input): a green RERUN of A after descendant B went red leaves the issue OPEN",
-      "⭐ r2 X1: an OLDER green (A, after descendant B went red) leaves the issue open, with a comment"
+      "⭐ r3: a green AT the failing commit, with the issue open, COMMENTS and leaves it OPEN",
+      "⭐ r3: `gh issue close` is never invoked, over a whole red/green/red/green history"
     ]
   },
   {
-    "name": "PR #496 r2 X1: git's 'not an ancestor' is read as an ancestor",
+    "name": "PR #496 r3: a green full sweep comments on only the first open sweep-red issue",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "            return r.returncode == 0\n",
-        "            return r.returncode in (0, 1)\n"
+        "        for i in issues:\n",
+        "        for i in issues[:1]:\n"
       ]
     ],
     "expect": [
-      "⭐ r2 X1 (Codex's input): a green RERUN of A after descendant B went red leaves the issue OPEN"
+      "a green comments on EACH open sweep-red issue, and closes neither"
+    ]
+  },
+  {
+    "name": "PR #496 r3: a green full sweep is handled as a red one",
+    "file": "scripts/sweep-red-alert.py",
+    "edits": [
+      [
+        "    if sweep == \"success\":\n",
+        "    if sweep == \"SUCCESS\":\n"
+      ]
+    ],
+    "expect": [
+      "a green with NO issue open writes nothing to GitHub",
+      "...and the comment names the green SHA and its run"
     ]
   },
   {
@@ -37,21 +51,20 @@
     ],
     "expect": [
       "the red body carries ITS OWN failing SHA as a marker",
-      "a red run at B opens ONE issue recording B"
+      "a red run with none open CREATES one issue, recording its failing SHA"
     ]
   },
   {
-    "name": "PR #496 r2 X1: an unreadable ancestry closes the issue",
+    "name": "backlog #330: a second red opens another issue instead of commenting on the open one",
     "file": "scripts/sweep-red-alert.py",
     "edits": [
       [
-        "        if unread:\n",
-        "        if False and unread:\n"
+        "    if issues:\n        gh(\"issue\", \"comment\", str(issues[0][\"number\"]), \"--body\", body)\n",
+        "    if False:\n        gh(\"issue\", \"comment\", str(issues[0][\"number\"]), \"--body\", body)\n"
       ]
     ],
     "expect": [
-      "an unreadable ancestry is left open",
-      "a recorded SHA git cannot find, even after a fetch, leaves the issue open"
+      "a second red COMMENTS on the open issue, recording its own SHA, and opens no second issue"
     ]
   },
   {
@@ -64,7 +77,8 @@
       ]
     ],
     "expect": [
-      "a gh failure makes the step RED, never a silent pass"
+      "a gh failure makes the step RED, never a silent pass (success)",
+      "a gh failure makes the step RED, never a silent pass (failure)"
     ]
   }
 ]

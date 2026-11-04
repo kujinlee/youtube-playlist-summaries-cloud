@@ -1254,8 +1254,8 @@ jobs:
     # reports red and does NOT block the merge button. Nothing in this file can do that for
     # you; say it in the pull request.
     needs: mutation-sweep
-    # backlog #330: `issues: write` for the alert step below, and nothing else. ⟳ PR #496 r2 X1:
-    # `contents: read` for the checkout the alert reads ancestry from — read, never write.
+    # backlog #330: `issues: write` for the alert step below, and nothing else. `contents: read`
+    # for the checkout that holds the alert's helper — read, never write.
     permissions:
       contents: read
       issues: write
@@ -1266,13 +1266,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # ⟳ PR #496 r2 X1: the alert step runs `scripts/sweep-red-alert.py`, which asks git whether a
-      # green commit DESCENDS from the failing one — so the whole history, and Python. Both come
-      # BEFORE the aggregate step: that step exits 1 on a red sweep, which skips every later step
-      # without its own `if:`, and the red path is exactly when the alert must run.
+      # The alert step runs `scripts/sweep-red-alert.py`, so the checkout and Python come BEFORE
+      # the aggregate step: that step exits 1 on a red sweep, which skips every later step without
+      # its own `if:`, and the red path is exactly when the alert must run. ⟳ PR #496 r3: no
+      # `fetch-depth: 0` — the full history was for the ancestry rule a green no longer applies.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       # The same pin as every other job in this file. `check-python-pin.py` asks it of every job,
       # and `EXEMPT_JOBS` is deliberately EMPTY — an empty allow-list is the strongest form.
@@ -1300,14 +1298,14 @@ jobs:
       # approval was conditional on ("as long as there are full sweep to detect error eventually").
       # So it opens an issue labelled `sweep-red`, or comments on the open one rather than piling up
       # duplicates; `session-state.py` lists the open ones at every SessionStart (PR #496 r1 C4).
-      # A GREEN full sweep closes the open one, so a later red opens a FRESH issue instead of
-      # commenting on a stale one — but ⟳ PR #496 r2 X1 only when the green SHA equals or DESCENDS
-      # from every failing SHA the issue records: a RERUN of an older commit keeps its old SHA, and
-      # serialised runs do not make it newer. The rule and its cases: `scripts/sweep-red-alert.py`.
+      # ⟳ PR #496 r3: a GREEN full sweep NEVER closes one. It comments "full sweep green at <sha>,
+      # run <url>" on each open issue, and with none open writes nothing. Three rounds each found a
+      # way for a close rule to erase a red it did not cover, so there is no close rule: closing is
+      # a person's act after reading the issue. The cases: `scripts/sweep-red-alert.py`.
       # Pull requests never reach this step: their red is on the PR itself.
-      # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor closes (backlog #482, r1 C6).
+      # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor comments (backlog #482, r1 C6).
       # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
-      - name: The FULL sweep on master opens, comments on, or closes the sweep-red issue
+      - name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}

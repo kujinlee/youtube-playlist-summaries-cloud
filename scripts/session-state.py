@@ -12,8 +12,8 @@ WHY THIS FILE EXISTS (measured 2026-10-26).
 WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from `gh` ALONE:
   - number, branch, head, draft, mergeability, a check summary (`NO CHECKS` when none ran), and the
     NAMES of failing checks;
-  - the open `sweep-red` issues (PR #496 r1 C4) — a red FULL mutation sweep on master opens one, and a green one closes
-    it; a `gh` failure here is CANNOT READ, never "none";
+  - the open `sweep-red` issues (PR #496 r1 C4) — a red FULL mutation sweep on master opens one, and a green one only
+    comments on it (PR #496 r3: closing is a person's act); a `gh` failure here is CANNOT READ, never "none";
   - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored) IN THE MAIN CHECKOUT — `main_checkout`, so a
     linked worktree reads and writes the one ledger every session sees (backlog #361's PR): one line per background job, added with
     `--add ID WHAT ON_DONE` and removed with `--done ID`. It is written BY HAND, so an empty ledger reads

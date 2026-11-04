@@ -2354,7 +2354,9 @@ EXPECTED_MUTATIONS = {
     "scripts/session-state.py": 94,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
-    "scripts/sweep-red-alert.py": 5,
+    # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
+    # only the first issue, or is handled as red; the marker dropped; a second red opens another issue; gh swallowed.
+    "scripts/sweep-red-alert.py": 6,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real

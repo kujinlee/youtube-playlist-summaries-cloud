@@ -1,37 +1,28 @@
 #!/usr/bin/env python3
-"""Open, comment on, or close the `sweep-red` issue after a FULL mutation sweep on master (backlog #330).
+"""Open or comment on the `sweep-red` issue after a FULL mutation sweep on master (backlog #330). It NEVER closes one.
 
-    python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL; acts via gh and git
-    python3 scripts/sweep-red-alert.py --self-test  # 22 cases
+    python3 scripts/sweep-red-alert.py              # in CI: reads SWEEP, SHA, EVENT, RUN_URL; acts via gh
+    python3 scripts/sweep-red-alert.py --self-test  # 15 cases
 
 WHY THIS EXISTS. A pull request's sweep is diff-scoped, so what it does not select is measured only by the full
 sweep on master, AFTER merge. A red full sweep therefore opens an issue labelled `sweep-red` (or comments on the
-open one), and `session-state.py` lists the open ones at every SessionStart (PR #496 r1 C4). A green full sweep
-closes it, so a later red opens a FRESH issue rather than commenting on a stale one.
+open one), recording the failing SHA (`MARKER`) for whoever reads it, and `session-state.py` lists every open one
+at every SessionStart (PR #496 r1 C4).
 
-⛔ WHAT A GREEN MAY CLOSE (PR #496 r2 X1). A green RERUN of an older master commit A keeps A's SHA, so when its
-descendant B went red, "the sweep is green" says nothing about B. The red path therefore RECORDS the failing SHA
-in the issue body and in every comment (`MARKER`), and the green path closes an issue only when the green SHA
-EQUALS or DESCENDS FROM every failing SHA recorded on it (`git merge-base --is-ancestor`). Otherwise it comments
-that an older or unrelated commit went green and leaves the issue OPEN. A SHA it cannot read — no marker, a
-malformed one, a commit git cannot find even after a fetch — also leaves it open: closing on evidence it could
-not read is the failure this file exists to prevent.
+⛔ A GREEN NEVER CLOSES (PR #496 r3, a redesign by removal). Rounds 1-3 each found a way for a green run to close
+an alert it did not cover: a rerun of an older commit (r2 X1), a SHA record hidden past `gh`'s first 100 comments
+(r3 X1), an unreadable record dropped beside a valid one (r3 X2). Every one was a rule deciding, from issue history,
+that a green covers every recorded red. So there is no such rule: a green full sweep only COMMENTS "full sweep green
+at <sha>, run <url>" on each open `sweep-red` issue, and with none open it writes nothing. Closing one is a person's
+act after reading it. A stale open alert fails toward MORE alarm, the direction the owner's approval asked for.
 
-THE DECISION, for each OPEN `sweep-red` issue on a green run (`green_actions`):
-
-    comment, leave open   no failing SHA is recorded on it (an issue opened before r2 X1, or a hand-edited one)
-    comment, leave open   some recorded SHA's ancestry is unreadable
-    comment, leave open   some recorded SHA is NOT an ancestor of (or equal to) the green SHA
-    close                 every recorded SHA is an ancestor of, or equal to, the green SHA
-
-A `gh` or `git` call that fails outright raises, so the CI step goes red and the run says so — never a silent pass.
+A `gh` call that fails raises, so the CI step goes red and the run says so — never a silent pass.
 """
 from __future__ import annotations
 
 import json
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -39,55 +30,9 @@ import tempfile
 
 LABEL = "sweep-red"
 MARKER = "<!-- sweep-red-sha: {sha} -->"
-MARKER_RE = re.compile(r"<!-- sweep-red-sha: ([0-9a-f]{40}) -->")
-SHA_RE = re.compile(r"[0-9a-f]{40}")
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
-STEP_NAME = "- name: The FULL sweep on master opens, comments on, or closes the sweep-red issue"
-
-
-def recorded_shas(issue: dict) -> "list[str] | None":
-    """PURE. The failing SHAs recorded on `issue` (body, then each comment), in order, de-duplicated; None
-    when there are none — an issue whose failing commit cannot be read."""
-    texts = [issue.get("body") or ""] + [(c or {}).get("body") or "" for c in issue.get("comments") or []]
-    out: list[str] = []
-    for t in texts:
-        for s in MARKER_RE.findall(t):
-            if s not in out:
-                out.append(s)
-    return out or None
-
-
-def green_actions(green_sha: str, issues: list, covers) -> list:
-    """PURE but for `covers(failing, green) -> True | False | None` (None: unreadable). -> one
-    (verb, number, text) per open issue, verb `close` or `comment`."""
-    out = []
-    for issue in issues:
-        n, shas = issue["number"], recorded_shas(issue)
-        if not SHA_RE.fullmatch(green_sha or ""):
-            out.append(("comment", n, f"A FULL mutation sweep went green, but its SHA ({green_sha!r}) is "
-                                      f"unreadable, so it cannot be shown to cover this issue. Left OPEN."))
-            continue
-        if shas is None:
-            out.append(("comment", n, f"The FULL mutation sweep is green at {green_sha}, but no failing SHA is "
-                                      f"recorded on this issue, so that green cannot be shown to cover it. Left "
-                                      f"OPEN — close it by hand once a green covers the red."))
-            continue
-        verdicts = {s: covers(s, green_sha) for s in shas}
-        unread = [s for s, v in verdicts.items() if v is None]
-        older = [s for s, v in verdicts.items() if v is False]
-        if unread:
-            out.append(("comment", n, f"The FULL mutation sweep is green at {green_sha}, but the ancestry of "
-                                      f"{', '.join(unread)} could not be read. Left OPEN."))
-        elif older:
-            out.append(("comment", n, f"An older or unrelated commit went green ({green_sha}): it does not "
-                                      f"descend from the failing {', '.join(older)}. Left OPEN until a green "
-                                      f"sweep covers that commit."))
-        else:
-            out.append(("close", n, f"The FULL mutation sweep is green at {green_sha}, which equals or descends "
-                                    f"from every failing commit recorded here ({', '.join(shas)}). Closed by that "
-                                    f"run. A later red opens a fresh issue."))
-    return out
+STEP_NAME = "- name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one"
 
 
 def red_body(sweep: str, event: str, sha: str, run_url: str) -> str:
@@ -97,18 +42,6 @@ def red_body(sweep: str, event: str, sha: str, run_url: str) -> str:
             f"a defect in an unselected manifest surfaces. Read the red shard's log for the survivor or the\n"
             f"CANNOT RUN line; treat the mutation evidence for this commit as NOT CHECKED until it is green.\n"
             f"{MARKER.format(sha=sha)}")
-
-
-def git_covers(failing: str, green: str, run=subprocess.run) -> "bool | None":
-    """IO. Is `failing` an ancestor of (or equal to) `green` in the current repository? One fetch of a commit
-    this clone lacks, then None if git still cannot answer (exit status other than 0 or 1)."""
-    for attempt in (0, 1):
-        r = run(["git", "merge-base", "--is-ancestor", failing, green], capture_output=True, text=True)
-        if r.returncode in (0, 1):
-            return r.returncode == 0
-        if attempt == 0:
-            run(["git", "fetch", "--quiet", "origin", failing, green], capture_output=True, text=True)
-    return None
 
 
 def gh(*args: str, run=subprocess.run) -> str:
@@ -124,18 +57,16 @@ def main(env=None) -> int:
     sweep, sha = env.get("SWEEP", ""), env.get("SHA", "")
     event, run_url = env.get("EVENT", ""), env.get("RUN_URL", "")
     if sweep == "success":
-        issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "open",
-                               "--json", "number,body,comments", "--limit", "100"))
+        issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "open", "--json", "number",
+                               "--limit", "100"))
         if not issues:
             print(f"the full sweep is green and no {LABEL} issue is open")
             return 0
-        for verb, n, text in green_actions(sha, issues, git_covers):
-            if verb == "close":
-                gh("issue", "close", str(n), "--comment", text)
-                print(f"closed the {LABEL} issue #{n}")
-            else:
-                gh("issue", "comment", str(n), "--body", text)
-                print(f"left the {LABEL} issue #{n} open: {text}")
+        for i in issues:
+            gh("issue", "comment", str(i["number"]), "--body",
+               f"full sweep green at {sha}, run {run_url}. This does not close the issue: read it, and close it "
+               f"by hand once the red it records is understood.")
+            print(f"commented on the open {LABEL} issue #{i['number']}; it stays open")
         return 0
     body = red_body(sweep, event, sha, run_url)
     gh("label", "create", LABEL, "--color", "B60205", "--force",
@@ -151,7 +82,7 @@ def main(env=None) -> int:
     return 0
 
 
-# ── the self-test: the workflow step's REAL `run:` block, a fake `gh`, a real local git history ──────────────
+# ── the self-test: the workflow step's REAL `run:` block and a fake `gh` ──────────────────────────────────
 
 FAKE_GH = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -235,33 +166,12 @@ def _self_test_body() -> int:
             fail += 1
             print(f"[FAIL] {label}: got {got!r} want {want!r}")
 
-    A, B, C = "a" * 40, "b" * 40, "c" * 40
-    anc = {(A, A), (A, B), (A, C), (B, B), (B, C), (C, C)}            # A <- B <- C
-    cov = lambda f, g: (f, g) in anc                                     # noqa: E731
-    one = lambda body, *cs: [{"number": 7, "body": body, "comments": [{"body": c} for c in cs]}]  # noqa: E731
-    mark = MARKER.format
+    B, C = "b" * 40, "c" * 40
 
-    # ── the pure decision ──
-    case("the failing SHA is read from the body and from every comment, in order, once each",
-         recorded_shas(one(mark(sha=B), "x " + mark(sha=C), mark(sha=B))[0]), [B, C])
-    case("an issue with no marker records NO failing SHA", recorded_shas(one("SHA " + B)[0]), None)
-    case("⭐ r2 X1: an OLDER green (A, after descendant B went red) leaves the issue open, with a comment",
-         [v for v, _, _ in green_actions(A, one(mark(sha=B)), cov)], ["comment"])
-    case("⭐ r2 X1: a green that DESCENDS from the failing commit closes it",
-         [v for v, _, _ in green_actions(C, one(mark(sha=B)), cov)], ["close"])
-    case("...and a green AT the failing commit closes it", [v for v, _, _ in green_actions(B, one(mark(sha=B)), cov)],
-         ["close"])
-    case("...but only when it covers EVERY failing commit recorded on the issue",
-         [v for v, _, _ in green_actions(B, one(mark(sha=B), mark(sha=C)), cov)], ["comment"])
-    case("an issue with no recorded SHA is left open", [v for v, _, _ in green_actions(C, one("old body"), cov)],
-         ["comment"])
-    case("an unreadable ancestry is left open",
-         [v for v, _, _ in green_actions(C, one(mark(sha=B)), lambda f, g: None)], ["comment"])
-    case("an unreadable GREEN sha is left open", [v for v, _, _ in green_actions("", one(mark(sha=B)), cov)],
-         ["comment"])
+    # ── the pure parts ──
     r1, r2 = red_body("failure", "push", B, "https://run/1"), red_body("timed_out", "schedule", C, "https://run/2")
-    case("the red body carries ITS OWN failing SHA as a marker", (recorded_shas({"body": r1}), recorded_shas({"body": r2})),
-         ([B], [C]))
+    case("the red body carries ITS OWN failing SHA as a marker",
+         (MARKER.format(sha=B) in r1, MARKER.format(sha=C) in r2, MARKER.format(sha=C) in r1), (True, True, False))
     case("...and names its own result, event and run",
          [all(t in r for t in ts) for r, ts in ((r1, ("'failure'", "push", "https://run/1")),
                                                 (r2, ("'timed_out'", "schedule", "https://run/2")))], [True, True])
@@ -278,7 +188,7 @@ def _self_test_body() -> int:
         _raised = True
     case("a step with no `run:` of its own RAISES — the next step's is never borrowed", _raised, True)
 
-    # ── the workflow step's real `run:` block, a fake gh, a real git history ──
+    # ── the workflow step's real `run:` block, against a fake gh ──
     wf = WORKFLOW.read_text(encoding="utf-8")
     run_block = step_run_block(wf)
     case("the alert step's run block runs this helper", "python3 scripts/sweep-red-alert.py" in run_block, True)
@@ -289,13 +199,15 @@ def _self_test_body() -> int:
         shutil.copy(__file__, repo / "scripts" / "sweep-red-alert.py")
         (bin_ / "gh").write_text(FAKE_GH)
         (bin_ / "gh").chmod(0o755)
+        # A REAL commit, so a green AT the failing commit is a green any coverage rule would accept: the strongest
+        # input for "a green never closes" (the pre-r3 helper closed on exactly this).
         g = lambda *a: subprocess.run(["git", *a], cwd=repo, capture_output=True, text=True,  # noqa: E731
                                       check=True).stdout.strip()
         g("init", "-q", "-b", "master")
         g("config", "user.email", "t@example.com")
         g("config", "user.name", "t")
         sha = {}
-        for c in ("a", "b", "c"):
+        for c in ("b", "c"):
             g("commit", "-q", "--allow-empty", "-m", c)
             sha[c] = g("rev-parse", "HEAD")
         state = pathlib.Path(td) / "gh.json"
@@ -307,36 +219,46 @@ def _self_test_body() -> int:
                                text=True)
             return r.returncode, r.stdout + r.stderr
 
-        def issues():
-            return json.loads(state.read_text())["issues"]
+        def st():
+            return json.loads(state.read_text())
+
+        def writes(calls):
+            """the calls that change GitHub — everything but `issue list`."""
+            return [c for c in calls if c[:2] != ["issue", "list"]]
 
         state.write_text(json.dumps({"issues": [], "calls": []}))
         rc, out = step("failure", "b")
-        case("a red run at B opens ONE issue recording B", (rc, [recorded_shas(i) for i in issues()]),
-             (0, [[sha["b"]]]))
-        rc, out = step("success", "a")
-        case("⭐ r2 X1 (Codex's input): a green RERUN of A after descendant B went red leaves the issue OPEN",
-             (rc, [i["state"] for i in issues()]), (0, ["open"]))
-        case("...and says so in a comment naming the older green",
-             "older or unrelated commit went green (" + sha["a"] in (issues()[0]["comments"] or [{}])[-1].get("body", ""),
-             True)
-        rc, out = step("failure", "c")
-        case("a second red comments on the open issue and records its own SHA",
-             (rc, len(issues()), recorded_shas(issues()[0])), (0, 1, [sha["b"], sha["c"]]))
+        case("a red run with none open CREATES one issue, recording its failing SHA",
+             (rc, len(st()["issues"]), MARKER.format(sha=sha["b"]) in st()["issues"][0]["body"]), (0, 1, True))
         rc, out = step("success", "b")
-        case("...a green at B does not cover C, so it stays open", (rc, issues()[0]["state"]), (0, "open"))
+        last = (st()["issues"][0]["comments"] or [{}])[-1].get("body") or ""
+        case("⭐ r3: a green AT the failing commit, with the issue open, COMMENTS and leaves it OPEN",
+             (rc, st()["issues"][0]["state"], len(st()["issues"][0]["comments"])), (0, "open", 1))
+        case("...and the comment names the green SHA and its run",
+             (f"full sweep green at {sha['b']}" in last, "https://run/success/b" in last), (True, True))
+        rc, out = step("failure", "c")
+        case("a second red COMMENTS on the open issue, recording its own SHA, and opens no second issue",
+             (rc, len(st()["issues"]), MARKER.format(sha=sha["c"]) in st()["issues"][0]["comments"][-1]["body"]),
+             (0, 1, True))
         rc, out = step("success", "c")
-        case("⭐ r2 X1: a green that descends from every failing SHA closes it", (rc, issues()[0]["state"]),
-             (0, "closed"))
-        state.write_text(json.dumps({"issues": [{"number": 9, "state": "open", "labels": [LABEL],
-                                                 "body": mark(sha="d" * 40), "comments": []}], "calls": []}))
+        case("...a green that descends from every failing SHA still leaves it OPEN", (rc, st()["issues"][0]["state"]),
+             (0, "open"))
+        case("⭐ r3: `gh issue close` is never invoked, over a whole red/green/red/green history",
+             [c for c in st()["calls"] if c[:2] == ["issue", "close"]], [])
+        two = [{"number": n, "state": "open", "labels": [LABEL], "body": "x", "comments": []} for n in (8, 9)]
+        state.write_text(json.dumps({"issues": two, "calls": []}))
         rc, out = step("success", "c")
-        case("a recorded SHA git cannot find, even after a fetch, leaves the issue open",
-             (rc, issues()[0]["state"]), (0, "open"))
-        state.write_text(json.dumps({"issues": [], "calls": [], "fail": True}))
+        case("a green comments on EACH open sweep-red issue, and closes neither",
+             (rc, [(i["state"], len(i["comments"])) for i in st()["issues"]]), (0, [("open", 1), ("open", 1)]))
+        state.write_text(json.dumps({"issues": [], "calls": []}))
+        rc, out = step("success", "c")
+        case("a green with NO issue open writes nothing to GitHub", (rc, writes(st()["calls"]), st()["issues"]),
+             (0, [], []))
         (bin_ / "gh").write_text("#!/bin/sh\necho 'HTTP 502' >&2\nexit 1\n")
-        rc, out = step("success", "c")
-        case("a gh failure makes the step RED, never a silent pass", (rc != 0, "HTTP 502" in out), (True, True))
+        for sweep in ("success", "failure"):
+            rc, out = step(sweep, "c")
+            case(f"a gh failure makes the step RED, never a silent pass ({sweep})", (rc != 0, "HTTP 502" in out),
+                 (True, True))
 
     if fail:
         print(f"\n{ok} passed, {fail} FAILED")
