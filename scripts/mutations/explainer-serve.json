@@ -213,7 +213,7 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "            return self._send(504, (f\"{script} did not finish in {REGEN_TIMEOUT}s — the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
+        "            return self._send(504, (f\"{script} did not finish in {limit}s — the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
         "            return self._send(200, json.dumps({\"ok\": True, \"page\": want}).encode(),\n                              \"application/json\")"
       ]
     ],
@@ -711,6 +711,41 @@
     ],
     "expect": [
       "⛔ #389: a resolve() that raises RuntimeError (3.12's symlink loop) is unresolvable, never a crash"
+    ]
+  },
+  {
+    "name": "backlog #497: the goal tree's 60 s rebuild bound is ignored",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "        limit = REGEN_TIMEOUTS.get(want, REGEN_TIMEOUT)\n",
+        "        limit = REGEN_TIMEOUT\n"
+      ]
+    ],
+    "expect": "the goal tree's rebuild is bounded by its own 60 s, not the 300 s default"
+  },
+  {
+    "name": "backlog #497: the timeout reply names the default, not the bound it waited",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "f\"{script} did not finish in {limit}s — the page \"",
+        "f\"{script} did not finish in {REGEN_TIMEOUT}s — the page \""
+      ]
+    ],
+    "expect": "…and a goal-tree timeout names the 60 s it actually waited"
+  },
+  {
+    "name": "the rebuild gets a full bound of its own after waiting for the lock, so a second Refresh click answers late",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "                left = deadline - time.monotonic()\n",
+        "                left = limit\n"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2 X2: two overlapping Refresh clicks BOTH answer within the bound — the deadline is taken before the lock, and a click that cannot finish answers with the timeout"
     ]
   }
 ]

@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 228 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 232 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -92,6 +92,7 @@ import signal
 import socket
 import subprocess
 import threading
+import time
 import sys
 import urllib.parse
 from typing import Callable, NamedTuple
@@ -114,6 +115,11 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 # only because of where the caller stood is a check that will one day stand somewhere else.
 REPO = SCRIPTS.parent
 REGEN_TIMEOUT = 300
+# A page whose rebuild is pressed while the owner watches gets a tighter bound than the
+# default. Backlog #497, the owner 2026-11-04 01:07: the goal tree refreshes on a click, so
+# a click must answer within a minute, never hang for five. MEASURED 2026-11-04: `goal-tree.py --page`
+# took 7.08, 7.95 and 6.41 s, so the bound is max(60, 2 x the slowest = 15.9) = 60 s.
+REGEN_TIMEOUTS = {"goal-tree": 60}
 # ⚠ The ONLY pages `POST /regenerate` may rebuild. A dict of LITERALS, deliberately: the
 # caller names a key, never a path or an argument, so nothing it sends reaches the
 # command line. Adding a page here is a visible act; resolving one from the request
@@ -1415,14 +1421,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
         with REGEN_LOCKS_GUARD:
             lock = REGEN_LOCKS.setdefault(want, threading.Lock())
+        limit = REGEN_TIMEOUTS.get(want, REGEN_TIMEOUT)
+        # ⛔ review r2 X2: the bound is the CLICK's, not the subprocess's. The deadline is taken BEFORE the
+        # lock, the lock wait is bounded by it, and the rebuild gets only what is left — so a second click
+        # waiting on a first answers with the timeout at the bound, never a full bound later.
+        deadline = time.monotonic() + limit
         try:
-            with lock:
+            if not lock.acquire(timeout=limit):
+                raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
+            try:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
                 r = subprocess.run([sys.executable, str(SCRIPTS / script)],
-                                   capture_output=True, text=True, timeout=REGEN_TIMEOUT)
+                                   capture_output=True, text=True, timeout=left)
+            finally:
+                lock.release()
         except subprocess.TimeoutExpired:
             # A timeout is NOT a failure to report as "rebuilt". The reader is told the
             # page may now be half-written, because silence here reads as success.
-            return self._send(504, (f"{script} did not finish in {REGEN_TIMEOUT}s — the page "
+            return self._send(504, (f"{script} did not finish in {limit}s — the page "
                                     f"may be unchanged. NOT REBUILT.").encode(),
                               "text/plain; charset=utf-8")
         if r.returncode != 0:
@@ -3049,9 +3067,51 @@ def _self_test_body() -> int:
              lambda: (_drive_regen({"page": _page}, _ok_runner),
                       isinstance(_regen_calls[0][0][0], list)
                       and not _regen_calls[0][1].get("shell", False))[1])
+        # review r2 X2: the rebuild gets what is LEFT of the click's bound, so it is just under the bound, never over.
+        _bounded = lambda kw, b: b - 1 < (kw.get("timeout") or 0) <= b
         case("…and it is bounded by REGEN_TIMEOUT, not left to run forever",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][1].get("timeout") == REGEN_TIMEOUT)[1])
+                      _bounded(_regen_calls[0][1], REGEN_TIMEOUT))[1])
+        # ⛔ Backlog #497: the goal tree is rebuilt on a click while the owner watches, so it gets
+        # its own 60 s bound — and only it; every other page keeps the default.
+        case("the goal tree's rebuild is bounded by its own 60 s, not the 300 s default",
+             lambda: (_regen_calls.clear(), _drive_regen({"page": "goal-tree"}, _ok_runner),
+                      _bounded(_regen_calls[0][1], 60))[2])
+        case("…and a page with no bound of its own still gets REGEN_TIMEOUT",
+             lambda: "backlog-table" not in REGEN_TIMEOUTS and (
+                 _regen_calls.clear(), _drive_regen({"page": "backlog-table"}, _ok_runner),
+                 _bounded(_regen_calls[0][1], REGEN_TIMEOUT))[2])
+        case("…and a goal-tree timeout names the 60 s it actually waited",
+             lambda: b"did not finish in 60s" in _drive_regen({"page": "goal-tree"}, _timeout_runner)[1])
+        # ⛔ review r2 X2 (Codex's input, scaled): two overlapping clicks. The second waited for the lock and then
+        # got a FULL bound of its own — 79 ms and 159 ms at a 100 ms limit. Scaled to a 1.0 s limit and 0.75 s
+        # rebuilds (the second click 50 ms after the first), unfixed is ~1.45 s; the bound with slack is 1.25 s.
+        def _overlap(limit=1.0, build=0.75):
+            def _sleepy(*_a, timeout=None, **_k):
+                if timeout is not None and timeout < build:
+                    time.sleep(max(timeout, 0))
+                    raise subprocess.TimeoutExpired(cmd="x", timeout=timeout)
+                time.sleep(build)
+                return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            got: list = []
+            def _click():
+                h = object.__new__(Handler)
+                t0 = time.monotonic()
+                h._send = lambda code, body, ctype: got.append((code, time.monotonic() - t0, body))
+                Handler._regenerate(h, {"page": "goal-tree"})
+            _real, _bound = subprocess.run, REGEN_TIMEOUTS["goal-tree"]
+            try:
+                subprocess.run, REGEN_TIMEOUTS["goal-tree"] = _sleepy, limit   # type: ignore[assignment]
+                ts = [threading.Thread(target=_click) for _ in range(2)]
+                ts[0].start(); time.sleep(0.05); ts[1].start()
+                for t in ts:
+                    t.join()
+            finally:
+                subprocess.run, REGEN_TIMEOUTS["goal-tree"] = _real, _bound    # type: ignore[assignment]
+            return sorted(c for c, _, _ in got), max(e for _, e, _ in got) <= limit + 0.25, got
+        case("⛔ review r2 X2: two overlapping Refresh clicks BOTH answer within the bound — the deadline is taken "
+             "before the lock, and a click that cannot finish answers with the timeout",
+             lambda: _overlap()[:2] == ([200, 504], True))
         # ⛔ THE 500 ARM IS THE SIBLING OF ROUND 1'S OWN HEADLINE, three lines below it, and it was
         # left uncased — *after fixing, SEARCH for the class*, failing one `if` later. A generator
         # that exits non-zero must not report a rebuild.
