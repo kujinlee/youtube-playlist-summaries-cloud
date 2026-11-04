@@ -154,3 +154,45 @@ The next four terms are about **what an assertion observes**, added 2026-10-19 b
 - A **reader** distinguishes **structural lines** from content; a **soundness check** is what makes it fail loudly rather than quietly when it cannot. A shared reader without one concentrates a blind spot across every caller.
 - A **coverage verdict** is earned only over green **controls**, with **recorded** equal to **declared**, and no entry a **cannot-run**.
 - A **ratchet** protects a count; a **falsifier** protects a claim. A ratchet with no falsifier ratchets nothing.
+
+## Recall (Repo Tooling)
+
+The vocabulary for how the assistant's recorded experience reaches it at the moment it applies. Named with the owner
+2026-11-03 (backlog #198), after three architecture reviews argued this subsystem in words this file did not contain.
+
+- **Lesson** — one rule learned from a past failure or an owner decision, recorded on its own together with the moment
+  it applies. The unit everything else in this section is about.
+  _Avoid_: memory entry, note, "a memory". **Memory** stays the name of the whole store of lessons, never one of them.
+- **Trigger** — the part of a lesson that describes the moment it applies, written as a situation the assistant would
+  be in, not as the subject the lesson is about. Exactly one per lesson; it describes a *kind* of **situation**, and it
+  is what a lesson is matched *from*.
+  _Avoid_: hook (collides with the harness's hooks), cue, "FIRES-WHEN" (that is only how it is spelled on disk).
+- **Lesson index** — the list of every lesson that the assistant sees at all times, one line each. That line is the
+  **first clause of the lesson's trigger**, never a text of its own, so the index cannot say something its lessons do not
+  (decided 2026-11-03). _Avoid_: hook line, summary, "the memory index row" as if it were written separately.
+- **Situation** — one step of the assistant's work, described in a line before the step starts; what lessons are
+  matched *against*. A trigger names a kind of situation; a situation is one actual instance.
+  _Avoid_: step (that is the plan's unit, and a situation need not come from a plan), moment, context.
+- **Arm** — to match every situation of a plan against every lesson's trigger in one pass, before the plan's first step,
+  and keep the answers. Slow (a model call), so it happens once per plan, never per step. Arming a plan also arms its
+  step banners; the word covers both.
+  _Avoid_: match, precompute, index.
+- **Fire** — a lesson **fires** when a situation it was armed for begins: it is shown to the assistant then, with no new
+  matching. A lesson can only fire for a plan that was armed; editing a situation after arming makes its answers stale,
+  and a stale answer is refused rather than shown. _Avoid_: serve, deliver, trigger (as a verb — the trigger is the text).
+- **Already embodied** — a lesson is already embodied in a situation when the situation's own line already does what
+  the lesson asks. Its trigger fits, and it still does **not** fire: recall exists to change what the assistant is about
+  to do, and a reminder of what it is already doing is noise that teaches it to ignore recall. A property of the
+  *pair* (lesson, situation), never of either alone. _Avoid_: already followed, redundant, duplicate.
+- **Recall** — the whole path by which a lesson reaches the assistant at its situation: arm, then fire. "Recall missed"
+  means a lesson that should have fired did not.
+  _Avoid_: retrieval, search, lookup.
+- **Unreadable plan** — a plan whose situations cannot all be read. It is refused as a whole, loudly, and never armed
+  with the situations that could be read: silently arming part of a plan would look like a plan whose other steps
+  simply matched nothing. _Avoid_: plan verdict (that is the check, not the thing it finds).
+
+### Relationships
+
+- A **lesson** has exactly one **trigger**; the **lesson index** shows the trigger's first clause, never a second text.
+- A trigger names a *kind* of **situation**; **arming** a plan matches each of its situations against every trigger once.
+- A lesson **fires** at a situation it was armed for, unless it is **already embodied** there. Arm, then fire, is **recall**.
