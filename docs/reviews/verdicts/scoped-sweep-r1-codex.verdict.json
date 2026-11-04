@@ -1,0 +1,20 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 2983 chars"
+  ],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 776fbfbcb91b75a0d1117f5748412f8b3b3bd0f6"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f6c770741d9f31a5eb8beb8def79b3024e85296d",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/r330/prompt.md",
+  "reason": "2983 chars",
+  "refused": false,
+  "review": "scoped-sweep-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/build-330"
+}
