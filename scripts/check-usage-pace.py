@@ -141,7 +141,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 302 cases
+    python3 scripts/check-usage-pace.py --self-test  # 304 cases
 """
 from __future__ import annotations
 
@@ -838,6 +838,12 @@ def _self_test_body() -> int:
               (refuse_at(NOW - 60, NOW + 2 * 86400), refuse_at(NOW, NOW + 2 * 86400)), (90.0, 95.0))
         check("#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
               (days_after_today(NOW, NOW + 3600), days_after_today(NOW, NOW + 86400 + 7200)), (0.0, 7200 / 86400))
+        check("#500: the hour of NOW does not change the count — 00:00, 13:00 and 23:59 Fri all keep 1 day",
+              [days_after_today(NOW + h, NOW + 2 * 86400) for h in (0, 13 * 3600, 86400 - 60)], [1.0, 1.0, 1.0])
+        check("#500: pace_line names the read's own reason, and a generic one without it",
+              (pace_line(None, NOW, WEEK_RESET, "/m was not read within 1 s"), pace_line(None, NOW, WEEK_RESET)),
+              ((None, "the meter log is unreadable: /m was not read within 1 s"),
+               (None, "the meter log is missing or unreadable")))
         def lt(*ymdh):  # a local time in the suite's PST8PDT zone
             return time.mktime((*ymdh, 0, 0, 0, 0, -1))
         check("⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end",

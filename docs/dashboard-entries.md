@@ -18760,4 +18760,4 @@ Backlog #500, `scripts/check-usage-pace.py`: `refuse_at(now, resets)` = min(97, 
 `days_after_today()`), counted in calendar dates from the coming local midnight plus the
 reset's time of day, so a DST day is one day; the pace line from
 `~/.claude/meter/log.jsonl` is text only; the self-test redirects `HOME` so no case reads the live
-meter. 302 self-test cases, 125 mutations.
+meter. 304 self-test cases, 125 mutations.
