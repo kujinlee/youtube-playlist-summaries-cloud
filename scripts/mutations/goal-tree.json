@@ -1846,8 +1846,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"' if seen is not None else \"\"",
-        "    anchor = f' id=\"goal-{n}\"' if seen is not None else \"\""
+        "goal-{html.escape(slug, quote=True)}\"' if seen",
+        "goal-{n}\"' if seen"
       ]
     ],
     "expect": [

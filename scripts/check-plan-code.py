@@ -1078,7 +1078,11 @@ EXPECTED_MUTATIONS = {
     # folds (nothing folds, text lists leaves, goal not folded, fold drawn open, page bucketed at snapshot time: 5).
     # ⟳ same day, the owner's 01:14 request (numbered goal blocks): 130 -> 135 — numbering origin, the text's
     # number, anchors on past trees, the folded goal's heading, the heading colour.
-    "scripts/goal-tree.py": 135,
+    # ⟳ same day, review round 1's fold: 135 -> 150 — in-flight work lifts a landed thread, PR mentions in text,
+    # the title-resolved PR (X1: 3), mergedAt first on both paths (X2: 2), numbering by time and slug anchors
+    # (X3: 2), queued fix/blocker and the later wording (C2: 2), negation and clause-leading `parked` (C3: 2),
+    # --ink-soft on the fold summary and counts (C5: 2), and the closed PR's age (C6: 2).
+    "scripts/goal-tree.py": 150,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
