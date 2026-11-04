@@ -1883,7 +1883,7 @@
       ]
     ],
     "expect": [
-      "a doc is selected by the guards naming it AND by those quoting a directory above it"
+      "a directory below the root is matched as the COMPONENT a join spells, not only as a whole path"
     ]
   },
   {
@@ -1896,7 +1896,7 @@
       ]
     ],
     "expect": [
-      "a file nothing names falls back to the guards quoting its staged ROOT"
+      "...and a file under `scripts` that nothing names falls back to the targets quoting `scripts`"
     ]
   },
   {

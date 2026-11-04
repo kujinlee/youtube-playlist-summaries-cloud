@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 303 cases
+    python3 scripts/check-plan-code.py --self-test          # 305 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -414,7 +414,7 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
     if changed is None:
         return None, [f"full: {why}"]
     readers = {t: s for t, s in sources.items() if t not in harness}
-    mods = {m: s for m, s in {**sources, **(modules or {})}.items() if m not in harness}
+    mods = {**{m: s for m, s in (modules or {}).items() if m not in harness}, **readers}
     picked: dict = {}
     outside = 0
     for path in (p.strip() for p in changed):
@@ -6939,6 +6939,14 @@ def _self_test_body() -> int:
          {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}
          <= (_rsel("docs/memory/MEMORY.md") or {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}),
          True)
+    case("a directory below the root is matched as the COMPONENT a join spells, not only as a whole path",
+         _sel(["docs/reviews/r1.md"], src={"scripts/check-r.py": "R = DOCS_DIR / 'reviews'\n",
+                                           "scripts/check-x.py": "y = 2\n"}),
+         frozenset({"scripts/check-r.py"}))
+    case("...and a file under `scripts` that nothing names falls back to the targets quoting `scripts`",
+         _sel(["scripts/notes.txt"], src={"scripts/check-s.py": "S = ROOT / 'scripts'\n",
+                                          "scripts/check-x.py": "y = 2\n"}),
+         frozenset({"scripts/check-s.py"}))
     case("...but `scripts` is reached by import name, not walked: a script change does not select "
          "every target that quotes the directory",
          _sel(["scripts/check-x.py"], src=dict(_WK, **{"scripts/check-s.py": "S = ROOT / 'scripts'\n"})),
