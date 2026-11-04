@@ -712,5 +712,27 @@
     "expect": [
       "⛔ #389: a resolve() that raises RuntimeError (3.12's symlink loop) is unresolvable, never a crash"
     ]
+  },
+  {
+    "name": "backlog #497: the goal tree's 60 s rebuild bound is ignored",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "        limit = REGEN_TIMEOUTS.get(want, REGEN_TIMEOUT)\n",
+        "        limit = REGEN_TIMEOUT\n"
+      ]
+    ],
+    "expect": "the goal tree's rebuild is bounded by its own 60 s, not the 300 s default"
+  },
+  {
+    "name": "backlog #497: the timeout reply names the default, not the bound it waited",
+    "file": "scripts/explainer-serve.py",
+    "edits": [
+      [
+        "f\"{script} did not finish in {limit}s — the page \"",
+        "f\"{script} did not finish in {REGEN_TIMEOUT}s — the page \""
+      ]
+    ],
+    "expect": "…and a goal-tree timeout names the 60 s it actually waited"
   }
 ]

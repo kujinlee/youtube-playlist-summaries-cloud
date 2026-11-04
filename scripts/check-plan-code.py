@@ -1993,7 +1993,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ #389, CI red on PR #434 (Python 3.12 raises RuntimeError from resolve() on a loop): 61 -> 62 —
     # every serve/index resolve goes through `resolve_or_none`; one entry pins RuntimeError in it, and the
     # raw-containment entry is re-anchored onto the helper's call.
-    "scripts/explainer-serve.py": 62,
+    # ⟳ backlog #497 (the owner 2026-11-04 01:07, refresh on a click): 62 -> 64 — the goal tree's own
+    # 60 s rebuild bound, and the timeout reply naming the bound it actually waited.
+    "scripts/explainer-serve.py": 64,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
