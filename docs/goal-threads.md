@@ -62,6 +62,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - side · PR #423 · the tag-vocabulary survey page and the suite inventory page
 - fix · backlog #389, PR #434 · the work-lines page retires into the goal tree, its history archived (the owner's decision D2)
 - fix · backlog #497 · the goal tree shows when each thread merged, shows parked and queued work per goal, and folds older merged and unplanned threads
+- fix · backlog #499 · the goal tree shows the current plan in its own dated block and keeps every earlier plan as one collapsed line (owner 2026-11-04 06:05)
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
