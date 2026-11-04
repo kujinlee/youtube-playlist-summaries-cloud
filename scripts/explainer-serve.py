@@ -1590,7 +1590,7 @@ def _self_test_body() -> int:
         prog = stub + js + ("\nif(%s){G.tick();G.tick();}" % _j.dumps(down)) + "\nsetTimeout(function(){console.log(JSON.stringify(span.textContent));},50);"
         try:
             r = subprocess.run(["node", "-e", prog], capture_output=True, text=True, timeout=30)
-            if r.returncode != 0:
+            if r.returncode:
                 return f"CANNOT RUN: node rc={r.returncode} {r.stderr.strip()[:160]}"
             return _j.loads(r.stdout.strip().splitlines()[-1])
         except FileNotFoundError:
