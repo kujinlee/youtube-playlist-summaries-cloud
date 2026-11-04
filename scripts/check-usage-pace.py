@@ -141,7 +141,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 291 cases
+    python3 scripts/check-usage-pace.py --self-test  # 295 cases
 """
 from __future__ import annotations
 
@@ -263,14 +263,16 @@ def local_midnight(now: float) -> float:
     return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
 
 
-def pace_line(text: str | None, now: float, resets: float) -> tuple[float | None, str]:
+def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tuple[float | None, str]:
     """The RULE (backlog #500): today's pace line from the meter log's text, or (None, why) when it cannot be
     read. The owner's 11-01 15:38 rule: start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at
     97; the last day before the reset is 97. start% is the weekly value AT local midnight — the last row at or
     before it — or, when the window began after midnight, the window's first row. Only rows of THIS window
-    (same `resets_at`) count, so last week's numbers never set this week's line. No I/O."""
+    (same `resets_at`) count, so last week's numbers never set this week's line; a reading outside 0..100 is
+    skipped, so start% is at most 100 and the last day's line is the cap (r1 X2/C3/C6). `why` is the read's own
+    reason when it failed (r1 C5). No I/O."""
     if text is None:
-        return None, "the meter log is missing or unreadable"
+        return None, f"the meter log is unreadable: {why}" if why else "the meter log is missing or unreadable"
     midnight = local_midnight(now)
     before = after = None
     for line in text.splitlines():
@@ -280,7 +282,7 @@ def pace_line(text: str | None, now: float, resets: float) -> tuple[float | None
             at, p, r = row["at"], w["used_percentage"], w["resets_at"]
         except (ValueError, KeyError, TypeError):
             continue
-        if not (is_number(at) and is_number(p) and is_number(r)) or r != resets or at > now:
+        if not (is_number(at) and is_number(p) and is_number(r)) or not 0 <= p <= 100 or r != resets or at > now:
             continue
         if at <= midnight and (before is None or at >= before[0]):
             before = (at, p)
@@ -306,17 +308,17 @@ def cannot(reason: str) -> tuple[str, str]:
 
 
 def evaluate(text: str | None, now: float, missing: str = "the cache is missing",
-             path: str = DEFAULT_CACHE, meter: str | None | bool = False) -> tuple[str, str]:
+             path: str = DEFAULT_CACHE, meter: str | None | bool = False, meter_why: str = "") -> tuple[str, str]:
     """The RULE: (verdict, one-line message) from the cache's text (None = no file) at `now`. No I/O, and
     TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3)."""
     try:
-        return _evaluate(text, now, missing, path, meter)
+        return _evaluate(text, now, missing, path, meter, meter_why)
     except Malformed as e:
         return cannot(f"the cache is malformed: {e}")
 
 
 def _evaluate(text: str | None, now: float, missing: str, path: str,
-              meter: str | None | bool = False) -> tuple[str, str]:
+              meter: str | None | bool = False, meter_why: str = "") -> tuple[str, str]:
     if text is None:
         return cannot(missing)
     try:
@@ -355,7 +357,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
         five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
                      f"resets {local_time(five[1])}.")
     # `meter` False = the line was not consulted (the fixed stop); None or text = the meter log's read.
-    line, why = (None, "") if meter is False else pace_line(meter, now, resets)
+    line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
     stop = refuse_at(line)
     line_note = (f" The stop is today's pace line ({pct(stop)}), above the {pct(REFUSE_AT)} floor." if stop > REFUSE_AT
                  else f" Today's pace line is {pct(line)}, so the stop is the {pct(REFUSE_AT)} floor." if line is not None
@@ -413,11 +415,12 @@ def read_payload(limit: int = PAYLOAD_MAX_BYTES, deadline: float = READ_DEADLINE
     """The hook's stdin, bounded like the cache read (r4 X1): a DAEMON thread reads fd 0 to EOF, and this returns
     within `deadline` whatever the writer does. None means UNUSABLE: not at EOF in time (a producer that keeps
     the pipe open held the hook past 3 s), over `limit` bytes, or unreadable. `main` reads None as "", which
-    fails toward each gate: a 95% wake is still DENIED and an absent cache is still said.
+    fails toward each gate: a wake at the stop is still DENIED and an absent cache is still said.
 
     `os.read`, not `sys.stdin.buffer`: a daemon thread blocked inside the buffered reader holds its lock, and
     the interpreter's shutdown then aborts on it (`could not acquire lock for <stdin>`) with no deny printed.
-    With the cache read, the hook's worst case is two deadlines."""
+    With the cache read and the meter-log read (made only after a cache read succeeds), the hook's worst case
+    is three deadlines."""
     box: list = []
 
     def take() -> None:
@@ -691,8 +694,10 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
     absent = text is None and not reason
     if absent:
         reason = f"no cache at {cache_path}; {STATUSLINE}"
-    meter_text, _ = read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES)  # unreadable reads as missing
-    verdict, message = evaluate(text, now, reason, cache_path, meter_text)
+    # The meter matters only beside a readable cache, so a stalled cache costs ONE deadline, not two (r1 C4).
+    meter_text, meter_why = ((None, "") if text is None else
+                             read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES))
+    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)
     if args.hook is None:
         print(f"{verdict}: {message}" if message else f"{verdict}: weekly usage is below {pct(WARN_AT)}")
         return RC[verdict]
@@ -824,6 +829,19 @@ def _self_test_body() -> int:
         check("#500: a window that began after midnight starts at its FIRST row",
               pace_line(meter((NOW + 7200, 4, WEEK_RESET), (NOW + 9000, 9, WEEK_RESET)), NOW + 9999,
                         WEEK_RESET)[0], 4 + 1.5 * 96 / 3)
+        check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop",
+              (pace_line(meter((NOW - 60, -100, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               evm(cache(91), meter((NOW - 60, -100, WEEK_RESET)))[0],
+               pace_line(meter((NOW - 60, 150, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               evm(cache(91), meter((NOW - 60, 150, WEEK_RESET)))[0],
+               pace_line(meter((NOW - 60, 110, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0],
+               pace_line(meter((NOW - 60, 100, WEEK_RESET), (NOW - 30, 0, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               pace_line(meter((NOW - 60, True, WEEK_RESET)), NOW, WEEK_RESET)[0]),
+              (None, REFUSE, None, REFUSE, None, 0 + 1.5 * 100 / 3, None))
+        check("#500 r1 C5: a meter log that cannot be read says WHY, from the read",
+              "the meter log is unreadable: /m was not read within 1 s" in evaluate(cache(91), NOW, meter=None,
+                                                                                meter_why="/m was not read within 1 s")[1],
+              True)
         check("#500: last week's rows and future rows never set the line, and garbage lines are skipped",
               (pace_line(meter((NOW - 60, 85, WEEK_RESET - 7 * 86400)), NOW, WEEK_RESET),
                pace_line(meter((NOW + 600, 85, WEEK_RESET)), NOW, WEEK_RESET)[0],
@@ -846,6 +864,23 @@ def _self_test_body() -> int:
                 rc_line = main(["--cache", cp, "--meter", mp, "--now", str(NOW)], env={}, payload="")
             rc_none = main(["--cache", cp, "--meter", os.path.join(td, "absent"), "--now", str(NOW)],
                            env={}, payload="")
+        check("⭐ #500 r1 C2: the suite's HOME is redirected, so the DEFAULT meter path is absent for every case",
+              (os.environ.get("HOME") == fake_home, os.path.exists(os.path.expanduser(METER_LOG))), (True, False))
+        with tempfile.TemporaryDirectory() as home2:
+            os.makedirs(os.path.join(home2, ".claude", "meter"))
+            with open(os.path.join(home2, ".claude", "meter", "log.jsonl"), "w") as f:
+                f.write(m85)
+            with open(os.path.join(home2, "c.json"), "w") as f:
+                f.write(cache(91))
+            os.environ["HOME"] = home2
+            try:
+                buf2 = io.StringIO()
+                with contextlib.redirect_stdout(buf2):
+                    rc_default = main(["--cache", os.path.join(home2, "c.json"), "--now", str(NOW)], env={}, payload="")
+            finally:
+                os.environ["HOME"] = fake_home
+        check("⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use",
+              (rc_default, "today's pace line (92.5%)" in buf2.getvalue()), (RC[WARN], True))
         check("⭐ #500: main() reads --meter: 91% under a 92.5 line WARNS; with no meter log it REFUSES",
               (rc_line, "today's pace line (92.5%)" in buf.getvalue(), rc_none), (RC[WARN], True, RC[REFUSE]))
 

@@ -368,8 +368,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return _evaluate(text, now, missing, path, meter)\n    except Malformed as e:",
-        "        return _evaluate(text, now, missing, path, meter)\n    except ZeroDivisionError as e:"
+        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except ZeroDivisionError as e:"
       ]
     ],
     "expect": [
@@ -919,8 +919,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "evaluate(text, now, reason, cache_path, meter_text)",
-        "evaluate(text, now, reason, meter=meter_text)"
+        "evaluate(text, now, reason, cache_path, meter_text, meter_why)",
+        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why)"
       ]
     ],
     "expect": [
@@ -1449,8 +1449,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        " or r != resets or at > now:",
-        " or at > now:"
+        " or not 0 <= p <= 100 or r != resets or at > now:",
+        " or not 0 <= p <= 100 or at > now:"
       ]
     ],
     "expect": [
@@ -1462,8 +1462,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "is_number(r)) or r != resets or at > now:",
-        "is_number(r)) or r != resets:"
+        "or not 0 <= p <= 100 or r != resets or at > now:",
+        "or not 0 <= p <= 100 or r != resets:"
       ]
     ],
     "expect": [
@@ -1488,12 +1488,103 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text)",
+        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)",
         "    verdict, message = evaluate(text, now, reason, cache_path)"
       ]
     ],
     "expect": [
       "⭐ #500: main() reads --meter: 91% under a 92.5 line WARNS; with no meter log it REFUSES"
+    ]
+  },
+  {
+    "name": "#500 r1 X2: a negative meter reading is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or not 0 <= p <= 100 or r",
+        "or not p <= 100 or r"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop"
+    ]
+  },
+  {
+    "name": "#500 r1 C3: a meter reading over 100 is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "or not 0 <= p <= 100 or r",
+        "or not 0 <= p or r"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop"
+    ]
+  },
+  {
+    "name": "#500 r1 C3: a non-number meter reading is accepted",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if not (is_number(at) and is_number(p) and is_number(r)) or",
+        "if not (is_number(at) and is_number(r)) or"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 is skipped, so it cannot move the stop"
+    ]
+  },
+  {
+    "name": "#500 r1 C1: the default meter path is wrong",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "METER_LOG = os.path.join(\"~\", \".claude\", \"meter\", \"log.jsonl\")",
+        "METER_LOG = os.path.join(\"~\", \".claude\", \"meter\", \"log.json\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use"
+    ]
+  },
+  {
+    "name": "#500 r1 C1: the meter path's ~ is not expanded",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES)",
+        "read_regular(args.meter, METER_MAX_BYTES)"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use"
+    ]
+  },
+  {
+    "name": "#500 r1 C2: the suite reads the real HOME",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "tempfile.mkdtemp(prefix=\"usage-pace-home-\")\n    os.environ[\"HOME\"] = fake_home\n",
+        "tempfile.mkdtemp(prefix=\"usage-pace-home-\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r1 C2: the suite's HOME is redirected, so the DEFAULT meter path is absent for every case"
+    ]
+  },
+  {
+    "name": "#500 r1 C5: the read's reason is dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"the meter log is unreadable: {why}\" if why else ",
+        "\"\" if False else "
+      ]
+    ],
+    "expect": [
+      "#500 r1 C5: a meter log that cannot be read says WHY, from the read"
     ]
   }
 ]

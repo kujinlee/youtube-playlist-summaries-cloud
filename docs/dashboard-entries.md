@@ -18759,4 +18759,4 @@ limit.
 Backlog #500, `scripts/check-usage-pace.py`: `refuse_at(line)` = max(`REFUSE_AT` 90, min(97, line));
 `pace_line()` reads `~/.claude/meter/log.jsonl` (this window's rows; start% = the reading at local
 midnight); an unreadable meter falls back to 90 and says so; the self-test redirects `HOME` so no
-case reads the live meter. 291 self-test cases, 113 mutations.
+case reads the live meter. 295 self-test cases, 120 mutations.

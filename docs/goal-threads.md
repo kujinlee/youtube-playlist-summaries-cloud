@@ -105,6 +105,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · PR #472 · work follows the budget situation (TIGHT / AMPLE), reassessed at each weekly reset
 - bookkeeping · PR #473 · backlog #466 to backlog #468 filed: destructive commands measured, stale agents, AFK sleep stalls
 - fix · backlog #500 · new agents are refused at max(90%, today's pace line), never above 97%, so the reserve is spent as the reset nears
+- bookkeeping · backlog #501 · the usage guard should read only the tail of a large meter log (filed from backlog #500's round-1 review)
 
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
