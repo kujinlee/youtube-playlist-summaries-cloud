@@ -972,7 +972,8 @@ EXPECTED_MUTATIONS = {
     # non-object input. PR #440 r2: both retargeted onto `bounded_read`, the count unchanged.
     # ⟳ 51 -> 52 (PR #440 r3 C4): the CANNOT RUN message must carry the reader's reason.
     "scripts/check-closing-table.py": 52,
-    "scripts/gen-dashboard.py": 68,
+    # ⟳ 2026-11-03, backlog #470: 68 -> 70. the PR option link through key_link, and its un-nested text (+2).
+    "scripts/gen-dashboard.py": 70,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
     # all had one. ⚠ IT WAS NOT "the ONE generator with no manifest", which both round-1
@@ -1071,7 +1072,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #484 round-2 fold: 102 -> 112 — code spans by matching backtick runs, the cut at the FIRST
     # `Previously:` and its order after the strip (r2 X1/X2: four), a fate beside an unlisted PR (r2 X3),
     # and a later bold REOPENED cancelling a marker (r2 note: five). Five r1 entries were re-anchored.
-    "scripts/goal-tree.py": 112,
+    # ⟳ 2026-11-03, backlog #470: 112 -> 115. the PR-href mutation moved to page_markup.json (-1); four thread-id mutations (+4).
+    "scripts/goal-tree.py": 115,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1116,7 +1118,9 @@ EXPECTED_MUTATIONS = {
     # rebound onto the simplified lookup and the per-form notice rule; two added for the
     # one-notice user-message rule.
     "scripts/backfill-work-lines.py": 108,
-    "scripts/gen-goals-page.py": 25,
+    # ⟳ 2026-11-03, backlog #470: 25 -> 28. goal-card id, qualified backlog chip, PR link (+3).
+    # ⟳ 2026-11-03, backlog #470 review round 1: 28 -> 29. a chip naming a missing row is marked text (+1).
+    "scripts/gen-goals-page.py": 29,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
     # its own terms: seven of the ten revert a DECISION the renderer makes (which band a fragment
@@ -1127,7 +1131,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-27, backlog #381 — 10 -> 15. Five on the per-tag match: the raw cell read as one
     # tag, the first tag only, un-normalised `areas:`, a row listed once per tag, and `collect`
     # bypassing `match_rows` at its CALL SITE.
-    "scripts/gen-features-page.py": 15,
+    # ⟳ 2026-11-03, backlog #470 review round 1: 15 -> 16. a linked row's text keeps its keys as text,
+    # so no `<a>` nests in the row's `<a>` (+1).
+    "scripts/gen-features-page.py": 16,
     # ⟳ 2026-09-10, backlog #110 review round 4. A SEED, not a full manifest, and the reason is
     # measured: `gen-backlog-page.py` is 3,000 lines with 160 cases and had ZERO mutations, so
     # `--mutate .` never touched it and no machine had ever asked whether any of those cases could
@@ -1152,7 +1158,9 @@ EXPECTED_MUTATIONS = {
     # (unknown kind, `kind:` first, parent shape, must END the cell, one marker), missing kinds
     # reported, the three parent refusals, the marker stripped from the text, the card's kind, and
     # parse reading it.
-    "scripts/gen-backlog-page.py": 64,
+    # ⟳ 2026-11-03, backlog #470: 64 -> 65. the word diff keeps a key whole (+1).
+    # ⟳ 2026-11-03, backlog #470 review round 1: 65 -> 67. publish_rows: the rows that exist, and its warning (+2).
+    "scripts/gen-backlog-page.py": 67,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
@@ -1191,7 +1199,9 @@ EXPECTED_MUTATIONS = {
     # rule are REMOVED, so 6 entries are RETIRED WITH THEIR SUBJECT (per-state, `themed`, the
     # var-chain follow, the hex gate before contrast, `!important`, the ground). 2 added for
     # the literal-colour rule (prefix match, a var() admitted); 3 retargeted onto the new code.
-    "scripts/brief-compose.py": 45,
+    # ⟳ 2026-11-03, backlog #470 review round 2: 45 -> 46 — the tray markup is lifted CLOSED (a composed
+    # page left `#tray` open at `</body>`, outside the page subset).
+    "scripts/brief-compose.py": 46,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1202,7 +1212,34 @@ EXPECTED_MUTATIONS = {
     # checks back, which is the shape `check-ratchet-contract` refuses by name (R4).
     "scripts/check-group-claims.py": 11,
 
-    "scripts/page_markup.py": 14,
+    # ⟳ 2026-11-03, backlog #470: 14 -> 23. key_link / link_keys / link_html: nine new decision
+    # lines, incl. the PR-without-repo mutation MOVED here from goal-tree.json.
+    # ⟳ 2026-11-03, backlog #470 review round 1: 23 -> 36. link_html rebuilt on ONE html.parser tokenizer
+    # (stack across comments, exempt set, closing, the marked class, in_a, the open-at-end report,
+    # decoding, the raw tail), missing rows (no link, marked, scan's branch), the g- goal id,
+    # render_unlinked (+13).
+    # ⟳ 2026-11-03, backlog #470 review round 2: 36 -> 72. The SUPPORTED SUBSET (`subset_problems`): one
+    # entry per rule — token spans, the strict stack, void and foreign self-closing, every implied end
+    # tag modelled, raw text / RCDATA, table and select, comments, declarations, `;`-less references,
+    # the 3.12 AssertionError wrap, and link_html's refusal (+34); the real exempt stack (r2 5b) and the
+    # `;`-terminated decode piece (r2 7) (+2). Two rules only 3.12's parser reaches are driven on either
+    # Python by making the parser behave as 3.12's (the RCDATA set emptied; an AssertionError raised).
+    # ⟳ 2026-11-03, backlog #470 review round 3: 72 -> 79. A URL ending in half a reference (F1, +2), no link
+    # of any kind inside a link's text (F2 and its property, +2), the whole p-closer set, HTML whitespace
+    # and the button-scope list (F3, +3). The table-text anchor rebound to `x.strip(ASCII_WHITESPACE)`.
+    "scripts/page_markup.py": 79,
+    # ⟳ 2026-11-03, backlog #470: the key-link guard gets its manifest in the commit that creates it.
+    # ⟳ 2026-11-03, backlog #470 review round 1: 16 -> 30. rule 2 read from the syntax tree (self-test
+    # BODIES only, docstrings, `+` chains, unparseable files); rule 1 through the shared tokenizer; rules
+    # 1b (no <a> in an <a>), 4 (unique ids) and 5 (scripts parse, no node = CANNOT RUN). 7 old regex-era
+    # entries rebound or replaced; the AST prefilter (+14).
+    # ⟳ 2026-11-03, backlog #470 review round 2: 30 -> 39. Rule 0 read and its page excluded from the
+    # other rules (+2); rule 2 reads `%`, `.format` (positional, named), `"".join`, f-string constant
+    # parts, and a literal's parts are not reported again alone (+7).
+    # ⟳ 2026-11-03, backlog #470 review round 3: 39 -> 44. The generators' renderers property: a raise is
+    # reported, so is an <a> in an <a>, the corpus is seeded and holds the review's inputs, and every
+    # renderer in the table is read (+5).
+    "scripts/check-page-links.py": 44,
     # ⟳ 2026-09-01, backlog #78: 18 -> 23. The entry gate now answers TWO questions
     # instead of one — "does this branch owe an entry?" (unchanged) and "is the entry
     # it added well-formed?" (new, and previously fail-open on the entry-only branch,
@@ -4888,6 +4925,7 @@ def _self_test_body() -> int:
                                       "scripts/check-memory-index-budget.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
+                                      "scripts/check-page-links.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement

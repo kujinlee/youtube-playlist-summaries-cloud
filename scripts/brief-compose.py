@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 194 cases
+    python3 scripts/brief-compose.py --self-test  # 196 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -969,7 +969,14 @@ def extract_tray(html: str, fragment_css: str = "") -> tuple[str, str, str]:
             f"brief-compose: incomplete tray in source "
             f"(css={bool(css)} markup={bool(div)} script={idx >= 0 and end > idx})"
         )
-    return css, div.group(0), html[idx:end + len("</script>")]
+    # ⛔ THE LAZY MATCH STOPS ONE `</div>` SHORT on a tray whose inner div nests another (backlog #470,
+    # review round 2): `<div id="tray"><div class="in">…<div class="trow">…</div>\n</div>` ends at the
+    # trow's and the inner div's closes, so every composed page left `#tray` open at `</body>`, and the
+    # next compose lifted that truncated copy verbatim. Closing what the slice opened repairs a truncated
+    # source and a whole one alike, in ONE pass.
+    markup = div.group(0)
+    markup += "</div>" * (len(re.findall(r"<div\b", markup)) - markup.count("</div>"))
+    return css, markup, html[idx:end + len("</script>")]
 
 
 def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
@@ -1384,6 +1391,14 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     css, markup, script = extract_tray(good)
     case("extracts only tray CSS rules", "#tray{a:1}" in css and "body{d:4}" not in css)
     case("extracts the tray markup", markup.startswith('<div id="tray"'))
+    _nested = good.replace('<textarea id="qbox"></textarea>',
+                           '<textarea id="qbox"></textarea>\n  <div class="trow"><span></span>\n  </div>')
+    _m = extract_tray(_nested)[1]
+    case("a tray whose inner div nests another is extracted CLOSED, every div it opens (r2)",
+         _m.endswith("</div>") and _m.count("<div") == _m.count("</div>") == 3)
+    _m2 = extract_tray(_nested.replace("</div></div><script>", "</div><script>"))[1]
+    case("...and a TRUNCATED source tray, as composed pages carried it, is closed in one pass",
+         _m2.count("<div") == _m2.count("</div>") == 3)
     case("extracts the trailing script", "/questions" in script)
 
     # ⛔ THE FAILURE LINE IS A CONTRACT WITH ANOTHER PROGRAM, pinned here on the PRODUCER side

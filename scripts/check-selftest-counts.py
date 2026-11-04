@@ -286,6 +286,7 @@ POPULATION: frozenset[str] = frozenset({
     "gen-work-lines.py",
     "backfill-work-lines.py",
     "goal-tree.py",               # backlog #363, pinned on arrival
+    "check-page-links.py",        # backlog #470, pinned on arrival
     "regen-pages.py",             # backlog #363 / owner decision D3, pinned on arrival
     "page_chrome.py",
     "peer-sites.py",

@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 236 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 239 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1145,6 +1145,9 @@ def changes_from_versions(versions: Sequence[tuple[str, int, str]]) -> dict[int,
     return hist
 
 
+WORD_OR_KEY = re.compile(r"\b(?:backlog|PR) #\d+\S*|\S+")
+
+
 def word_diff(before: str, after: str) -> str:
     """Word-level diff as HTML — deletions struck through, insertions marked.
 
@@ -1153,7 +1156,9 @@ def word_diff(before: str, after: str) -> str:
     formatting for correctness, which is the right way round for something read only when someone
     already wants the detail."""
     import difflib
-    a, b = re.sub(r"[*`]", "", before).split(), re.sub(r"[*`]", "", after).split()
+    # A key (`PR #445`) is ONE token, so the diff never splits it across `<del>`/`<ins>` where no
+    # link can reach it (backlog #470: every key on a generated page is a link).
+    a, b = (WORD_OR_KEY.findall(re.sub(r"[*`]", "", t)) for t in (before, after))
     out = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag in ("delete", "replace"):
@@ -2869,6 +2874,27 @@ def _self_test_body() -> int:
     by = {r["num"]: r for r in rows}
 
     case("reads both tables, six-column and three-column", lambda: len(rows) == 4)
+
+    def _published(text):
+        """(the rows `publish_rows` tells page_markup exist, its warning) for a backlog holding `text`
+        (None: no file). `page_markup.ROWS` is restored, so no later case sees it."""
+        saved = page_markup.ROWS
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                if text is None:                # a checkout with no docs/ at all
+                    warn = publish_rows(pathlib.Path(tmp) / "not-a-checkout")
+                    return page_markup.ROWS, warn
+                (pathlib.Path(tmp) / "docs").mkdir()
+                (pathlib.Path(tmp) / "docs" / "backlog.md").write_text(text)
+                warn = publish_rows(pathlib.Path(tmp))
+                return page_markup.ROWS, warn
+        finally:
+            page_markup.use_rows(saved)
+
+    case("publish_rows: the rows THIS parser reads are the rows that exist (backlog #470)",
+         lambda: _published(SAMPLE) == (frozenset(r["num"] for r in rows), None))
+    case("publish_rows: an unreadable backlog WARNS and leaves every key linked, never an empty set",
+         lambda: (lambda got: got[0] is None and "NOT READ" in (got[1] or ""))(_published(None)))
     case("the three-column row is read against ITS header", lambda: by[9]["title"] == "Delta")
     case("a row whose width disagrees with its header RAISES", lambda: _raises(
         lambda: parse(["| # | Item | Status |", "|---|---|---|", "| 5 | x | y | z |"]), ShapeError))
@@ -3307,6 +3333,8 @@ def _self_test_body() -> int:
             out = pathlib.Path(tmp) / "page.html"
             saved_backlog, saved_hist = globals()["BACKLOG"], globals()["attach_history"]
             saved_argv, saved_home = sys.argv, os.environ.get("HOME")
+            saved_repo = page_markup.REPO      # `main` sets it (backlog #470); later cases expect None
+            saved_rows = page_markup.ROWS      # ...and the rows that exist, the same way
             buf = io.StringIO()
             try:
                 globals()["BACKLOG"] = src
@@ -3328,6 +3356,8 @@ def _self_test_body() -> int:
                 globals()["BACKLOG"] = saved_backlog
                 globals()["attach_history"] = saved_hist
                 sys.argv = saved_argv
+                page_markup.use_repo(saved_repo)
+                page_markup.use_rows(saved_rows)
                 if saved_home is None:
                     os.environ.pop("HOME", None)
                 else:
@@ -3838,6 +3868,8 @@ def _self_test_body() -> int:
     case("word_diff marks a deletion and an insertion",
          lambda: "<del>old</del>" in word_diff("the old text", "the new text")
          and "<ins>new</ins>" in word_diff("the old text", "the new text"))
+    case("word_diff keeps a key whole, so no <del>/<ins> splits it away from any link",
+         lambda: "<del>PR #445),</del> <ins>PR #445;</ins>" in word_diff("see PR #445), x", "see PR #445; x"))
     case("word_diff leaves untouched words unmarked",
          lambda: word_diff("same words here", "same words here") == "same words here")
     case("word_diff escapes html in BOTH sides",
@@ -4189,6 +4221,24 @@ def registry_anchors() -> set[str]:
     return set(mod.parse_registry((REPO / "docs" / "anchors.md").read_text()))
 
 
+def publish_rows(root: pathlib.Path = REPO) -> str | None:
+    """Tell `page_markup` which backlog rows exist, read by THIS parser — the rows this page gives an
+    `id="i<N>"` — so another page's `backlog #N` naming no row renders as marked text, never as a link
+    to nothing (backlog #470 review round 1: 13 dangling links, 9 rows that never existed).
+
+    -> None, or the warning to print when `docs/backlog.md` could not be read. Then every key links,
+    missing rows included, and `check-page-links.py` rule 3 reports any that dangle: loud, not lost.
+    """
+    try:
+        rows = parse((root / "docs" / "backlog.md").read_text().split("\n"))
+    except Exception as exc:  # noqa: BLE001 — reported, never swallowed: the caller prints it
+        page_markup.use_rows(None)
+        return (f"⚠ backlog rows NOT READ ({exc.__class__.__name__}: {exc}) — every backlog key "
+                "links, a missing row included")
+    page_markup.use_rows(r["num"] for r in rows)
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT,
@@ -4198,6 +4248,8 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
+    # Every `PR #N` this page renders links to GitHub (backlog #470); no GitHub remote -> plain text.
+    page_markup.use_repo(page_markup.origin_repo(REPO))
 
     def git(*a: str) -> str:
         return subprocess.run(["git", "-C", str(REPO), *a],
@@ -4213,6 +4265,8 @@ def main() -> int:
     try:
         text = BACKLOG.read_text()
         rows = parse(text.splitlines(), unread=unread)
+        # A `backlog #N` naming no row is marked text, not a link to nothing (backlog #470).
+        page_markup.use_rows(r["num"] for r in rows)
         bad_parents = parent_errors(rows, registry_anchors())
         if bad_parents:
             raise ShapeError("; ".join(bad_parents))
@@ -4225,6 +4279,8 @@ def main() -> int:
                          page_chrome.provenance(
                              _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), REPO),
                          unread=unread)
+        # Every key left as TEXT by whichever path rendered it becomes a link (backlog #470).
+        fragment = page_markup.link_html(fragment, page_markup.REPO)
         page_chrome.assert_wired(fragment, "gen-backlog-page.py")
     except ShapeError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)

@@ -273,5 +273,57 @@
       ]
     ],
     "expect": "front matter is NOT counted as an amendment"
-  }
+  },
+  {
+    "name": "a goal card loses its id, so /goals#<slug> links dangle",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    parts = [f'<article class=\"goal{quiet}\" id=\"{esc(page_markup.goal_id(a[\"slug\"]))}\">',",
+        "    parts = [f'<article class=\"goal{quiet}\">',"
+      ]
+    ],
+    "expect": [
+      "a goal card carries its slug as its id, the target of /goals#<slug>"
+    ]
+  },
+  {
+    "name": "the backlog chip is a bare #N again",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "f'backlog #{esc(str(num))} · {esc(rel)}</a>')",
+        "f'#{esc(str(num))} · {esc(rel)}</a>')"
+      ]
+    ],
+    "expect": [
+      "a backlog chip is a QUALIFIED link to its row, never a bare #N"
+    ]
+  },
+  {
+    "name": "a thread's PR is never a link",
+    "file": "scripts/gen-goals-page.py",
+    "edits": [
+      [
+        "    return page_markup.key_html(kind, n, esc(f\"{kind} #{n}\"), page_markup.REPO)",
+        "    return esc(f\"{kind} #{n}\")"
+      ]
+    ],
+    "expect": [
+      "a PR in a thread links to GitHub when the repo is known"
+    ]
+  },
+ {
+  "name": "a backlog chip naming a missing row loses its marker, so it reads as a real row",
+  "file": "scripts/gen-goals-page.py",
+  "edits": [
+   [
+    "                parts.append(f'<span class=\"chip {page_markup.MISSING_CLASS}\" title=\"no such backlog row\">'",
+    "                parts.append(f'<span class=\"chip\">'"
+   ]
+  ],
+  "expect": [
+   "a backlog chip naming a row that does not exist is marked text, never a link"
+  ]
+ }
 ]

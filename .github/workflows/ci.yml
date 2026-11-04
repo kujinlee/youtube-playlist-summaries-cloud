@@ -806,6 +806,19 @@ jobs:
       - name: page_chrome self-test
         run: python3 scripts/page_chrome.py --self-test
 
+      # One link function for every key (backlog #470). `--sources` is rule 2: no href to a key's
+      # home page is built in scripts/ outside page_markup.key_link. The page rules (1, 1b, 3, 4, 5)
+      # read BUILT pages: `--build --ci` builds the four a checkout can build (dashboard, goals and
+      # features as fragments, the backlog table whole) from the real docs, and checks them. The
+      # goal-tree page renders from the local goal-tree log, which CI does not have: NOT RUN here,
+      # said so in the step's output, and run locally with `--build`. Needs node (rule 5), set up above.
+      - name: check-page-links self-test
+        run: python3 scripts/check-page-links.py --self-test
+      - name: check-page-links (one link function)
+        run: python3 scripts/check-page-links.py --sources
+      - name: check-page-links (built pages, what a checkout can build)
+        run: python3 scripts/check-page-links.py --build --ci
+
       # ── The project dashboard: the page, its grammar, and the gate that feeds it ──
       #
       # A person who was away reads this page instead of the transcript. It is only worth
