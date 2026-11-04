@@ -343,8 +343,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "wake an agent, are REFUSED (at {pct(stop)});",
-        "wake an agent, are REFUSED (at {pct(stop)}; override: {OVERRIDE_ENV}=1);"
+        "wake an agent, are REFUSED (at {pct_up(stop)});",
+        "wake an agent, are REFUSED (at {pct_up(stop)}; override: {OVERRIDE_ENV}=1);"
       ]
     ],
     "expect": [
@@ -1366,17 +1366,18 @@
     ]
   },
   {
-    "name": "#500: days after today are whole days, not fractional",
+    "name": "#500: the reset's time of day is dropped, so days are whole days",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "(resets - nxt) / 86400)",
-        "(resets - nxt) // 86400)"
+        " + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)",
+        " + 0)"
       ]
     ],
     "expect": [
       "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
-      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
+      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
+      "⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end"
     ]
   },
   {
@@ -1393,17 +1394,16 @@
     ]
   },
   {
-    "name": "#500: the days are counted from NOW, not from the coming midnight",
+    "name": "#500 r3 C2/C3: the days are counted in SECONDS between midnights, so a DST day is 23/24 or 25/24",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "max(0.0, (resets - nxt)",
-        "max(0.0, (resets - now)"
+        "    whole = (datetime.date(b.tm_year, b.tm_mon, b.tm_mday) - datetime.date(a.tm_year, a.tm_mon, a.tm_mday)).days - 1\n",
+        "    whole = (local_midnight(resets) - local_midnight(now)) / 86400 - 1\n"
       ]
     ],
     "expect": [
-      "⭐ #500: the reserve rises at local midnight — 23:59 Thu keeps 2 days, 00:00 Fri keeps 1",
-      "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
+      "⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end"
     ]
   },
   {
@@ -1613,6 +1613,45 @@
     ],
     "expect": [
       "⭐ #500: the message states the stop's reserve, and names the line as a guide"
+    ]
+  },
+  {
+    "name": "#500 r3 C7: days after today can go negative",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return max(0.0, whole + ",
+        "return (0.0 + whole + "
+      ]
+    ],
+    "expect": [
+      "#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)"
+    ]
+  },
+  {
+    "name": "#500 r3 C1: the blank-line skip is removed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if '\"seven_day\"' not in line:  #",
+        "        if False:  #"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)"
+    ]
+  },
+  {
+    "name": "#500 r3 C5: the WARN message shows the stop rounded DOWN",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "f\"{pct_up(stop)} new spawns",
+        "f\"{pct(stop)} new spawns"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 r3 C5: the stop is shown rounded UP — 94.55% under a 94.58 stop warns 'at 94.6%'"
     ]
   }
 ]

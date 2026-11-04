@@ -141,10 +141,11 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 299 cases
+    python3 scripts/check-usage-pace.py --self-test  # 302 cases
 """
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import os
@@ -223,6 +224,13 @@ def pct(p: float) -> str:
     return f"{whole}%" if frac[:1] in ("", "0") else f"{whole}.{frac[:1]}%"
 
 
+def pct_up(p: float) -> str:
+    """A STOP for a message, rounded UP to 0.1, so the text never names a stop the verdict has not reached
+    (r3 C5: at 94.55% under a 94.58 stop, `pct` showed "94.5%" in a WARN that did not refuse)."""
+    shown = pct(p)
+    return shown if float(shown[:-1]) >= p else f"{(round(float(shown[:-1]) * 10) + 1) / 10:g}%"
+
+
 def count(x: float) -> str:
     """A count for a message, kept short when a hostile epoch makes it astronomical."""
     return f"{x:.0f}" if abs(x) < 1e7 else f"{x:.3g}"
@@ -278,6 +286,8 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tup
     midnight = local_midnight(now)
     before = after = None
     for line in text.splitlines():
+        if '"seven_day"' not in line:  # every row carries it; a C-speed skip of blank and garbage lines (r3 C1)
+            continue
         try:
             row = parse_json(line)
             w = row["rate_limits"]["seven_day"]
@@ -299,11 +309,13 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tup
 
 
 def days_after_today(now: float, resets: float) -> float:
-    """The days from the coming local midnight to the reset, fractional, never negative (0 on the last day).
-    The next midnight comes from `mktime` with the day + 1, which normalises month ends and DST days."""
-    lt = time.localtime(now)
-    nxt = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday + 1, 0, 0, 0, 0, 0, -1))
-    return max(0.0, (resets - nxt) / 86400)
+    """The days from the coming local midnight to the reset, never negative (0 on the last day): the CALENDAR
+    days between tomorrow and the reset's date, plus the reset's wall-clock time as a fraction of a day (a 02:00
+    reset adds 1/12). Counted in dates, not seconds, so a day with a DST change is one day, not 23/24 or 25/24
+    (r3 C2/C3), and no `isdst` guess can move the stop."""
+    a, b = time.localtime(now), time.localtime(resets)
+    whole = (datetime.date(b.tm_year, b.tm_mon, b.tm_mday) - datetime.date(a.tm_year, a.tm_mon, a.tm_mday)).days - 1
+    return max(0.0, whole + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)
 
 
 def refuse_at(now: float, resets: float) -> float:
@@ -374,11 +386,11 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                  else f" Today's pace line cannot be read ({why}): treat it as NOT RUN." if why else "")
     if weekly >= stop:
         return REFUSE, (f"⛔ usage pace: weekly usage is {pct(weekly)} — new subagent spawns, and messages that "
-                        f"wake an agent, are REFUSED (at {pct(stop)}); work in flight continues, and a "
+                        f"wake an agent, are REFUSED (at {pct_up(stop)}); work in flight continues, and a "
                         f"subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if weekly >= WARN_AT:
         return WARN, (f"⚠ usage pace: weekly usage is {pct(weekly)} (WARN at {pct(WARN_AT)}; at "
-                      f"{pct(stop)} new spawns and agent wake-ups are refused). "
+                      f"{pct_up(stop)} new spawns and agent wake-ups are refused). "
                       f"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if five_note:
         return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{five_note}"
@@ -429,7 +441,8 @@ def read_payload(limit: int = PAYLOAD_MAX_BYTES, deadline: float = READ_DEADLINE
     `os.read`, not `sys.stdin.buffer`: a daemon thread blocked inside the buffered reader holds its lock, and
     the interpreter's shutdown then aborts on it (`could not acquire lock for <stdin>`) with no deny printed.
     With the cache read and the meter-log read (made only after a cache read succeeds), the hook's worst case
-    is three deadlines."""
+    is three deadlines for the READS, plus the meter log's parse: MEASURED 1.8 s for a 4 MiB log whose every line
+    carries `"seven_day"` and fails to parse, the worst the r3 C1 skip leaves (blank lines: 0.2 s, was 19.3)."""
     box: list = []
 
     def take() -> None:
@@ -825,6 +838,20 @@ def _self_test_body() -> int:
               (refuse_at(NOW - 60, NOW + 2 * 86400), refuse_at(NOW, NOW + 2 * 86400)), (90.0, 95.0))
         check("#500: days_after_today is never negative, and fractional (a 02:00 reset leaves 2 h of tomorrow's day)",
               (days_after_today(NOW, NOW + 3600), days_after_today(NOW, NOW + 86400 + 7200)), (0.0, 7200 / 86400))
+        def lt(*ymdh):  # a local time in the suite's PST8PDT zone
+            return time.mktime((*ymdh, 0, 0, 0, 0, -1))
+        check("⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end",
+              (refuse_at(lt(2026, 10, 31, 12), lt(2026, 11, 2, 0)), refuse_at(lt(2026, 3, 7, 12), lt(2026, 3, 9, 0)),
+               refuse_at(lt(2026, 7, 10, 0), lt(2026, 7, 13, 0)), refuse_at(lt(2026, 7, 31, 10), lt(2026, 8, 3, 2))),
+              (95.0, 95.0, 90.0, 100 - 5 * (2 + 2 / 24)))
+        check("⭐ #500 r3 C5: the stop is shown rounded UP — 94.55% under a 94.58 stop warns 'at 94.6%'",
+              (evm(cache(94.55, week_reset=NOW + 2 * 86400 + 7200), m85)[0],
+               "at 94.6% new spawns" in evm(cache(94.55, week_reset=NOW + 2 * 86400 + 7200), m85)[1],
+               pct_up(90.0), pct_up(97.0), pct_up(94.5000001)), (WARN, True, "90%", "97%", "94.6%"))
+        t0 = time.monotonic()
+        blank_line = pace_line("\n" * (METER_MAX_BYTES - 1), NOW, WEEK_RESET)
+        check("⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)",
+              (blank_line[0], time.monotonic() - t0 < 2.0), (None, True))
         check("⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter",
               [evm(cache(89.9), m)[0] + "/" + evm(cache(90), m)[0]
                for m in (m85, meter((NOW - 60, 20, WEEK_RESET)), None, meter((NOW - 60, 99, WEEK_RESET)))],
