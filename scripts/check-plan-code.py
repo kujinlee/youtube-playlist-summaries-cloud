@@ -1076,7 +1076,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-04, backlog #497: 115 -> 130 — merge time (blank/unread, zone, latest-of-several, git and gh reads: 5),
     # the buckets (48 h edge, unread age, parked: 3), parked not in flight and landed-parked grouping (2), and the
     # folds (nothing folds, text lists leaves, goal not folded, fold drawn open, page bucketed at snapshot time: 5).
-    "scripts/goal-tree.py": 130,
+    # ⟳ same day, the owner's 01:14 request (numbered goal blocks): 130 -> 135 — numbering origin, the text's
+    # number, anchors on past trees, the folded goal's heading, the heading colour.
+    "scripts/goal-tree.py": 135,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

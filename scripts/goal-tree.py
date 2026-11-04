@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 239 cases
+    python3 scripts/goal-tree.py --self-test                 # 246 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -904,12 +904,18 @@ def _leaf(t: dict, b: str, rel: bool = False) -> str:
             + f'{t["key"].split(" · ", 1)[1]} · {t["what"]} — {t["detail"]}')
 
 
-def _goal_blocks(g: dict, at) -> list:
-    """PURE. One goal as blocks (see `tree_blocks`). The visible buckets keep the relation branches; `older` and
-    `later` become one FOLD each, a last sibling whose text line counts what the page folds away."""
-    first, rest = g["requests"][0], g["requests"][1:]
-    lines = [f'GOAL {g["slug"]} ({first["when"]}) "{first["quote"]}"']
-    lines += [f'     + {r["when"]} "{r["quote"]}"' for r in rest]
+def goal_head(n: int, slug: str) -> str:
+    """PURE. A goal's numbered title, `GOAL 3 · slug` — ONE spelling for --print, the page heading and its anchor."""
+    return f"GOAL {n} · {slug}"
+
+
+def _goal_blocks(g: dict, at, n: int) -> list:
+    """PURE. Goal number `n` as ONE `("goal", n, slug, first_request, counts, blocks)` block (see `tree_blocks`).
+    The visible buckets keep the relation branches; `older` and `later` become one FOLD each, a last sibling whose
+    text line counts what the page folds away. `counts` is set only when NOTHING is current: the page then folds
+    the whole goal under its heading."""
+    rest = g["requests"][1:]
+    lines = [f'     + {r["when"]} "{r["quote"]}"' for r in rest]
     marked = [(t, bucket(t, at)) for t in g["threads"]]
     shown = [(t, b) for t, b in marked if b in VISIBLE]
     folds = []
@@ -937,11 +943,11 @@ def _goal_blocks(g: dict, at) -> list:
     for fi, (cls, summary, text, ts, b) in enumerate(folds):
         stem = "└─ " if len(rels) + fi == n_items - 1 else "├─ "
         blocks.append(("fold", cls, stem + summary, stem + text, [("pre", [_leaf(t, b, rel=True) for t in ts])]))
+    counts = None
     if g["threads"] and not shown:
-        # Nothing current: the WHOLE goal folds on the page, its counts in the summary; the text is unchanged.
-        counts = ", ".join(f"{len(f[3])} {f[0]}" for f in folds)
-        blocks = [("fold", "goal", f'GOAL {g["slug"]} — nothing current ({counts})', None, blocks)]
-    return blocks + [("pre", [""])]
+        # Nothing current: the WHOLE goal folds on the page, its counts beside its heading; the text is unchanged.
+        counts = "nothing current (" + ", ".join(f"{len(f[3])} {f[0]}" for f in folds) + ")"
+    return [("goal", n, g["slug"], g["requests"][0], counts, blocks), ("pre", [""])]
 
 
 def tree_blocks(snap: dict, at=None) -> list:
@@ -951,8 +957,10 @@ def tree_blocks(snap: dict, at=None) -> list:
     `at` is the moment the tree is drawn (default: the snapshot's own time), and decides only the buckets."""
     at = snap["at"] if at is None else at
     blocks: list = []
-    for g in snap["goals"]:
-        blocks += _goal_blocks(g, at)
+    # ⭐ The owner, 2026-11-04 01:14: goals are NUMBERED so they can be found. The number is the goal's place in
+    # docs/goal-threads.md (1-based) — never its place among the shown ones — so it is stable whatever folds.
+    for n, g in enumerate(snap["goals"], 1):
+        blocks += _goal_blocks(g, at, n)
     lines: list[str] = []
     if snap["undeclared"]:
         lines.append("UNDECLARED — open PRs no goal names (shown, never folded in)")
@@ -1009,6 +1017,9 @@ def _flat(blocks: list) -> list[str]:
     for b in blocks:
         if b[0] == "pre":
             out += b[1]
+        elif b[0] == "goal":
+            _, n, slug, first, _counts, inner = b
+            out += [f'{goal_head(n, slug)} ({first["when"]}) "{first["quote"]}"'] + _flat(inner)
         else:
             out += [b[3]] if b[3] is not None else _flat(b[4])
     return out
@@ -1142,12 +1153,30 @@ def _html_line(line: str, repo: str | None, ids: set | None = None) -> str:
     return "".join(out)
 
 
+def _goal_html(b: tuple, repo, seen) -> str:
+    """One goal as its own bordered `<section>`, headed `GOAL n · slug` in the heading colour (owner, 2026-11-04
+    01:14). A goal with nothing current keeps that heading as the summary of a CLOSED `<details>`."""
+    _, n, slug, first, counts, inner = b
+    anchor = f' id="goal-{n}"' if seen is not None else ""
+    head = (f'<h3 class="goal-h"><span class="goal-n">GOAL {n} ·</span> '
+            f'<span class="goal-slug">{html.escape(slug)}</span></h3>')
+    quote = (f'<p class="goal-q"><time>{html.escape(first["when"])}</time> '
+             f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>')
+    body = _blocks_html(inner, repo, seen)
+    if counts is not None:
+        return (f'<section class="goal"{anchor}><details class="fold goal"><summary>{head}'
+                f'<span class="goal-counts"> — {html.escape(counts)}</span></summary>{quote}{body}</details></section>')
+    return f'<section class="goal"{anchor}>{head}{quote}{body}</section>'
+
+
 def _blocks_html(blocks: list, repo, seen) -> str:
     out = []
     for b in blocks:
         if b[0] == "pre":
-            if b[1]:
+            if any(ln for ln in b[1]):      # a blank separator line is the section border's job on the page
                 out.append('<pre class="tree">' + "\n".join(_html_line(ln, repo, seen) for ln in b[1]) + "</pre>")
+        elif b[0] == "goal":
+            out.append(_goal_html(b, repo, seen))
         else:
             out.append(f'<details class="fold {b[1]}"><summary>{_html_line(b[2], repo)}</summary>'
                        + _blocks_html(b[4], repo, seen) + "</details>")
@@ -1212,15 +1241,15 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
 
 CSS = """
 :root{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;--ink-faint:#838a9b;
-      --rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;
+      --rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;--accent:#8a5a2b;
       --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
       --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 @media (prefers-color-scheme:dark){:root{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;
-      --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee}}
+      --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee;--accent:#cb9a68}}
 :root[data-theme="dark"]{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;--ink-soft:#b4bac9;
-      --ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee}
+      --ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee;--accent:#cb9a68}
 :root[data-theme="light"]{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;
-      --ink-faint:#838a9b;--rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8}
+      --ink-faint:#838a9b;--rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;--accent:#8a5a2b}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.5}
 main{max-width:72rem;margin:0 auto;padding:2rem 1rem}
 h1{font-size:2rem;margin:.2rem 0 1rem}
@@ -1229,13 +1258,20 @@ h2{font-size:1.15rem;margin:1.6rem 0 .5rem}
 .lede{color:var(--ink-soft);max-width:70ch}
 .warn{color:var(--pending);font-weight:600}
 a{color:var(--link)}
-div.tree{background:var(--card);border:1px solid var(--rule);border-radius:.5rem;padding:.9rem 1.1rem;
-         overflow-x:auto}
+div.tree{overflow-x:auto}
+div.tree>pre.tree,section.goal{background:var(--card);border:1px solid var(--rule);border-radius:.5rem;
+         padding:.7rem 1.1rem .9rem;margin:0 0 1rem}
+h3.goal-h{margin:.1rem 0 .3rem;color:var(--accent);font-family:var(--ui);font-weight:600;font-size:1rem;
+         display:inline-block}
+h3.goal-h .goal-slug{font-size:1.4rem;font-weight:700}
+.goal-q{margin:0 0 .5rem;color:var(--ink-soft);font-size:.85rem;max-width:none}
+.goal-q time{font-family:var(--mono);font-size:.75rem;color:var(--ink-faint)}
+details.fold.goal>summary{white-space:normal;font-family:var(--ui);font-size:.9rem}
+.goal-counts{color:var(--ink-faint)}
 pre.tree{margin:0;font-family:var(--mono);font-size:.78rem;line-height:1.55;white-space:pre}
 details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);
          white-space:pre}
 details.fold pre.tree{padding-left:3ch;color:var(--ink-soft)}
-details.fold.goal summary{color:var(--ink-soft)}
 details.fold.goal pre.tree{padding-left:0}
 details.snap{border-bottom:1px solid var(--rule);padding:.35rem 0}
 details.snap summary{cursor:pointer;font-size:.9rem}
@@ -1440,7 +1476,7 @@ def _self_test_body() -> int:
 
     def every_line(blocks):
         """Every line of a tree's blocks, the CONTENTS of each fold included (what the page holds, open or not)."""
-        return [ln for bk in blocks for ln in (bk[1] if bk[0] == "pre" else every_line(bk[4]))]
+        return [ln for bk in blocks for ln in (bk[1] if bk[0] == "pre" else every_line(bk[-1]))]
 
     def one(t, s):
         return derive_thread(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n' + t)[0]["threads"][0], s)
@@ -1750,7 +1786,7 @@ def _self_test_body() -> int:
     _bt = tree_lines(_bsnap)
     case("⛔ backlog #497: --print shows now, recent, queued and parked leaves, labelled, and folds the rest to counts",
          _bt[:11],
-         ['GOAL mix (2026-11-01 00:00) "q"',
+         ['GOAL 1 · mix (2026-11-01 00:00) "q"',
           "├─ fix",
           "│  ├─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
           "│  └─ ✅ PR #20 · new merge — merged 11-05 08:00 · aaaa111",
@@ -1760,14 +1796,14 @@ def _self_test_body() -> int:
           "├─ … 2 older merged or closed (collapsed on the page)",
           "└─ … 1 later (collapsed on the page)",
           "",
-          'GOAL done (2026-10-01 00:00) "r"'])
+          'GOAL 2 · done (2026-10-01 00:00) "r"'])
     case("⛔ backlog #497: a goal with NOTHING current prints its header and its two counts only",
          _bt[11:13], ["├─ … 1 older merged (collapsed on the page)", "└─ … 1 later (collapsed on the page)"])
     case("⛔ backlog #497: the folded leaves are NOT in the text — the count stands for them",
          [any(w in ln for ln in _bt) for w in ("old merge", "shut", "unplanned", "ancient", "someday")], [False] * 5)
     case("⭐ backlog #497: the bucket moves with the DRAWING time, not the snapshot — the same tree drawn 3 days on",
          tree_lines(_bsnap, "2026-11-08 19:09")[:5],
-         ['GOAL mix (2026-11-01 00:00) "q"', "├─ fix", "│  └─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
+         ['GOAL 1 · mix (2026-11-01 00:00) "q"', "├─ fix", "│  └─ ⏳ PR #21 · open one — PR #21 open · draft · clean · 1 pass",
           "├─ side", "│  ├─ ❌ queued · backlog #13 · waiting — no PR names it yet · waits on backlog #21 (declared)"])
     with tempfile.TemporaryDirectory() as d:
         _lp497 = pathlib.Path(d) / "log.jsonl"
@@ -1811,7 +1847,7 @@ def _self_test_body() -> int:
          "with nothing current",
          [(c, op, sm.split(" — ")[0]) for c, op, sm in _fp.folds],
          [("fold older", False, "├─ older (2)"), ("fold later", False, "└─ later (1)"),
-          ("fold goal", False, "GOAL done"), ("fold older", False, "├─ older (1)"),
+          ("fold goal", False, "GOAL 2 · done"), ("fold older", False, "├─ older (1)"),
           ("fold later", False, "└─ later (1)")])
     case("⛔ backlog #497 FAILS IF: a now, recent, queued or parked leaf is inside a closed fold",
          [w for w in ("open one", "new merge", "waiting", "parked one")
@@ -1829,14 +1865,52 @@ def _self_test_body() -> int:
     case("⭐ backlog #497: --print's tree is tree_lines at the SAME drawing time, and another time draws another tree",
          (render_text(_bsnap, "2026-11-08 19:09").endswith("\n".join(tree_lines(_bsnap, "2026-11-08 19:09"))),
           render_text(_bsnap, "2026-11-08 19:09") == render_text(_bsnap)), (True, False))
+    def folds_of(blocks):
+        """(goal number, fold class) of every fold, at any depth, and `goal` for a goal folded whole."""
+        out = []
+        for bk in blocks:
+            if bk[0] == "goal":
+                out += ([(bk[1], "goal")] if bk[4] else []) + [(bk[1], c) for _, c in folds_of(bk[5])]
+            elif bk[0] == "fold":
+                out.append((None, bk[1]))
+        return out
     case("backlog #497: tree_blocks folds by the drawing time it is given, and a tree with no old leaf folds nothing",
-         ([bk[1] for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "fold"],
-          [bk[1] for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "fold"],
-          [bk[0] for bk in tree_blocks(snap)]),
-         (["older", "later", "goal"], ["older", "later", "goal"], ["pre"]))
+         ([len(bk[5]) for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "goal"],
+          [len(bk[5]) for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "goal"],
+          folds_of(tree_blocks(snap)), folds_of(tree_blocks(_bsnap, "2026-11-08 19:09"))),
+         ([3, 3], [3, 3], [], [(1, "older"), (1, "later"), (2, "goal"), (2, "older"), (2, "later")]))
     case("backlog #497: the folded tree emits thread ids only when asked, inside a fold too",
          ('id="t-pr-24"' in render_tree_html(_bsnap, ids=True, at="2026-11-08 19:09"),
           "id=" in render_tree_html(snap, at="2026-10-28 04:00")), (True, False))
+    # ── the owner, 2026-11-04 01:14: each GOAL its own block, numbered, the slug in the heading colour ─────────
+    case("⛔ goal blocks: --print numbers each goal by its place in docs/goal-threads.md, `GOAL n · slug`",
+         [ln for ln in tree_lines(snap) if ln.startswith("GOAL ")],
+         ['GOAL 1 · alpha-one (2026-10-26 09:51) "do the first thing"', 'GOAL 2 · beta (2026-10-28 03:41) "the second goal"'])
+    _live = render_tree_html(_bsnap, ids=True, at="2026-11-05 19:09")
+    case("⛔ goal blocks: every goal is its OWN section with its anchor, in declaration order (the live tree)",
+         re.findall(r'<section class="goal"( id="[^"]*")?>', _live), [' id="goal-1"', ' id="goal-2"'])
+    case("goal blocks: a past tree's sections carry no anchor, so the page's ids stay unique",
+         re.findall(r'<section class="goal"( id="[^"]*")?>', render_tree_html(_bsnap, at="2026-11-05 19:09")), ["", ""])
+    case("⛔ goal blocks: the heading is `GOAL n ·` and the slug, the slug in its own span; the page and --print "
+         "name the same goals with the same numbers",
+         [f"{n} {sl}" for n, sl in re.findall(r'<span class="goal-n">GOAL (\d+) ·</span> <span class="goal-slug">([^<]+)</span>',
+                                             _live)],
+         [ln.split(" (", 1)[0].replace("GOAL ", "").replace(" · ", " ") for ln in _bt if ln.startswith("GOAL ")])
+    case("⛔ goal blocks: a goal with nothing current keeps its NUMBERED heading as its closed fold's summary",
+         re.search(r'<section class="goal" id="goal-2"><details class="fold goal"><summary><h3 class="goal-h">'
+                   r'<span class="goal-n">GOAL 2 ·</span> <span class="goal-slug">done</span></h3>'
+                   r'<span class="goal-counts"> — nothing current \(1 older, 1 later\)</span></summary>', _live) is not None,
+         True)
+    _quiet = dict(_bsnap, goals=[dict(g, threads=[t for t in g["threads"]
+                                                  if bucket(t, "2026-12-30 00:00") in ("older", "later")])
+                                 for g in _bsnap["goals"]])
+    case("⭐ goal blocks: the number is STABLE — goal 2 is goal 2 whether goal 1 is open or folded whole",
+         [re.findall(r'<section class="goal" id="goal-(\d)">(<details)?', render_tree_html(sn, ids=True, at=a))
+          for sn, a in ((_bsnap, "2026-11-05 19:09"), (_quiet, "2026-12-30 00:00"))],
+         [[("1", ""), ("2", "<details")], [("1", "<details"), ("2", "<details")]])
+    case("goal blocks: the heading colour is the common look's --accent (gold), declared in all four palettes",
+         ("h3.goal-h{" in CSS and "color:var(--accent)" in CSS.split("h3.goal-h{", 1)[1].split("}", 1)[0],
+          CSS.count("--accent:#8a5a2b"), CSS.count("--accent:#cb9a68")), (True, 2, 2))
     _np = render_page([_bsnap], "2026-11-05 19:09")
     case("backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run",
          ('<details class="fold older"><summary>├─ older (2)' in _np,
@@ -2135,9 +2209,9 @@ def _self_test_body() -> int:
     txt = "\n".join(tree_lines(snap))
     case("--print leads with the NEEDS YOU block, then the tree",
          [ln.split(" — ")[0] for ln in render_text(snap).splitlines()[:3]],
-         ["NEEDS YOU", "", 'GOAL alpha-one (2026-10-26 09:51) "do the first thing"'])
+         ["NEEDS YOU", "", 'GOAL 1 · alpha-one (2026-10-26 09:51) "do the first thing"'])
     case("the tree's root is the goal's own words, quoted, with its time",
-         txt.splitlines()[0], 'GOAL alpha-one (2026-10-26 09:51) "do the first thing"')
+         txt.splitlines()[0], 'GOAL 1 · alpha-one (2026-10-26 09:51) "do the first thing"')
     case("each relation is a branch, and the last one closes with └─",
          [ln for ln in txt.splitlines()[:8] if ln.startswith(("├─", "└─"))], ["├─ fix", "└─ side"])
     case("a leaf carries its glyph, refs, what and derived detail",
@@ -2343,7 +2417,7 @@ def _self_test_body() -> int:
         case("main logs a first snapshot, then declines an unchanged one",
              (rcs, said.count("snapshot logged"), "unchanged since the newest snapshot" in said),
              ([0, 0], 1, True))
-        case("--print prints the tree it just derived", 'GOAL alpha-one (2026-10-26 09:51)' in said, True)
+        case("--print prints the tree it just derived", 'GOAL 1 · alpha-one (2026-10-26 09:51)' in said, True)
         case("main wrote the page", out.is_file() and "<h1>Goal tree</h1>" in out.read_text(), True)
         run, _ = fake([(["git", "fetch"], (128, "offline"))] + ok[1:])
         buf = io.StringIO()

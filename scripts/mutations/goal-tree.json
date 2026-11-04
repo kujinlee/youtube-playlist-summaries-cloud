@@ -1697,5 +1697,70 @@
     "expect": [
       "backlog #497: collect reads gh's mergedAt for a PR off master's log, as a local minute"
     ]
+  },
+  {
+    "name": "goal blocks: goals are numbered from 0, not by their 1-based place in the threads file",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for n, g in enumerate(snap[\"goals\"], 1):",
+        "    for n, g in enumerate(snap[\"goals\"]):"
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: --print numbers each goal by its place in docs/goal-threads.md, `GOAL n · slug`"
+    ]
+  },
+  {
+    "name": "goal blocks: --print's goal line drops its number",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return f\"GOAL {n} · {slug}\"",
+        "    return f\"GOAL {slug}\""
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: --print numbers each goal by its place in docs/goal-threads.md, `GOAL n · slug`"
+    ]
+  },
+  {
+    "name": "goal blocks: a past tree's goal sections carry anchors too, so the page's ids collide",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    anchor = f' id=\"goal-{n}\"' if seen is not None else \"\"",
+        "    anchor = f' id=\"goal-{n}\"'"
+      ]
+    ],
+    "expect": [
+      "goal blocks: a past tree's sections carry no anchor, so the page's ids stay unique"
+    ]
+  },
+  {
+    "name": "goal blocks: a goal folded whole loses its numbered heading from the summary",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return (f'<section class=\"goal\"{anchor}><details class=\"fold goal\"><summary>{head}'",
+        "        return (f'<section class=\"goal\"{anchor}><details class=\"fold goal\"><summary>'"
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: a goal with nothing current keeps its NUMBERED heading as its closed fold's summary"
+    ]
+  },
+  {
+    "name": "goal blocks: the heading takes the link colour, not the common look's --accent",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "h3.goal-h{margin:.1rem 0 .3rem;color:var(--accent);",
+        "h3.goal-h{margin:.1rem 0 .3rem;color:var(--link);"
+      ]
+    ],
+    "expect": [
+      "goal blocks: the heading colour is the common look's --accent (gold), declared in all four palettes"
+    ]
   }
 ]
