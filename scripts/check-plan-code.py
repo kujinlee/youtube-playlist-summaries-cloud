@@ -303,17 +303,21 @@ HARNESS_TREE = (
 #   2. the changed-file list is undetermined ......................... the WHOLE manifest
 #   3. a harness file (`harness_files`: this script, the modules it
 #      imports, the workflow that runs it) ........................... the WHOLE manifest
-#   4. outside every `HARNESS_TREE` root — it is never staged, so no suite can read it: nothing
-#   5. a target, or `scripts/mutations/<stem>.json` .................. that manifest
+#   4. `package.json` / `package-lock.json` (`DEPENDENCY_MANIFESTS`) — they change the staged
+#      `node_modules/typescript` without changing any staged path (r1 C3) .. the WHOLE manifest
+#   5. outside every `HARNESS_TREE` root — it is never staged, so no suite can read it: nothing
+#   6. a target, or `scripts/mutations/<stem>.json` .................. that manifest
 #      (a manifest whose target does not exist ....................... the WHOLE manifest)
-#   6. every target whose source NAMES the path (full path, file name, or import name), and
-#      every target QUOTING a directory between the path and its staged root
+#   7. every target whose source NAMES the path (full path, file name, import name, or the
+#      QUOTED stem a hyphenated sibling is loaded by — r1 X1), every target that IMPORTS one of
+#      those modules, transitively (r1 C5), and every target QUOTING a directory between the path
+#      and its staged root — the root itself included, unless it is in `IMPORT_ROOTS` (r1 C2)
 #      (a path more than half the targets name is SHARED .............. the WHOLE manifest)
-#   7. none of the above: the targets quoting its staged ROOT; if none .. the WHOLE manifest
+#   8. none of the above: the targets quoting its staged ROOT; if none .. the WHOLE manifest
 #
 # ⚠ WHAT THIS DOES NOT SEE, AND WHY THE FULL SWEEP STAYS: "names" is a TEXT test. A suite that
-# reads a file without naming it or any directory above it (a bare walk of the repo root) is not
-# selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
+# reads a file without naming it or any directory above it (a bare walk of the repo root), or
+# that walks `scripts/` (an `IMPORT_ROOTS` root, reached by import name), is not selected by it — and backlog #109's orphaned anchor binds by text in ANOTHER manifest, which
 # only executing that manifest sees. So the full sweep still runs on every master push and on a
 # schedule, and a red one opens an issue (`ci.yml`, `mutation-sweep-complete`). The owner accepted
 # that such a defect is found after merge. What a scoped run does NOT give up: every whole-
@@ -324,6 +328,14 @@ HARNESS_TREE = (
 SWEEP_WORKFLOW = ".github/workflows/ci.yml"
 SWEEP_HARNESS = "scripts/check-plan-code.py"
 SHARED_FULL_FRACTION = 0.5
+# r1 C3: `node_modules/typescript` is staged but untracked, so no diff ever names a path under it;
+# it changes when one of these does. Exact repository paths, never a file name anywhere.
+DEPENDENCY_MANIFESTS = frozenset({"package.json", "package-lock.json"})
+# r1 C2: the staged root whose files a target reaches by IMPORT NAME (rule 7 and its closure),
+# not by walking it. Measured 2026-11-04: 54 of 87 targets quote `scripts`, nearly all to build the
+# path of one sibling, so treating every one as a walker would select ~54 for every script change.
+# A real walker of `scripts/` (`check-ratchet-contract`) is therefore seen only by the full sweep.
+IMPORT_ROOTS = frozenset({"scripts"})
 MANIFEST_PATH = re.compile(r"scripts/mutations/([^/]+)\.json")
 
 
@@ -355,19 +367,46 @@ def _quotes_dir(src: str, d: str) -> bool:
 
 
 def _names_of(path: str) -> set:
-    """The spellings a reader of `path` would carry: the path, its file name, and — for an
-    importable `scripts/` module — its import name."""
+    """The spellings a reader of `path` would carry: the path, its file name, and — for a
+    `scripts/` module — its import name, or its QUOTED stem when it is hyphenated (r1 X1: this
+    repository loads `gen-work-lines.py` as `_sibling("gen-work-lines")`, never by file name)."""
     base = path.rsplit("/", 1)[-1]
     out = {path, base}
-    if path.startswith("scripts/") and path.endswith(".py") and base[:-3].isidentifier():
-        out.add(base[:-3])
+    if path.startswith("scripts/") and path.endswith(".py"):
+        out |= _import_spellings(base[:-3]) | ({base[:-3]} if base[:-3].isidentifier() else set())
     return out
 
 
+def _import_spellings(stem: str) -> set:
+    """The spellings that IMPORT module `stem`: its stem quoted (`_sibling`, `import_module`, a
+    `_load` wrapper) and, for an identifier, `import stem` / `from stem import`. Prose that only
+    MENTIONS a module is not among them — the import graph is closed over these alone (r1 C5)."""
+    out = {f'"{stem}"', f"'{stem}'"}
+    if stem.isidentifier():
+        out |= {f"import {stem}\n", f"import {stem} ", f"import {stem},", f", {stem}\n",
+                f"from {stem} import"}
+    return out
+
+
+def _importers(start: set, modules: dict) -> set:
+    """The modules that import any of `start`, directly or through one another (r1 C5:
+    `m4_base_db` reaches `check-live-schema` only through `m4_catalog`). PURE; a fixpoint."""
+    reach, todo = set(), list(start)
+    while todo:
+        ks = _import_spellings(todo.pop().rsplit("/", 1)[-1][:-3])
+        for m, src in modules.items():
+            if m not in reach and m not in start and any(k in src for k in ks):
+                reach.add(m)
+                todo.append(m)
+    return reach
+
+
 def select_manifests(event: str, changed: "list[str] | None", why: str, sources: dict,
-                     harness: frozenset, roots=HARNESS_TREE) -> "tuple[frozenset | None, list[str]]":
+                     harness: frozenset, roots=HARNESS_TREE,
+                     modules: "dict | None" = None) -> "tuple[frozenset | None, list[str]]":
     """PURE. The targets whose manifests a run executes — None means the WHOLE manifest — and the
-    log lines saying why. `sources` maps every manifest target to its text. Rules: the block above.
+    log lines saying why. `sources` maps every manifest target to its text; `modules` adds the
+    importable modules no manifest targets, for the import closure. Rules: the block above.
     """
     if event != "pull_request":
         return None, [f"full: the event is {event!r}, not a pull request — a master push and "
@@ -375,6 +414,7 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
     if changed is None:
         return None, [f"full: {why}"]
     readers = {t: s for t, s in sources.items() if t not in harness}
+    mods = {m: s for m, s in {**sources, **(modules or {})}.items() if m not in harness}
     picked: dict = {}
     outside = 0
     for path in (p.strip() for p in changed):
@@ -382,6 +422,9 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
             continue
         if path in harness:
             return None, [f"full: {path} is the sweep harness itself"]
+        if path in DEPENDENCY_MANIFESTS:
+            return None, [f"full: {path} changes what is installed under a staged root "
+                          f"(`node_modules/typescript`) without changing any staged path"]
         root = _staged_root(path, roots)
         if root is None:
             outside += 1
@@ -395,12 +438,20 @@ def select_manifests(event: str, changed: "list[str] | None", why: str, sources:
             if target not in sources:
                 return None, [f"full: {path} is a manifest with no target this tree loads"]
             hit.add(target)
-        named = {t for t, s in readers.items() if any(k in s for k in _names_of(path))}
+        names = _names_of(path)
+        namers = {m for m, s in mods.items() if any(k in s for k in names)}
+        start = namers | ({path} if path in mods else set())
+        named = {t for t in namers | _importers({m for m in start if m.endswith(".py")}, mods)
+                 if t in readers}
         if len(named) > len(readers) * SHARED_FULL_FRACTION:
             return None, [f"full: {path} is named by {len(named)} of {len(readers)} targets — "
                           f"a shared module"]
         parts = path.split("/")
-        between = ["/".join(parts[:i]) for i in range(len(root.split("/")) + 1, len(parts))]
+        # r1 C2: a reader that walks the staged ROOT itself (`ROOT / 'docs'`, then `rglob`) reads
+        # every file under it, so it is selected by any change there — not only when nothing else
+        # names the path. Except a root in `IMPORT_ROOTS`, reached by import name instead.
+        lo = len(root.split("/")) + (root in IMPORT_ROOTS)
+        between = ["/".join(parts[:i]) for i in range(lo, len(parts))]
         hit |= named | {t for t, s in readers.items() if any(_quotes_dir(s, d) for d in between)}
         if not hit:
             hit = {t for t, s in readers.items() if _quotes_dir(s, root)}
@@ -444,6 +495,18 @@ def sweep_sources(root: pathlib.Path) -> "tuple[dict, frozenset]":
     # The harness is the one RUNNING — `root` is only the tree it measures (a fixture has none).
     own = pathlib.Path(__file__).read_text(encoding="utf-8")
     return sources, harness_files(own, stems)
+
+
+def module_sources(root: pathlib.Path) -> dict:
+    """IO. Every `scripts/*.py` module's text under `root` — the import graph a selection is closed
+    over (r1 C5), including the modules no manifest targets. Unreadable -> empty."""
+    out = {}
+    for p in sorted((root / "scripts").glob("*.py")):
+        try:
+            out[f"scripts/{p.name}"] = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            out[f"scripts/{p.name}"] = ""
+    return out
 
 
 def changed_from_nul(raw: str) -> "list[str] | None":
@@ -1577,7 +1640,8 @@ EXPECTED_MUTATIONS = {
     # (`sweep_needed`, `SWEEP_RELEVANT_ROOTS`/`SWEEP_SKIP_ROOTS`, `sweep_skipped_hole`, `sweep_verdict`);
     # 28 added for the per-manifest selector, its log, select-then-shard, the empty-selected-shard
     # pass, and main()'s --event/--changed wiring. Seven anchors REBOUND to the edited lines.
-    "scripts/check-plan-code.py": 168,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-04, PR #496 r1: 168 -> 174, one per selector fix (X1, C2 twice, C3, C5 twice).
+    "scripts/check-plan-code.py": 174,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2213,7 +2277,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 73 -> 85 (context floor r3): `--add` stores what the text looks like; the compact block is CAPPED (owner entries
     # accepted against a reserved notice, waits first, the PR list and the problems bounded, the overflow named and counted,
     # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
-    "scripts/session-state.py": 85,
+    # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 93, the open `sweep-red` issues in the block — the CANNOT READ arm, its
+    # mark, the names, the cap, collect()'s wiring, and the reader's command, failure and element checks.
+    "scripts/session-state.py": 93,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -6843,6 +6909,63 @@ def _self_test_body() -> int:
          and len(_hp) < len(_rs), True)
     case("...and on the real tree the harness is the WHOLE manifest",
          select_manifests("pull_request", ["scripts/check-plan-code.py"], "w", _rs, _rh)[0], None)
+    # ── PR #496 r1: four real kinds of dependency carried no quotable name in the form rule 7
+    # looked for. Each case is the reviewer's own input; the fixtures are independent of the tree.
+    # X1 = C1: a hyphenated sibling is loaded by its bare STEM, never by its file name.
+    _HY = {"scripts/check-g.py": '_SS = _sibling("gen-lines")\n',
+           "scripts/check-h.py": "m = importlib.import_module('gen-lines')\n",
+           "scripts/check-i.py": "# gen-lines builds the work lines\n",
+           "scripts/gen-lines.py": ""}
+    case("⭐ r1 X1: a hyphenated sibling selects the targets that load it by its quoted STEM",
+         _sel(["scripts/gen-lines.py"], src=_HY),
+         frozenset({"scripts/gen-lines.py", "scripts/check-g.py", "scripts/check-h.py"}))
+    _rm = module_sources(_real)
+    _rsel = lambda p: select_manifests("pull_request", [p], "w", _rs, _rh, modules=_rm)[0]  # noqa: E731
+    case("⭐ r1 X1 on the real tree: gen-work-lines.py selects goal-tree, which loads it by stem",
+         "scripts/goal-tree.py" in (_rsel("scripts/gen-work-lines.py") or {"scripts/goal-tree.py"}),
+         True)
+    # C2: a reader that walks a whole staged root is selected by ANY change under it.
+    _WK = {"scripts/check-w.py": "for p in (ROOT / 'docs').rglob('*.md'): pass\n",
+           "scripts/check-n.py": "IDX = 'docs/memory/MEMORY.md'\n",
+           "scripts/check-x.py": "y = 2\n"}
+    case("⭐ r1 C2: a ROOT walker is selected even when another target names the changed path",
+         _sel(["docs/memory/MEMORY.md"], src=_WK),
+         frozenset({"scripts/check-w.py", "scripts/check-n.py"}))
+    case("...and on the real tree MEMORY.md selects the docs walkers check-docs and check-plan-file-tags",
+         {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}
+         <= (_rsel("docs/memory/MEMORY.md") or {"scripts/check-docs.py", "scripts/check-plan-file-tags.py"}),
+         True)
+    case("...but `scripts` is reached by import name, not walked: a script change does not select "
+         "every target that quotes the directory",
+         _sel(["scripts/check-x.py"], src=dict(_WK, **{"scripts/check-s.py": "S = ROOT / 'scripts'\n"})),
+         frozenset({"scripts/check-x.py"}))
+    # C3: the dependency manifests change staged `node_modules` without any staged path changing.
+    case("⭐ r1 C3: package.json and package-lock.json select the WHOLE manifest",
+         [_sel([p]) for p in ("package.json", "package-lock.json")], [None, None])
+    case("...and a file merely NAMED like one, elsewhere, is not a dependency manifest",
+         _sel(["app/package.json"]), frozenset())
+    # C5: imports are followed transitively — a module reaches the targets that import an importer.
+    _TR = {"scripts/check-t.py": "import m_cat\n",
+           "scripts/check-u.py": "# m_cat is described in the spec\n",
+           "scripts/check-v.py": "z = 0\n"}
+    _TM = {"scripts/m_base.py": "CONTAINER = 'x'\n",
+           "scripts/m_cat.py": "from m_base import CONTAINER\n"}
+    case("⭐ r1 C5: a module reaches a target through an importer it does not name",
+         select_manifests("pull_request", ["scripts/m_base.py"], "w", _TR, _H, modules=_TM)[0],
+         frozenset({"scripts/check-t.py"}))
+    case("...through an IMPORT, never through prose that mentions the importer",
+         "scripts/check-u.py" in (select_manifests("pull_request", ["scripts/m_base.py"], "w", _TR, _H,
+                                                   modules=_TM)[0] or _TR), False)
+    case("...and on the real tree m4_base_db reaches check-live-schema and check-catalog-coverage",
+         {"scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"}
+         <= (_rsel("scripts/m4_base_db.py")
+             or {"scripts/check-live-schema.py", "scripts/check-catalog-coverage.py"}), True)
+    with tempfile.TemporaryDirectory() as _tdm:
+        (pathlib.Path(_tdm) / "scripts").mkdir()
+        (pathlib.Path(_tdm) / "scripts" / "m_a.py").write_text("import m_b\n")
+        (pathlib.Path(_tdm) / "notes.py").write_text("")
+        case("the module sources are every scripts/*.py under the ROOT given",
+             module_sources(pathlib.Path(_tdm)), {"scripts/m_a.py": "import m_b\n"})
     # ── the changed-file list: NUL-delimited, or it is not trusted ────────────────────────
     # r6 CODEX finding 2: git C-QUOTES non-ASCII paths without `-z`, and the quoted form does not
     # start with a staged root. Measured in a real repo: `"scripts/\303\251.py"`.
@@ -7341,7 +7464,8 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             changed, why = (changed_or_why(raw, a.changed) if a.changed is not None
                             else (None, "no --changed list was given"))
             sources, harness = sweep_sources(mroot)
-            select, lines = select_manifests(a.event, changed, why, sources, harness)
+            select, lines = select_manifests(a.event, changed, why, sources, harness,
+                                             modules=module_sources(mroot))
             print("SELECTION — " + "\n".join(lines))
             if select is not None:
                 scope = (len(select), len(sources))

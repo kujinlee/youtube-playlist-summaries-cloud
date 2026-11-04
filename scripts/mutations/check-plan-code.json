@@ -2080,5 +2080,83 @@
     "expect": [
       "refused by name, rc=2: --mutate /nonexistent-root --event push"
     ]
+  },
+  {
+    "name": "PR #496 r1 X1: a hyphenated sibling's quoted stem is not a name",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    out = {f'\"{stem}\"', f\"'{stem}'\"}",
+        "    out = set()"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 X1: a hyphenated sibling selects the targets that load it by its quoted STEM"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C2: a staged ROOT walker is selected only when nothing names the path",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        lo = len(root.split(\"/\")) + (root in IMPORT_ROOTS)",
+        "        lo = len(root.split(\"/\")) + 1"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C2: a ROOT walker is selected even when another target names the changed path"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C2: `scripts` is treated as a walked root",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "IMPORT_ROOTS = frozenset({\"scripts\"})",
+        "IMPORT_ROOTS = frozenset()"
+      ]
+    ],
+    "expect": [
+      "...but `scripts` is reached by import name, not walked: a script change does not select every target that quotes the directory"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C3: a dependency manifest change selects nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if path in DEPENDENCY_MANIFESTS:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C3: package.json and package-lock.json select the WHOLE manifest"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C5: imports are not followed transitively",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        named = {t for t in namers | _importers({m for m in start if m.endswith(\".py\")}, mods)",
+        "        named = {t for t in namers"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 C5: a module reaches a target through an importer it does not name"
+    ]
+  },
+  {
+    "name": "PR #496 r1 C5: the import closure follows prose mentions too",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        ks = _import_spellings(todo.pop().rsplit(\"/\", 1)[-1][:-3])",
+        "        ks = _names_of(todo.pop())"
+      ]
+    ],
+    "expect": [
+      "...through an IMPORT, never through prose that mentions the importer"
+    ]
   }
 ]

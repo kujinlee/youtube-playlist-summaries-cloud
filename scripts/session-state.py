@@ -12,6 +12,8 @@ WHY THIS FILE EXISTS (measured 2026-10-26).
 WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from `gh` ALONE:
   - number, branch, head, draft, mergeability, a check summary (`NO CHECKS` when none ran), and the
     NAMES of failing checks;
+  - the open `sweep-red` issues (PR #496 r1 C4) — a red FULL mutation sweep on master opens one, and a green one closes
+    it; a `gh` failure here is CANNOT READ, never "none";
   - the IN-FLIGHT LEDGER, `.claude/inflight.jsonl` (gitignored) IN THE MAIN CHECKOUT — `main_checkout`, so a
     linked worktree reads and writes the one ledger every session sees (backlog #361's PR): one line per background job, added with
     `--add ID WHAT ON_DONE` and removed with `--done ID`. It is written BY HAND, so an empty ledger reads
@@ -27,7 +29,7 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
   - `gh` failing, timing out, unparseable output or a malformed element is CANNOT RUN, never an empty
     list, and a timeout SAYS it timed out;
   - a list as long as LIMIT says MAY BE TRUNCATED;
-  - the one call is bounded (TIMEOUT s, under the hook's 60 s cap) and gets no stdin;
+  - the two calls are bounded (TIMEOUT + ISSUE_TIMEOUT s, under the hook's 60 s cap) and get no stdin;
   - the ledger is read by ONE rule for the block and for every update — one `open(O_NOFOLLOW)`, one `fstat`, one
     read: a symlink, a non-regular file (a FIFO would block the read) or a file over MAX_LEDGER is NOT READ, and an
     update REFUSES it rather than rewrite what it could not read (backlog #369); it is split on b"\\n" only and written
@@ -77,7 +79,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEDGER_REL = ".claude/inflight.jsonl"
-TIMEOUT = 30      # the one `gh` call, under the hook's 60 s harness timeout
+TIMEOUT = 30      # the `gh pr list` call; with ISSUE_TIMEOUT, 45 s under the hook's 60 s harness timeout
+ISSUE_TIMEOUT = 15   # the `gh issue list` call for open `sweep-red` issues (PR #496 r1 C4)
+SWEEP_RED_SHOWN = 3  # open sweep-red issues named in the block; the rest is a count
 LIMIT = 100
 MAX_LEDGER = 64 * 1024
 TITLE_WIDTH = 120    # the compact block's one line per ledger entry (backlog: context floor)
@@ -478,7 +482,7 @@ def _compact_ledger(head: list[str], ledger: list[dict], problems: list[str], ma
 
 def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], ledger_problems: list[str],
            now: str, truncated: bool = False, mark: str = "", compact: bool = False, ledger_path: str = "",
-           owner_elsewhere: int = 0) -> str:
+           owner_elsewhere: int = 0, sweep_red: tuple[list[dict] | None, str | None] | None = None) -> str:
     """The block, pure: everything is passed in, every value goes through clean(). `mark` is appended to each line that
     reports a state NOT READ — chosen where the failure is decided, never by searching the text, so a branch or a
     ledger entry that merely CONTAINS a failure word is not marked (PR #425 r4 C4-F3). Empty by default.
@@ -517,6 +521,19 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
                 L.append(f"      ⚠ gh omitted {', '.join(missing)} — this PR's state is UNREADABLE, not unknown-but-fine" + mark)
             if failing:
                 L.append(f"      failing: {', '.join(failing[:6])}{' …' if len(failing) > 6 else ''}")
+    if sweep_red is not None:   # None: this caller did not read the issues (the compaction snapshot)
+        issues, issue_error = sweep_red
+        if issues is None:
+            L.append(f"SWEEP-RED ISSUES: CANNOT READ — {clean(issue_error)}. Treat the master mutation sweep as NOT "
+                     "CHECKED, never as green." + mark)
+        elif not issues:
+            L.append("SWEEP-RED ISSUES: none open (gh answered).")
+        else:
+            L.append(f"SWEEP-RED ISSUES ({len(issues)}) — the FULL mutation sweep went red on master; read the run:")
+            for i in issues[:SWEEP_RED_SHOWN]:
+                L.append(f"  #{clean(i.get('number'), 10)} {clean(i.get('title'), 120)} {clean(i.get('url'), 120)}")
+            if len(issues) > SWEEP_RED_SHOWN:
+                L.append(f"  … {len(issues) - SWEEP_RED_SHOWN} more open sweep-red issue(s) (`gh issue list --label sweep-red`)")
     if owner_elsewhere:   # the caller prints the owner entries whole in a section of its own (the compaction snapshot)
         L.append(f"IN-FLIGHT LEDGER ({LEDGER_REL}): {owner_elsewhere} owner entr{'y' if owner_elsewhere == 1 else 'ies'} "
                  "listed whole under 'Pending OWNER decisions'; the rest:" if ledger or ledger_problems else
@@ -616,12 +633,30 @@ def fetch(root: Path, run=_run, main: tuple[Path, str | None] | None = None
     return prs, pr_error, ledger, problems, prs is not None and len(prs) >= LIMIT
 
 
+def fetch_sweep_red(root: Path, run=_run) -> tuple[list[dict] | None, str | None]:
+    """(open `sweep-red` issues, None), or (None, why). PR #496 r1 C4: a red FULL mutation sweep on master opens one
+    (`ci.yml`, `mutation-sweep-complete`), and nothing in this repository read it — so the alert reached only whoever
+    watched GitHub notifications. A gh failure is a reason, which `render` prints as CANNOT READ, never as none."""
+    rc, out = run(["gh", "issue", "list", "--label", "sweep-red", "--state", "open", "--json", "number,title,url"],
+                  root, ISSUE_TIMEOUT)
+    if rc != 0:
+        return None, f"gh exited {rc}: {out.strip()[:160]}"
+    try:
+        issues = json.loads(out)
+        if not isinstance(issues, list) or not all(isinstance(i, dict) and {"number", "title", "url"} <= i.keys()
+                                                   for i in issues):
+            raise ValueError("not a list of issue objects")
+    except ValueError as exc:
+        return None, f"gh output unparseable ({exc})"
+    return issues, None
+
+
 def collect(root: Path, run=_run, now: str | None = None) -> str:
     now = now or time.strftime("%Y-%m-%d %H:%M %Z")
     main = main_checkout(root, run)
     prs, pr_error, ledger, problems, truncated = fetch(root, run, main)
     return render(prs, pr_error, ledger, problems, now, truncated=truncated, compact=True,
-                  ledger_path=str(main[0] / LEDGER_REL))
+                  ledger_path=str(main[0] / LEDGER_REL), sweep_red=fetch_sweep_red(root, run))
 
 
 def self_test() -> int:
@@ -931,6 +966,35 @@ def _self_test_body() -> int:
          (render(None, "gh exited 4", [], [], "T", mark=" <M>").splitlines()[1].endswith(" <M>"),
           "<M>" in render(None, "gh exited 4", [], [], "T")), (True, False))
     case("an answered empty list says none", "OPEN PRS: none (gh answered)." in render([], None, [], [], "T"), True)
+    # PR #496 r1 C4: a red FULL mutation sweep on master opens a `sweep-red` issue, and nothing READ it.
+    red = [{"number": 501, "title": "Full mutation sweep red on master (push, 2fdbeb7e)", "url": "https://x/issues/501"}]
+    out = render([], None, [], [], "T", sweep_red=(red, None))
+    case("⭐ r1 C4: an open sweep-red issue is in the block, by number, title and url",
+         ("SWEEP-RED ISSUES (1)" in out, "#501 Full mutation sweep red on master (push, 2fdbeb7e) https://x/issues/501" in out),
+         (True, True))
+    out = render([], None, [], [], "T", sweep_red=(None, "gh exited 4: auth"), mark=" <M>")
+    case("⭐ r1 C4: gh failing on the issue list prints CANNOT READ, marked — never silence, never 'none'",
+         ("SWEEP-RED ISSUES: CANNOT READ — gh exited 4: auth" in out,
+          any(l.startswith("SWEEP-RED ISSUES: CANNOT READ") and l.endswith(" <M>") for l in out.splitlines()),
+          "none open" in out), (True, True, False))
+    case("...an answered empty issue list says none open",
+         "SWEEP-RED ISSUES: none open (gh answered)." in render([], None, [], [], "T", sweep_red=([], None)), True)
+    out = render([], None, [], [], "T", compact=True,
+                 sweep_red=([dict(red[0], number=600 + i) for i in range(SWEEP_RED_SHOWN + 2)], None))
+    case("...a long issue list names SWEEP_RED_SHOWN and counts the rest",
+         (sum(1 for l in out.splitlines() if l.startswith("  #6")), "… 2 more open sweep-red issue(s)" in out),
+         (SWEEP_RED_SHOWN, True))
+    case("...and a caller that did not read the issues prints no issue line at all",
+         "SWEEP-RED" in render([], None, [], [], "T"), False)
+    case("⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, within ISSUE_TIMEOUT",
+         (lambda seen_i: (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (seen_i.append((c, timeout)), (0, "[]"))[1]),
+                          seen_i))([]),
+         (([], None), [(["gh", "issue", "list", "--label", "sweep-red", "--state", "open", "--json", "number,title,url"],
+                        ISSUE_TIMEOUT)]))
+    case("...a gh failure is (None, why), and a malformed element is unparseable, never a crash",
+         (fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (1, "HTTP 502\n")),
+          fetch_sweep_red(Path("."), lambda c, w, timeout=TIMEOUT: (0, '[{"number": 1}]'))[1].startswith("gh output unparseable")),
+         ((None, "gh exited 1: HTTP 502"), True))
     out = render([pr, dict(pr, number=8, statusCheckRollup=[])], None, [], [], "T")
     case("a PR line carries number, branch, head, draft, mergeability and checks",
          "PR #7 `b` head abcdef12 DRAFT · DIRTY · checks: 1 fail" in out, True)
@@ -1074,7 +1138,7 @@ def _self_test_body() -> int:
 
         def fake(cmd, cwd, timeout=TIMEOUT):
             seen.append((cmd[:3], timeout))
-            return 0, json.dumps([pr])
+            return 0, json.dumps(red if cmd[:3] == ["gh", "issue", "list"] else [pr])
         out = collect(root, run=fake, now="T")
         git_calls = []
         fetch(root, run=lambda c, w, timeout=TIMEOUT: (git_calls.append(c[0]), (0, "[]"))[1], main=(root, None))
@@ -1084,10 +1148,15 @@ def _self_test_body() -> int:
         got = fetch(root / "fetch-nogit", lambda c, w, timeout=TIMEOUT: (asked_git.append(c[0]), (128, "not a repo"))[1])
         case("...and without one it asks git itself, and says the main checkout could not be found",
              (asked_git, any("main checkout could not be found" in p for p in got[3])), (["gh", "git"], True))
-        case("collect() asks gh ONCE, within the timeout, and wires the PR and the ledger into one block",
-             (len([c for c, _ in seen if c[0] == "gh"]), [c for c, _ in seen if c[0] == "gh"][0], all(t <= TIMEOUT for _, t in seen),
-              "PR #7 " in out, "[job1]" in out),
-             (1, ["gh", "pr", "list"], True, True, True))
+        case("collect() asks gh for the PRs and the sweep-red issues ONCE each, within the timeouts, and wires the PR, "
+             "the issue and the ledger into one block",
+             ([c for c, _ in seen if c[0] == "gh"], all(t <= TIMEOUT for _, t in seen),
+              "PR #7 " in out, "[job1]" in out, "#501 Full mutation sweep red" in out),
+             ([["gh", "pr", "list"], ["gh", "issue", "list"]], True, True, True, True))
+        out = collect(root, run=lambda c, w, timeout=TIMEOUT: (1, "HTTP 502") if c[:3] == ["gh", "issue", "list"]
+                      else fake(c, w, timeout), now="T")
+        case("⭐ r1 C4: collect() — the hook's entry — prints CANNOT READ when only the issue list fails, beside the PRs",
+             ("SWEEP-RED ISSUES: CANNOT READ — gh exited 1: HTTP 502" in out, "PR #7 " in out), (True, True))
         case("⭐ floor: collect() — the hook's own entry — prints the COMPACT block, naming the file with every entry",
              f"full: {root / LEDGER_REL}" in out, True)
         bare = root / "no-ledger-here"

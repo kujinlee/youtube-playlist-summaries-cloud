@@ -1291,10 +1291,15 @@ jobs:
       # AFTER merge — and a red master run that nobody opens is the silent failure the owner's
       # approval was conditional on ("as long as there are full sweep to detect error eventually").
       # So it opens an issue labelled `sweep-red`, or comments on the open one rather than piling up
-      # duplicates. Pull requests never reach this step: their red is on the PR itself.
-      # ⚠ `failure()` is true when any earlier step failed — here, only the aggregate check above.
-      - name: A red FULL sweep on master opens (or comments on) a sweep-red issue
-        if: failure() && github.event_name != 'pull_request'
+      # duplicates; `session-state.py` lists the open ones at every SessionStart (PR #496 r1 C4).
+      # A GREEN full sweep closes the open one with a comment naming its run, so a later red opens a
+      # FRESH issue instead of commenting on a stale one. Pull requests never reach this step: their
+      # red is on the PR itself. Master runs are serialised (`concurrency`, never cancelled), so a
+      # green that closes always swept a tree at least as new as the red it closes.
+      # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor closes (backlog #482, r1 C6).
+      # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
+      - name: The FULL sweep on master opens, comments on, or closes the sweep-red issue
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -1304,6 +1309,19 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -eu
+          if [ "$SWEEP" = "success" ]; then
+            OPEN=$(gh issue list --label sweep-red --state open --json number --jq '.[].number')
+            if [ -z "$OPEN" ]; then
+              echo "the full sweep is green and no sweep-red issue is open"
+              exit 0
+            fi
+            for N in $OPEN; do
+              gh issue close "$N" --comment "The FULL mutation sweep is green on master ($EVENT, $SHA): $RUN_URL
+          Closed by that run. A later red opens a fresh issue."
+              echo "closed the sweep-red issue #$N"
+            done
+            exit 0
+          fi
           BODY="The FULL mutation sweep reported '$SWEEP' on master ($EVENT, $SHA): $RUN_URL
           Pull requests run only the manifests their diff selects (backlog #330), so this run is where
           a defect in an unselected manifest surfaces. Read the red shard's log for the survivor or the

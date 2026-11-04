@@ -262,7 +262,9 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     ("ci.yml", "EVENT: ${{ github.event_name }}"):
         (2, "the event handed to the sweep's selector and to the sweep-red alert — gates no step"),
     # backlog #330: the alert runs on everything EXCEPT a pull request — the opposite of PR-only.
-    ("ci.yml", "if: failure() && github.event_name != 'pull_request'"):
+    # ⟳ PR #496 r1 C4: one step now opens, comments on, or CLOSES the issue, so it runs on a green
+    # run too (`!cancelled()`, not `failure()`).
+    ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' }}"):
         (1, "the sweep-red alert, which runs on a master push or the schedule and never on a PR"),
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
