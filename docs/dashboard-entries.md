@@ -18747,3 +18747,14 @@ guard that walks the folder it lives in, and every module that imports it), and 
 `check-plan-code.py` or the workflow, an unreadable diff, a module most guards import). Every master push and a new
 daily schedule still run the full sweep, and a red one opens or comments on a GitHub issue labelled `sweep-red`, which every session start lists; a
 green one only comments, and never closes it, so closing is a deliberate act after reading it.
+
+## 2026-11-04
+New agents are now refused only when weekly usage reaches 97%, on every day of the week; before, the
+refusal sat at 90%. You asked for this at 08:37, so the allowance gets used today rather than held
+back for a day you may be busy. Each warning also shows your pace line for the day (95.2% today)
+as a guide, but it never blocks anything. The last 3 points are kept so that work already running can
+finish instead of stopping halfway at the hard limit.
+<!--tech-->
+Backlog #500, `scripts/check-usage-pace.py`: `REFUSE_AT` is 97; `pace_line()` reads
+`~/.claude/meter/log.jsonl` (this window's rows; start% = the reading at local midnight); the self-test
+redirects `HOME` so no case reads the live meter. 291 self-test cases, 111 mutations.
