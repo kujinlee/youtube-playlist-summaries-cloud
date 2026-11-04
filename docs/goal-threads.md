@@ -62,6 +62,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - side · PR #423 · the tag-vocabulary survey page and the suite inventory page
 - fix · backlog #389, PR #434 · the work-lines page retires into the goal tree, its history archived (the owner's decision D2)
 - fix · backlog #497 · the goal tree shows when each thread merged, shows parked and queued work per goal, and folds older merged and unplanned threads
+- fix · backlog #499 · the goal tree shows the current plan in its own dated block and keeps every earlier plan as one collapsed line (owner 2026-11-04 06:05)
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
@@ -128,6 +129,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #177, PR #483 · Q0 drafted: the review method is chosen by kind of change; waits on the owner's walkthrough
 - fix · backlog #330 · approved 11-02 20:53: a PR sweeps only the manifests whose subject changed, and a scheduled full sweep on master is the safety net
 - fix · backlog #330, PR #496 · built: a PR sweeps the manifests its diff selects (one guard ≈ 5 of 87), the harness or an unreadable diff runs all, and master + a daily schedule run the full sweep with a sweep-red issue on red
+- fix · backlog #498 · the scoped sweep's import closure accepts a module loaded by its `.py` filename (Codex r4 on PR #496, filed under the round cap)
 - fix · backlog #426, PR #491 · a merge of master after the final review round no longer forces another round; 5 rounds and a thrashing-armed architecture review
 - fix · backlog #470, PR #489 · every backlog row and PR mentioned on the five generated pages is a link; the page reading redesigned twice, 4 rounds and an architecture review
 - bookkeeping · backlog #491, backlog #493, backlog #494 · filed from PR #491's and PR #489's rounds: whitespace path names, the regen hooks' unseen failure channel, render-time key linking
