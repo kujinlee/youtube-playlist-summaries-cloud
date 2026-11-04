@@ -1501,5 +1501,201 @@
     "expect": [
       "a PR with no repo still carries its id, on plain text"
     ]
+  },
+  {
+    "name": "backlog #497: the 48 h boundary is inclusive the wrong way, so a merge exactly 48 h old folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return \"older\" if age is not None and age > RECENT_HOURS else \"recent\"",
+        "        return \"older\" if age is not None and age >= RECENT_HOURS else \"recent\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a merge is RECENT up to exactly 48 h before the drawing, OLDER one minute past it"
+    ]
+  },
+  {
+    "name": "backlog #497: a merge whose age cannot be read is folded as older",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    except (TypeError, ValueError):\n        return None\n",
+        "    except (TypeError, ValueError):\n        return 10 ** 6\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a merge whose age cannot be read is RECENT — an unread time never folds a leaf away"
+    ]
+  },
+  {
+    "name": "backlog #497: an unread merge minute prints blank",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return TIME_UNREAD\n",
+        "        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: an unread merge minute says TIME UNREAD, never a blank or a guessed time",
+      "backlog #497: a stored minute prints as the owner's `mm-dd hh:mm`, anything else as TIME UNREAD"
+    ]
+  },
+  {
+    "name": "backlog #497: a zoneless mergedAt is read in this machine's zone — a guessed time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return t.astimezone(tz).strftime(MINUTE_FMT) if t.tzinfo is not None else None",
+        "    return t.astimezone(tz).strftime(MINUTE_FMT)"
+      ]
+    ],
+    "expect": [
+      "backlog #497: gh's mergedAt is converted to the given zone; no zone or no parse is None, never a guess"
+    ]
+  },
+  {
+    "name": "backlog #497: a parked ledger entry turns an unstarted leaf in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    flying = [_SS.clean(e.get(\"what\", \"\"), 160) for e in naming if not is_parked(e)]",
+        "    flying = [_SS.clean(e.get(\"what\", \"\"), 160) for e in naming]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked entry does NOT make an unstarted leaf in flight — it is shown as parked"
+    ]
+  },
+  {
+    "name": "backlog #497: the parked bucket is never chosen",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"parked\"):\n        return \"parked\"",
+        "    if False:\n        return \"parked\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked leaf that has not landed is PARKED; one that merged or closed is aged instead"
+    ]
+  },
+  {
+    "name": "backlog #497: a parked entry naming only landed threads is hidden inside their folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if hits and is_parked(e) and all(t[\"state\"] in LANDED for t in hits):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked entry naming only LANDED threads joins that group, naming them — never hidden in a fold"
+    ]
+  },
+  {
+    "name": "backlog #497: a merged leaf with an unread minute takes the latest READ one — a guessed time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    merged_at = max(whens) if whens and all(whens) else None",
+        "    merged_at = max(w for w in whens if w) if whens and any(whens) else None"
+      ]
+    ],
+    "expect": [
+      "backlog #497: a thread's merged_at is its LATEST merge; one unread minute makes it unread; unmerged is None"
+    ]
+  },
+  {
+    "name": "backlog #497: every bucket is drawn open, so nothing folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    shown = [(t, b) for t, b in marked if b in VISIBLE]",
+        "    shown = list(marked)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the folded leaves are NOT in the text — the count stands for them"
+    ]
+  },
+  {
+    "name": "backlog #497: --print lists a fold's leaves instead of its count line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            out += [b[3]] if b[3] is not None else _flat(b[4])",
+        "            out += _flat(b[4])"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: --print shows now, recent, queued and parked leaves, labelled, and folds the rest to counts"
+    ]
+  },
+  {
+    "name": "backlog #497: a goal with nothing current is not folded on the page",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if g[\"threads\"] and not shown:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal with nothing current"
+    ]
+  },
+  {
+    "name": "backlog #497: a fold is drawn OPEN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            out.append(f'<details class=\"fold {b[1]}\"><summary>",
+        "            out.append(f'<details open class=\"fold {b[1]}\"><summary>"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal with nothing current"
+    ]
+  },
+  {
+    "name": "backlog #497: the page's current tree is bucketed at the snapshot time, not the build time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "render_tree_html(newest, ids=True, at=built)",
+        "render_tree_html(newest, ids=True)"
+      ]
+    ],
+    "expect": [
+      "backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run"
+    ]
+  },
+  {
+    "name": "backlog #497: git is asked for the committer date in the commit's own zone, not the owner's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"-n{MERGED_DEPTH}\", f\"--date=format-local:{MINUTE_FMT}\",",
+        "f\"-n{MERGED_DEPTH}\", f\"--date=format:{MINUTE_FMT}\","
+      ]
+    ],
+    "expect": [
+      "backlog #497: ...asking git for the committer date in the owner's LOCAL zone, minute precision"
+    ]
+  },
+  {
+    "name": "backlog #497: gh's mergedAt is not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if p.get(\"mergedAt\"):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "backlog #497: collect reads gh's mergedAt for a PR off master's log, as a local minute"
+    ]
   }
 ]

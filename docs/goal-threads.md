@@ -59,6 +59,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #198 · the recall vocabulary named with the owner 2026-11-03 and written to CONTEXT.md; backlog #307 amended (the index line is the trigger's first clause)
 - side · PR #423 · the tag-vocabulary survey page and the suite inventory page
 - fix · backlog #389, PR #434 · the work-lines page retires into the goal tree, its history archived (the owner's decision D2)
+- fix · backlog #497 · the goal tree shows when each thread merged, shows parked and queued work per goal, and folds older merged and unplanned threads
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"

@@ -18729,3 +18729,13 @@ The last NEEDS YOU decision is done. In a grilling session the owner named the r
 `CONTEXT.md` → *Recall (Repo Tooling)*: **lesson**, **trigger**, **lesson index**, **situation**, **arm**, **fire**,
 **recall**, **already embodied** and **unreadable plan**. One answer changed backlog #307: the always-loaded index line
 is the first clause of each lesson's trigger, not a second hand-written field.
+
+## 2026-11-04
+The goal tree page now says when each piece of work merged, and shows what is current first. Every merged thread reads
+`merged 11-03 19:09 · <commit>` in your local time. Under each goal, open and in-flight work, anything merged in the last
+48 hours, work that is queued behind a declared wait, and work that is parked are shown; older merged work and work nothing
+plans yet fold into collapsed `older (N)` and `later (N)` groups you can open. A goal with nothing current folds whole, its
+counts in the heading. Parked items that belong to no goal are listed in their own group at the end. Backlog #497.
+<!--tech-->
+Branch `goal-tree-recency-497`. `bucket()` is computed at draw time and never stored, so the fingerprint is unchanged by the
+48 h boundary moving. `tree_blocks()` is the one structure both `--print` and the page are drawn from.
