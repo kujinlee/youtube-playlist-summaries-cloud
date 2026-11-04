@@ -1,0 +1,20 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/goal-tree-recency-r1-claude.md": "100644 c827d13ddae8f0d464602246a9c48cddaabb4ef2"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "fa54e005358539b670803e97a24d0d34a46cf46a",
+  "intrusions": [],
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/r497/prompt.md",
+  "reason": "claude half filed: 10530 chars, names fa54e0053585",
+  "refused": false,
+  "review": "goal-tree-recency-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/r497/rec",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
