@@ -18761,3 +18761,8 @@ Backlog #500, `scripts/check-usage-pace.py`: `refuse_at(now, resets)` = min(97, 
 reset's time of day, so a DST day is one day; the pace line from
 `~/.claude/meter/log.jsonl` is text only; the self-test redirects `HOME` so no case reads the live
 meter. 304 self-test cases, 125 mutations.
+
+## 2026-11-04
+The goal tree now keeps the plan I state for you, as an **agenda** (backlog #499, first half). Each time I state a plan it is recorded, and the new one replaces the old one, which is kept with how far each step had got. A step naming a backlog row or PR shows that row's live state (✅ ⏳ ⬜), so the plan cannot quietly go out of date; a step naming neither, such as *restart the page server*, is marked ◇ and ticked by hand. For now it appears in the text the goal tree prints; the page block and the collapsed history of earlier plans are the second half.
+<!--tech-->
+`scripts/goal-tree.py`: `parse_agenda`, `record_agenda`, `tick_agenda`, `derive_agenda` (steps through `derive_thread`), `--record-agenda FILE`, `--tick-agenda N`; the store is `.claude/agenda-log.jsonl` in the main checkout, git-ignored. 276 self-test cases, 162 mutations.

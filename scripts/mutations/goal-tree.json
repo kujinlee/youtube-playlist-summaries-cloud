@@ -1983,5 +1983,135 @@
     "expect": [
       "review r2 X1 adjacent: every ref old -> still OLDER and folded; one ref's time unread -> RECENT"
     ]
+  },
+  {
+    "name": "an agenda step naming a row or PR is NOT derived (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if st[\"refs\"]:\n            d = derive_thread(",
+        "        if False:\n            d = derive_thread("
+      ]
+    ],
+    "expect": [
+      "⭐ a step naming a row or PR is derived by the TREE's own derivation, in two distinct worlds"
+    ]
+  },
+  {
+    "name": "a hand tick on a free step is ignored (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        elif n in ag.get(\"ticked\", []):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a free step is FREE until ticked by hand, then done — and says which"
+    ]
+  },
+  {
+    "name": "a new agenda does not close the one it replaces (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if cur and cur[-1][\"replaced\"] is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a new agenda REPLACES the current one whole, and the old one keeps its states AT replacement"
+    ]
+  },
+  {
+    "name": "a replacement while a source was unread records a guessed state (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "states = [{\"n\": n, \"state\": \"cannot\"}",
+        "states = [{\"n\": n, \"state\": \"merged\"}"
+      ]
+    ],
+    "expect": [
+      "⛔ replaced while a source was unread: the states say CANNOT, never a guessed state"
+    ]
+  },
+  {
+    "name": "a DERIVED agenda step can be ticked by hand (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if steps[n - 1][\"refs\"]:\n        raise Malformed",
+        "    if False:\n        raise Malformed"
+      ]
+    ],
+    "expect": [
+      "⛔ a tick: refused with no agenda, refused on a DERIVED step, refused out of range; a free one ticks"
+    ]
+  },
+  {
+    "name": "an agenda with no window is accepted (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not window:\n        problems.append",
+        "    if False:\n        problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda names EVERY problem: a step before a group, a stray line, no window"
+    ]
+  },
+  {
+    "name": "an agenda with no steps is accepted (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not steps:\n        problems.append",
+        "    if False:\n        problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda with no steps is refused, not recorded as an empty plan"
+    ]
+  },
+  {
+    "name": "a step before any group is accepted (backlog #499)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if when is None:\n                problems.append",
+        "            if False:\n                problems.append"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda names EVERY problem: a step before a group, a stray line, no window"
+    ]
+  },
+  {
+    "name": "the snapshot never carries the agenda (backlog #499, the call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src)",
+        "live[\"agenda\"] = None"
+      ]
+    ],
+    "expect": [
+      "the logged snapshot carries the agenda, so --page replays it"
+    ]
+  },
+  {
+    "name": "the text output drops the agenda block (backlog #499, the call site)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    ag = agenda_lines(snap)\n    return",
+        "    ag = []\n    return"
+      ]
+    ],
+    "expect": [
+      "⭐ main records an agenda, ticks it, and --print shows it under NEEDS YOU, before the tree"
+    ]
   }
 ]
