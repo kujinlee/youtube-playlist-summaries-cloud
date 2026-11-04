@@ -2093,8 +2093,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "live[\"agenda\"] = derive_agenda(cur[-1] if cur else None, src, declared)",
-        "live[\"agenda\"] = None"
+        "                cur = agendas(read_agenda_log(agenda_path))\n                live[\"agenda\"] = derive_agenda(",
+        "                cur = agendas(read_agenda_log(agenda_path))\n                live[\"agenda\"] = None and derive_agenda("
       ]
     ],
     "expect": [
@@ -2119,7 +2119,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"waits\": waits.get(tuple(map(tuple, st[\"refs\"])))}",
+        "\"waits\": waits.get(_refset(st[\"refs\"]))}",
         "\"waits\": None}"
       ]
     ],
@@ -2203,6 +2203,58 @@
     ],
     "expect": [
       "⛔ a second `window:` line is refused, not silently overwritten"
+    ]
+  },
+  {
+    "name": "a step's refs are matched in ORDER, not as a set (backlog #499, r2 Codex H2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return frozenset(map(tuple, refs))",
+        "    return tuple(map(tuple, refs))"
+      ]
+    ],
+    "expect": [
+      "⭐ a step waits if ANY declared thread naming the same ref SET waits, in any ref or declaration order (r2 Codex H1, H2)"
+    ]
+  },
+  {
+    "name": "only the first declared thread's wait counts (backlog #499, r2 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if t.get(\"waits\"):\n            said = declared.setdefault(",
+        "        if t.get(\"waits\") and _refset(t[\"refs\"]) not in declared:\n            said = declared.setdefault("
+      ]
+    ],
+    "expect": [
+      "...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)"
+    ]
+  },
+  {
+    "name": "a writer appends after an interrupted write (backlog #499, r2 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if cur and cur[-1][\"replaced\"] is not None:\n        raise Malformed(f\"agenda id",
+        "    if False:\n        raise Malformed(f\"agenda id"
+      ]
+    ],
+    "expect": [
+      "⛔ after an interrupted write (closed, no successor) both writers refuse and append nothing (r2 Codex M3)"
+    ]
+  },
+  {
+    "name": "a malformed agenda log takes the snapshot down (backlog #499, r2 Codex M4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                print(f\"MALFORMED — {exc}\")\n                rc = 1",
+        "                print(f\"MALFORMED — {exc}\")\n                return 1"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged (r2 Codex M4)"
     ]
   }
 ]

@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 283 cases
+    python3 scripts/goal-tree.py --self-test                 # 287 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1043,6 +1043,11 @@ def agendas(log: list[dict]) -> list[dict]:
     return out
 
 
+def _refset(refs: list) -> frozenset:
+    """A step's or thread's refs as a SET: `backlog #2, backlog #1` names what `backlog #1, backlog #2` does."""
+    return frozenset(map(tuple, refs))
+
+
 def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict | None:
     """PURE. One agenda + the read sources -> its steps with `state` and `detail`. A step naming a
     row or PR goes through `derive_thread`, the tree's own derivation, WITH the `waits` a declared
@@ -1050,14 +1055,20 @@ def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict 
     H1). A free step is FREE until ticked by hand, then `merged` (done), and says which."""
     if ag is None:
         return None
-    waits = {}
+    # ⛔ keyed by the ref SET, and EVERY declared wait counts: two threads naming the same refs, one waiting,
+    # make the step wait — in either declaration order (r2 Codex H1, H2)
+    declared: dict = {}
     for t in threads:
-        waits.setdefault(tuple(map(tuple, t["refs"])), t.get("waits"))
+        if t.get("waits"):
+            said = declared.setdefault(_refset(t["refs"]), [])
+            if t["waits"] not in said:
+                said.append(t["waits"])
+    waits = {k: "; ".join(v) for k, v in declared.items()}
     steps = []
     for n, st in enumerate(ag["steps"], 1):
         if st["refs"]:
             d = derive_thread({"key": f"step {n}", "refs": st["refs"],
-                               "waits": waits.get(tuple(map(tuple, st["refs"])))}, src)
+                               "waits": waits.get(_refset(st["refs"]))}, src)
             steps.append(dict(st, n=n, state=d["state"], detail=d["detail"]))
         elif n in ag.get("ticked", []):
             steps.append(dict(st, n=n, state="merged", detail="ticked by hand (names no backlog row or PR)"))
@@ -1081,10 +1092,19 @@ def _locked(path: pathlib.Path, write):
     return said
 
 
+def _open_or_refuse(cur: list[dict]) -> None:
+    """⛔ A log whose last agenda is CLOSED with no successor is an interrupted write; appending to it would
+    leave a record replay refuses, so both writers refuse first (r2 Codex M3)."""
+    if cur and cur[-1]["replaced"] is not None:
+        raise Malformed(f"agenda id {cur[-1]['id']} was replaced but no new agenda follows (an interrupted "
+                        f"write) — repair {AGENDA_REL} before recording or ticking")
+
+
 def record_agenda(path: pathlib.Path, ag: dict, now: str, src: dict | None, threads: list[dict] = ()) -> str:
     """Append `ag` as the current agenda. The one it replaces is closed FIRST with each step's state
     at this moment (from `src`), so the history records what was done by the time it changed."""
     def write(cur):
+        _open_or_refuse(cur)
         lines = []
         if cur:
             prev = cur[-1]
@@ -1105,6 +1125,7 @@ def tick_agenda(path: pathlib.Path, n: int, now: str) -> str:
     def write(cur):
         if not cur:
             raise Malformed("there is no agenda to tick — record one first")
+        _open_or_refuse(cur)
         steps = cur[-1]["steps"]
         if not 1 <= n <= len(steps):
             raise Malformed(f"step {n} does not exist: the current agenda has {len(steps)} step(s)")
@@ -1122,6 +1143,8 @@ def agenda_lines(snap: dict) -> list[str]:
     ag = snap.get("agenda")
     if not ag:
         return []
+    if "malformed" in ag:
+        return [f"AGENDA — NOT READ: MALFORMED — {ag['malformed']}"]
     out = [f"AGENDA — the current plan, set {ag['at']} · {ag['window']}"]
     if ag.get("change_if"):
         out.append(f"  changes if: {ag['change_if']}")
@@ -1608,8 +1631,15 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
                 return 2
             src = collect(root, run)
             live = derive(parse_threads(threads.read_text()), src, now)
-            cur = agendas(read_agenda_log(agenda_path))
-            live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared)
+            # ⛔ a malformed agenda log is SAID on the agenda block and in the exit code, and never takes the
+            # snapshot down with it — the tree was read whole (r2 Codex M4)
+            try:
+                cur = agendas(read_agenda_log(agenda_path))
+                live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared)
+            except Malformed as exc:
+                live["agenda"] = {"malformed": str(exc)}
+                print(f"MALFORMED — {exc}")
+                rc = 1
             if live["cannot"]:
                 print("CANNOT RUN — the snapshot was NOT logged: " + "; ".join(live["cannot"]))
                 rc = 2
@@ -2879,6 +2909,18 @@ def _self_test_body() -> int:
             _par.append((_st[0]["state"], derive_thread(_leaf, _w)["state"], _st[1]["state"]))
         case("⭐ a step whose row the tree declares `waits on` reads ❌ blocked, as the leaf does (r1 Codex H1)",
              _par, [("blocked", "blocked", "next"), ("blocked", "blocked", "next")])
+        # r2 Codex H1/H2 — the ref SET, and ANY declared wait, in either declaration order
+        _t_go = {"key": "a", "refs": [["backlog", 1], ["backlog", 2]], "waits": None}
+        _t_wait = {"key": "b", "refs": [["backlog", 2], ["backlog", 1]], "waits": "the owner"}
+        _oag = parse_agenda("window: w\n## g\n- backlog #2, backlog #1 · reversed\n- backlog #1, backlog #2 · same order\n")
+        _ord = [[st["state"] for st in derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), ths)["steps"]]
+                for ths in ([_t_go, _t_wait], [_t_wait, _t_go])]
+        case("⭐ a step waits if ANY declared thread naming the same ref SET waits, in any ref or declaration order "
+             "(r2 Codex H1, H2)", _ord, [["blocked", "blocked"], ["blocked", "blocked"]])
+        _t_wait2 = {"key": "c", "refs": [["backlog", 1], ["backlog", 2]], "waits": "PR #20"}
+        _both = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait, _t_go, _t_wait2])["steps"][0]["detail"]
+        case("...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)",
+             ("waits on the owner; PR #20 (declared)" in _both, _both.count("the owner")), (True, 1))
         case("no agenda derives to None, and the text output then shows no block",
              (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
              (None, [], False))
@@ -2951,13 +2993,22 @@ def _self_test_body() -> int:
              [(x["id"], x["ticked"], bool(x["replaced"]))
               for x in agendas([_A, _rA, _B, {"kind": "tick", "at": "t3", "of": 2, "step": 1}])],
              [(1, [], True), (2, [1], False)])
+        _ap.write_text(_ap.read_text() + json.dumps({"kind": "replaced", "at": "t9", "of": 1, "states": []}) + "\n")
+        _int_tick, _int_rec = tick_err(3), None
+        try:
+            record_agenda(_ap, ag, "t9", _s1)
+        except Malformed as exc:
+            _int_rec = str(exc)
+        case("⛔ after an interrupted write (closed, no successor) both writers refuse and append nothing (r2 Codex M3)",
+             ("an interrupted write" in (_int_tick or ""), "an interrupted write" in (_int_rec or ""),
+              len(read_agenda_log(_ap))), (True, True, 3))
         _ap.write_text(_ap.read_text() + "not json\n")
         try:
             read_agenda_log(_ap)
             _mal = None
         except Malformed as exc:
             _mal = str(exc)
-        case("⛔ an unreadable agenda-log line is MALFORMED, never skipped", "line 3 is not an agenda record" in (_mal or ""), True)
+        case("⛔ an unreadable agenda-log line is MALFORMED, never skipped", "line 4 is not an agenda record" in (_mal or ""), True)
         _ap.unlink()
 
         # main, end to end: record, print, replace, tick — through the real argument parsing and paths
@@ -2996,6 +3047,15 @@ def _self_test_body() -> int:
              (_rc_missing, "CANNOT RUN — the agenda file" in _b2.getvalue(), _rc_zero,
               "step 0 does not exist" in _b2.getvalue(), "snapshot logged" in _b2.getvalue()),
              (2, True, 1, True, False))
+        (r / "main" / AGENDA_REL).write_text(json.dumps({"kind": "agenda", "at": "old", "window": "w", "steps": []}) + "\n")
+        _b3 = io.StringIO()
+        _n_before = len(read_log(r / "main" / LOG_REL))
+        with contextlib.redirect_stdout(_b3):
+            _rc_old = main(["--snapshot", "--print", "--out", str(out)], root=r, run=fake(ok)[0], now="2026-11-04 12:09")
+        case("⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged "
+             "(r2 Codex M4)",
+             (_rc_old, "AGENDA — NOT READ: MALFORMED" in _b3.getvalue(), len(read_log(r / "main" / LOG_REL)) - _n_before,
+              "GOAL 1 ·" in _b3.getvalue()), (1, True, 1, True))
         (r / "main" / AGENDA_REL).unlink()
         (r / "main" / LOG_REL).write_text(_log_before)
         run, _ = fake([(["git", "fetch"], (128, "offline"))] + ok[1:])
