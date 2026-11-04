@@ -1468,8 +1468,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "render_tree_html(newest, ids=True)",
-        "render_tree_html(newest)"
+        "render_tree_html(newest, ids=True,",
+        "render_tree_html(newest, ids=False,"
       ]
     ],
     "expect": [
@@ -1500,6 +1500,488 @@
     ],
     "expect": [
       "a PR with no repo still carries its id, on plain text"
+    ]
+  },
+  {
+    "name": "backlog #497: the 48 h boundary is inclusive the wrong way, so a merge exactly 48 h old folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a > RECENT_HOURS for a in ages",
+        "a >= RECENT_HOURS for a in ages"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a merge is RECENT up to exactly 48 h before the drawing, OLDER one minute past it"
+    ]
+  },
+  {
+    "name": "backlog #497: a merge whose age cannot be read is folded as older",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    except (TypeError, ValueError):\n        return None\n",
+        "    except (TypeError, ValueError):\n        return 10 ** 6\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a merge whose age cannot be read is RECENT — an unread time never folds a leaf away"
+    ]
+  },
+  {
+    "name": "backlog #497: an unread merge minute prints blank",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return TIME_UNREAD\n",
+        "        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: an unread merge minute says TIME UNREAD, never a blank or a guessed time",
+      "backlog #497: a stored minute prints as the owner's `mm-dd hh:mm`, anything else as TIME UNREAD"
+    ]
+  },
+  {
+    "name": "backlog #497: a zoneless mergedAt is read in this machine's zone — a guessed time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return t.astimezone(tz).strftime(MINUTE_FMT) if t.tzinfo is not None else None",
+        "    return t.astimezone(tz).strftime(MINUTE_FMT)"
+      ]
+    ],
+    "expect": [
+      "backlog #497: gh's mergedAt is converted to the given zone; no zone or no parse is None, never a guess"
+    ]
+  },
+  {
+    "name": "backlog #497: a parked ledger entry turns an unstarted leaf in flight",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    flying = [_SS.clean(e.get(\"what\", \"\"), 160) for e in naming if not is_parked(e)]",
+        "    flying = [_SS.clean(e.get(\"what\", \"\"), 160) for e in naming]"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked entry does NOT make an unstarted leaf in flight — it is shown as parked"
+    ]
+  },
+  {
+    "name": "backlog #497: the parked bucket is never chosen",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"parked\"):\n        return \"parked\"",
+        "    if False:\n        return \"parked\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked leaf that has not landed is PARKED; one that merged or closed is aged instead"
+    ]
+  },
+  {
+    "name": "backlog #497: a parked entry naming only landed threads is hidden inside their folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if hits and is_parked(e) and all(t[\"state\"] in LANDED for t in hits):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: a parked entry naming only LANDED threads joins that group, naming them — never hidden in a fold"
+    ]
+  },
+  {
+    "name": "backlog #497: a merged leaf with an unread minute takes the latest READ one — a guessed time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    merged_at = max(whens) if whens and all(whens) else None",
+        "    merged_at = max(w for w in whens if w) if whens and any(whens) else None"
+      ]
+    ],
+    "expect": [
+      "backlog #497: a thread's merged_at is its LATEST merge; one unread minute makes it unread; unmerged is None"
+    ]
+  },
+  {
+    "name": "backlog #497: every bucket is drawn open, so nothing folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    shown = [(t, b) for t, b in marked if b in VISIBLE]",
+        "    shown = list(marked)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the folded leaves are NOT in the text — the count stands for them"
+    ]
+  },
+  {
+    "name": "backlog #497: --print lists a fold's leaves instead of its count line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            out += [b[3]] if b[3] is not None else _flat(b[4])",
+        "            out += _flat(b[4])"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: --print shows now, recent, queued and parked leaves, labelled, and folds the rest to counts"
+    ]
+  },
+  {
+    "name": "backlog #497: a goal with nothing current is not folded on the page",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if g[\"threads\"] and not shown:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal with nothing current"
+    ]
+  },
+  {
+    "name": "backlog #497: a fold is drawn OPEN",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            out.append(f'<details class=\"fold {b[1]}\"><summary>",
+        "            out.append(f'<details open class=\"fold {b[1]}\"><summary>"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #497: the page folds `older` and `later` CLOSED with the count in each summary, and folds a goal with nothing current"
+    ]
+  },
+  {
+    "name": "backlog #497: the page's current tree is bucketed at the snapshot time, not the build time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "render_tree_html(newest, ids=True, at=built)",
+        "render_tree_html(newest, ids=True)"
+      ]
+    ],
+    "expect": [
+      "backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run"
+    ]
+  },
+  {
+    "name": "backlog #497: git is asked for the committer date in the commit's own zone, not the owner's",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"-n{MERGED_DEPTH}\", f\"--date=format-local:{MINUTE_FMT}\",",
+        "f\"-n{MERGED_DEPTH}\", f\"--date=format:{MINUTE_FMT}\","
+      ]
+    ],
+    "expect": [
+      "backlog #497: ...asking git for the committer date in the owner's LOCAL zone, minute precision"
+    ]
+  },
+  {
+    "name": "backlog #497: gh's mergedAt is not read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if p.get(\"mergedAt\"):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "backlog #497: collect reads gh's mergedAt for a PR off master's log, as a local minute"
+    ]
+  },
+  {
+    "name": "goal blocks: goals are numbered from 0, not 1-based by their first request's time",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    rank = {i: r for r, i in enumerate(order, 1)}",
+        "    rank = {i: r for r, i in enumerate(order)}"
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: --print numbers each goal by its first request's time, `GOAL n · slug`"
+    ]
+  },
+  {
+    "name": "goal blocks: --print's goal line drops its number",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return f\"GOAL {n} · {slug}\"",
+        "    return f\"GOAL {slug}\""
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: --print numbers each goal by its first request's time, `GOAL n · slug`"
+    ]
+  },
+  {
+    "name": "goal blocks: a past tree's goal sections carry anchors too, so the page's ids collide",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"' if seen is not None else \"\"",
+        "    anchor = f' id=\"goal-{html.escape(slug, quote=True)}\"'"
+      ]
+    ],
+    "expect": [
+      "goal blocks: a past tree's sections carry no anchor, so the page's ids stay unique"
+    ]
+  },
+  {
+    "name": "goal blocks: a goal folded whole loses its numbered heading from the summary",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return (f'<section class=\"goal\"{anchor}><details class=\"fold goal\"><summary>{head}'",
+        "        return (f'<section class=\"goal\"{anchor}><details class=\"fold goal\"><summary>'"
+      ]
+    ],
+    "expect": [
+      "⛔ goal blocks: a goal with nothing current keeps its NUMBERED heading as its closed fold's summary"
+    ]
+  },
+  {
+    "name": "goal blocks: the heading takes the link colour, not the common look's --accent",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "h3.goal-h{margin:.1rem 0 .3rem;color:var(--accent);",
+        "h3.goal-h{margin:.1rem 0 .3rem;color:var(--link);"
+      ]
+    ],
+    "expect": [
+      "goal blocks: the heading colour is the common look's --accent (gold), declared in all four palettes"
+    ]
+  },
+  {
+    "name": "review r1 X1: in-flight ledger work no longer lifts a landed thread to NOW, so it folds away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if t.get(\"inflight\", \" · in flight: \" in str(t.get(\"detail\", \"\"))):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X1: in-flight ledger work on a MERGED thread is NOW — in --print, and outside every page fold"
+    ]
+  },
+  {
+    "name": "review r1 X1: an open PR mentioned in any thread's detail text counts as represented, so it leaves UNDECLARED",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    named_prs |= {t[\"open_pr\"] for g in out_goals for t in g[\"threads\"] if t.get(\"open_pr\") is not None}",
+        "    named_prs |= {int(m) for g in out_goals for t in g[\"threads\"] for m in re.findall(r\"PR #(\\d+)\", t[\"detail\"])}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X1: an open PR mentioned only in a ledger entry's text is still UNDECLARED, never hidden"
+    ]
+  },
+  {
+    "name": "review r1 X1: the open PR a backlog row resolved to by its title is not recorded, so it shows as undeclared",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            open_pr = int(p[\"number\"])\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "review r1 X1 adjacent: a backlog-only thread resolved to an open PR by its TITLE still represents that PR"
+    ]
+  },
+  {
+    "name": "review r1 X2: master's committer date wins over GitHub's mergedAt",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if gh:\n        return gh\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X2: a merged leaf's time is GitHub's mergedAt, not the commit date, and stays RECENT"
+    ]
+  },
+  {
+    "name": "review r1 X2: a backlog-only thread's merge time ignores GitHub's mergedAt",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            whens = [(src.get(\"all_merged_at\") or {}).get(hit[1]) or (src.get(\"merged_at\") or {}).get(hit[0])]",
+        "            whens = [(src.get(\"merged_at\") or {}).get(hit[0])]"
+      ]
+    ],
+    "expect": [
+      "review r1 X2 adjacent: with no mergedAt, the commit date is the fallback (backlog-only path too)"
+    ]
+  },
+  {
+    "name": "review r1 X3: goals are numbered by their place in the file, so a prepended goal renumbers the rest",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    order = sorted(range(len(goals)), key=lambda i: (goals[i][\"requests\"][0][\"when\"], i))",
+        "    order = list(range(len(goals)))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or inserting a newer goal moves no number and no anchor"
+    ]
+  },
+  {
+    "name": "review r1 X3: goal anchors use the number, so they move with it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal-{html.escape(slug, quote=True)}\"' if seen",
+        "goal-{n}\"' if seen"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 X3: goals are numbered by their FIRST request's time and anchored by SLUG — prepending or inserting a newer goal moves no number and no anchor"
+    ]
+  },
+  {
+    "name": "review r1 C2: an unstarted fix or blocker is LATER again, folded under 'later'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return \"queued\" if t.get(\"relation\") in QUEUED_RELATIONS else \"later\"",
+        "        return \"later\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C2: an unstarted fix or blocker is QUEUED (planned), drawn open and labelled; unstarted bookkeeping and side stay LATER"
+    ]
+  },
+  {
+    "name": "review r1 C2: the later fold says 'nothing plans it' again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"later ({len(later)}) — not started, bookkeeping or an aside\"",
+        "f\"later ({len(later)}) — not started, and nothing plans it\""
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C2: the `later` fold no longer claims 'nothing plans it' — it says what it holds"
+    ]
+  },
+  {
+    "name": "review r1 C3: a negated 'NOT PARKED' parks the thread",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    text = PARKED_NOT_RE.sub(\" \", str(entry.get(\"what\", \"\")))",
+        "    text = str(entry.get(\"what\", \"\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, and a negated one parks nothing"
+    ]
+  },
+  {
+    "name": "review r1 C3: a lower-case 'parked:' leading the entry no longer parks",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            or bool(PARKED_LEAD_RE.search(text)))",
+        "            or False)"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C3: 'parked' is matched in any case where it LEADS a clause, PARKED in capitals anywhere, and a negated one parks nothing"
+    ]
+  },
+  {
+    "name": "review r1 C5: the fold summary is --ink-faint again (below AA in the light theme)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);",
+        "details.fold summary{cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C5: fold summaries, goal counts and the goal quote's time are --ink-soft, never --ink-faint"
+    ]
+  },
+  {
+    "name": "review r1 C5: the goal counts are --ink-faint again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".goal-counts{color:var(--ink-soft)}",
+        ".goal-counts{color:var(--ink-faint)}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C5: fold summaries, goal counts and the goal quote's time are --ink-soft, never --ink-faint"
+    ]
+  },
+  {
+    "name": "review r1 C6: a closed PR is OLDER at any age again",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if state in (\"merged\", \"closed\"):",
+        "    if state == \"merged\":"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
+    ]
+  },
+  {
+    "name": "review r1 C6: a closed PR's close time is not read, so an old closure never folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        closes = [(src.get(\"all_closed_at\") or {}).get(n) for n, f in zip(prs, found) if f[0] == \"closed\"]",
+        "        closes = [None for n, f in zip(prs, found) if f[0] == \"closed\"]"
+      ]
+    ],
+    "expect": [
+      "⛔ review r1 C6: a PR closed minutes ago is RECENT, says when, and is drawn open; an old closure is OLDER"
+    ]
+  },
+  {
+    "name": "recency is judged only by the time the aggregate state carries, so a recent merge beside an old closure folds",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out[\"ended_at\"] = whens + closes",
+        "        out[\"ended_at\"] = closes if state == \"closed\" else whens"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2 X1: a thread is RECENT when ANY of its PRs merged or closed within the window — a merge 3 h ago is not folded because the thread also names a PR closed a month ago"
+    ]
+  },
+  {
+    "name": "an unread ref time counts as old, so a thread whose merge minute was never read is folded away",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "a is not None and a >",
+        "a is None or a >"
+      ]
+    ],
+    "expect": [
+      "review r2 X1 adjacent: every ref old -> still OLDER and folded; one ref's time unread -> RECENT"
     ]
   }
 ]
