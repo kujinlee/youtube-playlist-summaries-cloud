@@ -17,7 +17,7 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
-    REFUSE-SPAWN  weekly 90% or more — a NEW subagent spawn, and a message from the MAIN SESSION that
+    REFUSE-SPAWN  weekly 97% or more (backlog #500; it was 90) — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
     CANNOT RUN    the cache is missing, not a regular file, not read within 1 s, over 64 KiB, unparseable
@@ -83,7 +83,7 @@ this PR was built in, all 107 senders of a teammate message are `in_process_team
 `meta.json`, and every entry of their transcripts carries `agentId`; no transcript on this machine holds a
 cross-session message. INFERRED, not measured: an in-process teammate's hook input carries `agent_id`, like the
 plain subagents measured above (the docs say so too), so its report is allowed. A teammate running as a SEPARATE
-Claude process is that process's own main session, so its hook input probably has NO `agent_id`: at 90% or more
+Claude process is that process's own main session, so its hook input probably has NO `agent_id`: at 97% or more
 its report to the lead is DENIED, and needs the owner's override. If an in-process teammate's input lacked
 `agent_id` too, every report in such a session would be denied at REFUSE; that fails toward the refusal, and is
 the first thing to measure if reports stall.
@@ -126,7 +126,7 @@ The hook verdict travels as JSON on stdout at exit 0. A crash is any other exit,
 as non-blocking, and the hooks map every non-zero exit to 1 so that even an argparse error (exit 2) can
 never block a prompt.
 
-FAILS IF (backlog #399's falsifier): with the cache at 90% or more, a new subagent spawns, or the MAIN SESSION
+FAILS IF (backlog #399's falsifier, at backlog #500's 97): with the cache at 97% or more, a new subagent spawns, or the MAIN SESSION
 wakes an agent with anything but a control message above, without an override; or a missing cache reads as fine.
 (A subagent waking a sibling is backlog #404's falsifier, not this one.)
 
