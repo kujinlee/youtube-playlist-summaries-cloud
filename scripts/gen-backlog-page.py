@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 246 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 247 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1057,9 +1057,13 @@ def unlaid_rows(rows: Sequence[dict], min_chars: int = LAYOUT_MIN_CHARS) -> list
 
 
 def _one_block(h: str) -> bool:
-    """A laid-out body is ONE block when it has fewer than two `seg`/`prov` blocks AND no `(a) (b)`
-    list — a list IS layout (row-cues r1 Codex M4: an 882-character row of two list items was named)."""
-    return len(re.findall(r'<div class="(?:seg|prov)">', h)) < 2 and '<ol class="enum">' not in h
+    """A laid-out body is ONE block when it has fewer than two `seg`/`prov` blocks, unless it holds an `(a) (b)`
+    list AND its prose outside the list is under `LAYOUT_MIN_CHARS` — a list IS layout (row-cues r1 Codex M4: an
+    882-character row of two list items was named), but not for a wall of prose in front of it (r2 Codex M1)."""
+    if len(re.findall(r'<div class="(?:seg|prov)">', h)) >= 2:
+        return False
+    outside = re.sub(r'<ol class="enum">.*?</ol>', "", h, flags=re.S)
+    return outside == h or len(visible_text(outside)) >= LAYOUT_MIN_CHARS
 
 
 def layout_body(h: str) -> str:
@@ -4046,6 +4050,9 @@ def _self_test_body() -> int:
     case("unlaid_rows: a long row laid out as an (a) (b) list is NOT a wall (row-cues r1 Codex M4)",
          lambda: len(_li) >= LAYOUT_MIN_CHARS and '<ol class="enum">' in layout_body(md(_li))
          and unlaid_rows([{"num": 5, "body": _li}]) == [])
+    _lw = "**T** — " + "wall word " * 100 + ": (a) first item with enough words here (b) second item with enough words here"
+    case("unlaid_rows: a list does NOT excuse a wall of prose in front of it (row-cues r2 Codex M1)",
+         lambda: '<ol class="enum">' in layout_body(md(_lw)) and unlaid_rows([{"num": 6, "body": _lw}]) == [6])
     case("unlaid_rows: the threshold is a parameter — the short row is named once it is lowered",
          lambda: unlaid_rows([{"num": 9, "body": _short}], min_chars=len(_short)) == [9])
     case("the Status cell is laid out by the same rules as the body (owner 2026-11-05, backlog #40)",

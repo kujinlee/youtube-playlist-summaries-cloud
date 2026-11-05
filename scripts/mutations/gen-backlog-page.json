@@ -834,8 +834,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 2 and '<ol class=\"enum\">' not in h",
-        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 1 and '<ol class=\"enum\">' not in h"
+        "    if len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) >= 2:",
+        "    if len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) >= 1:"
       ]
     ],
     "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
@@ -922,10 +922,21 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        " < 2 and '<ol class=\"enum\">' not in h",
-        " < 2"
+        "    return outside == h or len(",
+        "    return True or len("
       ]
     ],
     "expect": "unlaid_rows: a long row laid out as an (a) (b) list is NOT a wall (row-cues r1 Codex M4)"
+  },
+  {
+    "name": "a list excuses the wall in front of it (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return outside == h or len(visible_text(outside)) >= LAYOUT_MIN_CHARS",
+        "    return outside == h"
+      ]
+    ],
+    "expect": "unlaid_rows: a list does NOT excuse a wall of prose in front of it (row-cues r2 Codex M1)"
   }
 ]
