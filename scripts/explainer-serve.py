@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 232 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 233 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1192,7 +1192,20 @@ RELOAD_JS = """
   // cannot reach the server we cannot trust the staleness answer either.
   var serverMsg = '';   // owned by poll()      — "I cannot reach the server"
   var staleMsg  = '';   // owned by pollStale() — "the output is behind its source"
-  function render() { say(serverMsg || staleMsg); }
+  //
+  // ⛔ AND A THIRD WRITER THE 09-02 FIX DID NOT SEE: THE REFRESH BUTTON — backlog #502. Its
+  // handler (page_chrome.py) writes "rebuilding…" into this span, and render() blanked it on the
+  // next 2 s poll. MEASURED 2026-11-04 in Chrome: blank at 0.85 s, reload at 7.9 s, so the click
+  // looked dead and the owner clicked twice. The button's text is the answer to what the reader
+  // just DID, so it outranks the stale warning; the handler marks it with `data-refresh`, and a
+  // reload (the only way a rebuild ends well) clears the mark with the page.
+  // ⚠ BUT NOT THE OUTAGE — r1 CODEX MEDIUM. The first version put the claim FIRST, and a claim
+  // never expires: a rebuild left hanging, or one that failed, then hid "server not responding"
+  // for as long as the page stayed open. An unreachable server outranks everything, as above.
+  function render() {
+    var s = document.getElementById('chrome-refresh-say');
+    say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);
+  }
   var misses = 0;
   // ⛔ NOT 1. A single failed poll is a blip — a laptop waking, a restart mid-request — and
   // shouting on the first one trains the reader to ignore the message, which is worse than
@@ -1557,6 +1570,34 @@ def _self_test_body() -> int:
     ok = 0
     cases: list[tuple[str, Callable[[], object]]] = []
 
+    def _run_reload_js(claimed: bool, stale: bool, down: bool = False) -> str:
+        """Run RELOAD_JS on a stub page whose span reads "rebuilding…"; return the span's text
+        after both polls settle, or a CANNOT RUN string (never equal to any expected value).
+        `down`: every fetch rejects and the interval fires twice more, so three polls miss."""
+        import json as _j
+        js = RELOAD_JS.strip().removeprefix("<script>").removesuffix("</script>")
+        stub = ("var span={textContent:'rebuilding\\u2026',a:{},getAttribute:function(k){return k in this.a?this.a[k]:null;},"
+                "setAttribute:function(k,v){this.a[k]=String(v);}};"
+                "if(CLAIMED)span.setAttribute('data-refresh','rebuilding\\u2026');"
+                "var G=globalThis;G.document={getElementById:function(i){return i==='chrome-refresh-say'?span:null;},"
+                "querySelectorAll:function(){return [];},addEventListener:function(){},activeElement:null,visibilityState:'visible'};"
+                "G.window=G;G.scrollY=0;G.scrollTo=function(){};G.addEventListener=function(){};G.setInterval=function(f){G.tick=f;};"
+                "Object.defineProperty(G,'location',{configurable:true,value:{pathname:'/x.html',reload:function(){}}});"
+                "G.sessionStorage={getItem:function(){return null;},setItem:function(){},removeItem:function(){}};"
+                "G.fetch=function(u){if(DOWN)return Promise.reject(new Error('down'));var t=u.indexOf('/_stale')===0?(STALE?'stale docs/x.md':'fresh'):'r1';"
+                "return Promise.resolve({ok:true,text:function(){return Promise.resolve(t);}});};"
+                ).replace("CLAIMED", _j.dumps(claimed)).replace("STALE", _j.dumps(stale)).replace("DOWN", _j.dumps(down))
+        prog = stub + js + ("\nif(%s){G.tick();G.tick();}" % _j.dumps(down)) + "\nsetTimeout(function(){console.log(JSON.stringify(span.textContent));},50);"
+        try:
+            r = subprocess.run(["node", "-e", prog], capture_output=True, text=True, timeout=30)
+            if r.returncode:
+                return f"CANNOT RUN: node rc={r.returncode} {r.stderr.strip()[:160]}"
+            return _j.loads(r.stdout.strip().splitlines()[-1])
+        except FileNotFoundError:
+            return "CANNOT RUN: node is not on PATH — treat this as NOT RUN"
+        except Exception as e:
+            return f"CANNOT RUN: {e}"
+
     def case(name, fn):
         cases.append((name, fn))
 
@@ -1893,6 +1934,20 @@ def _self_test_body() -> int:
         # COMMENTS above that quote the old call while explaining why it is gone. A check about
         # code that prose can satisfy is measuring the wrong population; this one strips line
         # comments first. `_stale_no_url_literals` below guards the strip's one precondition.
+        # ⛔ BEHAVIOUR, RUN UNDER NODE — backlog #502. The client blanked the Refresh button's
+        # "rebuilding…" 0.85 s into a 7.9 s rebuild (measured in Chrome), so a click looked dead.
+        # A substring check cannot see that: the defect was a correct-looking render() meeting a
+        # writer in ANOTHER file. So this runs the real RELOAD_JS against a stub page, twice from
+        # one start — span claimed by the Refresh button, and not — and reads the span after both
+        # polls settle. The unclaimed world must still be blanked or warned, or the claim test
+        # would pass on a client that never writes at all.
+        case("a Refresh claim survives both polls; an unclaimed span is still the polls' (run)",
+             lambda: _run_reload_js(claimed=True, stale=False) == "rebuilding\u2026"
+                     and _run_reload_js(claimed=True, stale=True) == "rebuilding\u2026"
+                     and _run_reload_js(claimed=False, stale=False) == ""
+                     and _run_reload_js(claimed=False, stale=True).startswith("docs/x.md has changed")
+                     # r1 CODEX MEDIUM: the claim must NOT outrank an unreachable server
+                     and _run_reload_js(claimed=True, stale=True, down=True).startswith("server not responding"))
         case("no poll clears the whole status line; each owns its own state",
              lambda: "say('')" not in _js_code_only(RELOAD_JS)
                      and "serverMsg" in RELOAD_JS and "staleMsg" in RELOAD_JS)

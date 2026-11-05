@@ -18761,3 +18761,15 @@ Backlog #500, `scripts/check-usage-pace.py`: `refuse_at(now, resets)` = min(97, 
 reset's time of day, so a DST day is one day; the pace line from
 `~/.claude/meter/log.jsonl` is text only; the self-test redirects `HOME` so no case reads the live
 meter. 304 self-test cases, 125 mutations.
+
+## 2026-11-04
+The goal tree's Refresh button now keeps saying "rebuilding…" until the page reloads (or says why the
+rebuild failed), so one click is enough.
+Before, the message vanished within a second and the rebuild took about eight, so the click looked
+like it had done nothing. You had to click twice; the second click was ignored and the first one was
+still working.
+<!--tech-->
+Backlog #502, PR #501. The live-reload client (`RELOAD_JS`) blanked the status span on every 2 s poll;
+it now shows a `data-refresh` claim written by the Refresh handler's `tell()` ahead of the stale
+warning, though never ahead of "server not responding" (Codex r1, Medium). A new explainer-serve case runs the real client under node in five page states (233 cases);
+page_chrome gains one case (234). Five mutations, each killed by hand. Backlog #500 ticked ✅.
