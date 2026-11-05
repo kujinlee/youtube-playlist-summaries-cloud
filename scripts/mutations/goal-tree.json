@@ -4340,5 +4340,31 @@
     "expect": [
       "#509 r2 Codex L2: the age counts whole days — Jan 31 23:55 to Mar 1 00:05 is 672 h 10 m (28 days)"
     ]
+  },
+  {
+    "name": "#509 r3 Codex L1: an impossible date crashes the page (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        except ValueError:\n            mins = None\n",
+        "        except OverflowError:\n            mins = None\n"
+      ]
+    ],
+    "expect": [
+      "#509 r3 Codex L1: an impossible date (Feb 30, 24:00) renders the page with no age line rather than crash"
+    ]
+  },
+  {
+    "name": "#509 r3 Codex L2: a same-minute merge is stale (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and ended > ag[\"at\"]",
+        "and ended >= ag[\"at\"]"
+      ]
+    ],
+    "expect": [
+      "#509 r3 Codex L2: a merge in the SAME minute the plan was set is not stale; one a minute later is"
+    ]
   }
 ]

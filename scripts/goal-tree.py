@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 338 cases
+    python3 scripts/goal-tree.py --self-test                 # 340 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1344,9 +1344,13 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
     # r1 Codex L1 (item 4): say how old the plan is beside the snapshot's own time, when both are minute stamps
     at = snap.get("at")
     if isinstance(at, str) and _STAMP.fullmatch(at) and _STAMP.fullmatch(ag["at"]) and at >= ag["at"]:
-        mins = int((_dt.datetime.strptime(at, MINUTE_FMT) - _dt.datetime.strptime(ag["at"], MINUTE_FMT)).total_seconds()
-                   // 60)
-        out.append(("age", f"age: set {mins // 60} h {mins % 60:02d} m before this snapshot ({at})"))
+        try:  # r3 Codex L1: the pattern admits 2026-02-30 and 24:00, which strptime refuses — say nothing, never crash
+            mins = int((_dt.datetime.strptime(at, MINUTE_FMT) - _dt.datetime.strptime(ag["at"], MINUTE_FMT)).total_seconds()
+                       // 60)
+        except ValueError:
+            mins = None
+        if mins is not None:
+            out.append(("age", f"age: set {mins // 60} h {mins % 60:02d} m before this snapshot ({at})"))
     if late:
         out.append(("stale", f"⚠ STALE — merged after this plan was set, and named by no step: {', '.join(late)}. "
                              "Re-record the agenda."))
@@ -3384,6 +3388,17 @@ def _self_test_body() -> int:
         case("#509: the same plan read at an earlier `at` is stale for BOTH merges; at a later one, for none",
              ("backlog #41" in dict(agenda_context(_sn509, dict(_a509, at="2026-11-04 07:00"))).get("stale", ""),
               "stale" in dict(agenda_context(_sn509, dict(_a509, at="2026-11-04 12:00")))), (True, False))
+        def _no_crash(bad):
+            try:
+                return ("age" in dict(agenda_context(dict(_sn509, at="2026-12-31 23:59"), dict(_a509, at=bad))),
+                        "<section" in agenda_html(dict(_sn509, at="2026-12-31 23:59", agenda=dict(_a509, at=bad))))
+            except Exception as e:  # noqa: BLE001 — the case must FAIL by name, not take the suite down
+                return f"CRASH {type(e).__name__}"
+        case("#509 r3 Codex L1: an impossible date (Feb 30, 24:00) renders the page with no age line rather than crash",
+             [_no_crash(_bad) for _bad in ("2026-02-30 09:00", "2026-01-31 24:00")], [(False, True), (False, True)])
+        case("#509 r3 Codex L2: a merge in the SAME minute the plan was set is not stale; one a minute later is",
+             ["stale" in dict(agenda_context(_sn509, dict(_a509, at=_eq))) for _eq in ("2026-11-04 10:00", "2026-11-04 09:59")],
+             [False, True])
         case("#509: an agenda stamp that is not `YYYY-MM-DD HH:MM` flags nothing stale rather than compare text",
              "stale" in dict(agenda_context(_sn509, dict(_a509, at="(unknown)"))), False)
         _done = dict(_a509, at="2026-11-04 12:00", steps=[dict(st, state="merged") for st in _a509["steps"]])
