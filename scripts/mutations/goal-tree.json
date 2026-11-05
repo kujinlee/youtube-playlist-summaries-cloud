@@ -2366,12 +2366,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if not ag or \"malformed\" in ag:\n        return []\n    refs =",
-        "    if not ag:\n        return []\n    refs ="
+        "    if snap_agenda({\"agenda\": ag})[0] != \"ok\":\n        return []\n    refs =",
+        "    if not ag or \"malformed\" in ag:\n        return []\n    refs ="
       ]
     ],
     "expect": [
-      "a goal is tagged with the steps naming a ref its threads name — never a free step, never a bad agenda"
+      "⛔ a malformed agenda value is SAID by --print and the page, and tags no goal — never a crash (r2 Codex H1)"
     ]
   },
   {
@@ -2444,8 +2444,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if \"malformed\" in ag:\n        return f'<section class=\"agenda\"><h2 class=\"warn\">",
-        "    if False:\n        return f'<section class=\"agenda\"><h2 class=\"warn\">"
+        "return f'<section class=\"agenda\"><h2 class=\"warn\">{html.escape(lines[0])}</h2></section>'",
+        "return f'<section class=\"agenda\"><h2>{html.escape(lines[0])}</h2></section>'"
       ]
     ],
     "expect": [
@@ -2509,8 +2509,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(ca.get(\"id\"), ca.get(\"at\")) != (pa.get(\"id\"), pa.get(\"at\")):",
-        "ca.get(\"at\") != pa.get(\"at\"):"
+        "(pk != \"ok\" or (ca[\"id\"], ca[\"at\"]) != (pa[\"id\"], pa[\"at\"])):",
+        "(pk != \"ok\" or ca[\"at\"] != pa[\"at\"]):"
       ]
     ],
     "expect": [
@@ -2522,12 +2522,103 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if \"agenda\" not in snap:\n",
-        "    if False:\n"
+        "        return \"absent\", None\n",
+        "        return \"none\", None\n"
       ]
     ],
     "expect": [
       "⛔ a snapshot with NO agenda key says it was not captured — never that there was none (r1 Codex M3)"
+    ]
+  },
+  {
+    "name": "an agenda's id is not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_is(ag.get(\"id\"), int) and _is(ag.get(\"at\"), str)",
+        "_is(ag.get(\"at\"), str)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "an agenda's time is not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _is(ag.get(\"at\"), str) and _is(ag.get(\"window\"), str)",
+        "and _is(ag.get(\"window\"), str)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "a step's fields are not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return _is(steps, list) and all(isinstance(st, dict)",
+        "    return _is(steps, list) or all(isinstance(st, dict)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "steps are compared when only one side is a valid agenda (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    elif ck == \"ok\" and pk == \"ok\":",
+        "    elif ck == \"ok\" or pk == \"ok\":"
+      ]
+    ],
+    "expect": [
+      "⛔ a malformed or identity-less agenda on either side never crashes the timeline and never yields a step move — only a valid new agenda is said to be recorded (r2 Codex H1, M2)"
+    ]
+  },
+  {
+    "name": "earlier agendas are not shape-checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (hist, None) if ok else",
+        "    return (hist, None) if True else"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on"
+    ]
+  },
+  {
+    "name": "--print hides unreadable earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        out.append(f\"  ⚠ earlier agendas NOT READ",
+        "    if False:\n        out.append(f\"  ⚠ earlier agendas NOT READ"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on"
+    ]
+  },
+  {
+    "name": "the page hides unreadable earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        parts.append(f'<p class=\"warn\">⚠ earlier",
+        "    if False:\n        parts.append(f'<p class=\"warn\">⚠ earlier"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on"
     ]
   }
 ]
