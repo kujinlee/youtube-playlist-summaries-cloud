@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 292 cases
+    python3 scripts/goal-tree.py --self-test                 # 312 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -531,6 +531,16 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
     out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
+    (pk, pa), (ck, ca) = snap_agenda(prev), snap_agenda(cur)
+    # ⛔ identity is the agenda's (id, at), and steps are compared ONLY between two VALID agendas with the same one:
+    # two agendas recorded in one minute are different plans, and an agenda missing its identity is no basis for a
+    # move (slice 2, r1 Codex M2, r2 Codex M2)
+    if ck == "ok" and (pk != "ok" or (ca["id"], ca["at"]) != (pa["id"], pa["at"])):
+        out.append(f"agenda recorded: set {ca['at']}, {len(ca.get('steps') or [])} step(s)")
+    elif ck == "ok" and pk == "ok":
+        was = {st["n"]: st["state"] for st in pa["steps"]}
+        out += [f"agenda step {st['n']}: {was[st['n']]} → {step_glyph(st['state'])} {st['state']} — {st['text']}"
+                for st in ca["steps"] if st["n"] in was and was[st["n"]] != st["state"]]
     return out or ["no change a reader would see (the stored tree differs only in wording)"]
 
 
@@ -1018,6 +1028,12 @@ def _agenda_records(text: str, name: str) -> list[dict]:
                     isinstance(st, dict) and isinstance(st.get("when"), str) and isinstance(st.get("text"), str)
                     and isinstance(st.get("refs"), list) for st in rec["steps"]):
                 raise ValueError("an agenda step needs `when`, `text` and `refs`")
+            # ⛔ a frozen state is READ by the history and the page: each is `{n: int, state: str}`, or MALFORMED
+            # here — never a TypeError in the snapshot (slice 2, r1 Codex H1)
+            if rec["kind"] == "replaced" and not all(
+                    isinstance(x, dict) and isinstance(x.get("n"), int) and not isinstance(x.get("n"), bool)
+                    and isinstance(x.get("state"), str) for x in rec["states"]):
+                raise ValueError("a frozen state needs `n` (int) and `state` (str)")
         except ValueError as exc:
             raise Malformed(f"{name} line {i} is not an agenda record ({exc})") from None
         out.append(rec)
@@ -1154,13 +1170,60 @@ def tick_agenda(path: pathlib.Path, n: int, now: str) -> str:
     return _locked(path, write)
 
 
+def _is(x, typ) -> bool:
+    return isinstance(x, typ) and not isinstance(x, bool)
+
+
+def _ref_ok(r) -> bool:
+    return _is(r, list) and len(r) == 2 and _is(r[0], str) and _is(r[1], int)
+
+
+def _steps_ok(steps, keys) -> bool:
+    return _is(steps, list) and all(isinstance(st, dict) and _is(st.get("n"), int)
+                                    and all(_is(st.get(k), t) for k, t in keys)
+                                    and all(_ref_ok(r) for r in st.get("refs") or []) for st in steps)
+
+
+def snap_agenda(snap: dict) -> tuple[str, object]:
+    """PURE. THE ONE READER of a snapshot's `agenda` (slice 2, r2 Codex H1/M2 — the redesign: r1 patched each reader,
+    and r2 found the same class in the readers it had not touched). Returns `(kind, value)`:
+      absent    — no key: the snapshot predates agendas, and says NOTHING about whether there was one;
+      none      — the key holds None: no agenda was recorded;
+      malformed — the message: either the log said so, or the value is not an agenda's shape;
+      ok        — the agenda, its identity (`id`, `at`) and every step field a reader indexes checked.
+    ⛔ No reader indexes `snap["agenda"]` but through this."""
+    if "agenda" not in snap:
+        return "absent", None
+    ag = snap["agenda"]
+    if ag is None:
+        return "none", None
+    if isinstance(ag, dict) and "malformed" in ag:
+        return "malformed", str(ag["malformed"])
+    if not (isinstance(ag, dict) and _is(ag.get("id"), int) and _is(ag.get("at"), str) and _is(ag.get("window"), str)
+            and (ag.get("change_if") is None or _is(ag.get("change_if"), str))
+            and _steps_ok(ag.get("steps"), (("state", str), ("text", str), ("when", str), ("detail", str),
+                                            ("refs", list)))):
+        return "malformed", "the snapshot's agenda is not an agenda (an id, a time, a window and checked steps)"
+    return "ok", ag
+
+
+def snap_history(snap: dict) -> tuple[list, str | None]:
+    """PURE. The ONE reader of a snapshot's `agenda_history`: (the earlier agendas, None), or ([], why not)."""
+    hist = snap.get("agenda_history", [])
+    # ⛔ no `or []`: a FALSY malformed value (false, "", 0) is still malformed, and is said (r3 Codex L2)
+    ok = _is(hist, list) and all(
+        isinstance(h, dict) and _is(h.get("id"), int) and all(_is(h.get(k), str) for k in ("at", "replaced_at", "window"))
+        and _steps_ok(h.get("steps"), (("state", str), ("text", str))) for h in hist)
+    return (hist, None) if ok else ([], "the snapshot's earlier agendas are not in an agenda's shape")
+
+
 def agenda_lines(snap: dict) -> list[str]:
-    """PURE. The current agenda as text, grouped by when. Empty when none is recorded."""
-    ag = snap.get("agenda")
-    if not ag:
+    """PURE. The current agenda as text, grouped by when. Empty when none is recorded, or none was captured."""
+    kind, ag = snap_agenda(snap)
+    if kind in ("absent", "none"):
         return []
-    if "malformed" in ag:
-        return [f"AGENDA — NOT READ: MALFORMED — {ag['malformed']}"]
+    if kind == "malformed":
+        return [f"AGENDA — NOT READ: MALFORMED — {ag}"]
     out = [f"AGENDA — the current plan, set {ag['at']} · {ag['window']}"]
     if ag.get("change_if"):
         out.append(f"  changes if: {ag['change_if']}")
@@ -1169,9 +1232,50 @@ def agenda_lines(snap: dict) -> list[str]:
         if st["when"] != when:
             when = st["when"]
             out.append(f"  {when}")
-        glyph = "◇" if st["state"] == FREE else GLYPH.get(st["state"], "?")
-        out.append(f"    {st['n']}. {glyph} {st['text']} — {st['detail']}")
+        out.append(f"    {st['n']}. {step_glyph(st['state'])} {st['text']} — {st['detail']}")
+    hist, bad = snap_history(snap)
+    if bad:
+        out.append(f"  ⚠ earlier agendas NOT READ — {bad}")
+    if hist:
+        out.append(f"  earlier agendas ({len(hist)}), newest first — collapsed on the page")
+        out += ["    " + history_line(h) for h in hist]
     return out
+
+
+def step_glyph(state: str) -> str:
+    """PURE. A step's glyph: a leaf's, except a free step not yet ticked is ◇."""
+    return "◇" if state == FREE else GLYPH.get(state, "?")
+
+
+def agenda_history(cur: list[dict]) -> list[dict]:
+    """PURE. Every REPLACED agenda, NEWEST FIRST (owner, 2026-11-04 06:06: kept "for analytics purpose", one
+    collapsed line each). A step's state is the one frozen when its agenda was replaced, never re-derived — the
+    history says what was done BY THEN. ⚠ A step the frozen list does not name is `cannot`, never a guess."""
+    out = []
+    for ag in reversed(cur):
+        if ag["replaced"] is None:
+            continue
+        frozen = {x.get("n"): x.get("state") for x in ag["replaced"]["states"] if isinstance(x, dict)}
+        out.append({"id": ag["id"], "at": ag["at"], "replaced_at": ag["replaced"]["at"], "window": ag["window"],
+                    "steps": [dict(st, n=n, state=frozen.get(n) or "cannot")
+                              for n, st in enumerate(ag["steps"], 1)]})
+    return out
+
+
+def history_line(h: dict) -> str:
+    """PURE. An earlier agenda as ONE line — the same words in --print and on the page's collapsed summary."""
+    done = sum(1 for st in h["steps"] if st["state"] == "merged")
+    return (f"agenda #{h['id']} · set {h['at']} · replaced {h['replaced_at']} · "
+            f"{done}/{len(h['steps'])} done by then · {h['window']}")
+
+
+def goal_agenda_steps(g: dict, ag: dict | None) -> list[int]:
+    """PURE. The current agenda's steps that name a ref one of this goal's threads names — the goal's `agenda step
+    n` tag, so a step can be found in the tree and a goal on the agenda. A free step names nothing, so tags none."""
+    if snap_agenda({"agenda": ag})[0] != "ok":
+        return []
+    refs = {tuple(r) for t in g["threads"] for r in t.get("refs") or []}
+    return [st["n"] for st in ag["steps"] if refs.intersection(_refset(st["refs"]))]
 
 
 # ── rendering ─────────────────────────────────────────────────────────────────────────────────
@@ -1201,8 +1305,8 @@ def goal_numbers(goals: list[dict]) -> list[int]:
     return [rank[i] for i in range(len(goals))]
 
 
-def _goal_blocks(g: dict, at, n: int) -> list:
-    """PURE. Goal number `n` as ONE `("goal", n, slug, first_request, counts, blocks)` block (see `tree_blocks`).
+def _goal_blocks(g: dict, at, n: int, tags: list[int] = ()) -> list:
+    """PURE. Goal number `n` as ONE `("goal", n, slug, first_request, counts, tags, blocks)` block (see `tree_blocks`).
     The visible buckets keep the relation branches; `older` and `later` become one FOLD each, a last sibling whose
     text line counts what the page folds away. `counts` is set only when NOTHING is current: the page then folds
     the whole goal under its heading."""
@@ -1239,7 +1343,7 @@ def _goal_blocks(g: dict, at, n: int) -> list:
     if g["threads"] and not shown:
         # Nothing current: the WHOLE goal folds on the page, its counts beside its heading; the text is unchanged.
         counts = "nothing current (" + ", ".join(f"{len(f[3])} {f[0]}" for f in folds) + ")"
-    return [("goal", n, g["slug"], g["requests"][0], counts, blocks), ("pre", [""])]
+    return [("goal", n, g["slug"], g["requests"][0], counts, list(tags), blocks), ("pre", [""])]
 
 
 def tree_blocks(snap: dict, at=None) -> list:
@@ -1253,7 +1357,7 @@ def tree_blocks(snap: dict, at=None) -> list:
     # among the shown ones, so it is stable whatever folds — and (review r1 X3) it is `goal_numbers`, by TIME.
     numbers = goal_numbers(snap["goals"])
     for i, g in enumerate(snap["goals"]):
-        blocks += _goal_blocks(g, at, numbers[i])
+        blocks += _goal_blocks(g, at, numbers[i], goal_agenda_steps(g, snap.get("agenda")))
     lines: list[str] = []
     if snap["undeclared"]:
         lines.append("UNDECLARED — open PRs no goal names (shown, never folded in)")
@@ -1311,11 +1415,16 @@ def _flat(blocks: list) -> list[str]:
         if b[0] == "pre":
             out += b[1]
         elif b[0] == "goal":
-            _, n, slug, first, _counts, inner = b
-            out += [f'{goal_head(n, slug)} ({first["when"]}) "{first["quote"]}"'] + _flat(inner)
+            _, n, slug, first, _counts, tags, inner = b
+            out += [f'{goal_head(n, slug)} ({first["when"]}) "{first["quote"]}"' + tag_text(tags)] + _flat(inner)
         else:
             out += [b[3]] if b[3] is not None else _flat(b[4])
     return out
+
+
+def tag_text(tags: list[int]) -> str:
+    """PURE. A goal's agenda tag, ` · agenda step 3, 4`, or "" — one spelling for --print and the page."""
+    return f" · agenda step {', '.join(map(str, tags))}" if tags else ""
 
 
 def tree_lines(snap: dict, at=None) -> list[str]:
@@ -1416,6 +1525,41 @@ def needs_html(snap: dict) -> str:
     return "".join(parts)
 
 
+def agenda_html(snap: dict) -> str:
+    """The AGENDA section, under NEEDS YOU: the current plan grouped by when, then every earlier agenda as ONE
+    collapsed line (its `history_line`), newest first, expanding to its steps in their frozen states."""
+    (kind, ag), repo = snap_agenda(snap), snap.get("repo")
+    if kind == "absent":
+        # ⛔ a snapshot taken before agendas were recorded CANNOT say there was none (slice 2, r1 Codex M3), nor
+        # promise the next one will carry one (r2 Codex L3)
+        return ('<section class="agenda none"><h2>AGENDA — not captured in this snapshot</h2><p class="lede">It '
+                'was taken before agendas were recorded.</p></section>')
+    if kind == "none":
+        return ('<section class="agenda none"><h2>AGENDA — none recorded</h2><p class="lede">Recorded with '
+                '<code>python3 scripts/goal-tree.py --record-agenda FILE</code> each time a plan is stated.</p>'
+                '</section>')
+    lines = agenda_lines({"agenda": snap["agenda"]})
+    if kind == "malformed":
+        return f'<section class="agenda"><h2 class="warn">{html.escape(lines[0])}</h2></section>'
+    parts = ['<section class="agenda">', f'<h2>{html.escape(lines[0])}</h2>']
+    body = lines[1:]
+    if ag.get("change_if"):
+        parts.append(f'<p class="lede">{html.escape(body[0].strip())}</p>')
+        body = body[1:]
+    parts.append('<pre class="tree">' + "\n".join(_html_line(ln[2:], repo) for ln in body) + "</pre>")
+    hist, bad = snap_history(snap)
+    if bad:
+        parts.append(f'<p class="warn">⚠ earlier agendas NOT READ — {html.escape(bad)}</p>')
+    if hist:
+        parts.append(f'<h3>Earlier agendas ({len(hist)}), newest first</h3>')
+        for h in hist:
+            steps = [f"{st['n']}. {step_glyph(st['state'])} {st['text']}" for st in h["steps"]]
+            parts.append(f'<details class="fold agenda-hist"><summary>{_html_line(history_line(h), repo)}</summary>'
+                         '<pre class="tree">' + "\n".join(_html_line(x, repo) for x in steps) + "</pre></details>")
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def render_text(snap: dict, at=None) -> str:
     ag = agenda_lines(snap)
     return "\n".join(needs_lines(snap) + [""] + (ag + [""] if ag else []) + tree_lines(snap, at))
@@ -1450,10 +1594,11 @@ def _html_line(line: str, repo: str | None, ids: set | None = None) -> str:
 def _goal_html(b: tuple, repo, seen) -> str:
     """One goal as its own bordered `<section>`, headed `GOAL n · slug` in the heading colour (owner, 2026-11-04
     01:14). A goal with nothing current keeps that heading as the summary of a CLOSED `<details>`."""
-    _, n, slug, first, counts, inner = b
+    _, n, slug, first, counts, tags, inner = b
     anchor = f' id="goal-{html.escape(slug, quote=True)}"' if seen is not None else ""   # by SLUG: a number can move
     head = (f'<h3 class="goal-h"><span class="goal-n">GOAL {n} ·</span> '
-            f'<span class="goal-slug">{html.escape(slug)}</span></h3>')
+            f'<span class="goal-slug">{html.escape(slug)}</span></h3>'
+            + (f'<span class="goal-agenda">{html.escape(tag_text(tags)[3:])}</span>' if tags else ""))
     quote = (f'<p class="goal-q"><time>{html.escape(first["when"])}</time> '
              f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>')
     body = _blocks_html(inner, repo, seen)
@@ -1517,6 +1662,8 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
     # ⭐ NEEDS YOU FIRST, above the tree (owner decision D1): read from THIS run when there was one,
     # complete or not, because a decision that appeared since the newest snapshot is the one to see.
     parts.insert(6, needs_html(live if live is not None else newest))
+    # backlog #499: the AGENDA under NEEDS YOU — from the snapshot the tree below is, so step and leaf agree
+    parts.insert(7, agenda_html(newest))
     # backlog #497: the current tree is bucketed at the BUILD time, as --print is at its run, so the two agree.
     parts += ['<h2>Now</h2>', render_tree_html(newest, ids=True, at=built), '<h2>Timeline</h2>',
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed. Before this '
@@ -1579,6 +1726,13 @@ section.needs.none{border-left-color:var(--rule)}
 section.needs h2{margin:.5rem 0}
 section.needs ul{margin:.3rem 0;padding-left:1.1rem;font-size:.9rem}
 section.needs li{margin:.2rem 0}
+section.agenda{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--accent);
+               border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
+section.agenda.none{border-left-color:var(--rule)}
+section.agenda pre.tree{overflow-x:auto}
+section.agenda h2{margin:.5rem 0}
+section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
+.goal-agenda{margin-left:.6rem;font-family:var(--mono);font-size:.75rem;color:var(--accent)}
 section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
 """
 
@@ -1652,8 +1806,10 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             try:
                 cur = agendas(read_agenda_log(agenda_path))
                 live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared)
+                live["agenda_history"] = agenda_history(cur)
             except Malformed as exc:
                 live["agenda"] = {"malformed": str(exc)}
+                live["agenda_history"] = []
                 print(f"MALFORMED — {exc}")
                 rc = 1
             if live["cannot"]:
@@ -2200,13 +2356,13 @@ def _self_test_body() -> int:
         out = []
         for bk in blocks:
             if bk[0] == "goal":
-                out += ([(bk[1], "goal")] if bk[4] else []) + [(bk[1], c) for _, c in folds_of(bk[5])]
+                out += ([(bk[1], "goal")] if bk[4] else []) + [(bk[1], c) for _, c in folds_of(bk[-1])]
             elif bk[0] == "fold":
                 out.append((None, bk[1]))
         return out
     case("backlog #497: tree_blocks folds by the drawing time it is given, and a tree with no old leaf folds nothing",
-         ([len(bk[5]) for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "goal"],
-          [len(bk[5]) for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "goal"],
+         ([len(bk[-1]) for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "goal"],
+          [len(bk[-1]) for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "goal"],
           folds_of(tree_blocks(snap)), folds_of(tree_blocks(_bsnap, "2026-11-08 19:09"))),
          ([3, 3], [3, 3], [], [(1, "older"), (1, "later"), (2, "goal"), (2, "older"), (2, "later")]))
     case("backlog #497: the folded tree emits thread ids only when asked, inside a fold too",
@@ -2951,6 +3107,137 @@ def _self_test_body() -> int:
              (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
              (None, [], False))
 
+        # ── slice 2: the history, the goal tag, the page section, the timeline ──────────────────────────────
+        _h_cur = [dict(ag, at="t1", id=1, ticked=[],
+                       replaced={"at": "t2", "states": [{"n": 1, "state": "merged"}, {"n": 3, "state": FREE}]}),
+                  dict(parse_agenda("window: w2\n## g\n- backlog #12 · x\n"), at="t2", id=2, ticked=[],
+                       replaced={"at": "t3", "states": [{"n": 1, "state": "next"}]}),
+                  dict(ag, at="t3", id=3, ticked=[], replaced=None)]
+        _hist = agenda_history(_h_cur)
+        case("agenda_history keeps every REPLACED agenda, newest first, the open one left out",
+             ([h["id"] for h in _hist], agenda_history([dict(ag, at="t", id=1, ticked=[], replaced=None)])), ([2, 1], []))
+        case("⛔ a history step keeps its FROZEN state; one the frozen list omits is `cannot`, never re-derived",
+             [st["state"] for st in _hist[1]["steps"]] if len(_hist) > 1 else _hist,
+             ["merged", "cannot", FREE, "cannot"])
+        case("history_line says when each was set and replaced, and how much was done by then",
+             [history_line(h) for h in _hist],
+             ["agenda #2 · set t2 · replaced t3 · 0/1 done by then · w2",
+              "agenda #1 · set t1 · replaced t2 · 1/4 done by then · until the reset"])
+        _cur_ag = derive_agenda(dict(ag, at="t3", id=3, ticked=[]), _s1)
+        _lh = agenda_lines({"agenda": _cur_ag, "agenda_history": _hist})
+        case("--print lists the earlier agendas under the current one, newest first, one line each",
+             _lh[-3:], ["  earlier agendas (2), newest first — collapsed on the page",
+                        "    " + history_line(_hist[0]), "    " + history_line(_hist[-1])])
+        def _gas(g, a):
+            try:
+                return goal_agenda_steps(g, a)
+            except (KeyError, TypeError) as exc:     # a value, so a mutant reaches this case rather than crashing
+                return type(exc).__name__
+        case("a goal is tagged with the steps naming a ref its threads name — never a free step, never a bad agenda",
+             (goal_agenda_steps({"threads": [{"refs": [["backlog", 11]]}, {"refs": [["PR", 30]]}]}, _cur_ag),
+              goal_agenda_steps({"threads": [{"refs": [["PR", 20]]}, {"refs": [["backlog", 12]]}]}, _cur_ag),
+              goal_agenda_steps({"threads": [{"refs": [["backlog", 11]]}]}, None),
+              _gas({"threads": [{"refs": [["backlog", 11]]}]}, {"malformed": "x"})),
+             ([2], [1, 4], [], []))
+        case("tag_text is one spelling, and empty for no steps", (tag_text([2, 4]), tag_text([])),
+             (" · agenda step 2, 4", ""))
+        _gs = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #11 · f\n'
+                                   '## GOAL h\n> 2026-01-02 00:00 "q2"\n- fix · backlog #40 · f\n'), _s1, "t")
+        _gs["agenda"] = _cur_ag
+        case("--print tags the goal its step names, and only that goal",
+             [ln for ln in tree_lines(_gs) if ln.startswith("GOAL")],
+             ['GOAL 1 · g (2026-01-01 00:00) "q" · agenda step 2', 'GOAL 2 · h (2026-01-02 00:00) "q2"'])
+        case("the page draws the same tag beside that goal's heading, once",
+             render_tree_html(_gs).count('<span class="goal-agenda">agenda step 2</span>'), 1)
+        _ah = agenda_html({"agenda": _cur_ag, "agenda_history": _hist})
+        case("the page's AGENDA section: the current steps, then each earlier agenda as ONE collapsed line, newest "
+             "first",
+             (_ah.count('<details class="fold agenda-hist">'), -1 < _ah.find("agenda #2") < _ah.find("agenda #1"),
+              "<details open" in _ah, "changes if: the owner reprioritises" in _ah, "4. ⬜ backlog #12" in _ah,
+              "1. ✅ backlog #12" in _ah or "1. ⬜ backlog #12" in _ah),
+             (2, True, False, True, True, True))
+        _ah0 = agenda_html({"agenda": derive_agenda(dict(parse_agenda("window: w\n## g\n- x\n"), at="t", id=1,
+                                                         ticked=[]), _s1)})
+        case("an agenda with no change-if draws every step, none mistaken for the change-if line",
+             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
+             (False, True, True, False))
+        case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
+             ("AGENDA — none recorded" in agenda_html({"agenda": None}),
+              'class="warn">AGENDA — NOT READ: MALFORMED — bad' in agenda_html({"agenda": {"malformed": "bad"}})),
+             (True, True))
+        case("⛔ a snapshot with NO agenda key says it was not captured — never that there was none (r1 Codex M3)",
+             ("not captured in this snapshot" in agenda_html({}), "none recorded" in agenda_html({}),
+              "not captured" in agenda_html({"agenda": None})), (True, False, False))
+        def _agn(i, at, steps):
+            """A snapshot whose agenda has the FULL shape snap_agenda checks; `steps` is [(state, text)]."""
+            return {"goals": [], "undeclared": [], "inflight_loose": [],
+                    "agenda": {"id": i, "at": at, "window": "w", "change_if": None,
+                               "steps": [{"n": n, "state": st, "text": tx, "when": "g", "detail": "d", "refs": []}
+                                         for n, (st, tx) in enumerate(steps, 1)]}}
+        _p0 = _agn(1, "t1", [("next", "a"), ("open", "b")])
+        _p1 = _agn(1, "t1", [("merged", "a"), ("open", "b")])
+        _p2 = _agn(2, "t2", [("next", "a")])
+        case("the timeline says when an agenda is recorded, and each step whose state moved",
+             (changes(_p0, _p1), changes(_p1, _p2)),
+             (["agenda step 1: next → ✅ merged — a"], ["agenda recorded: set t2, 1 step(s)"]))
+        _p4 = _agn(2, "t1", [("next", "B")])
+        case("⛔ a second agenda in the SAME minute is a new agenda, never a false step move (r1 Codex M2)",
+             changes(_p1, _p4), ["agenda recorded: set t1, 1 step(s)"])
+        # r2 Codex H1/M2 — the class: a malformed value or a missing identity on EITHER side, never a crash, never a move
+        _noid = dict(_p0, agenda={k: v for k, v in _p0["agenda"].items() if k != "id"})
+        _noat = dict(_p1, agenda={k: v for k, v in _p1["agenda"].items() if k != "at"})
+        _worlds = []
+        for _a, _b in ((dict(_p0, agenda=True), _p1), (_p0, dict(_p1, agenda=["bad"])), (_noid, _p1), (_p0, _noat),
+                       (_noid, dict(_p1, agenda=dict(_noid["agenda"], steps=_p1["agenda"]["steps"]))),
+                       (dict(_p0, agenda={"malformed": "x"}), _p1)):
+            try:
+                _worlds.append([c for c in changes(_a, _b) if c.startswith("agenda")])
+            except Exception as exc:     # a value, so the case names the crash (r2 Codex H1)
+                _worlds.append(type(exc).__name__)
+        case("⛔ a malformed or identity-less agenda on either side never crashes the timeline and never yields a step "
+             "move — only a valid new agenda is said to be recorded (r2 Codex H1, M2)", _worlds,
+             [["agenda recorded: set t1, 2 step(s)"], [], ["agenda recorded: set t1, 2 step(s)"], [], [],
+              ["agenda recorded: set t1, 2 step(s)"]])
+        _bad_kinds = [snap_agenda({"agenda": v})[0] for v in
+                      (dict(_p0["agenda"], steps=[dict(_p0["agenda"]["steps"][0], refs=[1])]),
+                       dict(_p0["agenda"], steps=[dict(_p0["agenda"]["steps"][0], refs=[["backlog", "1"]])]),
+                       True, ["bad"], {"malformed": "m"}, dict(_p0["agenda"], id=True), dict(_p0["agenda"], at=None),
+                       dict(_p0["agenda"], window=3), dict(_p0["agenda"], change_if=[]),
+                       dict(_p0["agenda"], steps=[{"n": 1}]), dict(_p0["agenda"], steps="x"))]
+        case("snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED",
+             (snap_agenda({})[0], snap_agenda({"agenda": None})[0], snap_agenda(_p0)[0], _bad_kinds),
+             ("absent", "none", "ok", ["malformed"] * 11))
+        _bad_render = []
+        for _v in (True, ["bad"], dict(_p0["agenda"], steps=[{"n": 1}])):
+            try:
+                _bad_render.append((agenda_lines({"agenda": _v})[0][:28], 'class="warn"' in agenda_html({"agenda": _v}),
+                                    goal_agenda_steps({"threads": [{"refs": [["backlog", 1]]}]}, _v)))
+            except Exception as exc:
+                _bad_render.append(type(exc).__name__)
+        case("⛔ a malformed agenda value is SAID by --print and the page, and tags no goal — never a crash (r2 Codex H1)",
+             _bad_render, [("AGENDA — NOT READ: MALFORMED", True, [])] * 3)
+        _hb = {"agenda": _p0["agenda"], "agenda_history": [{"id": 1, "at": "a"}]}
+        try:
+            _hv = (snap_history(_hb)[1] is not None, snap_history({"agenda_history": _hist})[1],
+                   [snap_history({"agenda_history": v})[1] is not None for v in (False, "", 0, None)],
+                   any("earlier agendas NOT READ" in ln for ln in agenda_lines(_hb)),
+                   "earlier agendas NOT READ" in agenda_html(_hb))
+        except Exception as exc:       # a value, so a mutant reaches this case rather than crashing
+            _hv = type(exc).__name__
+        case("⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too "
+             "(r3 Codex L2)", _hv, (True, None, [True, True, True, True], True, True))
+        def _rec_err(states):
+            try:
+                _agenda_records(json.dumps({"kind": "replaced", "at": "t", "of": 1, "states": states}), "x")
+                return None
+            except Malformed as exc:
+                return str(exc)
+        case("⛔ a frozen state that is not {n: int, state: str} is MALFORMED where it is read, never a crash later "
+             "(r1 Codex H1)",
+             ["a frozen state needs" in (_rec_err(x) or "") for x in
+              ([{"n": [], "state": "merged"}], [{"n": 1, "state": {"bad": 1}}], [{"n": True, "state": "next"}], ["x"])]
+             + [_rec_err([{"n": 1, "state": "merged"}])], [True, True, True, True, None])
+
         _ap = r / "main" / AGENDA_REL
 
         def replayed(path):
@@ -3091,6 +3378,19 @@ def _self_test_body() -> int:
              "waits on the owner (declared)" in _step2, True)
         case("the logged snapshot carries the agenda, so --page replays it",
              ((read_log(r / "main" / LOG_REL)[-1:] or [{}])[0].get("agenda") or {}).get("at"), "2026-11-04 12:00")
+        _af2 = r / "agenda2.txt"
+        _af2.write_text("window: later\n## g\n- backlog #12 · next one\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            _rc_h = main(["--record-agenda", str(_af2), "--snapshot", "--page", "--out", str(out)], root=r,
+                         run=fake(ok)[0], now="2026-11-04 12:05")
+        _last = (read_log(r / "main" / LOG_REL)[-1:] or [{}])[0]
+        _pg = out.read_text() if out.is_file() else ""
+        case("⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under "
+             "NEEDS YOU, above the tree",
+             (_rc_h, [h["id"] for h in _last.get("agenda_history") or []], (_last.get("agenda") or {}).get("window"),
+              _pg.count('class="fold agenda-hist"'),
+              0 < _pg.find('<section class="needs') < _pg.find('<section class="agenda"') < _pg.find("<h2>Now</h2>")),
+             (0, [1], "later", 1, True))
         with contextlib.redirect_stdout(io.StringIO()):
             _rc_badtick = main(["--tick-agenda", "1"], root=r, run=fake(ok)[0], now="2026-11-04 12:03")
         case("⛔ main exits 1 on a refused tick (a derived step)", _rc_badtick, 1)
