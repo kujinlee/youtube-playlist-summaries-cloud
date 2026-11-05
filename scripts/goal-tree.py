@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 316 cases
+    python3 scripts/goal-tree.py --self-test                 # 317 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -2025,6 +2025,14 @@ def _self_test_body() -> int:
          [x.split(" — ")[0] if "not read" in x else x for x in derive(_g2, src(ledger=[
              dict(_e, goal="nope"), dict(_e, id="w2", thread="fix · issue #3 · x")]), "T")["ledger_problems"]],
          ["entry w505: goal 'nope' is not declared in docs/goal-threads.md", "entry w2: its thread is not read"])
+    _g1 = parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #12 · other\n')
+    case("backlog #505: the SAME entry is judged against the goals it is given — hung under one goal set, "
+         "a problem under a set without its goal, and suppressed under a set that declares its ref",
+         ([len(g["threads"]) for g in ledger_threads(_g1, [_e])[0]], ledger_threads(_g1[:0] + parse_threads(
+             '## GOAL h\n> 2026-01-01 00:00 "q"\n- side · PR #9 · x\n'), [_e])[1],
+          [len(g["threads"]) for g in ledger_threads(parse_threads(
+              '## GOAL g\n> 2026-01-01 00:00 "q"\n- side · PR #30 · tracked\n'), [_e])[0]]),
+         ([2], ["entry w505: goal 'g' is not declared in docs/goal-threads.md"], [1]))
     case("backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)",
          ledger_threads(_g2, [{"id": "x", "what": "PR #30"}]) == (_g2, []), True)
     case("a PR merged off master's log says so, with gh's SHA",
