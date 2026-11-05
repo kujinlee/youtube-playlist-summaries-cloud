@@ -3100,8 +3100,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(f' <span class=\"what\">— {html.escape(x[\"what\"])}</span>' if x[\"what\"] else \"\")",
-        "(f' <span class=\"what\">— {html.escape(x[\"what\"])}</span>' if False else \"\")"
+        "repo)}</span>' if x[\"what\"] else \"\")",
+        "repo)}</span>' if False else \"\")"
       ]
     ],
     "expect": [
@@ -3165,7 +3165,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "<span class=\"what\">— {html.escape(x[\"what\"])}</span>",
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}</span>",
         "<span class=\"what\">— {x[\"what\"]}</span>"
       ]
     ],
@@ -3236,6 +3236,110 @@
     ],
     "expect": [
       "⭐ r1 Codex M2: work under no goal keeps its purpose, cut to one line"
+    ]
+  },
+  {
+    "name": "the page drops the recap (agenda-digest r2 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    parts.append(f'<p class=\"recap\">{html.escape(agenda_recap(d))}</p>')",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count"
+    ]
+  },
+  {
+    "name": "the page drops the undeclared-PR count (agenda-digest r2 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "           if d[\"undeclared\"] else \"\") + \"</ul></div>\")",
+        "           if False else \"\") + \"</ul></div>\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count"
+    ]
+  },
+  {
+    "name": "Focus says no step left while a free step is open (agenda-digest r2 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"no remaining step names a goal\" if d[\"left\"] else \"no step left\"}",
+        "{\"no step left\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: with only a FREE step open, Focus says no remaining step names a goal — never 'no step left'"
+    ]
+  },
+  {
+    "name": "the purpose's references are plain text (agenda-digest r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}</span>",
+        "<span class=\"what\">— {html.escape(x[\"what\"])}</span>"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page"
+    ]
+  },
+  {
+    "name": "the recap always says pieces (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "head = (f\"{n} piece{'s' if n != 1 else ''} of work",
+        "head = (f\"{n} pieces of work"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "the recap always says goals (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"goal{'s' if len(goals_now) != 1 else ''}\"",
+        "f\"goals\""
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "the free-step recap always says step (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{left} step{'s' if left != 1 else ''} left, none",
+        "{left} step left, none"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "a later entry's purpose is dropped (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"what\"] = it[\"what\"] or x[\"what\"]",
+        "it[\"what\"] = it[\"what\"]"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: one item under two goals keeps the purpose a LATER entry gives when the first has none"
     ]
   }
 ]

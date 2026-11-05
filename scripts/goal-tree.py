@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 350 cases
+    python3 scripts/goal-tree.py --self-test                 # 355 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1755,14 +1755,14 @@ def agenda_html(snap: dict) -> str:
     chip = lambda g: f'<span class="chip">{html.escape(g)}</span>'
     parts.append('<div class="digest"><div><h3>In flight now</h3><ul>' + "".join(
         f'<li>{"".join(chip(g) for g in x["goals"])} {_html_line(x["label"], repo)}'
-        + (f' <span class="what">— {html.escape(x["what"])}</span>' if x["what"] else "") + "</li>"
+        + (f' <span class="what">— {_html_line(x["what"], repo)}</span>' if x["what"] else "") + "</li>"
         for x in agenda_now_items(d)) + ("" if d["now"] else "<li>nothing in flight</li>")
         + (f'<li class="warn">+ {d["undeclared"]} open PR(s) no goal declares (UNDECLARED, below)</li>'
            if d["undeclared"] else "") + "</ul></div>")
     parts.append('<div><h3>Focus — the next steps, by goal</h3>' + "".join(
         f'<p class="focus-g">{chip(gl)}</p><ul>' + "".join(
             f'<li><b>{st["n"]}.</b> {_html_line(st["text"], repo)}</li>' for st in sts) + "</ul>"
-        for gl, sts in d["focus"].items()) + ("" if d["focus"] else "<p class=\"lede\">no step left</p>")
+        for gl, sts in d["focus"].items()) + ("" if d["focus"] else f'<p class="lede">{"no remaining step names a goal" if d["left"] else "no step left"}</p>')
         + "</div></div>")
     for kind_, text in agenda_context(snap, ag):
         if kind_ == "stale":
@@ -3516,6 +3516,25 @@ def _self_test_body() -> int:
                                                                           {"id": "k", "what": "x" * 200}]), _a509)["now"]
               if x["goal"] == "no goal"],
              ["a b", "x" * 139 + "…"])
+        case("⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count",
+             (f'<p class="recap">{html.escape(agenda_recap(_d509))}</p>' in _h509,
+              '<li class="warn">+ 1 open PR(s) no goal declares (UNDECLARED, below)</li>' in _h509), (True, True))
+        _hf = agenda_html({"goals": [], "repo": "o/r", "agenda": dict(_a509, steps=[_a509["steps"][2]])})
+        case("⭐ r2 Codex M1: with only a FREE step open, Focus says no remaining step names a goal — never 'no step left'",
+             ('no remaining step names a goal' in _hf, 'no step left' in _hf), (True, False))
+        case("r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps",
+             (agenda_recap({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": ""}], "left": 1,
+                            "focus": {"GOAL 1 · a": [{"n": 1}]}}),
+              agenda_recap({"now": [], "left": 2, "focus": {}})),
+             ("1 piece of work in flight across 1 goal; the plan's next steps lean on GOAL 1 · a (1 of 1 left).",
+              "Nothing is in flight; 2 steps left, none on a goal's work."))
+        case("r2 Codex L2: one item under two goals keeps the purpose a LATER entry gives when the first has none",
+             agenda_now_items({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": ""},
+                                       {"label": "x", "goal": "GOAL 2 · b", "what": "why"}]}),
+             [{"label": "x", "goals": ["GOAL 1 · a", "GOAL 2 · b"], "what": "why"}])
+        case("r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page",
+             '— builds <a href="https://github.com/o/r/pull/9">PR #9</a></span>' in agenda_html(
+                 dict(_sn509, repo="o/r", inflight_loose=[{"id": "j", "what": "builds PR #9"}])), True)
         _evil = "<b>&amp;</b>"
         _he = agenda_html({"repo": "o/r", "at": "2026-11-05 08:15",
                            "goals": [{"slug": _evil, "requests": [{"when": "2026-11-03 08:00"}], "threads": [
