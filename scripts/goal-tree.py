@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 355 cases
+    python3 scripts/goal-tree.py --self-test                 # 357 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -3532,6 +3532,12 @@ def _self_test_body() -> int:
              agenda_now_items({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": ""},
                                        {"label": "x", "goal": "GOAL 2 · b", "what": "why"}]}),
              [{"label": "x", "goals": ["GOAL 1 · a", "GOAL 2 · b"], "what": "why"}])
+        case("r3 Codex L1: an item's purpose is never ERASED by a later entry for it that has none",
+             agenda_now_items({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": "why"},
+                                       {"label": "x", "goal": "GOAL 2 · b", "what": ""}]})[0]["what"], "why")
+        case("⭐ r3 Codex L2 (owner 11-05 14:37): the agenda heading is drawn in the goals' ACCENT colour, as they are",
+             (re.search(r"h2\.agenda-h\{[^}]*color:var\(--accent\)", CSS) is not None,
+              re.search(r"h3\.goal-h\{[^}]*color:var\(--accent\)", CSS) is not None), (True, True))
         case("r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page",
              '— builds <a href="https://github.com/o/r/pull/9">PR #9</a></span>' in agenda_html(
                  dict(_sn509, repo="o/r", inflight_loose=[{"id": "j", "what": "builds PR #9"}])), True)

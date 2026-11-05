@@ -3165,8 +3165,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}</span>",
-        "<span class=\"what\">— {x[\"what\"]}</span>"
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}",
+        "<span class=\"what\">— {x[\"what\"]}"
       ]
     ],
     "expect": [
@@ -3340,6 +3340,32 @@
     ],
     "expect": [
       "r2 Codex L2: one item under two goals keeps the purpose a LATER entry gives when the first has none"
+    ]
+  },
+  {
+    "name": "a later empty entry erases an item's purpose (agenda-digest r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " = it[\"what\"] or x[\"what\"]",
+        " = x[\"what\"]"
+      ]
+    ],
+    "expect": [
+      "r3 Codex L1: an item's purpose is never ERASED by a later entry for it that has none"
+    ]
+  },
+  {
+    "name": "the agenda heading loses the accent colour (agenda-digest r3 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "h2.agenda-h{margin:.4rem 0 .1rem;color:var(--accent);",
+        "h2.agenda-h{margin:.4rem 0 .1rem;color:red;"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L2 (owner 11-05 14:37): the agenda heading is drawn in the goals' ACCENT colour, as they are"
     ]
   }
 ]
