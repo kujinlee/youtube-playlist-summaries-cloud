@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 287 cases
+    python3 scripts/goal-tree.py --self-test                 # 290 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -948,6 +948,9 @@ def append_if_changed(path: pathlib.Path, snap: dict) -> bool:
 # so a step and the same row's tree leaf cannot disagree, and the agenda cannot silently go stale.
 AGENDA_REL = ".claude/agenda-log.jsonl"
 AGENDA_KINDS = ("agenda", "replaced", "tick")
+AGENDA_FIELDS = {"agenda": (("id", int), ("window", str), ("steps", list)),
+                 "replaced": (("of", int), ("states", list)),
+                 "tick": (("of", int), ("step", int))}
 WHEN_RE = re.compile(r"^## (\S.*)$")
 STEP_RE = re.compile(r"^- (\S.*)$")
 FREE = "free"            # a step naming no backlog row or PR: its state is the owner-visible tick, never derived
@@ -1006,6 +1009,15 @@ def _agenda_records(text: str, name: str) -> list[dict]:
             rec = json.loads(ln)
             if not isinstance(rec, dict) or rec.get("kind") not in AGENDA_KINDS or "at" not in rec:
                 raise ValueError("not an agenda record")
+            # ⛔ every field a reader indexes is checked HERE, so a bad record is MALFORMED, never a KeyError
+            # in the snapshot (r3 Codex M3)
+            for key, typ in AGENDA_FIELDS[rec["kind"]]:
+                if not isinstance(rec.get(key), typ) or isinstance(rec.get(key), bool):
+                    raise ValueError(f"a {rec['kind']} record needs `{key}` ({typ.__name__})")
+            if rec["kind"] == "agenda" and not all(
+                    isinstance(st, dict) and isinstance(st.get("when"), str) and isinstance(st.get("text"), str)
+                    and isinstance(st.get("refs"), list) for st in rec["steps"]):
+                raise ValueError("an agenda step needs `when`, `text` and `refs`")
         except ValueError as exc:
             raise Malformed(f"{name} line {i} is not an agenda record ({exc})") from None
         out.append(rec)
@@ -1052,7 +1064,8 @@ def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict 
     """PURE. One agenda + the read sources -> its steps with `state` and `detail`. A step naming a
     row or PR goes through `derive_thread`, the tree's own derivation, WITH the `waits` a declared
     thread naming the same refs carries — so a row the tree shows ❌ waiting is not ⬜ here (r1 Codex
-    H1). A free step is FREE until ticked by hand, then `merged` (done), and says which."""
+    H1). ⚠ BOUND: the policy is ANY WAIT WINS. Two leaves for one row, one waiting, show ⬜ and ❌ in the
+    tree; the step shows ❌, agreeing with the waiting leaf only (r3 Codex M1, stated rather than fixed). A free step is FREE until ticked by hand, then `merged` (done), and says which."""
     if ag is None:
         return None
     # ⛔ keyed by the ref SET, and EVERY declared wait counts: two threads naming the same refs, one waiting,
@@ -1063,7 +1076,7 @@ def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict 
             said = declared.setdefault(_refset(t["refs"]), [])
             if t["waits"] not in said:
                 said.append(t["waits"])
-    waits = {k: "; ".join(v) for k, v in declared.items()}
+    waits = {k: "; ".join(sorted(v)) for k, v in declared.items()}   # sorted: no declaration order (r3 Codex L4)
     steps = []
     for n, st in enumerate(ag["steps"], 1):
         if st["refs"]:
@@ -1086,8 +1099,11 @@ def _locked(path: pathlib.Path, write):
     with path.open("a+") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
-        lines, said = write(agendas(_agenda_records(fh.read(), path.name)))
+        text = fh.read()
+        lines, said = write(agendas(_agenda_records(text, path.name)))
         fh.seek(0, 2)
+        if text and not text.endswith("\n"):
+            fh.write("\n")      # a last line with no newline would fuse with the next record (r3 Codex M2)
         fh.write("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
     return said
 
@@ -2919,8 +2935,10 @@ def _self_test_body() -> int:
              "(r2 Codex H1, H2)", _ord, [["blocked", "blocked"], ["blocked", "blocked"]])
         _t_wait2 = {"key": "c", "refs": [["backlog", 1], ["backlog", 2]], "waits": "PR #20"}
         _both = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait, _t_go, _t_wait2])["steps"][0]["detail"]
+        _rev = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait2, _t_go, _t_wait])["steps"][0]["detail"]
+        case("the joined waits read the same in either declaration order (r3 Codex L4)", _rev == _both, True)
         case("...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)",
-             ("waits on the owner; PR #20 (declared)" in _both, _both.count("the owner")), (True, 1))
+             ("waits on PR #20; the owner (declared)" in _both, _both.count("the owner")), (True, 1))
         case("no agenda derives to None, and the text output then shows no block",
              (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
              (None, [], False))
@@ -2968,6 +2986,30 @@ def _self_test_body() -> int:
         _twice = tick_err(3)
         case("⛔ a step already ticked is refused, not ticked twice (r1 Codex M4)",
              ("already ticked" in (_twice or ""), agendas(read_agenda_log(_ap))[-1]["ticked"]), (True, [3]))
+
+        _bad_fields = [{"kind": "agenda", "at": "t", "id": 1, "window": "w"},
+                       {"kind": "agenda", "at": "t", "id": "1", "window": "w", "steps": []},
+                       {"kind": "agenda", "at": "t", "id": 1, "window": "w", "steps": [{"text": "x"}]},
+                       {"kind": "tick", "at": "t", "of": 1},
+                       {"kind": "replaced", "at": "t", "of": 1}]
+        _fe = []
+        for _rec in _bad_fields:
+            try:
+                _agenda_records(json.dumps(_rec), "x.jsonl")
+                _fe.append(None)
+            except Malformed as exc:
+                _fe.append("needs" in str(exc))
+            except (KeyError, TypeError) as exc:     # a crash where MALFORMED belongs, as a value
+                _fe.append(type(exc).__name__)
+        case("⛔ a record missing a field a reader indexes is MALFORMED, never a KeyError later (r3 Codex M3)",
+             _fe, [True] * 5)
+        _nl = r / "nl.jsonl"
+        _nl.write_text(json.dumps({"kind": "agenda", "at": "t", "id": 1, "window": "w",
+                                   "steps": [{"when": "g", "text": "free", "refs": []}]}))
+        tick_agenda(_nl, 1, "t2")
+        case("⛔ a log whose last line has no newline is still appended to as SEPARATE records (r3 Codex M2)",
+             [x["ticked"] for x in replayed(_nl)] if isinstance(replayed(_nl)[0], dict) else replayed(_nl), [[1]])
+        _nl.unlink()
 
         def replay_err(recs):
             try:
@@ -3047,13 +3089,17 @@ def _self_test_body() -> int:
              (_rc_missing, "CANNOT RUN — the agenda file" in _b2.getvalue(), _rc_zero,
               "step 0 does not exist" in _b2.getvalue(), "snapshot logged" in _b2.getvalue()),
              (2, True, 1, True, False))
-        (r / "main" / AGENDA_REL).write_text(json.dumps({"kind": "agenda", "at": "old", "window": "w", "steps": []}) + "\n")
+        (r / "main" / AGENDA_REL).write_text(json.dumps({"kind": "agenda", "at": "old", "id": 1, "window": "w"}) + "\n")
         _b3 = io.StringIO()
         _n_before = len(read_log(r / "main" / LOG_REL))
         with contextlib.redirect_stdout(_b3):
-            _rc_old = main(["--snapshot", "--print", "--out", str(out)], root=r, run=fake(ok)[0], now="2026-11-04 12:09")
+            try:
+                _rc_old = main(["--snapshot", "--print", "--out", str(out)], root=r, run=fake(ok)[0],
+                               now="2026-11-04 12:09")
+            except (KeyError, TypeError) as exc:     # the r3 crash, as a value the case below names
+                _rc_old = type(exc).__name__
         case("⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged "
-             "(r2 Codex M4)",
+             "(r2 Codex M4) — a record MISSING a field included (r3 Codex M3)",
              (_rc_old, "AGENDA — NOT READ: MALFORMED" in _b3.getvalue(), len(read_log(r / "main" / LOG_REL)) - _n_before,
               "GOAL 1 ·" in _b3.getvalue()), (1, True, 1, True))
         (r / "main" / AGENDA_REL).unlink()

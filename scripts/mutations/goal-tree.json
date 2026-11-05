@@ -2254,7 +2254,46 @@
       ]
     ],
     "expect": [
-      "⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged (r2 Codex M4)"
+      "⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged (r2 Codex M4) — a record MISSING a field included (r3 Codex M3)"
+    ]
+  },
+  {
+    "name": "an agenda record's fields are not checked (backlog #499, r3 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            for key, typ in AGENDA_FIELDS[rec[\"kind\"]]:\n                if not isinstance(",
+        "            for key, typ in ():\n                if not isinstance("
+      ]
+    ],
+    "expect": [
+      "⛔ a record missing a field a reader indexes is MALFORMED, never a KeyError later (r3 Codex M3)"
+    ]
+  },
+  {
+    "name": "a log with no final newline is appended to on the same line (backlog #499, r3 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if text and not text.endswith(\"\\n\"):\n            fh.write(\"\\n\")",
+        "        if False:\n            fh.write(\"\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose last line has no newline is still appended to as SEPARATE records (r3 Codex M2)"
+    ]
+  },
+  {
+    "name": "the joined waits keep declaration order (backlog #499, r3 Codex L4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"; \".join(sorted(v))",
+        "\"; \".join(v)"
+      ]
+    ],
+    "expect": [
+      "the joined waits read the same in either declaration order (r3 Codex L4)"
     ]
   }
 ]
