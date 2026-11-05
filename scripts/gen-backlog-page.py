@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 239 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 247 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1042,6 +1042,30 @@ def _layout_block(seg: str, cls: str = "seg") -> str:
             + "".join(f"<li>{it}</li>" for it in items) + "</ol></div>")
 
 
+# A row this long that lays out as ONE block is a wall of text on the page, because its prose gives
+# `layout_body` nothing to cut at (owner, 2026-11-05: rows 500-504, written after PR #475, rendered
+# as one block). 600 is MEASURED: every one-block row under it was a genuine one-liner (longest 557),
+# every one over it a multi-clause argument (shortest 639). The remedy is in the ROW, never here:
+# give it the cues the rules above read — a short bold `**Fix:**` label, an `(a) (b)` run.
+LAYOUT_MIN_CHARS = 600
+
+
+def unlaid_rows(rows: Sequence[dict], min_chars: int = LAYOUT_MIN_CHARS) -> list[int]:
+    """PURE. The numbers of rows whose body is at least `min_chars` long and still lays out as ONE
+    block — the rows a reader meets as a wall of text."""
+    return [r["num"] for r in rows if len(r["body"]) >= min_chars and _one_block(layout_body(md(r["body"])))]
+
+
+def _one_block(h: str) -> bool:
+    """A laid-out body is ONE block when it has fewer than two `seg`/`prov` blocks, unless it holds an `(a) (b)`
+    list AND its prose outside the list is under `LAYOUT_MIN_CHARS` — a list IS layout (row-cues r1 Codex M4: an
+    882-character row of two list items was named), but not for a wall of prose in front of it (r2 Codex M1)."""
+    if len(re.findall(r'<div class="(?:seg|prov)">', h)) >= 2:
+        return False
+    outside = re.sub(r'<ol class="enum">.*?</ol>', "", h, flags=re.S)
+    return outside == h or len(visible_text(outside)) >= LAYOUT_MIN_CHARS
+
+
 def layout_body(h: str) -> str:
     """PURE. `md(body)` → the same HTML with block structure inserted (see the rules above).
 
@@ -1148,6 +1172,22 @@ def changes_from_versions(versions: Sequence[tuple[str, int, str]]) -> dict[int,
 WORD_OR_KEY = re.compile(r"\b(?:backlog|PR) #\d+\S*|\S+")
 
 
+# A private-use code point: no row's text carries it (any that did is removed first), so the token
+# cannot be confused with content (row-cues r1 Codex M2: a literal `¶` vanished into a break).
+DIFF_BREAK = "\ue000"
+
+
+def _diff_words(t: str) -> list[str]:
+    """The diff's tokens: the row's VISIBLE text, with a `DIFF_BREAK` token wherever `layout_body`
+    would start a labelled block. The cut points are `_label_cuts`' own — the body's rule, glyphs,
+    nesting, code spans and the 80-character limit included — so the diff cannot break where the
+    body does not (row-cues r1 Codex M3: a second regex here disagreed with it on three inputs)."""
+    h = md(t.replace(DIFF_BREAK, ""))
+    for c in sorted(_label_cuts(h), reverse=True):
+        h = f"{h[:c]} {DIFF_BREAK} {h[c:]}"
+    return WORD_OR_KEY.findall(visible_text(h))
+
+
 def word_diff(before: str, after: str) -> str:
     """Word-level diff as HTML — deletions struck through, insertions marked.
 
@@ -1158,7 +1198,9 @@ def word_diff(before: str, after: str) -> str:
     import difflib
     # A key (`PR #445`) is ONE token, so the diff never splits it across `<del>`/`<ins>` where no
     # link can reach it (backlog #470: every key on a generated page is a link).
-    a, b = (WORD_OR_KEY.findall(re.sub(r"[*`]", "", t)) for t in (before, after))
+    # A bold lead-in label (`**Fix:**`) is where the entry's own layout breaks a block; the diff
+    # breaks there too (owner 2026-11-05: the diff of a laid-out entry was one wall of text).
+    a, b = (_diff_words(t) for t in (before, after))
     out = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag in ("delete", "replace"):
@@ -1167,7 +1209,7 @@ def word_diff(before: str, after: str) -> str:
             out.append("<ins>" + html.escape(" ".join(b[j1:j2])) + "</ins>")
         if tag == "equal":
             out.append(html.escape(" ".join(a[i1:i2])))
-    return " ".join(out)
+    return " ".join(out).replace(DIFF_BREAK, '<span class="brk"></span>')
 
 
 class ShapeError(Exception):
@@ -1846,7 +1888,7 @@ def card(r: dict) -> str:
     {dep}
     <details><summary>the full entry, as filed</summary>
       <div class="prose">{layout_body(md(r['body']))}</div>
-      <div class="status"><b>Status cell</b>{md(r['status'])}</div>
+      <div class="status"><b>Status cell</b>{layout_body(md(r['status']))}</div>
       {diff}
     </details>
   </div>
@@ -2278,6 +2320,7 @@ button.f[disabled]{{opacity:.4;cursor:default}}
 .age.unknown{{color:var(--pending)}}
 .age time{{border-bottom:1px dotted var(--line);cursor:help}}
 .diffbox{{margin-top:.8rem;padding-top:.7rem;border-top:1px solid var(--line-2)}}
+.diff .brk{{display:block;height:.5rem}}
 .diff{{font-family:var(--serif);font-size:.9rem;line-height:1.7;color:var(--ink-3);margin-top:.6rem;
        max-width:44rem}}
 .diff del{{background:rgba(173,58,34,.14);color:var(--problem);text-decoration:line-through;
@@ -3876,6 +3919,21 @@ def _self_test_body() -> int:
          lambda: "<script>" not in word_diff("<script>a</script>", "<script>b</script>"))
     case("word_diff strips markdown rather than splicing tags through it",
          lambda: "**" not in word_diff("**bold** a", "**bold** b"))
+    # owner 2026-11-05: the diff breaks where the entry's layout does — at a bold lead-in label after a
+    # sentence end — and nowhere mid-sentence; the break is markup, never a visible character.
+    _wd = word_diff("x. **Fix:** old, **Also:** y", "x. **Fix:** new, **Also:** y")
+    _B = '<span class="brk"></span>'
+    case("word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, "
+         "or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)",
+         lambda: [_B in word_diff(t, t) for t in ("word ⚠ **Fix:** value", "`x. **Fix:** y`",
+                                                   "x. **" + "L" * 81 + ":** y", "a ¶ b", "a \ue000 b",
+                                                   "x. ⚠ **Fix:** y")]
+         == [False, False, False, False, False, True]
+         and word_diff("a ¶ b", "a ¶ b") == "a ¶ b")
+    case("word_diff breaks before a lead-in label after a sentence end, not after a comma (owner 2026-11-05)",
+         lambda: (_wd.count('<span class="brk"></span>'), _wd.index('<span class="brk"></span>') < _wd.index("Fix:"),
+                  DIFF_BREAK in _wd, visible_text(_wd).split()) ==
+         (1, True, False, ["x.", "Fix:", "old,", "new,", "Also:", "y"]))
 
     # ⭐ The one case that measures the SHIPPED grouping rather than a fixture. If an item is filed
     # or closed and GROUPS is not updated, this fails here — before anyone opens the page.
@@ -3978,6 +4036,31 @@ def _self_test_body() -> int:
 
     def _blocks(src: str) -> list[str]:
         return re.findall(r'<div class="(?:seg|prov)">', _lay(src))
+
+    # ⛔ owner 2026-11-05: a LONG row must give the layout something to cut at. Fixtures first, so
+    # the threshold and the count are pinned apart from today's backlog; then every real row.
+    _wall = "**T** — " + "word " * 140                       # ≥ 600 characters, no cue
+    _cued = "**T** — " + "word " * 70 + ". **Fix:** " + "word " * 70
+    _short = "**T** — " + "word " * 100                      # under 600: a one-liner may stay one block
+    case("unlaid_rows: a long row with no cue is named; a cued one and a short one are not",
+         lambda: (unlaid_rows([{"num": 7, "body": _wall}, {"num": 8, "body": _cued},
+                               {"num": 9, "body": _short}]),
+                  len(_short) < LAYOUT_MIN_CHARS <= len(_wall), LAYOUT_MIN_CHARS) == ([7], True, 600))
+    _li = "**T** — intro text here: (a) " + "first item word " * 30 + "(b) " + "second item word " * 30
+    case("unlaid_rows: a long row laid out as an (a) (b) list is NOT a wall (row-cues r1 Codex M4)",
+         lambda: len(_li) >= LAYOUT_MIN_CHARS and '<ol class="enum">' in layout_body(md(_li))
+         and unlaid_rows([{"num": 5, "body": _li}]) == [])
+    _lw = "**T** — " + "wall word " * 100 + ": (a) first item with enough words here (b) second item with enough words here"
+    case("unlaid_rows: a list does NOT excuse a wall of prose in front of it (row-cues r2 Codex M1)",
+         lambda: '<ol class="enum">' in layout_body(md(_lw)) and unlaid_rows([{"num": 6, "body": _lw}]) == [6])
+    case("unlaid_rows: the threshold is a parameter — the short row is named once it is lowered",
+         lambda: unlaid_rows([{"num": 9, "body": _short}], min_chars=len(_short)) == [9])
+    case("the Status cell is laid out by the same rules as the body (owner 2026-11-05, backlog #40)",
+         lambda: (lambda c: c[c.index('<div class="status">'):].count('<div class="seg">') >= 2)(
+             card(dict(_kr[20], hist=None, status="OPEN — filed x. ⟳ **Decided by the user:** y"))))
+    case("⛔ every REAL row of 600+ characters lays out into two or more blocks — add a short bold "
+         "label (`**Fix:**`) or an `(a) (b)` run to any row named here (owner, 2026-11-05)",
+         lambda: unlaid_rows(real) == [])
 
     def _same_words_html(old: str, new: str) -> bool:
         # The new rendering must be the ORIGINAL HTML with only the layout wrappers inserted:
