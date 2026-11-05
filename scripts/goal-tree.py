@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 290 cases
+    python3 scripts/goal-tree.py --self-test                 # 292 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -2874,7 +2874,10 @@ def _self_test_body() -> int:
         case("main wrote the page", out.is_file() and "<h1>Goal tree</h1>" in out.read_text(), True)
 
         # ── the agenda (backlog #499) ───────────────────────────────────────────────────────────
-        _log_before = (r / "main" / LOG_REL).read_text()     # restored below: later cases count this log
+        # restored below: later cases count this log. ⛔ Read only if THERE — a mutant that moves the log must
+        # reach the case that names it, not crash here first (the CI sweep caught exactly that)
+        _log_p = r / "main" / LOG_REL
+        _log_before = _log_p.read_text() if _log_p.is_file() else None
         AG = ("window: until the reset\nchange-if: the owner reprioritises\n## today\n"
               "- PR #20 · land the merged one\n- backlog #11 · the row an open PR works on\n- restart the server\n"
               "## after\n- backlog #12 · not started\n")
@@ -2939,6 +2942,11 @@ def _self_test_body() -> int:
         case("the joined waits read the same in either declaration order (r3 Codex L4)", _rev == _both, True)
         case("...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)",
              ("waits on PR #20; the owner (declared)" in _both, _both.count("the owner")), (True, 1))
+        _txt = agenda_lines({"agenda": derive_agenda(dict(ag, at="2026-11-04 09:00", id=1, ticked=[3]), _s1)})
+        case("agenda_lines groups by when, numbers the steps, and marks a free step ◇ until ticked",
+             (_txt[0], _txt[1], _txt[2], _txt[5].strip()[:4], _txt[-1].strip()[:4], len(_txt)),
+             ("AGENDA — the current plan, set 2026-11-04 09:00 · until the reset",
+              "  changes if: the owner reprioritises", "  today", "3. ✅", "4. ⬜", 8))
         case("no agenda derives to None, and the text output then shows no block",
              (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
              (None, [], False))
@@ -2963,6 +2971,15 @@ def _self_test_body() -> int:
         _ap.unlink()
         record_agenda(_ap, ag, "2026-11-04 10:00", _s1)
         record_agenda(_ap, _ag2, "2026-11-04 11:00", None)
+        _ap2 = r / "main" / ".claude" / "agenda-other.jsonl"
+        _wa = parse_agenda("window: w\n## g\n- backlog #12 · waits\n")
+        record_agenda(_ap2, _wa, "t1", _s1, [{"key": "k", "refs": [["backlog", 12]], "waits": "the owner"}])
+        record_agenda(_ap2, _wa, "t2", _s1, [{"key": "k", "refs": [["backlog", 12]], "waits": "the owner"}])
+        _other = replayed(_ap2)
+        case("a replacement freezes the state the declared threads give a step (❌ waiting), in its own log",
+             (_other[0]["replaced"]["states"] if isinstance(_other[0], dict) else _other, _ap.is_file()),
+             ([{"n": 1, "state": "blocked"}], True))
+        _ap2.unlink()
         case("⛔ replaced while a source was unread: the states say CANNOT, never a guessed state",
              (lambda xs: {x["state"] for x in (xs[0]["replaced"] or {"states": []})["states"]}
               if isinstance(xs[0], dict) else xs)(replayed(_ap)),
@@ -3073,7 +3090,7 @@ def _self_test_body() -> int:
         case("⭐ main lends a step the `waits on` its row's declared thread carries (r1 Codex H1, the call site)",
              "waits on the owner (declared)" in _step2, True)
         case("the logged snapshot carries the agenda, so --page replays it",
-             (read_log(r / "main" / LOG_REL)[-1].get("agenda") or {}).get("at"), "2026-11-04 12:00")
+             ((read_log(r / "main" / LOG_REL)[-1:] or [{}])[0].get("agenda") or {}).get("at"), "2026-11-04 12:00")
         with contextlib.redirect_stdout(io.StringIO()):
             _rc_badtick = main(["--tick-agenda", "1"], root=r, run=fake(ok)[0], now="2026-11-04 12:03")
         case("⛔ main exits 1 on a refused tick (a derived step)", _rc_badtick, 1)
@@ -3103,7 +3120,8 @@ def _self_test_body() -> int:
              (_rc_old, "AGENDA — NOT READ: MALFORMED" in _b3.getvalue(), len(read_log(r / "main" / LOG_REL)) - _n_before,
               "GOAL 1 ·" in _b3.getvalue()), (1, True, 1, True))
         (r / "main" / AGENDA_REL).unlink()
-        (r / "main" / LOG_REL).write_text(_log_before)
+        if _log_before is not None:
+            _log_p.write_text(_log_before)
         run, _ = fake([(["git", "fetch"], (128, "offline"))] + ok[1:])
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -3116,7 +3134,7 @@ def _self_test_body() -> int:
         with contextlib.redirect_stdout(io.StringIO()):
             rc_bad = main(["--snapshot"], root=r, run=fake(ok)[0])
         case("⛔ a malformed threads file exits 1, loudly", rc_bad, 1)
-        (r / "main" / LOG_REL).unlink()
+        (r / "main" / LOG_REL).unlink(missing_ok=True)
         with contextlib.redirect_stdout(io.StringIO()):
             rc_empty = main(["--page", "--out", str(out)], root=r, run=run_ok)
         case("⛔ --page over an empty log is CANNOT RUN, and renders nothing", rc_empty, 2)
