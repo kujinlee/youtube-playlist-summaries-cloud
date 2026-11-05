@@ -1230,5 +1230,7 @@
       ]
     ],
     "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
-  }
+  },
+  {"name": "tell() writes the text but never claims the span (backlog #502)", "file": "scripts/page_chrome.py", "edits": [["say.setAttribute('data-refresh',m);}}\"\n        \"if(r){", "}}\"\n        \"if(r){"]], "expect": ["...and every refresh message CLAIMS the span, so the reload poll cannot blank it"]},
+  {"name": "the warning bypasses tell() and is blanked by the next poll (backlog #502)", "file": "scripts/page_chrome.py", "edits": [["tell('rebuilt WITH A WARNING: '+j.warning);return;}", "if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}"]], "expect": ["...and every refresh message CLAIMS the span, so the reload poll cannot blank it"]}
 ]

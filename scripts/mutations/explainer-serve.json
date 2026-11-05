@@ -747,5 +747,8 @@
     "expect": [
       "⛔ review r2 X2: two overlapping Refresh clicks BOTH answer within the bound — the deadline is taken before the lock, and a click that cannot finish answers with the timeout"
     ]
-  }
+  },
+  {"name": "the reload poll ignores the Refresh button's claim and blanks its message (backlog #502)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);", "say(serverMsg || staleMsg);"]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
+  {"name": "the Refresh claim is ranked BELOW the polls' own messages, so a stale warning replaces it (backlog #502)", "file": "scripts/explainer-serve.py", "edits": [["(s && s.getAttribute('data-refresh')) || staleMsg);", "staleMsg || (s && s.getAttribute('data-refresh')) || '');"]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
+  {"name": "the Refresh claim outranks an unreachable server, so a hung or failed rebuild hides the outage (backlog #502 r1)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && ", "say((s && s.getAttribute('data-refresh')) || serverMsg || (s && "]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]}
 ]
