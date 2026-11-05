@@ -1174,9 +1174,14 @@ def _is(x, typ) -> bool:
     return isinstance(x, typ) and not isinstance(x, bool)
 
 
+def _ref_ok(r) -> bool:
+    return _is(r, list) and len(r) == 2 and _is(r[0], str) and _is(r[1], int)
+
+
 def _steps_ok(steps, keys) -> bool:
     return _is(steps, list) and all(isinstance(st, dict) and _is(st.get("n"), int)
-                                    and all(_is(st.get(k), t) for k, t in keys) for st in steps)
+                                    and all(_is(st.get(k), t) for k, t in keys)
+                                    and all(_ref_ok(r) for r in st.get("refs") or []) for st in steps)
 
 
 def snap_agenda(snap: dict) -> tuple[str, object]:
@@ -1204,7 +1209,8 @@ def snap_agenda(snap: dict) -> tuple[str, object]:
 
 def snap_history(snap: dict) -> tuple[list, str | None]:
     """PURE. The ONE reader of a snapshot's `agenda_history`: (the earlier agendas, None), or ([], why not)."""
-    hist = snap.get("agenda_history") or []
+    hist = snap.get("agenda_history", [])
+    # ⛔ no `or []`: a FALSY malformed value (false, "", 0) is still malformed, and is said (r3 Codex L2)
     ok = _is(hist, list) and all(
         isinstance(h, dict) and _is(h.get("id"), int) and all(_is(h.get(k), str) for k in ("at", "replaced_at", "window"))
         and _steps_ok(h.get("steps"), (("state", str), ("text", str))) for h in hist)
@@ -3193,12 +3199,14 @@ def _self_test_body() -> int:
              [["agenda recorded: set t1, 2 step(s)"], [], ["agenda recorded: set t1, 2 step(s)"], [], [],
               ["agenda recorded: set t1, 2 step(s)"]])
         _bad_kinds = [snap_agenda({"agenda": v})[0] for v in
-                      (True, ["bad"], {"malformed": "m"}, dict(_p0["agenda"], id=True), dict(_p0["agenda"], at=None),
+                      (dict(_p0["agenda"], steps=[dict(_p0["agenda"]["steps"][0], refs=[1])]),
+                       dict(_p0["agenda"], steps=[dict(_p0["agenda"]["steps"][0], refs=[["backlog", "1"]])]),
+                       True, ["bad"], {"malformed": "m"}, dict(_p0["agenda"], id=True), dict(_p0["agenda"], at=None),
                        dict(_p0["agenda"], window=3), dict(_p0["agenda"], change_if=[]),
                        dict(_p0["agenda"], steps=[{"n": 1}]), dict(_p0["agenda"], steps="x"))]
         case("snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED",
              (snap_agenda({})[0], snap_agenda({"agenda": None})[0], snap_agenda(_p0)[0], _bad_kinds),
-             ("absent", "none", "ok", ["malformed"] * 9))
+             ("absent", "none", "ok", ["malformed"] * 11))
         _bad_render = []
         for _v in (True, ["bad"], dict(_p0["agenda"], steps=[{"n": 1}])):
             try:
@@ -3211,12 +3219,13 @@ def _self_test_body() -> int:
         _hb = {"agenda": _p0["agenda"], "agenda_history": [{"id": 1, "at": "a"}]}
         try:
             _hv = (snap_history(_hb)[1] is not None, snap_history({"agenda_history": _hist})[1],
+                   [snap_history({"agenda_history": v})[1] is not None for v in (False, "", 0, None)],
                    any("earlier agendas NOT READ" in ln for ln in agenda_lines(_hb)),
                    "earlier agendas NOT READ" in agenda_html(_hb))
         except Exception as exc:       # a value, so a mutant reaches this case rather than crashing
             _hv = type(exc).__name__
-        case("⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on", _hv,
-             (True, None, True, True))
+        case("⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too "
+             "(r3 Codex L2)", _hv, (True, None, [True, True, True, True], True, True))
         def _rec_err(states):
             try:
                 _agenda_records(json.dumps({"kind": "replaced", "at": "t", "of": 1, "states": states}), "x")

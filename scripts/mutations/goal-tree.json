@@ -2592,7 +2592,7 @@
       ]
     ],
     "expect": [
-      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on"
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
     ]
   },
   {
@@ -2605,7 +2605,7 @@
       ]
     ],
     "expect": [
-      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on"
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
     ]
   },
   {
@@ -2618,7 +2618,33 @@
       ]
     ],
     "expect": [
-      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on"
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
+    ]
+  },
+  {
+    "name": "a step's ref entries are not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                    and all(_ref_ok(r) for r in st.get(\"refs\") or []) for st in steps)",
+        "                                    for st in steps)"
+      ]
+    ],
+    "expect": [
+      "snap_agenda: absent, none, ok, and every malformed shape a reader would index is MALFORMED"
+    ]
+  },
+  {
+    "name": "a falsy malformed history is read as none (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    hist = snap.get(\"agenda_history\", [])\n",
+        "    hist = snap.get(\"agenda_history\") or []\n"
+      ]
+    ],
+    "expect": [
+      "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
     ]
   }
 ]
