@@ -2701,5 +2701,38 @@
       ]
     ],
     "expect": "backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)"
+  },
+  {
+    "name": "two ledger entries hang the same PR (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if refs & claimed.keys():\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: two ledger entries hanging the same ref — the FIRST wins, the second is a named problem (r1 Codex M1)"
+  },
+  {
+    "name": "the merge hand-off reads as added + removed (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if {tuple(x) for x in b[k][\"refs\"]} & rr:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: the MERGE hand-off is one 'declared on master' line, never a false added + removed, even when its key and goal changed (r1 Codex M2)"
+  },
+  {
+    "name": "a number in a thread's prose associates the entry (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            | ({n for _, n in t[\"refs\"]} if t else set()))",
+        "            | {int(n) for n in LEDGER_NUM_RE.findall(str(entry.get('thread', '')))})"
+      ]
+    ],
+    "expect": "backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)"
   }
 ]

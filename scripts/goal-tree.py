@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 317 cases
+    python3 scripts/goal-tree.py --self-test                 # 320 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -276,6 +276,7 @@ def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], l
     sharing any ref with a thread `docs/goal-threads.md` declares, in any goal, is not added again (after the merge
     it is the same work). A bad line or an unknown goal is a PROBLEM shown on the page, never dropped in silence."""
     declared = {(k, n) for g in goals for t in g["threads"] for k, n in t["refs"]}
+    claimed: dict = {}   # ref -> the ledger entry that hung it first (r1 Codex M1: two entries, two goals, one PR)
     out = [dict(g, threads=list(g["threads"])) for g in goals]
     by_slug = {g["slug"]: g for g in out}
     problems: list[str] = []
@@ -291,14 +292,23 @@ def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], l
         if g is None:
             problems.append(f"entry {id_}: goal {str(e.get('goal'))!r} is not declared in {THREADS_REL}")
             continue
-        if {tuple(r) for r in t["refs"]} & declared or any(x["key"] == t["key"] for x in g["threads"]):
+        refs = {tuple(r) for r in t["refs"]}
+        if refs & declared:
             continue
+        if refs & claimed.keys():
+            first = claimed[sorted(refs & claimed.keys())[0]]
+            problems.append(f"entry {id_}: its thread's refs are already hung by entry {first} — the first wins")
+            continue
+        claimed.update({r: id_ for r in refs})
         g["threads"].append(dict(t, ledger=id_))
     return out, problems
 
 
 def _ledger_numbers(entry: dict) -> set:
-    return {int(n) for n in LEDGER_NUM_RE.findall(f"{entry.get('id', '')} {entry.get('what', '')} {entry.get('thread', '')}")}
+    # a declared `thread` counts by its STRUCTURED refs only — a number in its prose is not an association (r1 Codex M3)
+    t, _ = parse_thread_line("- " + str(entry["thread"]).removeprefix("- ")) if entry.get("thread") else (None, None)
+    return ({int(n) for n in LEDGER_NUM_RE.findall(f"{entry.get('id', '')} {entry.get('what', '')}")}
+            | ({n for _, n in t["refs"]} if t else set()))
 
 
 def merge_when(full) -> str:
@@ -542,14 +552,28 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     pg, cg = {g["slug"] for g in prev["goals"]}, {g["slug"] for g in cur["goals"]}
     out += [f"goal added: {s}" for s in sorted(cg - pg)]
     out += [f"goal removed: {s}" for s in sorted(pg - cg)]
+    # backlog #505: a LEDGER thread replaced by the tracked one sharing a ref is ONE event — master now declares it —
+    # never a false `added` plus a false `removed` (r1 Codex M2: the key or goal may differ across the handoff)
+    handed: dict = {}
+    for r in (k for k in a if k not in b and a[k].get("ledger")):
+        rr = {tuple(x) for x in a[r]["refs"]}
+        for k in (k for k in b if k not in a and not b[k].get("ledger") and k not in handed.values()):
+            if {tuple(x) for x in b[k]["refs"]} & rr:
+                handed[r] = k
+                out.append(f"declared on master: [{b[k]['relation']}] {k[1].split(' · ', 1)[1]} (was in the ledger "
+                           f"as [{a[r]['relation']}] {r[1].split(' · ', 1)[1]} under {r[0]}): "
+                           f"{GLYPH[b[k]['state']]} {b[k]['detail']}")
+                break
     for k in b:
+        if k in handed.values():
+            continue
         if k not in a:
             out.append(f"added [{b[k]['relation']}] {k[1].split(' · ', 1)[1]}: "
                        f"{GLYPH[b[k]['state']]} {b[k]['detail']}")
         elif (a[k]["state"], a[k]["detail"]) != (b[k]["state"], b[k]["detail"]):
             out.append(f"[{b[k]['relation']}] {k[1].split(' · ', 1)[1]}: {a[k]['state']} → "
                        f"{GLYPH[b[k]['state']]} {b[k]['state']} — {b[k]['detail']}")
-    out += [f"removed [{a[k]['relation']}] {k[1].split(' · ', 1)[1]}" for k in a if k not in b]
+    out += [f"removed [{a[k]['relation']}] {k[1].split(' · ', 1)[1]}" for k in a if k not in b and k not in handed]
     pu, cu = {u["pr"] for u in prev["undeclared"]}, {u["pr"] for u in cur["undeclared"]}
     out += [f"undeclared PR #{n} appeared" for n in sorted(cu - pu)]
     out += [f"undeclared PR #{n} is gone" for n in sorted(pu - cu)]
@@ -2033,6 +2057,22 @@ def _self_test_body() -> int:
           [len(g["threads"]) for g in ledger_threads(parse_threads(
               '## GOAL g\n> 2026-01-01 00:00 "q"\n- side · PR #30 · tracked\n'), [_e])[0]]),
          ([2], ["entry w505: goal 'g' is not declared in docs/goal-threads.md"], [1]))
+    _gh = parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n## GOAL h\n> 2026-01-01 00:00 "q"\n')
+    _two = ledger_threads(_gh, [_e, dict(_e, id="w9", goal="h", thread="side · PR #30 · again")])
+    case("backlog #505: two ledger entries hanging the same ref — the FIRST wins, the second is a named problem "
+         "(r1 Codex M1)", ([[t["key"] for t in g["threads"]] for g in _two[0]], _two[1]),
+         ([["fix · PR #30"], []], ["entry w9: its thread's refs are already hung by entry w505 — the first wins"]))
+    _pre = derive(_g2, src(ledger=[_e]), "T1")
+    _post = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
+                                 '## GOAL h\n> 2026-01-01 00:00 "q"\n- side · PR #21 · aside\n'
+                                 '- side · backlog #11, PR #30 · tracked now\n'), src(ledger=[_e]), "T2")
+    _ch = changes(_pre, _post)
+    case("backlog #505: the MERGE hand-off is one 'declared on master' line, never a false added + removed, even "
+         "when its key and goal changed (r1 Codex M2)",
+         ([l.split(":")[0] for l in _ch if "PR #30" in l], any(l.startswith(("added", "removed")) for l in _ch)),
+         (["declared on master"], False))
+    case("backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)",
+         _ledger_numbers({"id": "x", "what": "w", "thread": "fix · PR #30 · depends on PR #777"}), {30})
     case("backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)",
          ledger_threads(_g2, [{"id": "x", "what": "PR #30"}]) == (_g2, []), True)
     case("a PR merged off master's log says so, with gh's SHA",
