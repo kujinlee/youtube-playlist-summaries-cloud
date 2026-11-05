@@ -3476,8 +3476,11 @@ def _self_test_body() -> int:
         _ah0 = agenda_html({"agenda": derive_agenda(dict(parse_agenda("window: w\n## g\n- x\n"), at="t", id=1,
                                                          ticked=[]), _s1)})
         case("an agenda with no change-if draws every step, none mistaken for the change-if line",
-             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
-             (False, True, True, False))
+             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower(),
+              # ⟳ backlog #509: the steps no longer come from the text, so a forced change-if lede takes the line
+              # after the title instead — the NOW line — and the page shows it TWICE
+              _ah0.count("now: ")),
+             (False, True, True, False, 1))
         case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
              ("AGENDA — none recorded" in agenda_html({"agenda": None}),
               'class="warn">AGENDA — NOT READ: MALFORMED — bad' in agenda_html({"agenda": {"malformed": "bad"}})),
