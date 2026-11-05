@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 346 cases
+    python3 scripts/goal-tree.py --self-test                 # 350 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1330,7 +1330,8 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
                 seen.add(label)
                 late.append(f"{label} (merged {ended[5:]})")
     # r1 Codex M2: ledger work no goal claims is in flight too — the tree lists it under IN FLIGHT, UNDER NO GOAL
-    now += [{"label": u["id"], "goal": "no goal", "what": ""}
+    # r1 Codex M2 (agenda-digest): its purpose too — the ledger's `what`, cut to one line
+    now += [{"label": u["id"], "goal": "no goal", "what": _one_line(u.get("what"))}
             for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
     focus: dict[str, list[dict]] = {}
     sg = step_goals(snap, ag)
@@ -1346,7 +1347,11 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
                        // 60)
         except ValueError:
             mins = None
-    return {"now": now, "undeclared": len(snap.get("undeclared") or []), "focus": focus, "at": at, "mins": mins,
+    # r1 Codex M1 (agenda-digest): every step not done is LEFT, a free one too — the recap never says "none left"
+    # while All steps still shows an open one
+    left = sum(st["state"] not in ("merged", "closed") for st in ag["steps"])
+    return {"now": now, "undeclared": len(snap.get("undeclared") or []), "focus": focus, "left": left, "at": at,
+            "mins": mins,
             "late": late, "done": bool(ag["steps"]) and all(st["state"] in ("merged", "closed") for st in ag["steps"])}
 
 
@@ -1357,11 +1362,19 @@ def agenda_recap(d: dict) -> str:
     n = len(agenda_now_items(d))   # one piece of work under two goals is ONE piece
     head = (f"{n} piece{'s' if n != 1 else ''} of work in flight across {len(goals_now)} "
             f"goal{'s' if len(goals_now) != 1 else ''}" if n else "Nothing is in flight")
-    total = len({st["n"] for sts in d["focus"].values() for st in sts})   # a step under two goals counts once
-    if not total:
+    left = d.get("left", 0)   # every step not done, a free one too; a step under two goals counts once
+    if not left:
         return head + "; no step of the plan is left."
+    if not d["focus"]:
+        return head + f"; {left} step{'s' if left != 1 else ''} left, none on a goal's work."
     top, steps = max(d["focus"].items(), key=lambda kv: len(kv[1]))   # ties keep the first goal, in step order
-    return head + f"; the plan's next steps lean on {top} ({len(steps)} of {total})."
+    return head + f"; the plan's next steps lean on {top} ({len(steps)} of {left} left)."
+
+
+def _one_line(text, limit: int = 140) -> str:
+    """PURE. A free-text field as one line of at most `limit` characters, cut with `…`."""
+    t = " ".join(str(text or "").split())
+    return t if len(t) <= limit else t[:limit - 1] + "…"
 
 
 def agenda_now_items(d: dict) -> list[dict]:
@@ -3488,9 +3501,28 @@ def _self_test_body() -> int:
         case("⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a "
              "step under two goals counted once",
              agenda_recap(_d509),
-             "4 pieces of work in flight across 2 goals; the plan's next steps lean on GOAL 1 · beta (2 of 3).")
+             "4 pieces of work in flight across 2 goals; the plan's next steps lean on GOAL 1 · beta (2 of 4 left).")
         case("#509 recap: nothing in flight and no step left says both, in words",
-             agenda_recap({"now": [], "focus": {}}), "Nothing is in flight; no step of the plan is left.")
+             agenda_recap({"now": [], "focus": {}, "left": 0}), "Nothing is in flight; no step of the plan is left.")
+        case("⭐ r1 Codex M1: an open FREE step is still left — the recap never says none is left while one shows open",
+             (agenda_recap(agenda_digest({"goals": []}, dict(_a509, steps=[_a509["steps"][2]]))),
+              agenda_digest({"goals": []}, dict(_a509, steps=[dict(_a509["steps"][2], state="merged")]))["left"]),
+             ("Nothing is in flight; 1 step left, none on a goal's work.", 0))
+        case("r1 Codex L1: a TIE keeps the first goal in step order, never the alphabetically larger one",
+             agenda_recap({"now": [], "left": 2, "focus": {"GOAL 1 · a": [{"n": 1}], "GOAL 2 · b": [{"n": 2}]}}),
+             "Nothing is in flight; the plan's next steps lean on GOAL 1 · a (1 of 2 left).")
+        case("⭐ r1 Codex M2: work under no goal keeps its purpose, cut to one line",
+             [x["what"] for x in agenda_digest(dict(_sn509, inflight_loose=[{"id": "j", "what": "a\nb"},
+                                                                          {"id": "k", "what": "x" * 200}]), _a509)["now"]
+              if x["goal"] == "no goal"],
+             ["a b", "x" * 139 + "…"])
+        _evil = "<b>&amp;</b>"
+        _he = agenda_html({"repo": "o/r", "at": "2026-11-05 08:15",
+                           "goals": [{"slug": _evil, "requests": [{"when": "2026-11-03 08:00"}], "threads": [
+                               dict(_th("fix · PR #42", "inflight", [["PR", 42]]), what=_evil)]}],
+                           "agenda": dict(_a509, window=_evil, change_if=_evil)})
+        case("⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if",
+             (_he.count("&lt;b&gt;&amp;amp;&lt;/b&gt;"), "<b>&amp;</b>" in _he), (4, False))
         case("⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves",
              ([(x["label"], x["goals"]) for x in agenda_now_items(_d509)],
               _h509.count('<span class="chip">GOAL 1 · beta</span><span class="chip">GOAL 2 · alpha</span> '

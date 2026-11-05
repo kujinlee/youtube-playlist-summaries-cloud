@@ -2930,8 +2930,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    now += [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": \"\"}",
-        "    now += [] if 1 else [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": \"\"}"
+        "    now += [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line(",
+        "    now += [] if 1 else [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line("
       ]
     ],
     "expect": [
@@ -3060,8 +3060,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "total = len({st[\"n\"] for sts in d[\"focus\"].values() for st in sts})",
-        "total = sum(len(v) for v in d[\"focus\"].values())"
+        "    left = d.get(\"left\", 0)   # every step",
+        "    left = d.get(\"left\", 0) + sum(len(v) for v in d[\"focus\"].values()) - len({st[\"n\"] for sts in d[\"focus\"].values() for st in sts})   # every step"
       ]
     ],
     "expect": [
@@ -3145,6 +3145,97 @@
     ],
     "expect": [
       "⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line"
+    ]
+  },
+  {
+    "name": "the goal chip is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "chip = lambda g: f'<span class=\"chip\">{html.escape(g)}</span>'",
+        "chip = lambda g: f'<span class=\"chip\">{g}</span>'"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the in-flight purpose is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"what\">— {html.escape(x[\"what\"])}</span>",
+        "<span class=\"what\">— {x[\"what\"]}</span>"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the agenda window is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{age} · {html.escape(ag[\"window\"])}</p>",
+        "{age} · {ag[\"window\"]}</p>"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the change-if is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "changes if: {html.escape(ag.get(\"change_if\") or \"\")}",
+        "changes if: {ag.get(\"change_if\") or \"\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "a recap tie picks the alphabetically larger goal (agenda-digest r1 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "key=lambda kv: len(kv[1]))   # ties keep",
+        "key=lambda kv: (len(kv[1]), kv[0]))   # ties keep"
+      ]
+    ],
+    "expect": [
+      "r1 Codex L1: a TIE keeps the first goal in step order, never the alphabetically larger one"
+    ]
+  },
+  {
+    "name": "an open free step is not counted as left (agenda-digest r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "left = sum(st[\"state\"] not in (\"merged\", \"closed\") for st in ag[\"steps\"])",
+        "left = sum(st[\"state\"] not in (\"merged\", \"closed\") and bool(st[\"refs\"]) for st in ag[\"steps\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: an open FREE step is still left — the recap never says none is left while one shows open"
+    ]
+  },
+  {
+    "name": "work under no goal loses its purpose (agenda-digest r1 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"goal\": \"no goal\", \"what\": _one_line(u.get(\"what\"))}",
+        "\"goal\": \"no goal\", \"what\": \"\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M2: work under no goal keeps its purpose, cut to one line"
     ]
   }
 ]
