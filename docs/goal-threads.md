@@ -67,6 +67,10 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-04 18:09 "if slice 2 is continuation of same backlog, why wait until tomorrow? this current session already has context"
 > 2026-11-04 14:33 "I have to click Refresh button two times to get real refresh"
 - fix · backlog #502 · a Refresh click keeps saying "rebuilding…" until the page reloads or the rebuild reports a failure, so one click is enough
+> 2026-11-05 01:38 "what you are doing currently isn't appear in goal-tree"
+> 2026-11-05 01:46 "let's not wait. finish the work while memories are warm"
+- fix · backlog #505, PR #505 · work in flight shows under its goal before the PR merges: a ledger entry carries its goal and thread
+- bookkeeping · backlog #507 · filed 2026-11-05: closing a ledger entry whose thread is not yet on master drops the thread from the tree without a warning
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
