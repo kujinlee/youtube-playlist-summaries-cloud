@@ -1757,5 +1757,18 @@
     "expect": [
       "⭐ #510 r1 Codex M1: across spring-forward the rise starts at Sat 00:00 PST for a Mon 00:30 PDT reset — Sat 12:00 is 12 h into a 46.5 h rise"
     ]
+  },
+  {
+    "name": "#510 r2 Codex L1: the note picks the reserve only below 97, not whenever the reserve binds",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "days after today.\" if stop < cap_at(now, resets)",
+        "days after today.\" if stop < STOP_CAP"
+      ]
+    ],
+    "expect": [
+      "⭐ #510 r2 Codex L1: when the reserve binds above 97 the message names the reserve, not the rising cap"
+    ]
   }
 ]

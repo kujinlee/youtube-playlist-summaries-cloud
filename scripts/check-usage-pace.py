@@ -143,7 +143,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 311 cases
+    python3 scripts/check-usage-pace.py --self-test  # 312 cases
 """
 from __future__ import annotations
 
@@ -400,7 +400,8 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
         five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
                      f"resets {local_time(five[1])}.")
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
-    stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < STOP_CAP
+    # r2 Codex L1: the note names the limit that BINDS — the reserve can sit above 97 and below the rising cap
+    stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < cap_at(now, resets)
                  else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
                  else f" The stop rises over the last day, {pct_up(stop)} now and {pct(LAST_DAY_CAP)} from "
                       f"{local_time(resets - RISE_END_S)}: start only work that finishes before the reset.")
@@ -876,6 +877,12 @@ def _self_test_body() -> int:
         # r1 Codex M1: the rise starts at the LOCAL midnight of the day 24 h before the reset. Across spring-forward the
         # day before a Mon 00:30 PDT reset begins Sat 00:00 PST; `local_midnight(resets) - 24 h` lands Sat 23:00 PST.
         _spr = lt(2026, 3, 9, 0) + 1800
+        # r2 Codex L1: a Sat 10:00 reset; Fri 18:00 has a rising cap of 98.09 but the reserve holds the stop at 97.92
+        _jul, _fri18 = lt(2026, 7, 11, 10), lt(2026, 7, 10, 18)
+        check("⭐ #510 r2 Codex L1: when the reserve binds above 97 the message names the reserve, not the rising cap",
+              (round(refuse_at(_fri18, _jul), 4), round(cap_at(_fri18, _jul), 4),
+               "The stop keeps 5% for each of the 0.4 days after today." in
+               evm(cache(90, week_reset=_jul, at=_fri18), m85, _fri18)[1]), (97.9167, 98.0909, True))
         check("⭐ #510 r1 Codex M1: across spring-forward the rise starts at Sat 00:00 PST for a Mon 00:30 PDT reset — Sat 12:00 is 12 h into a 46.5 h rise",
               (cap_at(lt(2026, 3, 7, 0), _spr), cap_at(lt(2026, 3, 7, 12), _spr), cap_at(lt(2026, 3, 8, 23) + 1800, _spr)),
               (97.0, 97 + 2 * 12 / 46.5, 99.0))
