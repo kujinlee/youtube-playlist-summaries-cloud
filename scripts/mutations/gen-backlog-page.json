@@ -922,8 +922,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 2 and '<ol class=\"enum\">' not in h",
-        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 2"
+        " < 2 and '<ol class=\"enum\">' not in h",
+        " < 2"
       ]
     ],
     "expect": "unlaid_rows: a long row laid out as an (a) (b) list is NOT a wall (row-cues r1 Codex M4)"
