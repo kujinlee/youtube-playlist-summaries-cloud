@@ -861,5 +861,38 @@
       ]
     ],
     "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
+  },
+  {
+    "name": "the Status cell is drawn as one paragraph again (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "{layout_body(md(r['status']))}",
+        "{md(r['status'])}"
+      ]
+    ],
+    "expect": "the Status cell is laid out by the same rules as the body (owner 2026-11-05, backlog #40)"
+  },
+  {
+    "name": "the diff loses its label breaks (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return \" \".join(out).replace(DIFF_BREAK, '<span class=\"brk\"></span>')",
+        "    return \" \".join(out)"
+      ]
+    ],
+    "expect": "word_diff breaks before a lead-in label after a sentence end, not after a comma (owner 2026-11-05)"
+  },
+  {
+    "name": "the diff breaks a label mid-sentence (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "_DIFF_LABEL = re.compile(r\"([^\\w,\\s]\\s*)(?=",
+        "_DIFF_LABEL = re.compile(r\"([^\\s]\\s*)(?="
+      ]
+    ],
+    "expect": "word_diff breaks before a lead-in label after a sentence end, not after a comma (owner 2026-11-05)"
   }
 ]

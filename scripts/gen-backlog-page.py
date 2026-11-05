@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 242 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 244 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1163,6 +1163,10 @@ def changes_from_versions(versions: Sequence[tuple[str, int, str]]) -> dict[int,
 WORD_OR_KEY = re.compile(r"\b(?:backlog|PR) #\d+\S*|\S+")
 
 
+DIFF_BREAK = "¶"
+_DIFF_LABEL = re.compile(r"([^\w,\s]\s*)(?=\*\*[^*]{1,80}?:\*\*)")
+
+
 def word_diff(before: str, after: str) -> str:
     """Word-level diff as HTML — deletions struck through, insertions marked.
 
@@ -1173,7 +1177,11 @@ def word_diff(before: str, after: str) -> str:
     import difflib
     # A key (`PR #445`) is ONE token, so the diff never splits it across `<del>`/`<ins>` where no
     # link can reach it (backlog #470: every key on a generated page is a link).
-    a, b = (WORD_OR_KEY.findall(re.sub(r"[*`]", "", t)) for t in (before, after))
+    # A bold lead-in label (`**Fix:**`) is where the entry's own layout breaks a block; stripping the
+    # `**` would lose it, so it is kept as one `¶` token first and drawn as a line break (owner
+    # 2026-11-05: the diff of a laid-out entry was one wall of text). Same lead-in rule as the body:
+    # a label after a letter, digit or comma sits mid-sentence and is not a break.
+    a, b = (WORD_OR_KEY.findall(re.sub(r"[*`]", "", _DIFF_LABEL.sub(lambda m: f"{m.group(1)} {DIFF_BREAK} ", t))) for t in (before, after))
     out = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag in ("delete", "replace"):
@@ -1182,7 +1190,7 @@ def word_diff(before: str, after: str) -> str:
             out.append("<ins>" + html.escape(" ".join(b[j1:j2])) + "</ins>")
         if tag == "equal":
             out.append(html.escape(" ".join(a[i1:i2])))
-    return " ".join(out)
+    return " ".join(out).replace(DIFF_BREAK, '<span class="brk"></span>')
 
 
 class ShapeError(Exception):
@@ -1861,7 +1869,7 @@ def card(r: dict) -> str:
     {dep}
     <details><summary>the full entry, as filed</summary>
       <div class="prose">{layout_body(md(r['body']))}</div>
-      <div class="status"><b>Status cell</b>{md(r['status'])}</div>
+      <div class="status"><b>Status cell</b>{layout_body(md(r['status']))}</div>
       {diff}
     </details>
   </div>
@@ -2293,6 +2301,7 @@ button.f[disabled]{{opacity:.4;cursor:default}}
 .age.unknown{{color:var(--pending)}}
 .age time{{border-bottom:1px dotted var(--line);cursor:help}}
 .diffbox{{margin-top:.8rem;padding-top:.7rem;border-top:1px solid var(--line-2)}}
+.diff .brk{{display:block;height:.5rem}}
 .diff{{font-family:var(--serif);font-size:.9rem;line-height:1.7;color:var(--ink-3);margin-top:.6rem;
        max-width:44rem}}
 .diff del{{background:rgba(173,58,34,.14);color:var(--problem);text-decoration:line-through;
@@ -3891,6 +3900,13 @@ def _self_test_body() -> int:
          lambda: "<script>" not in word_diff("<script>a</script>", "<script>b</script>"))
     case("word_diff strips markdown rather than splicing tags through it",
          lambda: "**" not in word_diff("**bold** a", "**bold** b"))
+    # owner 2026-11-05: the diff breaks where the entry's layout does — at a bold lead-in label after a
+    # sentence end — and nowhere mid-sentence; the break is markup, never a visible character.
+    _wd = word_diff("x. **Fix:** old, **Also:** y", "x. **Fix:** new, **Also:** y")
+    case("word_diff breaks before a lead-in label after a sentence end, not after a comma (owner 2026-11-05)",
+         lambda: (_wd.count('<span class="brk"></span>'), _wd.index('<span class="brk"></span>') < _wd.index("Fix:"),
+                  DIFF_BREAK in _wd, visible_text(_wd).split()) ==
+         (1, True, False, ["x.", "Fix:", "old,", "new,", "Also:", "y"]))
 
     # ⭐ The one case that measures the SHIPPED grouping rather than a fixture. If an item is filed
     # or closed and GROUPS is not updated, this fails here — before anyone opens the page.
@@ -4005,6 +4021,9 @@ def _self_test_body() -> int:
                   len(_short) < LAYOUT_MIN_CHARS <= len(_wall), LAYOUT_MIN_CHARS) == ([7], True, 600))
     case("unlaid_rows: the threshold is a parameter — the short row is named once it is lowered",
          lambda: unlaid_rows([{"num": 9, "body": _short}], min_chars=len(_short)) == [9])
+    case("the Status cell is laid out by the same rules as the body (owner 2026-11-05, backlog #40)",
+         lambda: (lambda c: c[c.index('<div class="status">'):].count('<div class="seg">') >= 2)(
+             card(dict(_kr[20], hist=None, status="OPEN — filed x. ⟳ **Decided by the user:** y"))))
     case("⛔ every REAL row of 600+ characters lays out into two or more blocks — add a short bold "
          "label (`**Fix:**`) or an `(a) (b)` run to any row named here (owner, 2026-11-05)",
          lambda: unlaid_rows(real) == [])
