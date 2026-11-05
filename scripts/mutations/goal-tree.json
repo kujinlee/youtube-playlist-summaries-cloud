@@ -4,8 +4,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if rel not in RELATIONS:",
-        "            if False:"
+        "    if rel not in RELATIONS:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
@@ -17,8 +17,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if not REFS_RE.fullmatch(refs_text):",
-        "            if not REFS_RE.search(refs_text):"
+        "    if not REFS_RE.fullmatch(refs_text):",
+        "    if not REFS_RE.search(refs_text):"
       ]
     ],
     "expect": [
@@ -56,7 +56,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            if any(t[\"key\"] == key for t in cur[\"threads\"]):",
+        "            if any(x[\"key\"] == t[\"key\"] for x in cur[\"threads\"]):",
         "            if False:"
       ]
     ],
@@ -2646,5 +2646,126 @@
     "expect": [
       "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
     ]
+  },
+  {
+    "name": "a ledger thread duplicates a tracked one (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if refs & declared:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: the TRACKED file wins — a ledger thread sharing a ref with any declared thread is not added"
+  },
+  {
+    "name": "a ledger thread under an unknown goal vanishes (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            problems.append(f\"entry {id_}: goal {str(e.get('goal'))!r} is not declared in {THREADS_REL}\")\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: an unknown goal and a bad line are PROBLEMS on the page, never dropped"
+  },
+  {
+    "name": "a ledger thread never reaches the tree (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        g[\"threads\"].append(dict(t, ledger=id_))\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master"
+  },
+  {
+    "name": "a ledger thread looks like a tracked one (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        detail += f\" · declared in the ledger ({t['ledger']}), not yet on master\"\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master"
+  },
+  {
+    "name": "every ledger entry is read as a thread (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not (e.get(\"goal\") or e.get(\"thread\")):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)"
+  },
+  {
+    "name": "two ledger entries hang the same PR (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if refs & claimed.keys():\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: two ledger entries hanging the same ref — the FIRST wins, the second is a named problem (r1 Codex M1)"
+  },
+  {
+    "name": "the merge hand-off reads as added + removed (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if {tuple(x) for x in b[k][\"refs\"]} & rr:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: the MERGE hand-off is one 'declared on master' line, never a false added + removed, even when its key and goal changed (r1 Codex M2)"
+  },
+  {
+    "name": "a number in a thread's prose associates the entry (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            | ({n for _, n in t[\"refs\"]} if t else set()))",
+        "            | {int(n) for n in LEDGER_NUM_RE.findall(str(entry.get('thread', '')))})"
+      ]
+    ],
+    "expect": "backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)"
+  },
+  {
+    "name": "the ledger winner follows file order (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for e in sorted(ledger, key=lambda e: str(e.get(\"id\", \"\"))):\n",
+        "    for e in ledger:\n"
+      ]
+    ],
+    "expect": "backlog #505: the winner of a shared ref is the id that sorts first, whatever the FILE order — a re-add moves an entry to the end and must not move the thread (r2 Codex M1)"
+  },
+  {
+    "name": "the hand-off pairs on any shared ref (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        rr = {x for x in rr if x[0] == \"PR\"} or rr\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: the hand-off pairs on the ledger thread's PR — a sibling sharing only a backlog row is NOT its successor, and a ledger thread with no successor is still REMOVED (r2 Codex M2)"
+  },
+  {
+    "name": "a ledger problem is invisible on the timeline (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    out += [f\"ledger problem, new: {q}\" for q in sorted(cq - pq)]\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: a ledger problem appearing and clearing is on the timeline, never 'no change' (r2 Codex L1)"
   }
 ]
