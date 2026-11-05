@@ -119,6 +119,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-04 09:29 "For example, emergency reserve is set to 5% and remaining days are 3 days(excluding today), max usage for today can be 100 - 3×5 = 85"
 - fix · backlog #500 · new agents are refused at 100% − 5% × the days left after today, never above 97% (09:29), so each later day keeps a reserve and the rest is spent
 - bookkeeping · backlog #501 · the usage guard should read only the tail of a large meter log (filed from backlog #500's round-1 review)
+> 2026-11-05 08:36 "by reset time is approaching, gradually loosing the hard stop limit or do not apply the hard stop altogether after certain time of last day might be better"
+- fix · backlog #510 · the weekly stop rises from 97% to 99% over the last 6 hours before the reset, only on a fresh meter reading (owner card A, 08:38)
 
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
