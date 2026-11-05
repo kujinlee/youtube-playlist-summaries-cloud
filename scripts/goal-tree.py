@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 263 cases
+    python3 scripts/goal-tree.py --self-test                 # 292 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -934,6 +934,246 @@ def append_if_changed(path: pathlib.Path, snap: dict) -> bool:
     return True
 
 
+# ── the agenda (backlog #499) ────────────────────────────────────────────────────────────────
+# Asked 2026-11-04 06:05 (option A): the CURRENT plan in its own dated block, every earlier one kept
+# as a collapsed line "for analytics purpose". ⛔ NAMED "agenda", NOT "plan": in this file a plan is
+# an implementation-plan FILE read through gen-work-lines (`open_plans`), and two things called plan
+# is the duplicate vocabulary check-vocabulary-collisions.py exists to refuse. The page says "AGENDA —
+# the current plan", so the owner's word is still on it.
+#
+# The owner's three answers, 2026-11-04 15:33: the log is LOCAL and git-ignored (plans change several
+# times a day; a PR per change is friction); an agenda is recorded EACH TIME the coordinator states
+# one, and a new one replaces the current one WHOLE; a step naming no backlog row or PR is ALLOWED,
+# marked, and ticked by hand. A step that names one is DERIVED through `derive_thread`, unchanged —
+# so a step and the same row's tree leaf cannot disagree, and the agenda cannot silently go stale.
+AGENDA_REL = ".claude/agenda-log.jsonl"
+AGENDA_KINDS = ("agenda", "replaced", "tick")
+AGENDA_FIELDS = {"agenda": (("id", int), ("window", str), ("steps", list)),
+                 "replaced": (("of", int), ("states", list)),
+                 "tick": (("of", int), ("step", int))}
+WHEN_RE = re.compile(r"^## (\S.*)$")
+STEP_RE = re.compile(r"^- (\S.*)$")
+FREE = "free"            # a step naming no backlog row or PR: its state is the owner-visible tick, never derived
+
+
+def parse_agenda(text: str) -> dict:
+    """PURE. The coordinator's stated plan -> an agenda. Raises Malformed naming EVERY bad line.
+
+        window: until the weekly reset (Fri 11-06 02:00)
+        change-if: the owner reprioritises; usage reaches today's stop
+        ## today
+        - backlog #499 · slice 1: the agenda store and derived step states
+        - restart the page server and check one Refresh click
+        ## after the reset
+        - backlog #495 · the intermittent sweep case
+    """
+    window, change_if, when, steps, problems = None, None, None, [], []
+    for i, raw in enumerate(text.split("\n"), 1):
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        if line.startswith(("window:", "change-if:")):
+            key, val = line.split(":", 1)
+            if (window if key == "window" else change_if) is not None:
+                problems.append(f"line {i}: a second `{key}:` line — an agenda states each once")
+            elif key == "window":
+                window = val.strip() or None
+            else:
+                change_if = val.strip() or None
+        elif (m := WHEN_RE.match(line)):
+            when = m.group(1).strip()
+        elif (m := STEP_RE.match(line)):
+            if when is None:
+                problems.append(f"line {i}: a step before any `## <when>` group: {line!r}")
+                continue
+            steps.append({"when": when, "text": m.group(1).strip(),
+                          "refs": [[k, int(n)] for k, n in REF_RE.findall(m.group(1))]})
+        else:
+            problems.append(f"line {i}: an agenda line is `window:`, `change-if:`, `## <when>` or "
+                            f"`- <step>`: {line!r}")
+    if not window:
+        problems.append("no `window:` line — an agenda says what period it covers")
+    if not steps:
+        problems.append("no steps — an agenda with nothing in it is not a plan")
+    if problems:
+        raise Malformed("; ".join(problems))
+    return {"window": window, "change_if": change_if, "steps": steps}
+
+
+def _agenda_records(text: str, name: str) -> list[dict]:
+    out = []
+    for i, ln in enumerate(text.split("\n"), 1):
+        if not ln.strip():
+            continue
+        try:
+            rec = json.loads(ln)
+            if not isinstance(rec, dict) or rec.get("kind") not in AGENDA_KINDS or "at" not in rec:
+                raise ValueError("not an agenda record")
+            # ⛔ every field a reader indexes is checked HERE, so a bad record is MALFORMED, never a KeyError
+            # in the snapshot (r3 Codex M3)
+            for key, typ in AGENDA_FIELDS[rec["kind"]]:
+                if not isinstance(rec.get(key), typ) or isinstance(rec.get(key), bool):
+                    raise ValueError(f"a {rec['kind']} record needs `{key}` ({typ.__name__})")
+            if rec["kind"] == "agenda" and not all(
+                    isinstance(st, dict) and isinstance(st.get("when"), str) and isinstance(st.get("text"), str)
+                    and isinstance(st.get("refs"), list) for st in rec["steps"]):
+                raise ValueError("an agenda step needs `when`, `text` and `refs`")
+        except ValueError as exc:
+            raise Malformed(f"{name} line {i} is not an agenda record ({exc})") from None
+        out.append(rec)
+    return out
+
+
+def read_agenda_log(path: pathlib.Path) -> list[dict]:
+    """Every agenda record, oldest first. Missing is empty; an unreadable line is Malformed."""
+    return _agenda_records(path.read_text(), path.name) if path.exists() else []
+
+
+def agendas(log: list[dict]) -> list[dict]:
+    """PURE. The log -> every agenda, oldest first, each with its hand ticks and, once replaced, the
+    states its steps were in at that moment. The LAST one is current; the rest are history.
+    ⛔ A `tick` or `replaced` record names the agenda it belongs to (`of`, the agenda's `id`), and one
+    that names any agenda but the current one, or arrives before any, is MALFORMED — never dropped,
+    never attached to whichever agenda happens to be last (r1 Codex H2)."""
+    out: list[dict] = []
+    for i, rec in enumerate(log, 1):
+        if rec["kind"] == "agenda":
+            if out and out[-1]["replaced"] is None:
+                raise Malformed(f"agenda record {i} (id {rec.get('id')}) follows agenda id {out[-1].get('id')} "
+                                f"without closing it")
+            if rec.get("id") != len(out) + 1:
+                raise Malformed(f"agenda record {i} has id {rec.get('id')!r}, expected {len(out) + 1}")
+            out.append(dict(rec, ticked=[], replaced=None))
+            continue
+        if not out or rec.get("of") != out[-1]["id"] or out[-1]["replaced"] is not None:
+            raise Malformed(f"{rec['kind']} record {i} names agenda {rec.get('of')!r}, which is not the open "
+                            f"agenda ({out[-1]['id'] if out and out[-1]['replaced'] is None else 'none'})")
+        if rec["kind"] == "tick":
+            out[-1]["ticked"].append(rec["step"])
+        else:
+            out[-1]["replaced"] = {"at": rec["at"], "states": rec["states"]}
+    return out
+
+
+def _refset(refs: list) -> frozenset:
+    """A step's or thread's refs as a SET: `backlog #2, backlog #1` names what `backlog #1, backlog #2` does."""
+    return frozenset(map(tuple, refs))
+
+
+def derive_agenda(ag: dict | None, src: dict, threads: list[dict] = ()) -> dict | None:
+    """PURE. One agenda + the read sources -> its steps with `state` and `detail`. A step naming a
+    row or PR goes through `derive_thread`, the tree's own derivation, WITH the `waits` a declared
+    thread naming the same refs carries — so a row the tree shows ❌ waiting is not ⬜ here (r1 Codex
+    H1). ⚠ BOUND: the policy is ANY WAIT WINS. Two leaves for one row, one waiting, show ⬜ and ❌ in the
+    tree; the step shows ❌, agreeing with the waiting leaf only (r3 Codex M1, stated rather than fixed). A free step is FREE until ticked by hand, then `merged` (done), and says which."""
+    if ag is None:
+        return None
+    # ⛔ keyed by the ref SET, and EVERY declared wait counts: two threads naming the same refs, one waiting,
+    # make the step wait — in either declaration order (r2 Codex H1, H2)
+    declared: dict = {}
+    for t in threads:
+        if t.get("waits"):
+            said = declared.setdefault(_refset(t["refs"]), [])
+            if t["waits"] not in said:
+                said.append(t["waits"])
+    waits = {k: "; ".join(sorted(v)) for k, v in declared.items()}   # sorted: no declaration order (r3 Codex L4)
+    steps = []
+    for n, st in enumerate(ag["steps"], 1):
+        if st["refs"]:
+            d = derive_thread({"key": f"step {n}", "refs": st["refs"],
+                               "waits": waits.get(_refset(st["refs"]))}, src)
+            steps.append(dict(st, n=n, state=d["state"], detail=d["detail"]))
+        elif n in ag.get("ticked", []):
+            steps.append(dict(st, n=n, state="merged", detail="ticked by hand (names no backlog row or PR)"))
+        else:
+            steps.append(dict(st, n=n, state=FREE, detail="names no backlog row or PR — ticked by hand"))
+    return {"at": ag["at"], "id": ag.get("id"), "window": ag["window"], "change_if": ag.get("change_if"),
+            "steps": steps}
+
+
+def _locked(path: pathlib.Path, write):
+    """Read the log and append to it under ONE exclusive lock, so two recorders cannot both read the
+    same open agenda and each close it (r1 Codex H2). `write(current_agendas)` returns the lines."""
+    import fcntl
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        text = fh.read()
+        lines, said = write(agendas(_agenda_records(text, path.name)))
+        fh.seek(0, 2)
+        if text and not text.endswith("\n"):
+            fh.write("\n")      # a last line with no newline would fuse with the next record (r3 Codex M2)
+        fh.write("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+    return said
+
+
+def _open_or_refuse(cur: list[dict]) -> None:
+    """⛔ A log whose last agenda is CLOSED with no successor is an interrupted write; appending to it would
+    leave a record replay refuses, so both writers refuse first (r2 Codex M3)."""
+    if cur and cur[-1]["replaced"] is not None:
+        raise Malformed(f"agenda id {cur[-1]['id']} was replaced but no new agenda follows (an interrupted "
+                        f"write) — repair {AGENDA_REL} before recording or ticking")
+
+
+def record_agenda(path: pathlib.Path, ag: dict, now: str, src: dict | None, threads: list[dict] = ()) -> str:
+    """Append `ag` as the current agenda. The one it replaces is closed FIRST with each step's state
+    at this moment (from `src`), so the history records what was done by the time it changed."""
+    def write(cur):
+        _open_or_refuse(cur)
+        lines = []
+        if cur:
+            prev = cur[-1]
+            if src is None:
+                states = [{"n": n, "state": "cannot"} for n in range(1, len(prev["steps"]) + 1)]
+            else:
+                states = [{"n": s["n"], "state": s["state"]} for s in derive_agenda(prev, src, threads)["steps"]]
+            lines.append({"kind": "replaced", "at": now, "of": prev["id"], "states": states})
+        lines.append(dict(ag, kind="agenda", at=now, id=len(cur) + 1))
+        return lines, f"agenda recorded at {now} ({len(ag['steps'])} step(s)) -> {AGENDA_REL}"
+    return _locked(path, write)
+
+
+def tick_agenda(path: pathlib.Path, n: int, now: str) -> str:
+    """Tick step `n` of the current agenda by hand. ⛔ REFUSED for a step that names a row or PR —
+    its state is derived, and a hand tick there would be a second source of truth — and for a step
+    already ticked."""
+    def write(cur):
+        if not cur:
+            raise Malformed("there is no agenda to tick — record one first")
+        _open_or_refuse(cur)
+        steps = cur[-1]["steps"]
+        if not 1 <= n <= len(steps):
+            raise Malformed(f"step {n} does not exist: the current agenda has {len(steps)} step(s)")
+        if steps[n - 1]["refs"]:
+            raise Malformed(f"step {n} names {', '.join(f'{k} #{v}' for k, v in steps[n - 1]['refs'])}: its "
+                            f"state is derived, never ticked by hand")
+        if n in cur[-1]["ticked"]:
+            raise Malformed(f"step {n} is already ticked")
+        return [{"kind": "tick", "at": now, "of": cur[-1]["id"], "step": n}], f"agenda step {n} ticked by hand"
+    return _locked(path, write)
+
+
+def agenda_lines(snap: dict) -> list[str]:
+    """PURE. The current agenda as text, grouped by when. Empty when none is recorded."""
+    ag = snap.get("agenda")
+    if not ag:
+        return []
+    if "malformed" in ag:
+        return [f"AGENDA — NOT READ: MALFORMED — {ag['malformed']}"]
+    out = [f"AGENDA — the current plan, set {ag['at']} · {ag['window']}"]
+    if ag.get("change_if"):
+        out.append(f"  changes if: {ag['change_if']}")
+    when = None
+    for st in ag["steps"]:
+        if st["when"] != when:
+            when = st["when"]
+            out.append(f"  {when}")
+        glyph = "◇" if st["state"] == FREE else GLYPH.get(st["state"], "?")
+        out.append(f"    {st['n']}. {glyph} {st['text']} — {st['detail']}")
+    return out
+
+
 # ── rendering ─────────────────────────────────────────────────────────────────────────────────
 # PURE. Text split into (piece, href) — every `PR #N` and `backlog #N` becomes a link. The ONE
 # implementation is `page_markup.key_segments` (backlog #470); this name is the tree's import of it.
@@ -1177,7 +1417,8 @@ def needs_html(snap: dict) -> str:
 
 
 def render_text(snap: dict, at=None) -> str:
-    return "\n".join(needs_lines(snap) + [""] + tree_lines(snap, at))
+    ag = agenda_lines(snap)
+    return "\n".join(needs_lines(snap) + [""] + (ag + [""] if ag else []) + tree_lines(snap, at))
 
 
 def _id_attr(t: str, ids: set | None) -> str:
@@ -1363,11 +1604,15 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
     ap.add_argument("--page", action="store_true", help="render the page from the log")
     ap.add_argument("--print", dest="print_", action="store_true", help="print the tree as text")
     ap.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT)
+    ap.add_argument("--record-agenda", type=pathlib.Path, metavar="FILE",
+                    help="record FILE as the current agenda, replacing the current one (backlog #499)")
+    ap.add_argument("--tick-agenda", type=int, metavar="N",
+                    help="tick step N of the current agenda by hand (only a step naming no row or PR)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
     if a.self_test:
         return _self_test()
-    if not (a.snapshot or a.page or a.print_):
+    if not (a.snapshot or a.page or a.print_ or a.record_agenda or a.tick_agenda is not None):
         a.snapshot = a.page = True
     now = now or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     main_root, why = _SS.main_checkout(root, run or _SS._run)
@@ -1375,14 +1620,42 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         print(f"CANNOT RUN — the log lives in the MAIN checkout's {LOG_REL}, and {why}.")
         return 2
     log_path = main_root / LOG_REL
+    agenda_path = main_root / AGENDA_REL
     rc, live = 0, None
     try:
+        threads = root / THREADS_REL
+        # the declared threads lend a step their `waits`; read only by the modes that derive (not --page)
+        declared = ([t for g in parse_threads(threads.read_text()) for t in g["threads"]]
+                    if (a.record_agenda or a.snapshot) and threads.is_file() else [])
+        if a.record_agenda:
+            try:
+                text = a.record_agenda.read_text(encoding="utf-8")
+            except OSError as exc:
+                print(f"CANNOT RUN — the agenda file {a.record_agenda} was not read ({type(exc).__name__}); "
+                      f"nothing was recorded.")
+                return 2
+            ag = parse_agenda(text)
+            src = collect(root, run)
+            # ⛔ the replaced agenda's states are only as good as the sources: an unread one is said
+            print(record_agenda(agenda_path, ag, now,
+                                None if src["errors"] and any(src["errors"].values()) else src, declared))
+        if a.tick_agenda is not None:
+            print(tick_agenda(agenda_path, a.tick_agenda, now))
         if a.snapshot:
-            threads = root / THREADS_REL
             if not threads.is_file():
                 print(f"CANNOT RUN — {THREADS_REL} does not exist, so there is no tree to draw.")
                 return 2
-            live = derive(parse_threads(threads.read_text()), collect(root, run), now)
+            src = collect(root, run)
+            live = derive(parse_threads(threads.read_text()), src, now)
+            # ⛔ a malformed agenda log is SAID on the agenda block and in the exit code, and never takes the
+            # snapshot down with it — the tree was read whole (r2 Codex M4)
+            try:
+                cur = agendas(read_agenda_log(agenda_path))
+                live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared)
+            except Malformed as exc:
+                live["agenda"] = {"malformed": str(exc)}
+                print(f"MALFORMED — {exc}")
+                rc = 1
             if live["cannot"]:
                 print("CANNOT RUN — the snapshot was NOT logged: " + "; ".join(live["cannot"]))
                 rc = 2
@@ -2599,6 +2872,256 @@ def _self_test_body() -> int:
              ([0, 0], 1, True))
         case("--print prints the tree it just derived", 'GOAL 1 · alpha-one (2026-10-26 09:51)' in said, True)
         case("main wrote the page", out.is_file() and "<h1>Goal tree</h1>" in out.read_text(), True)
+
+        # ── the agenda (backlog #499) ───────────────────────────────────────────────────────────
+        # restored below: later cases count this log. ⛔ Read only if THERE — a mutant that moves the log must
+        # reach the case that names it, not crash here first (the CI sweep caught exactly that)
+        _log_p = r / "main" / LOG_REL
+        _log_before = _log_p.read_text() if _log_p.is_file() else None
+        AG = ("window: until the reset\nchange-if: the owner reprioritises\n## today\n"
+              "- PR #20 · land the merged one\n- backlog #11 · the row an open PR works on\n- restart the server\n"
+              "## after\n- backlog #12 · not started\n")
+        ag = parse_agenda(AG)
+        case("an agenda parses its window, change-if, groups, steps and refs",
+             (ag["window"], ag["change_if"], [st["when"] for st in ag["steps"]], ag["steps"][1]["refs"],
+              ag["steps"][2]["refs"]),
+             ("until the reset", "the owner reprioritises", ["today"] * 3 + ["after"], [["backlog", 11]], []))
+
+        def ag_bad(text):
+            try:
+                parse_agenda(text)
+            except Malformed as exc:
+                return str(exc)
+            return None
+        _bad = ag_bad("- a step before a group\n## g\nstray\n")
+        case("⛔ a malformed agenda names EVERY problem: a step before a group, a stray line, no window",
+             ("line 1: a step before any" in _bad, "line 3: an agenda line is" in _bad, "no `window:` line" in _bad),
+             (True, True, True))
+        case("⛔ a second `window:` line is refused, not silently overwritten",
+             "a second `window:` line" in (ag_bad("window: a\nwindow: b\n## g\n- x\n") or ""), True)
+        case("⛔ an agenda with no steps is refused, not recorded as an empty plan",
+             "no steps" in (ag_bad("window: w\n## g\n") or ""), True)
+
+        # the step's state IS the tree leaf's state for the same refs — two distinct worlds, one case
+        _s1, _s2 = src(), src(merged_by_pr={}, merged_rows=[], all={})
+        _same = []
+        for _w in (_s1, _s2):
+            _d = derive_agenda(dict(ag, at="t", ticked=[]), _w)["steps"]
+            _same.append([st["state"] for st in _d[:2]]
+                         == [derive_thread({"key": "k", "refs": st["refs"], "waits": None}, _w)["state"]
+                             for st in ag["steps"][:2]])
+        _d1 = derive_agenda(dict(ag, at="t", ticked=[]), _s1)["steps"]
+        _d2 = derive_agenda(dict(ag, at="t", ticked=[]), _s2)["steps"]
+        case("⭐ a step naming a row or PR is derived by the TREE's own derivation, in two distinct worlds",
+             (_same, [st["state"] for st in _d1], _d2[0]["state"]),
+             ([True, True], ["merged", "open", FREE, "next"], "notfound"))
+        case("a free step is FREE until ticked by hand, then done — and says which",
+             ([st["state"] for st in derive_agenda(dict(ag, at="t", ticked=[3]), _s1)["steps"]][2],
+              "ticked by hand" in derive_agenda(dict(ag, at="t", ticked=[3]), _s1)["steps"][2]["detail"]),
+             ("merged", True))
+        # r1 Codex H1 — a declared `waits on` lends the step its ❌, in two distinct worlds
+        _leaf = {"key": "k", "refs": [["backlog", 12]], "waits": "PR #20"}
+        _wag = parse_agenda("window: w\n## g\n- backlog #12 · the waiting row\n- backlog #13 · undeclared\n")
+        _par = []
+        for _w in (src(), src(merged_by_pr={}, merged_rows=[], all={})):
+            _st = derive_agenda(dict(_wag, at="t", id=1, ticked=[]), _w, [_leaf])["steps"]
+            _par.append((_st[0]["state"], derive_thread(_leaf, _w)["state"], _st[1]["state"]))
+        case("⭐ a step whose row the tree declares `waits on` reads ❌ blocked, as the leaf does (r1 Codex H1)",
+             _par, [("blocked", "blocked", "next"), ("blocked", "blocked", "next")])
+        # r2 Codex H1/H2 — the ref SET, and ANY declared wait, in either declaration order
+        _t_go = {"key": "a", "refs": [["backlog", 1], ["backlog", 2]], "waits": None}
+        _t_wait = {"key": "b", "refs": [["backlog", 2], ["backlog", 1]], "waits": "the owner"}
+        _oag = parse_agenda("window: w\n## g\n- backlog #2, backlog #1 · reversed\n- backlog #1, backlog #2 · same order\n")
+        _ord = [[st["state"] for st in derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), ths)["steps"]]
+                for ths in ([_t_go, _t_wait], [_t_wait, _t_go])]
+        case("⭐ a step waits if ANY declared thread naming the same ref SET waits, in any ref or declaration order "
+             "(r2 Codex H1, H2)", _ord, [["blocked", "blocked"], ["blocked", "blocked"]])
+        _t_wait2 = {"key": "c", "refs": [["backlog", 1], ["backlog", 2]], "waits": "PR #20"}
+        _both = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait, _t_go, _t_wait2])["steps"][0]["detail"]
+        _rev = derive_agenda(dict(_oag, at="t", id=1, ticked=[]), src(), [_t_wait2, _t_go, _t_wait])["steps"][0]["detail"]
+        case("the joined waits read the same in either declaration order (r3 Codex L4)", _rev == _both, True)
+        case("...and EVERY distinct declared wait is said, not only the first (r2 Codex H1)",
+             ("waits on PR #20; the owner (declared)" in _both, _both.count("the owner")), (True, 1))
+        _txt = agenda_lines({"agenda": derive_agenda(dict(ag, at="2026-11-04 09:00", id=1, ticked=[3]), _s1)})
+        case("agenda_lines groups by when, numbers the steps, and marks a free step ◇ until ticked",
+             (_txt[0], _txt[1], _txt[2], _txt[5].strip()[:4], _txt[-1].strip()[:4], len(_txt)),
+             ("AGENDA — the current plan, set 2026-11-04 09:00 · until the reset",
+              "  changes if: the owner reprioritises", "  today", "3. ✅", "4. ⬜", 8))
+        case("no agenda derives to None, and the text output then shows no block",
+             (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
+             (None, [], False))
+
+        _ap = r / "main" / AGENDA_REL
+
+        def replayed(path):
+            """The agendas, or the MALFORMED message as a one-item list — a value a case can name, not a crash."""
+            try:
+                return agendas(read_agenda_log(path))
+            except Malformed as exc:
+                return [str(exc)]
+        _ag2 = parse_agenda("window: tomorrow\n## g\n- backlog #12 · next one\n")
+        record_agenda(_ap, ag, "2026-11-04 10:00", _s1)
+        record_agenda(_ap, _ag2, "2026-11-04 11:00", _s1)
+        _all = replayed(_ap)
+        case("⭐ a new agenda REPLACES the current one whole, and the old one keeps its states AT replacement",
+             (len(_all), _all[0]["replaced"], _all[1]["replaced"], _all[1]["window"]) if len(_all) == 2 else _all,
+             (2, {"at": "2026-11-04 11:00", "states": [{"n": 1, "state": "merged"}, {"n": 2, "state": "open"},
+                                                       {"n": 3, "state": FREE}, {"n": 4, "state": "next"}]},
+              None, "tomorrow"))
+        _ap.unlink()
+        record_agenda(_ap, ag, "2026-11-04 10:00", _s1)
+        record_agenda(_ap, _ag2, "2026-11-04 11:00", None)
+        _ap2 = r / "main" / ".claude" / "agenda-other.jsonl"
+        _wa = parse_agenda("window: w\n## g\n- backlog #12 · waits\n")
+        record_agenda(_ap2, _wa, "t1", _s1, [{"key": "k", "refs": [["backlog", 12]], "waits": "the owner"}])
+        record_agenda(_ap2, _wa, "t2", _s1, [{"key": "k", "refs": [["backlog", 12]], "waits": "the owner"}])
+        _other = replayed(_ap2)
+        case("a replacement freezes the state the declared threads give a step (❌ waiting), in its own log",
+             (_other[0]["replaced"]["states"] if isinstance(_other[0], dict) else _other, _ap.is_file()),
+             ([{"n": 1, "state": "blocked"}], True))
+        _ap2.unlink()
+        case("⛔ replaced while a source was unread: the states say CANNOT, never a guessed state",
+             (lambda xs: {x["state"] for x in (xs[0]["replaced"] or {"states": []})["states"]}
+              if isinstance(xs[0], dict) else xs)(replayed(_ap)),
+             {"cannot"})
+        _ap.unlink()
+
+        def tick_err(n):
+            try:
+                tick_agenda(_ap, n, "t")
+            except Malformed as exc:
+                return str(exc)
+            return None
+        _none_yet = tick_err(1)
+        record_agenda(_ap, ag, "2026-11-04 10:00", _s1)
+        _refused, _range, _ok = tick_err(1), tick_err(9), tick_err(3)
+        case("⛔ a tick: refused with no agenda, refused on a DERIVED step, refused out of range; a free one ticks",
+             ("no agenda to tick" in (_none_yet or ""), "never ticked by hand" in (_refused or ""),
+              "does not exist" in (_range or ""),
+              _ok, agendas(read_agenda_log(_ap))[-1]["ticked"]),
+             (True, True, True, None, [3]))
+        _twice = tick_err(3)
+        case("⛔ a step already ticked is refused, not ticked twice (r1 Codex M4)",
+             ("already ticked" in (_twice or ""), agendas(read_agenda_log(_ap))[-1]["ticked"]), (True, [3]))
+
+        _bad_fields = [{"kind": "agenda", "at": "t", "id": 1, "window": "w"},
+                       {"kind": "agenda", "at": "t", "id": "1", "window": "w", "steps": []},
+                       {"kind": "agenda", "at": "t", "id": 1, "window": "w", "steps": [{"text": "x"}]},
+                       {"kind": "tick", "at": "t", "of": 1},
+                       {"kind": "replaced", "at": "t", "of": 1}]
+        _fe = []
+        for _rec in _bad_fields:
+            try:
+                _agenda_records(json.dumps(_rec), "x.jsonl")
+                _fe.append(None)
+            except Malformed as exc:
+                _fe.append("needs" in str(exc))
+            except (KeyError, TypeError) as exc:     # a crash where MALFORMED belongs, as a value
+                _fe.append(type(exc).__name__)
+        case("⛔ a record missing a field a reader indexes is MALFORMED, never a KeyError later (r3 Codex M3)",
+             _fe, [True] * 5)
+        _nl = r / "nl.jsonl"
+        _nl.write_text(json.dumps({"kind": "agenda", "at": "t", "id": 1, "window": "w",
+                                   "steps": [{"when": "g", "text": "free", "refs": []}]}))
+        tick_agenda(_nl, 1, "t2")
+        case("⛔ a log whose last line has no newline is still appended to as SEPARATE records (r3 Codex M2)",
+             [x["ticked"] for x in replayed(_nl)] if isinstance(replayed(_nl)[0], dict) else replayed(_nl), [[1]])
+        _nl.unlink()
+
+        def replay_err(recs):
+            try:
+                agendas(recs)
+            except Malformed as exc:
+                return str(exc)
+            return None
+        _A = {"kind": "agenda", "at": "t1", "id": 1, "window": "w", "steps": []}
+        _B = {"kind": "agenda", "at": "t2", "id": 2, "window": "w", "steps": []}
+        _rA = {"kind": "replaced", "at": "t2", "of": 1, "states": []}
+        _bad_replays = [
+            [{"kind": "tick", "at": "t0", "of": 1, "step": 1}, _A],              # a tick before any agenda
+            [_rA, _A],                                                          # a replacement before any
+            [_A, _B, _rA],                                                      # B never closed A; rA arrives late
+            [_A, _rA, _B, {"kind": "tick", "at": "t3", "of": 1, "step": 1}],     # a late tick for replaced A
+            [_A, _rA, dict(_B, id=3)],                                          # an id out of sequence
+            [_A, _rA],                                                          # then a tick on closed A ↓
+        ]
+        _errs = [replay_err(r) for r in _bad_replays[:5]]
+        case("⛔ a replay record naming a closed or absent agenda is MALFORMED, never dropped or misattributed "
+             "(r1 Codex H2)", [bool(e) for e in _errs], [True] * 5)
+        case("...and a well-formed replace-then-tick replays to the right agenda",
+             [(x["id"], x["ticked"], bool(x["replaced"]))
+              for x in agendas([_A, _rA, _B, {"kind": "tick", "at": "t3", "of": 2, "step": 1}])],
+             [(1, [], True), (2, [1], False)])
+        _ap.write_text(_ap.read_text() + json.dumps({"kind": "replaced", "at": "t9", "of": 1, "states": []}) + "\n")
+        _int_tick, _int_rec = tick_err(3), None
+        try:
+            record_agenda(_ap, ag, "t9", _s1)
+        except Malformed as exc:
+            _int_rec = str(exc)
+        case("⛔ after an interrupted write (closed, no successor) both writers refuse and append nothing (r2 Codex M3)",
+             ("an interrupted write" in (_int_tick or ""), "an interrupted write" in (_int_rec or ""),
+              len(read_agenda_log(_ap))), (True, True, 3))
+        _ap.write_text(_ap.read_text() + "not json\n")
+        try:
+            read_agenda_log(_ap)
+            _mal = None
+        except Malformed as exc:
+            _mal = str(exc)
+        case("⛔ an unreadable agenda-log line is MALFORMED, never skipped", "line 4 is not an agenda record" in (_mal or ""), True)
+        _ap.unlink()
+
+        # main, end to end: record, print, replace, tick — through the real argument parsing and paths
+        _af = r / "agenda.txt"
+        _af.write_text(AG)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            _rc_rec = main(["--record-agenda", str(_af)], root=r, run=fake(ok)[0], now="2026-11-04 12:00")
+            _rc_tick = main(["--tick-agenda", "3"], root=r, run=fake(ok)[0], now="2026-11-04 12:01")
+            _rc_pr = main(["--snapshot", "--print", "--out", str(out)], root=r, run=fake(ok)[0], now="2026-11-04 12:02")
+        _said = buf.getvalue()
+        case("⭐ main records an agenda, ticks it, and --print shows it under NEEDS YOU, before the tree",
+             ((_rc_rec, _rc_tick, _rc_pr), "agenda recorded at 2026-11-04 12:00 (4 step(s))" in _said,
+              "AGENDA — the current plan, set 2026-11-04 12:00 · until the reset" in _said,
+              "3. ✅ restart the server — ticked by hand" in _said,
+              _said.find("AGENDA —") != -1 and _said.find("AGENDA —") < _said.find("GOAL 1 ·"),
+              (r / "main" / AGENDA_REL).is_file(), (r / AGENDA_REL).exists()),
+             ((0, 0, 0), True, True, True, True, True, False))
+        _step2 = next((ln for ln in _said.splitlines() if ln.strip().startswith("2. ")), "")
+        case("⭐ main lends a step the `waits on` its row's declared thread carries (r1 Codex H1, the call site)",
+             "waits on the owner (declared)" in _step2, True)
+        case("the logged snapshot carries the agenda, so --page replays it",
+             ((read_log(r / "main" / LOG_REL)[-1:] or [{}])[0].get("agenda") or {}).get("at"), "2026-11-04 12:00")
+        with contextlib.redirect_stdout(io.StringIO()):
+            _rc_badtick = main(["--tick-agenda", "1"], root=r, run=fake(ok)[0], now="2026-11-04 12:03")
+        case("⛔ main exits 1 on a refused tick (a derived step)", _rc_badtick, 1)
+        _b2 = io.StringIO()
+        with contextlib.redirect_stdout(_b2):
+            try:
+                _rc_missing = main(["--record-agenda", str(r / "no-such-agenda.txt")], root=r, run=fake(ok)[0], now="t")
+            except OSError as exc:        # a traceback in the CLI — a value here, so the case below names it
+                _rc_missing = type(exc).__name__
+            _rc_zero = main(["--tick-agenda", "0"], root=r, run=fake(ok)[0], now="t")
+        case("⛔ a missing agenda file is CANNOT RUN (2), and `--tick-agenda 0` is a refused tick (1), "
+             "never the default run (r1 Codex M3, M5)",
+             (_rc_missing, "CANNOT RUN — the agenda file" in _b2.getvalue(), _rc_zero,
+              "step 0 does not exist" in _b2.getvalue(), "snapshot logged" in _b2.getvalue()),
+             (2, True, 1, True, False))
+        (r / "main" / AGENDA_REL).write_text(json.dumps({"kind": "agenda", "at": "old", "id": 1, "window": "w"}) + "\n")
+        _b3 = io.StringIO()
+        _n_before = len(read_log(r / "main" / LOG_REL))
+        with contextlib.redirect_stdout(_b3):
+            try:
+                _rc_old = main(["--snapshot", "--print", "--out", str(out)], root=r, run=fake(ok)[0],
+                               now="2026-11-04 12:09")
+            except (KeyError, TypeError) as exc:     # the r3 crash, as a value the case below names
+                _rc_old = type(exc).__name__
+        case("⛔ a malformed agenda log is SAID (exit 1, the block reads NOT READ) and the snapshot is STILL logged "
+             "(r2 Codex M4) — a record MISSING a field included (r3 Codex M3)",
+             (_rc_old, "AGENDA — NOT READ: MALFORMED" in _b3.getvalue(), len(read_log(r / "main" / LOG_REL)) - _n_before,
+              "GOAL 1 ·" in _b3.getvalue()), (1, True, 1, True))
+        (r / "main" / AGENDA_REL).unlink()
+        if _log_before is not None:
+            _log_p.write_text(_log_before)
         run, _ = fake([(["git", "fetch"], (128, "offline"))] + ok[1:])
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -2611,7 +3134,7 @@ def _self_test_body() -> int:
         with contextlib.redirect_stdout(io.StringIO()):
             rc_bad = main(["--snapshot"], root=r, run=fake(ok)[0])
         case("⛔ a malformed threads file exits 1, loudly", rc_bad, 1)
-        (r / "main" / LOG_REL).unlink()
+        (r / "main" / LOG_REL).unlink(missing_ok=True)
         with contextlib.redirect_stdout(io.StringIO()):
             rc_empty = main(["--page", "--out", str(out)], root=r, run=run_ok)
         case("⛔ --page over an empty log is CANNOT RUN, and renders nothing", rc_empty, 2)

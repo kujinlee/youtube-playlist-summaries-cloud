@@ -18773,3 +18773,8 @@ Backlog #502, PR #501. The live-reload client (`RELOAD_JS`) blanked the status s
 it now shows a `data-refresh` claim written by the Refresh handler's `tell()` ahead of the stale
 warning, though never ahead of "server not responding" (Codex r1, Medium). A new explainer-serve case runs the real client under node in five page states (233 cases);
 page_chrome gains one case (234). Five mutations, each killed by hand. Backlog #500 ticked ✅.
+
+## 2026-11-04
+The goal tree now keeps the plan I state for you, as an **agenda** (backlog #499, first half). Each time I state a plan it is recorded, and the new one replaces the old one, which is kept with how far each step had got. A step naming a backlog row or PR shows that row's live state (✅ ⏳ ⬜), so the plan cannot quietly go out of date; a step naming neither, such as *restart the page server*, is marked ◇ and ticked by hand. For now it appears in the text the goal tree prints; the page block and the collapsed history of earlier plans are the second half.
+<!--tech-->
+`scripts/goal-tree.py`: `parse_agenda`, `record_agenda`, `tick_agenda`, `derive_agenda` (steps through `derive_thread`), `--record-agenda FILE`, `--tick-agenda N`; the store is `.claude/agenda-log.jsonl` in the main checkout, git-ignored. 290 self-test cases, 176 mutations.
