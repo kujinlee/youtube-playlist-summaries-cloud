@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 320 cases
+    python3 scripts/goal-tree.py --self-test                 # 321 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -2073,6 +2073,11 @@ def _self_test_body() -> int:
          (["declared on master"], False))
     case("backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)",
          _ledger_numbers({"id": "x", "what": "w", "thread": "fix · PR #30 · depends on PR #777"}), {30})
+    case("backlog #505: parse_thread_line reads ONE line — a thread, a bad relation, bad refs, no separators",
+         [(t and t["key"], bad and bad.split(" ")[0]) for t, bad in (
+             parse_thread_line("- side · PR #7 · x"), parse_thread_line("- fixx · PR #7 · x"),
+             parse_thread_line("- fix · issue #7 · x"), parse_thread_line("- just words"))],
+         [("side · PR #7", None), (None, "relation"), (None, "refs"), (None, "a")])
     case("backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)",
          ledger_threads(_g2, [{"id": "x", "what": "PR #30"}]) == (_g2, []), True)
     case("a PR merged off master's log says so, with gh's SHA",
