@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 357 cases
+    python3 scripts/goal-tree.py --self-test                 # 367 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1322,7 +1322,11 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
             # merged threads, PR #411 among them, read as in flight on the live tree)
             if ((t.get("inflight") or t["state"] in ("open", "inflight")) and not t.get("parked")
                     and t["state"] not in _FINISHED):
-                now.append({"label": label, "goal": goal_head(i, g["slug"]), "what": t.get("what") or ""})
+                # owner 11-05 15:45 (card A): RUNNING is an open PR nothing declares a wait on; the rest is OWED, with the
+                # wait it declares (`· waits on …`) or none recorded — the tree cannot see a background job or agent
+                now.append({"label": label, "goal": goal_head(i, g["slug"]), "what": t.get("what") or "",
+                            "running": (t["state"] == "open" or t.get("open_pr") is not None) and not t.get("waits"),
+                            "waits": t.get("waits")})
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
                     and _STAMP.fullmatch(ag["at"]) and ended > ag["at"]
@@ -1331,8 +1335,13 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
                 late.append(f"{label} (merged {ended[5:]})")
     # r1 Codex M2: ledger work no goal claims is in flight too — the tree lists it under IN FLIGHT, UNDER NO GOAL
     # r1 Codex M2 (agenda-digest): its purpose too — the ledger's `what`, cut to one line
-    now += [{"label": u["id"], "goal": "no goal", "what": _one_line(u.get("what"))}
+    now += [{"label": u["id"], "goal": "no goal", "what": _one_line(u.get("what")), "running": False, "waits": None}
             for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
+    # owner 11-05 15:45: an open PR no goal declares is RUNNING work too — listed by its title, not only counted
+    # kept OUT of `now`, so the text lines are unchanged; the page lists them under Running now
+    stray = [{"label": f"PR #{u['pr']}", "goals": ["no goal"], "what": _one_line(u.get("title")), "running": True,
+              "waits": None}
+             for u in snap.get("undeclared") or [] if isinstance(u, dict) and isinstance(u.get("pr"), int)]
     focus: dict[str, list[dict]] = {}
     sg = step_goals(snap, ag)
     for st in ag["steps"]:
@@ -1350,7 +1359,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
     # r1 Codex M1 (agenda-digest): every step not done is LEFT, a free one too — the recap never says "none left"
     # while All steps still shows an open one
     left = sum(st["state"] not in ("merged", "closed") for st in ag["steps"])
-    return {"now": now, "undeclared": len(snap.get("undeclared") or []), "focus": focus, "left": left, "at": at,
+    return {"now": now, "undeclared": len(snap.get("undeclared") or []), "stray": stray, "focus": focus, "left": left, "at": at,
             "mins": mins,
             "late": late, "done": bool(ag["steps"]) and all(st["state"] in ("merged", "closed") for st in ag["steps"])}
 
@@ -1359,9 +1368,12 @@ def agenda_recap(d: dict) -> str:
     """PURE (owner 11-05 14:37: "these in flight items and focus should help me to capture current thrust"). One
     sentence read off the digest: how much is in flight, across how many goals, and where the next steps lean."""
     goals_now = {x["goal"] for x in d["now"] if x["goal"] != "no goal"}
-    n = len(agenda_now_items(d))   # one piece of work under two goals is ONE piece
-    head = (f"{n} piece{'s' if n != 1 else ''} of work in flight across {len(goals_now)} "
-            f"goal{'s' if len(goals_now) != 1 else ''}" if n else "Nothing is in flight")
+    items = agenda_now_items(d)   # one piece of work under two goals is ONE piece
+    run = sum(x["running"] for x in items) + len(d.get("stray") or [])   # an undeclared open PR is running too
+    items = items + list(d.get("stray") or [])
+    # owner 11-05 15:45: say what is RUNNING apart from what is OWED — never "in flight" for work nobody is doing
+    head = (f"{run} running and {len(items) - run} owed across {len(goals_now)} "
+            f"goal{'s' if len(goals_now) != 1 else ''}" if items else "Nothing is running or owed")
     left = d.get("left", 0)   # every step not done, a free one too; a step under two goals counts once
     if not left:
         return head + "; no step of the plan is left."
@@ -1382,10 +1394,13 @@ def agenda_now_items(d: dict) -> list[dict]:
     carrying both goals, so the page lists each piece of work once."""
     out: dict[str, dict] = {}
     for x in d["now"]:
-        it = out.setdefault(x["label"], {"label": x["label"], "goals": [], "what": x["what"]})
+        it = out.setdefault(x["label"], {"label": x["label"], "goals": [], "what": x["what"],
+                                         "running": x.get("running", False), "waits": x.get("waits")})
         if x["goal"] not in it["goals"]:
             it["goals"].append(x["goal"])
         it["what"] = it["what"] or x["what"]
+        it["waits"] = it["waits"] or x.get("waits")     # a wait declared under ANY goal holds the item
+        it["running"] = (it["running"] or x.get("running", False)) and not it["waits"]
     return list(out.values())
 
 
@@ -1753,12 +1768,22 @@ def agenda_html(snap: dict) -> str:
     # …then a recap sentence, what is in flight one per line with its purpose, and the focus by goal (backlog #509)
     parts.append(f'<p class="recap">{html.escape(agenda_recap(d))}</p>')
     chip = lambda g: f'<span class="chip">{html.escape(g)}</span>'
-    parts.append('<div class="digest"><div><h3>In flight now</h3><ul>' + "".join(
-        f'<li>{"".join(chip(g) for g in x["goals"])} {_html_line(x["label"], repo)}'
-        + (f' <span class="what">— {_html_line(x["what"], repo)}</span>' if x["what"] else "") + "</li>"
-        for x in agenda_now_items(d)) + ("" if d["now"] else "<li>nothing in flight</li>")
-        + (f'<li class="warn">+ {d["undeclared"]} open PR(s) no goal declares (UNDECLARED, below)</li>'
-           if d["undeclared"] else "") + "</ul></div>")
+    item = lambda x, tail="": (f'<li>{"".join(chip(g) for g in x["goals"])} {_html_line(x["label"], repo)}'
+                               + (f' <span class="what">— {_html_line(x["what"], repo)}</span>' if x["what"] else "")
+                               + tail + "</li>")
+    items = agenda_now_items(d)
+    run = [x for x in items if x["running"]] + list(d.get("stray") or [])
+    owed = [x for x in items if not x["running"]]
+    # owner 11-05 15:45 (card A): RUNNING apart from OWED, and each owed item says what it waits for
+    parts.append('<div class="digest"><div><h3>Running now</h3><ul>' + "".join(item(x) for x in run)
+        + ("" if run else "<li>nothing running</li>")
+        + (f'<li class="warn">{d["undeclared"]} of these PRs no goal declares (UNDECLARED, below)</li>'
+           if d["undeclared"] else "") + "</ul>"
+        + '<p class="lede">open PRs only: a background job or an agent is not visible to this page</p>'
+        + '<h3>Owed — not being worked</h3><ul>' + "".join(
+            item(x, f' <span class="waits">waits for: {_html_line(x["waits"], repo) if x["waits"] else "not recorded"}'
+                    "</span>") for x in owed)
+        + ("" if owed else "<li>nothing owed</li>") + "</ul></div>")
     parts.append('<div><h3>Focus — the next steps, by goal</h3>' + "".join(
         f'<p class="focus-g">{chip(gl)}</p><ul>' + "".join(
             f'<li><b>{st["n"]}.</b> {_html_line(st["text"], repo)}</li>' for st in sts) + "</ul>"
@@ -1955,6 +1980,7 @@ section.agenda.none{border-left-color:var(--rule)}
 section.agenda pre.tree{overflow-x:auto}
 section.agenda h2{margin:.5rem 0}
 section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
+.waits{color:var(--warn,#d29922);font-size:.85rem;white-space:nowrap}
 h2.agenda-h{margin:.4rem 0 .1rem;color:var(--accent);font-size:1.4rem;font-weight:700}
 section.agenda .meta{margin:.1rem 0}
 section.agenda .recap{margin:.6rem 0 .2rem;font-size:1rem;max-width:none}
@@ -3490,8 +3516,8 @@ def _self_test_body() -> int:
              [" → GOAL 1 · beta, GOAL 2 · alpha", " → GOAL 1 · beta", "", " → GOAL 1 · beta", " → no goal"])
         _h509 = agenda_html(dict(_sn509, repo="o/r"))
         case("⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour",
-             (_h509.count('<p class="warn">⚠ STALE'), _h509.count("<h3>In flight now</h3>"), _h509.count("<h3>Focus"),
-              _h509.index("In flight now") < _h509.index('<pre class="tree">')), (1, 1, 1, True))
+             (_h509.count('<p class="warn">⚠ STALE'), _h509.count("<h3>Running now</h3>"), _h509.count("<h3>Focus"),
+              _h509.index("Running now") < _h509.index('<pre class="tree">')), (1, 1, 1, True))
         case("⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE "
              "and its window sit on a meta line beneath (r4 X1: the page's age line)",
              ('<h2 class="agenda-h">Agenda</h2>' in _h509,
@@ -3501,16 +3527,16 @@ def _self_test_body() -> int:
         case("⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a "
              "step under two goals counted once",
              agenda_recap(_d509),
-             "4 pieces of work in flight across 2 goals; the plan's next steps lean on GOAL 1 · beta (2 of 4 left).")
+             "2 running and 3 owed across 2 goals; the plan's next steps lean on GOAL 1 · beta (2 of 4 left).")
         case("#509 recap: nothing in flight and no step left says both, in words",
-             agenda_recap({"now": [], "focus": {}, "left": 0}), "Nothing is in flight; no step of the plan is left.")
+             agenda_recap({"now": [], "focus": {}, "left": 0}), "Nothing is running or owed; no step of the plan is left.")
         case("⭐ r1 Codex M1: an open FREE step is still left — the recap never says none is left while one shows open",
              (agenda_recap(agenda_digest({"goals": []}, dict(_a509, steps=[_a509["steps"][2]]))),
               agenda_digest({"goals": []}, dict(_a509, steps=[dict(_a509["steps"][2], state="merged")]))["left"]),
-             ("Nothing is in flight; 1 step left, none on a goal's work.", 0))
+             ("Nothing is running or owed; 1 step left, none on a goal's work.", 0))
         case("r1 Codex L1: a TIE keeps the first goal in step order, never the alphabetically larger one",
              agenda_recap({"now": [], "left": 2, "focus": {"GOAL 1 · a": [{"n": 1}], "GOAL 2 · b": [{"n": 2}]}}),
-             "Nothing is in flight; the plan's next steps lean on GOAL 1 · a (1 of 2 left).")
+             "Nothing is running or owed; the plan's next steps lean on GOAL 1 · a (1 of 2 left).")
         case("⭐ r1 Codex M2: work under no goal keeps its purpose, cut to one line",
              [x["what"] for x in agenda_digest(dict(_sn509, inflight_loose=[{"id": "j", "what": "a\nb"},
                                                                           {"id": "k", "what": "x" * 200}]), _a509)["now"]
@@ -3518,7 +3544,7 @@ def _self_test_body() -> int:
              ["a b", "x" * 139 + "…"])
         case("⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count",
              (f'<p class="recap">{html.escape(agenda_recap(_d509))}</p>' in _h509,
-              '<li class="warn">+ 1 open PR(s) no goal declares (UNDECLARED, below)</li>' in _h509), (True, True))
+              '<li class="warn">1 of these PRs no goal declares (UNDECLARED, below)</li>' in _h509), (True, True))
         _hf = agenda_html({"goals": [], "repo": "o/r", "agenda": dict(_a509, steps=[_a509["steps"][2]])})
         case("⭐ r2 Codex M1: with only a FREE step open, Focus says no remaining step names a goal — never 'no step left'",
              ('no remaining step names a goal' in _hf, 'no step left' in _hf), (True, False))
@@ -3526,12 +3552,12 @@ def _self_test_body() -> int:
              (agenda_recap({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": ""}], "left": 1,
                             "focus": {"GOAL 1 · a": [{"n": 1}]}}),
               agenda_recap({"now": [], "left": 2, "focus": {}})),
-             ("1 piece of work in flight across 1 goal; the plan's next steps lean on GOAL 1 · a (1 of 1 left).",
-              "Nothing is in flight; 2 steps left, none on a goal's work."))
+             ("0 running and 1 owed across 1 goal; the plan's next steps lean on GOAL 1 · a (1 of 1 left).",
+              "Nothing is running or owed; 2 steps left, none on a goal's work."))
         case("r2 Codex L2: one item under two goals keeps the purpose a LATER entry gives when the first has none",
              agenda_now_items({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": ""},
                                        {"label": "x", "goal": "GOAL 2 · b", "what": "why"}]}),
-             [{"label": "x", "goals": ["GOAL 1 · a", "GOAL 2 · b"], "what": "why"}])
+             [{"label": "x", "goals": ["GOAL 1 · a", "GOAL 2 · b"], "what": "why", "running": False, "waits": None}])
         case("r3 Codex L1: an item's purpose is never ERASED by a later entry for it that has none",
              agenda_now_items({"now": [{"label": "x", "goal": "GOAL 1 · a", "what": "why"},
                                        {"label": "x", "goal": "GOAL 2 · b", "what": ""}]})[0]["what"], "why")
@@ -3557,8 +3583,58 @@ def _self_test_body() -> int:
         _gw = [dict(g, threads=[dict(t, what="why it exists") if t["key"] == "side · PR #42" else t for t in g["threads"]])
                for g in _g509]
         case("owner 11-05 14:37: an in-flight line says the work's PURPOSE, the thread's `what`",
-             'PR #42</a> <span class="what">— why it exists</span></li>' in agenda_html(dict(_sn509, goals=_gw, repo="o/r")),
+             'PR #42</a> <span class="what">— why it exists</span>' in agenda_html(dict(_sn509, goals=_gw, repo="o/r")),
              True)
+        # owner 11-05 15:45 (card A): RUNNING is an open PR with no declared wait; everything else is OWED, with its wait
+        _rg = [{"slug": "ro", "requests": [{"when": "2026-11-04 08:00"}], "threads": [
+                   _th("fix · PR #61", "open", [["PR", 61]]),
+                   dict(_th("fix · PR #62", "open", [["PR", 62]]), waits="the owner"),
+                   _th("fix · backlog #63", "inflight", [["backlog", 63]]),
+                   dict(_th("fix · backlog #64", "inflight", [["backlog", 64]]), open_pr=65),
+                   dict(_th("fix · backlog #66", "inflight", [["backlog", 66]]), waits="the weekly reset")]}]
+        _rs = {"goals": _rg, "repo": "o/r", "at": "2026-11-05 16:00", "agenda": dict(_a509, steps=[]),
+               "undeclared": [{"pr": 88, "title": "stray work"}]}
+        _rd = agenda_digest(_rs, _rs["agenda"])
+        case("⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED",
+             [(x["label"], x["running"], x["waits"]) for x in _rd["now"]],
+             [("PR #61", True, None), ("PR #62", False, "the owner"), ("backlog #63", False, None),
+              ("backlog #64", True, None), ("backlog #66", False, "the weekly reset")])
+        _rh = agenda_html(_rs)
+        _run, _owe = (_rh.split("<h3>Running now</h3>", 1)[1].split("<h3>Owed", 1)[0],
+                      _rh.split("<h3>Owed — not being worked</h3>", 1)[1].split("</div>", 1)[0])
+        case("⭐ owner 15:45: the page lists running work and OWED work apart — each item in exactly one list",
+             ([n for n in ("PR #61", "PR #62", "backlog #63", "backlog #64", "backlog #66", "PR #88")
+               if n in _run],
+              [n for n in ("PR #61", "PR #62", "backlog #63", "backlog #64", "backlog #66", "PR #88") if n in _owe]),
+             (["PR #61", "backlog #64", "PR #88"], ["PR #62", "backlog #63", "backlog #66"]))
+        case("⭐ owner 15:45: each owed item says what it WAITS for, and one with no declared wait says so, never a guess",
+             ('<span class="waits">waits for: the owner</span>' in _owe,
+              '<span class="waits">waits for: the weekly reset</span>' in _owe,
+              _owe.count('<span class="waits">waits for: not recorded</span>'), "waits for" in _run), (True, True, 1, False))
+        case("owner 15:45: an open PR no goal declares is listed under Running now BY ITS TITLE — never only counted",
+             ("— stray work</span>" in _run, "1 of these PRs no goal declares" in _run), (True, True))
+        case("owner 15:45: the page says a background job or agent is NOT visible to it, under Running now",
+             "a background job or an agent is not visible to this page" in _run, True)
+        case("owner 15:45: the recap counts running (an undeclared PR too) and owed, apart",
+             agenda_recap(_rd).split(";")[0], "3 running and 3 owed across 1 goal")
+        case("owner 15:45: with nothing at all, both lists say so",
+             tuple(t in agenda_html(dict(_rs, goals=[], undeclared=[])) for t in ("<li>nothing running</li>", "<li>nothing owed</li>")),
+             (True, True))
+        case("owner 15:45: the text lines are unchanged — an undeclared PR is still only COUNTED in `now:`",
+             [t for k, t in agenda_context(_rs, _rs["agenda"]) if k == "now"][0].endswith(
+                 "+ 1 open PR(s) no goal declares (UNDECLARED, below)") and "PR #88" not in agenda_context(_rs, _rs["agenda"])[0][1],
+             True)
+        case("⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first",
+             [(x["running"], x["waits"]) for x in (
+                 agenda_now_items({"now": [{"label": "x", "goal": "a", "what": "", "running": True, "waits": None},
+                                           {"label": "x", "goal": "b", "what": "", "running": False, "waits": "y"}]})
+                 + agenda_now_items({"now": [{"label": "x", "goal": "b", "what": "", "running": False, "waits": "y"},
+                                             {"label": "x", "goal": "a", "what": "", "running": True, "waits": None}]}))],
+             [(False, "y"), (False, "y")])
+        case("owner 15:45: a declared wait's reference LINKS and is escaped",
+             '<span class="waits">waits for: <a href="https://github.com/o/r/pull/9">PR #9</a> &lt;b&gt;</span>' in agenda_html(
+                 dict(_rs, goals=[dict(_rg[0], threads=[dict(_th("fix · PR #62", "open", [["PR", 62]]), waits="PR #9 <b>")])],
+                      undeclared=[])), True)
         _fx = _h509.split("<h3>Focus", 1)[1].split("</div>", 1)[0]
         case("⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line",
              re.findall(r'<span class="chip">([^<]*)</span>|<b>(\d+)\.</b>', _fx),

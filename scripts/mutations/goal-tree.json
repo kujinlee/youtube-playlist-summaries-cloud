@@ -3047,8 +3047,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "n = len(agenda_now_items(d))",
-        "n = len(d[\"now\"])"
+        "items = agenda_now_items(d)   # one piece of work under two goals is ONE piece",
+        "items = list(d[\"now\"])   #"
       ]
     ],
     "expect": [
@@ -3230,8 +3230,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"goal\": \"no goal\", \"what\": _one_line(u.get(\"what\"))}",
-        "\"goal\": \"no goal\", \"what\": \"\"}"
+        "\"what\": _one_line(u.get(\"what\")), \"running\": False",
+        "\"what\": \"\", \"running\": False"
       ]
     ],
     "expect": [
@@ -3256,8 +3256,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "           if d[\"undeclared\"] else \"\") + \"</ul></div>\")",
-        "           if False else \"\") + \"</ul></div>\")"
+        "if d[\"undeclared\"] else \"\") + \"</ul>\"\n",
+        "if False else \"\") + \"</ul>\"\n"
       ]
     ],
     "expect": [
@@ -3288,19 +3288,6 @@
     ],
     "expect": [
       "r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page"
-    ]
-  },
-  {
-    "name": "the recap always says pieces (agenda-digest r2 Codex L2)",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "head = (f\"{n} piece{'s' if n != 1 else ''} of work",
-        "head = (f\"{n} pieces of work"
-      ]
-    ],
-    "expect": [
-      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
     ]
   },
   {
@@ -3366,6 +3353,149 @@
     ],
     "expect": [
       "⭐ r3 Codex L2 (owner 11-05 14:37): the agenda heading is drawn in the goals' ACCENT colour, as they are"
+    ]
+  },
+  {
+    "name": "a declared wait does not stop work counting as running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not t.get(\"waits\"),",
+        ","
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED"
+    ]
+  },
+  {
+    "name": "a backlog row resolved to an open PR is not running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " or t.get(\"open_pr\") is not None) and not",
+        ") and not"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED"
+    ]
+  },
+  {
+    "name": "the page drops undeclared open PRs from Running now (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "run = [x for x in items if x[\"running\"]] + list(d.get(\"stray\") or [])",
+        "run = [x for x in items if x[\"running\"]]"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: an open PR no goal declares is listed under Running now BY ITS TITLE — never only counted"
+    ]
+  },
+  {
+    "name": "an owed item never says what it waits for (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{_html_line(x[\"waits\"], repo) if x[\"waits\"] else \"not recorded\"}",
+        "{\"not recorded\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: each owed item says what it WAITS for, and one with no declared wait says so, never a guess"
+    ]
+  },
+  {
+    "name": "the page hides that jobs and agents are invisible to it (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        + '<p class=\"lede\">open PRs only: a background job or an agent is not visible to this page</p>'\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "owner 15:45: the page says a background job or agent is NOT visible to it, under Running now"
+    ]
+  },
+  {
+    "name": "the recap leaves undeclared PRs out of running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ len(d.get(\"stray\") or [])   # an undeclared open PR is running too",
+        "+ 0   #"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: the recap counts running (an undeclared PR too) and owed, apart"
+    ]
+  },
+  {
+    "name": "a wait declared under a later goal is lost (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")",
+        "it[\"waits\"] = it[\"waits\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first"
+    ]
+  },
+  {
+    "name": "a merged item runs despite its wait (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]",
+        "it[\"running\"] = (it[\"running\"] or x.get(\"running\", False))"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first"
+    ]
+  },
+  {
+    "name": "the empty Owed list says nothing (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ (\"\" if owed else \"<li>nothing owed</li>\")",
+        "+ \"\""
+      ]
+    ],
+    "expect": [
+      "owner 15:45: with nothing at all, both lists say so"
+    ]
+  },
+  {
+    "name": "a declared wait is neither linked nor escaped (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_html_line(x[\"waits\"], repo) if",
+        "x[\"waits\"] if"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: a declared wait's reference LINKS and is escaped"
+    ]
+  },
+  {
+    "name": "the page puts running work under Owed (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "owed = [x for x in items if not x[\"running\"]]",
+        "owed = list(items)"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: the page lists running work and OWED work apart — each item in exactly one list"
     ]
   }
 ]
