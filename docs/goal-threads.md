@@ -71,6 +71,10 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-05 01:46 "let's not wait. finish the work while memories are warm"
 - fix · backlog #505, PR #505 · work in flight shows under its goal before the PR merges: a ledger entry carries its goal and thread
 - bookkeeping · backlog #507 · filed 2026-11-05: closing a ledger entry whose thread is not yet on master drops the thread from the tree without a warning
+> 2026-11-05 08:12 "at the merge decision by hold, can this be decided by agnet or can it be decided in gate itself"
+- bookkeeping · backlog #508 · filed 2026-11-05 from the owner's card A: a rising self-test count is cleared by the gate; every other flagged line is answered by the final reviewer, not the PR's author
+> 2026-11-05 08:19 "If the agenda list shows larger goat that the line item belongs to, I can see the current focus or which area you are working on"
+- fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
@@ -115,6 +119,9 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-04 09:29 "For example, emergency reserve is set to 5% and remaining days are 3 days(excluding today), max usage for today can be 100 - 3×5 = 85"
 - fix · backlog #500 · new agents are refused at 100% − 5% × the days left after today, never above 97% (09:29), so each later day keeps a reserve and the rest is spent
 - bookkeeping · backlog #501 · the usage guard should read only the tail of a large meter log (filed from backlog #500's round-1 review)
+> 2026-11-05 08:36 "by reset time is approaching, gradually loosing the hard stop limit or do not apply the hard stop altogether after certain time of last day might be better"
+> 2026-11-05 08:40 "what has been the burning rate of usage? Will the 6 hours before the reset be enough to utilize the remaining capacity?"
+- fix · backlog #510 · the weekly stop rises from 97% to 99% over the whole last day before the reset, only on a fresh meter reading (owner card A, 08:47, replacing the 08:38 six-hour window)
 
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
