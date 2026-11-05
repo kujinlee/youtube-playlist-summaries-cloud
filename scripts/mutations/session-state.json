@@ -836,8 +836,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "\"at\": now, \"kind\": kind})",
-        "\"at\": now, \"kind\": KIND_ROUTINE})"
+        "\"at\": now, \"kind\": kind}\n",
+        "\"at\": now, \"kind\": KIND_ROUTINE}\n"
       ]
     ],
     "expect": [

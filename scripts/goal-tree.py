@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 321 cases
+    python3 scripts/goal-tree.py --self-test                 # 324 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -280,7 +280,9 @@ def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], l
     out = [dict(g, threads=list(g["threads"])) for g in goals]
     by_slug = {g["slug"]: g for g in out}
     problems: list[str] = []
-    for e in ledger:
+    # by ID, never file order: a re-`--add` moves an entry to the END of the file, and file order would flip the
+    # winner of a shared ref and log a false move (r2 Codex M1)
+    for e in sorted(ledger, key=lambda e: str(e.get("id", ""))):
         if not (e.get("goal") or e.get("thread")):
             continue
         id_ = _SS.clean(e.get("id", ""), 60)
@@ -297,7 +299,7 @@ def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], l
             continue
         if refs & claimed.keys():
             first = claimed[sorted(refs & claimed.keys())[0]]
-            problems.append(f"entry {id_}: its thread's refs are already hung by entry {first} — the first wins")
+            problems.append(f"entry {id_}: its thread's refs are already hung by entry {first} — the id that sorts first wins")
             continue
         claimed.update({r: id_ for r in refs})
         g["threads"].append(dict(t, ledger=id_))
@@ -555,8 +557,11 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     # backlog #505: a LEDGER thread replaced by the tracked one sharing a ref is ONE event — master now declares it —
     # never a false `added` plus a false `removed` (r1 Codex M2: the key or goal may differ across the handoff)
     handed: dict = {}
+    # Paired on the ledger thread's PR when it names one, else its backlog row — a sibling sharing only a backlog
+    # row is other work, and pairing it would hide a real removal (r2 Codex M2)
     for r in (k for k in a if k not in b and a[k].get("ledger")):
         rr = {tuple(x) for x in a[r]["refs"]}
+        rr = {x for x in rr if x[0] == "PR"} or rr
         for k in (k for k in b if k not in a and not b[k].get("ledger") and k not in handed.values()):
             if {tuple(x) for x in b[k]["refs"]} & rr:
                 handed[r] = k
@@ -588,6 +593,9 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     out += [f"plan no longer owing: {pp[k]['plan']}" for k in sorted(set(pp) - set(cp))]
     out += [f"plan progress: {cp[k]['plan']} {pp[k]['ticked']}/{pp[k]['total']} → {cp[k]['ticked']}/{cp[k]['total']}"
             for k in sorted(set(pp) & set(cp)) if pp[k]["ticked"] != cp[k]["ticked"]]
+    pq, cq = set(prev.get("ledger_problems") or []), set(cur.get("ledger_problems") or [])
+    out += [f"ledger problem, new: {q}" for q in sorted(cq - pq)]
+    out += [f"ledger problem, cleared: {q}" for q in sorted(pq - cq)]
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
     out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
@@ -2048,7 +2056,7 @@ def _self_test_body() -> int:
     case("backlog #505: an unknown goal and a bad line are PROBLEMS on the page, never dropped",
          [x.split(" — ")[0] if "not read" in x else x for x in derive(_g2, src(ledger=[
              dict(_e, goal="nope"), dict(_e, id="w2", thread="fix · issue #3 · x")]), "T")["ledger_problems"]],
-         ["entry w505: goal 'nope' is not declared in docs/goal-threads.md", "entry w2: its thread is not read"])
+         ["entry w2: its thread is not read", "entry w505: goal 'nope' is not declared in docs/goal-threads.md"])
     _g1 = parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #12 · other\n')
     case("backlog #505: the SAME entry is judged against the goals it is given — hung under one goal set, "
          "a problem under a set without its goal, and suppressed under a set that declares its ref",
@@ -2061,7 +2069,7 @@ def _self_test_body() -> int:
     _two = ledger_threads(_gh, [_e, dict(_e, id="w9", goal="h", thread="side · PR #30 · again")])
     case("backlog #505: two ledger entries hanging the same ref — the FIRST wins, the second is a named problem "
          "(r1 Codex M1)", ([[t["key"] for t in g["threads"]] for g in _two[0]], _two[1]),
-         ([["fix · PR #30"], []], ["entry w9: its thread's refs are already hung by entry w505 — the first wins"]))
+         ([["fix · PR #30"], []], ["entry w9: its thread's refs are already hung by entry w505 — the id that sorts first wins"]))
     _pre = derive(_g2, src(ledger=[_e]), "T1")
     _post = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
                                  '## GOAL h\n> 2026-01-01 00:00 "q"\n- side · PR #21 · aside\n'
@@ -2071,6 +2079,28 @@ def _self_test_body() -> int:
          "when its key and goal changed (r1 Codex M2)",
          ([l.split(":")[0] for l in _ch if "PR #30" in l], any(l.startswith(("added", "removed")) for l in _ch)),
          (["declared on master"], False))
+    _w1, _w2 = dict(_e, id="b-first"), dict(_e, id="a-second", goal="h", thread="side · PR #30 · again")
+    case("backlog #505: the winner of a shared ref is the id that sorts first, whatever the FILE order — a re-add "
+         "moves an entry to the end and must not move the thread (r2 Codex M1)",
+         [[[t["key"] for t in g["threads"]] for g in ledger_threads(_gh, L)[0]] for L in ([_w1, _w2], [_w2, _w1])],
+         [[[], ["side · PR #30"]]] * 2)
+    _lp = derive(_g2, src(ledger=[dict(_e, thread="fix · backlog #12, PR #30 · x")]), "T1")
+    _sib = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
+                                '- side · backlog #12, PR #99 · sibling\n- fix · backlog #11, PR #30 · successor\n'
+                                '## GOAL h\n> 2026-01-01 00:00 "q"\n- side · PR #21 · aside\n'), src(), "T2")
+    _lone = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
+                                 '- side · backlog #12, PR #99 · sibling\n'
+                                 '## GOAL h\n> 2026-01-01 00:00 "q"\n- side · PR #21 · aside\n'), src(), "T2")
+    case("backlog #505: the hand-off pairs on the ledger thread's PR — a sibling sharing only a backlog row is NOT its "
+         "successor, and a ledger thread with no successor is still REMOVED (r2 Codex M2)",
+         ([l.split(":")[0] for l in changes(_lp, _sib) if "declared on master" in l],
+          [l.split(":")[0] for l in changes(_lp, _lone) if l.startswith(("declared", "removed"))]),
+         (["declared on master"], ["removed [fix] backlog #12, PR #30"]))
+    case("backlog #505: a ledger problem appearing and clearing is on the timeline, never 'no change' (r2 Codex L1)",
+         [[l.split(":")[0] for l in changes(x, y) if "ledger problem" in l] for x, y in (
+             (_pre, derive(_g2, src(ledger=[_e, dict(_e, id="w3", goal="nope")]), "T2")),
+             (derive(_g2, src(ledger=[_e, dict(_e, id="w3", goal="nope")]), "T2"), _pre))],
+         [["ledger problem, new"], ["ledger problem, cleared"]])
     case("backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)",
          _ledger_numbers({"id": "x", "what": "w", "thread": "fix · PR #30 · depends on PR #777"}), {30})
     case("backlog #505: parse_thread_line reads ONE line — a thread, a bad relation, bad refs, no separators",
