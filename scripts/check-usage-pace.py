@@ -17,7 +17,9 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
-    REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) — a NEW subagent spawn, and a message from the MAIN SESSION that
+    REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) —
+                  except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
+                  — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
     CANNOT RUN    the cache is missing, not a regular file, not read within 1 s, over 64 KiB, unparseable
@@ -141,7 +143,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 304 cases
+    python3 scripts/check-usage-pace.py --self-test  # 310 cases
 """
 from __future__ import annotations
 
@@ -165,6 +167,14 @@ WARN_AT = 80.0
 # and never moves the stop — so the meter log it is read from cannot move the stop either.
 RESERVE_PER_DAY = 5.0
 STOP_CAP = 97.0
+# backlog #510 (the owner, 2026-11-05 08:47, card A): the cap's reserve exists for work in flight and for a cache up to
+# MAX_AGE_S old, and both needs shrink with the time left, so on the LAST DAY the cap rises linearly from STOP_CAP at
+# its start (local midnight of the day 24 h before the reset) to LAST_DAY_CAP at RISE_END_S before the reset. MEASURED
+# 11-05: the weekly meter burns ~11% a day, so a flat 97% on the last day idled the afternoon (a 6-hour rise was
+# rejected for that reason). It rises only on a FRESH reading because a stale cache is CANNOT RUN before any stop is
+# computed. ⚠ For a reset late in the evening the rise starts the day before; the reserve formula keeps that day lower.
+LAST_DAY_CAP = 99.0
+RISE_END_S = 3600
 LINE_CAP = 97.0
 LINE_FRONT_LOAD = 1.5
 METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
@@ -318,9 +328,21 @@ def days_after_today(now: float, resets: float) -> float:
     return max(0.0, whole + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)
 
 
+def cap_at(now: float, resets: float) -> float:
+    """The cap (backlog #510): STOP_CAP until the last day starts, then linear to LAST_DAY_CAP at RISE_END_S before
+    the reset, and LAST_DAY_CAP from then on."""
+    start, end = local_midnight(resets - 86400), resets - RISE_END_S
+    if now <= start:
+        return STOP_CAP
+    if now >= end:
+        return LAST_DAY_CAP
+    return STOP_CAP + (LAST_DAY_CAP - STOP_CAP) * (now - start) / (end - start)
+
+
 def refuse_at(now: float, resets: float) -> float:
-    """The hard stop (backlog #500): 100 − RESERVE_PER_DAY × the days left after today, never above STOP_CAP."""
-    return min(STOP_CAP, 100 - RESERVE_PER_DAY * days_after_today(now, resets))
+    """The hard stop (backlog #500): 100 − RESERVE_PER_DAY × the days left after today, never above the cap
+    (`cap_at`: STOP_CAP, rising on the last day — backlog #510)."""
+    return min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))
 
 
 def cannot(reason: str) -> tuple[str, str]:
@@ -379,7 +401,9 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                      f"resets {local_time(five[1])}.")
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
     stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < STOP_CAP
-                 else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.")
+                 else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
+                 else f" The stop rises over the last day, {pct_up(stop)} now and {pct(LAST_DAY_CAP)} from "
+                      f"{local_time(resets - RISE_END_S)}: start only work that finishes before the reset.")
     # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
     line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
     line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
@@ -829,9 +853,12 @@ def _self_test_body() -> int:
         check("⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
               (refuse_at(NOW, NOW + 4 * 86400), refuse_at(NOW, WEEK_RESET), refuse_at(NOW, NOW + 86400 + 7200), refuse_at(NOW, NOW + 3 * 86400 + 7200),
                refuse_at(NOW, NOW + 7 * 86400)), (85.0, 90.0, 97.0, 100 - 5 * (2 + 7200 / 86400), 70.0))
-        check("⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
-              (refuse_at(NOW, NOW + 20 * 3600), evm(cache(96.9, week_reset=NOW + 20 * 3600), m85)[0],
-               evm(cache(97, week_reset=NOW + 20 * 3600), m85)[0]), (97.0, WARN, REFUSE))
+        # ⟳ backlog #510: this case asserted a FLAT 97 on the last day, the behaviour #510 replaces. A 20:00 reset's
+        # last day starts at the previous midnight, so at NOW the cap is 24 h into a 43 h rise: 97 + 2 × 24/43.
+        _r20 = 97 + 2 * 24 / 43
+        check("⭐ #500 → #510: on the last day the stop RISES (20:00 reset, at midnight: 97 + 2 × 24/43; 98.1 warns, 98.2 refuses)",
+              (refuse_at(NOW, NOW + 20 * 3600), evm(cache(98.1, week_reset=NOW + 20 * 3600), m85)[0],
+               evm(cache(98.2, week_reset=NOW + 20 * 3600), m85)[0]), (_r20, WARN, REFUSE))
         check("⭐ #500: early in the week the reserve bites below WARN (6 days after today → 70; 69.9 OK, 70 refuses)",
               (kind(cache(69.9, week_reset=NOW + 7 * 86400)), kind(cache(70, week_reset=NOW + 7 * 86400))), (OK, REFUSE))
         check("⭐ #500: the reserve rises at local midnight — 23:59 Thu keeps 2 days, 00:00 Fri keeps 1",
@@ -867,7 +894,29 @@ def _self_test_body() -> int:
                "The stop keeps 5% for each of the 2.0 days after today." in evm(cache(85), m85)[1],
                "Today's pace line is 92.5% — a guide, not a stop." in evm(cache(85), m85)[1],
                "The stop is the 97% cap: the rest is for work in flight." in
-               evm(cache(85, week_reset=NOW + 3600), m85)[1]), (True, True, True, True))
+               evm(cache(85, week_reset=NOW + 86400 + 7200), m85)[1]), (True, True, True, True))
+        # ── backlog #510: the cap rises over the last day (owner 2026-11-05 08:47, card A) ─────────────────────────
+        # NOW is Fri 00:00. A Sat 02:00 reset: the last day starts at Fri 00:00 and the rise ends Sat 01:00 (25 h).
+        _sat2 = NOW + 86400 + 7200
+        check("⭐ #510: the cap rises linearly over the last day — 97 at its midnight, 98 halfway, 99 an hour before the reset, 99 after",
+              (cap_at(NOW, _sat2), cap_at(NOW + 12.5 * 3600, _sat2), cap_at(_sat2 - 3600, _sat2), cap_at(_sat2 - 60, _sat2)),
+              (97.0, 98.0, 99.0, 99.0))
+        check("⭐ #510: before the last day the cap is 97 — a minute before its midnight, and a whole day earlier",
+              (cap_at(NOW - 60, _sat2), cap_at(NOW - 86400, _sat2)), (97.0, 97.0))
+        # Two DISTINCT resets in one case, so a constant curve cannot satisfy it: a Sat 02:00 and a Fri 23:00 reset
+        # at the same instant (Fri 12:30) sit at different points of their rises.
+        _fri23 = NOW + 23 * 3600
+        check("⭐ #510: the rise is measured against ITS reset — Fri 12:30 under a Sat 02:00 reset is 98; under a Fri 23:00 reset it is 97 + 2 × 36.5/46",
+              (cap_at(NOW + 12.5 * 3600, _sat2), cap_at(NOW + 12.5 * 3600, _fri23)), (98.0, 97 + 2 * 36.5 / 46))
+        check("⭐ #510: the reserve still binds below the cap — on the day before a Fri 23:00 reset the stop is 100 − 5 × 23/24, not the rising cap",
+              refuse_at(NOW - 3600, _fri23), 100 - 5 * 23 / 24)
+        check("⭐ #510: the verdict follows the rising stop — at Fri 12:30 before a Sat 02:00 reset, 97.9 warns and 98 refuses",
+              (evm(cache(97.9, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[0],
+               evm(cache(98, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[0]), (WARN, REFUSE))
+        check("#510: the message says the stop is rising, its value now, and when it reaches 99",
+              "The stop rises over the last day, 98% now and 99% from Sat 01-16 01:00 PST: start only work that finishes "
+              "before the reset." in evm(cache(97.5, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[1],
+              True)
         check("#500: the pace line on the last day is its 97 cap by the formula alone (50 at midnight)",
               pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0], 97.0)
         check("#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)",
@@ -1000,7 +1049,8 @@ def _self_test_body() -> int:
         check("a cache 60 s in the future is CANNOT RUN (r1 X3)", kind(cache(85, age=-60)), CANNOT_RUN)
         check("a seven_day reset in the past is CANNOT RUN", kind(cache(98.5, week_reset=NOW - 1)), CANNOT_RUN)
         check("a seven_day reset exactly now is CANNOT RUN", kind(cache(98.5, week_reset=NOW)), CANNOT_RUN)
-        check("a seven_day reset 1 s ahead is read", kind(cache(98.5, week_reset=NOW + 1)), REFUSE)
+        # ⟳ backlog #510: 98.5 refused under the flat 97 cap; an hour before a reset the stop is 99, so 99.5 (still read)
+        check("a seven_day reset 1 s ahead is read", kind(cache(99.5, week_reset=NOW + 1)), REFUSE)
         check("a string percentage is CANNOT RUN", kind(cache("95")), CANNOT_RUN)
         check("a boolean percentage is CANNOT RUN", kind(cache(True)), CANNOT_RUN)
         check("a negative percentage is CANNOT RUN", kind(cache(-1)), CANNOT_RUN)

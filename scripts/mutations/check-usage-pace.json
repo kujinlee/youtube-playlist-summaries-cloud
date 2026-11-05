@@ -1356,12 +1356,12 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "return min(STOP_CAP, 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
-        "return 100 - RESERVE_PER_DAY * days_after_today(now, resets)"
+        "min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
+        "100 - RESERVE_PER_DAY * days_after_today(now, resets)"
       ]
     ],
     "expect": [
-      "⭐ #500: on the last day the stop is the 97 cap (reset in 20 h; 96.9 warns, 97 refuses)",
+      "⭐ #500 → #510: on the last day the stop RISES (20:00 reset, at midnight: 97 + 2 × 24/43; 98.1 warns, 98.2 refuses)",
       "⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)"
     ]
   },
@@ -1652,6 +1652,97 @@
     ],
     "expect": [
       "⭐ #500 r3 C5: the stop is shown rounded UP — 94.55% under a 94.58 stop warns 'at 94.6%'"
+    ]
+  },
+  {
+    "name": "#510: the cap never rises (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return min(cap_at(now, resets), 100 - RESERVE_PER_DAY",
+        "    return min(STOP_CAP, 100 - RESERVE_PER_DAY"
+      ]
+    ],
+    "expect": [
+      "⭐ #500 → #510: on the last day the stop RISES (20:00 reset, at midnight: 97 + 2 × 24/43; 98.1 warns, 98.2 refuses)"
+    ]
+  },
+  {
+    "name": "#510: the rise ends AT the reset, not an hour before (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "start, end = local_midnight(resets - 86400), resets - RISE_END_S",
+        "start, end = local_midnight(resets - 86400), resets"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the cap rises linearly over the last day — 97 at its midnight, 98 halfway, 99 an hour before the reset, 99 after"
+    ]
+  },
+  {
+    "name": "#510: the rise starts at the reset's own midnight, not the last day's (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "local_midnight(resets - 86400)",
+        "local_midnight(resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the cap rises linearly over the last day — 97 at its midnight, 98 halfway, 99 an hour before the reset, 99 after"
+    ]
+  },
+  {
+    "name": "#510: the rise is a step, not a line (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return STOP_CAP + (LAST_DAY_CAP - STOP_CAP) * (now - start) / (end - start)",
+        "    return LAST_DAY_CAP"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the rise is measured against ITS reset — Fri 12:30 under a Sat 02:00 reset is 98; under a Fri 23:00 reset it is 97 + 2 × 36.5/46"
+    ]
+  },
+  {
+    "name": "#510: the rising cap overrides the reserve (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))",
+        "    return cap_at(now, resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: the reserve still binds below the cap — on the day before a Fri 23:00 reset the stop is 100 − 5 × 23/24, not the rising cap"
+    ]
+  },
+  {
+    "name": "#510: the cap is already rising before the last day (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if now <= start:\n        return STOP_CAP\n",
+        "    if now <= start - 86400:\n        return STOP_CAP\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #510: before the last day the cap is 97 — a minute before its midnight, and a whole day earlier"
+    ]
+  },
+  {
+    "name": "#510: a rising stop is described as the 97% cap (owner 2026-11-05)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                 else f\" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.\" if stop == STOP_CAP\n",
+        "                 else f\" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight.\" if stop >= STOP_CAP\n"
+      ]
+    ],
+    "expect": [
+      "#510: the message says the stop is rising, its value now, and when it reaches 99"
     ]
   }
 ]
