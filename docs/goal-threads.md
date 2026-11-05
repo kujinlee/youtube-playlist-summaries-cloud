@@ -71,6 +71,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-05 01:46 "let's not wait. finish the work while memories are warm"
 - fix · backlog #505, PR #505 · work in flight shows under its goal before the PR merges: a ledger entry carries its goal and thread
 - bookkeeping · backlog #507 · filed 2026-11-05: closing a ledger entry whose thread is not yet on master drops the thread from the tree without a warning
+> 2026-11-05 08:12 "at the merge decision by hold, can this be decided by agnet or can it be decided in gate itself"
+- bookkeeping · backlog #508 · filed 2026-11-05 from the owner's card A: a rising self-test count is cleared by the gate; every other flagged line is answered by the final reviewer, not the PR's author
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"

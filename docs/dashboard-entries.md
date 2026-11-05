@@ -18798,3 +18798,8 @@ Work in flight now shows on the goal tree **under the goal it serves**, from its
 The goal tree lost PR #505 the moment it merged. Its thread lived only in the ledger, and the PR never added the matching line to `docs/goal-threads.md`, so closing the ledger entry left the merged work under no goal. The line is added here, and the gap that let it happen silently is filed as backlog #507. This PR's own CI turned up a second mutation that survives by chance (a set iterated under a random hash seed comes out sorted about 1 time in 120), so backlog #506 now covers both, plus a check for the whole class.
 <!--tech-->
 `docs/goal-threads.md`: `- fix · backlog #505, PR #505 · …` and a bookkeeping line for backlog #507 under GOAL comprehensibility-suite, with the owner's 01:38 and 01:46 words. Backlog #507: `session-state.py --done` should warn when an entry's thread has no tracked line on `origin/master`.
+
+## 2026-11-05
+You asked whether a merge HOLD that turns out to be false can be decided by the gate instead of by me. Partly: the gate can clear one kind of flagged line by itself (a self-test count that went up), and every other kind needs judgment. Your choice (card A) is that the judgment moves to the reviewer of the final round, recorded where the gate reads it, so the PR's author stops grading its own HOLD. Filed as backlog #508, to build after the Friday reset.
+<!--tech-->
+Backlog #508: (1) `check-merge-ready.py` treats a line whose only change is a rising `--self-test  # N cases` count as not a loosening; (2) the HOLD detector's flagged lines go into the final review prompt, the reviewer answers each in its verdict file, and the gate passes only when all are `not a loosening` on the merged tree. PR #505's three flagged lines: (1) clears 1.
