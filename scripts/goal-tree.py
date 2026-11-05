@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 334 cases
+    python3 scripts/goal-tree.py --self-test                 # 337 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1285,6 +1285,7 @@ def snap_history(snap: dict) -> tuple[list, str | None]:
     return (hist, None) if ok else ([], "the snapshot's earlier agendas are not in an agenda's shape")
 
 
+_FINISHED = ("merged", "closed", "superseded", "withdrawn")
 _STAMP = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d")
 
 
@@ -1293,7 +1294,8 @@ def step_goals(snap: dict, ag: dict) -> dict[int, list[str]]:
     goal and a goal's `agenda step` tag are one rule read both ways and cannot disagree. A step no goal declares maps
     to nothing; its line says `no goal` rather than guessing (owner 2026-11-05 08:19)."""
     out: dict[int, list[str]] = {}
-    for i, g in enumerate(snap.get("goals") or [], 1):
+    goals = snap.get("goals") or []
+    for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers, in order (r1 Codex M1)
         for n in goal_agenda_steps(g, ag):
             out.setdefault(n, []).append(goal_head(i, g["slug"]))
     return out
@@ -1309,12 +1311,15 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
     goals, out = snap.get("goals") or [], []
     now, named = [], frozenset().union(*(_refset(st["refs"]) for st in ag["steps"]))
     late, seen = [], set()
-    for i, g in enumerate(goals, 1):
+    for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers (r1 Codex M1)
         for t in g["threads"]:
             label = t["key"].split(" · ", 1)[-1]
             # the ledger's `inflight` flag, not only the state: a thread whose row has not landed reads `cannot` while
             # its work is plainly in flight (measured 11-05: #509 and #510, rows filed in a PR still open)
-            if (t.get("inflight") or t["state"] in ("open", "inflight")) and not t.get("parked"):
+            # ⛔ …and never a FINISHED one: a ledger entry left naming a merged PR keeps its flag (measured 11-05: four
+            # merged threads, PR #411 among them, read as in flight on the live tree)
+            if ((t.get("inflight") or t["state"] in ("open", "inflight")) and not t.get("parked")
+                    and t["state"] not in _FINISHED):
                 now.append(f"⏳ {label} → {goal_head(i, g['slug'])}")
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
@@ -1322,6 +1327,8 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
                     and not named.intersection(_refset(t.get("refs") or [])) and label not in seen):
                 seen.add(label)
                 late.append(f"{label} (merged {ended[5:]})")
+    # r1 Codex M2: ledger work no goal claims is in flight too — the tree lists it under IN FLIGHT, UNDER NO GOAL
+    now += [f"⏳ {u['id']} → no goal" for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
     loose = len(snap.get("undeclared") or [])
     out.append(("now", "now: " + (" · ".join(now) if now else "nothing in flight")
                 + (f" · + {loose} open PR(s) no goal declares (UNDECLARED, below)" if loose else "")))
@@ -1334,6 +1341,12 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
     if by:
         out.append(("focus", "focus: " + " · ".join(
             f"{gl} (step{'s' if len(ns) > 1 else ''} {', '.join(map(str, ns))})" for gl, ns in by.items())))
+    # r1 Codex L1 (item 4): say how old the plan is beside the snapshot's own time, when both are minute stamps
+    at = snap.get("at")
+    if isinstance(at, str) and _STAMP.fullmatch(at) and _STAMP.fullmatch(ag["at"]) and at >= ag["at"]:
+        mins = int((_dt.datetime.strptime(at, MINUTE_FMT) - _dt.datetime.strptime(ag["at"], MINUTE_FMT)).total_seconds()
+                   // 60)
+        out.append(("age", f"age: set {mins // 60} h {mins % 60:02d} m before this snapshot ({at})"))
     if late:
         out.append(("stale", f"⚠ STALE — merged after this plan was set, and named by no step: {', '.join(late)}. "
                              "Re-record the agenda."))
@@ -1353,20 +1366,26 @@ def agenda_lines(snap: dict) -> list[str]:
     if ag.get("change_if"):
         out.append(f"  changes if: {ag['change_if']}")
     out += [f"  {text}" for _, text in agenda_context(snap, ag)]
-    sg = step_goals(snap, ag)
-    when = None
-    for st in ag["steps"]:
-        if st["when"] != when:
-            when = st["when"]
-            out.append(f"  {when}")
-        goal = (" → " + ", ".join(sg.get(st["n"]) or ["no goal"])) if st["refs"] else ""
-        out.append(f"    {st['n']}. {step_glyph(st['state'])} {st['text']} — {st['detail']}{goal}")
+    out += [f"  {ln}" for ln in agenda_step_lines(snap, ag)]
     hist, bad = snap_history(snap)
     if bad:
         out.append(f"  ⚠ earlier agendas NOT READ — {bad}")
     if hist:
         out.append(f"  earlier agendas ({len(hist)}), newest first — collapsed on the page")
         out += ["    " + history_line(h) for h in hist]
+    return out
+
+
+def agenda_step_lines(snap: dict, ag: dict) -> list[str]:
+    """PURE. The steps grouped by when, each ending with its goals — ONE source for the text and the page, so the page
+    never slices them out of the text by counting the lines above (r1 Codex L2)."""
+    out, sg, when = [], step_goals(snap, ag), None
+    for st in ag["steps"]:
+        if st["when"] != when:
+            when = st["when"]
+            out.append(when)
+        goal = (" → " + ", ".join(sg.get(st["n"]) or ["no goal"])) if st["refs"] else ""
+        out.append(f"  {st['n']}. {step_glyph(st['state'])} {st['text']} — {st['detail']}{goal}")
     return out
 
 
@@ -1666,20 +1685,17 @@ def agenda_html(snap: dict) -> str:
         return ('<section class="agenda none"><h2>AGENDA — none recorded</h2><p class="lede">Recorded with '
                 '<code>python3 scripts/goal-tree.py --record-agenda FILE</code> each time a plan is stated.</p>'
                 '</section>')
-    lines = agenda_lines({k: snap[k] for k in ("agenda", "goals", "undeclared") if k in snap})
+    lines = agenda_lines({"agenda": snap["agenda"]})
     if kind == "malformed":
         return f'<section class="agenda"><h2 class="warn">{html.escape(lines[0])}</h2></section>'
     parts = ['<section class="agenda">', f'<h2>{html.escape(lines[0])}</h2>']
-    body = lines[1:]
     if ag.get("change_if"):
-        parts.append(f'<p class="lede">{html.escape(body[0].strip())}</p>')
-        body = body[1:]
-    # backlog #509: the NOW, focus and stale lines sit above the steps, a stale one in the warning colour
-    ctx = agenda_context(snap, ag)
-    for kind_, text in ctx:
+        parts.append(f'<p class="lede">{html.escape(lines[1].strip())}</p>')
+    # backlog #509: the NOW, focus, age and stale lines sit above the steps, a stale one in the warning colour
+    for kind_, text in agenda_context(snap, ag):
         parts.append(f'<p class="{"warn" if kind_ == "stale" else "lede"}">{_html_line(text, repo)}</p>')
-    body = body[len(ctx):]
-    parts.append('<pre class="tree">' + "\n".join(_html_line(ln[2:], repo) for ln in body) + "</pre>")
+    parts.append('<pre class="tree">' + "\n".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag))
+                 + "</pre>")
     hist, bad = snap_history(snap)
     if bad:
         parts.append(f'<p class="warn">⚠ earlier agendas NOT READ — {html.escape(bad)}</p>')
@@ -3313,17 +3329,19 @@ def _self_test_body() -> int:
         # ── backlog #509: each step's goal, a NOW line, the focus by goal, a stale flag (owner 2026-11-05) ──────
         def _th(key, state, refs, merged_at=None, parked=False):
             return {"key": key, "state": state, "refs": refs, "merged_at": merged_at, "parked": parked}
-        _g509 = [{"slug": "alpha", "threads": [
+        # r1 Codex M1: alpha is declared FIRST but asked LATER, so the tree numbers it 2 — file order would say 1
+        _g509 = [{"slug": "alpha", "requests": [{"when": "2026-11-04 08:00"}], "threads": [
                       _th("fix · backlog #11", "open", [["backlog", 11]]),
                       _th("fix · backlog #40", "merged", [["backlog", 40]], "2026-11-04 10:00"),
                       _th("fix · backlog #41", "merged", [["backlog", 41]], "2026-11-04 08:00")]},
-                 {"slug": "beta", "threads": [
+                 {"slug": "beta", "requests": [{"when": "2026-11-03 08:00"}], "threads": [
                       _th("fix · backlog #12", "next", [["backlog", 12]]),
                       _th("fix · backlog #13", "merged", [["backlog", 13]], "2026-11-04 11:00"),
                       _th("fix · backlog #14", "inflight", [["backlog", 14]], parked=True),
                       _th("side · PR #42", "inflight", [["PR", 42]]),
                       _th("fix · backlog #11", "open", [["backlog", 11]]),
                       dict(_th("fix · backlog #15", "cannot", [["backlog", 15]]), inflight=True),
+                      dict(_th("fix · backlog #17", "merged", [["backlog", 17]], "2026-11-04 08:30"), inflight=True),
                       _th("fix · backlog #16", "cannot", [["backlog", 16]])]}]
         _a509 = {"id": 1, "at": "2026-11-04 09:00", "window": "w", "change_if": None, "steps": [
             {"n": 1, "when": "today", "text": "backlog #11 · a", "detail": "d", "state": "open", "refs": [["backlog", 11]]},
@@ -3331,21 +3349,29 @@ def _self_test_body() -> int:
             {"n": 3, "when": "today", "text": "restart", "detail": "d", "state": FREE, "refs": []},
             {"n": 4, "when": "after", "text": "backlog #13 · c", "detail": "d", "state": "merged", "refs": [["backlog", 13]]},
             {"n": 5, "when": "after", "text": "backlog #99 · d", "detail": "d", "state": "next", "refs": [["backlog", 99]]}]}
-        _sn509 = {"agenda": _a509, "goals": _g509, "undeclared": [{"pr": 77}]}
+        _sn509 = {"agenda": _a509, "goals": _g509, "undeclared": [{"pr": 77}], "at": "2026-11-05 08:15",
+                  "inflight_loose": [{"id": "build-777", "what": "working on backlog #777"}]}
         case("⭐ #509: a step's goals are goal_agenda_steps read backwards — two goals on one step, one goal on two, none on a free or unclaimed step",
              step_goals(_sn509, _a509),
-             {1: ["GOAL 1 · alpha", "GOAL 2 · beta"], 2: ["GOAL 2 · beta"], 4: ["GOAL 2 · beta"]})
+             {1: ["GOAL 1 · beta", "GOAL 2 · alpha"], 2: ["GOAL 1 · beta"], 4: ["GOAL 1 · beta"]})
+        case("#509: step_goals over another snapshot — one goal, two steps — numbers that goal 1",
+             step_goals({"goals": _g509[1:]}, dict(_a509, steps=_a509["steps"][:2])), {1: ["GOAL 1 · beta"], 2: ["GOAL 1 · beta"]})
         _ctx = dict(agenda_context(_sn509, _a509))
         case("⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; "
-             "not parked, not next, not a CANNOT RUN thread nothing works on — and counts the undeclared PRs",
-             _ctx["now"], "now: ⏳ backlog #11 → GOAL 1 · alpha · ⏳ PR #42 → GOAL 2 · beta · ⏳ backlog #11 → GOAL 2 · beta"
-                          " · ⏳ backlog #15 → GOAL 2 · beta"
+             "not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs",
+             _ctx["now"], "now: ⏳ PR #42 → GOAL 1 · beta · ⏳ backlog #11 → GOAL 1 · beta · ⏳ backlog #15 → GOAL 1 · beta"
+                          " · ⏳ backlog #11 → GOAL 2 · alpha · ⏳ build-777 → no goal"
                           " · + 1 open PR(s) no goal declares (UNDECLARED, below)")
         case("#509: with nothing in flight NOW says so, and adds no undeclared count when there is none",
-             dict(agenda_context({"agenda": _a509, "goals": [{"slug": "q", "threads": []}]}, _a509))["now"],
+             dict(agenda_context({"agenda": _a509, "goals": [{"slug": "q", "requests": [{"when": "2026-11-01 08:00"}], "threads": []}]}, _a509))["now"],
              "now: nothing in flight")
         case("⭐ #509: focus groups the steps NOT done by goal, a step under each goal it serves; an unclaimed step is `no goal`; a free or done step is not listed",
-             _ctx["focus"], "focus: GOAL 1 · alpha (step 1) · GOAL 2 · beta (steps 1, 2) · no goal (step 5)")
+             _ctx["focus"], "focus: GOAL 1 · beta (steps 1, 2) · GOAL 2 · alpha (step 1) · no goal (step 5)")
+        case("⭐ #509 r1 Codex L1: the age line says how old the plan is beside the snapshot's own time; none when the "
+             "snapshot is older, or either stamp is not a minute stamp",
+             (_ctx.get("age"), "age" in dict(agenda_context(dict(_sn509, at="2026-11-04 08:00"), _a509)),
+              "age" in dict(agenda_context(dict(_sn509, at="t"), _a509))),
+             ("age: set 23 h 15 m before this snapshot (2026-11-05 08:15)", False, False))
         case("⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names",
              _ctx.get("stale"), "⚠ STALE — merged after this plan was set, and named by no step: backlog #40 (merged 11-04 10:00). "
                                 "Re-record the agenda.")
@@ -3356,15 +3382,23 @@ def _self_test_body() -> int:
              "stale" in dict(agenda_context(_sn509, dict(_a509, at="(unknown)"))), False)
         _done = dict(_a509, at="2026-11-04 12:00", steps=[dict(st, state="merged") for st in _a509["steps"]])
         case("⭐ #509: a plan whose every step is done says so, and its focus line is gone",
-             [k for k, _ in agenda_context(_sn509, _done)], ["now", "stale"])
+             [k for k, _ in agenda_context(_sn509, _done)], ["now", "age", "stale"])
         _lines509 = agenda_lines(_sn509)
         case("⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing",
              [ln.rsplit(" — d", 1)[-1] for ln in _lines509 if ln.startswith("    ")],
-             [" → GOAL 1 · alpha, GOAL 2 · beta", " → GOAL 2 · beta", "", " → GOAL 2 · beta", " → no goal"])
+             [" → GOAL 1 · beta, GOAL 2 · alpha", " → GOAL 1 · beta", "", " → GOAL 1 · beta", " → no goal"])
         _h509 = agenda_html(dict(_sn509, repo="o/r"))
         case("⭐ #509: the page shows NOW and focus as lede lines and STALE in the warning colour, each once, above the steps",
              (_h509.count('<p class="warn">⚠ STALE'), _h509.count("now: ⏳"), _h509.count("focus: GOAL"),
               _h509.index("now: ⏳") < _h509.index("restart")), (1, 1, 1, True))
+        # r1 Codex L2: every heading and step reaches the page, with one context line or four, with or without change-if
+        _kept = []
+        for _snp in (dict(_sn509, repo="o/r"), {"agenda": dict(_a509, change_if="x"), "goals": [], "repo": "o/r"}):
+            _hp = agenda_html(_snp)
+            _pre = _hp.split('<pre class="tree">', 1)[1].split("</pre>", 1)[0]
+            _kept.append([ln.strip()[:2] for ln in _pre.split("\n")] == ["to", "1.", "2.", "3.", "af", "4.", "5."])
+        case("⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them",
+             _kept, [True, True])
         case("no agenda derives to None, and the text output then shows no block",
              (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
              (None, [], False))
