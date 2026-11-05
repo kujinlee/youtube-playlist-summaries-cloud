@@ -2767,5 +2767,136 @@
       ]
     ],
     "expect": "backlog #505: a ledger problem appearing and clearing is on the timeline, never 'no change' (r2 Codex L1)"
+  },
+  {
+    "name": "#509: a step's goals are never collected (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "out.setdefault(n, []).append(goal_head(i, g[\"slug\"]))",
+        "out.setdefault(n, [])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a step's goals are goal_agenda_steps read backwards — two goals on one step, one goal on two, none on a free or unclaimed step",
+      "⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing"
+    ]
+  },
+  {
+    "name": "#509: NOW ignores the ledger's inflight flag (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(t.get(\"inflight\") or t[\"state\"] in (\"open\", \"inflight\")) and not t.get(\"parked\")",
+        "t[\"state\"] in (\"open\", \"inflight\") and not t.get(\"parked\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on — and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509: NOW lists a parked thread (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "t[\"state\"] in (\"open\", \"inflight\")) and not t.get(\"parked\"):",
+        "t[\"state\"] in (\"open\", \"inflight\")):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on — and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509: STALE flags a merge from BEFORE the plan (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _STAMP.fullmatch(ag[\"at\"]) and ended > ag[\"at\"]",
+        "and _STAMP.fullmatch(ag[\"at\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names"
+    ]
+  },
+  {
+    "name": "#509: STALE flags a merge a step names (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and not named.intersection(_refset(t.get(\"refs\") or [])) and label not in seen",
+        "and label not in seen"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names"
+    ]
+  },
+  {
+    "name": "#509: STALE compares a non-stamp as text (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _STAMP.fullmatch(ag[\"at\"]) and ended",
+        "and ended"
+      ]
+    ],
+    "expect": [
+      "#509: an agenda stamp that is not `YYYY-MM-DD HH:MM` flags nothing stale rather than compare text"
+    ]
+  },
+  {
+    "name": "#509: focus lists done steps (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if st[\"state\"] not in (\"merged\", \"closed\") and st[\"refs\"]:",
+        "if st[\"refs\"]:"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: focus groups the steps NOT done by goal, a step under each goal it serves; an unclaimed step is `no goal`; a free or done step is not listed"
+    ]
+  },
+  {
+    "name": "#509: a finished plan is not flagged (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if ag[\"steps\"] and all(st[\"state\"] in (\"merged\", \"closed\") for st in ag[\"steps\"]):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a plan whose every step is done says so, and its focus line is gone"
+    ]
+  },
+  {
+    "name": "#509: the step line drops its goal (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal = (\" → \" + \", \".join(sg.get(st[\"n\"]) or [\"no goal\"])) if st[\"refs\"] else \"\"",
+        "goal = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing"
+    ]
+  },
+  {
+    "name": "#509: STALE is shown in the lede colour (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"warn\" if kind_ == \"stale\" else \"lede\"",
+        "\"lede\""
+      ]
+    ],
+    "expect": [
+      "⭐ #509: the page shows NOW and focus as lede lines and STALE in the warning colour, each once, above the steps"
+    ]
   }
 ]
