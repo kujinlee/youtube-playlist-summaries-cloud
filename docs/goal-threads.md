@@ -64,6 +64,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #497 · the goal tree shows when each thread merged, shows parked and queued work per goal, and folds older merged and unplanned threads
 - fix · backlog #499 · the goal tree shows the current plan in its own dated block and keeps every earlier plan as one collapsed line (owner 2026-11-04 06:05)
 > 2026-11-04 15:31 "what if we start #499 today and continue to tomorrow?"
+> 2026-11-04 18:09 "if slice 2 is continuation of same backlog, why wait until tomorrow? this current session already has context"
 > 2026-11-04 14:33 "I have to click Refresh button two times to get real refresh"
 - fix · backlog #502 · a Refresh click keeps saying "rebuilding…" until the page reloads or the rebuild reports a failure, so one click is enough
 

@@ -2295,5 +2295,200 @@
     "expect": [
       "the joined waits read the same in either declaration order (r3 Codex L4)"
     ]
+  },
+  {
+    "name": "the history is oldest first (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for ag in reversed(cur):\n        if ag[\"replaced\"] is None:",
+        "    for ag in cur:\n        if ag[\"replaced\"] is None:"
+      ]
+    ],
+    "expect": [
+      "agenda_history keeps every REPLACED agenda, newest first, the open one left out"
+    ]
+  },
+  {
+    "name": "a step the frozen list omits gets a guessed state (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "state=frozen.get(n) or \"cannot\")",
+        "state=frozen.get(n) or \"next\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a history step keeps its FROZEN state; one the frozen list omits is `cannot`, never re-derived"
+    ]
+  },
+  {
+    "name": "done counts every step that is not cannot (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    done = sum(1 for st in h[\"steps\"] if st[\"state\"] == \"merged\")",
+        "    done = sum(1 for st in h[\"steps\"] if st[\"state\"] != \"cannot\")"
+      ]
+    ],
+    "expect": [
+      "history_line says when each was set and replaced, and how much was done by then"
+    ]
+  },
+  {
+    "name": "--print omits the earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if hist:\n        out.append(f\"  earlier agendas",
+        "    if False:\n        out.append(f\"  earlier agendas"
+      ]
+    ],
+    "expect": [
+      "--print lists the earlier agendas under the current one, newest first, one line each"
+    ]
+  },
+  {
+    "name": "a free step tags every goal (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if refs.intersection(_refset(st[\"refs\"]))]",
+        "if refs.intersection(_refset(st[\"refs\"])) or not st[\"refs\"]]"
+      ]
+    ],
+    "expect": [
+      "a goal is tagged with the steps naming a ref its threads name — never a free step, never a bad agenda"
+    ]
+  },
+  {
+    "name": "a malformed agenda is read for tags (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not ag or \"malformed\" in ag:\n        return []\n    refs =",
+        "    if not ag:\n        return []\n    refs ="
+      ]
+    ],
+    "expect": [
+      "a goal is tagged with the steps naming a ref its threads name — never a free step, never a bad agenda"
+    ]
+  },
+  {
+    "name": "the tree is drawn without the agenda's tags (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal_agenda_steps(g, snap.get(\"agenda\"))",
+        "goal_agenda_steps(g, None)"
+      ]
+    ],
+    "expect": [
+      "--print tags the goal its step names, and only that goal"
+    ]
+  },
+  {
+    "name": "the page drops the goal's tag (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "html.escape(tag_text(tags)[3:])}</span>' if tags else \"\")",
+        "html.escape(tag_text(tags)[3:])}</span>' if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "the page draws the same tag beside that goal's heading, once"
+    ]
+  },
+  {
+    "name": "the page reads the first step line as the change-if (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ag.get(\"change_if\"):\n        parts.append(",
+        "    if True:\n        parts.append("
+      ]
+    ],
+    "expect": [
+      "an agenda with no change-if draws every step, none mistaken for the change-if line"
+    ]
+  },
+  {
+    "name": "the page omits the earlier agendas (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if hist:\n        parts.append(f'<h3>Earlier",
+        "    if False:\n        parts.append(f'<h3>Earlier"
+      ]
+    ],
+    "expect": [
+      "the page's AGENDA section: the current steps, then each earlier agenda as ONE collapsed line, newest first"
+    ]
+  },
+  {
+    "name": "the page has no agenda section (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    parts.insert(7, agenda_html(newest))",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under NEEDS YOU, above the tree"
+    ]
+  },
+  {
+    "name": "a malformed agenda is drawn as an empty plan (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if \"malformed\" in ag:\n        return f'<section class=\"agenda\"><h2 class=\"warn\">",
+        "    if False:\n        return f'<section class=\"agenda\"><h2 class=\"warn\">"
+      ]
+    ],
+    "expect": [
+      "no agenda: the page SAYS none is recorded; a malformed one is said as a warning"
+    ]
+  },
+  {
+    "name": "the timeline never says an agenda was recorded (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ca.get(\"at\") and ca.get(\"at\") != pa.get(\"at\"):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "the timeline says when an agenda is recorded, and each step whose state moved"
+    ]
+  },
+  {
+    "name": "the timeline lists every step, moved or not (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if st[\"n\"] in was and was[st[\"n\"]] != st[\"state\"]]",
+        "if st[\"n\"] in was]"
+      ]
+    ],
+    "expect": [
+      "the timeline says when an agenda is recorded, and each step whose state moved"
+    ]
+  },
+  {
+    "name": "the snapshot carries no history (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                live[\"agenda_history\"] = agenda_history(cur)\n",
+        "                live[\"agenda_history\"] = []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under NEEDS YOU, above the tree"
+    ]
   }
 ]

@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 292 cases
+    python3 scripts/goal-tree.py --self-test                 # 305 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -531,6 +531,13 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     pl, cl = {u["id"] for u in prev["inflight_loose"]}, {u["id"] for u in cur["inflight_loose"]}
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
     out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
+    pa, ca = prev.get("agenda") or {}, cur.get("agenda") or {}
+    if ca.get("at") and ca.get("at") != pa.get("at"):
+        out.append(f"agenda recorded: set {ca['at']}, {len(ca.get('steps') or [])} step(s)")
+    elif ca.get("steps") and pa.get("steps"):
+        was = {st["n"]: st["state"] for st in pa["steps"]}
+        out += [f"agenda step {st['n']}: {was[st['n']]} → {step_glyph(st['state'])} {st['state']} — {st['text']}"
+                for st in ca["steps"] if st["n"] in was and was[st["n"]] != st["state"]]
     return out or ["no change a reader would see (the stored tree differs only in wording)"]
 
 
@@ -1169,9 +1176,48 @@ def agenda_lines(snap: dict) -> list[str]:
         if st["when"] != when:
             when = st["when"]
             out.append(f"  {when}")
-        glyph = "◇" if st["state"] == FREE else GLYPH.get(st["state"], "?")
-        out.append(f"    {st['n']}. {glyph} {st['text']} — {st['detail']}")
+        out.append(f"    {st['n']}. {step_glyph(st['state'])} {st['text']} — {st['detail']}")
+    hist = snap.get("agenda_history") or []
+    if hist:
+        out.append(f"  earlier agendas ({len(hist)}), newest first — collapsed on the page")
+        out += ["    " + history_line(h) for h in hist]
     return out
+
+
+def step_glyph(state: str) -> str:
+    """PURE. A step's glyph: a leaf's, except a free step not yet ticked is ◇."""
+    return "◇" if state == FREE else GLYPH.get(state, "?")
+
+
+def agenda_history(cur: list[dict]) -> list[dict]:
+    """PURE. Every REPLACED agenda, NEWEST FIRST (owner, 2026-11-04 06:06: kept "for analytics purpose", one
+    collapsed line each). A step's state is the one frozen when its agenda was replaced, never re-derived — the
+    history says what was done BY THEN. ⚠ A step the frozen list does not name is `cannot`, never a guess."""
+    out = []
+    for ag in reversed(cur):
+        if ag["replaced"] is None:
+            continue
+        frozen = {x.get("n"): x.get("state") for x in ag["replaced"]["states"] if isinstance(x, dict)}
+        out.append({"id": ag["id"], "at": ag["at"], "replaced_at": ag["replaced"]["at"], "window": ag["window"],
+                    "steps": [dict(st, n=n, state=frozen.get(n) or "cannot")
+                              for n, st in enumerate(ag["steps"], 1)]})
+    return out
+
+
+def history_line(h: dict) -> str:
+    """PURE. An earlier agenda as ONE line — the same words in --print and on the page's collapsed summary."""
+    done = sum(1 for st in h["steps"] if st["state"] == "merged")
+    return (f"agenda #{h['id']} · set {h['at']} · replaced {h['replaced_at']} · "
+            f"{done}/{len(h['steps'])} done by then · {h['window']}")
+
+
+def goal_agenda_steps(g: dict, ag: dict | None) -> list[int]:
+    """PURE. The current agenda's steps that name a ref one of this goal's threads names — the goal's `agenda step
+    n` tag, so a step can be found in the tree and a goal on the agenda. A free step names nothing, so tags none."""
+    if not ag or "malformed" in ag:
+        return []
+    refs = {tuple(r) for t in g["threads"] for r in t.get("refs") or []}
+    return [st["n"] for st in ag["steps"] if refs.intersection(_refset(st["refs"]))]
 
 
 # ── rendering ─────────────────────────────────────────────────────────────────────────────────
@@ -1201,8 +1247,8 @@ def goal_numbers(goals: list[dict]) -> list[int]:
     return [rank[i] for i in range(len(goals))]
 
 
-def _goal_blocks(g: dict, at, n: int) -> list:
-    """PURE. Goal number `n` as ONE `("goal", n, slug, first_request, counts, blocks)` block (see `tree_blocks`).
+def _goal_blocks(g: dict, at, n: int, tags: list[int] = ()) -> list:
+    """PURE. Goal number `n` as ONE `("goal", n, slug, first_request, counts, tags, blocks)` block (see `tree_blocks`).
     The visible buckets keep the relation branches; `older` and `later` become one FOLD each, a last sibling whose
     text line counts what the page folds away. `counts` is set only when NOTHING is current: the page then folds
     the whole goal under its heading."""
@@ -1239,7 +1285,7 @@ def _goal_blocks(g: dict, at, n: int) -> list:
     if g["threads"] and not shown:
         # Nothing current: the WHOLE goal folds on the page, its counts beside its heading; the text is unchanged.
         counts = "nothing current (" + ", ".join(f"{len(f[3])} {f[0]}" for f in folds) + ")"
-    return [("goal", n, g["slug"], g["requests"][0], counts, blocks), ("pre", [""])]
+    return [("goal", n, g["slug"], g["requests"][0], counts, list(tags), blocks), ("pre", [""])]
 
 
 def tree_blocks(snap: dict, at=None) -> list:
@@ -1253,7 +1299,7 @@ def tree_blocks(snap: dict, at=None) -> list:
     # among the shown ones, so it is stable whatever folds — and (review r1 X3) it is `goal_numbers`, by TIME.
     numbers = goal_numbers(snap["goals"])
     for i, g in enumerate(snap["goals"]):
-        blocks += _goal_blocks(g, at, numbers[i])
+        blocks += _goal_blocks(g, at, numbers[i], goal_agenda_steps(g, snap.get("agenda")))
     lines: list[str] = []
     if snap["undeclared"]:
         lines.append("UNDECLARED — open PRs no goal names (shown, never folded in)")
@@ -1311,11 +1357,16 @@ def _flat(blocks: list) -> list[str]:
         if b[0] == "pre":
             out += b[1]
         elif b[0] == "goal":
-            _, n, slug, first, _counts, inner = b
-            out += [f'{goal_head(n, slug)} ({first["when"]}) "{first["quote"]}"'] + _flat(inner)
+            _, n, slug, first, _counts, tags, inner = b
+            out += [f'{goal_head(n, slug)} ({first["when"]}) "{first["quote"]}"' + tag_text(tags)] + _flat(inner)
         else:
             out += [b[3]] if b[3] is not None else _flat(b[4])
     return out
+
+
+def tag_text(tags: list[int]) -> str:
+    """PURE. A goal's agenda tag, ` · agenda step 3, 4`, or "" — one spelling for --print and the page."""
+    return f" · agenda step {', '.join(map(str, tags))}" if tags else ""
 
 
 def tree_lines(snap: dict, at=None) -> list[str]:
@@ -1416,6 +1467,34 @@ def needs_html(snap: dict) -> str:
     return "".join(parts)
 
 
+def agenda_html(snap: dict) -> str:
+    """The AGENDA section, under NEEDS YOU: the current plan grouped by when, then every earlier agenda as ONE
+    collapsed line (its `history_line`), newest first, expanding to its steps in their frozen states."""
+    ag, repo = snap.get("agenda"), snap.get("repo")
+    if not ag:
+        return ('<section class="agenda none"><h2>AGENDA — none recorded</h2><p class="lede">Recorded with '
+                '<code>python3 scripts/goal-tree.py --record-agenda FILE</code> each time a plan is stated.</p>'
+                '</section>')
+    lines = agenda_lines({"agenda": ag})
+    if "malformed" in ag:
+        return f'<section class="agenda"><h2 class="warn">{html.escape(lines[0])}</h2></section>'
+    parts = ['<section class="agenda">', f'<h2>{html.escape(lines[0])}</h2>']
+    body = lines[1:]
+    if ag.get("change_if"):
+        parts.append(f'<p class="lede">{html.escape(body[0].strip())}</p>')
+        body = body[1:]
+    parts.append('<pre class="tree">' + "\n".join(_html_line(ln[2:], repo) for ln in body) + "</pre>")
+    hist = snap.get("agenda_history") or []
+    if hist:
+        parts.append(f'<h3>Earlier agendas ({len(hist)}), newest first</h3>')
+        for h in hist:
+            steps = [f"{st['n']}. {step_glyph(st['state'])} {st['text']}" for st in h["steps"]]
+            parts.append(f'<details class="fold agenda-hist"><summary>{_html_line(history_line(h), repo)}</summary>'
+                         '<pre class="tree">' + "\n".join(_html_line(x, repo) for x in steps) + "</pre></details>")
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def render_text(snap: dict, at=None) -> str:
     ag = agenda_lines(snap)
     return "\n".join(needs_lines(snap) + [""] + (ag + [""] if ag else []) + tree_lines(snap, at))
@@ -1450,10 +1529,11 @@ def _html_line(line: str, repo: str | None, ids: set | None = None) -> str:
 def _goal_html(b: tuple, repo, seen) -> str:
     """One goal as its own bordered `<section>`, headed `GOAL n · slug` in the heading colour (owner, 2026-11-04
     01:14). A goal with nothing current keeps that heading as the summary of a CLOSED `<details>`."""
-    _, n, slug, first, counts, inner = b
+    _, n, slug, first, counts, tags, inner = b
     anchor = f' id="goal-{html.escape(slug, quote=True)}"' if seen is not None else ""   # by SLUG: a number can move
     head = (f'<h3 class="goal-h"><span class="goal-n">GOAL {n} ·</span> '
-            f'<span class="goal-slug">{html.escape(slug)}</span></h3>')
+            f'<span class="goal-slug">{html.escape(slug)}</span></h3>'
+            + (f'<span class="goal-agenda">{html.escape(tag_text(tags)[3:])}</span>' if tags else ""))
     quote = (f'<p class="goal-q"><time>{html.escape(first["when"])}</time> '
              f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>')
     body = _blocks_html(inner, repo, seen)
@@ -1517,6 +1597,8 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
     # ⭐ NEEDS YOU FIRST, above the tree (owner decision D1): read from THIS run when there was one,
     # complete or not, because a decision that appeared since the newest snapshot is the one to see.
     parts.insert(6, needs_html(live if live is not None else newest))
+    # backlog #499: the AGENDA under NEEDS YOU — from the snapshot the tree below is, so step and leaf agree
+    parts.insert(7, agenda_html(newest))
     # backlog #497: the current tree is bucketed at the BUILD time, as --print is at its run, so the two agree.
     parts += ['<h2>Now</h2>', render_tree_html(newest, ids=True, at=built), '<h2>Timeline</h2>',
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed. Before this '
@@ -1579,6 +1661,13 @@ section.needs.none{border-left-color:var(--rule)}
 section.needs h2{margin:.5rem 0}
 section.needs ul{margin:.3rem 0;padding-left:1.1rem;font-size:.9rem}
 section.needs li{margin:.2rem 0}
+section.agenda{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--accent);
+               border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
+section.agenda.none{border-left-color:var(--rule)}
+section.agenda pre.tree{overflow-x:auto}
+section.agenda h2{margin:.5rem 0}
+section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
+.goal-agenda{margin-left:.6rem;font-family:var(--mono);font-size:.75rem;color:var(--accent)}
 section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
 """
 
@@ -1652,8 +1741,10 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
             try:
                 cur = agendas(read_agenda_log(agenda_path))
                 live["agenda"] = derive_agenda(cur[-1] if cur else None, src, declared)
+                live["agenda_history"] = agenda_history(cur)
             except Malformed as exc:
                 live["agenda"] = {"malformed": str(exc)}
+                live["agenda_history"] = []
                 print(f"MALFORMED — {exc}")
                 rc = 1
             if live["cannot"]:
@@ -2200,13 +2291,13 @@ def _self_test_body() -> int:
         out = []
         for bk in blocks:
             if bk[0] == "goal":
-                out += ([(bk[1], "goal")] if bk[4] else []) + [(bk[1], c) for _, c in folds_of(bk[5])]
+                out += ([(bk[1], "goal")] if bk[4] else []) + [(bk[1], c) for _, c in folds_of(bk[-1])]
             elif bk[0] == "fold":
                 out.append((None, bk[1]))
         return out
     case("backlog #497: tree_blocks folds by the drawing time it is given, and a tree with no old leaf folds nothing",
-         ([len(bk[5]) for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "goal"],
-          [len(bk[5]) for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "goal"],
+         ([len(bk[-1]) for bk in tree_blocks(_bsnap, "2026-11-05 19:09") if bk[0] == "goal"],
+          [len(bk[-1]) for bk in tree_blocks(_bsnap, "2026-11-08 19:09") if bk[0] == "goal"],
           folds_of(tree_blocks(snap)), folds_of(tree_blocks(_bsnap, "2026-11-08 19:09"))),
          ([3, 3], [3, 3], [], [(1, "older"), (1, "later"), (2, "goal"), (2, "older"), (2, "later")]))
     case("backlog #497: the folded tree emits thread ids only when asked, inside a fold too",
@@ -2951,6 +3042,74 @@ def _self_test_body() -> int:
              (derive_agenda(None, _s1), agenda_lines({"agenda": None}), "AGENDA" in render_text(derive([], _s1, "t"))),
              (None, [], False))
 
+        # ── slice 2: the history, the goal tag, the page section, the timeline ──────────────────────────────
+        _h_cur = [dict(ag, at="t1", id=1, ticked=[],
+                       replaced={"at": "t2", "states": [{"n": 1, "state": "merged"}, {"n": 3, "state": FREE}]}),
+                  dict(parse_agenda("window: w2\n## g\n- backlog #12 · x\n"), at="t2", id=2, ticked=[],
+                       replaced={"at": "t3", "states": [{"n": 1, "state": "next"}]}),
+                  dict(ag, at="t3", id=3, ticked=[], replaced=None)]
+        _hist = agenda_history(_h_cur)
+        case("agenda_history keeps every REPLACED agenda, newest first, the open one left out",
+             ([h["id"] for h in _hist], agenda_history([dict(ag, at="t", id=1, ticked=[], replaced=None)])), ([2, 1], []))
+        case("⛔ a history step keeps its FROZEN state; one the frozen list omits is `cannot`, never re-derived",
+             [st["state"] for st in _hist[1]["steps"]] if len(_hist) > 1 else _hist,
+             ["merged", "cannot", FREE, "cannot"])
+        case("history_line says when each was set and replaced, and how much was done by then",
+             [history_line(h) for h in _hist],
+             ["agenda #2 · set t2 · replaced t3 · 0/1 done by then · w2",
+              "agenda #1 · set t1 · replaced t2 · 1/4 done by then · until the reset"])
+        _cur_ag = derive_agenda(dict(ag, at="t3", id=3, ticked=[]), _s1)
+        _lh = agenda_lines({"agenda": _cur_ag, "agenda_history": _hist})
+        case("--print lists the earlier agendas under the current one, newest first, one line each",
+             _lh[-3:], ["  earlier agendas (2), newest first — collapsed on the page",
+                        "    " + history_line(_hist[0]), "    " + history_line(_hist[-1])])
+        def _gas(g, a):
+            try:
+                return goal_agenda_steps(g, a)
+            except (KeyError, TypeError) as exc:     # a value, so a mutant reaches this case rather than crashing
+                return type(exc).__name__
+        case("a goal is tagged with the steps naming a ref its threads name — never a free step, never a bad agenda",
+             (goal_agenda_steps({"threads": [{"refs": [["backlog", 11]]}, {"refs": [["PR", 30]]}]}, _cur_ag),
+              goal_agenda_steps({"threads": [{"refs": [["PR", 20]]}, {"refs": [["backlog", 12]]}]}, _cur_ag),
+              goal_agenda_steps({"threads": [{"refs": [["backlog", 11]]}]}, None),
+              _gas({"threads": [{"refs": [["backlog", 11]]}]}, {"malformed": "x"})),
+             ([2], [1, 4], [], []))
+        case("tag_text is one spelling, and empty for no steps", (tag_text([2, 4]), tag_text([])),
+             (" · agenda step 2, 4", ""))
+        _gs = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #11 · f\n'
+                                   '## GOAL h\n> 2026-01-02 00:00 "q2"\n- fix · backlog #40 · f\n'), _s1, "t")
+        _gs["agenda"] = _cur_ag
+        case("--print tags the goal its step names, and only that goal",
+             [ln for ln in tree_lines(_gs) if ln.startswith("GOAL")],
+             ['GOAL 1 · g (2026-01-01 00:00) "q" · agenda step 2', 'GOAL 2 · h (2026-01-02 00:00) "q2"'])
+        case("the page draws the same tag beside that goal's heading, once",
+             render_tree_html(_gs).count('<span class="goal-agenda">agenda step 2</span>'), 1)
+        _ah = agenda_html({"agenda": _cur_ag, "agenda_history": _hist})
+        case("the page's AGENDA section: the current steps, then each earlier agenda as ONE collapsed line, newest "
+             "first",
+             (_ah.count('<details class="fold agenda-hist">'), -1 < _ah.find("agenda #2") < _ah.find("agenda #1"),
+              "<details open" in _ah, "changes if: the owner reprioritises" in _ah, "4. ⬜ backlog #12" in _ah,
+              "1. ✅ backlog #12" in _ah or "1. ⬜ backlog #12" in _ah),
+             (2, True, False, True, True, True))
+        _ah0 = agenda_html({"agenda": derive_agenda(dict(parse_agenda("window: w\n## g\n- x\n"), at="t", id=1,
+                                                         ticked=[]), _s1)})
+        case("an agenda with no change-if draws every step, none mistaken for the change-if line",
+             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
+             (False, True, True, False))
+        case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
+             ("AGENDA — none recorded" in agenda_html({}),
+              'class="warn">AGENDA — NOT READ: MALFORMED — bad' in agenda_html({"agenda": {"malformed": "bad"}})),
+             (True, True))
+        _p0 = {"goals": [], "undeclared": [], "inflight_loose": [],
+               "agenda": {"at": "t1", "steps": [{"n": 1, "state": "next", "text": "a"},
+                                                {"n": 2, "state": "open", "text": "b"}]}}
+        _p1 = dict(_p0, agenda={"at": "t1", "steps": [{"n": 1, "state": "merged", "text": "a"},
+                                                      {"n": 2, "state": "open", "text": "b"}]})
+        _p2 = dict(_p0, agenda={"at": "t2", "steps": [{"n": 1, "state": "next", "text": "a"}]})
+        case("the timeline says when an agenda is recorded, and each step whose state moved",
+             (changes(_p0, _p1), changes(_p1, _p2)),
+             (["agenda step 1: next → ✅ merged — a"], ["agenda recorded: set t2, 1 step(s)"]))
+
         _ap = r / "main" / AGENDA_REL
 
         def replayed(path):
@@ -3091,6 +3250,19 @@ def _self_test_body() -> int:
              "waits on the owner (declared)" in _step2, True)
         case("the logged snapshot carries the agenda, so --page replays it",
              ((read_log(r / "main" / LOG_REL)[-1:] or [{}])[0].get("agenda") or {}).get("at"), "2026-11-04 12:00")
+        _af2 = r / "agenda2.txt"
+        _af2.write_text("window: later\n## g\n- backlog #12 · next one\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            _rc_h = main(["--record-agenda", str(_af2), "--snapshot", "--page", "--out", str(out)], root=r,
+                         run=fake(ok)[0], now="2026-11-04 12:05")
+        _last = (read_log(r / "main" / LOG_REL)[-1:] or [{}])[0]
+        _pg = out.read_text() if out.is_file() else ""
+        case("⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under "
+             "NEEDS YOU, above the tree",
+             (_rc_h, [h["id"] for h in _last.get("agenda_history") or []], (_last.get("agenda") or {}).get("window"),
+              _pg.count('class="fold agenda-hist"'),
+              0 < _pg.find('<section class="needs') < _pg.find('<section class="agenda"') < _pg.find("<h2>Now</h2>")),
+             (0, [1], "later", 1, True))
         with contextlib.redirect_stdout(io.StringIO()):
             _rc_badtick = main(["--tick-agenda", "1"], root=r, run=fake(ok)[0], now="2026-11-04 12:03")
         case("⛔ main exits 1 on a refused tick (a derived step)", _rc_badtick, 1)
