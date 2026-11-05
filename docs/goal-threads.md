@@ -73,6 +73,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #507 · filed 2026-11-05: closing a ledger entry whose thread is not yet on master drops the thread from the tree without a warning
 > 2026-11-05 08:12 "at the merge decision by hold, can this be decided by agnet or can it be decided in gate itself"
 - bookkeeping · backlog #508 · filed 2026-11-05 from the owner's card A: a rising self-test count is cleared by the gate; every other flagged line is answered by the final reviewer, not the PR's author
+> 2026-11-05 08:19 "If the agenda list shows larger goat that the line item belongs to, I can see the current focus or which area you are working on"
+- fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
 
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
