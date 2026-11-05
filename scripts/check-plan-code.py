@@ -1351,7 +1351,7 @@ EXPECTED_MUTATIONS = {
     # parse reading it.
     # ⟳ 2026-11-03, backlog #470: 64 -> 65. the word diff keeps a key whole (+1).
     # ⟳ 2026-11-03, backlog #470 review round 1: 65 -> 67. publish_rows: the rows that exist, and its warning (+2).
-    "scripts/gen-backlog-page.py": 67,
+    "scripts/gen-backlog-page.py": 77,
     # ⟳ 2026-09-10, backlog #106. This file had NO manifest while composing every page the
     # reader ever sees, and the cost was measurable rather than theoretical: it grew each page
     # by 1,515 bytes on every recompose until `goals.html` was 95.5% duplicate bytes and
