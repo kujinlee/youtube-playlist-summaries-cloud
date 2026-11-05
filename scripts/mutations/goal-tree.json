@@ -2767,5 +2767,279 @@
       ]
     ],
     "expect": "backlog #505: a ledger problem appearing and clearing is on the timeline, never 'no change' (r2 Codex L1)"
+  },
+  {
+    "name": "#509: a step's goals are never collected (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "out.setdefault(n, []).append(goal_head(i, g[\"slug\"]))",
+        "out.setdefault(n, [])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a step's goals are goal_agenda_steps read backwards — two goals on one step, one goal on two, none on a free or unclaimed step",
+      "⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing"
+    ]
+  },
+  {
+    "name": "#509: NOW ignores the ledger's inflight flag (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(t.get(\"inflight\") or t[\"state\"] in (\"open\", \"inflight\")) and not t.get(\"parked\")",
+        "t[\"state\"] in (\"open\", \"inflight\") and not t.get(\"parked\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509: NOW lists a parked thread (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not t.get(\"parked\")\n                    and t[\"state\"] not in _FINISHED",
+        "\n                    and t[\"state\"] not in _FINISHED"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509: STALE flags a merge from BEFORE the plan (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _STAMP.fullmatch(ag[\"at\"]) and ended > ag[\"at\"]",
+        "and _STAMP.fullmatch(ag[\"at\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names"
+    ]
+  },
+  {
+    "name": "#509: STALE flags a merge a step names (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and not named.intersection(_refset(t.get(\"refs\") or [])) and label not in seen",
+        "and label not in seen"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names"
+    ]
+  },
+  {
+    "name": "#509: STALE compares a non-stamp as text (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _STAMP.fullmatch(ag[\"at\"]) and ended",
+        "and ended"
+      ]
+    ],
+    "expect": [
+      "#509: an agenda stamp that is not `YYYY-MM-DD HH:MM` flags nothing stale rather than compare text"
+    ]
+  },
+  {
+    "name": "#509: focus lists done steps (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if st[\"state\"] not in (\"merged\", \"closed\") and st[\"refs\"]:",
+        "if st[\"refs\"]:"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: focus groups the steps NOT done by goal, a step under each goal it serves; an unclaimed step is `no goal`; a free or done step is not listed"
+    ]
+  },
+  {
+    "name": "#509: a finished plan is not flagged (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if ag[\"steps\"] and all(st[\"state\"] in (\"merged\", \"closed\") for st in ag[\"steps\"]):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a plan whose every step is done says so, and its focus line is gone"
+    ]
+  },
+  {
+    "name": "#509: the step line drops its goal (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "goal = (\" → \" + \", \".join(sg.get(st[\"n\"]) or [\"no goal\"])) if st[\"refs\"] else \"\"",
+        "goal = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ #509: each step line ends with its goals; an unclaimed step says `no goal`; a free step says nothing"
+    ]
+  },
+  {
+    "name": "#509: STALE is shown in the lede colour (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"warn\" if kind_ == \"stale\" else \"lede\"",
+        "\"lede\""
+      ]
+    ],
+    "expect": [
+      "⭐ #509: the page shows NOW and focus as lede lines and STALE in the warning colour, each once, above the steps"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex M1: a step's goals are numbered in file order (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers, in order (r1 Codex M1)",
+        "    for i, g in enumerate(goals, 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: a step's goals are goal_agenda_steps read backwards — two goals on one step, one goal on two, none on a free or unclaimed step"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex M1: NOW numbers goals in file order (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers (r1 Codex M1)",
+        "    for i, g in enumerate(goals, 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex M2: NOW drops the ledger work no goal claims (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    now += [f\"⏳ {u['id']} → no goal\" for u in snap.get(\"inflight_loose\") or [] if isinstance(u, dict) and \"id\" in u]",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L1: the age line shows for a snapshot older than the plan (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_STAMP.fullmatch(ag[\"at\"]) and at >= ag[\"at\"]:",
+        "_STAMP.fullmatch(ag[\"at\"]):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L1: the age line says how old the plan is beside the snapshot's own time; none when the snapshot is older, or either stamp is not a minute stamp"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L1: the age line is never shown (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        out.append((\"age\", f\"age: set",
+        "        0 and out.append((\"age\", f\"age: set"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L1: the age line says how old the plan is beside the snapshot's own time; none when the snapshot is older, or either stamp is not a minute stamp"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L2: the page drops the first step line (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"\\n\".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag))",
+        "\"\\n\".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag)[1:])"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them"
+    ]
+  },
+  {
+    "name": "#509: NOW lists a finished thread a stale ledger entry flags (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                    and t[\"state\"] not in _FINISHED):",
+        "                    and True):"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r2 Codex L1: only MERGED counts as finished (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_FINISHED = (\"merged\", \"closed\", \"superseded\", \"withdrawn\")",
+        "_FINISHED = (\"merged\",)"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r2 Codex L2: the age drops whole days (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_dt.datetime.strptime(ag[\"at\"], MINUTE_FMT)).total_seconds()",
+        "_dt.datetime.strptime(ag[\"at\"], MINUTE_FMT)).seconds"
+      ]
+    ],
+    "expect": [
+      "#509 r2 Codex L2: the age counts whole days — Jan 31 23:55 to Mar 1 00:05 is 672 h 10 m (28 days)"
+    ]
+  },
+  {
+    "name": "#509 r3 Codex L1: an impossible date crashes the page (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        except ValueError:\n            mins = None\n",
+        "        except OverflowError:\n            mins = None\n"
+      ]
+    ],
+    "expect": [
+      "#509 r3 Codex L1: an impossible date (Feb 30, 24:00) renders the page with no age line rather than crash"
+    ]
+  },
+  {
+    "name": "#509 r3 Codex L2: a same-minute merge is stale (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and ended > ag[\"at\"]",
+        "and ended >= ag[\"at\"]"
+      ]
+    ],
+    "expect": [
+      "#509 r3 Codex L2: a merge in the SAME minute the plan was set is not stale; one a minute later is"
+    ]
   }
 ]
