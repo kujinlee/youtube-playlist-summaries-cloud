@@ -143,7 +143,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 310 cases
+    python3 scripts/check-usage-pace.py --self-test  # 311 cases
 """
 from __future__ import annotations
 
@@ -161,9 +161,9 @@ WARN_AT = 80.0
 # backlog #500 (the owner, 2026-11-04 09:29): the stop is a RESERVE, not a pace — "emergency reserve is set to 5% and
 # remaining days are 3 days(excluding today), max usage for today can be 100 - 3×5 = 85". So the stop is
 # 100 − RESERVE_PER_DAY × the days left AFTER today (fractional: a reset at 02:00 leaves 2 h, not a whole day), never
-# above STOP_CAP. Unused reserve is never lost: each midnight the stop rises by RESERVE_PER_DAY, and on the last day
-# all of it is spendable. The last 3 points (STOP_CAP) let work IN FLIGHT finish and cover a cache up to MAX_AGE_S
-# old. The owner's PACE LINE (11-01 15:38) keeps the day-to-day pace steady; it is a GUIDE, named in the message,
+# above the cap (STOP_CAP, rising to LAST_DAY_CAP over the last day — backlog #510, below). Unused reserve is never
+# lost: each midnight the stop rises by RESERVE_PER_DAY, and on the last day all of it is spendable. The points above
+# the cap let work IN FLIGHT finish and cover a cache up to MAX_AGE_S old. The owner's PACE LINE (11-01 15:38) keeps the day-to-day pace steady; it is a GUIDE, named in the message,
 # and never moves the stop — so the meter log it is read from cannot move the stop either.
 RESERVE_PER_DAY = 5.0
 STOP_CAP = 97.0
@@ -873,6 +873,12 @@ def _self_test_body() -> int:
                (None, "the meter log is missing or unreadable")))
         def lt(*ymdh):  # a local time in the suite's PST8PDT zone
             return time.mktime((*ymdh, 0, 0, 0, 0, -1))
+        # r1 Codex M1: the rise starts at the LOCAL midnight of the day 24 h before the reset. Across spring-forward the
+        # day before a Mon 00:30 PDT reset begins Sat 00:00 PST; `local_midnight(resets) - 24 h` lands Sat 23:00 PST.
+        _spr = lt(2026, 3, 9, 0) + 1800
+        check("⭐ #510 r1 Codex M1: across spring-forward the rise starts at Sat 00:00 PST for a Mon 00:30 PDT reset — Sat 12:00 is 12 h into a 46.5 h rise",
+              (cap_at(lt(2026, 3, 7, 0), _spr), cap_at(lt(2026, 3, 7, 12), _spr), cap_at(lt(2026, 3, 8, 23) + 1800, _spr)),
+              (97.0, 97 + 2 * 12 / 46.5, 99.0))
         check("⭐ #500 r3 C2/C3: a day with a DST change is ONE day — fall back, spring forward, summer, month end",
               (refuse_at(lt(2026, 10, 31, 12), lt(2026, 11, 2, 0)), refuse_at(lt(2026, 3, 7, 12), lt(2026, 3, 9, 0)),
                refuse_at(lt(2026, 7, 10, 0), lt(2026, 7, 13, 0)), refuse_at(lt(2026, 7, 31, 10), lt(2026, 8, 3, 2))),
