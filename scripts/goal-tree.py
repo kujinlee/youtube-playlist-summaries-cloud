@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 337 cases
+    python3 scripts/goal-tree.py --self-test                 # 338 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -3342,6 +3342,9 @@ def _self_test_body() -> int:
                       _th("fix · backlog #11", "open", [["backlog", 11]]),
                       dict(_th("fix · backlog #15", "cannot", [["backlog", 15]]), inflight=True),
                       dict(_th("fix · backlog #17", "merged", [["backlog", 17]], "2026-11-04 08:30"), inflight=True),
+                      # r2 Codex L1: EVERY finished state, not only merged
+                      *[dict(_th(f"fix · backlog #{n}", st, [["backlog", n]]), inflight=True)
+                        for n, st in ((18, "closed"), (19, "superseded"), (20, "withdrawn"))],
                       _th("fix · backlog #16", "cannot", [["backlog", 16]])]}]
         _a509 = {"id": 1, "at": "2026-11-04 09:00", "window": "w", "change_if": None, "steps": [
             {"n": 1, "when": "today", "text": "backlog #11 · a", "detail": "d", "state": "open", "refs": [["backlog", 11]]},
@@ -3372,6 +3375,9 @@ def _self_test_body() -> int:
              (_ctx.get("age"), "age" in dict(agenda_context(dict(_sn509, at="2026-11-04 08:00"), _a509)),
               "age" in dict(agenda_context(dict(_sn509, at="t"), _a509))),
              ("age: set 23 h 15 m before this snapshot (2026-11-05 08:15)", False, False))
+        case("#509 r2 Codex L2: the age counts whole days — Jan 31 23:55 to Mar 1 00:05 is 672 h 10 m (28 days)",
+             dict(agenda_context(dict(_sn509, at="2026-03-01 00:05"), dict(_a509, at="2026-01-31 23:55"))).get("age"),
+             "age: set 672 h 10 m before this snapshot (2026-03-01 00:05)")
         case("⭐ #509: STALE names a thread merged AFTER the plan was set that no step names — not one merged before, not one a step names",
              _ctx.get("stale"), "⚠ STALE — merged after this plan was set, and named by no step: backlog #40 (merged 11-04 10:00). "
                                 "Re-record the agenda.")

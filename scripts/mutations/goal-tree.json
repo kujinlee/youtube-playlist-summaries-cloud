@@ -4314,5 +4314,31 @@
     "expect": [
       "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
     ]
+  },
+  {
+    "name": "#509 r2 Codex L1: only MERGED counts as finished (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_FINISHED = (\"merged\", \"closed\", \"superseded\", \"withdrawn\")",
+        "_FINISHED = (\"merged\",)"
+      ]
+    ],
+    "expect": [
+      "⭐ #509: NOW names each thread in flight with its goal — open, inflight, or a ledger entry whose row reads CANNOT RUN; not parked, not next, not a CANNOT RUN thread nothing works on, not a MERGED one a stale ledger entry still flags — and the ledger work no goal claims (r1 Codex M2), and counts the undeclared PRs"
+    ]
+  },
+  {
+    "name": "#509 r2 Codex L2: the age drops whole days (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_dt.datetime.strptime(ag[\"at\"], MINUTE_FMT)).total_seconds()",
+        "_dt.datetime.strptime(ag[\"at\"], MINUTE_FMT)).seconds"
+      ]
+    ],
+    "expect": [
+      "#509 r2 Codex L2: the age counts whole days — Jan 31 23:55 to Mar 1 00:05 is 672 h 10 m (28 days)"
+    ]
   }
 ]
