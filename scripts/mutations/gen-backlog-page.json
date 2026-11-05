@@ -828,5 +828,38 @@
       ]
     ],
     "expect": "publish_rows: an unreadable backlog WARNS and leaves every key linked, never an empty set"
+  },
+  {
+    "name": "a long one-block row is never named (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "            and len(re.findall(r'<div class=\"(?:seg|prov)\">', layout_body(md(r[\"body\"])))) < 2]",
+        "            and len(re.findall(r'<div class=\"(?:seg|prov)\">', layout_body(md(r[\"body\"])))) < 1]"
+      ]
+    ],
+    "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
+  },
+  {
+    "name": "a short one-liner is named a wall of text (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return [r[\"num\"] for r in rows if len(r[\"body\"]) >= min_chars\n",
+        "    return [r[\"num\"] for r in rows if True\n"
+      ]
+    ],
+    "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
+  },
+  {
+    "name": "the wall threshold drifts from its measured 600 (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "LAYOUT_MIN_CHARS = 600\n",
+        "LAYOUT_MIN_CHARS = 1300\n"
+      ]
+    ],
+    "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
   }
 ]

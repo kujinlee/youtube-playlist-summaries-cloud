@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 239 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 242 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -1040,6 +1040,21 @@ def _layout_block(seg: str, cls: str = "seg") -> str:
     items = [seg[a:b] for a, b in zip(cuts, cuts[1:] + [len(seg)])]
     return (f'<div class="{cls}">{seg[:cuts[0]]}<ol class="enum">'
             + "".join(f"<li>{it}</li>" for it in items) + "</ol></div>")
+
+
+# A row this long that lays out as ONE block is a wall of text on the page, because its prose gives
+# `layout_body` nothing to cut at (owner, 2026-11-05: rows 500-504, written after PR #475, rendered
+# as one block). 600 is MEASURED: every one-block row under it was a genuine one-liner (longest 557),
+# every one over it a multi-clause argument (shortest 639). The remedy is in the ROW, never here:
+# give it the cues the rules above read — a short bold `**Fix:**` label, an `(a) (b)` run.
+LAYOUT_MIN_CHARS = 600
+
+
+def unlaid_rows(rows: Sequence[dict], min_chars: int = LAYOUT_MIN_CHARS) -> list[int]:
+    """PURE. The numbers of rows whose body is at least `min_chars` long and still lays out as ONE
+    block — the rows a reader meets as a wall of text."""
+    return [r["num"] for r in rows if len(r["body"]) >= min_chars
+            and len(re.findall(r'<div class="(?:seg|prov)">', layout_body(md(r["body"])))) < 2]
 
 
 def layout_body(h: str) -> str:
@@ -3978,6 +3993,21 @@ def _self_test_body() -> int:
 
     def _blocks(src: str) -> list[str]:
         return re.findall(r'<div class="(?:seg|prov)">', _lay(src))
+
+    # ⛔ owner 2026-11-05: a LONG row must give the layout something to cut at. Fixtures first, so
+    # the threshold and the count are pinned apart from today's backlog; then every real row.
+    _wall = "**T** — " + "word " * 140                       # ≥ 600 characters, no cue
+    _cued = "**T** — " + "word " * 70 + ". **Fix:** " + "word " * 70
+    _short = "**T** — " + "word " * 100                      # under 600: a one-liner may stay one block
+    case("unlaid_rows: a long row with no cue is named; a cued one and a short one are not",
+         lambda: (unlaid_rows([{"num": 7, "body": _wall}, {"num": 8, "body": _cued},
+                               {"num": 9, "body": _short}]),
+                  len(_short) < LAYOUT_MIN_CHARS <= len(_wall), LAYOUT_MIN_CHARS) == ([7], True, 600))
+    case("unlaid_rows: the threshold is a parameter — the short row is named once it is lowered",
+         lambda: unlaid_rows([{"num": 9, "body": _short}], min_chars=len(_short)) == [9])
+    case("⛔ every REAL row of 600+ characters lays out into two or more blocks — add a short bold "
+         "label (`**Fix:**`) or an `(a) (b)` run to any row named here (owner, 2026-11-05)",
+         lambda: unlaid_rows(real) == [])
 
     def _same_words_html(old: str, new: str) -> bool:
         # The new rendering must be the ORIGINAL HTML with only the layout wrappers inserted:
