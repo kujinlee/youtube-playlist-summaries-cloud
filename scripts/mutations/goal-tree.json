@@ -2865,8 +2865,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if ag[\"steps\"] and all(st[\"state\"] in (\"merged\", \"closed\") for st in ag[\"steps\"]):",
-        "if False:"
+        "\"done\": bool(ag[\"steps\"]) and all(",
+        "\"done\": False and all("
       ]
     ],
     "expect": [
@@ -2891,12 +2891,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"warn\" if kind_ == \"stale\" else \"lede\"",
-        "\"lede\""
+        "parts.append(f'<p class=\"warn\">{_html_line(text, repo)}</p>')",
+        "parts.append(f'<p class=\"lede\">{_html_line(text, repo)}</p>')"
       ]
     ],
     "expect": [
-      "⭐ #509: the page shows NOW and focus as lede lines and STALE in the warning colour, each once, above the steps"
+      "⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour"
     ]
   },
   {
@@ -2930,8 +2930,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    now += [f\"⏳ {u['id']} → no goal\" for u in snap.get(\"inflight_loose\") or [] if isinstance(u, dict) and \"id\" in u]",
-        "    pass"
+        "    now += [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": \"\"}",
+        "    now += [] if 1 else [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": \"\"}"
       ]
     ],
     "expect": [
@@ -3040,6 +3040,111 @@
     ],
     "expect": [
       "#509 r3 Codex L2: a merge in the SAME minute the plan was set is not stale; one a minute later is"
+    ]
+  },
+  {
+    "name": "the recap counts a piece of work once per goal it serves (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "n = len(agenda_now_items(d))",
+        "n = len(d[\"now\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "the recap counts a step once per goal it serves (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "total = len({st[\"n\"] for sts in d[\"focus\"].values() for st in sts})",
+        "total = sum(len(v) for v in d[\"focus\"].values())"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "a piece of work under two goals is listed twice (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it = out.setdefault(x[\"label\"], {",
+        "it = out.setdefault(x[\"label\"] + x[\"goal\"], {"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves",
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "an in-flight line shows only its first goal (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"\".join(chip(g) for g in x[\"goals\"])}",
+        "{chip(x[\"goals\"][0])}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves"
+    ]
+  },
+  {
+    "name": "an in-flight line drops the work's purpose (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(f' <span class=\"what\">— {html.escape(x[\"what\"])}</span>' if x[\"what\"] else \"\")",
+        "(f' <span class=\"what\">— {html.escape(x[\"what\"])}</span>' if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "owner 11-05 14:37: an in-flight line says the work's PURPOSE, the thread's `what`"
+    ]
+  },
+  {
+    "name": "the agenda heading is the long sentence again (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "'<h2 class=\"agenda-h\">Agenda</h2>',",
+        "f'<h2>{html.escape(lines[0])}</h2>',"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE and its window sit on a meta line beneath (r4 X1: the page's age line)"
+    ]
+  },
+  {
+    "name": "the page drops the plan's age (r4 X1, owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    age = f\" ({d['mins'] // 60}",
+        "    age = \"\" if 1 else f\" ({d['mins'] // 60}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE and its window sit on a meta line beneath (r4 X1: the page's age line)"
+    ]
+  },
+  {
+    "name": "the focus loses its step numbers (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<li><b>{st[\"n\"]}.</b> {_html_line(st[\"text\"], repo)}</li>'",
+        "f'<li>{_html_line(st[\"text\"], repo)}</li>'"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line"
     ]
   }
 ]

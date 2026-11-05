@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 340 cases
+    python3 scripts/goal-tree.py --self-test                 # 346 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1301,14 +1301,16 @@ def step_goals(snap: dict, ag: dict) -> dict[int, list[str]]:
     return out
 
 
-def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
-    """PURE (backlog #509). What the agenda block says beyond its steps, as (kind, text), for --print and the page alike:
-      now   — the threads in flight (⏳, not parked), each with its goal, so the current focus is visible;
+def agenda_digest(snap: dict, ag: dict) -> dict:
+    """PURE (backlog #509, owner 11-05 14:37). What the agenda block says beyond its steps, as DATA, so the text
+    lines (`agenda_context`) and the page's laid-out block read ONE derivation:
+      now   — the threads in flight (⏳, not parked), each with its goal and its one-line `what`;
       focus — the steps not yet done, grouped by goal: the plan read as areas, not a flat list;
-      stale — threads MERGED after the plan was set that no step names (owner 08:24: a page generated at 08:15 showed
-              the plan set 19:55 the day before, and said nothing), or every step done. Compared only when both
-              times are `YYYY-MM-DD HH:MM`; any other stamp says nothing rather than guess."""
-    goals, out = snap.get("goals") or [], []
+      late  — threads MERGED after the plan was set that no step names (owner 08:24: a page generated at 08:15 showed
+              the plan set 19:55 the day before, and said nothing). Compared only when both times are
+              `YYYY-MM-DD HH:MM`; any other stamp says nothing rather than guess;
+      done  — every step is done."""
+    goals = snap.get("goals") or []
     now, named = [], frozenset().union(*(_refset(st["refs"]) for st in ag["steps"]))
     late, seen = [], set()
     for i, g in sorted(zip(goal_numbers(goals), goals), key=lambda ig: ig[0]):  # the TREE's numbers (r1 Codex M1)
@@ -1320,7 +1322,7 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
             # merged threads, PR #411 among them, read as in flight on the live tree)
             if ((t.get("inflight") or t["state"] in ("open", "inflight")) and not t.get("parked")
                     and t["state"] not in _FINISHED):
-                now.append(f"⏳ {label} → {goal_head(i, g['slug'])}")
+                now.append({"label": label, "goal": goal_head(i, g["slug"]), "what": t.get("what") or ""})
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
                     and _STAMP.fullmatch(ag["at"]) and ended > ag["at"]
@@ -1328,33 +1330,69 @@ def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
                 seen.add(label)
                 late.append(f"{label} (merged {ended[5:]})")
     # r1 Codex M2: ledger work no goal claims is in flight too — the tree lists it under IN FLIGHT, UNDER NO GOAL
-    now += [f"⏳ {u['id']} → no goal" for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
-    loose = len(snap.get("undeclared") or [])
-    out.append(("now", "now: " + (" · ".join(now) if now else "nothing in flight")
-                + (f" · + {loose} open PR(s) no goal declares (UNDECLARED, below)" if loose else "")))
-    by: dict[str, list[int]] = {}
+    now += [{"label": u["id"], "goal": "no goal", "what": ""}
+            for u in snap.get("inflight_loose") or [] if isinstance(u, dict) and "id" in u]
+    focus: dict[str, list[dict]] = {}
     sg = step_goals(snap, ag)
     for st in ag["steps"]:
         if st["state"] not in ("merged", "closed") and st["refs"]:
             for gl in sg.get(st["n"]) or ["no goal"]:
-                by.setdefault(gl, []).append(st["n"])
-    if by:
-        out.append(("focus", "focus: " + " · ".join(
-            f"{gl} (step{'s' if len(ns) > 1 else ''} {', '.join(map(str, ns))})" for gl, ns in by.items())))
+                focus.setdefault(gl, []).append(st)
     # r1 Codex L1 (item 4): say how old the plan is beside the snapshot's own time, when both are minute stamps
-    at = snap.get("at")
+    at, mins = snap.get("at"), None
     if isinstance(at, str) and _STAMP.fullmatch(at) and _STAMP.fullmatch(ag["at"]) and at >= ag["at"]:
         try:  # r3 Codex L1: the pattern admits 2026-02-30 and 24:00, which strptime refuses — say nothing, never crash
             mins = int((_dt.datetime.strptime(at, MINUTE_FMT) - _dt.datetime.strptime(ag["at"], MINUTE_FMT)).total_seconds()
                        // 60)
         except ValueError:
             mins = None
-        if mins is not None:
-            out.append(("age", f"age: set {mins // 60} h {mins % 60:02d} m before this snapshot ({at})"))
-    if late:
-        out.append(("stale", f"⚠ STALE — merged after this plan was set, and named by no step: {', '.join(late)}. "
+    return {"now": now, "undeclared": len(snap.get("undeclared") or []), "focus": focus, "at": at, "mins": mins,
+            "late": late, "done": bool(ag["steps"]) and all(st["state"] in ("merged", "closed") for st in ag["steps"])}
+
+
+def agenda_recap(d: dict) -> str:
+    """PURE (owner 11-05 14:37: "these in flight items and focus should help me to capture current thrust"). One
+    sentence read off the digest: how much is in flight, across how many goals, and where the next steps lean."""
+    goals_now = {x["goal"] for x in d["now"] if x["goal"] != "no goal"}
+    n = len(agenda_now_items(d))   # one piece of work under two goals is ONE piece
+    head = (f"{n} piece{'s' if n != 1 else ''} of work in flight across {len(goals_now)} "
+            f"goal{'s' if len(goals_now) != 1 else ''}" if n else "Nothing is in flight")
+    total = len({st["n"] for sts in d["focus"].values() for st in sts})   # a step under two goals counts once
+    if not total:
+        return head + "; no step of the plan is left."
+    top, steps = max(d["focus"].items(), key=lambda kv: len(kv[1]))   # ties keep the first goal, in step order
+    return head + f"; the plan's next steps lean on {top} ({len(steps)} of {total})."
+
+
+def agenda_now_items(d: dict) -> list[dict]:
+    """PURE. The digest's NOW entries merged BY WORK ITEM, in first-seen order: one item serving two goals is one entry
+    carrying both goals, so the page lists each piece of work once."""
+    out: dict[str, dict] = {}
+    for x in d["now"]:
+        it = out.setdefault(x["label"], {"label": x["label"], "goals": [], "what": x["what"]})
+        if x["goal"] not in it["goals"]:
+            it["goals"].append(x["goal"])
+        it["what"] = it["what"] or x["what"]
+    return list(out.values())
+
+
+def agenda_context(snap: dict, ag: dict) -> list[tuple[str, str]]:
+    """PURE (backlog #509). The digest as (kind, text) lines, for --print: now, focus, age, stale."""
+    d, out = agenda_digest(snap, ag), []
+    loose = d["undeclared"]
+    out.append(("now", "now: " + (" · ".join(f"⏳ {x['label']} → {x['goal']}" for x in d["now"]) if d["now"]
+                                   else "nothing in flight")
+                + (f" · + {loose} open PR(s) no goal declares (UNDECLARED, below)" if loose else "")))
+    if d["focus"]:
+        out.append(("focus", "focus: " + " · ".join(
+            f"{gl} (step{'s' if len(sts) > 1 else ''} {', '.join(str(st['n']) for st in sts)})"
+            for gl, sts in d["focus"].items())))
+    if d["mins"] is not None:
+        out.append(("age", f"age: set {d['mins'] // 60} h {d['mins'] % 60:02d} m before this snapshot ({d['at']})"))
+    if d["late"]:
+        out.append(("stale", f"⚠ STALE — merged after this plan was set, and named by no step: {', '.join(d['late'])}. "
                              "Re-record the agenda."))
-    if ag["steps"] and all(st["state"] in ("merged", "closed") for st in ag["steps"]):
+    if d["done"]:
         out.append(("stale", "⚠ every step is done — the plan is finished. Record the next one."))
     return out
 
@@ -1692,12 +1730,31 @@ def agenda_html(snap: dict) -> str:
     lines = agenda_lines({"agenda": snap["agenda"]})
     if kind == "malformed":
         return f'<section class="agenda"><h2 class="warn">{html.escape(lines[0])}</h2></section>'
-    parts = ['<section class="agenda">', f'<h2>{html.escape(lines[0])}</h2>']
+    # owner 11-05 14:37: the heading in the goals' accent style; the plan's when and window on a meta line beneath
+    d = agenda_digest(snap, ag)
+    age = f" ({d['mins'] // 60} h {d['mins'] % 60:02d} m before this snapshot)" if d["mins"] is not None else ""
+    parts = ['<section class="agenda">', '<h2 class="agenda-h">Agenda</h2>',
+             f'<p class="meta">the current plan · set {html.escape(ag["at"])}{age} · {html.escape(ag["window"])}</p>']
     if ag.get("change_if"):
-        parts.append(f'<p class="lede">{html.escape(lines[1].strip())}</p>')
-    # backlog #509: the NOW, focus, age and stale lines sit above the steps, a stale one in the warning colour
+        parts.append(f'<p class="meta">changes if: {html.escape(ag.get("change_if") or "")}</p>')
+    # …then a recap sentence, what is in flight one per line with its purpose, and the focus by goal (backlog #509)
+    parts.append(f'<p class="recap">{html.escape(agenda_recap(d))}</p>')
+    chip = lambda g: f'<span class="chip">{html.escape(g)}</span>'
+    parts.append('<div class="digest"><div><h3>In flight now</h3><ul>' + "".join(
+        f'<li>{"".join(chip(g) for g in x["goals"])} {_html_line(x["label"], repo)}'
+        + (f' <span class="what">— {html.escape(x["what"])}</span>' if x["what"] else "") + "</li>"
+        for x in agenda_now_items(d)) + ("" if d["now"] else "<li>nothing in flight</li>")
+        + (f'<li class="warn">+ {d["undeclared"]} open PR(s) no goal declares (UNDECLARED, below)</li>'
+           if d["undeclared"] else "") + "</ul></div>")
+    parts.append('<div><h3>Focus — the next steps, by goal</h3>' + "".join(
+        f'<p class="focus-g">{chip(gl)}</p><ul>' + "".join(
+            f'<li><b>{st["n"]}.</b> {_html_line(st["text"], repo)}</li>' for st in sts) + "</ul>"
+        for gl, sts in d["focus"].items()) + ("" if d["focus"] else "<p class=\"lede\">no step left</p>")
+        + "</div></div>")
     for kind_, text in agenda_context(snap, ag):
-        parts.append(f'<p class="{"warn" if kind_ == "stale" else "lede"}">{_html_line(text, repo)}</p>')
+        if kind_ == "stale":
+            parts.append(f'<p class="warn">{_html_line(text, repo)}</p>')
+    parts.append('<h3>All steps</h3>')
     parts.append('<pre class="tree">' + "\n".join(_html_line(ln, repo) for ln in agenda_step_lines(snap, ag))
                  + "</pre>")
     hist, bad = snap_history(snap)
@@ -1885,6 +1942,16 @@ section.agenda.none{border-left-color:var(--rule)}
 section.agenda pre.tree{overflow-x:auto}
 section.agenda h2{margin:.5rem 0}
 section.agenda h3{font-size:.9rem;margin:.8rem 0 .3rem;color:var(--ink-soft)}
+h2.agenda-h{margin:.4rem 0 .1rem;color:var(--accent);font-size:1.4rem;font-weight:700}
+section.agenda .meta{margin:.1rem 0}
+section.agenda .recap{margin:.6rem 0 .2rem;font-size:1rem;max-width:none}
+section.agenda .digest{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:.2rem 2rem}
+section.agenda .digest ul{list-style:none;margin:.2rem 0 .5rem;padding:0;font-size:.88rem}
+section.agenda .digest li{margin:.25rem 0}
+section.agenda .chip{display:inline-block;font-family:var(--mono);font-size:.7rem;color:var(--accent);
+               border:1px solid var(--accent);border-radius:.8rem;padding:0 .5rem;margin-right:.3rem}
+section.agenda .what{color:var(--ink-soft)}
+section.agenda .focus-g{margin:.4rem 0 0}
 .goal-agenda{margin-left:.6rem;font-family:var(--mono);font-size:.75rem;color:var(--accent)}
 section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
 """
@@ -3409,9 +3476,36 @@ def _self_test_body() -> int:
              [ln.rsplit(" — d", 1)[-1] for ln in _lines509 if ln.startswith("    ")],
              [" → GOAL 1 · beta, GOAL 2 · alpha", " → GOAL 1 · beta", "", " → GOAL 1 · beta", " → no goal"])
         _h509 = agenda_html(dict(_sn509, repo="o/r"))
-        case("⭐ #509: the page shows NOW and focus as lede lines and STALE in the warning colour, each once, above the steps",
-             (_h509.count('<p class="warn">⚠ STALE'), _h509.count("now: ⏳"), _h509.count("focus: GOAL"),
-              _h509.index("now: ⏳") < _h509.index("restart")), (1, 1, 1, True))
+        case("⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour",
+             (_h509.count('<p class="warn">⚠ STALE'), _h509.count("<h3>In flight now</h3>"), _h509.count("<h3>Focus"),
+              _h509.index("In flight now") < _h509.index('<pre class="tree">')), (1, 1, 1, True))
+        case("⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE "
+             "and its window sit on a meta line beneath (r4 X1: the page's age line)",
+             ('<h2 class="agenda-h">Agenda</h2>' in _h509,
+              '<p class="meta">the current plan · set 2026-11-04 09:00 (23 h 15 m before this snapshot) · w</p>' in _h509,
+              "AGENDA —" in _h509), (True, True, False))
+        _d509 = agenda_digest(_sn509, _a509)
+        case("⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a "
+             "step under two goals counted once",
+             agenda_recap(_d509),
+             "4 pieces of work in flight across 2 goals; the plan's next steps lean on GOAL 1 · beta (2 of 3).")
+        case("#509 recap: nothing in flight and no step left says both, in words",
+             agenda_recap({"now": [], "focus": {}}), "Nothing is in flight; no step of the plan is left.")
+        case("⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves",
+             ([(x["label"], x["goals"]) for x in agenda_now_items(_d509)],
+              _h509.count('<span class="chip">GOAL 1 · beta</span><span class="chip">GOAL 2 · alpha</span> '
+                          '<a href="/backlog-table#i11">backlog #11</a>')),
+             ([("PR #42", ["GOAL 1 · beta"]), ("backlog #11", ["GOAL 1 · beta", "GOAL 2 · alpha"]),
+               ("backlog #15", ["GOAL 1 · beta"]), ("build-777", ["no goal"])], 1))
+        _gw = [dict(g, threads=[dict(t, what="why it exists") if t["key"] == "side · PR #42" else t for t in g["threads"]])
+               for g in _g509]
+        case("owner 11-05 14:37: an in-flight line says the work's PURPOSE, the thread's `what`",
+             'PR #42</a> <span class="what">— why it exists</span></li>' in agenda_html(dict(_sn509, goals=_gw, repo="o/r")),
+             True)
+        _fx = _h509.split("<h3>Focus", 1)[1].split("</div>", 1)[0]
+        case("⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line",
+             re.findall(r'<span class="chip">([^<]*)</span>|<b>(\d+)\.</b>', _fx),
+             [("GOAL 1 · beta", ""), ("", "1"), ("", "2"), ("GOAL 2 · alpha", ""), ("", "1"), ("no goal", ""), ("", "5")])
         # r1 Codex L2: every heading and step reaches the page, with one context line or four, with or without change-if
         _kept = []
         for _snp in (dict(_sn509, repo="o/r"), {"agenda": dict(_a509, change_if="x"), "goals": [], "repo": "o/r"}):
@@ -3473,14 +3567,14 @@ def _self_test_body() -> int:
               "<details open" in _ah, "changes if: the owner reprioritises" in _ah, "4. ⬜ backlog #12" in _ah,
               "1. ✅ backlog #12" in _ah or "1. ⬜ backlog #12" in _ah),
              (2, True, False, True, True, True))
-        _ah0 = agenda_html({"agenda": derive_agenda(dict(parse_agenda("window: w\n## g\n- x\n"), at="t", id=1,
-                                                         ticked=[]), _s1)})
+        try:  # a forced change-if line must FAIL this case by name, not take the suite down
+            _ah0 = agenda_html({"agenda": derive_agenda(dict(parse_agenda("window: w\n## g\n- x\n"), at="t", id=1,
+                                                             ticked=[]), _s1)})
+        except Exception as _e:  # noqa: BLE001
+            _ah0 = f"CRASH {type(_e).__name__}"
         case("an agenda with no change-if draws every step, none mistaken for the change-if line",
-             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower(),
-              # ⟳ backlog #509: the steps no longer come from the text, so a forced change-if lede takes the line
-              # after the title instead — the NOW line — and the page shows it TWICE
-              _ah0.count("now: ")),
-             (False, True, True, False, 1))
+             ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
+             (False, True, True, False))
         case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
              ("AGENDA — none recorded" in agenda_html({"agenda": None}),
               'class="warn">AGENDA — NOT READ: MALFORMED — bad' in agenda_html({"agenda": {"malformed": "bad"}})),
