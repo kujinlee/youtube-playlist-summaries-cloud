@@ -1221,5 +1221,38 @@
     "expect": [
       "⭐ r1 C4: the issue reader asks gh for exactly the open sweep-red issues, in the root given, within ISSUE_TIMEOUT"
     ]
+  },
+  {
+    "name": "a goal is stored without its thread (owner 2026-11-05)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if bool(goal) != bool(thread):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored"
+  },
+  {
+    "name": "the goal and thread are never stored (owner 2026-11-05)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                       | ({\"goal\": goal, \"thread\": thread} if goal else {}))",
+        "                       )"
+      ]
+    ],
+    "expect": "backlog #505: --goal and --thread are STORED on the entry"
+  },
+  {
+    "name": "--goal outside --add does nothing silently (owner 2026-11-05)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                                   (\"--goal\", args.goal is not None and not args.add),\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: --goal outside --add is a stray flag, CANNOT RUN"
   }
 ]

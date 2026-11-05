@@ -53,7 +53,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 110 cases
+    python3 scripts/session-state.py --self-test  # 113 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -336,7 +336,8 @@ def normalise_what(what: str) -> str:
     return what
 
 
-def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None) -> None:
+def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: str | None = None,
+               goal: str | None = None, thread: str | None = None) -> None:
     """`kind` is DECLARED by the caller. Left out, it is `guess_kind` of the entry — the WIDE reading, so an owner entry
     written without `--kind` is stored as the owner entry it looks like and never as `routine` (r3 R3-1: storing the
     strict-prefix answer made every R2-1 phrasing routine again, and the declared field then bypassed the fallback).
@@ -345,13 +346,16 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         raise ValueError("an empty id could never be shown or removed")
     if kind is not None and kind not in KINDS:
         raise ValueError(f"kind {kind!r} is not one of {', '.join(KINDS)}")
+    if bool(goal) != bool(thread):
+        raise ValueError("--goal and --thread go together: a thread is hung under a goal (backlog #505)")
     what = normalise_what(what)
     if kind is None:
         kind = guess_kind({"what": what, "on_done": on_done})
     with _locked(path):
         entries, raw = _for_update(path)
         entries = [e for e in entries if e.get("id") != id_]
-        entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind})
+        entries.append({"id": id_, "what": what, "on_done": on_done, "at": now, "kind": kind}
+                       | ({"goal": goal, "thread": thread} if goal else {}))
         _write(path, entries, raw)
 
 
@@ -1044,6 +1048,14 @@ def _self_test_body() -> int:
         case("done removes exactly that job", (ledger_done(led, "job2"), [e["id"] for e in read_ledger(led)[0]]),
              (True, ["job1"]))
         case("done on an unknown id says False", ledger_done(led, "nope"), False)
+        ledger_add(led, "job5", "build backlog #505", "merge", "T4", goal="g", thread="fix · PR #30 · x")
+        case("backlog #505: --goal and --thread are STORED on the entry",
+             [(e.get("goal"), e.get("thread")) for e in read_ledger(led)[0] if e["id"] == "job5"], [("g", "fix · PR #30 · x")])
+        case("backlog #505: a goal without a thread (or the reverse) is REFUSED, never half-stored",
+             [attempt(lambda: ledger_add(led, "j6", "w", "d", "T", goal="g")),
+              attempt(lambda: ledger_add(led, "j6", "w", "d", "T", thread="fix · PR #1 · x"))], ["raised ValueError"] * 2)
+        case("backlog #505: --goal outside --add is a stray flag, CANNOT RUN", main(["--goal", "g"], root=root, run=NO_GIT), 2)
+        ledger_done(led, "job5")   # the cases below count this ledger's entries
         refused = []
         for fn, args in ((ledger_add, (led, " ", "w", "d", "T")), (ledger_done, (led, ""))):
             try:
@@ -1295,6 +1307,11 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                     help="what the owner has to do with the entry, declared and never inferred: `owner-wait` (a decision waits "
                          "on them), `owner-instruction` (something they told us to do) or `routine`. Every reader prints the "
                          "first two WHOLE and trims `routine`. Left out, it is what the text looks like (`guess_kind`)")
+    ap.add_argument("--goal", metavar="SLUG",
+                    help="with --add and --thread: the `## GOAL <slug>` of docs/goal-threads.md this work serves (backlog #505)")
+    ap.add_argument("--thread", metavar="LINE",
+                    help="with --add and --goal: `<relation> · <refs> · <what>`, the threads file's own grammar. The goal "
+                         "tree shows it under the goal until master's docs/goal-threads.md declares the same refs")
     ap.add_argument("--done", metavar="ID")
     ap.add_argument("--migrate-kinds", action="store_true",
                     help="print the kind each entry has or would get; with --apply, back the ledger up to "
@@ -1307,10 +1324,12 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
         return self_test()
     stray = [flag for flag, on in (("--apply", args.apply and not args.migrate_kinds),
                                    ("--override", bool(args.override) and not args.migrate_kinds),
-                                   ("--kind", args.kind is not None and not args.add)) if on]
+                                   ("--kind", args.kind is not None and not args.add),
+                                   ("--goal", args.goal is not None and not args.add),
+                                   ("--thread", args.thread is not None and not args.add)) if on]
     if stray:   # r3 R3-5: a flag given outside the mode that reads it did nothing and said nothing
         print(f"CANNOT RUN — {', '.join(stray)} only means something with "
-              f"{'--migrate-kinds' if stray[0] != '--kind' else '--add'}; nothing was done", file=sys.stderr)
+              f"{'--migrate-kinds' if stray[0] in ('--apply', '--override') else '--add'}; nothing was done", file=sys.stderr)
         return 2
     main, main_err = main_checkout(root, run)
     led = main / LEDGER_REL   # a worktree session's --add goes where every reader looks
@@ -1330,7 +1349,8 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
                 print(f"  {id_:<28} {now_:<17} -> {want:<17} ({why})")
             return 0
         if args.add:
-            ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind)
+            ledger_add(led, args.add[0], args.add[1], args.add[2], time.strftime("%m-%d %H:%M"), args.kind,
+                       args.goal, args.thread)
             print(f"ledger: added {args.add[0]}")
             return 0
         if args.done is not None:

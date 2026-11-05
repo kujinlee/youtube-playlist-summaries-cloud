@@ -2646,5 +2646,60 @@
     "expect": [
       "⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too (r3 Codex L2)"
     ]
+  },
+  {
+    "name": "a ledger thread duplicates a tracked one (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if {tuple(r) for r in t[\"refs\"]} & declared or any(",
+        "        if any("
+      ]
+    ],
+    "expect": "backlog #505: the TRACKED file wins — a ledger thread sharing a ref with any declared thread is not added"
+  },
+  {
+    "name": "a ledger thread under an unknown goal vanishes (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            problems.append(f\"entry {id_}: goal {str(e.get('goal'))!r} is not declared in {THREADS_REL}\")\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: an unknown goal and a bad line are PROBLEMS on the page, never dropped"
+  },
+  {
+    "name": "a ledger thread never reaches the tree (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        g[\"threads\"].append(dict(t, ledger=id_))\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master"
+  },
+  {
+    "name": "a ledger thread looks like a tracked one (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        detail += f\" · declared in the ledger ({t['ledger']}), not yet on master\"\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": "backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master"
+  },
+  {
+    "name": "every ledger entry is read as a thread (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not (e.get(\"goal\") or e.get(\"thread\")):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": "backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)"
   }
 ]

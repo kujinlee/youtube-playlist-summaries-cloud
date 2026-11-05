@@ -1264,7 +1264,7 @@ EXPECTED_MUTATIONS = {
     # --ink-soft on the fold summary and counts (C5: 2), and the closed PR's age (C6: 2).
     # ⟳ same day, review round 2's fold: 150 -> 152 — recency judged across EVERY ref, not the aggregate's time,
     # and an unread ref time never folds (X1: 2).
-    "scripts/goal-tree.py": 203,
+    "scripts/goal-tree.py": 208,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2365,7 +2365,7 @@ EXPECTED_MUTATIONS = {
     # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
     # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 94, the open `sweep-red` issues in the block — the CANNOT READ arm, its
     # mark, the names, the cap, collect()'s wiring, and the reader's command, directory, failure and element checks.
-    "scripts/session-state.py": 94,
+    "scripts/session-state.py": 97,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on

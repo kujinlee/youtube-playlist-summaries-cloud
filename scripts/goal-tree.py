@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 312 cases
+    python3 scripts/goal-tree.py --self-test                 # 316 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -227,26 +227,14 @@ def parse_threads(text: str) -> list[dict]:
                 continue
             cur["requests"].append({"when": m.group(1), "quote": m.group(2)})
         elif line.startswith("-"):
-            m = THREAD_RE.match(line)
-            if not m:
-                problems.append(f"line {i}: a thread must be `- <relation> · <refs> · <what>`: {line!r}")
+            t, bad = parse_thread_line(line)
+            if bad:
+                problems.append(f"line {i}: {bad}")
                 continue
-            rel, refs_text, what, waits = m.groups()
-            if rel not in RELATIONS:
-                problems.append(f"line {i}: relation {rel!r} is not one of {', '.join(RELATIONS)}")
+            if any(x["key"] == t["key"] for x in cur["threads"]):
+                problems.append(f"line {i}: thread `{t['key']}` is declared twice in goal `{cur['slug']}`")
                 continue
-            if not REFS_RE.fullmatch(refs_text):
-                problems.append(f"line {i}: refs {refs_text!r} must be `backlog #N` / `PR #N`, "
-                                f"joined by `, ` — a thread names a backlog row or a PR")
-                continue
-            key = f"{rel} · {refs_text}"
-            if any(t["key"] == key for t in cur["threads"]):
-                problems.append(f"line {i}: thread `{key}` is declared twice in goal `{cur['slug']}`")
-                continue
-            cur["threads"].append({
-                "key": key, "relation": rel,
-                "refs": [[k, int(n)] for k, n in REF_RE.findall(refs_text)],
-                "what": what.strip(), "waits": waits.strip() if waits else None})
+            cur["threads"].append(t)
         else:
             problems.append(f"line {i}: inside goal `{cur['slug']}` a line must be a `> ` request or a "
                             f"`- ` thread: {line!r}")
@@ -264,8 +252,53 @@ def parse_threads(text: str) -> list[dict]:
 
 
 # ── the derived states ────────────────────────────────────────────────────────────────────────
+
+def parse_thread_line(line: str):
+    """PURE. One `- <relation> · <refs> · <what>` line -> (thread, None) or (None, why). The ONE reader of the
+    grammar: the threads file and a ledger entry's `thread` (backlog #505) both go through it."""
+    m = THREAD_RE.match(line)
+    if not m:
+        return None, f"a thread must be `- <relation> · <refs> · <what>`: {line!r}"
+    rel, refs_text, what, waits = m.groups()
+    if rel not in RELATIONS:
+        return None, f"relation {rel!r} is not one of {', '.join(RELATIONS)}"
+    if not REFS_RE.fullmatch(refs_text):
+        return None, (f"refs {refs_text!r} must be `backlog #N` / `PR #N`, "
+                      f"joined by `, ` — a thread names a backlog row or a PR")
+    return {"key": f"{rel} · {refs_text}", "relation": rel,
+            "refs": [[k, int(n)] for k, n in REF_RE.findall(refs_text)],
+            "what": what.strip(), "waits": waits.strip() if waits else None}, None
+
+
+def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], list[str]]:
+    """PURE. Hang each ledger entry's DECLARED thread (`goal` + `thread`, backlog #505) under its goal, so work in
+    flight sits under the goal it serves before its PR merges the tracked line. The tracked file WINS: a thread
+    sharing any ref with a thread `docs/goal-threads.md` declares, in any goal, is not added again (after the merge
+    it is the same work). A bad line or an unknown goal is a PROBLEM shown on the page, never dropped in silence."""
+    declared = {(k, n) for g in goals for t in g["threads"] for k, n in t["refs"]}
+    out = [dict(g, threads=list(g["threads"])) for g in goals]
+    by_slug = {g["slug"]: g for g in out}
+    problems: list[str] = []
+    for e in ledger:
+        if not (e.get("goal") or e.get("thread")):
+            continue
+        id_ = _SS.clean(e.get("id", ""), 60)
+        t, bad = parse_thread_line("- " + str(e.get("thread") or "").removeprefix("- "))
+        if bad:
+            problems.append(f"entry {id_}: its thread is not read — {bad}")
+            continue
+        g = by_slug.get(str(e.get("goal") or ""))
+        if g is None:
+            problems.append(f"entry {id_}: goal {str(e.get('goal'))!r} is not declared in {THREADS_REL}")
+            continue
+        if {tuple(r) for r in t["refs"]} & declared or any(x["key"] == t["key"] for x in g["threads"]):
+            continue
+        g["threads"].append(dict(t, ledger=id_))
+    return out, problems
+
+
 def _ledger_numbers(entry: dict) -> set:
-    return {int(n) for n in LEDGER_NUM_RE.findall(f"{entry.get('id', '')} {entry.get('what', '')}")}
+    return {int(n) for n in LEDGER_NUM_RE.findall(f"{entry.get('id', '')} {entry.get('what', '')} {entry.get('thread', '')}")}
 
 
 def merge_when(full) -> str:
@@ -441,6 +474,8 @@ def derive_thread(t: dict, src: dict) -> dict:
         detail += " · in flight: " + "; ".join(flying)
     if parked:
         detail += " · parked: " + "; ".join(parked)
+    if t.get("ledger"):
+        detail += f" · declared in the ledger ({t['ledger']}), not yet on master"
     if t.get("waits") and state in ("next", "inflight"):
         state = "blocked" if state == "next" else state
         detail += f" · waits on {t['waits']} (declared)"
@@ -459,6 +494,7 @@ def derive_thread(t: dict, src: dict) -> dict:
 
 def derive(goals: list[dict], src: dict, now: str) -> dict:
     """PURE. Goals + sources -> one snapshot. `cannot` lists every source that could not be read."""
+    goals, thread_problems = ledger_threads(goals, src["ledger"])
     out_goals = [dict(g, threads=[derive_thread(t, src) for t in g["threads"]]) for g in goals]
     # ⛔ review r1 X1: an open PR is represented only by a STRUCTURED association — a thread's refs, or the open PR
     # its backlog row resolved to — never by a mention in detail text (a ledger entry quoting `PR #99` hid PR #99).
@@ -484,7 +520,7 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
     return {"at": now, "head": src.get("head"), "repo": src.get("repo"), "goals": out_goals,
             "undeclared": undeclared, "inflight_loose": loose, "parked_loose": parked_loose, "needs": list(src.get("needs") or []),
             "needs_not_read": [f"{k}: {src['errors'][k]}" for k in NEEDS_SOURCES if src["errors"].get(k)],
-            "ledger_problems": list(src.get("ledger_problems") or []),
+            "ledger_problems": list(src.get("ledger_problems") or []) + thread_problems,
             "plans": list(src.get("plans") or []), "plan_notes": list(src.get("plan_notes") or []),
             "cannot": [f"{k}: {v}" for k, v in sorted(src["errors"].items()) if v]}
 
@@ -1970,6 +2006,27 @@ def _self_test_body() -> int:
     case("an open PR shows draft, mergeability and the checks summary",
          (o["state"], o["detail"]), ("open", "PR #21 open · draft · clean · 1 pass"))
     case("a closed PR is CLOSED, never open", one("- side · PR #22 · c\n", src())["state"], "closed")
+
+    # ── backlog #505: a ledger entry declares its thread before master does ──────────────────────
+    _g2 = parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
+                        '## GOAL h\n> 2026-01-01 00:00 "q"\n- side · PR #21 · aside\n')
+    _e = {"id": "w505", "what": "build it", "goal": "g", "thread": "fix · PR #30 · in flight"}
+    _lt = derive(_g2, src(ledger=[_e]), "T")
+    _hung = [t for t in _lt["goals"][0]["threads"] if t["key"] == "fix · PR #30"]
+    case("backlog #505: a ledger entry's thread hangs under ITS goal, in flight, saying it is not yet on master",
+         (len(_hung), _hung[0]["state"] if _hung else None,
+          "declared in the ledger (w505), not yet on master" in (_hung[0]["detail"] if _hung else ""),
+          [u["pr"] for u in _lt["undeclared"]], _lt["inflight_loose"]),
+         (1, "open", True, [99], []))
+    case("backlog #505: the TRACKED file wins — a ledger thread sharing a ref with any declared thread is not added",
+         [[t["key"] for t in g["threads"]] for g in ledger_threads(_g2, [dict(_e, thread="fix · PR #21 · dup")])[0]],
+         [["fix · backlog #10"], ["side · PR #21"]])
+    case("backlog #505: an unknown goal and a bad line are PROBLEMS on the page, never dropped",
+         [x.split(" — ")[0] if "not read" in x else x for x in derive(_g2, src(ledger=[
+             dict(_e, goal="nope"), dict(_e, id="w2", thread="fix · issue #3 · x")]), "T")["ledger_problems"]],
+         ["entry w505: goal 'nope' is not declared in docs/goal-threads.md", "entry w2: its thread is not read"])
+    case("backlog #505: an entry with no goal or thread hangs nothing (the ledger's ordinary entries)",
+         ledger_threads(_g2, [{"id": "x", "what": "PR #30"}]) == (_g2, []), True)
     case("a PR merged off master's log says so, with gh's SHA",
          one("- side · PR #23 · c\n", src())["detail"], "merged time unread · bbbb2222 — not on master's log")
     case("a PR gh did not list is NOT FOUND, never a guess",
