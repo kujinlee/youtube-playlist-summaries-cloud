@@ -2457,8 +2457,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if ca.get(\"at\") and ca.get(\"at\") != pa.get(\"at\"):",
-        "    if False:"
+        "        out.append(f\"agenda recorded: set {ca['at']}, {len(ca.get('steps') or [])} step(s)\")",
+        "        pass"
       ]
     ],
     "expect": [
@@ -2489,6 +2489,45 @@
     ],
     "expect": [
       "⭐ main logs the history IN the snapshot (so --page replays it), and the page draws the agenda under NEEDS YOU, above the tree"
+    ]
+  },
+  {
+    "name": "a frozen state's shape is not checked (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if rec[\"kind\"] == \"replaced\" and not all(",
+        "            if False and not all("
+      ]
+    ],
+    "expect": [
+      "⛔ a frozen state that is not {n: int, state: str} is MALFORMED where it is read, never a crash later (r1 Codex H1)"
+    ]
+  },
+  {
+    "name": "agenda identity is only its minute (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(ca.get(\"id\"), ca.get(\"at\")) != (pa.get(\"id\"), pa.get(\"at\")):",
+        "ca.get(\"at\") != pa.get(\"at\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ a second agenda in the SAME minute is a new agenda, never a false step move (r1 Codex M2)"
+    ]
+  },
+  {
+    "name": "an uncaptured agenda is said to be none (backlog #499, slice 2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if \"agenda\" not in snap:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a snapshot with NO agenda key says it was not captured — never that there was none (r1 Codex M3)"
     ]
   }
 ]

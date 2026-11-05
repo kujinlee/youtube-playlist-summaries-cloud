@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 305 cases
+    python3 scripts/goal-tree.py --self-test                 # 308 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -532,7 +532,9 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
     out += [f"in flight, under no goal: {i}" for i in sorted(cl - pl)]
     out += [f"no longer in flight: {i}" for i in sorted(pl - cl)]
     pa, ca = prev.get("agenda") or {}, cur.get("agenda") or {}
-    if ca.get("at") and ca.get("at") != pa.get("at"):
+    # ⛔ identity is the agenda's (id, at): two agendas recorded in one minute are different plans, and comparing
+    # their steps by number would invent moves (slice 2, r1 Codex M2)
+    if ca.get("at") and (ca.get("id"), ca.get("at")) != (pa.get("id"), pa.get("at")):
         out.append(f"agenda recorded: set {ca['at']}, {len(ca.get('steps') or [])} step(s)")
     elif ca.get("steps") and pa.get("steps"):
         was = {st["n"]: st["state"] for st in pa["steps"]}
@@ -1025,6 +1027,12 @@ def _agenda_records(text: str, name: str) -> list[dict]:
                     isinstance(st, dict) and isinstance(st.get("when"), str) and isinstance(st.get("text"), str)
                     and isinstance(st.get("refs"), list) for st in rec["steps"]):
                 raise ValueError("an agenda step needs `when`, `text` and `refs`")
+            # ⛔ a frozen state is READ by the history and the page: each is `{n: int, state: str}`, or MALFORMED
+            # here — never a TypeError in the snapshot (slice 2, r1 Codex H1)
+            if rec["kind"] == "replaced" and not all(
+                    isinstance(x, dict) and isinstance(x.get("n"), int) and not isinstance(x.get("n"), bool)
+                    and isinstance(x.get("state"), str) for x in rec["states"]):
+                raise ValueError("a frozen state needs `n` (int) and `state` (str)")
         except ValueError as exc:
             raise Malformed(f"{name} line {i} is not an agenda record ({exc})") from None
         out.append(rec)
@@ -1471,6 +1479,10 @@ def agenda_html(snap: dict) -> str:
     """The AGENDA section, under NEEDS YOU: the current plan grouped by when, then every earlier agenda as ONE
     collapsed line (its `history_line`), newest first, expanding to its steps in their frozen states."""
     ag, repo = snap.get("agenda"), snap.get("repo")
+    if "agenda" not in snap:
+        # ⛔ a snapshot taken before agendas were recorded CANNOT say there was none (slice 2, r1 Codex M3)
+        return ('<section class="agenda none"><h2>AGENDA — not captured in this snapshot</h2><p class="lede">It '
+                'was taken before agendas were recorded; the next snapshot will carry one.</p></section>')
     if not ag:
         return ('<section class="agenda none"><h2>AGENDA — none recorded</h2><p class="lede">Recorded with '
                 '<code>python3 scripts/goal-tree.py --record-agenda FILE</code> each time a plan is stated.</p>'
@@ -3097,9 +3109,12 @@ def _self_test_body() -> int:
              ("changes if" in _ah0, '<pre class="tree">g\n' in _ah0, "1. ◇ x" in _ah0, "earlier agendas" in _ah0.lower()),
              (False, True, True, False))
         case("no agenda: the page SAYS none is recorded; a malformed one is said as a warning",
-             ("AGENDA — none recorded" in agenda_html({}),
+             ("AGENDA — none recorded" in agenda_html({"agenda": None}),
               'class="warn">AGENDA — NOT READ: MALFORMED — bad' in agenda_html({"agenda": {"malformed": "bad"}})),
              (True, True))
+        case("⛔ a snapshot with NO agenda key says it was not captured — never that there was none (r1 Codex M3)",
+             ("not captured in this snapshot" in agenda_html({}), "none recorded" in agenda_html({}),
+              "not captured" in agenda_html({"agenda": None})), (True, False, False))
         _p0 = {"goals": [], "undeclared": [], "inflight_loose": [],
                "agenda": {"at": "t1", "steps": [{"n": 1, "state": "next", "text": "a"},
                                                 {"n": 2, "state": "open", "text": "b"}]}}
@@ -3109,6 +3124,21 @@ def _self_test_body() -> int:
         case("the timeline says when an agenda is recorded, and each step whose state moved",
              (changes(_p0, _p1), changes(_p1, _p2)),
              (["agenda step 1: next → ✅ merged — a"], ["agenda recorded: set t2, 1 step(s)"]))
+        _p3 = dict(_p1, agenda=dict(_p1["agenda"], id=1))
+        _p4 = dict(_p0, agenda={"at": "t1", "id": 2, "steps": [{"n": 1, "state": "next", "text": "B"}]})
+        case("⛔ a second agenda in the SAME minute is a new agenda, never a false step move (r1 Codex M2)",
+             changes(_p3, _p4), ["agenda recorded: set t1, 1 step(s)"])
+        def _rec_err(states):
+            try:
+                _agenda_records(json.dumps({"kind": "replaced", "at": "t", "of": 1, "states": states}), "x")
+                return None
+            except Malformed as exc:
+                return str(exc)
+        case("⛔ a frozen state that is not {n: int, state: str} is MALFORMED where it is read, never a crash later "
+             "(r1 Codex H1)",
+             ["a frozen state needs" in (_rec_err(x) or "") for x in
+              ([{"n": [], "state": "merged"}], [{"n": 1, "state": {"bad": 1}}], [{"n": True, "state": "next"}], ["x"])]
+             + [_rec_err([{"n": 1, "state": "merged"}])], [True, True, True, True, None])
 
         _ap = r / "main" / AGENDA_REL
 
