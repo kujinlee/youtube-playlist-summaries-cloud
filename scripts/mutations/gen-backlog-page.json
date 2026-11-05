@@ -799,8 +799,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "    a, b = (WORD_OR_KEY.findall(re.sub(r\"[*`]\", \"\", t)) for t in (before, after))",
-        "    a, b = (re.sub(r\"[*`]\", \"\", t).split() for t in (before, after))"
+        "    return WORD_OR_KEY.findall(visible_text(h))\n",
+        "    return visible_text(h).split()\n"
       ]
     ],
     "expect": [
@@ -834,8 +834,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "            and len(re.findall(r'<div class=\"(?:seg|prov)\">', layout_body(md(r[\"body\"])))) < 2]",
-        "            and len(re.findall(r'<div class=\"(?:seg|prov)\">', layout_body(md(r[\"body\"])))) < 1]"
+        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 2 and '<ol class=\"enum\">' not in h",
+        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 1 and '<ol class=\"enum\">' not in h"
       ]
     ],
     "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
@@ -845,8 +845,8 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "    return [r[\"num\"] for r in rows if len(r[\"body\"]) >= min_chars\n",
-        "    return [r[\"num\"] for r in rows if True\n"
+        "    return [r[\"num\"] for r in rows if len(r[\"body\"]) >= min_chars and _one_block(",
+        "    return [r[\"num\"] for r in rows if True and _one_block("
       ]
     ],
     "expect": "unlaid_rows: a long row with no cue is named; a cued one and a short one are not"
@@ -889,10 +889,43 @@
     "file": "scripts/gen-backlog-page.py",
     "edits": [
       [
-        "_DIFF_LABEL = re.compile(r\"([^\\w,\\s]\\s*)(?=",
-        "_DIFF_LABEL = re.compile(r\"([^\\s]\\s*)(?="
+        "    for c in sorted(_label_cuts(h), reverse=True):\n",
+        "    for c in sorted({m.start() for m in _LAYOUT_LABEL.finditer(h)}, reverse=True):\n"
       ]
     ],
-    "expect": "word_diff breaks before a lead-in label after a sentence end, not after a comma (owner 2026-11-05)"
+    "expect": "word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)"
+  },
+  {
+    "name": "the diff's break token is a character rows can contain (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "DIFF_BREAK = \"\\ue000\"\n",
+        "DIFF_BREAK = \"¶\"\n"
+      ]
+    ],
+    "expect": "word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)"
+  },
+  {
+    "name": "a row that carries the sentinel keeps it (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    h = md(t.replace(DIFF_BREAK, \"\"))\n",
+        "    h = md(t)\n"
+      ]
+    ],
+    "expect": "word_diff breaks only where the BODY does — never after a glyph mid-sentence, inside a code span, or at an over-long label; a literal ¶ or the sentinel itself stays text (row-cues r1 Codex M2, M3)"
+  },
+  {
+    "name": "a laid-out list is named a wall of text (owner 2026-11-05)",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 2 and '<ol class=\"enum\">' not in h",
+        "    return len(re.findall(r'<div class=\"(?:seg|prov)\">', h)) < 2"
+      ]
+    ],
+    "expect": "unlaid_rows: a long row laid out as an (a) (b) list is NOT a wall (row-cues r1 Codex M4)"
   }
 ]
