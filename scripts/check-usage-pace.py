@@ -1916,12 +1916,16 @@ def _self_test_body() -> int:
                 fh.write("import sys\nsys.exit(2)\n")
             git("commit", "-q", "-am", "a checker exiting 2", cwd=main_co)
             git("update-ref", "refs/remotes/origin/master", "HEAD", cwd=main_co)
-            check("run-hook: a checker exiting 2 never blocks the prompt (exit 1, not 2)",
-                  hook("usage-pace-prompt.sh", 85)[0], 1)
-            check("run-hook: a checker exiting 2 never blocks a spawn (exit 1, not 2)",
-                  hook("usage-pace-spawn.sh", 98.5)[0], 1)
-            check("run-hook: a checker exiting 2 never blocks a wake (exit 1, not 2)",
-                  hook("usage-pace-wake.sh", 98.5, stdin=to_agent)[0], 1)
+            # r5 Codex BLOCKER: a guard that fails is a visible CANNOT RUN that allows (exit 0), never a silent exit
+            check("run-hook: a checker exiting 2 never blocks the prompt, and says CANNOT RUN",
+                  (lambda r: (r[0], "CANNOT RUN" in r[1]))(hook("usage-pace-prompt.sh", 85)), (0, True))
+            check("run-hook: a checker exiting 2 never blocks a spawn, and says CANNOT RUN",
+                  (lambda r: (r[0], "CANNOT RUN" in r[1]))(hook("usage-pace-spawn.sh", 98.5)), (0, True))
+            check("run-hook: a checker exiting 2 never blocks a wake, and says CANNOT RUN",
+                  (lambda r: (r[0], "CANNOT RUN" in r[1]))(hook("usage-pace-wake.sh", 98.5, stdin=to_agent)), (0, True))
+            rc, out = hook("usage-pace-spawn.sh", 98.5, PYTHONHOME=os.path.join(tmp, "no-such-pythonhome"))
+            check("backlog #522 r5: a python that cannot start is a CANNOT RUN systemMessage, not a silent exit",
+                  (rc, json.loads(out or "{}").get("systemMessage", "").startswith("⚠ usage pace CANNOT RUN")), (0, True))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     finally:

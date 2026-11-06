@@ -20,11 +20,13 @@ mode="$1"
 # naming a missing directory exited 1 with stderr only — a silent allow).
 cannot() {
     msg="⚠ usage pace CANNOT RUN — $1 (backlog #522: the checkout's own copy is not trusted). Treat the usage verdict as NOT RUN; unknown is not a stop."
+    # r5 Codex BLOCKER: built WITHOUT python, since a python that cannot start (a bad PYTHONHOME) is one of the failures
+    msg="${msg//\\/\\\\}"; msg="${msg//\"/\\\"}"
     if [ "$mode" = prompt ]; then
-        python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": sys.argv[1]}}))' "$msg"
+        printf '{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "%s"}}\n' "$msg"
     else
         # security review 11-05: stderr alone is not seen — say it as a systemMessage, and ALLOW (unknown is not a stop)
-        python3 -c 'import json,sys; print(json.dumps({"systemMessage": sys.argv[1]}))' "$msg"
+        printf '{"systemMessage": "%s"}\n' "$msg"
     fi
     exit 0
 }
@@ -40,4 +42,8 @@ fi
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/usage-pace.XXXXXX" 2>/dev/null)" || cannot "no temp directory under ${TMPDIR:-/tmp}"
 trap 'rm -rf "$tmp"' EXIT
 printf '%s\n' "$src" > "$tmp/check-usage-pace.py" 2>/dev/null || cannot "the guard could not be written to $tmp"
-python3 "$tmp/check-usage-pace.py" --hook "$mode" --root "$REPO_ROOT"
+# r5 Codex BLOCKER: the guard's own failure (a python that cannot start, a crash, an exit 2) is a CANNOT RUN too — it
+# answers on stdout with exit 0, so anything else printed nothing a hook reads.
+out="$(python3 "$tmp/check-usage-pace.py" --hook "$mode" --root "$REPO_ROOT")"; rc=$?
+[ "$rc" -eq 0 ] || cannot "origin/master's guard exited $rc"
+[ -z "$out" ] || printf '%s\n' "$out"
