@@ -1685,8 +1685,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "local_midnight(resets - 86400)",
-        "local_midnight(resets)"
+        "start, end = local_midnight(resets - 86400)",
+        "start, end = local_midnight(resets)"
       ]
     ],
     "expect": [
@@ -1769,6 +1769,71 @@
     ],
     "expect": [
       "⭐ #510 r2 Codex L1: when the reserve binds above 97 the message names the reserve, not the rising cap"
+    ]
+  },
+  {
+    "name": "the last day's room is never said (owner 11-05 19:44)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if last_day and weekly < stop else \"\")",
+        "if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
+    ]
+  },
+  {
+    "name": "the pace line is still shown on the last day, beside the usage it reads as a stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if last_day:\n        line_note = \"\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: ...and the pace line is not shown on the last day — '97% — a guide' beside 97% read as a stop"
+    ]
+  },
+  {
+    "name": "below WARN on the last day the room is a silent OK",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if use_it:   # below the WARN line",
+        "    if False:   # below the WARN line"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: below the WARN line on the last day the room is SAID, never a silent OK"
+    ]
+  },
+  {
+    "name": "every day is the last day, so next week's room is called lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    last_day = now > local_midnight(resets - 86400)",
+        "    last_day = True"
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: before the last day there is no USE IT — the room is still next week's"
+    ]
+  },
+  {
+    "name": "the WARN on the last day does not lead with the room",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return WARN, (f\"{use_it}⚠ usage pace: weekly",
+        "        return WARN, (f\"⚠ usage pace: weekly"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
     ]
   }
 ]

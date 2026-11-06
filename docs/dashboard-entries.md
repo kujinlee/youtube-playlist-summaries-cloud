@@ -18839,3 +18839,8 @@ A small correction to the timeline's one-line stories: a thread that first appea
 <!--tech-->
 `scripts/goal-tree.py` `story()`: an `added` line whose glyph is the merged one goes to `landed`. A wording-only case now runs two snapshots whose stored trees differ in a thread's text, through `derive` and `changes()`. 393 cases (+2, one re-expected: the r2 producer case's fixture PR #20 is merged, so it now reads "Landed PR #20."); 1 new mutation, 1 re-bound; pin 297 → 298.
 
+## 2026-11-05
+On the last day of the week the usage warning now tells me to **use** the room, not only to hold back (your 19:44 messages). Tonight I sat idle for about an hour at 97% with the stop at 98.6%, because every line of the warning said hold back and none said that whatever is unused vanishes at the 02:00 reset. Now, on the last day, the warning opens with "⏳ USE IT — N% is left under the stop and is LOST at the reset", even when usage is low. The pace line is no longer shown that day, because "97% — a guide" next to 97% read as a stop. An unreadable meter now also says "keep working". Backlog #521.
+<!--tech-->
+`scripts/check-usage-pace.py` `evaluate`: `last_day` (after the reset's own local midnight) and `use_it` lead the WARN message; below WARN on the last day the verdict is WARN with the room, never `OK, ""`; `line_note` is dropped on the last day; the rising-stop note reads "what is left under it is lost at the reset"; `cannot()` adds "Unknown is not a stop: keep working." 318 cases (+6, two re-expected: the rising-stop text and the run-hook case at 50%, whose fixture reset is 24 h out and so IS the last day). 5 new mutations, 1 re-bound; pin 134 → 139.
+

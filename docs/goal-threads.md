@@ -131,6 +131,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-05 08:36 "by reset time is approaching, gradually loosing the hard stop limit or do not apply the hard stop altogether after certain time of last day might be better"
 > 2026-11-05 08:40 "what has been the burning rate of usage? Will the 6 hours before the reset be enough to utilize the remaining capacity?"
 - fix · backlog #510 · the weekly stop rises from 97% to 99% over the whole last day before the reset, only on a fresh meter reading (owner card A, 08:47, replacing the 08:38 six-hour window)
+- fix · backlog #521 · on the last day the usage hook leads with the room the reset would lose — USE IT — instead of only saying hold back
 - fix · backlog #503 · measure whether agents spawned close together share one cached start-up
 - fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio · waits on days of meter data
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop
