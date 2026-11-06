@@ -1273,8 +1273,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "re.search(re.escape(r) + r\"\\b\", ln)",
-        "re.search(re.escape(r), ln)"
+        "_THREAD_REF = re.compile(r\"\\b(?:PR|backlog) #\\d+\\b\")",
+        "_THREAD_REF = re.compile(r\"\\b(?:PR|backlog) #\\d\\d?\")"
       ]
     ],
     "expect": [
@@ -1299,8 +1299,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if refs and any(",
-        "    if True or refs and any("
+        "    if set(refs) & tracked:",
+        "    if True:"
       ]
     ],
     "expect": [
@@ -1326,12 +1326,38 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "for ln in lines for r in refs)",
-        "for ln in lines for r in refs[:0])"
+        "    refs = sorted(refs_field(thread))",
+        "    refs = []"
       ]
     ],
     "expect": [
       "backlog #507: …a tracked line naming the same ref (a backlog row among others) is silent"
+    ]
+  },
+  {
+    "name": "backlog #507 r1: a tracked line's whole text is searched, not its refs field",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            tracked |= refs_field(ln[2:])",
+        "            tracked |= set(_THREAD_REF.findall(ln))"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r1: a ref named only in a tracked line's WHAT is not a declaration — it warns"
+    ]
+  },
+  {
+    "name": "backlog #507 r1: a bullet above any goal heading counts as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    in_goal = False\n    for ln in out.splitlines():",
+        "    in_goal = True\n    for ln in out.splitlines():"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r1: a bullet ABOVE any goal heading does not count; one under ANOTHER goal does"
     ]
   }
 ]

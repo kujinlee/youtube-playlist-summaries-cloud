@@ -53,7 +53,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 119 cases
+    python3 scripts/session-state.py --self-test  # 121 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -384,13 +384,24 @@ def thread_handoff(entry: dict, main: Path, run=_run) -> str | None:
     thread, goal = entry.get("thread"), entry.get("goal")
     if not isinstance(thread, str) or not thread.strip():
         return None
-    refs = _THREAD_REF.findall(thread)
+    # done-thread-check r1 Codex: refs come from the REFS FIELD (`<relation> · <refs> · <what>`) on both sides, never the
+    # whole line — a ref named in a line's WHAT is not a declaration — and only a line under a `## GOAL` heading counts
+    def refs_field(line: str) -> set:
+        parts = line.split(" · ")
+        return set(_THREAD_REF.findall(parts[1])) if len(parts) >= 3 else set()
+    refs = sorted(refs_field(thread))
     rc, out = run(["git", "show", f"origin/master:{THREADS_REL}"], main, 10)
     if rc != 0:
         return (f"⚠ thread NOT CHECKED — origin/master:{THREADS_REL} could not be read (exit {rc}: {clean(out, 100)}); "
                 f"if no tracked line names {', '.join(refs) or 'this work'}, add under `## GOAL {goal}`:  - {thread}")
-    lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
-    if refs and any(re.search(re.escape(r) + r"\b", ln) for ln in lines for r in refs):
+    tracked: set = set()
+    in_goal = False
+    for ln in out.splitlines():
+        if ln.startswith("## "):
+            in_goal = ln.startswith("## GOAL ")
+        elif in_goal and ln.startswith("- "):
+            tracked |= refs_field(ln[2:])
+    if set(refs) & tracked:
         return None
     return (f"⚠ this entry's thread is on NO tracked goal on origin/master — the goal tree drops it now. Add to "
             f"{THREADS_REL} under `## GOAL {goal}`:  - {thread}")
@@ -1289,6 +1300,12 @@ def _self_test_body() -> int:
              [thread_handoff(_e(f"fix · PR #{n} · x"), root, _show(_tracked)) is None for n in (30, 305)], [False, True])
         case("backlog #507: …an unreadable threads file says NOT CHECKED, never 'tracked'",
              "NOT CHECKED" in (thread_handoff(_e("fix · PR #9 · x"), root, _show("fatal: bad", 128)) or ""), True)
+        case("backlog #507 r1: a ref named only in a tracked line's WHAT is not a declaration — it warns",
+             thread_handoff(_e("fix · PR #30, backlog #12 · x"), root,
+                            _show("## GOAL g\n- fix · PR #99 · follow PR #30 and backlog #12\n")) is None, False)
+        case("backlog #507 r1: a bullet ABOVE any goal heading does not count; one under ANOTHER goal does",
+             [thread_handoff(_e("fix · PR #30 · x"), root, _show(t)) is None
+              for t in ("- fix · PR #30 · stray\n## GOAL g\n", "## GOAL other\n- fix · PR #30 · there\n")], [False, True])
         case("backlog #507: …an entry with no thread is silent",
              [thread_handoff({"id": "j"}, root, _show(_tracked)), thread_handoff(_e("  "), root, _show(_tracked))], [None, None])
         _err = io.StringIO()

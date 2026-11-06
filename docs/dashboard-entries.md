@@ -18847,5 +18847,5 @@ On the last day of the week the usage warning now tells me to **use** the room, 
 ## 2026-11-05
 Closing a piece of tracked work no longer makes it silently vanish from the goal tree: if the work was never written into the goal file on master, closing it now prints a warning naming the exact line to add. Backlog #507.
 <!--tech-->
-`scripts/session-state.py`: `thread_handoff(entry, main, run)` reads `origin/master:docs/goal-threads.md` and looks for a tracked `- ` line naming one of the entry's refs as a whole ref (`PR #30` ≠ `PR #305`); `--done` calls it after removing the entry and prints the warning on stderr (a warning, never a refusal); an unreadable file is NOT CHECKED. 119 cases (+6); 6 new mutations; pin 97 → 103.
+`scripts/session-state.py`: `thread_handoff(entry, main, run)` reads `origin/master:docs/goal-threads.md` and compares the REFS FIELD of the entry's thread with the refs fields of the `- ` lines under a `## GOAL` heading (a ref in a line's WHAT text, or a bullet above any goal, does not count; `PR #30` ≠ `PR #305`); `--done` calls it after removing the entry and prints the warning on stderr (a warning, never a refusal); an unreadable file is NOT CHECKED. 121 cases (+8); 8 new mutations; pin 97 → 105.
 
