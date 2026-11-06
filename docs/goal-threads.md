@@ -46,7 +46,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · PR #419 · backlog #379 filed
 - bookkeeping · PR #421 · backlog #383 filed
 - side · PR #418 · the skills explainer gets the text-style switcher; backlog #376 filed
-- fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area
+- fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area · waits on the weekly reset (Fri 11-06 02:00)
 ## GOAL comprehensibility-suite
 > 2026-10-27 11:30 "I am aiming to complete comprehensibility suite features. … what is current status of comprehensibility suite?"
 > 2026-10-27 17:45 "we would need to define role and usages for these comprehensibility/status/explainer pages (goals, features, backlogs, dashboard, worklines, brief etc) … these pages are currently developed and produced in ad-hoc manner without overarching design"
@@ -79,6 +79,9 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #504 · the agenda log's record check refuses a step whose refs are not (kind, number) pairs
 - fix · backlog #514 · in-flight work is added with a goal, or says why it has none
 - fix · backlog #515 · an agenda step for a partly-done row is not ticked by its PR's merge
+- fix · PR #511 · the agenda block as a recap: an accent heading, the thrust in one sentence, items with their purpose, focus by goal
+- fix · backlog #517 · the agenda lists RUNNING work apart from OWED work, and each owed item says what it waits for
+- bookkeeping · backlog #518 · two thread shapes where the Running/Owed split still mis-owns an open PR (filed from the capped round)
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
@@ -127,7 +130,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-05 08:40 "what has been the burning rate of usage? Will the 6 hours before the reset be enough to utilize the remaining capacity?"
 - fix · backlog #510 · the weekly stop rises from 97% to 99% over the whole last day before the reset, only on a fresh meter reading (owner card A, 08:47, replacing the 08:38 six-hour window)
 - fix · backlog #503 · measure whether agents spawned close together share one cached start-up
-- fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio
+- fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio · waits on days of meter data
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop
 ## GOAL dev-speed-first
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
@@ -164,7 +167,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #495 · filed from PR #489's CI: the completion-order kill case races `as_completed`, so its mutation survives on a loaded runner; register rows 22 (the compaction deferral) and 4 (the owner keeps the 300k window) and the backlog #47 indexed-search note ride in the same docs PR
 - side · backlog #492 · the owner's destructive-command recovery gate (11-03 14:20), filed to build after backlog #330 when the usage margin allows
 - fix · backlog #506 · two mutations killed only by chance red unrelated PRs' sweeps
-- fix · backlog #512 · self-tests leave temp directories behind, and the pile slows long-path shell commands
+- fix · backlog #512 · self-tests leave temp directories behind, and the pile slows long-path shell commands · waits on the weekly reset (Fri 11-06 02:00)
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"

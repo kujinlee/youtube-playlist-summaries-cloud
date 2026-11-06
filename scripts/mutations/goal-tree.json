@@ -1781,7 +1781,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    named_prs |= {t[\"open_pr\"] for g in out_goals for t in g[\"threads\"] if t.get(\"open_pr\") is not None}",
+        "    named_prs |= {n for g in out_goals for t in g[\"threads\"] for n in t.get(\"open_prs\") or []}",
         "    named_prs |= {int(m) for g in out_goals for t in g[\"threads\"] for m in re.findall(r\"PR #(\\d+)\", t[\"detail\"])}"
       ]
     ],
@@ -1795,6 +1795,10 @@
     "edits": [
       [
         "            open_pr = int(p[\"number\"])\n",
+        ""
+      ],
+      [
+        "            resolved = [int(q[\"number\"]) for q in opened]\n",
         ""
       ]
     ],
@@ -2787,8 +2791,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(t.get(\"inflight\") or t[\"state\"] in (\"open\", \"inflight\")) and not t.get(\"parked\")",
-        "t[\"state\"] in (\"open\", \"inflight\") and not t.get(\"parked\")"
+        "if ((t.get(\"inflight\") or t.get(\"open_prs\")",
+        "if ((False or t.get(\"open_prs\")"
       ]
     ],
     "expect": [
@@ -3047,8 +3051,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "n = len(agenda_now_items(d))",
-        "n = len(d[\"now\"])"
+        "items = agenda_now_items(d)   # one piece of work under two goals is ONE piece",
+        "items = list(d[\"now\"])   #"
       ]
     ],
     "expect": [
@@ -3073,8 +3077,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "it = out.setdefault(x[\"label\"], {",
-        "it = out.setdefault(x[\"label\"] + x[\"goal\"], {"
+        "hits = [g for g in groups if x[\"label\"] in g[\"labels\"] or prs & g[\"prs\"]]",
+        "hits = [g for g in groups if g[\"item\"][\"goals\"] == [x[\"goal\"]] and x[\"label\"] in g[\"labels\"]]"
       ]
     ],
     "expect": [
@@ -3230,8 +3234,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"goal\": \"no goal\", \"what\": _one_line(u.get(\"what\"))}",
-        "\"goal\": \"no goal\", \"what\": \"\"}"
+        "\"what\": _one_line(u.get(\"what\")), \"running\": False",
+        "\"what\": \"\", \"running\": False"
       ]
     ],
     "expect": [
@@ -3256,8 +3260,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "           if d[\"undeclared\"] else \"\") + \"</ul></div>\")",
-        "           if False else \"\") + \"</ul></div>\")"
+        "if d[\"undeclared\"] else \"\") + \"</ul>\"\n",
+        "if False else \"\") + \"</ul>\"\n"
       ]
     ],
     "expect": [
@@ -3288,19 +3292,6 @@
     ],
     "expect": [
       "r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page"
-    ]
-  },
-  {
-    "name": "the recap always says pieces (agenda-digest r2 Codex L2)",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "head = (f\"{n} piece{'s' if n != 1 else ''} of work",
-        "head = (f\"{n} pieces of work"
-      ]
-    ],
-    "expect": [
-      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
     ]
   },
   {
@@ -3366,6 +3357,307 @@
     ],
     "expect": [
       "⭐ r3 Codex L2 (owner 11-05 14:37): the agenda heading is drawn in the goals' ACCENT colour, as they are"
+    ]
+  },
+  {
+    "name": "a declared wait does not stop work counting as running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and not t.get(\"waits\"),",
+        ","
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED"
+    ]
+  },
+  {
+    "name": "a backlog row resolved to an open PR is not running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "bool(ops or t[\"state\"] == \"open\")",
+        "(t[\"state\"] == \"open\")"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: an open PR (or a row resolved to one) with no wait RUNS; a declared wait, or no PR, is OWED"
+    ]
+  },
+  {
+    "name": "the page drops undeclared open PRs from Running now (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "run = [x for x in items if x[\"running\"]] + list(d.get(\"stray\") or [])",
+        "run = [x for x in items if x[\"running\"]]"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: an open PR no goal declares is listed under Running now BY ITS TITLE — never only counted"
+    ]
+  },
+  {
+    "name": "an owed item never says what it waits for (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{_html_line(x[\"waits\"], repo) if x[\"waits\"] else \"not recorded\"}",
+        "{\"not recorded\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: each owed item says what it WAITS for, and one with no declared wait says so, never a guess"
+    ]
+  },
+  {
+    "name": "the page hides that jobs and agents are invisible to it (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        + '<p class=\"lede\">open PRs only: a background job or an agent is not visible to this page</p>'\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "owner 15:45: the page says a background job or agent is NOT visible to it, under Running now"
+    ]
+  },
+  {
+    "name": "the recap leaves undeclared PRs out of running (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ len(d.get(\"stray\") or [])   # an undeclared open PR is running too",
+        "+ 0   #"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: the recap counts running (an undeclared PR too) and owed, apart"
+    ]
+  },
+  {
+    "name": "a wait declared under a later goal is lost (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"waits\"] = it[\"waits\"] or x.get(\"waits\")",
+        "it[\"waits\"] = it[\"waits\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first"
+    ]
+  },
+  {
+    "name": "a merged item runs despite its wait (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"running\"] = (it[\"running\"] or x.get(\"running\", False)) and not it[\"waits\"]",
+        "it[\"running\"] = (it[\"running\"] or x.get(\"running\", False))"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: one item under two goals with a wait declared under EITHER is owed, whichever comes first"
+    ]
+  },
+  {
+    "name": "the empty Owed list says nothing (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "+ (\"\" if owed else \"<li>nothing owed</li>\")",
+        "+ \"\""
+      ]
+    ],
+    "expect": [
+      "owner 15:45: with nothing at all, both lists say so"
+    ]
+  },
+  {
+    "name": "a declared wait is neither linked nor escaped (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_html_line(x[\"waits\"], repo) if",
+        "x[\"waits\"] if"
+      ]
+    ],
+    "expect": [
+      "owner 15:45: a declared wait's reference LINKS and is escaped"
+    ]
+  },
+  {
+    "name": "the page puts running work under Owed (running-vs-owed)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "owed = [x for x in items if not x[\"running\"]]",
+        "owed = list(items)"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 15:45: the page lists running work and OWED work apart — each item in exactly one list"
+    ]
+  },
+  {
+    "name": "an unread row hides the thread's open PR (running-vs-owed r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ops = t.get(\"open_prs\") or (",
+        "ops = ("
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+    ]
+  },
+  {
+    "name": "a thread's named open PRs are not recorded (running-vs-owed r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{n for n in prs if n in src[\"open\"]} | ",
+        "set() | "
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+    ]
+  },
+  {
+    "name": "items merge by label, so one PR counts twice (running-vs-owed r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "x[\"label\"] in g[\"labels\"] or prs & g[\"prs\"]",
+        "x[\"label\"] in g[\"labels\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+      "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
+    ]
+  },
+  {
+    "name": "an item's key is its label, not its PR (running-vs-owed r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"prs\": list(ops)})",
+        "\"prs\": []})"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+      "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
+    ]
+  },
+  {
+    "name": "a thread with an open PR but an unread row is hidden (running-vs-owed r2 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " or t.get(\"open_prs\") or t[\"state\"] in",
+        " or t[\"state\"] in"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex H1: a thread naming an open PR, its row unread and NO ledger entry, is still listed as running"
+    ]
+  },
+  {
+    "name": "a thread records only its first open PR (running-vs-owed r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{n for n in prs if n in src[\"open\"]}",
+        "{n for n in prs[:1] if n in src[\"open\"]}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: a thread naming TWO open PRs is one item with a row resolved to its SECOND, and that row's wait holds it"
+    ]
+  },
+  {
+    "name": "an entry sharing a PR with two items joins only the first (running-vs-owed r2 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        for o in hits[1:]:",
+        "        for o in []:"
+      ]
+    ],
+    "expect": [
+      "r2 Codex M1: an entry sharing a PR with TWO items joins them into one, in first-seen order"
+    ]
+  },
+  {
+    "name": "an undeclared PR's number is not checked (running-vs-owed r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if isinstance(u, dict) and isinstance(u.get(\"pr\"), int)]",
+        "if isinstance(u, dict)]"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L1: an undeclared PR whose number is not an integer is not listed, and nothing crashes"
+    ]
+  },
+  {
+    "name": "a thread owns only the first PR its rows resolve to (running-vs-owed r3 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " | set(resolved))",
+        " | set())"
+      ]
+    ],
+    "expect": [
+      "r3 Codex M1: …so neither resolved PR is reported UNDECLARED"
+    ]
+  },
+  {
+    "name": "a resolved PR beyond the first is reported undeclared (running-vs-owed r3 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for n in t.get(\"open_prs\") or []}",
+        "for n in (t.get(\"open_prs\") or [])[:1]}"
+      ]
+    ],
+    "expect": [
+      "r3 Codex M1: …so neither resolved PR is reported UNDECLARED"
+    ]
+  },
+  {
+    "name": "joining two items drops the later one's wait (running-vs-owed r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_fold_item(g[\"item\"], o[\"item\"][\"goals\"], o[\"item\"])",
+        "_fold_item(g[\"item\"], o[\"item\"][\"goals\"], dict(o[\"item\"], waits=None))"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
+    ]
+  },
+  {
+    "name": "joining two items drops the later one's running (running-vs-owed r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "o[\"item\"][\"goals\"], o[\"item\"])\n",
+        "o[\"item\"][\"goals\"], dict(o[\"item\"], running=False))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
     ]
   }
 ]
