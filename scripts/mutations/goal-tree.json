@@ -3665,7 +3665,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    landed = [ref(c) for c in ch if c.startswith(\"[\") and \"→ ✅ merged\" in c]",
+        "    landed = [r for r, a, b in trans if b == \"merged\" and a != \"merged\"]",
         "    landed = []"
       ]
     ],
@@ -3678,8 +3678,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        ".split(\" — \", 1)[0].split(\" \", 1)[-1]",
-        ".split(\" — \", 1)[0].split(\" \", 1)[0]"
+        "    moved = [f\"{r} → {b}\" for r, a, b in trans if b != \"merged\" and a != b]",
+        "    moved = [f\"{r} → {a}\" for r, a, b in trans if b != \"merged\" and a != b]"
       ]
     ],
     "expect": [
@@ -3792,6 +3792,45 @@
     ],
     "expect": [
       "owner 17:28: NOTHING waiting is said quietly — a muted line, never a bright NEEDS YOU heading"
+    ]
+  },
+  {
+    "name": "a detail-only change on a merged thread is told as another landing (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if b == \"merged\" and a != \"merged\"]",
+        "if b == \"merged\"]"
+      ]
+    ],
+    "expect": [
+      "timeline story: a detail that SAYS '→ ✅ merged' is not a landing, and a detail-only change is not a move (r1 P2)"
+    ]
+  },
+  {
+    "name": "a hand-off keeps its ledger note in the ref (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ref(c[20:].split(\" (was in the ledger\", 1)[0])",
+        "ref(c[20:])"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: a hand-off names its ref alone, never the ledger note (r1 P2)"
+    ]
+  },
+  {
+    "name": "a plan newly owing is told as progress (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"plan not ticked closed, new: \"), \"a plan newly owing\"",
+        "(0, \"a plan newly owing\""
+      ]
+    ],
+    "expect": [
+      "timeline story: a plan newly owed, one no longer owing and progress are three different words (r1 P2)"
     ]
   }
 ]

@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 386 cases
+    python3 scripts/goal-tree.py --self-test                 # 389 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1708,29 +1708,38 @@ def story(ch: list[str]) -> str:
     if ch == ["first snapshot"]:
         return "The first snapshot."
 
-    def ref(line):  # "[fix] PR #511 · what: open → ✅ merged — …" → "PR #511"
-        return line.split("] ", 1)[1].split(" · ", 1)[0].split(":", 1)[0]
+    def ref(line):  # "[fix] PR #511 · what" → "PR #511"
+        return line.split("] ", 1)[1].split(" · ", 1)[0]
 
     def n(*pfx):
         return sum(c.startswith(pfx) for c in ch)
+
     def names(refs):   # at most three named, then a count, so one sentence stays one line
         return ", ".join(refs[:3]) + (f" and {len(refs) - 3} more" if len(refs) > 3 else "")
-
-    def to(c):   # "… open → ⏳ waits — …" → "waits"
-        return c.split("→ ", 1)[1].split(" — ", 1)[0].split(" ", 1)[-1]
-    landed = [ref(c) for c in ch if c.startswith("[") and "→ ✅ merged" in c]
-    moved = [f"{ref(c)} → {to(c)}" for c in ch if c.startswith("[") and "→ ✅ merged" not in c]
+    # A state line is "[rel] name: A → GLYPH B — detail". The TRANSITION is read from its own slot, never searched
+    # for in the whole line: a detail can say "→ ✅ merged" (timeline-story r1 Codex P2)
+    trans = [(ref(c[:m.start()]), m[1], m[2]) for c in ch if c.startswith("[")
+             for m in [re.search(r": (\w+) → \S+ (\w+) — ", c)] if m]
+    landed = [r for r, a, b in trans if b == "merged" and a != "merged"]
+    moved = [f"{r} → {b}" for r, a, b in trans if b != "merged" and a != b]
     goals = [c.split(": ", 1)[1] for c in ch if c.startswith("goal added: ")]
     bits = [f"{head} {names(refs)}" for head, refs in (
         ("goal opened:", goals), ("landed", landed),
         ("added", [ref(c[6:]) for c in ch if c.startswith("added [")]),
-        ("declared on master:", [ref(c.split(": ", 1)[1]) for c in ch if c.startswith("declared on master: ")]),
+        # "declared on master: [rel] name (was in the ledger as …): …" — the ref ends at the hand-off note (r1 P2)
+        ("declared on master:", [ref(c[20:].split(" (was in the ledger", 1)[0]) for c in ch
+                                 if c.startswith("declared on master: ")]),
         ("moved", moved), ("removed", [ref(c[8:]) for c in ch if c.startswith("removed [")]),
         ("goal removed:", [c.split(": ", 1)[1] for c in ch if c.startswith("goal removed: ")])) if refs]
-    for count, one, many in ((n("needs you, new: "), "a new ask for you", "{} new asks for you"),
+    for count, one, many in ((sum(a == b for _, a, b in trans) + n("[") - len(trans), "a thread's detail changed",
+                              "{} threads' details changed"),
+                             (n("needs you, new: "), "a new ask for you", "{} new asks for you"),
                              (n("needs you, cleared: "), "an ask cleared", "{} asks cleared"),
                              (n("agenda "), "the agenda changed", "the agenda changed"),
-                             (n("plan "), "plan progress", "plan progress"),
+                             # a plan newly owed is not progress (r1 P2): three kinds, three words
+                             (n("plan not ticked closed, new: "), "a plan newly owing", "{} plans newly owing"),
+                             (n("plan no longer owing: "), "a plan no longer owing", "{} plans no longer owing"),
+                             (n("plan progress: "), "plan progress", "plan progress"),
                              (n("in flight, ", "no longer in flight", "ledger problem", "undeclared PR"),
                               "in-flight work changed", "in-flight work changed")):
         if count:
@@ -2350,6 +2359,8 @@ def _self_test_body() -> int:
          "when its key and goal changed (r1 Codex M2)",
          ([l.split(":")[0] for l in _ch if "PR #30" in l], any(l.startswith(("added", "removed")) for l in _ch)),
          (["declared on master"], False))
+    case("timeline story, from the REAL producer: a hand-off names its ref alone, never the ledger note (r1 P2)",
+         story([l for l in _ch if l.startswith("declared on master: ")]), "Declared on master: backlog #11, PR #30.")
     _w1, _w2 = dict(_e, id="b-first"), dict(_e, id="a-second", goal="h", thread="side · PR #30 · again")
     case("backlog #505: the winner of a shared ref is the id that sorts first, whatever the FILE order — a re-add "
          "moves an entry to the end and must not move the thread (r2 Codex M1)",
@@ -3284,6 +3295,12 @@ def _self_test_body() -> int:
                 "added [fix] backlog #517 · split: ⬜ next", "[fix] backlog #511 · x: next → ❌ blocked — the reset",
                 "removed [side] PR #9"]),
          "Goal opened: product; landed PR #511; added backlog #517; moved backlog #511 → blocked; removed PR #9.")
+    case("timeline story: a detail that SAYS '→ ✅ merged' is not a landing, and a detail-only change is not a move "
+         "(r1 P2)", story(["[fix] PR #20 · w: open → ⏳ open — notes: x → ✅ merged — y",
+                           "[fix] PR #21 · w: merged → ✅ merged — sha changed"]), "2 threads' details changed.")
+    case("timeline story: a plan newly owed, one no longer owing and progress are three different words (r1 P2)",
+         story(["plan not ticked closed, new: a (0/3)", "plan no longer owing: b", "plan progress: c 1/3 → 2/3"]),
+         "A plan newly owing; a plan no longer owing; plan progress.")
     case("timeline story: past three refs it counts the rest, so one sentence stays one line",
          story([f"added [fix] PR #{n} · w: ⬜ next" for n in (1, 2, 3, 4, 5)]), "Added PR #1, PR #2, PR #3 and 2 more.")
     case("timeline story: the asks and the agenda are told by kind",
