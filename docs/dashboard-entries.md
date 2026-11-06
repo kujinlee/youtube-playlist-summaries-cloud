@@ -18844,3 +18844,8 @@ On the last day of the week the usage warning now tells me to **use** the room, 
 <!--tech-->
 `scripts/check-usage-pace.py` `evaluate`: `last_day` (after the reset's own local midnight) and `use_it` lead the WARN message; below WARN on the last day the verdict is WARN with the room, never `OK, ""`; `line_note` is dropped on the last day; the rising-stop note reads "what is left under it is lost at the reset"; `cannot()` adds "Unknown is not a stop: keep working." 320 cases (+8, two re-expected: the rising-stop text and the run-hook case at 50%, whose fixture reset is 24 h out and so IS the last day). A room under 0.1 reads "<0.1%", never "0%"; `rise_start` is ONE helper for when the stop starts rising and when USE IT starts, so they cannot disagree (across DST it keeps #510 r1 M1's ruling). 7 new mutations, 4 re-bound; pin 134 → 141.
 
+## 2026-11-05
+Closing a piece of tracked work no longer makes it silently vanish from the goal tree: if the work was never written into the goal file on master, closing it now prints a warning naming the exact line to add. Backlog #507.
+<!--tech-->
+`scripts/session-state.py`: `thread_handoff(entry, main, run)` reads `origin/master:docs/goal-threads.md` and looks for a tracked `- ` line naming one of the entry's refs as a whole ref (`PR #30` ≠ `PR #305`); `--done` calls it after removing the entry and prints the warning on stderr (a warning, never a refusal); an unreadable file is NOT CHECKED. 119 cases (+6); 6 new mutations; pin 97 → 103.
+

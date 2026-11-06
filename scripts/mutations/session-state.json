@@ -1254,5 +1254,84 @@
       ]
     ],
     "expect": "backlog #505: --goal outside --add is a stray flag, CANNOT RUN"
+  },
+  {
+    "name": "backlog #507: --done never checks the thread",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            warn = thread_handoff(closing, main, run) if removed and closing else None",
+        "            warn = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr"
+    ]
+  },
+  {
+    "name": "backlog #507: a tracked ref is matched as a prefix (PR #30 inside PR #305)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "re.search(re.escape(r) + r\"\\b\", ln)",
+        "re.search(re.escape(r), ln)"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …`PR #30` is not tracked by a line naming `PR #305`, but `PR #305` is"
+    ]
+  },
+  {
+    "name": "backlog #507: an unreadable threads file reads as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        return (f\"⚠ thread NOT CHECKED",
+        "    if rc != 0:\n        return None\n        return (f\"⚠ thread NOT CHECKED"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …an unreadable threads file says NOT CHECKED, never 'tracked'"
+    ]
+  },
+  {
+    "name": "backlog #507: every thread is treated as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if refs and any(",
+        "    if True or refs and any("
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #507: a thread whose PR no tracked line names is WARNED, naming the line and its goal",
+      "⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr"
+    ]
+  },
+  {
+    "name": "backlog #507: a blank thread is checked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not isinstance(thread, str) or not thread.strip():",
+        "    if not isinstance(thread, str):"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …an entry with no thread is silent"
+    ]
+  },
+  {
+    "name": "backlog #507: no ref of the thread is looked for, so a tracked thread warns",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "for ln in lines for r in refs)",
+        "for ln in lines for r in refs[:0])"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …a tracked line naming the same ref (a backlog row among others) is silent"
+    ]
   }
 ]
