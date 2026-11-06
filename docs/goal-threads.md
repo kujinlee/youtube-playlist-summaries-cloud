@@ -81,6 +81,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #515 · an agenda step for a partly-done row is not ticked by its PR's merge
 - fix · PR #511 · the agenda block as a recap: an accent heading, the thrust in one sentence, items with their purpose, focus by goal
 - fix · backlog #517 · the agenda lists RUNNING work apart from OWED work, and each owed item says what it waits for
+- bookkeeping · backlog #518 · two thread shapes where the Running/Owed split still mis-owns an open PR (filed from the capped round)
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
