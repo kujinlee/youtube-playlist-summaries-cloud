@@ -2544,8 +2544,12 @@ def _self_test_body() -> int:
          "def pin_display(src):\n    return {k: True for k in _real_pd(src)}\n"),
     ]:
         _rc, _o = _reader_main(_extra, _pr)
+        # ⟳ backlog #536: the held-versus-displayed comparison ALSO says CANNOT RUN for a display that is not the
+        # real harness's pins, so a bare "CANNOT RUN" let it answer for `_exact_pins` (bool pins passing an
+        # `isinstance` check were caught there, and the mutation was attributed elsewhere). The refusal must
+        # come from the reader's answer: `_exact_pins`'s TypeError on what pin_display returned.
         check(f"⭐ main() is CANNOT RUN, rc=2, when pin_display returns {_why}",
-              (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
+              (_rc, "CANNOT RUN" in _o, "mutation pins" in _o, "TypeError: pin_display" in _o), (2, True, True, True))
     _rc, _o = _reader_main("def pin_display(src):\n    return dict(_real_pd(src))\n", "32")
     check("...while a reader returning a PLAIN dict still HOLDS the fall, rc=3 (the adjacent negative)",
           (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
