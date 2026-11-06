@@ -1798,8 +1798,8 @@
         ""
       ],
       [
-        "            resolved = [int(q[\"number\"]) for q in opened]\n",
-        ""
+        "    resolved = [int(q[\"number\"]) for q in opened]\n",
+        "    resolved = []\n"
       ]
     ],
     "expect": [
@@ -2804,8 +2804,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        " and not t.get(\"parked\")\n                    and t[\"state\"] not in _FINISHED",
-        "\n                    and t[\"state\"] not in _FINISHED"
+        " and not t.get(\"parked\")\n                    and (t[\"state\"] not in _FINISHED",
+        "\n                    and (t[\"state\"] not in _FINISHED"
       ]
     ],
     "expect": [
@@ -2986,8 +2986,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                    and t[\"state\"] not in _FINISHED):",
-        "                    and True):"
+        "                    and (t[\"state\"] not in _FINISHED or t.get(\"open_prs\"))):",
+        "                    and (True or t.get(\"open_prs\"))):"
       ]
     ],
     "expect": [
@@ -3525,7 +3525,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+      "⭐ r1 Codex H1 / backlog #518: a NAMED open PR that no row's title resolves to still runs, its row unread"
     ]
   },
   {
@@ -3874,6 +3874,33 @@
     ],
     "expect": [
       "timeline story: a thread added already merged is told as landed, not merely added"
+    ]
+  },
+  {
+    "name": "backlog #518: resolved PRs are collected only when no named PR or merge takes precedence",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    resolved = [int(q[\"number\"]) for q in opened]\n    if prs:",
+        "    resolved = [int(q[\"number\"]) for q in opened] if not prs and not any(re.search(rf\"\\(backlog #{n}\\)\", s_) for _, _, s_ in src.get(\"merged_rows\") or [] for n in live_rows) else []\n    if prs:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #518: a MIXED thread — one row merged, another resolving to an open PR — owns that PR, and its wait holds it",
+      "⭐ backlog #518: …and a named MERGED PR beside a row resolving to an open PR owns it too"
+    ]
+  },
+  {
+    "name": "backlog #518: a finished leaf that owns an open PR is dropped from the agenda",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(t[\"state\"] not in _FINISHED or t.get(\"open_prs\"))):   # backlog #518",
+        "t[\"state\"] not in _FINISHED):   # backlog #518"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #518: a MIXED thread — one row merged, another resolving to an open PR — owns that PR, and its wait holds it"
     ]
   }
 ]

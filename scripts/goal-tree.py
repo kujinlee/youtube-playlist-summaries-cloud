@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 393 cases
+    python3 scripts/goal-tree.py --self-test                 # 397 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -432,7 +432,12 @@ def derive_thread(t: dict, src: dict) -> dict:
     whens: list = []          # backlog #497: the merge minute of every merged PR (None where it was not read)
     closes: list = []         # review r1 C6: the close minute of every closed PR (None where it was not read)
     open_pr = None            # review r1 X1: the open PR a backlog-only thread resolved to by its TITLE
-    resolved: list = []       # running-vs-owed r3 Codex M1: EVERY open PR its rows resolved to, not only the first
+    # running-vs-owed r3 Codex M1: EVERY open PR its rows resolve to, not only the first — and (backlog #518) whatever
+    # the leaf shows: a MIXED thread (one ref merged, a live row resolving to an open PR) took the merged branch below
+    # and owned none, so its open PR showed as stray RUNNING work past the thread's declared wait.
+    opened = [p for p in (src.get("open") or {}).values()
+              if any(re.search(rf"\bbacklog #{n}\b", p.get("title") or "") for n in live_rows)]
+    resolved = [int(q["number"]) for q in opened]
     if prs:
         found = [_pr_state(n, src) for n in prs]
         state = next(s for s in PRECEDENCE if any(f[0] == s for f in found))
@@ -444,15 +449,12 @@ def derive_thread(t: dict, src: dict) -> dict:
     else:
         hit = next(((sha, pr) for sha, pr, subj in src["merged_rows"]
                     if any(re.search(rf"\(backlog #{n}\)", subj) for n in live_rows)), None)
-        opened = [p for p in src["open"].values()
-                  if any(re.search(rf"\bbacklog #{n}\b", p.get("title") or "") for n in live_rows)]
         if hit:
             whens = [(src.get("all_merged_at") or {}).get(hit[1]) or (src.get("merged_at") or {}).get(hit[0])]
             state, detail = "merged", f"merged {merge_when(whens[0])} · {hit[0]} via PR #{hit[1]}"
         elif opened:
             p = opened[0]
             open_pr = int(p["number"])
-            resolved = [int(q["number"]) for q in opened]
             state, detail = "open", (f"PR #{p['number']} open" + (" · draft" if p.get("isDraft") else "")
                                      + " · " + _SS.check_summary(p.get("statusCheckRollup")))
         else:
@@ -1332,7 +1334,7 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
             # merged threads, PR #411 among them, read as in flight on the live tree)
             # running-vs-owed r2 Codex H1: a thread with an OPEN PR is in flight whatever its worst state reads
             if ((t.get("inflight") or t.get("open_prs") or t["state"] in ("open", "inflight")) and not t.get("parked")
-                    and t["state"] not in _FINISHED):
+                    and (t["state"] not in _FINISHED or t.get("open_prs"))):   # backlog #518: a finished leaf still OWNING an open PR is live
                 # owner 11-05 15:45 (card A): RUNNING is an open PR nothing declares a wait on; the rest is OWED, with the
                 # wait it declares (`· waits on …`) or none recorded — the tree cannot see a background job or agent
                 ops = t.get("open_prs") or ([t["open_pr"]] if t.get("open_pr") is not None else [])
@@ -3795,6 +3797,12 @@ def _self_test_body() -> int:
              _rv(_rt("- fix · PR #30, backlog #11 · w\n"), fates=None,
                  ledger=[{"id": "j", "what": "building backlog #11", "on_done": "d", "at": "t"}]),
              [("PR #30, backlog #11", True, None)])
+        # backlog #518 moved `resolved` before the precedence, so the case above now also reaches PR #30 through backlog #11's
+        # TITLE: a named PR NO row resolves to is what still tests that the named ones are recorded (sweep shard 18, PR #516)
+        case("⭐ r1 Codex H1 / backlog #518: a NAMED open PR that no row's title resolves to still runs, its row unread",
+             _rv(_rt("- fix · PR #21, backlog #12 · w\n"), fates=None,
+                 ledger=[{"id": "j", "what": "building backlog #12", "on_done": "d", "at": "t"}]),
+             [("PR #21, backlog #12", True, None)])
         _two = ('## GOAL gb\n> 2026-11-01 09:00 "b"\n- fix · backlog #11 · via its row\n')
         case("⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
              _rv(_rt("- fix · PR #30 · named\n" + _two)), [("PR #30", True, None)])
@@ -3810,6 +3818,12 @@ def _self_test_body() -> int:
              _rv(_rt("- fix · backlog #11, backlog #12 · two rows · waits on the owner\n"),
                  open={30: {"number": 30, "title": "a (backlog #11)"}, 31: {"number": 31, "title": "b (backlog #12)"}}),
              [("backlog #11, backlog #12", False, "the owner")])
+        case("⭐ backlog #518: a MIXED thread — one row merged, another resolving to an open PR — owns that PR, and its wait holds it",
+             _rv(_rt("- fix · backlog #10, backlog #11 · mixed · waits on the owner\n")), [("backlog #10, backlog #11", False, "the owner")])
+        case("⭐ backlog #518: …and a named MERGED PR beside a row resolving to an open PR owns it too",
+             _rv(_rt("- fix · PR #20, backlog #11 · mixed · waits on the owner\n")), [("PR #20, backlog #11", False, "the owner")])
+        case("backlog #518: …so the mixed thread's open PR is not reported UNDECLARED",
+             [u["pr"] for u in derive(_rt("- fix · PR #20, backlog #11 · mixed\n"), src(), "t")["undeclared"]], [21, 99])
         case("r3 Codex M1: …so neither resolved PR is reported UNDECLARED",
              [u["pr"] for u in derive(_rt("- fix · backlog #11, backlog #12 · two rows\n"), src(
                  open={30: {"number": 30, "title": "a (backlog #11)"}, 31: {"number": 31, "title": "b (backlog #12)"},
