@@ -18844,6 +18844,7 @@ On the last day of the week the usage warning now tells me to **use** the room, 
 <!--tech-->
 `scripts/check-usage-pace.py` `evaluate`: `last_day` (after the reset's own local midnight) and `use_it` lead the WARN message; below WARN on the last day the verdict is WARN with the room, never `OK, ""`; `line_note` is dropped on the last day; the rising-stop note reads "what is left under it is lost at the reset"; `cannot()` adds "Unknown is not a stop: keep working." 320 cases (+8, two re-expected: the rising-stop text and the run-hook case at 50%, whose fixture reset is 24 h out and so IS the last day). A room under 0.1 reads "<0.1%", never "0%"; `rise_start` is ONE helper for when the stop starts rising and when USE IT starts, so they cannot disagree (across DST it keeps #510 r1 M1's ruling). 7 new mutations, 4 re-bound; pin 134 → 141.
 
+## 2026-11-05
 Two checks that sometimes went red on unrelated pull requests, purely by luck of timing or ordering, now behave the same on every run. Backlog #506, its two known instances; a broader check for the whole class is still open.
 <!--tech-->
 `check-review-decision.py`: a case gives tied components one per round in REVERSE order, so dropping `sorted()` fails under every `PYTHONHASHSEED` (measured at seeds 266 and 312, where the old case passed). `check-selftest-counts.py`: a case patches `concurrent.futures.as_completed` to yield futures in reverse, so the "completion order" mutant fails on every run. Each joins its mutation's `expect`. 119 and 60 cases (+1 each).
