@@ -1039,7 +1039,10 @@ jobs:
     # `copy2` preserves mtime and size, so the repository's own 89-file cache arrived looking
     # current.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # ⟳ 2026-11-06, backlog #506: the SCHEDULED sweep runs every suite under TWO hash seeds (see `--seeds`
+    # below), so its shard does about twice the work — slowest shard ~1,184s at one seed (N=18), so ~2,400s
+    # PREDICTED, not measured, at two. 60 on the schedule only; every other event keeps 30.
+    timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
       # cancelling them turns one finding into an unknown — the reader needs every survivor
@@ -1225,8 +1228,22 @@ jobs:
           SHARD_TOTAL: ${{ strategy.job-total }}
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          RUN_ID: ${{ github.run_id }}
+        # ⟳ 2026-11-06, backlog #506 — THE CLASS CHECK. A mutant can be "killed" only when a hash order falls
+        # the right way (measured: dropping `sorted()` in check-review-decision survived under 4 seeds of
+        # 0-599), and then it reds an unrelated PR's sweep about once in N runs. On the SCHEDULE only, every
+        # suite runs under two PYTHONHASHSEEDs: 0, and one that changes every run (1 + run_id mod 2**32-1,
+        # never 0), so the daily sweep samples a new seed each day. A mutant killed under one and not the
+        # other is NONDETERMINISTIC, the shard is red, and `sweep-red-alert` files it like any red sweep —
+        # the log names both seeds, so it reproduces with `--seeds A,B`.
+        # ⛔ NOT ON PULL REQUESTS (the coordinator's call, 2026-11-06): doubling a PR's ~20-minute sweep and
+        # its share of the account's 20 concurrent jobs costs every PR to catch a ~1-in-120 defect class.
         run: |
           set -u
+          SEEDS=""
+          if [ "$EVENT" = "schedule" ]; then
+            SEEDS="0,$(( 1 + RUN_ID % 4294967295 ))"
+          fi
           CHANGED="$RUNNER_TEMP/changed.txt"
           rm -f "$CHANGED"
           if [ "$EVENT" = "pull_request" ]; then
@@ -1238,7 +1255,7 @@ jobs:
           fi
           python3 scripts/check-plan-code.py --mutate . \
             --shard0 "$SHARD_INDEX/$SHARD_TOTAL" \
-            --event "$EVENT" --changed "$CHANGED"
+            --event "$EVENT" --changed "$CHANGED" ${SEEDS:+--seeds "$SEEDS"}
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N

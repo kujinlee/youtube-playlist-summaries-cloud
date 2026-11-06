@@ -139,7 +139,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "timeout=SUITE_TIMEOUT,\n                           env=mutation_env(d))",
+        "timeout=SUITE_TIMEOUT,\n                           env=mutation_env(d, seed))",
         "timeout=SUITE_TIMEOUT)"
       ]
     ],
@@ -503,8 +503,8 @@
     "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase — the long one — is the one with no progress",
     "edits": [
       [
-        "progress=progress)",
-        "progress=None)"
+        "progress=progress, seeds=",
+        "progress=None, seeds="
       ]
     ],
     "expect": "every phase of --mutate reports its position when a caller asks",
@@ -1083,8 +1083,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only, scope)}\")",
-        "              f\"{len(verdict.survivors)} survivor(s)\")"
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only, scope)}\"\n",
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n"
       ]
     ],
     "expect": [
@@ -1584,7 +1584,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                           env=mutation_env(d))\n",
+        "                           env=mutation_env(d, seed))\n",
         "                           env=child_env(d))\n"
       ]
     ],
@@ -2021,8 +2021,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "{shard_label(shard, only, scope)}\")\n\n\n# One terminal row",
-        "{shard_label(shard, only)}\")\n\n\n# One terminal row"
+        "{shard_label(shard, only, scope)}\"\n            + (f\" under PYTHONHASHSEED",
+        "{shard_label(shard, only)}\"\n            + (f\" under PYTHONHASHSEED"
       ]
     ],
     "expect": [
@@ -2211,6 +2211,281 @@
     "expect": [
       "⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
       "backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py"
+    ]
+  },
+  {
+    "name": "backlog #506: mutation_env never hands the seed to the child",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        env[\"PYTHONHASHSEED\"] = str(seed)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ mutation_env hands a seed to the CHILD as PYTHONHASHSEED"
+    ]
+  },
+  {
+    "name": "backlog #506: run_suite_parts builds the child's env without the seed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "env=mutation_env(d, seed))",
+        "env=mutation_env(d))"
+      ]
+    ],
+    "expect": [
+      "⭐ the seed REACHES the child's hashing: one seed repeats its hash, another seed differs"
+    ]
+  },
+  {
+    "name": "backlog #506: run_suite drops the seed on its way to run_suite_parts",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "rc, out, err = run_suite_parts(d, name, seed)",
+        "rc, out, err = run_suite_parts(d, name)"
+      ]
+    ],
+    "expect": [
+      "⭐ the seed REACHES the child's hashing: one seed repeats its hash, another seed differs"
+    ]
+  },
+  {
+    "name": "backlog #506: killed under one seed and spared under another reads as an ordinary verdict",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if killed and spared:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...a seed that prints the same red case but exits 3 is SPARED under it, so the mutant is NONDETERMINISTIC"
+    ]
+  },
+  {
+    "name": "backlog #506: a seed that cannot run is not a cannot-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if rc == 2:\n            return 2, f\"[under",
+        "        if rc == 99:\n            return 2, f\"[under"
+      ]
+    ],
+    "expect": [
+      "⛔ a seed that CANNOT RUN makes the mutant a cannot-run (rc 2) naming that seed — never killed"
+    ]
+  },
+  {
+    "name": "backlog #506: killed under every seed by DIFFERENT cases reads as an ordinary kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if len({tuple(v) for v in reds.values()}) > 1:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...killed under every seed but by DIFFERENT cases is NONDETERMINISTIC too (the named kill was luck)"
+    ]
+  },
+  {
+    "name": "backlog #506: --seeds accepts a single seed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if len(seeds) < 2:",
+        "    if len(seeds) < 1:"
+      ]
+    ],
+    "expect": [
+      "...ONE seed is refused — a single seed cannot show a kill that depends on the seed"
+    ]
+  },
+  {
+    "name": "backlog #506: --seeds accepts a repeated seed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if len(set(seeds)) != len(seeds):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...a REPEATED seed is refused — it would run the same order twice and call it two",
+      "--mutate /nonexistent-root is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "backlog #506: --seeds accepts a negative or out-of-range seed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not p.isdigit() or int(p) > SEED_MAX:",
+        "        if not p.lstrip(\"-\").isdigit():"
+      ]
+    ],
+    "expect": [
+      "...a seed outside 0..4294967295, or not a number, is refused"
+    ]
+  },
+  {
+    "name": "backlog #506: the control runs under the FIRST seed only, so a control red under another forges a kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    for seed in (seeds or (None,)):",
+        "    for seed in (seeds or (None,))[:1]:"
+      ]
+    ],
+    "expect": [
+      "⛔ #506 ADVERSARIAL: a control red under ONE seed refuses the run, naming that seed — never KILLED"
+    ]
+  },
+  {
+    "name": "backlog #506: a red control's report stops naming the seed it was red under",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            return rc, so, (se if seed is None else f\"[under PYTHONHASHSEED={seed}] {se}\")",
+        "            return rc, so, se"
+      ]
+    ],
+    "expect": [
+      "⛔ #506 ADVERSARIAL: a control red under ONE seed refuses the run, naming that seed — never KILLED"
+    ]
+  },
+  {
+    "name": "backlog #506: mutate_delivered runs its BEFORE-control unseeded",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "rc, so, se = control_parts(d, name, seeds)\n            control_seconds",
+        "rc, so, se = control_parts(d, name, None)\n            control_seconds"
+      ]
+    ],
+    "expect": [
+      "⛔ #506 ADVERSARIAL: a control red under ONE seed refuses the run, naming that seed — never KILLED"
+    ]
+  },
+  {
+    "name": "backlog #506: mutate_delivered never passes the seeds to the mutation runs",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "progress=progress, seeds=seeds)",
+        "progress=progress)"
+      ]
+    ],
+    "expect": [
+      "#506: --mutate under two seeds runs each mutation under both, to a full verdict"
+    ]
+  },
+  {
+    "name": "backlog #506: main() parses --seeds and never passes them to the run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "only=only, seeds=seeds,",
+        "only=only,"
+      ]
+    ],
+    "expect": [
+      "⭐ #506: main() wires --seeds to the run, and the verdict line names the seeds, rc=0"
+    ]
+  },
+  {
+    "name": "backlog #506: --seeds without --mutate is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not a.mutate:\n            print(\"CANNOT RUN — --seeds",
+        "        if False:\n            print(\"CANNOT RUN — --seeds"
+      ]
+    ],
+    "expect": [
+      "--seeds 3,5 is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "backlog #506: main() ignores a --seeds refusal",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seeds, why = parse_seeds(a.seeds)\n        if why:",
+        "seeds, why = parse_seeds(a.seeds)\n        if False:"
+      ]
+    ],
+    "expect": [
+      "--mutate /nonexistent-root is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "backlog #506: run_mutations ignores a NONDETERMINISTIC outcome and credits the kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if odd:\n            ok = False",
+        "        if False:\n            ok = False"
+      ]
+    ],
+    "expect": [
+      "⭐ #506 END TO END: a fake suite whose kill depends on the seed is NONDETERMINISTIC and RED"
+    ]
+  },
+  {
+    "name": "backlog #506: run_mutations takes the unseeded path even when given seeds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if seeds:\n            rc, out, odd = seed_outcome",
+        "        if False:\n            rc, out, odd = seed_outcome"
+      ]
+    ],
+    "expect": [
+      "⭐ #506 END TO END: a fake suite whose kill depends on the seed is NONDETERMINISTIC and RED"
+    ]
+  },
+  {
+    "name": "backlog #506: the tally stops counting NONDETERMINISTIC mutants",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "              f\"{f'{_nd} NONDETERMINISTIC (among the survivors), ' if _nd else ''}\"",
+        "              \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ #506: the tally COUNTS a nondeterministic mutant separately and is never 'killed' for it"
+    ]
+  },
+  {
+    "name": "backlog #506: the tally stops naming the seeds it was measured under",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            + (f\" under PYTHONHASHSEED {', '.join(map(str, _seeds))}\" if _seeds else \"\"))",
+        "            + \"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #506: the tally COUNTS a nondeterministic mutant separately and is never 'killed' for it",
+      "⭐ #506: main() wires --seeds to the run, and the verdict line names the seeds, rc=0"
+    ]
+  },
+  {
+    "name": "backlog #506: a killed mutant's evidence entry stops recording the seeds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            ev_muts[-1][\"seeds\"] = list(seeds)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "...ADJACENT: the SAME mutant under two seeds that both kill it is KILLED and attributed"
     ]
   }
 ]
