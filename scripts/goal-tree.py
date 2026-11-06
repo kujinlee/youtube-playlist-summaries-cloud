@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 397 cases
+    python3 scripts/goal-tree.py --self-test                 # 416 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1043,6 +1043,11 @@ AGENDA_FIELDS = {"agenda": (("id", int), ("window", str), ("steps", list)),
                  "tick": (("of", int), ("step", int))}
 WHEN_RE = re.compile(r"^## (\S.*)$")
 STEP_RE = re.compile(r"^- (\S.*)$")
+# ⛔ the kinds a ref names: exactly what the step grammar (`REF_RE`) writes. A ref of any other kind, or not a
+# [kind, int] pair, is MALFORMED where it is read — never a TypeError in derivation (backlog #504).
+# DERIVED from the alternation group of `REF_RE` (a new kind added to the grammar is a known kind here, never a log
+# the writer produces and the reader refuses)
+REF_KINDS = tuple(re.search(r"\(([^()]*)\)", REF_RE.pattern).group(1).split("|"))
 FREE = "free"            # a step naming no backlog row or PR: its state is the owner-visible tick, never derived
 
 
@@ -1090,10 +1095,22 @@ def parse_agenda(text: str) -> dict:
     return {"window": window, "change_if": change_if, "steps": steps}
 
 
+# ⛔ ONE line model for the reader and both writers, so a log that reads is never refused on write, nor the reverse:
+# `\r\n`, a lone `\r` and `\n` each end a line — what `read_text()`'s universal newlines read (r3 Claude N1).
+_EOL = re.compile(r"\r\n|\r|\n")
+_EOL_B = re.compile(_EOL.pattern.encode())     # the same model over bytes, for the blank repair's byte offsets
+
+
+def _blank(line: str) -> bool:
+    """A line the reader skips — whitespace only, by `str.strip()` — and the ONLY kind the blank repair cuts: one
+    predicate, so the two cannot disagree about what is blank (r3 Claude N2)."""
+    return not line.strip()
+
+
 def _agenda_records(text: str, name: str) -> list[dict]:
     out = []
-    for i, ln in enumerate(text.split("\n"), 1):
-        if not ln.strip():
+    for i, ln in enumerate(_EOL.split(text), 1):
+        if _blank(ln):
             continue
         try:
             rec = json.loads(ln)
@@ -1108,6 +1125,8 @@ def _agenda_records(text: str, name: str) -> list[dict]:
                     isinstance(st, dict) and isinstance(st.get("when"), str) and isinstance(st.get("text"), str)
                     and isinstance(st.get("refs"), list) for st in rec["steps"]):
                 raise ValueError("an agenda step needs `when`, `text` and `refs`")
+            if rec["kind"] == "agenda" and not all(_ref_ok(x) for st in rec["steps"] for x in st["refs"]):
+                raise ValueError("an agenda step's refs are [kind, number] pairs of a known kind (backlog #504)")
             # ⛔ a frozen state is READ by the history and the page: each is `{n: int, state: str}`, or MALFORMED
             # here — never a TypeError in the snapshot (slice 2, r1 Codex H1)
             if rec["kind"] == "replaced" and not all(
@@ -1122,7 +1141,7 @@ def _agenda_records(text: str, name: str) -> list[dict]:
 
 def read_agenda_log(path: pathlib.Path) -> list[dict]:
     """Every agenda record, oldest first. Missing is empty; an unreadable line is Malformed."""
-    return _agenda_records(path.read_text(), path.name) if path.exists() else []
+    return _agenda_records(path.read_bytes().decode("utf-8"), path.name) if path.exists() else []
 
 
 def agendas(log: list[dict]) -> list[dict]:
@@ -1192,16 +1211,34 @@ def _locked(path: pathlib.Path, write):
     same open agenda and each close it (r1 Codex H2). `write(current_agendas)` returns the lines."""
     import fcntl
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+") as fh:
+    with path.open("a+b") as fh:       # BYTES: a text read translates CRLF, so a length it counts is no file offset (r2 Codex F1)
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
-        text = fh.read()
+        raw = fh.read()
+        keep = _blank_tail_cut(raw)
+        text = raw[:keep].decode("utf-8")
+        # ⛔ validated BEFORE the file is touched: a log refused as malformed is left exactly as it was (r2 Codex F3)
         lines, said = write(agendas(_agenda_records(text, path.name)))
-        fh.seek(0, 2)
-        if text and not text.endswith("\n"):
-            fh.write("\n")      # a last line with no newline would fuse with the next record (r3 Codex M2)
-        fh.write("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+        if keep != len(raw):
+            fh.truncate(keep)
+        out = "" if not text or text.endswith("\n") else "\n"   # a last line with no newline would fuse with the next record (r3 Codex M2)
+        fh.write((out + "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines)).encode("utf-8"))
     return said
+
+
+def _blank_tail_cut(raw: bytes) -> int:
+    """How many bytes of the log to KEEP. Only what is provably not data is cut: the blank lines AFTER the last
+    record's own line ending (backlog #504), or the whole of a log that holds nothing but blanks — lines and blanks
+    as the READER sees them (`_EOL`, `_blank`; r3 Claude N1, N2). The last record, any blanks on its own line, and
+    its line ending — `\n`, `\r\n` or a lone `\r` — are kept byte for byte (r2 Codex F1)."""
+    keep = pos = 0                               # an all-blank log holds no record: all of it is cut
+    for m in _EOL_B.finditer(raw):
+        if not _blank(raw[pos:m.start()].decode("utf-8")):
+            keep = m.end()                       # a record's line, kept WITH its own line ending
+        pos = m.end()
+    if not _blank(raw[pos:].decode("utf-8")):
+        keep = len(raw)                          # a last line with no line ending: kept whole, nothing after it
+    return keep
 
 
 def _open_or_refuse(cur: list[dict]) -> None:
@@ -1255,13 +1292,17 @@ def _is(x, typ) -> bool:
 
 
 def _ref_ok(r) -> bool:
-    return _is(r, list) and len(r) == 2 and _is(r[0], str) and _is(r[1], int)
+    return _is(r, list) and len(r) == 2 and r[0] in REF_KINDS and _is(r[1], int)
 
 
 def _steps_ok(steps, keys) -> bool:
-    return _is(steps, list) and all(isinstance(st, dict) and _is(st.get("n"), int)
-                                    and all(_is(st.get(k), t) for k, t in keys)
-                                    and all(_ref_ok(r) for r in st.get("refs") or []) for st in steps)
+    # ⛔ `refs` is a LIST before it is iterated (`"refs": 1` raised TypeError in snap_history and the page replay), and
+    # each `n` is UNIQUE (two steps of one n made changes() report a move between identical snapshots) — backlog #504
+    return (_is(steps, list) and all(isinstance(st, dict) and _is(st.get("n"), int)
+                                     and all(_is(st.get(k), t) for k, t in keys)
+                                     and _is(st.get("refs", []), list)
+                                     and all(_ref_ok(r) for r in st.get("refs", [])) for st in steps)
+            and len({st["n"] for st in steps}) == len(steps))
 
 
 def snap_agenda(snap: dict) -> tuple[str, object]:
@@ -3985,6 +4026,28 @@ def _self_test_body() -> int:
             _hv = type(exc).__name__
         case("⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too "
              "(r3 Codex L2)", _hv, (True, None, [True, True, True, True], True, True))
+        _h1 = {"id": 1, "at": "a", "replaced_at": "b", "window": "w",
+               "steps": [{"n": 1, "state": "merged", "text": "x", "refs": []}]}
+        _hrefs = dict(_h1, steps=[dict(_h1["steps"][0], refs=1)])
+        _hdup = dict(_h1, steps=[_h1["steps"][0], dict(_h1["steps"][0], text="y")])
+
+        def _hist_said(h):
+            """backlog #504: (snap_history refuses it, the page REPLAY says so) — or the crash's name, as a value."""
+            try:
+                return (snap_history({"agenda_history": [h]})[1] is not None,
+                        "earlier agendas NOT READ" in render_page([dict(_ns, agenda=_p0["agenda"], agenda_history=[h])], "t"))
+            except Exception as exc:
+                return type(exc).__name__
+        case("⛔ an earlier agenda's step whose refs is not a list is SAID by snap_history and the page replay, never "
+             "a TypeError (backlog #504)", (_hist_said(_hrefs), _hist_said(_h1)), ((True, True), (False, False)))
+        case("⛔ an earlier agenda with two steps of one n is SAID by snap_history and the page replay (backlog #504)",
+             _hist_said(_hdup), (True, True))
+        _pdup = _agn(1, "t1", [("next", "a"), ("merged", "a")])
+        _pdup["agenda"]["steps"][1]["n"] = 1
+        case("⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step "
+             "move (backlog #504)",
+             (snap_agenda(_pdup)[0], [c for c in changes(_pdup, json.loads(json.dumps(_pdup))) if c.startswith("agenda")]),
+             ("malformed", []))
         def _rec_err(states):
             try:
                 _agenda_records(json.dumps({"kind": "replaced", "at": "t", "of": 1, "states": states}), "x")
@@ -3996,6 +4059,42 @@ def _self_test_body() -> int:
              ["a frozen state needs" in (_rec_err(x) or "") for x in
               ([{"n": [], "state": "merged"}], [{"n": 1, "state": {"bad": 1}}], [{"n": True, "state": "next"}], ["x"])]
              + [_rec_err([{"n": 1, "state": "merged"}])], [True, True, True, True, None])
+
+        def _refs_err(refs):
+            """backlog #504: an agenda step with these `refs` -> True if refused as MALFORMED for its refs, None if it
+            passes, or the crash's name — a value, so a mutant reaches the case rather than crashing it."""
+            try:
+                _agenda_records(json.dumps({"kind": "agenda", "at": "t", "id": 1, "window": "w",
+                                            "steps": [{"when": "g", "text": "x", "refs": refs}]}), "x")
+                return None
+            except Malformed as exc:
+                return "[kind, number] pairs" in str(exc)
+            except Exception as exc:
+                return type(exc).__name__
+        case("⛔ an agenda step's ref that is not a list is MALFORMED where it is read (backlog #504)",
+             _refs_err([1]), True)
+        case("⛔ an agenda step's ref with no number is MALFORMED where it is read (backlog #504)",
+             _refs_err([["backlog"]]), True)
+        case("⛔ an agenda step's ref with three parts is MALFORMED where it is read (backlog #504)",
+             _refs_err([["backlog", 1, 2]]), True)
+        case("⛔ an agenda step's ref of an unknown kind is MALFORMED where it is read (backlog #504)",
+             _refs_err([["issue", 1]]), True)
+        case("⛔ an agenda step's ref whose number is not an int (a bool, a string) is MALFORMED (backlog #504)",
+             [_refs_err([["backlog", True]]), _refs_err([["PR", "1"]]), _refs_err([["backlog", 1.0]])],
+             [True, True, True])
+        case("...and an agenda step with well-formed refs of every known kind passes (backlog #504, the control)",
+             (_refs_err([["backlog", 1], ["PR", 2]]), _refs_err([])), (None, None))
+        case("the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)",
+             (sorted(REF_KINDS), [REF_RE.findall(f"{k} #7") for k in sorted(REF_KINDS)]),
+             (["PR", "backlog"], [[("PR", "7")], [("backlog", "7")]]))
+        # r2 Codex F2: the derivation splits the regex TEXT, so a grammar the split misreads (a group, an escaped `|`,
+        # a flag) drifts. Assert from the other side: every `<word> #7` the grammar ACCEPTS, over a probe of each
+        # kind's case variants and every word in the pattern text, names a known kind.
+        _probe = sorted({v for k in REF_KINDS for v in (k, k.lower(), k.upper(), k.swapcase(), k.title())}
+                        | set(re.findall(r"\w+", REF_RE.pattern)) | {"issue", "pr", "Backlog", "Pr"})
+        case("⛔ no `<word> #7` the step grammar accepts names a kind outside the known ref kinds — a case-insensitive or "
+             "regrouped grammar is caught (backlog #504, r2 Codex F2)",
+             sorted({k for w in _probe for k, _n in REF_RE.findall(f"{w} #7")} - set(REF_KINDS)), [])
 
         _ap = r / "main" / AGENDA_REL
 
@@ -4073,6 +4172,98 @@ def _self_test_body() -> int:
         case("⛔ a log whose last line has no newline is still appended to as SEPARATE records (r3 Codex M2)",
              [x["ticked"] for x in replayed(_nl)] if isinstance(replayed(_nl)[0], dict) else replayed(_nl), [[1]])
         _nl.unlink()
+        _ws = r / "ws.jsonl"
+        _ws.write_text("  \t ")
+        record_agenda(_ws, ag, "t", None)
+        case("⛔ a log that is only whitespace, with no final newline, is emptied before the newline repair — no blank "
+             "line left ahead of the first record (backlog #504)",
+             (_ws.read_text().count("\n"), _ws.read_text()[:1], [x["id"] for x in replayed(_ws)]), (1, "{", [1]))
+        _ws.unlink()
+        _tw = r / "tw.jsonl"
+        _tw.write_text(json.dumps({"kind": "agenda", "at": "t", "id": 1, "window": "w",
+                                   "steps": [{"when": "g", "text": "free", "refs": []}]}) + "\n   ")
+        record_agenda(_tw, ag, "t2", None)
+        case("⛔ a log whose last line is blanks after a record leaves no blank line before the next write (backlog #504)",
+             (_tw.read_text().count("\n"), [x["id"] for x in replayed(_tw)], "" in _tw.read_text().split("\n")[:-1]),
+             (3, [1, 2], False))
+        _tw.unlink()
+        _nn = r / "nn.jsonl"
+        _nn.write_text("\n")
+        record_agenda(_nn, ag, "t", None)
+        case("⛔ a log that is a lone newline is emptied too, so the first record is not preceded by a blank line (backlog #504)",
+             (_nn.read_text().count("\n"), _nn.read_text()[:1]), (1, "{"))
+        _nn.unlink()
+        # r2 Codex F1, the input verbatim: a CRLF log whose last record is followed by spaces. The repair cut at a
+        # length counted after newline translation, so it removed the tick's closing `}`.
+        _crlf_agenda = '{"kind":"agenda","at":"t","id":1,"window":"w","steps":[{"when":"g","text":"free","refs":[]}]}'
+        _crlf_tick = '{"kind":"tick","at":"t","of":1,"step":1}'
+        _crlf_data = (_crlf_agenda + "\r\n" + _crlf_tick + "   ").encode()
+        _cr = r / "crlf.jsonl"
+        _cr.write_bytes(_crlf_data)
+        record_agenda(_cr, ag, "t2", None)
+        case("⛔ a CRLF log is kept byte for byte ahead of the appended record — the blank repair never cuts into a "
+             "record or its line ending (backlog #504, r2 Codex F1)",
+             (_cr.read_bytes().startswith(_crlf_data),
+              [(x["id"], x["ticked"]) for x in replayed(_cr)] if isinstance(replayed(_cr)[0], dict) else replayed(_cr)),
+             (True, [(1, [1]), (2, [])]))
+        _cr.write_bytes(_crlf_agenda.encode() + b"\r\n\r\n \t")
+        record_agenda(_cr, ag, "t2", None)
+        case("...and blank lines after a CRLF record are cut after its own CRLF, which is kept (backlog #504, r2 Codex F1)",
+             _cr.read_bytes().startswith(_crlf_agenda.encode() + b"\r\n{"), True)
+        _cr.unlink()
+        # r3 Claude N1 and N2, the reviewer's inputs verbatim (`A` an agenda record, `T` a tick). The line model is
+        # written out HERE, independently of the code under test: `\r\n`, a lone `\r` and `\n` each end a line, and a
+        # line is blank when `str.strip()` empties it.
+        _A, _T = _crlf_agenda.encode(), _crlf_tick.encode()
+        _lr = r / "lone-cr.jsonl"
+
+        def _ids(path):
+            """Each agenda as (id, ticked steps), or the MALFORMED message as a one-item list."""
+            got = replayed(path)
+            return [(x["id"], x["ticked"]) for x in got] if all(isinstance(x, dict) for x in got) else got
+
+        def after_record(data):
+            """(the log replayed before, `record_agenda`'s outcome, the log replayed after, a blank line left ahead of the
+            appended record) for a log holding `data` — every outcome a value a case can name."""
+            _lr.write_bytes(data)
+            before = _ids(_lr)
+            try:
+                record_agenda(_lr, ag, "t2", None)
+                wrote = "ok"
+            except Malformed as exc:
+                wrote = f"Malformed: {exc}"
+            lines = re.split(r"\r\n|\r|\n", _lr.read_bytes().decode("utf-8"))
+            after = _ids(_lr)
+            return before, wrote, after, any(not ln.strip() for ln in lines[:-1])
+        case("⛔ a log whose lines end in a lone CR is read AND written: the writers' line model is the reader's "
+             "(backlog #504, r3 Claude N1)",
+             after_record(_A + b"\r" + _T + b"\r"), ([(1, [1])], "ok", [(1, [1]), (2, [])], False))
+        case("⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the "
+             "reader and the cut (backlog #504, r3 Claude N2)",
+             ([after_record(_A + t)[1:] for t in (b"\n\x0c", b"\n\x0b\n", b"\n\xc2\xa0", b"\r\r\n", b"\r   ")],
+              after_record(b"\x0c\n")[1:], _lr.read_bytes()[:1]),
+             ([("ok", [(1, []), (2, [])], False)] * 5, ("ok", [(1, [])], False), b"{"))
+        _lr.unlink()
+        # r2 Codex F3, the input verbatim: an unfinished record whose string ends in spaces. Recording is refused,
+        # and the refused log is left exactly as it was — nothing is cut before the log is validated.
+        _uf = r / "unfinished.jsonl"
+
+        def refused_unchanged(data):
+            """(refused as malformed, the log left exactly as it was) for a log holding `data`."""
+            _uf.write_text(data)
+            try:
+                record_agenda(_uf, ag, "t", None)
+                refused = False
+            except Malformed:
+                refused = True
+            return refused, _uf.read_text() == data
+        # the second input has a blank tail the repair WOULD cut — so the order (validate, then cut) is what is tested
+        case("⛔ a log recording refuses as malformed is left unchanged — nothing is cut before it is validated "
+             "(backlog #504, r2 Codex F3)",
+             [refused_unchanged('{"kind":"agenda","text":"unfinished   '),
+              refused_unchanged('{"kind":"agenda","text":"unfinished\n  \t')],
+             [(True, True), (True, True)])
+        _uf.unlink()
 
         def replay_err(recs):
             try:
