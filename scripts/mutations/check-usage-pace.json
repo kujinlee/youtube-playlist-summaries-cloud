@@ -1742,7 +1742,7 @@
       ]
     ],
     "expect": [
-      "#510: the message says the stop is rising, its value now, and when it reaches 99"
+      "#510: the message says the stop is rising, its value now, and when its NEXT stop comes (backlog #525: the hard limit at the last night)"
     ]
   },
   {
