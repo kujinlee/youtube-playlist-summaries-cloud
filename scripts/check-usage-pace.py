@@ -144,7 +144,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 326 cases
+    python3 scripts/check-usage-pace.py --self-test  # 327 cases
 """
 from __future__ import annotations
 
@@ -1769,6 +1769,15 @@ def _self_test_body() -> int:
                   decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
             git("checkout", "-q", "-", cwd=main_co)
             git("branch", "-D", "-q", "origin/master", cwd=main_co)
+            # r2 Codex: a `refs/replace` entry for the guard's blob does not substitute it
+            _blob = subprocess.run(["git", "rev-parse", "refs/remotes/origin/master:scripts/check-usage-pace.py"], cwd=main_co,
+                                   capture_output=True, text=True, check=True).stdout.strip()
+            _gut = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=main_co, input="import sys\nsys.exit(0)\n",
+                                  capture_output=True, text=True, check=True).stdout.strip()
+            git("replace", _blob, _gut, cwd=main_co)
+            check("backlog #522 r2: a refs/replace entry swapping the guard's blob is ignored — still DENIES",
+                  decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
+            git("replace", "-d", _blob, cwd=main_co)
             _elsewhere = os.path.join(tmp, "elsewhere")
             os.makedirs(_elsewhere)
             git("init", "-q", cwd=_elsewhere)
@@ -1778,8 +1787,9 @@ def _self_test_body() -> int:
             _rc, _out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522"}')
             check("⭐ backlog #522: no origin/master — the prompt hook SAYS cannot run, never runs the checkout's copy",
                   (_rc, "CANNOT RUN" in _out, "could not be read" in _out, "WARN at 80%" in _out), (0, True, True, False))
-            check("backlog #522: …and the spawn hook exits 1 (visible, non-blocking) with nothing on stdout",
-                  hook("usage-pace-spawn.sh", 98.5), (1, ""))
+            _rc, _out = hook("usage-pace-spawn.sh", 98.5)
+            check("backlog #522: …and the spawn hook ALLOWS (unknown is not a stop) but SAYS so in a systemMessage",
+                  (_rc, decision(_out), "CANNOT RUN" in hso(_out).get("systemMessage", "")), (0, None, True))
             git("update-ref", "refs/remotes/origin/master", "HEAD", cwd=main_co)
             check("run-hook: ALLOW_SPAWN_OVER_LIMIT=1 lets a 98.5% spawn through",
                   hook("usage-pace-spawn.sh", 98.5, **{OVERRIDE_ENV: "1"}), (0, ""))
