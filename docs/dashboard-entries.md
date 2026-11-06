@@ -18844,3 +18844,8 @@ On the last day of the week the usage warning now tells me to **use** the room, 
 <!--tech-->
 `scripts/check-usage-pace.py` `evaluate`: `last_day` (after the reset's own local midnight) and `use_it` lead the WARN message; below WARN on the last day the verdict is WARN with the room, never `OK, ""`; `line_note` is dropped on the last day; the rising-stop note reads "what is left under it is lost at the reset"; `cannot()` adds "Unknown is not a stop: keep working." 320 cases (+8, two re-expected: the rising-stop text and the run-hook case at 50%, whose fixture reset is 24 h out and so IS the last day). A room under 0.1 reads "<0.1%", never "0%"; `rise_start` is ONE helper for when the stop starts rising and when USE IT starts, so they cannot disagree (across DST it keeps #510 r1 M1's ruling). 7 new mutations, 4 re-bound; pin 134 → 141.
 
+
+## 2026-11-05
+A pull request that changes the dashboard's grammar now re-tests the session-summary tool that depends on it; before, that test only ran in the nightly full sweep. Backlog #498.
+<!--tech-->
+`scripts/check-plan-code.py` `_import_spellings`: the scoped sweep's import closure also matches a sibling loaded by its FILENAME (`"gen-dashboard.py"`, `'x.py'`), so `check-dashboard-entry.py` → `gen-dashboard.py` → `compaction-state.py` selects `compaction-state`'s manifest. Two cases (a two-hop synthetic chain; the real tree's chain); one new mutation, one re-bound (PR #496's stem mutation now drops only the stem spellings); pin 177 → 178; 310 cases.

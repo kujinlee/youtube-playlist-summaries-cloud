@@ -448,7 +448,7 @@ def _import_spellings(stem: str) -> set:
     """The spellings that IMPORT module `stem`: its stem quoted (`_sibling`, `import_module`, a
     `_load` wrapper) and, for an identifier, `import stem` / `from stem import`. Prose that only
     MENTIONS a module is not among them — the import graph is closed over these alone (r1 C5)."""
-    out = {f'"{stem}"', f"'{stem}'"}
+    out = {f'"{stem}"', f"'{stem}'", f'"{stem}.py"', f"'{stem}.py'"}   # backlog #498: `_load("gen-dashboard.py", …)`
     if stem.isidentifier():
         out |= {f"import {stem}\n", f"import {stem} ", f"import {stem},", f", {stem}\n",
                 f"from {stem} import"}
@@ -1724,7 +1724,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-04, PR #496 r1: 168 -> 174, one per selector fix (X1, C2 twice, C3, C5 twice).
     # ⟳ PR #496 r2 X2: 174 -> 177 — a walker of `scripts/` is selected: the rule, the loop-variable
     # dataflow, and the one-file-path negative.
-    "scripts/check-plan-code.py": 177,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    "scripts/check-plan-code.py": 178,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -7021,6 +7021,14 @@ def _self_test_body() -> int:
     case("⭐ r1 X1 on the real tree: gen-work-lines.py selects goal-tree, which loads it by stem",
          "scripts/goal-tree.py" in (_rsel("scripts/gen-work-lines.py") or {"scripts/goal-tree.py"}),
          True)
+    # two hops, so naming the changed file is not what selects check-a: it reaches check-c only through gen-b
+    _FN = {"scripts/check-a.py": 'gd = _load("gen-b.py", "_b")\n', "scripts/gen-b.py": 'c = _load("check-c", "_c")\n',
+           "scripts/check-c.py": "", "scripts/check-z.py": "y = 1\n"}
+    case("⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
+         _sel(["scripts/check-c.py"], src=_FN), frozenset({"scripts/check-c.py", "scripts/gen-b.py", "scripts/check-a.py"}))
+    _r498 = _rsel("scripts/check-dashboard-entry.py")
+    case("backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py",
+         (_r498 is not None, "scripts/compaction-state.py" in (_r498 or set())), (True, True))
     # C2: a reader that walks a whole staged root is selected by ANY change under it.
     _WK = {"scripts/check-w.py": "for p in (ROOT / 'docs').rglob('*.md'): pass\n",
            "scripts/check-n.py": "IDX = 'docs/memory/MEMORY.md'\n",
