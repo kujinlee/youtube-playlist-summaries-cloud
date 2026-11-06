@@ -160,8 +160,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "_write(path, entries, raw)\n\n\ndef ledger_done",
-        "_write(path, entries, [])\n\n\ndef ledger_done"
+        "_write(path, entries, raw)\n\n\ndef ledger_take",
+        "_write(path, entries, [])\n\n\ndef ledger_take"
       ]
     ],
     "expect": [
@@ -1254,5 +1254,162 @@
       ]
     ],
     "expect": "backlog #505: --goal outside --add is a stray flag, CANNOT RUN"
+  },
+  {
+    "name": "backlog #507: --done never checks the thread",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            warn = thread_handoff(closing, main, run) if closing is not None else None",
+        "            warn = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr"
+    ]
+  },
+  {
+    "name": "backlog #507: a tracked ref is matched as a prefix (PR #30 inside PR #305)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    tracked = {tuple(r) for g in goals",
+        "    tracked = {(r[0], int(str(r[1])[:2])) for g in goals"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …`PR #30` is not tracked by a line naming `PR #305`, but `PR #305` is"
+    ]
+  },
+  {
+    "name": "backlog #507: an unreadable threads file reads as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        return f\"⚠ thread NOT CHECKED",
+        "    if rc != 0:\n        return None\n        return f\"⚠ thread NOT CHECKED"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …an unreadable threads file says NOT CHECKED, never 'tracked'"
+    ]
+  },
+  {
+    "name": "backlog #507: every thread is treated as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if refs & tracked:",
+        "    if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #507: a thread whose PR no tracked line names is WARNED, naming the line and its goal",
+      "⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr"
+    ]
+  },
+  {
+    "name": "backlog #507: a blank thread is checked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not isinstance(thread, str) or not thread.strip():",
+        "    if not isinstance(thread, str):"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …an entry with no thread is silent"
+    ]
+  },
+  {
+    "name": "backlog #507: no ref of the thread is looked for, so a tracked thread warns",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    refs = {tuple(r) for r in mine[\"refs\"]}",
+        "    refs = set()"
+      ]
+    ],
+    "expect": [
+      "backlog #507: …a tracked line naming the same ref (a backlog row among others) is silent"
+    ]
+  },
+  {
+    "name": "backlog #507 r1: a tracked line's whole text is searched, not its refs field",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "for t in g[\"threads\"] for r in t[\"refs\"]}",
+        "for t in g[\"threads\"] for r in t[\"refs\"]} | {(k, int(n)) for k, n in re.findall(r\"\\b(PR|backlog) #(\\d+)\", out)}"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r1: a ref named only in a tracked line's WHAT is not a declaration — it warns"
+    ]
+  },
+  {
+    "name": "backlog #507 r2: a threads file goal-tree refuses reads as tracked",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    except gt.Malformed as e:\n        return f\"⚠ thread NOT CHECKED",
+        "    except gt.Malformed as e:\n        return None\n        return f\"⚠ thread NOT CHECKED"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r2: a file goal-tree REFUSES (a stray heading) is NOT CHECKED, even when it names the ref"
+    ]
+  },
+  {
+    "name": "backlog #507 r2: an entry thread that does not parse is silent",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if mine is None:\n        return f\"⚠ this entry",
+        "    if mine is None:\n        return None\n        return f\"⚠ this entry"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r2: an entry thread that does not parse says so"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: --done reads the entry before the lock that removes it",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            closing = ledger_take(led, args.done)\n",
+        "            closing = next((e for e in read_ledger(led)[0] if e.get(\"id\") == args.done), None)\n            ledger_take(led, args.done)\n"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: --done checks the entry it REMOVED, so a re-add racing it still warns"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: an entry thread written with its bullet is not normalised",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "gt.parse_thread_line(\"- \" + thread.removeprefix(\"- \"))",
+        "gt.parse_thread_line(\"- \" + thread)"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: an entry thread written WITH its bullet (`- fix · …`) reads as goal-tree reads it"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: refs compare by number alone",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if refs & tracked:\n        return None\n",
+        "    if {r[1] for r in refs} & {r[1] for r in tracked}:\n        return None\n"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`"
+    ]
   }
 ]
