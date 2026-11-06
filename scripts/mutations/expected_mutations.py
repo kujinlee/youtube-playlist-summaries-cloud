@@ -340,7 +340,10 @@ EXPECTED_MUTATIONS = {
     # --ink-soft on the fold summary and counts (C5: 2), and the closed PR's age (C6: 2).
     # ⟳ same day, review round 2's fold: 150 -> 152 — recency judged across EVERY ref, not the aggregate's time,
     # and an unread ref time never folds (X1: 2).
-    "scripts/goal-tree.py": 300,
+    # ⟳ 2026-11-06, backlog #504 r3 fold: 312 -> 314 — a lone CR ends a line for reader and writers alike (N1),
+    # and the blank repair's blank is the reader's (N2); four blank-repair entries re-anchored onto the rewrite.
+    # ⟳ 2026-11-06, merging master (backlog #518, PR #516: 298 -> 300) into backlog #504: 316, the merged manifest's count.
+    "scripts/goal-tree.py": 316,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
