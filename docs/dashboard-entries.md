@@ -18870,6 +18870,11 @@ Closing a piece of tracked work no longer makes it silently vanish from the goal
 <!--tech-->
 `scripts/session-state.py`: `thread_handoff(entry, main, run)` reads `origin/master:docs/goal-threads.md` and parses the entry's thread and the file with goal-tree's own parsers (`parse_thread_line`, `parse_threads`) and compares their refs as (kind, number) — a ref in a line's WHAT text does not count, `PR #30` ≠ `PR #305`, `PR #030` = `PR #30`; `--done` calls it after removing the entry and prints the warning on stderr (a warning, never a refusal); an unreadable file, one goal-tree refuses, or an entry thread that does not parse is NOT CHECKED; the entry checked is the one removed under the ledger lock. 129 cases (+16); 12 new mutations; pin 97 → 109.
 
+## 2026-11-05
+A fix to the agenda's **Running now / Owed** split from earlier today. A thread with one part already merged and another part still open as a PR used to show that open PR as separate "running" work, even when the thread said it was waiting on something. It now counts the open PR as part of its own thread, and the thread's wait holds it under Owed. Backlog #518.
+<!--tech-->
+`scripts/goal-tree.py`: `derive_thread` collects `resolved` (every live row's open PR, by title) before the named-PR / merged / open precedence, so a mixed thread records its `open_prs`; `agenda_digest` admits a FINISHED leaf only when it still owns an open PR. Backlog #518's (b), the join keeping every PR identity, was already pinned by r3's `_fold_item` cases. 394 cases (+3); 2 new mutations, 3 re-bound; pin 297 → 299.
+
 ## 2026-11-06
 A hand-edited agenda log or snapshot can no longer crash the goal tree. A plan step naming its backlog row or PR in the wrong shape is refused when the log is read, saying which line; an earlier plan stored in the wrong shape is said on the page as not read, rather than breaking it; and a log holding only blank space no longer leaves a stray blank line. Backlog #504.
 <!--tech-->
