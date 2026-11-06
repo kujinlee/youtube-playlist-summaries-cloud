@@ -2671,7 +2671,16 @@ EXPECTED_MUTATIONS = {
     # non-blocking opens, undecodable snapshot output. 28 + 13 = 41.
     # ⟳ r2 fold: +4 — a report quoting the launch phrase, the ceiling's floor at W, its `no-headroom` label, a
     # nested repo's checkout. 41 + 4 = 45.
-    "scripts/check-compaction-boundary.py": 47,
+    # ⟳ backlog #537 (2026-11-06): the explainer question watcher is not a monitor signal — the flag ignored, one
+    # watcher silencing a CI monitor, -F, the chaining test, quote stripping, the path's two boundaries, the flag
+    # never recorded: +8. 47 + 8 = 55.
+    # ⟳ r1 fold (backlog #537): the denylist became an allowlist over shlex tokens — 5 regex entries retired, 18 added,
+    # one per clause (-F, one path, the path's two boundaries, the first program, the filter allowlist, a later stage's
+    # operator, the newline, the substitution scan and its four clauses, `#`, an unparsable command, each redirect).
+    # 55 - 5 + 18 = 68.
+    # ⟳ r2 fold: the 18 shlex-clause entries retired, 14 added, one per template clause. 68 - 18 + 14 = 64.
+    # ⟳ r3 fold: +3, each widening the path position (a space, `$`, `~user`) and each expecting the r3 F1 case. 64 + 3 = 67.
+    "scripts/check-compaction-boundary.py": 67,
     # backlog #455 (2026-11-01): a subagent's foreground Bash call that can block past 270 s is refused. Pinned in the
     # commit that creates it (21). ⟳ r1 fold: the sleep and watch rules removed, the effective timeout read the way
     # the harness reads it — one entry per clause of that reading, the exemptions, the deny JSON and NOT CHECKED: 29.

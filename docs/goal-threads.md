@@ -175,6 +175,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - side · backlog #492 · the owner's destructive-command recovery gate (11-03 14:20), filed to build after backlog #330 when the usage margin allows
 - fix · backlog #506 · two mutations killed only by chance red unrelated PRs' sweeps — both now fail on every run; the seed-varied sweep remains
 - fix · backlog #512 · self-tests leave temp directories behind, and the pile slows long-path shell commands · waits on the weekly reset (Fri 11-06 02:00)
+- fix · backlog #537 · the explainer question watcher no longer holds every auto compaction, so compaction comes at a pause (owner 11-06 card A; the window lowers to 200k locally)
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
