@@ -41,7 +41,8 @@ exited 1 with no verdict and a valid weekly 95% let a spawn through. Every JSON 
 (`parse_json`), so the huge one is `inf`, which no window accepts: that window is NOT RUN and the weekly
 verdict stands. The rule is one place, the parse, so nothing downstream ever sees a Python int.
 
-THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`:
+THE CALLERS — three hooks, registered through `.claude/hooks/run-hook.sh`, each running THIS file as it is on
+`origin/master` through `.claude/hooks/usage-pace-run.sh` (backlog #522) — never the checked-out copy:
 
     usage-pace-prompt.sh   UserPromptSubmit: on WARN, REFUSE-SPAWN or CANNOT RUN, one line of
                            additionalContext. Silent on OK. WARN and REFUSE-SPAWN also go to the OWNER as
@@ -143,7 +144,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 321 cases
+    python3 scripts/check-usage-pace.py --self-test  # 324 cases
 """
 from __future__ import annotations
 
@@ -1700,13 +1701,18 @@ def _self_test_body() -> int:
             # ── the shipped hooks, launched exactly as settings.json launches them ─────────────────
             here = os.path.dirname(os.path.abspath(__file__))
             hooks_src = os.path.join(os.path.dirname(here), ".claude", "hooks")
-            names = ("run-hook.sh", "usage-pace-prompt.sh", "usage-pace-spawn.sh", "usage-pace-wake.sh")
+            names = ("run-hook.sh", "usage-pace-prompt.sh", "usage-pace-spawn.sh", "usage-pace-wake.sh", "usage-pace-run.sh")
             for co in (main_co, wt):  # BOTH checkouts populated, so a pass cannot come from an absent one
                 os.makedirs(os.path.join(co, ".claude", "hooks"), exist_ok=True)
                 os.makedirs(os.path.join(co, "scripts"), exist_ok=True)
                 for h in names:
                     shutil.copy(os.path.join(hooks_src, h), os.path.join(co, ".claude", "hooks", h))
                 shutil.copy(os.path.abspath(__file__), os.path.join(co, "scripts", "check-usage-pace.py"))
+            # backlog #522: the hooks run origin/master's guard, so the fixture's main checkout COMMITS it and points the
+            # ref there; both checkouts share the ref, as a worktree does
+            git("add", "-A", cwd=main_co)
+            git("commit", "-q", "-m", "guard", cwd=main_co)
+            git("update-ref", "refs/remotes/origin/master", "HEAD", cwd=main_co)
             home = os.path.join(tmp, "home")
             os.makedirs(os.path.join(home, ".claude"))
             live = os.path.join(home, ".claude", ".rate-limits.json")
@@ -1743,6 +1749,23 @@ def _self_test_body() -> int:
             check("run-hook: the spawn hook's systemMessage names the MAIN checkout's file",
                   os.path.realpath(main_co) in hso(out).get("systemMessage", ""), True)
             check("run-hook: the spawn hook allows at 50%", hook("usage-pace-spawn.sh", 50), (0, ""))
+            # backlog #522: a branch's OWN copy of the guard never governs the session — master's does
+            _own = os.path.join(wt, "scripts", "check-usage-pace.py")
+            with open(_own) as fh:
+                _keep = fh.read()
+            with open(_own, "w") as fh:
+                fh.write("import sys\nsys.exit(0)\n")   # a branch that loosened the guard to nothing
+            check("⭐ backlog #522: a worktree whose own guard is gutted still DENIES at 98.5% — origin/master's guard ran",
+                  decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
+            with open(_own, "w") as fh:
+                fh.write(_keep)
+            git("update-ref", "-d", "refs/remotes/origin/master", cwd=main_co)
+            _rc, _out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522"}')
+            check("⭐ backlog #522: no origin/master — the prompt hook SAYS cannot run, never runs the checkout's copy",
+                  (_rc, "CANNOT RUN" in _out, "could not be read" in _out, "WARN at 80%" in _out), (0, True, True, False))
+            check("backlog #522: …and the spawn hook exits 1 (visible, non-blocking) with nothing on stdout",
+                  hook("usage-pace-spawn.sh", 98.5), (1, ""))
+            git("update-ref", "refs/remotes/origin/master", "HEAD", cwd=main_co)
             check("run-hook: ALLOW_SPAWN_OVER_LIMIT=1 lets a 98.5% spawn through",
                   hook("usage-pace-spawn.sh", 98.5, **{OVERRIDE_ENV: "1"}), (0, ""))
             with open(os.path.join(wt, OVERRIDE_FILE), "w") as fh:
@@ -1855,8 +1878,11 @@ def _self_test_body() -> int:
             fresh()
             rc, out = hook("usage-pace-prompt.sh", None)
             check("run-hook: the prompt hook is LOUD on a missing cache", (rc, "CANNOT RUN" in out), (0, True))
-            with open(os.path.join(wt, "scripts", "check-usage-pace.py"), "w") as fh:
+            # backlog #522: the guard that runs is origin/master's, so the exiting-2 checker is COMMITTED there
+            with open(os.path.join(main_co, "scripts", "check-usage-pace.py"), "w") as fh:
                 fh.write("import sys\nsys.exit(2)\n")
+            git("commit", "-q", "-am", "a checker exiting 2", cwd=main_co)
+            git("update-ref", "refs/remotes/origin/master", "HEAD", cwd=main_co)
             check("run-hook: a checker exiting 2 never blocks the prompt (exit 1, not 2)",
                   hook("usage-pace-prompt.sh", 85)[0], 1)
             check("run-hook: a checker exiting 2 never blocks a spawn (exit 1, not 2)",
