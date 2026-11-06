@@ -1927,5 +1927,31 @@
     "expect": [
       "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
     ]
+  },
+  {
+    "name": "backlog #525 M1: the rise names its 99% end, which the last night always skips",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                          if resets - LAST_NIGHT_S < resets - RISE_END_S\n",
+        "                          if False\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 M1: before the last night the rising stop names its NEXT real stop — 100% (the hard limit) at the last night's start, never a 99% it skips"
+    ]
+  },
+  {
+    "name": "backlog #525 M3: the last night starts a second late (>= becomes >)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return now >= resets - LAST_NIGHT_S",
+        "return now > resets - LAST_NIGHT_S"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 M3: the last night starts EXACTLY at resets − LAST_NIGHT_S — a second before it the day's stop, at it and a second after the hard limit"
+    ]
   }
 ]

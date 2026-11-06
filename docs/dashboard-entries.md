@@ -18865,3 +18865,8 @@ On the final night before the weekly usage reset, nothing holds work back early 
 <!--tech-->
 `scripts/check-usage-pace.py`: `last_night()` (the last `LAST_NIGHT_S` = 8 h before the reset); `refuse_at` returns `HARD_LIMIT` then; the WARN message leads with the room "before the hard limit" and says to commit before every long step. 331 cases (+4); 5 new mutations; pin 141 → 146 (stacked on #522).
 
+
+## 2026-11-06
+On the last day before the weekly usage reset, the usage warning no longer promises a 99% stop that never comes. It now names the stop that actually comes next: the real 100% limit, which starts eight hours before the reset. Backlog #525, three small points from a review.
+<!--tech-->
+`scripts/check-usage-pace.py`: the rising-stop note names `next_at`/`next_stop`, the last night's start and "100% (the hard limit)" whenever `resets − LAST_NIGHT_S` comes before `resets − RISE_END_S` (M1); the module docstring states the last night (M2); a case pins `last_night` one second either side of and exactly at its start, for two resets (M3). 338 cases (+2); 2 new mutations, each red on a temp copy; pin 146 → 148.

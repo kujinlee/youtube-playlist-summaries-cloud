@@ -19,6 +19,8 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
                   also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
     REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) —
                   except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
+                  — and for the last 8 h before the reset (the LAST NIGHT) there is no soft stop: the stop is the hard
+                  100% limit (backlog #523), which comes before that 99%, so the 99% is never reached as a stop (#525)
                   — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
@@ -144,7 +146,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 336 cases
+    python3 scripts/check-usage-pace.py --self-test  # 338 cases
 """
 from __future__ import annotations
 
@@ -422,13 +424,18 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
         five_note = (f" Five-hour usage is {pct(five[0])} (WARN at {pct(FIVE_HOUR_WARN_AT)}), "
                      f"resets {local_time(five[1])}.")
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
+    # backlog #525 M1: the rise's NEXT real stop. The last night (the hard limit) starts before the rise's 99% end
+    # whenever LAST_NIGHT_S > RISE_END_S, so the 99% end is then never a stop and must not be named as one.
+    next_at, next_stop = ((resets - LAST_NIGHT_S, f"{pct(HARD_LIMIT)} (the hard limit)")
+                          if resets - LAST_NIGHT_S < resets - RISE_END_S
+                          else (resets - RISE_END_S, pct(LAST_DAY_CAP)))
     # r2 Codex L1: the note names the limit that BINDS — the reserve can sit above 97 and below the rising cap
     stop_note = (" The last night has no soft stop — only the hard 100% limit; if it is hit, work waits for the reset, so "
                  "commit before every long step (owner 11-05 20:46)." if stop == HARD_LIMIT
                  else f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < cap_at(now, resets)
                  else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
-                 else f" The stop rises over the last day, {pct_up(stop)} now and {pct(LAST_DAY_CAP)} from "
-                      f"{local_time(resets - RISE_END_S)}: what is left under it is lost at the reset.")
+                 else f" The stop rises over the last day, {pct_up(stop)} now and {next_stop} from "
+                      f"{local_time(next_at)}: what is left under it is lost at the reset.")
     # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
     line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
     line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
@@ -966,8 +973,8 @@ def _self_test_body() -> int:
         check("⭐ #510: the verdict follows the rising stop — at Fri 12:30 before a Sat 02:00 reset, 97.9 warns and 98 refuses",
               (evm(cache(97.9, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[0],
                evm(cache(98, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[0]), (WARN, REFUSE))
-        check("#510: the message says the stop is rising, its value now, and when it reaches 99",
-              "The stop rises over the last day, 98% now and 99% from Sat 01-16 01:00 PST: what is left under it is "
+        check("#510: the message says the stop is rising, its value now, and when its NEXT stop comes (backlog #525: the hard limit at the last night)",
+              "The stop rises over the last day, 98% now and 100% (the hard limit) from Fri 01-15 18:00 PST: what is left under it is "
               "lost at the reset." in evm(cache(97.5, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[1],
               True)
         # owner 2026-11-05 19:44: the room left on the LAST day is lost at the reset, and the message must say so FIRST
@@ -991,6 +998,24 @@ def _self_test_body() -> int:
         _ln = _sat2 - LAST_NIGHT_S
         check("⭐ backlog #523: the stop becomes the hard limit at the last night's start — a minute either side",
               (refuse_at(_ln - 60, _sat2) < HARD_LIMIT, refuse_at(_ln + 60, _sat2)), (True, HARD_LIMIT))
+        # Two DISTINCT resets (Sat 02:00 and Fri 23:00), so a constant reset cannot satisfy the boundary
+        check("⭐ backlog #525 M3: the last night starts EXACTLY at resets − LAST_NIGHT_S — a second before it the day's stop, at it and a second after the hard limit",
+              ((last_night(_ln - 1, _sat2), last_night(_ln, _sat2), last_night(_ln + 1, _sat2),
+                refuse_at(_ln - 1, _sat2) < HARD_LIMIT, refuse_at(_ln, _sat2), refuse_at(_ln + 1, _sat2)),
+               (last_night(_fri23 - LAST_NIGHT_S - 1, _fri23), last_night(_fri23 - LAST_NIGHT_S, _fri23),
+                last_night(_fri23 - LAST_NIGHT_S + 1, _fri23), refuse_at(_fri23 - LAST_NIGHT_S - 1, _fri23) < HARD_LIMIT,
+                refuse_at(_fri23 - LAST_NIGHT_S, _fri23), refuse_at(_fri23 - LAST_NIGHT_S + 1, _fri23))),
+              ((False, True, True, True, HARD_LIMIT, HARD_LIMIT),) * 2)
+        # backlog #525 M1: before the last night the rising stop's NEXT real stop is the hard limit at the last night's
+        # start, never the 99% end of the rise, which the last night always covers. Two DISTINCT resets, so a constant
+        # time cannot satisfy it: Fri 17:00 before a Sat 02:00 reset (the row's example) and Fri 12:30 before Fri 23:00.
+        _m1a, _m1b = _sat2 - 9 * 3600, NOW + 12.5 * 3600
+        _m1 = (evm(cache(98, week_reset=_sat2, at=_m1a), m85, _m1a)[1],
+               evm(cache(98, week_reset=_fri23, at=_m1b), m85, _m1b)[1])
+        check("⭐ backlog #525 M1: before the last night the rising stop names its NEXT real stop — 100% (the hard limit) at the last night's start, never a 99% it skips",
+              ("The stop rises over the last day, 98.4% now and 100% (the hard limit) from Fri 01-15 18:00 PST: " in _m1[0],
+               "The stop rises over the last day, 98.6% now and 100% (the hard limit) from Fri 01-15 15:00 PST: " in _m1[1],
+               "99% from" in _m1[0] + _m1[1]), (True, True, False))
         _n = _sat2 - 3 * 3600
         _r = evm(cache(99.5, week_reset=_sat2, at=_n), m85, _n)
         check("⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit",
