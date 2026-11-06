@@ -5,11 +5,12 @@
 # a SUBAGENT sends (its hook input carries `agent_id`) is a report and always allowed. The recipient's name is
 # never consulted (PR #446 r2 X1). Otherwise allows, silently. Waking an idle agent is the measured expensive
 # case (docs/process-checklists.md -> *Agent lifetime*).
+# It runs origin/master's guard through usage-pace-run.sh (backlog #522), never the checkout's copy.
 # The rules, the cache format, the override and the bounds are described ONCE, in scripts/check-usage-pace.py.
 #
 # ⛔ EVERY NON-ZERO EXIT BECOMES 1. The verdict travels as JSON on stdout at exit 0; exit 2 would BLOCK, and
 # argparse exits 2 on a bad argument, so a broken checker must never be able to stop a prompt or a message.
 # Unlike its siblings it passes the payload on stdin: the checker reads it only at REFUSE-SPAWN, for `agent_id`.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 "$REPO_ROOT/scripts/check-usage-pace.py" --hook wake --root "$REPO_ROOT"
+bash "$REPO_ROOT/.claude/hooks/usage-pace-run.sh" wake
 [ $? -eq 0 ] || exit 1
