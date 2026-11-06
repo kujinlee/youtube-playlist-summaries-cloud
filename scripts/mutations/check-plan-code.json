@@ -2232,12 +2232,13 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return [f\"{PINS_FILE}: the pins could not be read ({exc.__class__.__name__}: {exc})\"]\n    return pin_display_problems(src, EXPECTED_MUTATIONS)",
-        "        return []\n    return pin_display_problems(src, EXPECTED_MUTATIONS)"
+        "    if why is not None:\n        return [why]\n    return pin_differences(display, effective)",
+        "    if why is not None:\n        return []\n    return pin_differences(display, effective)"
       ]
     ],
     "expect": [
-      "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}"
+      "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}",
+      "⛔ sweep-pin-select r1 F2: an unreadable pins file is REPORTED by its consumer with read_pins's reason, never an agreement with {}"
     ]
   },
   {
@@ -2254,7 +2255,7 @@
     ]
   },
   {
-    "name": "backlog #533: an unreadable pins file is a silent {}, with no reason for the consumer to report",
+    "name": "backlog #533 + sweep-pin-select r1 F2: an unreadable pins file is a silent {} with no reason, so its consumer reads {} as agreement and --mutate measures against {}",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -2264,7 +2265,9 @@
     ],
     "expect": [
       "⛔ backlog #533: a pins file whose display is refused is {} WITH the reason, never a silent {}",
-      "⛔ backlog #533: a MISSING pins file is {} WITH the reason"
+      "⛔ backlog #533: a MISSING pins file is {} WITH the reason",
+      "⛔ sweep-pin-select r1 F2: an unreadable pins file is REPORTED by its consumer with read_pins's reason, never an agreement with {}",
+      "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}"
     ]
   }
 ]

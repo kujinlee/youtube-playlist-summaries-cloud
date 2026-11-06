@@ -1270,5 +1270,44 @@
   "expect": [
    "⭐ backlog #533: a revision holding BOTH files is read from the pins file, never the harness"
   ]
+ },
+ {
+  "name": "sweep-pin-select r1 F1: HEAD's harness is never checked, so a harness repointed at a new pins file with a lowered pin is READY on the stale one",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if pins_home(run, \"HEAD\") == PINS_FILE:\n        harness_binds_pins(run, \"HEAD\")\n",
+    "    pass\n"
+   ]
+  ],
+  "expect": [
+   "⛔ sweep-pin-select r1 F1: a head harness REPOINTED at a new pins file with a lowered pin is CANNOT RUN, never READY on the stale file"
+  ]
+ },
+ {
+  "name": "sweep-pin-select r1 F1: a second write of a pins name is not refused, so a later rebinding passes",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if len(writes) != 1:",
+    "        if len(writes) < 1:"
+   ]
+  ],
+  "expect": [
+   "⛔ F1: a harness whose EXPECTED_MUTATIONS is bound to anything but the pins file, or rebound, is refused"
+  ]
+ },
+ {
+  "name": "sweep-pin-select r1 F1: a binding below module level counts, so one an `if` can skip passes",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "isinstance(stmt, ast.Assign) and id(stmt) in top and",
+    "isinstance(stmt, ast.Assign) and"
+   ]
+  ],
+  "expect": [
+   "...and a binding nested under an `if` is not at module level"
+  ]
  }
 ]

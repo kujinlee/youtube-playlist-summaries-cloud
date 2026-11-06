@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 259 cases
+    python3 scripts/check-merge-ready.py --self-test # 264 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -45,6 +45,7 @@ readiness checker that shrugs is worse than none, because its silence reads as a
 from __future__ import annotations
 
 import argparse
+import ast
 import functools
 import importlib.util
 import json
@@ -1047,12 +1048,69 @@ def pins_at(run, rev: str) -> dict:
                   error=lambda d: PinsUnreadable(f"{rev}: {home}: {d}"))
 
 
+# ⟳ sweep-pin-select r1 (Claude F1): after the move this script reads a FILE NAME, `PINS_FILE`, while the
+# harness enforces whatever ITS `PINS_FILE` names. A head that pointed the harness at a new file with a
+# lowered pin, leaving `PINS_FILE` stale, was READY — before the move the same rebinding was CANNOT RUN.
+# So the head harness must BIND the pins this script reads: exactly one write of each name, at module
+# level, `PINS_FILE` the same literal, and `EXPECTED_MUTATIONS` exactly `PINS_BINDING`. Read by `ast`,
+# never executed. Anything else is CANNOT RUN.
+# ⚠ BOUND, stated: the BODIES of `own_pins_path` and `read_pins` are trusted, as this script trusts any
+# other harness code the same PR can edit; and a head with NO harness at all is not checked here (that
+# head has deleted the mutation gate, which is not a pin falling).
+PINS_BINDING = "read_pins(own_pins_path())[0]"
+
+
+def harness_binding_problems(src: str) -> list[str]:
+    """PURE. Why the harness source `src` does not enforce the pins in `PINS_FILE`. Empty when it does."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError) as exc:
+        return [f"the harness does not parse ({exc.__class__.__name__}: {exc})"]
+    top = {id(n) for n in tree.body}
+    parents = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
+    want = {"PINS_FILE": lambda v: isinstance(v, ast.Constant) and v.value == PINS_FILE,
+            "EXPECTED_MUTATIONS": lambda v: ast.dump(v) == ast.dump(ast.parse(PINS_BINDING, mode="eval").body)}
+    out = []
+    for name, ok in want.items():
+        writes = [n for n in ast.walk(tree)
+                  if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, (ast.Store, ast.Del))]
+        if len(writes) != 1:
+            out.append(f"{name} is written {len(writes)} times, not once")
+            continue
+        stmt = parents.get(writes[0])
+        if not (isinstance(stmt, ast.Assign) and id(stmt) in top and stmt.targets == [writes[0]]
+                and ok(stmt.value)):
+            want_text = repr(PINS_FILE) if name == "PINS_FILE" else PINS_BINDING
+            out.append(f"line {writes[0].lineno}: {name} is not bound, at module level, to {want_text}")
+    return out
+
+
+def harness_binds_pins(run, rev: str) -> None:
+    """Raise `PinsUnreadable` unless `rev`'s harness, when it has one, enforces `PINS_FILE` — see above."""
+    ls = run(["git", "ls-tree", "--name-only", rev, "--", PINS_SCRIPT], text=True)
+    if ls.returncode != 0:
+        raise PinsUnreadable(f"{rev}: `git ls-tree` exited {ls.returncode}")
+    if not ls.stdout.strip():
+        return
+    shown = run(["git", "show", f"{rev}:{PINS_SCRIPT}"], text=True, encoding="utf-8")
+    if shown.returncode != 0:
+        raise PinsUnreadable(f"{rev}: `git show` exited {shown.returncode}")
+    problems = harness_binding_problems(shown.stdout)
+    if problems:
+        raise PinsUnreadable(f"{rev}: {PINS_SCRIPT} does not enforce the pins in {PINS_FILE}, which "
+                             f"this script reads: " + "; ".join(problems))
+
+
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
-    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`."""
+    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`. HEAD's pins are read from
+    `PINS_FILE` only when HEAD's harness enforces that file (`harness_binds_pins`)."""
     mb = run(["git", "merge-base", base, "HEAD"], text=True)
     if mb.returncode != 0:
         raise PinsUnreadable(f"`git merge-base {base} HEAD` exited {mb.returncode}")
-    return pins_at(run, mb.stdout.strip()), pins_at(run, "HEAD")
+    old = pins_at(run, mb.stdout.strip())
+    if pins_home(run, "HEAD") == PINS_FILE:
+        harness_binds_pins(run, "HEAD")
+    return old, pins_at(run, "HEAD")
 
 
 def pin_falls(old: dict, new: dict) -> list[str]:
@@ -2022,6 +2080,8 @@ def _self_test_body() -> int:
     # this script's to see: the harness refuses them where the pins are used (check-plan-code's cases).
     def _syn(extra="", pins='    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n'):
         return "import json, sys\nEXPECTED_MUTATIONS = {\n" + pins + "}\n" + extra
+    # ⟳ sweep-pin-select r1 (Claude F1): the harness after the move, as `harness_binding_problems` accepts it.
+    _HARN = f'PINS_FILE = "{PINS_FILE}"\n\n\ndef own_pins_path():\n    pass\n\n\nEXPECTED_MUTATIONS = {PINS_BINDING}\n'
     def _prun(trees):
         """A runner over in-memory trees: `ls-tree` and `show` are answered from `trees`."""
         def run(cmd, **kw):
@@ -2075,7 +2135,7 @@ def _self_test_body() -> int:
           ["loosens a gate: the mutation pin for scripts/a.py (5) is removed",
            "loosens a gate: the mutation pin for scripts/b.py (3) is removed"])
     # ── backlog #533: the display MOVED from `PINS_SCRIPT` to `PINS_FILE` ─────────────────────────
-    _NODISP = "EXPECTED_MUTATIONS = read_pins(own_pins_path())[0]\n"   # the harness after the move
+    _NODISP = _HARN                                  # the harness after the move: no display
     _low = _syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')
     def _pp(trees):
         try:
@@ -2115,6 +2175,7 @@ def _self_test_body() -> int:
     _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _real_pins = (_here.parent / PINS_FILE).read_text(encoding="utf-8")     # backlog #533
     _k = "scripts/check-vocabulary-collisions.py"
+    _base_pins: dict = {}                            # so a failed read below reds its cases, never kills the suite
     try:
         _rdr = _pins_reader(PINS_READER)
         _base_pins = _cross(lambda: _rdr.pin_display(_real_pins), reduce=_exact_pins, error=PinsUnreadable)
@@ -2127,6 +2188,36 @@ def _self_test_body() -> int:
     check("⭐ the REAL pins file's display is read on both sides", (_rerr, len(_rp[0]) > 10), (None, True))
     check("⭐ ...and a pin lowered in it is HELD at the value it shows",
           [r for r in pin_falls(*_rp) if _k in r], [f"loosens a gate: the mutation pin for {_k} drops {_rp[0].get(_k)} -> 0"])
+    # ⟳ sweep-pin-select r1 (Claude F1), the reviewer's scenario: the head harness is pointed at a NEW pins
+    # file holding a lowered pin, and `PINS_FILE` is left untouched. This script read the stale file: READY.
+    _v2 = "scripts/mutations/pins_v2.py"
+    _k1 = "scripts/check-anchors.py"
+    _v2src = _real_src.replace(f'PINS_FILE = "{PINS_FILE}"', f'PINS_FILE = "{_v2}"', 1)
+    _v2pins = _real_pins.replace(f'    "{_k1}": {_base_pins.get(_k1)},', f'    "{_k1}": {(_base_pins.get(_k1) or 1) - 1},', 1)
+    _f1 = _pp({"base": {PCP: _real_pins, PINS_SCRIPT: _real_src},
+               "HEAD": {PCP: _real_pins, _v2: _v2pins, PINS_SCRIPT: _v2src}})
+    check("⛔ sweep-pin-select r1 F1: a head harness REPOINTED at a new pins file with a lowered pin is CANNOT RUN, "
+          "never READY on the stale file",
+          (_v2src != _real_src, _v2pins != _real_pins,
+           str(_f1).startswith(f"CANNOT RUN: HEAD: {PINS_SCRIPT} does not enforce the pins in {PINS_FILE}")),
+          (True, True, True))
+    check("...while the REAL harness at the head binds the pins file (the adjacent negative)",
+          harness_binding_problems(_real_src), [])
+    check("⛔ F1: a harness whose EXPECTED_MUTATIONS is bound to anything but the pins file, or rebound, is refused",
+          [bool(harness_binding_problems(_HARN.replace(PINS_BINDING, r))) for r in
+           ("read_pins(pathlib.Path('x'))[0]", "{}", PINS_BINDING + " or {}")]
+          + [bool(harness_binding_problems(_HARN + x)) for x in
+             ("EXPECTED_MUTATIONS = {}\n", "def f():\n    global EXPECTED_MUTATIONS\n    EXPECTED_MUTATIONS = {}\n",
+              "PINS_FILE = 'other.py'\n", "del PINS_FILE\n")],
+          [True] * 7)
+    check("⛔ F1: ...and so is a PINS_FILE that is not the literal this script reads, or a harness that does not parse",
+          [bool(harness_binding_problems(_HARN.replace(f'"{PINS_FILE}"', r))) for r in
+           (f'"{_v2}"', f'"{PINS_FILE}".strip()', "None")] + [bool(harness_binding_problems(_HARN + "def (\n"))],
+          [True] * 4)
+    check("...and a binding nested under an `if` is not at module level",
+          harness_binding_problems(_HARN.replace(f"EXPECTED_MUTATIONS = {PINS_BINDING}",
+                                                 f"if True:\n    EXPECTED_MUTATIONS = {PINS_BINDING}")),
+          [f"line 9: EXPECTED_MUTATIONS is not bound, at module level, to {PINS_BINDING}"])
     # ⛔ r4 Codex F2: importing the WORKING-TREE reader executes it. Every way that import or the reader
     # can misbehave is CANNOT RUN, never an answer — and never an escape past `main()`'s handler.
     _rd = Path(tempfile.mkdtemp())
@@ -2234,6 +2325,8 @@ def _self_test_body() -> int:
                 return cp("mb\n")
             if cmd[:3] == ["git", "ls-tree", "--name-only"]:    # the pins: base `mb` and HEAD
                 return cp(f"{PCP}\n")
+            if cmd[:2] == ["git", "show"] and cmd[2].endswith(f":{PINS_SCRIPT}"):
+                return cp(_HARN)                    # a head harness that enforces the pins file
             if cmd[:2] == ["git", "show"]:
                 return cp(_syn() if cmd[2].startswith("mb:") else (pins_head or _syn()))
             if cmd[:2] == ["git", "ls-tree"]:

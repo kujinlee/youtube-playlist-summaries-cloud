@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 321 cases
+    python3 scripts/check-plan-code.py --self-test          # 323 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1418,6 +1418,11 @@ def pin_display_problems(src: str, effective: dict) -> list[str]:
         display = pin_display(src)
     except PinDisplayError as exc:
         return [str(exc)]
+    return pin_differences(display, effective)
+
+
+def pin_differences(display: dict, effective: dict) -> list[str]:
+    """PURE. One line per key on which a pins `display` and the `effective` dict disagree."""
     return [f"{k}: the display says {display.get(k)}, this process holds {effective.get(k)}"
             for k in sorted(display.keys() | effective.keys())
             if display.get(k) != effective.get(k)]
@@ -1450,14 +1455,19 @@ def read_pins(path: pathlib.Path) -> "tuple[dict, str | None]":
 EXPECTED_MUTATIONS = read_pins(own_pins_path())[0]
 
 
+def pin_file_problems(path: pathlib.Path, effective: dict) -> list[str]:
+    """IO. The pins file at `path` against the dict a process holds. A file `read_pins` cannot read is
+    its REASON (backlog #533), never an empty agreement — ⟳ sweep-pin-select r1 (Claude F2): this is the
+    reason's consumer; it once reread the file itself, and the reason went unread."""
+    display, why = read_pins(path)
+    if why is not None:
+        return [why]
+    return pin_differences(display, effective)
+
+
 def own_pin_problems() -> list[str]:
-    """`pin_display_problems` for THIS process: its pins file's display against the dict it holds.
-    A pins file that cannot be read is a problem too (backlog #533), never an empty agreement."""
-    try:
-        src = own_pins_path().read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        return [f"{PINS_FILE}: the pins could not be read ({exc.__class__.__name__}: {exc})"]
-    return pin_display_problems(src, EXPECTED_MUTATIONS)
+    """`pin_file_problems` for THIS process: its pins file against the dict it holds."""
+    return pin_file_problems(own_pins_path(), EXPECTED_MUTATIONS)
 
 
 # The names whose mention makes a literal a TOTAL rather than a number: the derived total, or the pins.
@@ -5496,6 +5506,22 @@ def _self_test_body() -> int:
          ({}, True, True))
     case("⛔ backlog #533: a MISSING pins file is {} WITH the reason",
          (_gone[0], "FileNotFoundError" in (_gone[1] or "")), ({}, True))
+    # ⟳ sweep-pin-select r1 (Claude F2): the reason `read_pins` gives is what the CONSUMER reports. With
+    # `effective` {} — what an import holds when the file cannot be read — a silent {} would agree.
+    with tempfile.TemporaryDirectory() as _tdq:
+        _qf = pathlib.Path(_tdq) / "pins.py"
+        _qf.write_text("EXPECTED_MUTATIONS = dict(a=5)\n")
+        _q_bad = pin_file_problems(_qf, {})
+        _q_gone = pin_file_problems(pathlib.Path(_tdq) / "absent.py", {})
+        _qf.write_text(_dsrc)
+        _q_ok = pin_file_problems(_qf, {"scripts/a.py": 5, "scripts/b.py": 3})
+        _q_drift = pin_file_problems(_qf, {"scripts/a.py": 4, "scripts/b.py": 3})
+    case("⛔ sweep-pin-select r1 F2: an unreadable pins file is REPORTED by its consumer with read_pins's reason, "
+         "never an agreement with {}",
+         [(len(p), p[0].startswith(f"{PINS_FILE}: the pins could not be read") if p else False)
+          for p in (_q_bad, _q_gone)], [(1, True), (1, True)])
+    case("...while a readable one is compared key by key (the adjacent negatives)",
+         (_q_ok, _q_drift), ([], ["scripts/a.py: the display says 5, this process holds 4"]))
     case("backlog #533: the pins this harness holds are read from the pins file BESIDE it",
          (own_pins_path() == pathlib.Path(__file__).resolve().parent.parent / PINS_FILE,
           read_pins(own_pins_path())[1]), (True, None))

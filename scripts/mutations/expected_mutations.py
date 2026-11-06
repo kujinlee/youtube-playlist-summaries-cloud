@@ -1609,7 +1609,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06, backlog #533: 97 -> 99, none retired, two RE-BOUND into `pins_home`. The display moved to
     # this file: a revision read only from it, so a base before the move pins nothing (1), and the harness
     # read before it (1).
-    "scripts/check-merge-ready.py": 99,
+    # ⟳ 2026-11-06, sweep-pin-select r1 (Claude F1): 99 -> 102, none retired. HEAD's harness must bind the
+    # pins file this script reads: the check skipped (1), a second write allowed (1), a nested binding (1).
+    "scripts/check-merge-ready.py": 102,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

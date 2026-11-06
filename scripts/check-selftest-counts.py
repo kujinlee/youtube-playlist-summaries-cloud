@@ -625,9 +625,11 @@ def reached(changed: set[str], sources: dict[str, str]) -> set[str]:
     suite loads BY FILE NAME (`spec_from_file_location`) puts that helper's own imports inside the
     suite exactly as an `import` would, so a one-hop string edge left helper -> (import) -> loaded
     script -> suite unreached (PR #450 r1, Codex finding 2, constructed). The cost of closing the
-    string edge is real and accepted: `check-plan-code.py` holds every script's path as a dictionary
-    KEY (`EXPECTED_MUTATIONS`), so a change to any of them reaches it and, through it, whatever loads
-    or names it. Over-selecting is the safe direction; the full run is CI's."""
+    string edge is real and accepted: any script that names many others in a string reaches every one
+    of them, and through it whatever loads or names it. (⟳ backlog #533: the largest such list, the
+    `EXPECTED_MUTATIONS` pins keyed by every script's path, moved out of `check-plan-code.py` into
+    `scripts/mutations/expected_mutations.py`, which is not a `scripts/*.py` source here, so that cost
+    shrank.) Over-selecting is the safe direction; the full run is CI's."""
     refs = {name: code_refs(src) for name, src in sources.items()}
     reach = set(changed)
     grew = True
