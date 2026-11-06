@@ -1,0 +1,21 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 final message was only 45 chars (< 200) \u2014 this is the silent no-op, NOT a clean review",
+    "  gpt-6-astra: try_next \u2014 final message was only 18 chars (< 200) \u2014 this is the silent no-op, NOT a clean review",
+    "  gpt-6.1-terra: try_next \u2014 final message was only 178 chars (< 200) \u2014 this is the silent no-op, NOT a clean review",
+    "  gpt-6-sol: ok \u2014 357 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "31a1094182bd3490e698127fd923edb573edf121",
+  "intrusions": [],
+  "model": "gpt-6-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/p-tls-r4.md",
+  "reason": "357 chars",
+  "refused": false,
+  "review": "timeline-story-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/tls"
+}
