@@ -1798,8 +1798,8 @@
         ""
       ],
       [
-        "            resolved = [int(q[\"number\"]) for q in opened]\n",
-        ""
+        "    resolved = [int(q[\"number\"]) for q in opened]\n",
+        "    resolved = []\n"
       ]
     ],
     "expect": [
@@ -2804,8 +2804,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        " and not t.get(\"parked\")\n                    and t[\"state\"] not in _FINISHED",
-        "\n                    and t[\"state\"] not in _FINISHED"
+        " and not t.get(\"parked\")\n                    and (t[\"state\"] not in _FINISHED",
+        "\n                    and (t[\"state\"] not in _FINISHED"
       ]
     ],
     "expect": [
@@ -2986,8 +2986,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                    and t[\"state\"] not in _FINISHED):",
-        "                    and True):"
+        "                    and (t[\"state\"] not in _FINISHED or t.get(\"open_prs\"))):",
+        "                    and (True or t.get(\"open_prs\"))):"
       ]
     ],
     "expect": [
@@ -3525,7 +3525,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+      "⭐ r1 Codex H1 / backlog #518: a NAMED open PR that no row's title resolves to still runs, its row unread"
     ]
   },
   {
