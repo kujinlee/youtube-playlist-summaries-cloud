@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 393 cases
+    python3 scripts/goal-tree.py --self-test                 # 404 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1041,6 +1041,9 @@ AGENDA_FIELDS = {"agenda": (("id", int), ("window", str), ("steps", list)),
                  "tick": (("of", int), ("step", int))}
 WHEN_RE = re.compile(r"^## (\S.*)$")
 STEP_RE = re.compile(r"^- (\S.*)$")
+# ⛔ the kinds a ref names: exactly what the step grammar (`REF_RE`) writes. A ref of any other kind, or not a
+# [kind, int] pair, is MALFORMED where it is read — never a TypeError in derivation (backlog #504)
+REF_KINDS = ("backlog", "PR")
 FREE = "free"            # a step naming no backlog row or PR: its state is the owner-visible tick, never derived
 
 
@@ -1106,6 +1109,8 @@ def _agenda_records(text: str, name: str) -> list[dict]:
                     isinstance(st, dict) and isinstance(st.get("when"), str) and isinstance(st.get("text"), str)
                     and isinstance(st.get("refs"), list) for st in rec["steps"]):
                 raise ValueError("an agenda step needs `when`, `text` and `refs`")
+            if rec["kind"] == "agenda" and not all(_ref_ok(x) for st in rec["steps"] for x in st["refs"]):
+                raise ValueError("an agenda step's refs are [kind, number] pairs of a known kind (backlog #504)")
             # ⛔ a frozen state is READ by the history and the page: each is `{n: int, state: str}`, or MALFORMED
             # here — never a TypeError in the snapshot (slice 2, r1 Codex H1)
             if rec["kind"] == "replaced" and not all(
@@ -1194,6 +1199,9 @@ def _locked(path: pathlib.Path, write):
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
         text = fh.read()
+        if not text.strip():
+            fh.truncate(0)     # a whitespace-only log: emptied, so no blank line is left ahead of the first record (#504)
+            text = ""
         lines, said = write(agendas(_agenda_records(text, path.name)))
         fh.seek(0, 2)
         if text and not text.endswith("\n"):
@@ -1253,13 +1261,17 @@ def _is(x, typ) -> bool:
 
 
 def _ref_ok(r) -> bool:
-    return _is(r, list) and len(r) == 2 and _is(r[0], str) and _is(r[1], int)
+    return _is(r, list) and len(r) == 2 and r[0] in REF_KINDS and _is(r[1], int)
 
 
 def _steps_ok(steps, keys) -> bool:
-    return _is(steps, list) and all(isinstance(st, dict) and _is(st.get("n"), int)
-                                    and all(_is(st.get(k), t) for k, t in keys)
-                                    and all(_ref_ok(r) for r in st.get("refs") or []) for st in steps)
+    # ⛔ `refs` is a LIST before it is iterated (`"refs": 1` raised TypeError in snap_history and the page replay), and
+    # each `n` is UNIQUE (two steps of one n made changes() report a move between identical snapshots) — backlog #504
+    return (_is(steps, list) and all(isinstance(st, dict) and _is(st.get("n"), int)
+                                     and all(_is(st.get(k), t) for k, t in keys)
+                                     and _is(st.get("refs", []), list)
+                                     and all(_ref_ok(r) for r in st.get("refs", [])) for st in steps)
+            and len({st["n"] for st in steps}) == len(steps))
 
 
 def snap_agenda(snap: dict) -> tuple[str, object]:
@@ -3971,6 +3983,28 @@ def _self_test_body() -> int:
             _hv = type(exc).__name__
         case("⛔ earlier agendas not in an agenda's shape are SAID, never rendered or crashed on — a FALSY one too "
              "(r3 Codex L2)", _hv, (True, None, [True, True, True, True], True, True))
+        _h1 = {"id": 1, "at": "a", "replaced_at": "b", "window": "w",
+               "steps": [{"n": 1, "state": "merged", "text": "x", "refs": []}]}
+        _hrefs = dict(_h1, steps=[dict(_h1["steps"][0], refs=1)])
+        _hdup = dict(_h1, steps=[_h1["steps"][0], dict(_h1["steps"][0], text="y")])
+
+        def _hist_said(h):
+            """backlog #504: (snap_history refuses it, the page REPLAY says so) — or the crash's name, as a value."""
+            try:
+                return (snap_history({"agenda_history": [h]})[1] is not None,
+                        "earlier agendas NOT READ" in render_page([dict(_ns, agenda=_p0["agenda"], agenda_history=[h])], "t"))
+            except Exception as exc:
+                return type(exc).__name__
+        case("⛔ an earlier agenda's step whose refs is not a list is SAID by snap_history and the page replay, never "
+             "a TypeError (backlog #504)", (_hist_said(_hrefs), _hist_said(_h1)), ((True, True), (False, False)))
+        case("⛔ an earlier agenda with two steps of one n is SAID by snap_history and the page replay (backlog #504)",
+             _hist_said(_hdup), (True, True))
+        _pdup = _agn(1, "t1", [("next", "a"), ("merged", "a")])
+        _pdup["agenda"]["steps"][1]["n"] = 1
+        case("⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step "
+             "move (backlog #504)",
+             (snap_agenda(_pdup)[0], [c for c in changes(_pdup, json.loads(json.dumps(_pdup))) if c.startswith("agenda")]),
+             ("malformed", []))
         def _rec_err(states):
             try:
                 _agenda_records(json.dumps({"kind": "replaced", "at": "t", "of": 1, "states": states}), "x")
@@ -3982,6 +4016,34 @@ def _self_test_body() -> int:
              ["a frozen state needs" in (_rec_err(x) or "") for x in
               ([{"n": [], "state": "merged"}], [{"n": 1, "state": {"bad": 1}}], [{"n": True, "state": "next"}], ["x"])]
              + [_rec_err([{"n": 1, "state": "merged"}])], [True, True, True, True, None])
+
+        def _refs_err(refs):
+            """backlog #504: an agenda step with these `refs` -> True if refused as MALFORMED for its refs, None if it
+            passes, or the crash's name — a value, so a mutant reaches the case rather than crashing it."""
+            try:
+                _agenda_records(json.dumps({"kind": "agenda", "at": "t", "id": 1, "window": "w",
+                                            "steps": [{"when": "g", "text": "x", "refs": refs}]}), "x")
+                return None
+            except Malformed as exc:
+                return "[kind, number] pairs" in str(exc)
+            except Exception as exc:
+                return type(exc).__name__
+        case("⛔ an agenda step's ref that is not a list is MALFORMED where it is read (backlog #504)",
+             _refs_err([1]), True)
+        case("⛔ an agenda step's ref with no number is MALFORMED where it is read (backlog #504)",
+             _refs_err([["backlog"]]), True)
+        case("⛔ an agenda step's ref with three parts is MALFORMED where it is read (backlog #504)",
+             _refs_err([["backlog", 1, 2]]), True)
+        case("⛔ an agenda step's ref of an unknown kind is MALFORMED where it is read (backlog #504)",
+             _refs_err([["issue", 1]]), True)
+        case("⛔ an agenda step's ref whose number is not an int (a bool, a string) is MALFORMED (backlog #504)",
+             [_refs_err([["backlog", True]]), _refs_err([["PR", "1"]]), _refs_err([["backlog", 1.0]])],
+             [True, True, True])
+        case("...and an agenda step with well-formed refs of every known kind passes (backlog #504, the control)",
+             (_refs_err([["backlog", 1], ["PR", 2]]), _refs_err([])), (None, None))
+        case("the known ref kinds are exactly the kinds the step grammar writes (backlog #504)",
+             (sorted(REF_KINDS), sorted({k for k, _ in REF_RE.findall("backlog #1 · PR #2")})),
+             (["PR", "backlog"], ["PR", "backlog"]))
 
         _ap = r / "main" / AGENDA_REL
 
@@ -4059,6 +4121,13 @@ def _self_test_body() -> int:
         case("⛔ a log whose last line has no newline is still appended to as SEPARATE records (r3 Codex M2)",
              [x["ticked"] for x in replayed(_nl)] if isinstance(replayed(_nl)[0], dict) else replayed(_nl), [[1]])
         _nl.unlink()
+        _ws = r / "ws.jsonl"
+        _ws.write_text("  \t ")
+        record_agenda(_ws, ag, "t", None)
+        case("⛔ a log that is only whitespace, with no final newline, is emptied before the newline repair — no blank "
+             "line left ahead of the first record (backlog #504)",
+             (_ws.read_text().count("\n"), _ws.read_text()[:1], [x["id"] for x in replayed(_ws)]), (1, "{", [1]))
+        _ws.unlink()
 
         def replay_err(recs):
             try:

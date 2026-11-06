@@ -2565,8 +2565,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    return _is(steps, list) and all(isinstance(st, dict)",
-        "    return _is(steps, list) or all(isinstance(st, dict)"
+        "    return (_is(steps, list) and all(isinstance(st, dict)",
+        "    return (_is(steps, list) or all(isinstance(st, dict)"
       ]
     ],
     "expect": [
@@ -2630,8 +2630,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                                    and all(_ref_ok(r) for r in st.get(\"refs\") or []) for st in steps)",
-        "                                    for st in steps)"
+        "                                     and all(_ref_ok(r) for r in st.get(\"refs\", [])) for st in steps)",
+        "                                     for st in steps)"
       ]
     ],
     "expect": [
@@ -3874,6 +3874,97 @@
     ],
     "expect": [
       "timeline story: a thread added already merged is told as landed, not merely added"
+    ]
+  },
+  {
+    "name": "an agenda step's refs are not checked where the log is read (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if rec[\"kind\"] == \"agenda\" and not all(_ref_ok(x) for st in rec[\"steps\"] for x in st[\"refs\"]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref that is not a list is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref of any length passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "len(r) == 2 and r[0] in REF_KINDS",
+        "r[0] in REF_KINDS"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref with three parts is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref of an unknown kind passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "r[0] in REF_KINDS and _is(r[1], int)",
+        "_is(r[0], str) and _is(r[1], int)"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref of an unknown kind is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref whose number is a bool or a string passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _is(r[1], int)",
+        "and isinstance(r[1], (int, str))"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref whose number is not an int (a bool, a string) is MALFORMED (backlog #504)"
+    ]
+  },
+  {
+    "name": "a whitespace-only log is kept ahead of the first record (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not text.strip():\n            fh.truncate(0)",
+        "        if False:\n            fh.truncate(0)"
+      ]
+    ],
+    "expect": [
+      "⛔ a log that is only whitespace, with no final newline, is emptied before the newline repair — no blank line left ahead of the first record (backlog #504)"
+    ]
+  },
+  {
+    "name": "a snapshot step's refs are iterated without checking it is a list (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                     and _is(st.get(\"refs\", []), list)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ an earlier agenda's step whose refs is not a list is SAID by snap_history and the page replay, never a TypeError (backlog #504)"
+    ]
+  },
+  {
+    "name": "a snapshot's steps may share an n (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\n            and len({st[\"n\"] for st in steps}) == len(steps))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step move (backlog #504)"
     ]
   }
 ]

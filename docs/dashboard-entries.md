@@ -18865,3 +18865,8 @@ On the final night before the weekly usage reset, nothing holds work back early 
 <!--tech-->
 `scripts/check-usage-pace.py`: `last_night()` (the last `LAST_NIGHT_S` = 8 h before the reset); `refuse_at` returns `HARD_LIMIT` then; the WARN message leads with the room "before the hard limit" and says to commit before every long step. 331 cases (+4); 5 new mutations; pin 141 → 146 (stacked on #522).
 
+
+## 2026-11-06
+A hand-edited agenda log or snapshot can no longer crash the goal tree. A plan step naming its backlog row or PR in the wrong shape is refused when the log is read, saying which line; an earlier plan stored in the wrong shape is said on the page as not read, rather than breaking it; and a log holding only blank space no longer leaves a stray blank line. Backlog #504.
+<!--tech-->
+`scripts/goal-tree.py`: `_agenda_records` refuses a step whose `refs` are not `[kind, int]` pairs of a kind in the new `REF_KINDS` (`backlog`, `PR`, the kinds `REF_RE` writes); `_ref_ok` checks the kind, not merely a string. `_locked` truncates a whitespace-only log before the newline repair. `_steps_ok` checks `refs` is a list before iterating (`"refs": 1` raised `TypeError` in `snap_history` and `render_page`) and requires unique `n` (a duplicate made `changes()` report a move between identical snapshots). 404 cases (+11); 7 new mutations, 2 anchors re-pointed; pin 298 → 305.
