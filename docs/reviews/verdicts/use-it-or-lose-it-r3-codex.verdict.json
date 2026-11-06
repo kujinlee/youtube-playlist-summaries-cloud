@@ -1,0 +1,21 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 final message was only 197 chars (< 200) \u2014 this is the silent no-op, NOT a clean review",
+    "  gpt-6-astra: ok \u2014 258 chars"
+  ],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 2519965653593e254bd3322335b6b755d10a5d5b"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "27d0afbf7f8ca781fc6f7a2ca992131236e78aaa",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/p-uil-r3.md",
+  "reason": "258 chars",
+  "refused": false,
+  "review": "use-it-or-lose-it-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/sl"
+}
