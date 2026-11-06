@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 367 cases
+    python3 scripts/goal-tree.py --self-test                 # 370 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -493,8 +493,11 @@ def derive_thread(t: dict, src: dict) -> dict:
         detail += f" · waits on {t['waits']} (declared)"
     # The LATEST merge is when the thread landed; one unread minute makes the whole time unread (never a guess).
     merged_at = max(whens) if whens and all(whens) else None
+    # running-vs-owed r1 Codex H1/M1: the open PRs this thread's work IS — a named one or the one its row resolved to,
+    # read whatever the leaf's worst state is (an unread row must not hide an open PR) and the identity items merge by
+    open_prs = sorted({n for n in prs if n in src["open"]} | ({open_pr} if open_pr is not None else set()))
     out = dict(t, state=state, detail=detail, merged_at=merged_at, parked=bool(parked), inflight=bool(flying),
-               open_pr=open_pr)
+               open_pr=open_pr, open_prs=open_prs)
     if state == "closed":
         out["closed_at"] = max(closes) if closes and all(closes) else None
     if whens or closes:
@@ -1324,9 +1327,12 @@ def agenda_digest(snap: dict, ag: dict) -> dict:
                     and t["state"] not in _FINISHED):
                 # owner 11-05 15:45 (card A): RUNNING is an open PR nothing declares a wait on; the rest is OWED, with the
                 # wait it declares (`· waits on …`) or none recorded — the tree cannot see a background job or agent
+                ops = t.get("open_prs") or ([t["open_pr"]] if t.get("open_pr") is not None else [])
                 now.append({"label": label, "goal": goal_head(i, g["slug"]), "what": t.get("what") or "",
-                            "running": (t["state"] == "open" or t.get("open_pr") is not None) and not t.get("waits"),
-                            "waits": t.get("waits")})
+                            "running": bool(ops or t["state"] == "open") and not t.get("waits"),
+                            "waits": t.get("waits"),
+                            # one PR reached by two declarations is ONE item (r1 Codex M1): merged by its PR
+                            "key": f"PR #{ops[0]}" if ops else label})
             ended = t.get("merged_at")
             if (t["state"] == "merged" and isinstance(ended, str) and _STAMP.fullmatch(ended)
                     and _STAMP.fullmatch(ag["at"]) and ended > ag["at"]
@@ -1394,7 +1400,7 @@ def agenda_now_items(d: dict) -> list[dict]:
     carrying both goals, so the page lists each piece of work once."""
     out: dict[str, dict] = {}
     for x in d["now"]:
-        it = out.setdefault(x["label"], {"label": x["label"], "goals": [], "what": x["what"],
+        it = out.setdefault(x.get("key") or x["label"], {"label": x["label"], "goals": [], "what": x["what"],
                                          "running": x.get("running", False), "waits": x.get("waits")})
         if x["goal"] not in it["goals"]:
             it["goals"].append(x["goal"])
@@ -3635,6 +3641,20 @@ def _self_test_body() -> int:
              '<span class="waits">waits for: <a href="https://github.com/o/r/pull/9">PR #9</a> &lt;b&gt;</span>' in agenda_html(
                  dict(_rs, goals=[dict(_rg[0], threads=[dict(_th("fix · PR #62", "open", [["PR", 62]]), waits="PR #9 <b>")])],
                       undeclared=[])), True)
+        # r1 Codex H1/M1: the two derived-state scenarios, through the REAL `derive` over parsed thread lines
+        _rt = lambda body: parse_threads('## GOAL ga\n> 2026-11-01 08:00 "a"\n' + body)
+        _rv = lambda goals, **kw: [(x["label"], x["running"], x["waits"]) for x in agenda_now_items(
+            agenda_digest(dict(derive(goals, src(**kw), "t"), at="2026-11-05 16:00"), dict(_a509, steps=[])))]
+        case("⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read",
+             _rv(_rt("- fix · PR #30, backlog #11 · w\n"), fates=None,
+                 ledger=[{"id": "j", "what": "building backlog #11", "on_done": "d", "at": "t"}]),
+             [("PR #30, backlog #11", True, None)])
+        _two = ('## GOAL gb\n> 2026-11-01 09:00 "b"\n- fix · backlog #11 · via its row\n')
+        case("⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+             _rv(_rt("- fix · PR #30 · named\n" + _two)), [("PR #30", True, None)])
+        case("⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed",
+             _rv(_rt("- fix · PR #30 · named\n" + _two.replace("via its row", "via its row · waits on the owner"))),
+             [("PR #30", False, "the owner")])
         _fx = _h509.split("<h3>Focus", 1)[1].split("</div>", 1)[0]
         case("⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line",
              re.findall(r'<span class="chip">([^<]*)</span>|<b>(\d+)\.</b>', _fx),

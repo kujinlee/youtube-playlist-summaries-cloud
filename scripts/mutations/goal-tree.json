@@ -3073,8 +3073,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "it = out.setdefault(x[\"label\"], {",
-        "it = out.setdefault(x[\"label\"] + x[\"goal\"], {"
+        "it = out.setdefault(x.get(\"key\") or x[\"label\"], {",
+        "it = out.setdefault((x.get(\"key\") or x[\"label\"]) + x[\"goal\"], {"
       ]
     ],
     "expect": [
@@ -3373,8 +3373,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        " or t.get(\"open_pr\") is not None) and not",
-        ") and not"
+        "bool(ops or t[\"state\"] == \"open\")",
+        "(t[\"state\"] == \"open\")"
       ]
     ],
     "expect": [
@@ -3496,6 +3496,60 @@
     ],
     "expect": [
       "⭐ owner 15:45: the page lists running work and OWED work apart — each item in exactly one list"
+    ]
+  },
+  {
+    "name": "an unread row hides the thread's open PR (running-vs-owed r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ops = t.get(\"open_prs\") or (",
+        "ops = ("
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+    ]
+  },
+  {
+    "name": "a thread's named open PRs are not recorded (running-vs-owed r1 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{n for n in prs if n in src[\"open\"]} | ",
+        "set() | "
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+    ]
+  },
+  {
+    "name": "items merge by label, so one PR counts twice (running-vs-owed r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "out.setdefault(x.get(\"key\") or x[\"label\"],",
+        "out.setdefault(x[\"label\"],"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+      "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
+    ]
+  },
+  {
+    "name": "an item's key is its label, not its PR (running-vs-owed r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"key\": f\"PR #{ops[0]}\" if ops else label",
+        "\"key\": label"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
+      "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
     ]
   }
 ]
