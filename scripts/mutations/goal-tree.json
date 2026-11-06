@@ -3929,16 +3929,55 @@
     ]
   },
   {
-    "name": "a whitespace-only log is kept ahead of the first record (backlog #504)",
+    "name": "a lone-newline log is kept ahead of the first record (backlog #504)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if not text.strip():\n            fh.truncate(0)",
-        "        if False:\n            fh.truncate(0)"
+        "        if text != body and (not body or text != body + \"\\n\"):",
+        "        if text != body and (False or text != body + \"\\n\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ a log that is a lone newline is emptied too, so the first record is not preceded by a blank line (backlog #504)"
+    ]
+  },
+  {
+    "name": "a whitespace-only log is not emptied (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            fh.truncate(len(body.encode()))",
+        "            pass"
       ]
     ],
     "expect": [
       "⛔ a log that is only whitespace, with no final newline, is emptied before the newline repair — no blank line left ahead of the first record (backlog #504)"
+    ]
+  },
+  {
+    "name": "trailing blanks after a record are kept (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if text != body and (not body or",
+        "        if not body and (not body or"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose last line is blanks after a record leaves no blank line before the next write (backlog #504)"
+    ]
+  },
+  {
+    "name": "the known ref kinds include one the step grammar does not write (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".group(1).split(\"|\"))",
+        ".group(1).split(\"|\") + [\"zzz\"])"
+      ]
+    ],
+    "expect": [
+      "the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)"
     ]
   },
   {

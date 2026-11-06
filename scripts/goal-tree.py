@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 404 cases
+    python3 scripts/goal-tree.py --self-test                 # 406 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1042,8 +1042,10 @@ AGENDA_FIELDS = {"agenda": (("id", int), ("window", str), ("steps", list)),
 WHEN_RE = re.compile(r"^## (\S.*)$")
 STEP_RE = re.compile(r"^- (\S.*)$")
 # ⛔ the kinds a ref names: exactly what the step grammar (`REF_RE`) writes. A ref of any other kind, or not a
-# [kind, int] pair, is MALFORMED where it is read — never a TypeError in derivation (backlog #504)
-REF_KINDS = ("backlog", "PR")
+# [kind, int] pair, is MALFORMED where it is read — never a TypeError in derivation (backlog #504).
+# DERIVED from the alternation group of `REF_RE` (a new kind added to the grammar is a known kind here, never a log
+# the writer produces and the reader refuses)
+REF_KINDS = tuple(re.search(r"\(([^()]*)\)", REF_RE.pattern).group(1).split("|"))
 FREE = "free"            # a step naming no backlog row or PR: its state is the owner-visible tick, never derived
 
 
@@ -1199,9 +1201,10 @@ def _locked(path: pathlib.Path, write):
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
         text = fh.read()
-        if not text.strip():
-            fh.truncate(0)     # a whitespace-only log: emptied, so no blank line is left ahead of the first record (#504)
-            text = ""
+        body = text.rstrip()
+        if text != body and (not body or text != body + "\n"):
+            fh.truncate(len(body.encode()))    # trailing blanks (or an all-blank log) cut off, so no blank line is left between records (#504)
+            text = body
         lines, said = write(agendas(_agenda_records(text, path.name)))
         fh.seek(0, 2)
         if text and not text.endswith("\n"):
@@ -4041,9 +4044,9 @@ def _self_test_body() -> int:
              [True, True, True])
         case("...and an agenda step with well-formed refs of every known kind passes (backlog #504, the control)",
              (_refs_err([["backlog", 1], ["PR", 2]]), _refs_err([])), (None, None))
-        case("the known ref kinds are exactly the kinds the step grammar writes (backlog #504)",
-             (sorted(REF_KINDS), sorted({k for k, _ in REF_RE.findall("backlog #1 · PR #2")})),
-             (["PR", "backlog"], ["PR", "backlog"]))
+        case("the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)",
+             (sorted(REF_KINDS), [REF_RE.findall(f"{k} #7") for k in sorted(REF_KINDS)]),
+             (["PR", "backlog"], [[("PR", "7")], [("backlog", "7")]]))
 
         _ap = r / "main" / AGENDA_REL
 
@@ -4128,6 +4131,20 @@ def _self_test_body() -> int:
              "line left ahead of the first record (backlog #504)",
              (_ws.read_text().count("\n"), _ws.read_text()[:1], [x["id"] for x in replayed(_ws)]), (1, "{", [1]))
         _ws.unlink()
+        _tw = r / "tw.jsonl"
+        _tw.write_text(json.dumps({"kind": "agenda", "at": "t", "id": 1, "window": "w",
+                                   "steps": [{"when": "g", "text": "free", "refs": []}]}) + "\n   ")
+        record_agenda(_tw, ag, "t2", None)
+        case("⛔ a log whose last line is blanks after a record leaves no blank line before the next write (backlog #504)",
+             (_tw.read_text().count("\n"), [x["id"] for x in replayed(_tw)], "" in _tw.read_text().split("\n")[:-1]),
+             (3, [1, 2], False))
+        _tw.unlink()
+        _nn = r / "nn.jsonl"
+        _nn.write_text("\n")
+        record_agenda(_nn, ag, "t", None)
+        case("⛔ a log that is a lone newline is emptied too, so the first record is not preceded by a blank line (backlog #504)",
+             (_nn.read_text().count("\n"), _nn.read_text()[:1]), (1, "{"))
+        _nn.unlink()
 
         def replay_err(recs):
             try:
