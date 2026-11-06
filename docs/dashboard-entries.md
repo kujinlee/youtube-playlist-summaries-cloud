@@ -18849,3 +18849,7 @@ Closing a piece of tracked work no longer makes it silently vanish from the goal
 <!--tech-->
 `scripts/session-state.py`: `thread_handoff(entry, main, run)` reads `origin/master:docs/goal-threads.md` and parses the entry's thread and the file with goal-tree's own parsers (`parse_thread_line`, `parse_threads`) and compares their refs as (kind, number) — a ref in a line's WHAT text does not count, `PR #30` ≠ `PR #305`, `PR #030` = `PR #30`; `--done` calls it after removing the entry and prints the warning on stderr (a warning, never a refusal); an unreadable file, one goal-tree refuses, or an entry thread that does not parse is NOT CHECKED; the entry checked is the one removed under the ledger lock. 129 cases (+16); 12 new mutations; pin 97 → 109.
 
+Two checks that sometimes went red on unrelated pull requests, purely by luck of timing or ordering, now behave the same on every run. Backlog #506, its two known instances; a broader check for the whole class is still open.
+<!--tech-->
+`check-review-decision.py`: a case gives tied components one per round in REVERSE order, so dropping `sorted()` fails under every `PYTHONHASHSEED` (measured at seeds 266 and 312, where the old case passed). `check-selftest-counts.py`: a case patches `concurrent.futures.as_completed` to yield futures in reverse, so the "completion order" mutant fails on every run. Each joins its mutation's `expect`. 119 and 60 cases (+1 each).
+
