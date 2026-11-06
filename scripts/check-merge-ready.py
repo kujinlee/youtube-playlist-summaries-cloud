@@ -2179,8 +2179,13 @@ def _self_test_body() -> int:
             return pin_pair(run, "m")
         except PinsUnreadable as exc:
             return f"CANNOT RUN: {exc}"
+    # ⟳ backlog #536 masked this case's ls-tree third: a pins read that ignores the failing `ls-tree` falls
+    # through to the held-versus-displayed comparison, which ALSO says CANNOT RUN (the synthetic display is not
+    # the real harness's pins). A bare "CANNOT RUN" was answered by that second clause, and the full sweep
+    # reported the mutation SURVIVED. So each third must be refused for ITS OWN failing command.
     check("⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}",
-          [str(_err(lambda c, w=w: 128 if c[1] == w else 0)).startswith("CANNOT RUN")
+          [(lambda r: r.startswith("CANNOT RUN") and f"`git {w}" in r and "exited 128" in r)(
+               str(_err(lambda c, w=w: 128 if c[1] == w else 0)))
            for w in ("merge-base", "ls-tree", "show")], [True, True, True])
     # THE REAL `check-plan-code.py`: the synthetic texts above prove the rule; only the real one
     # proves its display is what `pin_display` reads.
