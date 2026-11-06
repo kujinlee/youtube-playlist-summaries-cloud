@@ -147,7 +147,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 344 cases
+    python3 scripts/check-usage-pace.py --self-test  # 347 cases
 """
 from __future__ import annotations
 
@@ -229,10 +229,11 @@ class Malformed(Exception):
 def local_time(t: float, exact: bool = False) -> str:
     """The reset as the owner reads it, zone included. Malformed when the platform cannot represent `t`.
     `exact` (backlog #525 r1 fold): a forecast transition that is not minute-aligned shows its seconds, because the minute
-    alone names an instant up to 59 s BEFORE it."""
+    alone names an instant up to 59 s BEFORE it; r2 fold: a fractional one is rounded UP to the next whole second."""
     try:
-        sec = ":%S" if exact and int(t) % 60 else ""
-        return time.strftime(f"%a %m-%d %H:%M{sec} %Z", time.localtime(t))
+        shown = math.ceil(t) if exact else t  # r2 fold: a fraction is shown UP, never as the second before it
+        sec = ":%S" if exact and shown % 60 else ""
+        return time.strftime(f"%a %m-%d %H:%M{sec} %Z", time.localtime(shown))
     except (OverflowError, OSError, ValueError) as e:
         raise Malformed(f"the time {t:.6g} cannot be shown on this platform ({e})") from None
 
@@ -1047,6 +1048,16 @@ def _self_test_body() -> int:
         check("backlog #525 r1 fold: local_time(exact) is direct — exact shows the seconds of 02:37:42, the default and an aligned time never do",
               (local_time(_sec, True)[-12:], local_time(_sec)[-9:], local_time(_sat2, True)[-9:]),
               ("02:37:42 PST", "02:37 PST", "02:00 PST"))
+        _f1, _f2 = _sat2 + 37 * 60 + 0.5, _sat2 + 37 * 60 + 42.5
+        _fm1 = evm(cache(98, week_reset=_f1, at=_f1 - 9 * 3600), m85, _f1 - 9 * 3600)[1]
+        _fm2 = evm(cache(98, week_reset=_f2, at=_f2 - 9 * 3600), m85, _f2 - 9 * 3600)[1]
+        check("⭐ backlog #525 r2 fold: a fractional transition (02:37:00.500) is shown UP to the next second (18:37:01), never 18:37 which is 0.5 s early",
+              ("from Fri 01-15 18:37:01 PST" in _fm1, "from Fri 01-15 18:37 PST" in _fm1), (True, False))
+        check("⭐ backlog #525 r2 fold: …and 02:37:42.500 is shown as 18:37:43, never 18:37:42",
+              ("from Fri 01-15 18:37:43 PST" in _fm2, "18:37:42" in _fm2), (True, False))
+        check("backlog #525 r2 fold: local_time(exact) rounds up — 42.5 s shows :43, a whole :42 stays :42, an aligned minute stays minute-form",
+              (local_time(_f2, True)[-12:], local_time(_sec, True)[-12:], local_time(_sat2, True)[-9:]),
+              ("02:37:43 PST", "02:37:42 PST", "02:00 PST"))
         check("backlog #525 r1 fold: …and an aligned transition keeps the minute form",
               ("from Fri 01-15 18:00 PST" in _m1[0], "18:00:00" in _m1[0]), (True, False))
         _n = _sat2 - 3 * 3600

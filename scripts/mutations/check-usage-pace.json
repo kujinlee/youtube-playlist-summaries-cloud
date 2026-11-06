@@ -777,8 +777,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "%H:%M{sec} %Z\", time.localtime(t))",
-        "%H:%M{sec} %Z\", time.gmtime(t))"
+        "%H:%M{sec} %Z\", time.localtime(shown))",
+        "%H:%M{sec} %Z\", time.gmtime(shown))"
       ]
     ],
     "expect": [
@@ -1998,12 +1998,39 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "if exact and int(t) % 60 else \"\"",
+        "if exact and shown % 60 else \"\"",
         "if exact else \"\""
       ]
     ],
     "expect": [
       "backlog #525 r1 fold: …and an aligned transition keeps the minute form"
+    ]
+  },
+  {
+    "name": "backlog #525 r2 fold: the forecast truncates a fraction instead of rounding it up",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "shown = math.ceil(t) if exact else t",
+        "shown = int(t) if exact else t"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r2 fold: a fractional transition (02:37:00.500) is shown UP to the next second (18:37:01), never 18:37 which is 0.5 s early",
+      "⭐ backlog #525 r2 fold: …and 02:37:42.500 is shown as 18:37:43, never 18:37:42"
+    ]
+  },
+  {
+    "name": "backlog #525 r2 fold: the seconds test reads the unrounded transition",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if exact and shown % 60 else",
+        "if exact and int(t) % 60 else"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r2 fold: a fractional transition (02:37:00.500) is shown UP to the next second (18:37:01), never 18:37 which is 0.5 s early"
     ]
   },
   {
