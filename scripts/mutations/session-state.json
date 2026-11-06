@@ -1273,8 +1273,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "_THREAD_REF = re.compile(r\"\\b(?:PR|backlog) #\\d+\\b\")",
-        "_THREAD_REF = re.compile(r\"\\b(?:PR|backlog) #\\d\\d?\")"
+        "    tracked = {tuple(r) for g in goals",
+        "    tracked = {(r[0], int(str(r[1])[:2])) for g in goals"
       ]
     ],
     "expect": [
@@ -1286,8 +1286,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if rc != 0:\n        return (f\"⚠ thread NOT CHECKED",
-        "    if rc != 0:\n        return None\n        return (f\"⚠ thread NOT CHECKED"
+        "    if rc != 0:\n        return f\"⚠ thread NOT CHECKED",
+        "    if rc != 0:\n        return None\n        return f\"⚠ thread NOT CHECKED"
       ]
     ],
     "expect": [
@@ -1299,7 +1299,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if set(refs) & tracked:",
+        "    if refs & tracked:",
         "    if True:"
       ]
     ],
@@ -1326,8 +1326,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    refs = sorted(refs_field(thread))",
-        "    refs = []"
+        "    refs = {tuple(r) for r in mine[\"refs\"]}",
+        "    refs = set()"
       ]
     ],
     "expect": [
@@ -1339,8 +1339,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "            tracked |= refs_field(ln[2:])",
-        "            tracked |= set(_THREAD_REF.findall(ln))"
+        "for t in g[\"threads\"] for r in t[\"refs\"]}",
+        "for t in g[\"threads\"] for r in t[\"refs\"]} | {(k, int(n)) for k, n in re.findall(r\"\\b(PR|backlog) #(\\d+)\", out)}"
       ]
     ],
     "expect": [
@@ -1348,16 +1348,29 @@
     ]
   },
   {
-    "name": "backlog #507 r1: a bullet above any goal heading counts as tracked",
+    "name": "backlog #507 r2: a threads file goal-tree refuses reads as tracked",
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    in_goal = False\n    for ln in out.splitlines():",
-        "    in_goal = True\n    for ln in out.splitlines():"
+        "    except gt.Malformed as e:\n        return f\"⚠ thread NOT CHECKED",
+        "    except gt.Malformed as e:\n        return None\n        return f\"⚠ thread NOT CHECKED"
       ]
     ],
     "expect": [
-      "backlog #507 r1: a bullet ABOVE any goal heading does not count; one under ANOTHER goal does"
+      "backlog #507 r2: a file goal-tree REFUSES (a stray heading) is NOT CHECKED, even when it names the ref"
+    ]
+  },
+  {
+    "name": "backlog #507 r2: an entry thread that does not parse is silent",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if mine is None:\n        return f\"⚠ this entry",
+        "    if mine is None:\n        return None\n        return f\"⚠ this entry"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r2: an entry thread that does not parse says so"
     ]
   }
 ]
