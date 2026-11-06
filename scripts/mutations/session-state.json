@@ -1404,8 +1404,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    tracked = {tuple(r) for g in goals",
-        "    refs = {(\"PR\", r[1]) for r in refs}\n    tracked = {(\"PR\", r[1]) for g in goals"
+        "    if refs & tracked:\n        return None\n",
+        "    if {r[1] for r in refs} & {r[1] for r in tracked}:\n        return None\n"
       ]
     ],
     "expect": [

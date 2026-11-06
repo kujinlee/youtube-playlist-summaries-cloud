@@ -53,7 +53,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 124 cases
+    python3 scripts/session-state.py --self-test  # 129 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -73,6 +73,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
@@ -1331,6 +1332,13 @@ def _self_test_body() -> int:
         case("backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`",
              thread_handoff(_e("fix · PR #30 · x"), root, _show("## GOAL g\n" + _rq + "- fix · backlog #30 · x\n")) is None,
              False)
+        _other = root / "other-main"
+        case("backlog #507 r3: master's file is read in the checkout `main` names, not another",
+             [thread_handoff(_e("fix · PR #30 · x"), m, lambda c, w, timeout=TIMEOUT: (0, "## GOAL g\n" + _rq + "- fix · PR #30 · x\n")
+                             if w == _other else (128, "not here")) is None for m in (_other, root)], [True, False])
+        _stub = types.SimpleNamespace(parse_thread_line=lambda line: (None, "the stub refuses"), Malformed=ValueError)
+        case("backlog #507 r3: the thread is parsed by the goal-tree module handed in",
+             "the stub refuses" in (thread_handoff(_e("fix · PR #30 · x"), root, _show(_tracked), gt=_stub) or ""), True)
         case("backlog #507: …an entry with no thread is silent",
              [thread_handoff({"id": "j"}, root, _show(_tracked)), thread_handoff(_e("  "), root, _show(_tracked))], [None, None])
         _err = io.StringIO()
