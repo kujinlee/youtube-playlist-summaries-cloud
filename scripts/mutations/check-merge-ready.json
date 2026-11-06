@@ -1272,68 +1272,42 @@
   ]
  },
  {
-  "name": "sweep-pin-select r1 F1: HEAD's harness is never checked, so a harness repointed at a new pins file with a lowered pin is READY on the stale one",
+  "name": "backlog #536: the held-versus-display comparison is skipped, so a head harness redirected to a new pins file with a lowered pin is READY on the stale display",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if pins_home(run, \"HEAD\") == PINS_FILE:\n        harness_binds_pins(run, \"HEAD\")\n",
-    "    pass\n"
+    "        if differ:\n            raise PinsUnreadable(",
+    "        if False:\n            raise PinsUnreadable("
    ]
   ],
   "expect": [
-   "⛔ sweep-pin-select r1 F1: a head harness REPOINTED at a new pins file with a lowered pin is CANNOT RUN, never READY on the stale file"
+   "⛔ backlog #536: a head harness REDIRECTED to a new pins file with a lowered pin is CANNOT RUN, by every import-time route (R1-R7), never READY on the stale file"
   ]
  },
  {
-  "name": "sweep-pin-select r1 F1: a second write of a pins name is not refused, so a later rebinding passes",
+  "name": "backlog #536: the comparison is inverted, so the real harness, whose held pins equal its display, is CANNOT RUN",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if len(writes) != 1:",
-    "        if len(writes) < 1:"
+    "        if differ:\n",
+    "        if not differ:\n"
    ]
   ],
   "expect": [
-   "⛔ F1: a harness whose EXPECTED_MUTATIONS is bound to anything but the pins file, or rebound, is refused"
+   "backlog #536: ...while the real harness and harmless shapes of the same names are read, and hold nothing (the adjacent negatives, L0-L4)"
   ]
  },
  {
-  "name": "sweep-pin-select r1 F1: a binding below module level counts, so one an `if` can skip passes",
+  "name": "backlog #536: the comparison reads only the held side's keys, so a redirect to a pins file that drops a target is READY",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "isinstance(stmt, ast.Assign) and id(stmt) in top and",
-    "isinstance(stmt, ast.Assign) and"
+    "held.keys() | new.keys()",
+    "held.keys()"
    ]
   ],
   "expect": [
-   "...and a binding nested under an `if` is not at module level"
-  ]
- },
- {
-  "name": "sweep-pin-select r2 F2: the binding scan walks the whole tree, so a helper's LOCAL PINS_FILE makes the real harness CANNOT RUN",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "if isinstance(child, _SCOPES):",
-    "if False:"
-   ]
-  ],
-  "expect": [
-   "⛔ sweep-pin-select r2 F2: a helper's LOCAL `PINS_FILE` or `EXPECTED_MUTATIONS` (or a class attribute) is not a module binding — the real harness with one still binds"
-  ]
- },
- {
-  "name": "sweep-pin-select r2 F2: a function's `global` declaration is ignored, so a rebinding inside a function passes",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "visit(child, decl)",
-    "visit(child, False)"
-   ]
-  ],
-  "expect": [
-   "⛔ F1: a harness whose EXPECTED_MUTATIONS is bound to anything but the pins file, or rebound, is refused"
+   "⛔ backlog #536: ...and so is a redirect to a pins file that DROPS a target (the comparison reads both sides)"
   ]
  }
 ]

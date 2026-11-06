@@ -1611,7 +1611,12 @@ EXPECTED_MUTATIONS = {
     # read before it (1).
     # ⟳ 2026-11-06, sweep-pin-select r1 (Claude F1): 99 -> 102, none retired. HEAD's harness must bind the
     # pins file this script reads: the check skipped (1), a second write allowed (1), a nested binding (1).
-    "scripts/check-merge-ready.py": 104,
+    # ⟳ 2026-11-06, sweep-pin-select r2 (Codex F2): 102 -> 104, none retired. The binding scan counts only module
+    # bindings: walking the whole tree (1), and ignoring a function's `global` (1).
+    # ⟳ 2026-11-06, backlog #536 (the THRASHING architecture review, r4 fold): 104 -> 102. The static binding proof is
+    # DELETED with its 5 mutations (3 from r1, 2 from r2); the held-versus-display comparison in `pin_pair` adds 3:
+    # skipped (1), inverted (1), and reading only the held side's keys (1).
+    "scripts/check-merge-ready.py": 102,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
