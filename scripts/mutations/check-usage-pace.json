@@ -764,8 +764,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "\"%a %m-%d %H:%M %Z\"",
-        "\"%a %m-%d %H:%M\""
+        "%H:%M{sec} %Z\"",
+        "%H:%M{sec}\""
       ]
     ],
     "expect": [
@@ -777,8 +777,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "time.strftime(\"%a %m-%d %H:%M %Z\", time.localtime(t))",
-        "time.strftime(\"%a %m-%d %H:%M %Z\", time.gmtime(t))"
+        "%H:%M{sec} %Z\", time.localtime(t))",
+        "%H:%M{sec} %Z\", time.gmtime(t))"
       ]
     ],
     "expect": [
@@ -1933,8 +1933,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "                          if resets - LAST_NIGHT_S < resets - RISE_END_S\n",
-        "                          if False\n"
+        "night_at\n                          else (night_at",
+        "night_at or True\n                          else (night_at"
       ]
     ],
     "expect": [
@@ -1952,6 +1952,71 @@
     ],
     "expect": [
       "⭐ backlog #525 M3: the last night starts EXACTLY at resets − LAST_NIGHT_S — a second before it the day's stop, at it and a second after the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: a tie names the 99% (< night_at becomes <=)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "rise_end < night_at\n",
+        "rise_end <= night_at\n"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r1 fold: a TIE (rise end == last night start) names the hard limit — last_night uses >=, so a 99% there is never a stop"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: a rise end already past is still named (now < rise_end dropped)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if now < rise_end <",
+        "if rise_end <"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r1 fold: past the rise's end (end 17:00, now 17:30) the next stop is the 100% at the last night's start, never a 99% already past"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: the forecast never shows seconds",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "sec = \":%S\" if exact and",
+        "sec = \":%S\" if False and"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #525 r1 fold: a transition that is not minute-aligned shows its seconds (18:37:42), never 18:37 which is 42 s early"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: the forecast always shows seconds",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if exact and int(t) % 60 else \"\"",
+        "if exact else \"\""
+      ]
+    ],
+    "expect": [
+      "backlog #525 r1 fold: …and an aligned transition keeps the minute form"
+    ]
+  },
+  {
+    "name": "backlog #525 r1 fold: the 99% branch is unreachable (now < rise_end < night_at becomes False)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(rise_end, pct(LAST_DAY_CAP)) if",
+        "(rise_end, pct(LAST_DAY_CAP)) if False and"
+      ]
+    ],
+    "expect": [
+      "backlog #525 r1 fold: …while BEFORE a rise end that precedes the last night, the 99% IS the next stop (the other branch stays reachable)"
     ]
   }
 ]

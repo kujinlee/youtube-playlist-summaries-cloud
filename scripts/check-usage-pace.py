@@ -20,7 +20,8 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) —
                   except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
                   — and for the last 8 h before the reset (the LAST NIGHT) there is no soft stop: the stop is the hard
-                  100% limit (backlog #523), which comes before that 99%, so the 99% is never reached as a stop (#525)
+                  100% limit (backlog #523), which comes before that 99% for the SHIPPED constants (RISE_END_S < LAST_NIGHT_S), so there the 99% is never reached as a
+                  stop; the message names whichever of the two transitions really comes next (#525)
                   — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
@@ -146,7 +147,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 338 cases
+    python3 scripts/check-usage-pace.py --self-test  # 344 cases
 """
 from __future__ import annotations
 
@@ -225,10 +226,13 @@ class Malformed(Exception):
     pass
 
 
-def local_time(t: float) -> str:
-    """The reset as the owner reads it, zone included. Malformed when the platform cannot represent `t`."""
+def local_time(t: float, exact: bool = False) -> str:
+    """The reset as the owner reads it, zone included. Malformed when the platform cannot represent `t`.
+    `exact` (backlog #525 r1 fold): a forecast transition that is not minute-aligned shows its seconds, because the minute
+    alone names an instant up to 59 s BEFORE it."""
     try:
-        return time.strftime("%a %m-%d %H:%M %Z", time.localtime(t))
+        sec = ":%S" if exact and int(t) % 60 else ""
+        return time.strftime(f"%a %m-%d %H:%M{sec} %Z", time.localtime(t))
     except (OverflowError, OSError, ValueError) as e:
         raise Malformed(f"the time {t:.6g} cannot be shown on this platform ({e})") from None
 
@@ -426,16 +430,18 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
     # backlog #525 M1: the rise's NEXT real stop. The last night (the hard limit) starts before the rise's 99% end
     # whenever LAST_NIGHT_S > RISE_END_S, so the 99% end is then never a stop and must not be named as one.
-    next_at, next_stop = ((resets - LAST_NIGHT_S, f"{pct(HARD_LIMIT)} (the hard limit)")
-                          if resets - LAST_NIGHT_S < resets - RISE_END_S
-                          else (resets - RISE_END_S, pct(LAST_DAY_CAP)))
+    # r1 fold: the 99% end is a real NEXT stop only while it is still ahead (now < end) AND strictly before the last night
+    # starts (a tie goes to the hard limit, as `last_night` uses >=); otherwise the next stop is the hard limit.
+    rise_end, night_at = resets - RISE_END_S, resets - LAST_NIGHT_S
+    next_at, next_stop = ((rise_end, pct(LAST_DAY_CAP)) if now < rise_end < night_at
+                          else (night_at, f"{pct(HARD_LIMIT)} (the hard limit)"))
     # r2 Codex L1: the note names the limit that BINDS — the reserve can sit above 97 and below the rising cap
     stop_note = (" The last night has no soft stop — only the hard 100% limit; if it is hit, work waits for the reset, so "
                  "commit before every long step (owner 11-05 20:46)." if stop == HARD_LIMIT
                  else f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < cap_at(now, resets)
                  else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
                  else f" The stop rises over the last day, {pct_up(stop)} now and {next_stop} from "
-                      f"{local_time(next_at)}: what is left under it is lost at the reset.")
+                      f"{local_time(next_at, exact=True)}: what is left under it is lost at the reset.")
     # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
     line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
     line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
@@ -1016,6 +1022,33 @@ def _self_test_body() -> int:
               ("The stop rises over the last day, 98.4% now and 100% (the hard limit) from Fri 01-15 18:00 PST: " in _m1[0],
                "The stop rises over the last day, 98.6% now and 100% (the hard limit) from Fri 01-15 15:00 PST: " in _m1[1],
                "99% from" in _m1[0] + _m1[1]), (True, True, False))
+        # r1 fold (both reviewers, MINOR): the next-stop choice must agree with `last_night` for ANY constants. Patched in
+        # place and restored in `finally`; every case is on the same Sat 02:00 reset, 98%, evaluated by the real message.
+        def _with_consts(rise: int, night: int, t: float, weekly: float = 98, reset: float = _sat2) -> str:
+            _saved = (globals()["RISE_END_S"], globals()["LAST_NIGHT_S"])
+            globals()["RISE_END_S"], globals()["LAST_NIGHT_S"] = rise, night
+            try:
+                return evm(cache(weekly, week_reset=reset, at=t), m85, t)[1]
+            finally:
+                globals()["RISE_END_S"], globals()["LAST_NIGHT_S"] = _saved
+        _tie = _with_consts(8 * 3600, 8 * 3600, _sat2 - 9 * 3600)
+        check("⭐ backlog #525 r1 fold: a TIE (rise end == last night start) names the hard limit — last_night uses >=, so a 99% there is never a stop",
+              ("100% (the hard limit) from Fri 01-15 18:00 PST" in _tie, "99% from" in _tie), (True, False))
+        _post = _with_consts(9 * 3600, 8 * 3600, _sat2 - 8.5 * 3600)
+        check("⭐ backlog #525 r1 fold: past the rise's end (end 17:00, now 17:30) the next stop is the 100% at the last night's start, never a 99% already past",
+              ("100% (the hard limit) from Fri 01-15 18:00 PST" in _post, "99% from" in _post), (True, False))
+        _pre = _with_consts(9 * 3600, 8 * 3600, _sat2 - 9.5 * 3600)
+        check("backlog #525 r1 fold: …while BEFORE a rise end that precedes the last night, the 99% IS the next stop (the other branch stays reachable)",
+              "99% from Fri 01-15 17:00 PST" in _pre, True)
+        _sec = _sat2 + 37 * 60 + 42
+        _secm = evm(cache(98, week_reset=_sec, at=_sec - 9 * 3600), m85, _sec - 9 * 3600)[1]
+        check("⭐ backlog #525 r1 fold: a transition that is not minute-aligned shows its seconds (18:37:42), never 18:37 which is 42 s early",
+              ("100% (the hard limit) from Fri 01-15 18:37:42 PST" in _secm), True)
+        check("backlog #525 r1 fold: local_time(exact) is direct — exact shows the seconds of 02:37:42, the default and an aligned time never do",
+              (local_time(_sec, True)[-12:], local_time(_sec)[-9:], local_time(_sat2, True)[-9:]),
+              ("02:37:42 PST", "02:37 PST", "02:00 PST"))
+        check("backlog #525 r1 fold: …and an aligned transition keeps the minute form",
+              ("from Fri 01-15 18:00 PST" in _m1[0], "18:00:00" in _m1[0]), (True, False))
         _n = _sat2 - 3 * 3600
         _r = evm(cache(99.5, week_reset=_sat2, at=_n), m85, _n)
         check("⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit",

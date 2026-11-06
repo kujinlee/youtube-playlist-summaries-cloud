@@ -2708,7 +2708,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #446 r4 fold: 94 -> 102, none retired. The stdin read's deadline at both call sites, as a daemon,
     # failing toward the gate (4), its byte bound through real stdin (2), the control type as a string (1), and
     # the missing-cache case's precondition (1).
-    "scripts/check-usage-pace.py": 148,
+    # ⟳ backlog #525 r1 fold: 148 -> 153, none retired. The next-stop choice for a tie, a past rise end and the 99% branch (3),
+    # seconds on a non-aligned forecast and minutes on an aligned one (2).
+    "scripts/check-usage-pace.py": 153,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
