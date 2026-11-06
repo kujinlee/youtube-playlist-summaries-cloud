@@ -30,4 +30,9 @@ if ! src="$(for v in $(compgen -e | grep '^GIT_'); do unset "$v"; done
     python3 -c 'import json,sys; print(json.dumps({"systemMessage": sys.argv[1]}))' "$msg"
     exit 0
 fi
-python3 <(printf '%s\n' "$src") --hook "$mode" --root "$REPO_ROOT"
+# Run from a file NAMED check-usage-pace.py, not `python3 <(…)`: the ratchet contract finds a guard's caller by its
+# invocation, and a process substitution hid the only one (the guard runs nowhere else). The file is per-call and removed.
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/usage-pace.XXXXXX")" || { echo "⚠ usage pace CANNOT RUN — no temp dir" >&2; exit 1; }
+trap 'rm -rf "$tmp"' EXIT
+printf '%s\n' "$src" > "$tmp/check-usage-pace.py"
+python3 "$tmp/check-usage-pace.py" --hook "$mode" --root "$REPO_ROOT"
