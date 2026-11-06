@@ -9,7 +9,7 @@ halves:
   claude: skipped
 findings:
   - {id: R2-1, severity: Medium, aim: deliverable, fix_induced: true, component: settled-history-reader, disposition: fixed}
-  - {id: R2-2, severity: Low, aim: deliverable, fix_induced: false, component: settled-history-reader, disposition: bound}
+  - {id: R2-2, severity: Low, aim: deliverable, fix_induced: false, component: settled-history-reader, disposition: declined}
 ```
 
 REVIEW GAP: claude — alternation
