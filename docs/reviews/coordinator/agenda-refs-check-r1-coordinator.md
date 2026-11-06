@@ -1,5 +1,17 @@
 # agenda-refs-check r1 — coordinator fold (backlog #504)
 
+```yaml
+round: 1
+fixes_nontrivial: true
+subject: agenda-refs-check
+halves:
+  codex: ran
+  claude: ran
+findings:
+  - {id: F1, severity: Low, aim: deliverable, fix_induced: false, component: ref-kinds, disposition: fixed}
+  - {id: F2, severity: Low, aim: deliverable, fix_induced: false, component: blank-repair, disposition: fixed}
+```
+
 Both halves CONVERGED (Claude: 2 MINOR; Codex: none). Both MINOR findings fixed.
 
 | Finding | Fix | Case that fails without it |

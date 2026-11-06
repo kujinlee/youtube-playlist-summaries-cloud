@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 406 cases
+    python3 scripts/goal-tree.py --self-test                 # 410 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1197,20 +1197,30 @@ def _locked(path: pathlib.Path, write):
     same open agenda and each close it (r1 Codex H2). `write(current_agendas)` returns the lines."""
     import fcntl
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+") as fh:
+    with path.open("a+b") as fh:       # BYTES: a text read translates CRLF, so a length it counts is no file offset (r2 Codex F1)
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
-        text = fh.read()
-        body = text.rstrip()
-        if text != body and (not body or text != body + "\n"):
-            fh.truncate(len(body.encode()))    # trailing blanks (or an all-blank log) cut off, so no blank line is left between records (#504)
-            text = body
+        raw = fh.read()
+        keep = _blank_tail_cut(raw)
+        text = raw[:keep].decode("utf-8")
+        # ⛔ validated BEFORE the file is touched: a log refused as malformed is left exactly as it was (r2 Codex F3)
         lines, said = write(agendas(_agenda_records(text, path.name)))
-        fh.seek(0, 2)
-        if text and not text.endswith("\n"):
-            fh.write("\n")      # a last line with no newline would fuse with the next record (r3 Codex M2)
-        fh.write("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+        if keep != len(raw):
+            fh.truncate(keep)
+        out = "" if not text or text.endswith("\n") else "\n"   # a last line with no newline would fuse with the next record (r3 Codex M2)
+        fh.write((out + "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines)).encode("utf-8"))
     return said
+
+
+def _blank_tail_cut(raw: bytes) -> int:
+    """How many bytes of the log to KEEP. Only what is provably not data is cut: the blank lines AFTER the last
+    record's own line ending (backlog #504), or the whole of a log that holds nothing but blanks. The last record,
+    any blanks on its own line, and its line ending — `\n` or `\r\n` — are kept byte for byte (r2 Codex F1)."""
+    end = len(raw.rstrip(b" \t\r\n"))
+    if end == 0:
+        return 0                                  # an all-blank log holds no record
+    nl = raw.find(b"\n", end)
+    return len(raw) if nl == -1 else nl + 1       # no line ending after the last record: nothing after it is cut
 
 
 def _open_or_refuse(cur: list[dict]) -> None:
@@ -4047,6 +4057,14 @@ def _self_test_body() -> int:
         case("the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)",
              (sorted(REF_KINDS), [REF_RE.findall(f"{k} #7") for k in sorted(REF_KINDS)]),
              (["PR", "backlog"], [[("PR", "7")], [("backlog", "7")]]))
+        # r2 Codex F2: the derivation splits the regex TEXT, so a grammar the split misreads (a group, an escaped `|`,
+        # a flag) drifts. Assert from the other side: every `<word> #7` the grammar ACCEPTS, over a probe of each
+        # kind's case variants and every word in the pattern text, names a known kind.
+        _probe = sorted({v for k in REF_KINDS for v in (k, k.lower(), k.upper(), k.swapcase(), k.title())}
+                        | set(re.findall(r"\w+", REF_RE.pattern)) | {"issue", "pr", "Backlog", "Pr"})
+        case("⛔ no `<word> #7` the step grammar accepts names a kind outside the known ref kinds — a case-insensitive or "
+             "regrouped grammar is caught (backlog #504, r2 Codex F2)",
+             sorted({k for w in _probe for k, _n in REF_RE.findall(f"{w} #7")} - set(REF_KINDS)), [])
 
         _ap = r / "main" / AGENDA_REL
 
@@ -4145,6 +4163,44 @@ def _self_test_body() -> int:
         case("⛔ a log that is a lone newline is emptied too, so the first record is not preceded by a blank line (backlog #504)",
              (_nn.read_text().count("\n"), _nn.read_text()[:1]), (1, "{"))
         _nn.unlink()
+        # r2 Codex F1, the input verbatim: a CRLF log whose last record is followed by spaces. The repair cut at a
+        # length counted after newline translation, so it removed the tick's closing `}`.
+        _crlf_agenda = '{"kind":"agenda","at":"t","id":1,"window":"w","steps":[{"when":"g","text":"free","refs":[]}]}'
+        _crlf_tick = '{"kind":"tick","at":"t","of":1,"step":1}'
+        _crlf_data = (_crlf_agenda + "\r\n" + _crlf_tick + "   ").encode()
+        _cr = r / "crlf.jsonl"
+        _cr.write_bytes(_crlf_data)
+        record_agenda(_cr, ag, "t2", None)
+        case("⛔ a CRLF log is kept byte for byte ahead of the appended record — the blank repair never cuts into a "
+             "record or its line ending (backlog #504, r2 Codex F1)",
+             (_cr.read_bytes().startswith(_crlf_data),
+              [(x["id"], x["ticked"]) for x in replayed(_cr)] if isinstance(replayed(_cr)[0], dict) else replayed(_cr)),
+             (True, [(1, [1]), (2, [])]))
+        _cr.write_bytes(_crlf_agenda.encode() + b"\r\n\r\n \t")
+        record_agenda(_cr, ag, "t2", None)
+        case("...and blank lines after a CRLF record are cut after its own CRLF, which is kept (backlog #504, r2 Codex F1)",
+             _cr.read_bytes().startswith(_crlf_agenda.encode() + b"\r\n{"), True)
+        _cr.unlink()
+        # r2 Codex F3, the input verbatim: an unfinished record whose string ends in spaces. Recording is refused,
+        # and the refused log is left exactly as it was — nothing is cut before the log is validated.
+        _uf = r / "unfinished.jsonl"
+
+        def refused_unchanged(data):
+            """(refused as malformed, the log left exactly as it was) for a log holding `data`."""
+            _uf.write_text(data)
+            try:
+                record_agenda(_uf, ag, "t", None)
+                refused = False
+            except Malformed:
+                refused = True
+            return refused, _uf.read_text() == data
+        # the second input has a blank tail the repair WOULD cut — so the order (validate, then cut) is what is tested
+        case("⛔ a log recording refuses as malformed is left unchanged — nothing is cut before it is validated "
+             "(backlog #504, r2 Codex F3)",
+             [refused_unchanged('{"kind":"agenda","text":"unfinished   '),
+              refused_unchanged('{"kind":"agenda","text":"unfinished\n  \t')],
+             [(True, True), (True, True)])
+        _uf.unlink()
 
         def replay_err(recs):
             try:

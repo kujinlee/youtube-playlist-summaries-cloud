@@ -2279,8 +2279,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if text and not text.endswith(\"\\n\"):\n            fh.write(\"\\n\")",
-        "        if False:\n            fh.write(\"\\n\")"
+        "        out = \"\" if not text or text.endswith(\"\\n\") else \"\\n\"",
+        "        out = \"\""
       ]
     ],
     "expect": [
@@ -3933,8 +3933,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if text != body and (not body or text != body + \"\\n\"):",
-        "        if text != body and (False or text != body + \"\\n\"):"
+        "    if end == 0:\n",
+        "    if end == 0 and b\"\\n\" not in raw:\n"
       ]
     ],
     "expect": [
@@ -3946,7 +3946,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            fh.truncate(len(body.encode()))",
+        "            fh.truncate(keep)",
         "            pass"
       ]
     ],
@@ -3959,8 +3959,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if text != body and (not body or",
-        "        if not body and (not body or"
+        "    return len(raw) if nl == -1 else nl + 1",
+        "    return len(raw)"
       ]
     ],
     "expect": [
@@ -3978,6 +3978,58 @@
     ],
     "expect": [
       "the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)"
+    ]
+  },
+  {
+    "name": "blanks on the last record's own line are cut (backlog #504, r2 Codex F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return len(raw) if nl == -1 else nl + 1       # no line ending after the last record",
+        "    return end if nl == -1 else nl + 1       # no line ending after the last record"
+      ]
+    ],
+    "expect": [
+      "⛔ a CRLF log is kept byte for byte ahead of the appended record — the blank repair never cuts into a record or its line ending (backlog #504, r2 Codex F1)"
+    ]
+  },
+  {
+    "name": "a CR is taken for data when the blank tail is measured (backlog #504, r2 Codex F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    end = len(raw.rstrip(b\" \\t\\r\\n\"))",
+        "    end = len(raw.rstrip(b\" \\t\\n\"))"
+      ]
+    ],
+    "expect": [
+      "...and blank lines after a CRLF record are cut after its own CRLF, which is kept (backlog #504, r2 Codex F1)"
+    ]
+  },
+  {
+    "name": "the blank tail is cut before the log is validated (backlog #504, r2 Codex F3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        lines, said = write(agendas(_agenda_records(text, path.name)))\n        if keep != len(raw):\n            fh.truncate(keep)\n",
+        "        if keep != len(raw):\n            fh.truncate(keep)\n        lines, said = write(agendas(_agenda_records(text, path.name)))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a log recording refuses as malformed is left unchanged — nothing is cut before it is validated (backlog #504, r2 Codex F3)"
+    ]
+  },
+  {
+    "name": "the step grammar is read case-insensitively (backlog #504, r2 Codex F2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "REF_RE = page_markup.KEY_REF      #",
+        "REF_RE = re.compile(page_markup.KEY_REF.pattern, re.I)      #"
+      ]
+    ],
+    "expect": [
+      "⛔ no `<word> #7` the step grammar accepts names a kind outside the known ref kinds — a case-insensitive or regrouped grammar is caught (backlog #504, r2 Codex F2)"
     ]
   },
   {
