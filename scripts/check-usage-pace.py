@@ -144,7 +144,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 324 cases
+    python3 scripts/check-usage-pace.py --self-test  # 326 cases
 """
 from __future__ import annotations
 
@@ -1759,6 +1759,21 @@ def _self_test_body() -> int:
                   decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
             with open(_own, "w") as fh:
                 fh.write(_keep)
+            # hook-master-guard r1 Codex: neither a local branch NAMED `origin/master` nor an inherited GIT_DIR picks the guard
+            git("branch", "origin/master", cwd=main_co)              # the short name now resolves to the LOCAL branch…
+            git("checkout", "-q", "origin/master", cwd=main_co)
+            with open(os.path.join(main_co, "scripts", "check-usage-pace.py"), "w") as fh:
+                fh.write("import sys\nsys.exit(0)\n")
+            git("commit", "-q", "-am", "gutted on a local branch named origin/master", cwd=main_co)
+            check("backlog #522 r1: a LOCAL branch named origin/master does not shadow the remote ref — still DENIES",
+                  decision(hook("usage-pace-spawn.sh", 98.5)[1]), "deny")
+            git("checkout", "-q", "-", cwd=main_co)
+            git("branch", "-D", "-q", "origin/master", cwd=main_co)
+            _elsewhere = os.path.join(tmp, "elsewhere")
+            os.makedirs(_elsewhere)
+            git("init", "-q", cwd=_elsewhere)
+            check("backlog #522 r1: an inherited GIT_DIR naming another repository does not redirect the read — still DENIES",
+                  decision(hook("usage-pace-spawn.sh", 98.5, GIT_DIR=os.path.join(_elsewhere, ".git"))[1]), "deny")
             git("update-ref", "-d", "refs/remotes/origin/master", cwd=main_co)
             _rc, _out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522"}')
             check("⭐ backlog #522: no origin/master — the prompt hook SAYS cannot run, never runs the checkout's copy",

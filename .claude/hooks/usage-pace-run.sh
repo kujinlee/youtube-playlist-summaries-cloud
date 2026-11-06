@@ -10,12 +10,15 @@
 #
 # ⛔ CANNOT READ origin/master IS SAID, NEVER FALLEN BACK FROM: the checkout's copy is exactly what this refuses to
 # trust. The prompt hook says so in context; spawn and wake exit 1 (visible, non-blocking — unknown is not a stop).
-# Bounds: the guard is read from THIS checkout's `origin/master` ref, as last fetched — a stale fetch runs an older
+# Bounds: the guard is read from THIS checkout's `refs/remotes/origin/master`, as last fetched — a stale fetch runs an older
 # reviewed guard, never an unreviewed one. This file itself still comes from the checkout (run-hook.sh's limit L2).
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 mode="$1"
-if ! src="$(git -C "$REPO_ROOT" show origin/master:scripts/check-usage-pace.py 2>/dev/null)" || [ -z "$src" ]; then
-    msg="⚠ usage pace CANNOT RUN — origin/master:scripts/check-usage-pace.py could not be read in $REPO_ROOT (backlog #522: the checkout's own copy is not trusted). Treat the usage verdict as NOT RUN; unknown is not a stop."
+# hook-master-guard r1 Codex: the ref is FULLY QUALIFIED (a local branch named `origin/master` shadowed the short name),
+# and every inherited GIT_* variable is unset for the read (a GIT_DIR pointed it at another repository's guard).
+if ! src="$(for v in $(compgen -e | grep '^GIT_'); do unset "$v"; done
+            git -C "$REPO_ROOT" show refs/remotes/origin/master:scripts/check-usage-pace.py 2>/dev/null)" || [ -z "$src" ]; then
+    msg="⚠ usage pace CANNOT RUN — refs/remotes/origin/master:scripts/check-usage-pace.py could not be read in $REPO_ROOT (backlog #522: the checkout's own copy is not trusted). Treat the usage verdict as NOT RUN; unknown is not a stop."
     if [ "$mode" = prompt ]; then
         python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": sys.argv[1]}}))' "$msg"
         exit 0
