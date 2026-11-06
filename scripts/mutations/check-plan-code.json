@@ -2086,8 +2086,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    out = {f'\"{stem}\"', f\"'{stem}'\"}",
-        "    out = set()"
+        "    out = {f'\"{stem}\"', f\"'{stem}'\"}\n",
+        "    out = set()\n"
       ]
     ],
     "expect": [
@@ -2197,6 +2197,20 @@
     ],
     "expect": [
       "...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob call — and walks another directory, is not a walker of it"
+    ]
+  },
+  {
+    "name": "backlog #498: a sibling loaded by its FILENAME is not an import",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    out |= {f'\"{stem}.py\"', f\"'{stem}.py'\"}",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
+      "backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py"
     ]
   }
 ]
