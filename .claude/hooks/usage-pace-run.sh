@@ -14,6 +14,9 @@
 # reviewed guard, never an unreviewed one. ⚠ THE THREAT IS ACCIDENT, NOT A HOSTILE BRANCH: this launcher, and
 # the three hooks calling it, still come from the checkout (run-hook.sh's limit L2), so a branch editing THEM runs its
 # edit; and the ref is locally writable. What it closes is the measured case — a branch's GUARD governing its session.
+# r7 Codex BLOCKER: an inherited SHELLOPTS=errexit exited on the guard's failure before `cannot` could speak — this
+# launcher's error handling is its own, so no inherited option may change it.
+set +e +u +o pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 mode="$1"
 # ⛔ EVERY failure to run origin/master's guard goes through `cannot`, never a bare exit (r4 Codex BLOCKER: a TMPDIR
@@ -45,6 +48,6 @@ trap 'rm -rf "$tmp"' EXIT
 printf '%s\n' "$src" > "$tmp/check-usage-pace.py" 2>/dev/null || cannot "the guard could not be written to $tmp"
 # r5 Codex BLOCKER: the guard's own failure (a python that cannot start, a crash, an exit 2) is a CANNOT RUN too — it
 # answers on stdout with exit 0, so anything else printed nothing a hook reads.
-out="$(python3 "$tmp/check-usage-pace.py" --hook "$mode" --root "$REPO_ROOT")"; rc=$?
+if out="$(python3 "$tmp/check-usage-pace.py" --hook "$mode" --root "$REPO_ROOT")"; then rc=0; else rc=$?; fi
 [ "$rc" -eq 0 ] || cannot "origin/master's guard exited $rc"
 [ -z "$out" ] || printf '%s\n' "$out"

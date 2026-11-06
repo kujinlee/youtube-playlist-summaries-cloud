@@ -1937,6 +1937,10 @@ def _self_test_body() -> int:
             rc, out = hook("usage-pace-spawn.sh", 98.5, PYTHONHOME=os.path.join(tmp, "no-such-pythonhome"))
             check("backlog #522 r5: a python that cannot start is a CANNOT RUN systemMessage, not a silent exit",
                   (rc, json.loads(out or "{}").get("systemMessage", "").startswith("⚠ usage pace CANNOT RUN")), (0, True))
+            rc, out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522e"}', SHELLOPTS="errexit",
+                           PYTHONHOME=os.path.join(tmp, "no-such-pythonhome-2"))
+            check("backlog #522 r7: under an inherited SHELLOPTS=errexit, a failing guard still says CANNOT RUN",
+                  (rc, "CANNOT RUN" in hso(out).get("hookSpecificOutput", {}).get("additionalContext", "")), (0, True))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     finally:
