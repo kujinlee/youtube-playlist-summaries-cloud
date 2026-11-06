@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 possible auth/quota fault (advisory match on stdout)",
+    "  gpt-6-astra: ok \u2014 691 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "66e30308f00e5f6b1c98d9607215712891e11031",
+  "intrusions": [],
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/p-hmg-r8.md",
+  "reason": "691 chars",
+  "refused": false,
+  "review": "hook-master-guard-r8-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hmg"
+}
