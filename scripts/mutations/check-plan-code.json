@@ -2212,5 +2212,59 @@
       "⭐ backlog #498: a target that loads a sibling by its FILENAME (`\"gen-b.py\"`) is reached through it",
       "backlog #498 on the real tree: check-dashboard-entry.py reaches compaction-state through gen-dashboard.py"
     ]
+  },
+  {
+    "name": "backlog #533: the pins file is a HARNESS file again, so every pin bump sweeps the WHOLE manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return frozenset({SWEEP_HARNESS, SWEEP_WORKFLOW}",
+        "    return frozenset({SWEEP_HARNESS, SWEEP_WORKFLOW, PINS_FILE}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #533 on the real tree: the pins file is not a harness file, though the harness reads it",
+      "⭐ backlog #533 on the real tree: a pins-only diff is a SELECTION, and it includes check-merge-ready, which reads the pins at both revisions"
+    ]
+  },
+  {
+    "name": "backlog #533: an unreadable pins file reads as AGREEMENT, so --mutate measures against {}",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return [f\"{PINS_FILE}: the pins could not be read ({exc.__class__.__name__}: {exc})\"]\n    return pin_display_problems(src, EXPECTED_MUTATIONS)",
+        "        return []\n    return pin_display_problems(src, EXPECTED_MUTATIONS)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}"
+    ]
+  },
+  {
+    "name": "backlog #533: importing the harness NEEDS the pins file, so a copy without one crashes instead of refusing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECTED_MUTATIONS = read_pins(own_pins_path())[0]",
+        "EXPECTED_MUTATIONS = pin_display(own_pins_path().read_text(encoding=\"utf-8\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}"
+    ]
+  },
+  {
+    "name": "backlog #533: an unreadable pins file is a silent {}, with no reason for the consumer to report",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return {}, f\"{PINS_FILE}: the pins could not be read ({exc.__class__.__name__}: {exc})\"",
+        "        return {}, None"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #533: a pins file whose display is refused is {} WITH the reason, never a silent {}",
+      "⛔ backlog #533: a MISSING pins file is {} WITH the reason"
+    ]
   }
 ]
