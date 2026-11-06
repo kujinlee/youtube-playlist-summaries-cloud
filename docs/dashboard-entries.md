@@ -18860,6 +18860,10 @@ The usage warnings now always come from the reviewed version on master. Before, 
 <!--tech-->
 New `.claude/hooks/usage-pace-run.sh`: the prompt, spawn and wake hooks run `scripts/check-usage-pace.py` from `git show origin/master:` (refs/remotes, `GIT_*` unset, `--no-replace-objects`), written to a per-call temp file named `check-usage-pace.py` so the ratchet contract still sees its caller; unreadable → the prompt hook says CANNOT RUN in context, spawn/wake exit 1 (non-blocking), never a fallback to the checkout's copy. The self-test's fixture now commits the guard and sets `origin/master`; 324 cases (+3). The launcher is a shell file the mutation harness cannot target, so 4 hand mutations were measured, each red (recorded in the PR).
 
+## 2026-11-05
+On the final night before the weekly usage reset, nothing holds work back early any more: the only stop is the real 100% limit, because anything kept in reserve would be lost at the reset anyway. If the limit is reached, work simply waits for the reset. Backlog #523, at the owner's request. A finer usage reading, so a small reserve for finishing a merge can be measured, is filed as backlog #524.
+<!--tech-->
+`scripts/check-usage-pace.py`: `last_night()` (the last `LAST_NIGHT_S` = 8 h before the reset); `refuse_at` returns `HARD_LIMIT` then; the WARN message leads with the room "before the hard limit" and says to commit before every long step. 331 cases (+4); 5 new mutations; pin 141 → 146 (stacked on #522).
 
 ## 2026-11-06
 The merge check no longer leaves its false "loosens a gate" alarms to the pull request's own author. Counted first from the written records: of 21 such alarms judged since the rule began, 19 were false. A self-test count that only went up is no longer flagged at all. Every other flagged line is now put to the final reviewer, who answers each one, and the merge check clears the alarm only for lines the reviewer answered "not a loosening" on exactly the code being merged. An unanswered line, a reviewer's finding, a verdict it cannot read, or any change after the review still holds the merge for you. Backlog #508.
