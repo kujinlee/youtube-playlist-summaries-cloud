@@ -649,12 +649,26 @@
     ]
   },
   {
+    "name": "the watcher is not recorded at all: every question watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "\"watcher\": question_watcher(inp.get(\"command\")),",
+        "\"watcher\": False,"
+      ]
+    ],
+    "expect": [
+      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)",
+      "⭐ the REAL watcher shapes are watchers: both `2>&1` forms, -n0 with no redirect, the grep filters, a bare tail"
+    ]
+  },
+  {
     "name": "the watcher no longer needs -F: a one-shot tail of questions.md is exempted",
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "\\s+-F(?:\\s+-n\\s*\\d+)?\\s+",
-        "(?:\\s+-F)?(?:\\s+-n\\s*\\d+)?\\s+"
+        "    return follow and len(paths) == 1 and",
+        "    return len(paths) == 1 and"
       ]
     ],
     "expect": [
@@ -662,29 +676,16 @@
     ]
   },
   {
-    "name": "work chained outside quotes no longer disqualifies a watcher",
+    "name": "the tail may follow MORE than one file: a CI log rides along with the watcher",
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "            and CHAINED_RE.search(re.sub(r\"'[^']*'\", \"\", command)) is None)",
-        "            )"
+        "follow and len(paths) == 1 and",
+        "follow and len(paths) >= 1 and"
       ]
     ],
     "expect": [
-      "⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), a -F tail that is not the FIRST stage, work chained after the watcher, another file's name"
-    ]
-  },
-  {
-    "name": "quoted text is no longer stripped before the chaining test: the canonical awk's `;` disqualifies it",
-    "file": "scripts/check-compaction-boundary.py",
-    "edits": [
-      [
-        "CHAINED_RE.search(re.sub(r\"'[^']*'\", \"\", command))",
-        "CHAINED_RE.search(command)"
-      ]
-    ],
-    "expect": [
-      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)"
+      "⭐ the tail follows exactly ONE file — a second path is another watcher (a CI log) riding along"
     ]
   },
   {
@@ -692,8 +693,8 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "(?:\\S*/)?explainers/questions\\.md\"",
-        "\\S*explainers/questions\\.md\""
+        "paths[0].endswith(\"/\" + WATCHER_FILE)",
+        "paths[0].endswith(WATCHER_FILE)"
       ]
     ],
     "expect": [
@@ -705,8 +706,8 @@
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "r\"(?:\\s+2>(?:/dev/null|&1))?\\s*(?:\\||\\Z)\")",
-        "r\"\")"
+        "(paths[0] == WATCHER_FILE or paths[0].endswith(\"/\" + WATCHER_FILE))",
+        "(WATCHER_FILE in paths[0])"
       ]
     ],
     "expect": [
@@ -714,17 +715,186 @@
     ]
   },
   {
-    "name": "the watcher is not recorded at all: every question watcher blocks again",
+    "name": "the first stage's program is not checked: any program with -F and the path is a watcher",
     "file": "scripts/check-compaction-boundary.py",
     "edits": [
       [
-        "\"watcher\": question_watcher(inp.get(\"command\")),",
-        "\"watcher\": False,"
+        "    if words[:1] != [\"tail\"]:\n",
+        "    if not words:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ the FIRST stage must be the tail itself, with no chaining token anywhere (r1 Claude F2, `.search` for `.match`)"
+    ]
+  },
+  {
+    "name": "a later stage may be ANY program, not only a filter: `| gh run watch` is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "return all(st and st[0] in WATCHER_FILTERS and",
+        "return all(st and"
+      ]
+    ],
+    "expect": [
+      "⭐ R1: a later stage that is WORK, not a FILTER, is no watcher (r1 Codex R1)"
+    ]
+  },
+  {
+    "name": "an operator token inside a later stage is allowed: `|&`, `;`, `&`, `||` are exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        " and not any(set(t) <= set(SHELL_OPERATOR_CHARS) for t in st)\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R1/F1: an operator other than `|` is no watcher — `|&`, `||`, `;`, `&&`, a background `&`, `&>`, a redirect in a later stage (r1 Codex R1, Claude F1, F2)"
+    ]
+  },
+  {
+    "name": "a newline is not refused: shlex reads it as a space, so `| cat<NL>gh run watch` is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        " or \"\\n\" in command:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "⭐ F1: a NEWLINE is a separator, so it is no watcher (r1 Codex R3, Claude F1)"
+    ]
+  },
+  {
+    "name": "the substitution scan is skipped: a backtick, or `$(` in double quotes, is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if _substitution_outside_single_quotes(command):\n        return False\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ F2: a SUBSTITUTION outside single quotes is no watcher — `$(`, a backtick, either inside double quotes, `${`, `<(` inside double quotes (r1 Claude F2)"
+    ]
+  },
+  {
+    "name": "a backslash no longer escapes: `\\'` opens a quoted region that hides a backtick",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            i += 2\n            continue\n",
+        "            i += 1\n            continue\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R3: an ESCAPED quote opens no quoted region, and a `'` inside double quotes is literal (r1 Codex R3, Claude F1)"
+    ]
+  },
+  {
+    "name": "a `'` inside double quotes opens a single-quoted region, hiding a backtick after it",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        elif ch == \"'\" and quote is None:",
+        "        elif ch == \"'\":"
+      ]
+    ],
+    "expect": [
+      "⭐ R3: an ESCAPED quote opens no quoted region, and a `'` inside double quotes is literal (r1 Codex R3, Claude F1)"
+    ]
+  },
+  {
+    "name": "a single-quoted region never ends (the greedy strip): a backtick after 'a' is hidden",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "        if quote == \"'\":\n            if ch == \"'\":\n",
+        "        if quote == \"'\":\n            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ F2: a single-quoted region ends at the NEXT quote — the greedy strip's analogue"
+    ]
+  },
+  {
+    "name": "only a backtick is a substitution, not `$`: `$(` in double quotes is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "elif ch in \"$`\" or",
+        "elif ch == \"`\" or"
+      ]
+    ],
+    "expect": [
+      "⭐ F2: a SUBSTITUTION outside single quotes is no watcher — `$(`, a backtick, either inside double quotes, `${`, `<(` inside double quotes (r1 Claude F2)"
+    ]
+  },
+  {
+    "name": "`<(` and `>(` are not refused by the scan: `<(` in double quotes is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        " or (ch in \"<>\" and command[i + 1:i + 2] == \"(\")",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ F2: a SUBSTITUTION outside single quotes is no watcher — `$(`, a backtick, either inside double quotes, `${`, `<(` inside double quotes (r1 Claude F2)"
+    ]
+  },
+  {
+    "name": "`#` is a comment again: the `; gh run watch` after `a#b` is dropped",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    lexer.commenters = \"\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a `#` inside a word is not a comment: the `;` after `a#b` is real"
+    ]
+  },
+  {
+    "name": "a command shlex cannot parse is a watcher",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    except ValueError:\n        return False\n",
+        "    except ValueError:\n        return True\n"
+      ]
+    ],
+    "expect": [
+      "an unbalanced quote is no watcher; neither is anything but a string"
+    ]
+  },
+  {
+    "name": "`2>&1` is no longer an allowed redirect: two real watcher shapes block again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        ", [\"2\", \">&\", \"1\"])   #",
+        ",)   #"
+      ]
+    ],
+    "expect": [
+      "⭐ the REAL watcher shapes are watchers: both `2>&1` forms, -n0 with no redirect, the grep filters, a bare tail"
+    ]
+  },
+  {
+    "name": "`2>/dev/null` is no longer an allowed redirect: the canonical watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "WATCHER_REDIRECTS = ([\"2\", \">\", \"/dev/null\"], ",
+        "WATCHER_REDIRECTS = ("
       ]
     ],
     "expect": [
       "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)",
-      "the watcher's other shapes are watchers too: an absolute path, -n0, a grep filter, no filter at all"
+      "⭐ the REAL watcher shapes are watchers: both `2>&1` forms, -n0 with no redirect, the grep filters, a bare tail"
     ]
   }
 ]

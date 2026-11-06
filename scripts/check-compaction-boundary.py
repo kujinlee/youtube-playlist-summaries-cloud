@@ -49,12 +49,18 @@ THE DECISION, in this order (the first that applies wins):
                                   one was ~1.2 h)
                          monitor  a Monitor whose task has no `<status>` notification, no `TaskStop`, and whose own
                                   expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed.
-                                  EXCEPT the explainer QUESTION WATCHER (`question_watcher`, backlog #537): a command
-                                  whose FIRST stage is `tail [-n N] -F <...>/explainers/questions.md`, with nothing
-                                  chained outside quotes. It waits on the human, never ends and is re-armed every 30
-                                  min, so it held all 3 offers of 2026-11-06 11:00-11:05 (238k-241k). ⚠ BOUND: matched
-                                  by COMMAND only — a watcher of another page type, or this one in another shape,
-                                  still blocks, up to the ceiling; a CI monitor beside the watcher still blocks.
+                                  EXCEPT the explainer QUESTION WATCHER (`question_watcher`, backlog #537), judged by
+                                  an ALLOWLIST over shlex tokens (r1: a denylist missed `| gh run watch`, `|&`, `<(`,
+                                  `&`, a newline and an escaped quote): stage 1 is `tail -F [-n N]` of exactly one
+                                  `<...>/explainers/questions.md`, optionally `2>/dev/null` or `2>&1`; every later stage
+                                  is joined by `|` alone and starts with a FILTER (awk grep sed cut head tr cat); no
+                                  other operator, no newline, and no `$`, backtick, `<(` or `>(` outside single quotes.
+                                  It waits on the human, never ends and is re-armed every 30 min, so it held all 4
+                                  `block-monitor` offers of 2026-11-06 11:00-11:07 (237,702-247,039 tokens) alone.
+                                  ⚠ BOUND: matched by COMMAND only — a watcher of another page type, or this one in
+                                  another shape, still blocks, up to the ceiling; a CI monitor beside the watcher
+                                  still blocks. ⚠ BOUND: the allowlist judges the SHELL, not the filters' own
+                                  languages — awk's `system()` or a sed `e` inside single quotes is not seen.
     allow-no-signal    none of the above — the work is at a boundary.
 
     NOT a signal: uncommitted tracked changes. The main checkout is always dirty with generated files, so that
@@ -78,7 +84,7 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 87 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 99 cases
 
 EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
 past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
@@ -91,6 +97,7 @@ import json
 import os
 import re
 import select
+import shlex
 import stat
 import subprocess
 import sys
@@ -120,13 +127,13 @@ END_TYPES = ("idle_notification", "shutdown_response")
 NOTE_RE = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TEAM_RE = re.compile(r'<teammate-message teammate_id="([^"]+)"[^>]*>(.*?)</teammate-message>', re.S)
 EXPIRES_RE = re.compile(r"expires in (\d+)m")
-# The explainer QUESTION WATCHER (explainer-delivery.md §5): its first stage is a `tail ... -F` of
-# `explainers/questions.md`, and nothing is chained outside quotes (`;`, `&&`, `||`, `$(`, a backtick) — so a
-# later stage can only filter. It waits on the human and never ends, so it is not work in flight (backlog #537).
-WATCHER_RE = re.compile(r"\A\s*tail(?:\s+-n\s*\d+)?\s+-F(?:\s+-n\s*\d+)?\s+(?:\S*/)?explainers/questions\.md"
-                        r"(?:\s+2>(?:/dev/null|&1))?\s*(?:\||\Z)")
-CHAINED_RE = re.compile(r";|&&|\|\||\$\(|`")
-
+# The explainer QUESTION WATCHER (explainer-delivery.md §5), judged by an ALLOWLIST over a real tokenizer (r1 Codex
+# R1-R3, Claude F1): stage 1 is `tail` of exactly one `.../explainers/questions.md` with -F, every later stage is a
+# FILTER, the only operator is `|`. It waits on the human and never ends, so it is not work in flight (backlog #537).
+WATCHER_FILTERS = frozenset({"awk", "grep", "sed", "cut", "head", "tr", "cat"})
+WATCHER_REDIRECTS = (["2", ">", "/dev/null"], ["2", ">&", "1"])   # shlex splits `2>/dev/null` and `2>&1` so
+WATCHER_FILE = "explainers/questions.md"
+SHELL_OPERATOR_CHARS = "();<>|&"                                   # shlex's punctuation_chars
 
 class CannotRun(Exception):
     pass
@@ -265,11 +272,83 @@ def scan(lines: list[str]) -> dict:
     return out
 
 
-def question_watcher(command) -> bool:
-    """A Monitor command that is the explainer question watcher (`WATCHER_RE`). PURE. The ONE place the rule lives."""
-    return (isinstance(command, str) and WATCHER_RE.match(command) is not None
-            and CHAINED_RE.search(re.sub(r"'[^']*'", "", command)) is None)
+def _substitution_outside_single_quotes(command: str) -> bool:
+    """`$`, a backtick, `<(` or `>(` anywhere but inside single quotes. PURE. A backslash escapes the next character
+    outside single quotes, so `\\'` opens nothing; inside double quotes a `'` is literal. shlex reads a backtick and a
+    double-quoted `$(` as plain words, so this is the clause that sees them; `$` covers `$'...'` too."""
+    quote, i = None, 0
+    while i < len(command):
+        ch = command[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\":
+            i += 2
+            continue
+        elif ch == "'" and quote is None:
+            quote = "'"
+        elif ch == '"':
+            quote = None if quote == '"' else '"'
+        elif ch in "$`" or (ch in "<>" and command[i + 1:i + 2] == "("):
+            return True
+        i += 1
+    return False
 
+
+def _watch_stage(words: list[str]) -> bool:
+    """Stage 1: `tail`, -F, an optional `-n N`/`-nN`, exactly one path naming `explainers/questions.md`, then
+    optionally `2>/dev/null` or `2>&1`. PURE. An operator token here (`&`, `;`) would be a second path, so the
+    one-path rule refuses it."""
+    if words[:1] != ["tail"]:
+        return False
+    rest = words[1:]
+    if rest[-3:] in WATCHER_REDIRECTS:
+        rest = rest[:-3]
+    follow = count = False
+    paths = []
+    it = iter(rest)
+    for w in it:
+        if w == "-F" and not follow:
+            follow = True
+        elif w == "-n" and not count:
+            count = re.fullmatch(r"[0-9]+", next(it, "")) is not None
+            if not count:
+                return False
+        elif re.fullmatch(r"-n[0-9]+", w) and not count:
+            count = True
+        elif w.startswith("-"):
+            return False
+        else:
+            paths.append(w)
+    return follow and len(paths) == 1 and (paths[0] == WATCHER_FILE or paths[0].endswith("/" + WATCHER_FILE))
+
+
+def question_watcher(command) -> bool:
+    """A Monitor command that is the explainer question watcher. PURE. The ONE place the rule lives. An ALLOWLIST:
+    every token must be accounted for. Refused before tokenizing: a newline (a separator shlex reads as a space) and a
+    substitution outside single quotes. Then shlex, with `#` NOT a comment (bash reads `a#b` as one word), splits on
+    `|` alone; any other operator token is refused, and so is anything shlex cannot parse."""
+    if not isinstance(command, str) or "\n" in command:
+        return False
+    if _substitution_outside_single_quotes(command):
+        return False
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=SHELL_OPERATOR_CHARS)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    stages: list[list[str]] = [[]]
+    for t in tokens:
+        if t == "|":
+            stages.append([])
+        else:
+            stages[-1].append(t)
+    if not _watch_stage(stages[0]):
+        return False
+    return all(st and st[0] in WATCHER_FILTERS and not any(set(t) <= set(SHELL_OPERATOR_CHARS) for t in st)
+               for st in stages[1:])
 
 def signals(scanned: dict, now: float, plan_armed: bool) -> list[str]:
     """The mid-work signals present. PURE. An agent past its lease stops counting, as a Monitor past its expiry does."""
@@ -711,11 +790,16 @@ def _self_test_body() -> int:
     case("⭐ the question watcher beside a CI monitor still gives monitor",
          signals(scan([asst(T0, uses=[QW, M]), result(T0, "tQ", QMON), result(T0, "tM", MON)]), T0 + 60, False),
          ["monitor"])
-    case("the watcher's other shapes are watchers too: an absolute path, -n0, a grep filter, no filter at all",
-         [mon_alone(c) for c in ("tail -n 0 -F /srv/repo/docs/explainers/questions.md 2>&1 | grep -E --line-buffered 'Q:'",
-                                 "tail -n0 -F ~/explainers/questions.md | grep --line-buffered -v '^\\s*$'",
-                                 "tail -F ~/explainers/questions.md")],
-         [[], [], []])
+    case("⭐ the REAL watcher shapes are watchers: both `2>&1` forms, -n0 with no redirect, the grep filters, a bare tail",
+         [mon_alone(c) for c in (
+             "tail -n 0 -F /srv/repo/docs/explainers/questions.md 2>&1 | grep -E --line-buffered 'Q:|^## |question|asked'",
+             "tail -n 0 -F ~/explainers/questions.md 2>&1 | awk '/^   Q: /{printf \"ASK | %s\\n\", $0; fflush()}'",
+             "tail -n0 -F ~/explainers/questions.md | grep --line-buffered -v '^\\s*$'",
+             "tail -n 0 -F ~/explainers/questions.md 2>/dev/null | grep --line-buffered -E '^## 20|^\\*\\*[0-9]+ ·|^   Q:'",
+             "tail -F ~/explainers/questions.md",
+             "tail -F -n 0 explainers/questions.md | grep Q | cut -c1-80 | sed -u 's/x/y/' | tr a b | head -n 5 | cat")],
+         [[]] * 6)
+    QB = "tail -n 0 -F ~/explainers/questions.md"
     case("⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), "
          "a -F tail that is not the FIRST stage, work chained after the watcher, another file's name",
          [mon_alone(c) for c in ("tail -6 ~/explainers/questions.md", "tail -n 0 ~/explainers/questions.md",
@@ -725,6 +809,52 @@ def _self_test_body() -> int:
                                  "tail -F ~/myexplainers/questions.md",
                                  "tail -F ~/explainers/questions.md | while read l; do gh pr checks 1; done")],
          [["monitor"]] * 7)
+    case("⭐ the FIRST stage must be the tail itself, with no chaining token anywhere (r1 Claude F2, `.search` for `.match`)",
+         [question_watcher(c) for c in ("echo hi | tail -F ~/explainers/questions.md",
+                                        "cat ~/explainers/questions.md | tail -F ~/explainers/questions.md",
+                                        "less -F ~/explainers/questions.md")],
+         [False] * 3)
+    case("⭐ the tail follows exactly ONE file — a second path is another watcher (a CI log) riding along",
+         [question_watcher(QB + s) for s in (" /tmp/ci.log", " ~/explainers/questions.md")], [False, False])
+    case("⭐ R1: a later stage that is WORK, not a FILTER, is no watcher (r1 Codex R1)",
+         [question_watcher(QB + s) for s in (" | gh run watch 123", " | tee /tmp/q.log", " | grep Q | xargs -n1 gh run watch",
+                                             " | sh", " | awk '{print}' | bash")],
+         [False] * 5)
+    case("⭐ R1/F1: an operator other than `|` is no watcher — `|&`, `||`, `;`, `&&`, a background `&`, `&>`, a "
+         "redirect in a later stage (r1 Codex R1, Claude F1, F2)",
+         [question_watcher(QB + s) for s in (" |& gh run watch 123", " |& cat", " | cat || gh run watch 1",
+                                             " | cat ; gh run watch 1", " | cat && gh run watch 1",
+                                             " | cat & gh run watch 123 --exit-status", " &", " | cat &> /tmp/x",
+                                             " | grep Q > /tmp/x", " 2>/dev/null >/tmp/x", " | grep \\; gh")],
+         [False] * 11)
+    case("⭐ R2: process substitution is no watcher (r1 Codex R2, Claude F1)",
+         [question_watcher(QB + s) for s in (" | cat <(gh run watch 123)", " | cat >(gh run watch 123)",
+                                             " | tee >(gh run watch 123)")],
+         [False] * 3)
+    case("⭐ F2: a SUBSTITUTION outside single quotes is no watcher — `$(`, a backtick, either inside double quotes, "
+         "`${`, `<(` inside double quotes (r1 Claude F2)",
+         [question_watcher(QB + s) for s in (" | grep $(gh run watch 1)", " | grep `gh run watch 1`",
+                                             ' | grep "$(gh run watch 1)"', ' | grep "`gh run watch 1`"',
+                                             ' | grep "${X:-y}"', ' | grep "<(x)"')],
+         [False] * 6)
+    case("⭐ R3: an ESCAPED quote opens no quoted region, and a `'` inside double quotes is literal (r1 Codex R3, Claude F1)",
+         [question_watcher(QB + s) for s in (" | echo \\' ; gh run watch 123 # '", " | cat \\' ; gh run watch 123 # '",
+                                             " | grep \"it's\" ; gh run watch 1 ; echo \"'\"",
+                                             " | grep \\' `gh run watch 1` \\'",
+                                             " | grep \"it's\" `gh run watch 1` \"'\"")],
+         [False] * 5)
+    case("⭐ F2: a single-quoted region ends at the NEXT quote — the greedy strip's analogue",
+         [question_watcher(QB + s) for s in (" | grep 'a' `gh run watch 1` 'b'", " | grep 'a' \"$(gh run watch 1)\" 'b'")],
+         [False, False])
+    case("⭐ F1: a NEWLINE is a separator, so it is no watcher (r1 Codex R3, Claude F1)",
+         [question_watcher(QB + s) for s in (" | cat\ngh run watch 123", "\ngh run watch 123", " | grep 'a\nb'")],
+         [False] * 3)
+    case("⭐ a `#` inside a word is not a comment: the `;` after `a#b` is real",
+         [question_watcher(QB + s) for s in (" | grep a#b ; gh run watch 1", " | grep x #; gh run watch 1")], [False, False])
+    case("an unbalanced quote is no watcher; neither is anything but a string",
+         [question_watcher(QB + " | grep 'x"), question_watcher(None), question_watcher(["tail"])], [False] * 3)
+    case("single-quoted program text is inert: `$`, `;`, `|`, `>`, `(` and a backtick inside it are fine",
+         question_watcher(QB + " 2>/dev/null | awk '/x/{print $0 \"; |\" > \"/dev/stderr\"; fflush()} /`/{n++}'"), True)
 
     # ── the plan sentinel ──
     case("⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
