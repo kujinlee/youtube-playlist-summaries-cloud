@@ -844,5 +844,44 @@
     "expect": [
       "⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied"
     ]
+  },
+  {
+    "name": "the path's character class admits a space: tail follows two files, one a CI log",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "9._/-]*)/explainers/questions",
+        "9._/ -]*)/explainers/questions"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher (widening the path's character class must go red)"
+    ]
+  },
+  {
+    "name": "the path's character class admits `$`: an unquoted `$IFS` splits the path into two files",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "r\"(?:~|/[A-Za-z0-9._/-]*)/explainers",
+        "r\"(?:~|/[A-Za-z0-9._/$-]*)/explainers"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher (widening the path's character class must go red)"
+    ]
+  },
+  {
+    "name": "the `~` alternative admits `~user`: another user's home is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(?:~|/[A-Za-z0-9",
+        "(?:~[a-z]*|/[A-Za-z0-9"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher (widening the path's character class must go red)"
+    ]
   }
 ]

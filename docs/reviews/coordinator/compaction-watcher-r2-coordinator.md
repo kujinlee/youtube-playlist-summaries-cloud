@@ -71,3 +71,5 @@ one per template clause: the end anchor, the start anchor, the path's character 
 anchor was asserted to occur exactly once in the source when the entries were written.
 
 **Corpus re-measured on the new rule:** **141 of 141** watchers match, **0 of 215** others.
+
+**Added in round 3 (counts):** "141 of 141" and "0 of 215" count transcript RECORDS; an `api-request-blob` repeats the `tool_use` id of an assistant record. By distinct call: **106/106** watcher calls, **0/193** others, **5 distinct watcher commands**.

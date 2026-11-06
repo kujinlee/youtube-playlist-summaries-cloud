@@ -51,13 +51,18 @@ THE DECISION, in this order (the first that applies wins):
                                   expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed.
                                   EXCEPT the explainer QUESTION WATCHER (`question_watcher`, backlog #537), judged by
                                   EXACT TEMPLATES: the whole command is `tail -n N -F <path>` plus one of the 5 shapes
-                                  the transcripts hold (141 watchers), character for character. Only N (digits) and the
+                                  the transcripts hold (141 Monitor RECORDS = 106 distinct calls, 5 distinct commands), character for character. Only N (digits) and the
                                   path (`~` or `/...` of `[A-Za-z0-9._/-]`, ending `/explainers/questions.md`) vary.
                                   r0's regex denylist and r1's shlex allowlist were each widened by shell features they
                                   did not name (r1: `| gh run watch`, `|&`, `<(`, `&`, a newline, an escaped quote; r2:
                                   a filter's FILE argument, `2 >&1`, a brace or glob path); a template names none.
                                   It waits on the human, never ends and is re-armed every 30 min, so it held all 4
                                   `block-monitor` offers of 2026-11-06 11:00-11:07 (237,702-247,039 tokens) alone.
+                                  Measured over the transcripts: 106/106 distinct watcher calls match, 0/193 other calls
+                                  (counts of RECORDS, 141 and 0/215, double-count calls seen in both an assistant record and
+                                  an `api-request-blob`). Only `~/explainers/...` is matched with `~`: `~/sub/explainers/
+                                  questions.md` is NOT (the safe direction). The file is matched by NAME only: a symlink,
+                                  a `..` segment or a FIFO at that name is exempted too (a deliberate act of naming).
                                   ⚠ BOUND: a watcher written in a NEW shape, or of another page type, is not matched
                                   and blocks up to the ceiling until its shape is added — fail-safe, the behaviour
                                   before backlog #537. A CI monitor beside the watcher still blocks.
@@ -84,7 +89,7 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 105 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 106 cases
 
 EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
 past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
@@ -130,7 +135,7 @@ EXPIRES_RE = re.compile(r"expires in (\d+)m")
 # the human and never ends, so it is not work in flight. A template is anchored at both ends; only the path and N vary.
 WATCHER_PATH = r"(?:~|/[A-Za-z0-9._/-]*)/explainers/questions\.md"   # ONE file: no glob, brace, quote, `$` or space
 WATCHER_HEAD = r"tail -n ?[0-9]+ -F " + WATCHER_PATH
-WATCHER_SHAPES = (   # everything after the path, VERBATIM from the transcripts: 141 watchers, 5 shapes (r2 measurement)
+WATCHER_SHAPES = (   # everything after the path, VERBATIM from the transcripts: 141 Monitor records = 106 distinct calls, 5 distinct commands (r2 measurement; r3 counted by id) 
     ' 2>/dev/null | awk \'/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf "%s | quoted: %s | %s\\n", (s?s:"(no section)"), (q?substr(q,1,160):"(nothing highlighted)"), $0; fflush(); q=""}\'',   # S1: 136× — explainer-delivery.md §5, the canonical watcher
     " | grep --line-buffered -v '^\\s*$'",   # S2: 2× — blank lines dropped
     ' 2>&1 | awk \'/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf "ASK | %s | quoted: %s | %s\\n", (s?s:"(no section)"), (q?substr(q,1,160):"(nothing highlighted)"), $0; fflush(); q=""}\'',   # S3: 1× — §5 with an `ASK` prefix
@@ -824,6 +829,12 @@ def _self_test_body() -> int:
              "/tmp/{questions,ci}/explainers", "/tmp/*/explainers", "/tmp/c?/explainers", "/tmp/[cq]i/explainers",
              "~/{a,b}/explainers")],
          [False] * 5)
+    case("⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher "
+         "(widening the path's character class must go red)",
+         [question_watcher(QW_CMD.replace(a, b)) for a, b in (("~/explainers", "/tmp/ci.log /x/explainers"),
+                                                              ("~/explainers", "/tmp/ci.log$IFS/explainers"),
+                                                              ("~/", "~root/"))],
+         [False] * 3)
 
     # ── the plan sentinel ──
     case("⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
