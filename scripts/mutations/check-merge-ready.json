@@ -1249,7 +1249,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                rose = rising_count(l[1:].rstrip(), readded)",
+    "                rose = rising_count(l[1:], [a for a in raw if a.rstrip() in readded])",
     "                rose = None"
    ]
   ],
@@ -1304,8 +1304,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if not isinstance(dirty, dict):\n        return False\n    for p in set(changed) | set(dirty):",
-    "    if not isinstance(dirty, dict):\n        dirty = {}\n    for p in set(changed) | set(dirty):"
+    "    if not isinstance(dirty, dict):\n        return False\n    for p in set(reviewed) | set(merged) | set(dirty):",
+    "    if not isinstance(dirty, dict):\n        dirty = {}\n    for p in set(reviewed) | set(merged) | set(dirty):"
    ]
   ],
   "expect": "#508: a tree the wrapper COULD NOT DESCRIBE (dirty None) never matches"
@@ -1337,8 +1337,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    return frozenset(clear - other)",
-    "    return frozenset(clear)"
+    "    return frozenset(clear - other - held)",
+    "    return frozenset(clear - held)"
    ]
   ],
   "expect": "#508: ...a FINDING in any matching verdict beats `not a loosening` in another"
@@ -1381,7 +1381,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if not tree_matches(reviewed, rec.get(\"dirty\"), head_t, changed):",
+    "        if not tree_matches(reviewed, rec.get(\"dirty\"), head_t):",
     "        if False:"
    ]
   ],
@@ -1403,10 +1403,175 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        print(flagged_block(failure_path_flags(\"\", _fs)), end=\"\")",
+    "        print(flagged_block(failure_path_flags(\"\", _fs, lines=_ln), _ln), end=\"\")",
     "        print(\"\", end=\"\")"
    ]
   ],
   "expect": "#508 real git: --flagged-block prints the branch's flagged line with its id, rc=0"
+ },
+ {
+  "name": "#508 r1 Codex 3: the rising-count comparison strips trailing whitespace again, so a dropped meaningful space is exempt",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "rose = rising_count(l[1:], [a for a in raw if",
+    "rose = rising_count(l[1:].rstrip(), [a.rstrip() for a in raw if"
+   ]
+  ],
+  "expect": "#508 r1 Codex 3: a rising count that also DROPS a trailing space is still a failure-path removal"
+ },
+ {
+  "name": "#508 r1 Codex 2: gitlinks are not compared, so a submodule moved after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for p in set(reviewed) | set(merged) | set(dirty):",
+    "    for p in {q for q in set(reviewed) | set(merged) | set(dirty) if (merged.get(q) or ('',))[0] != GITLINK}:"
+   ]
+  ],
+  "expect": "#508 r1 Codex 2: a GITLINK changed after the round does not match, though no diff named it"
+ },
+ {
+  "name": "#508 r1 Codex 2: a path only the MERGING tree has is not compared, so a file added after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "set(reviewed) | set(merged) | set(dirty):",
+    "set(reviewed) | set(dirty):"
+   ]
+  ],
+  "expect": "#508 r1 Codex 2: ...nor a file ADDED after the round that no diff named"
+ },
+ {
+  "name": "#508 r1 M2: the coordinator document is not a round record, so committing it after the round voids every answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\"docs/reviews/coordinator/\", \"docs/reviews/decision-scheme/decision-log.jsonl\")",
+    "\"docs/reviews/decision-scheme/decision-log.jsonl\")"
+   ]
+  ],
+  "expect": "#508 r1 M2: the round's coordinator document and decision log, added after it, match"
+ },
+ {
+  "name": "#508 r1 M2: the decision log is not a round record, so appending to it after the round voids every answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    ", \"docs/reviews/decision-scheme/decision-log.jsonl\")",
+    ")"
+   ]
+  ],
+  "expect": "#508 r1 M2: the round's coordinator document and decision log, added after it, match"
+ },
+ {
+  "name": "#508 r1 M2: the WHOLE decision-scheme directory is exempt, so its baseline may change after the round",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\"docs/reviews/decision-scheme/decision-log.jsonl\")",
+    "\"docs/reviews/decision-scheme/\")"
+   ]
+  ],
+  "expect": "#508 r1 M2: ...but the decision scheme's BASELINE changed after it does not (only the log is a record)"
+ },
+ {
+  "name": "#508 r1 M2: --flagged-block reads only the commits, so a line only an UNCOMMITTED fix flags is never asked about",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            _wt = _rd([\"git\", \"stash\", \"create\"]).strip() or \"HEAD\"",
+    "            _wt = \"HEAD\""
+   ]
+  ],
+  "expect": "⭐ #508 r1 M2 real git: --flagged-block asks about a line an UNCOMMITTED fix flags"
+ },
+ {
+  "name": "#508 r1 M2: the status list ignores the head it is given, so a file changed only in the working tree is not read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            f\"{base}...{head}\"]",
+    "            f\"{base}...HEAD\"]"
+   ]
+  ],
+  "expect": "⭐ #508 r1 M2 real git: --flagged-block asks about a line an UNCOMMITTED fix flags"
+ },
+ {
+  "name": "#508 r1 m3: a FINDING on another tree is dropped, so a later assent on an unchanged line clears it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "- other - held)",
+    "- other)"
+   ]
+  ],
+  "expect": "#508 r1 m3: a FINDING from a record on ANOTHER tree still beats an assent on this one"
+ },
+ {
+  "name": "#508 r1 m3: review_answers passes no other-tree records — the call site, reverted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    got = answered_flags(usable, [r for _p, r in anywhere])",
+    "    got = answered_flags(usable)"
+   ]
+  ],
+  "expect": "⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3"
+ },
+ {
+  "name": "#508 r1 m5: a removal's line is its hunk's FIRST line, not its own",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "None if getattr(hk, \"old\", None) is None else hk.old + i))",
+    "None if getattr(hk, \"old\", None) is None else hk.old))"
+   ]
+  ],
+  "expect": "#508 r1 m5: each block row names its file AND base line"
+ },
+ {
+  "name": "#508 r1 m5: the block row drops the line number it was given",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        return f\"{p}:{n}\" if n is not None else p",
+    "        return p"
+   ]
+  ],
+  "expect": "#508 r1 m5: each block row names its file AND base line"
+ },
+ {
+  "name": "#508 r1 m5: the diff parser keeps no hunk start, so no row can be located",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            hunk = _hunk(line)\n            cur[\"hunks\"].append(hunk)",
+    "            hunk = Hunk()\n            cur[\"hunks\"].append(hunk)"
+   ]
+  ],
+  "expect": "#508 r1 m5: each block row names its file AND base line"
+ },
+ {
+  "name": "#508 r1 m5: the blob-diff reader (main's path) keeps no hunk start",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            hunk = _hunk(line)\n            out.append(hunk)",
+    "            hunk = Hunk()\n            out.append(hunk)"
+   ]
+  ],
+  "expect": "#508 r1 m5 real git: ...and names where each line was in the base file"
+ },
+ {
+  "name": "#508 r1 m5: --flagged-block does not pass the line numbers it collected — the call site",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "failure_path_flags(\"\", _fs, lines=_ln), _ln)",
+    "failure_path_flags(\"\", _fs, lines=_ln))"
+   ]
+  ],
+  "expect": "#508 r1 m5 real git: ...and names where each line was in the base file"
  }
 ]

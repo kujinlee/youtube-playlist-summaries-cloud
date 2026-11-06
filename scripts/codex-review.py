@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 221 cases
+  scripts/codex-review.py --self-test  # 227 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -877,19 +877,59 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
 # answers each with a WHOLE line, unindented: `LOOSENING-CHECK <12-hex id>: not a loosening` or
 # `LOOSENING-CHECK <id>: finding<anything>`. Both recorders (this wrapper for Codex, and
 # `record-review-verdict.py` for a Claude half) copy them into the verdict through this function, and
-# the merge gate reads them from there. ⛔ FAILS CLOSED: a finding for an id beats `not a loosening`
-# for it wherever either appears; any other wording, indentation, quote or list marker is no answer.
-ANSWER_LINE = re.compile(r"LOOSENING-CHECK ([0-9a-f]{12}): (not a loosening|finding\b.*)")
+# the merge gate reads them from there. ⛔ FAILS CLOSED, asymmetrically (r1 CLAUDE M1): ASSENT is strict —
+# only the exact line, outside a code fence and an HTML comment (r1 CODEX 1: a quoted example answered
+# for the reviewer) — while DISSENT is loose: any other line naming `LOOSENING-CHECK` (any case) is a
+# finding for EVERY 12-hex id on it, wherever it stands. A finding beats `not a loosening` for that id.
+# ⚠ BOUND: a dissent that names its id on a line WITHOUT `LOOSENING-CHECK` is not seen; the line then
+# has no assent from that review either, so only another review's exact assent can clear it.
+ASSENT_LINE = re.compile(r"LOOSENING-CHECK ([0-9a-f]{12}): not a loosening")
+MENTION = re.compile(r"(?i)loosening-check")
+HEX_ID = re.compile(r"(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+
+
+def quoted_lines(lines: "list[str]") -> "list[bool]":
+    """PURE. Per line: is it inside a fenced code block (``` or ~~~, CommonMark's closing rule: the
+    same character, at least as long, nothing after it) or an HTML comment? An unclosed one runs to the
+    end — the direction that drops an assent, never one that invents it."""
+    out, fence, comment = [], None, False
+    for line in lines:
+        if comment:
+            out.append(True)
+            comment = "-->" not in line
+            continue
+        m = FENCE.fullmatch(line.rstrip())
+        if fence is not None:
+            out.append(True)
+            if m and m[1][0] == fence[0] and len(m[1]) >= len(fence) and not m[2].strip():
+                fence = None
+            continue
+        if m and not (m[1][0] == "`" and "`" in m[2]):
+            out.append(True)
+            fence = m[1]
+            continue
+        if "<!--" in line:
+            out.append(True)
+            comment = "-->" not in line[line.index("<!--") + 4:]
+            continue
+        out.append(False)
+    return out
 
 
 def loosening_answers(text: str) -> "dict[str, str]":
-    """PURE. {id: "not a loosening" | "finding"} from a review's whole answer lines."""
+    """PURE. {id: "not a loosening" | "finding"} from a review's answer lines."""
     out: "dict[str, str]" = {}
-    for line in text.split("\n"):
-        m = ANSWER_LINE.fullmatch(line.rstrip())
+    lines = [l.rstrip() for l in text.split("\n")]
+    for line, quoted in zip(lines, quoted_lines(lines)):
+        m = ASSENT_LINE.fullmatch(line)
         if m:
-            said = "not a loosening" if m.group(2) == "not a loosening" else "finding"
-            out[m.group(1)] = "finding" if "finding" in (said, out.get(m.group(1))) else said
+            if not quoted and out.get(m.group(1)) != "finding":
+                out[m.group(1)] = "not a loosening"
+            continue
+        if MENTION.search(line):
+            for i in HEX_ID.findall(line):
+                out[i.lower()] = "finding"
     return out
 
 
@@ -2533,10 +2573,41 @@ def _self_test_body() -> int:
         (loosening_answers(f"LOOSENING-CHECK {_a}: not a loosening\nLOOSENING-CHECK {_a}: finding: x\n"),
          loosening_answers(f"LOOSENING-CHECK {_a}: finding: x\nLOOSENING-CHECK {_a}: not a loosening\n")),
         ({_a: "finding"}, {_a: "finding"}))
-    chk("#508: an indented, quoted, prefixed, suffixed or placeholder answer is no answer",
-        loosening_answers(f"    LOOSENING-CHECK {_a}: not a loosening\n> LOOSENING-CHECK {_a}: not a loosening\n"
-                          f"- LOOSENING-CHECK {_a}: not a loosening\nLOOSENING-CHECK {_a}: not a loosening, mostly\n"
-                          "LOOSENING-CHECK <id>: not a loosening\n"), {})
+    # ⟳ r1 CLAUDE M1: a non-canonical line was DROPPED, so a dissent in bold or `Finding:` vanished and the
+    # other half's assent cleared the line. Now only the exact assent assents; ANY other line naming
+    # `LOOSENING-CHECK` and an id is a finding for every id on it. The placeholder names no id: no answer.
+    chk("#508: an indented, quoted, prefixed or suffixed assent is a FINDING, a placeholder no answer",
+        [loosening_answers(t) for t in (
+            f"    LOOSENING-CHECK {_a}: not a loosening", f"> LOOSENING-CHECK {_a}: not a loosening",
+            f"- LOOSENING-CHECK {_a}: not a loosening", f"LOOSENING-CHECK {_a}: not a loosening, mostly",
+            "LOOSENING-CHECK <id>: not a loosening")],
+        [{_a: "finding"}] * 4 + [{}])
+    chk("#508 r1 M1: a dissent in ANY wording is a finding — bold, `Finding`, `a loosening`, spacing, case",
+        [loosening_answers(t) for t in (
+            f"**LOOSENING-CHECK {_a}: finding: exit 1 now 0**", f"LOOSENING-CHECK {_a}: Finding: exit 1 now 0",
+            f"LOOSENING-CHECK {_a}: a loosening: exit 1 now 0", f"LOOSENING-CHECK {_a}:  finding: x",
+            f"- LOOSENING-CHECK {_a}: finding: x", f"LOOSENING-CHECK {_a} : finding: x",
+            f"LOOSENING-CHECK {_a.upper()}: finding: x", f"loosening-check `{_a}` — I disagree")],
+        [{_a: "finding"}] * 8)
+    chk("#508 r1 M1: ...and it beats the exact assent for the same id in the same review",
+        loosening_answers(f"LOOSENING-CHECK {_a}: not a loosening\n**LOOSENING-CHECK {_a}: finding: x**\n"),
+        {_a: "finding"})
+    # ⟳ r1 CODEX 1 / CLAUDE m4: a QUOTED example answered for the reviewer. An exact assent inside a
+    # fence or an HTML comment is no answer (a finding there still counts — that direction fails closed).
+    chk("#508 r1 Codex 1: an exact assent inside a ``` or ~~~ fence is no answer",
+        (loosening_answers(f"Example:\n```text\nLOOSENING-CHECK {_a}: not a loosening\n```\n"),
+         loosening_answers(f"~~~~\nLOOSENING-CHECK {_a}: not a loosening\n~~~~\n"),
+         loosening_answers(f"```\nLOOSENING-CHECK {_a}: not a loosening\n")), ({}, {}, {}))
+    chk("#508 r1 Codex 1: ...nor inside an HTML comment, one line or many",
+        (loosening_answers(f"<!--\nLOOSENING-CHECK {_a}: not a loosening\n-->\n"),
+         loosening_answers(f"<!-- quoted\nLOOSENING-CHECK {_a}: not a loosening\n")), ({}, {}))
+    chk("#508 r1 Codex 1: ...but an assent AFTER the fence or comment closes is the answer",
+        (loosening_answers(f"```\nx\n```\nLOOSENING-CHECK {_a}: not a loosening\n"),
+         loosening_answers(f"~~~\n```\n~~~\nLOOSENING-CHECK {_a}: not a loosening\n"),
+         loosening_answers(f"<!-- a\nb -->\nLOOSENING-CHECK {_a}: not a loosening\n")),
+        ({_a: "not a loosening"},) * 3)
+    chk("#508 r1 Codex 1: ...and a FINDING inside a fence still counts",
+        loosening_answers(f"```\nLOOSENING-CHECK {_a}: finding: x\n```\n"), {_a: "finding"})
     chk("#508: a CRLF line and trailing spaces are still the answer",
         loosening_answers(f"LOOSENING-CHECK {_a}: not a loosening  \r\n"), {_a: "not a loosening"})
     chk("#508: the record carries the answers only when given, so an older record is unchanged",

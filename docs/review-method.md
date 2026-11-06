@@ -121,6 +121,7 @@ settled three earlier findings on the branch that built this.
    half's brief** (`codex-review.py` appends it itself). The half answers each flagged line
    `LOOSENING-CHECK <id>: not a loosening` or `…: finding: <why>`; the merge gate clears a
    "loosens a gate" HOLD only for lines answered that way in a verdict on the exact tree it merges.
+   ⚠ A Claude half's overlay is captured when its verdict is RECORDED: record before any fold edit.
 5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
    boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each
    finding must state whether siblings were searched for, HOW, and what turned up** — "grepped the

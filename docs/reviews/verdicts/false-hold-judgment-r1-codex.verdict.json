@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: try_next \u2014 possible auth/quota fault (advisory match on stdout)",
+    "  gpt-6-astra: ok \u2014 4347 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "54667f2cc6e26996f3d0ce17aad719a4fe9d55ab",
+  "intrusions": [],
+  "loosening_answers": {
+    "6bd002a6d73a": "finding",
+    "e8b3c3bfbf22": "finding",
+    "f13e64d753fa": "not a loosening"
+  },
+  "model": "gpt-6-astra",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/p-fhj-r1.md",
+  "reason": "4347 chars",
+  "refused": false,
+  "review": "false-hold-judgment-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/fhj"
+}
