@@ -3933,8 +3933,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if end == 0:\n",
-        "    if end == 0 and b\"\\n\" not in raw:\n"
+        "        pos = m.end()\n",
+        "        keep = m.end() if pos == m.start() else keep\n        pos = m.end()\n"
       ]
     ],
     "expect": [
@@ -3959,8 +3959,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    return len(raw) if nl == -1 else nl + 1",
-        "    return len(raw)"
+        "    if not _blank(raw[pos:].decode(\"utf-8\")):",
+        "    if raw[pos:]:"
       ]
     ],
     "expect": [
@@ -3985,8 +3985,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    return len(raw) if nl == -1 else nl + 1       # no line ending after the last record",
-        "    return end if nl == -1 else nl + 1       # no line ending after the last record"
+        "        keep = len(raw)                          # a last line with no line ending",
+        "        keep = pos + len(raw[pos:].rstrip())                          # a last line with no line ending"
       ]
     ],
     "expect": [
@@ -3998,12 +3998,38 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    end = len(raw.rstrip(b\" \\t\\r\\n\"))",
-        "    end = len(raw.rstrip(b\" \\t\\n\"))"
+        "_EOL_B = re.compile(_EOL.pattern.encode())",
+        "_EOL_B = re.compile(rb\"\\n\")"
       ]
     ],
     "expect": [
-      "...and blank lines after a CRLF record are cut after its own CRLF, which is kept (backlog #504, r2 Codex F1)"
+      "⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the reader and the cut (backlog #504, r3 Claude N2)"
+    ]
+  },
+  {
+    "name": "a lone CR does not end a line, for the reader or the writers (backlog #504, r3 Claude N1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_EOL = re.compile(r\"\\r\\n|\\r|\\n\")",
+        "_EOL = re.compile(r\"\\r?\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose lines end in a lone CR is read AND written: the writers' line model is the reader's (backlog #504, r3 Claude N1)"
+    ]
+  },
+  {
+    "name": "the blank repair's blank is narrower than the reader's (backlog #504, r3 Claude N2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not _blank(raw[pos:m.start()].decode(\"utf-8\")):",
+        "        if raw[pos:m.start()].strip(b\" \\t\\r\\n\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the reader and the cut (backlog #504, r3 Claude N2)"
     ]
   },
   {

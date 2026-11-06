@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 410 cases
+    python3 scripts/goal-tree.py --self-test                 # 412 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1093,10 +1093,22 @@ def parse_agenda(text: str) -> dict:
     return {"window": window, "change_if": change_if, "steps": steps}
 
 
+# ⛔ ONE line model for the reader and both writers, so a log that reads is never refused on write, nor the reverse:
+# `\r\n`, a lone `\r` and `\n` each end a line — what `read_text()`'s universal newlines read (r3 Claude N1).
+_EOL = re.compile(r"\r\n|\r|\n")
+_EOL_B = re.compile(_EOL.pattern.encode())     # the same model over bytes, for the blank repair's byte offsets
+
+
+def _blank(line: str) -> bool:
+    """A line the reader skips — whitespace only, by `str.strip()` — and the ONLY kind the blank repair cuts: one
+    predicate, so the two cannot disagree about what is blank (r3 Claude N2)."""
+    return not line.strip()
+
+
 def _agenda_records(text: str, name: str) -> list[dict]:
     out = []
-    for i, ln in enumerate(text.split("\n"), 1):
-        if not ln.strip():
+    for i, ln in enumerate(_EOL.split(text), 1):
+        if _blank(ln):
             continue
         try:
             rec = json.loads(ln)
@@ -1127,7 +1139,7 @@ def _agenda_records(text: str, name: str) -> list[dict]:
 
 def read_agenda_log(path: pathlib.Path) -> list[dict]:
     """Every agenda record, oldest first. Missing is empty; an unreadable line is Malformed."""
-    return _agenda_records(path.read_text(), path.name) if path.exists() else []
+    return _agenda_records(path.read_bytes().decode("utf-8"), path.name) if path.exists() else []
 
 
 def agendas(log: list[dict]) -> list[dict]:
@@ -1214,13 +1226,17 @@ def _locked(path: pathlib.Path, write):
 
 def _blank_tail_cut(raw: bytes) -> int:
     """How many bytes of the log to KEEP. Only what is provably not data is cut: the blank lines AFTER the last
-    record's own line ending (backlog #504), or the whole of a log that holds nothing but blanks. The last record,
-    any blanks on its own line, and its line ending — `\n` or `\r\n` — are kept byte for byte (r2 Codex F1)."""
-    end = len(raw.rstrip(b" \t\r\n"))
-    if end == 0:
-        return 0                                  # an all-blank log holds no record
-    nl = raw.find(b"\n", end)
-    return len(raw) if nl == -1 else nl + 1       # no line ending after the last record: nothing after it is cut
+    record's own line ending (backlog #504), or the whole of a log that holds nothing but blanks — lines and blanks
+    as the READER sees them (`_EOL`, `_blank`; r3 Claude N1, N2). The last record, any blanks on its own line, and
+    its line ending — `\n`, `\r\n` or a lone `\r` — are kept byte for byte (r2 Codex F1)."""
+    keep = pos = 0                               # an all-blank log holds no record: all of it is cut
+    for m in _EOL_B.finditer(raw):
+        if not _blank(raw[pos:m.start()].decode("utf-8")):
+            keep = m.end()                       # a record's line, kept WITH its own line ending
+        pos = m.end()
+    if not _blank(raw[pos:].decode("utf-8")):
+        keep = len(raw)                          # a last line with no line ending: kept whole, nothing after it
+    return keep
 
 
 def _open_or_refuse(cur: list[dict]) -> None:
@@ -4181,6 +4197,39 @@ def _self_test_body() -> int:
         case("...and blank lines after a CRLF record are cut after its own CRLF, which is kept (backlog #504, r2 Codex F1)",
              _cr.read_bytes().startswith(_crlf_agenda.encode() + b"\r\n{"), True)
         _cr.unlink()
+        # r3 Claude N1 and N2, the reviewer's inputs verbatim (`A` an agenda record, `T` a tick). The line model is
+        # written out HERE, independently of the code under test: `\r\n`, a lone `\r` and `\n` each end a line, and a
+        # line is blank when `str.strip()` empties it.
+        _A, _T = _crlf_agenda.encode(), _crlf_tick.encode()
+        _lr = r / "lone-cr.jsonl"
+
+        def _ids(path):
+            """Each agenda as (id, ticked steps), or the MALFORMED message as a one-item list."""
+            got = replayed(path)
+            return [(x["id"], x["ticked"]) for x in got] if all(isinstance(x, dict) for x in got) else got
+
+        def after_record(data):
+            """(the log replayed before, `record_agenda`'s outcome, the log replayed after, a blank line left ahead of the
+            appended record) for a log holding `data` — every outcome a value a case can name."""
+            _lr.write_bytes(data)
+            before = _ids(_lr)
+            try:
+                record_agenda(_lr, ag, "t2", None)
+                wrote = "ok"
+            except Malformed as exc:
+                wrote = f"Malformed: {exc}"
+            lines = re.split(r"\r\n|\r|\n", _lr.read_bytes().decode("utf-8"))
+            after = _ids(_lr)
+            return before, wrote, after, any(not ln.strip() for ln in lines[:-1])
+        case("⛔ a log whose lines end in a lone CR is read AND written: the writers' line model is the reader's "
+             "(backlog #504, r3 Claude N1)",
+             after_record(_A + b"\r" + _T + b"\r"), ([(1, [1])], "ok", [(1, [1]), (2, [])], False))
+        case("⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the "
+             "reader and the cut (backlog #504, r3 Claude N2)",
+             ([after_record(_A + t)[1:] for t in (b"\n\x0c", b"\n\x0b\n", b"\n\xc2\xa0", b"\r\r\n", b"\r   ")],
+              after_record(b"\x0c\n")[1:], _lr.read_bytes()[:1]),
+             ([("ok", [(1, []), (2, [])], False)] * 5, ("ok", [(1, [])], False), b"{"))
+        _lr.unlink()
         # r2 Codex F3, the input verbatim: an unfinished record whose string ends in spaces. Recording is refused,
         # and the refused log is left exactly as it was — nothing is cut before the log is validated.
         _uf = r / "unfinished.jsonl"
