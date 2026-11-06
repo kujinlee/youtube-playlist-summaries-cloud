@@ -48,7 +48,24 @@ THE DECISION, in this order (the first that applies wins):
                                   the signal for the whole tail (r1: 6 of 253 agents never closed; the longest live
                                   one was ~1.2 h)
                          monitor  a Monitor whose task has no `<status>` notification, no `TaskStop`, and whose own
-                                  expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed
+                                  expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed.
+                                  EXCEPT the explainer QUESTION WATCHER (`question_watcher`, backlog #537), judged by
+                                  EXACT TEMPLATES: the whole command is `tail -n N -F <path>` plus one of the 5 shapes
+                                  the transcripts hold (141 Monitor RECORDS = 106 distinct calls, 5 distinct commands), character for character. Only N (digits) and the
+                                  path (`~` or `/...` of `[A-Za-z0-9._/-]`, ending `/explainers/questions.md`) vary.
+                                  r0's regex denylist and r1's shlex allowlist were each widened by shell features they
+                                  did not name (r1: `| gh run watch`, `|&`, `<(`, `&`, a newline, an escaped quote; r2:
+                                  a filter's FILE argument, `2 >&1`, a brace or glob path); a template names none.
+                                  It waits on the human, never ends and is re-armed every 30 min, so it held all 4
+                                  `block-monitor` offers of 2026-11-06 11:00-11:07 (237,702-247,039 tokens) alone.
+                                  Measured over the transcripts: 106/106 distinct watcher calls match, 0/193 other calls
+                                  (counts of RECORDS, 141 and 0/215, double-count calls seen in both an assistant record and
+                                  an `api-request-blob`). Only `~/explainers/...` is matched with `~`: `~/sub/explainers/
+                                  questions.md` is NOT (the safe direction). The file is matched by NAME only: a symlink,
+                                  a `..` segment or a FIFO at that name is exempted too (a deliberate act of naming).
+                                  ⚠ BOUND: a watcher written in a NEW shape, or of another page type, is not matched
+                                  and blocks up to the ceiling until its shape is added — fail-safe, the behaviour
+                                  before backlog #537. A CI monitor beside the watcher still blocks.
     allow-no-signal    none of the above — the work is at a boundary.
 
     NOT a signal: uncommitted tracked changes. The main checkout is always dirty with generated files, so that
@@ -72,7 +89,7 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 83 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 106 cases
 
 EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
 past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
@@ -114,7 +131,18 @@ END_TYPES = ("idle_notification", "shutdown_response")
 NOTE_RE = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TEAM_RE = re.compile(r'<teammate-message teammate_id="([^"]+)"[^>]*>(.*?)</teammate-message>', re.S)
 EXPIRES_RE = re.compile(r"expires in (\d+)m")
-
+# The explainer QUESTION WATCHER (explainer-delivery.md §5), judged by EXACT TEMPLATES (r2, backlog #537). It waits on
+# the human and never ends, so it is not work in flight. A template is anchored at both ends; only the path and N vary.
+WATCHER_PATH = r"(?:~|/[A-Za-z0-9._/-]*)/explainers/questions\.md"   # ONE file: no glob, brace, quote, `$` or space
+WATCHER_HEAD = r"tail -n ?[0-9]+ -F " + WATCHER_PATH
+WATCHER_SHAPES = (   # everything after the path, VERBATIM from the transcripts: 141 Monitor records = 106 distinct calls, 5 distinct commands (r2 measurement; r3 counted by id) 
+    ' 2>/dev/null | awk \'/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf "%s | quoted: %s | %s\\n", (s?s:"(no section)"), (q?substr(q,1,160):"(nothing highlighted)"), $0; fflush(); q=""}\'',   # S1: 136× — explainer-delivery.md §5, the canonical watcher
+    " | grep --line-buffered -v '^\\s*$'",   # S2: 2× — blank lines dropped
+    ' 2>&1 | awk \'/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf "ASK | %s | quoted: %s | %s\\n", (s?s:"(no section)"), (q?substr(q,1,160):"(nothing highlighted)"), $0; fflush(); q=""}\'',   # S3: 1× — §5 with an `ASK` prefix
+    " 2>/dev/null | grep --line-buffered -E '^## 20|^\\*\\*[0-9]+ ·|^   Q:'",   # S4: 1× — grep for headings and questions
+    " 2>&1 | grep -E --line-buffered 'Q:|^## |question|asked|ERROR|No such file'",   # S5: 1× — grep, with errors
+)
+WATCHER_TEMPLATES = tuple(re.compile(WATCHER_HEAD + re.escape(shape)) for shape in WATCHER_SHAPES)
 
 class CannotRun(Exception):
     pass
@@ -200,6 +228,7 @@ def scan(lines: list[str]) -> dict:
                 elif x.get("name") == "Monitor":
                     ms = inp.get("timeout_ms")
                     monitors[x.get("id")] = {"open": True, "task": None, "at": at,
+                                             "watcher": question_watcher(inp.get("command")),
                                              "expires": None if at is None or not isinstance(ms, int)
                                              else at + ms / 1000}
                 elif x.get("name") == "TaskStop":
@@ -252,12 +281,23 @@ def scan(lines: list[str]) -> dict:
     return out
 
 
+def question_watcher(command) -> bool:
+    """A Monitor command that is the explainer question watcher. PURE. The ONE place the rule lives. EXACT TEMPLATES:
+    the whole command must equal `tail -n N -F <path>` followed by one of `WATCHER_SHAPES`, character for character,
+    where only N (digits) and the path (`~` or `/...`, of `[A-Za-z0-9._/-]`, ending `/explainers/questions.md`) vary.
+    A rule that names no shell feature cannot be widened by one: r1's token allowlist was, three ways (r2 Codex: a
+    filter's FILE argument, a split or quoted redirect, a brace or glob path). ⚠ COST: a watcher written in a NEW way
+    is not matched, so it blocks compaction up to the ceiling until its shape is added here. That fails SAFE — it is
+    the behaviour before backlog #537."""
+    return isinstance(command, str) and any(t.fullmatch(command) for t in WATCHER_TEMPLATES)
+
 def signals(scanned: dict, now: float, plan_armed: bool) -> list[str]:
     """The mid-work signals present. PURE. An agent past its lease stops counting, as a Monitor past its expiry does."""
     out = ["plan"] if plan_armed else []
     if any(st["open"] and (st["at"] is None or now - st["at"] < AGENT_LEASE_S) for st in scanned["agents"].values()):
         out.append("agent")
-    if any(st["open"] and (st["expires"] is None or now < st["expires"]) for st in scanned["monitors"].values()):
+    if any(st["open"] and not st["watcher"] and (st["expires"] is None or now < st["expires"])
+           for st in scanned["monitors"].values()):
         out.append("monitor")
     return out
 
@@ -677,6 +717,124 @@ def _self_test_body() -> int:
          signals(scan([asst(T0, uses=[M]), result(T0, "tM", "Error: bad", err=True)]), T0 + 60, False), [])
     case("the signals combine in order", signals(scan([asst(T0, uses=[A, M]), result(T0, "tM", MON)]), T0 + 60, True),
          ["plan", "agent", "monitor"])
+    QW_CMD = ("tail -n 0 -F ~/explainers/questions.md 2>/dev/null | awk '/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} "
+              "/^   Q: /{printf \"%s | quoted: %s | %s\\n\", (s?s:\"(no section)\"), (q?substr(q,1,160):\"(nothing "
+              "highlighted)\"), $0; fflush(); q=\"\"}'")       # explainer-delivery.md §5, byte for byte
+    QW = ("tQ", "Monitor", {"timeout_ms": 3_600_000, "command": QW_CMD})
+    QMON = "Monitor started (task bq1, expires in 30m unless the source ends first)"
+
+    def mon_alone(cmd):
+        return signals(scan([asst(T0, uses=[("tX", "Monitor", {"timeout_ms": 3_600_000, "command": cmd})]),
+                             result(T0, "tX", QMON)]), T0 + 60, False)
+    case("⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)",
+         signals(scan([asst(T0, uses=[QW]), result(T0, "tQ", QMON)]), T0 + 60, False), [])
+    case("⭐ the question watcher beside a CI monitor still gives monitor",
+         signals(scan([asst(T0, uses=[QW, M]), result(T0, "tQ", QMON), result(T0, "tM", MON)]), T0 + 60, False),
+         ["monitor"])
+    QS2 = "tail -n0 -F ~/explainers/questions.md | grep --line-buffered -v '^\\s*$'"
+    QS3 = ("tail -n 0 -F ~/explainers/questions.md 2>&1 | awk '/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf "
+           "\"ASK | %s | quoted: %s | %s\\n\", (s?s:\"(no section)\"), (q?substr(q,1,160):\"(nothing highlighted)\"), $0; "
+           "fflush(); q=\"\"}'")
+    QS4 = "tail -n 0 -F ~/explainers/questions.md 2>/dev/null | grep --line-buffered -E '^## 20|^\\*\\*[0-9]+ ·|^   Q:'"
+    QS5 = ("tail -n 0 -F /srv/repo/docs/explainers/questions.md 2>&1 | grep -E --line-buffered "
+           "'Q:|^## |question|asked|ERROR|No such file'")
+    case("⭐ the REAL watcher shapes are watchers: the 5 the transcripts hold, verbatim, then the path and N varied",
+         [mon_alone(c) for c in (QW_CMD, QS2, QS3, QS4, QS5,
+                                 QW_CMD.replace("~/explainers", "/srv/my-repo_2/docs.v1/explainers"),
+                                 QW_CMD.replace("-n 0", "-n 25"), QS2.replace("-n0", "-n 0"))],
+         [[]] * 8)
+    QB = "tail -n 0 -F ~/explainers/questions.md"
+    case("⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), "
+         "a -F tail that is not the FIRST stage, work chained after the watcher, another file's name",
+         [mon_alone(c) for c in ("tail -6 ~/explainers/questions.md", "tail -n 0 ~/explainers/questions.md",
+                                 "gh run watch 1 && tail -F ~/explainers/questions.md",
+                                 "tail -F ~/explainers/questions.md | awk '{print}'; gh run watch 1",
+                                 "tail -F ~/explainers/questions.md.bak",
+                                 "tail -F ~/myexplainers/questions.md",
+                                 "tail -F ~/explainers/questions.md | while read l; do gh pr checks 1; done")],
+         [["monitor"]] * 7)
+    case("⭐ the FIRST stage must be the tail itself, with no chaining token anywhere (r1 Claude F2, `.search` for `.match`)",
+         [question_watcher(c) for c in ("echo hi | tail -F ~/explainers/questions.md",
+                                        "cat ~/explainers/questions.md | tail -F ~/explainers/questions.md",
+                                        "less -F ~/explainers/questions.md")],
+         [False] * 3)
+    case("⭐ the tail follows exactly ONE file — a second path is another watcher (a CI log) riding along",
+         [question_watcher(QB + s) for s in (" /tmp/ci.log", " ~/explainers/questions.md")], [False, False])
+    case("⭐ R1: a later stage that is WORK, not a FILTER, is no watcher (r1 Codex R1)",
+         [question_watcher(QB + s) for s in (" | gh run watch 123", " | tee /tmp/q.log", " | grep Q | xargs -n1 gh run watch",
+                                             " | sh", " | awk '{print}' | bash")],
+         [False] * 5)
+    case("⭐ R1/F1: an operator other than `|` is no watcher — `|&`, `||`, `;`, `&&`, a background `&`, `&>`, a "
+         "redirect in a later stage (r1 Codex R1, Claude F1, F2)",
+         [question_watcher(QB + s) for s in (" |& gh run watch 123", " |& cat", " | cat || gh run watch 1",
+                                             " | cat ; gh run watch 1", " | cat && gh run watch 1",
+                                             " | cat & gh run watch 123 --exit-status", " &", " | cat &> /tmp/x",
+                                             " | grep Q > /tmp/x", " 2>/dev/null >/tmp/x", " | grep \\; gh")],
+         [False] * 11)
+    case("⭐ R2: process substitution is no watcher (r1 Codex R2, Claude F1)",
+         [question_watcher(QB + s) for s in (" | cat <(gh run watch 123)", " | cat >(gh run watch 123)",
+                                             " | tee >(gh run watch 123)")],
+         [False] * 3)
+    case("⭐ F2: a SUBSTITUTION outside single quotes is no watcher — `$(`, a backtick, either inside double quotes, "
+         "`${`, `<(` inside double quotes (r1 Claude F2)",
+         [question_watcher(QB + s) for s in (" | grep $(gh run watch 1)", " | grep `gh run watch 1`",
+                                             ' | grep "$(gh run watch 1)"', ' | grep "`gh run watch 1`"',
+                                             ' | grep "${X:-y}"', ' | grep "<(x)"')],
+         [False] * 6)
+    case("⭐ R3: an ESCAPED quote opens no quoted region, and a `'` inside double quotes is literal (r1 Codex R3, Claude F1)",
+         [question_watcher(QB + s) for s in (" | echo \\' ; gh run watch 123 # '", " | cat \\' ; gh run watch 123 # '",
+                                             " | grep \"it's\" ; gh run watch 1 ; echo \"'\"",
+                                             " | grep \\' `gh run watch 1` \\'",
+                                             " | grep \"it's\" `gh run watch 1` \"'\"")],
+         [False] * 5)
+    case("⭐ F2: a single-quoted region ends at the NEXT quote — the greedy strip's analogue",
+         [question_watcher(QB + s) for s in (" | grep 'a' `gh run watch 1` 'b'", " | grep 'a' \"$(gh run watch 1)\" 'b'")],
+         [False, False])
+    case("⭐ F1: a NEWLINE is a separator, so it is no watcher (r1 Codex R3, Claude F1)",
+         [question_watcher(QB + s) for s in (" | cat\ngh run watch 123", "\ngh run watch 123", " | grep 'a\nb'")],
+         [False] * 3)
+    case("⭐ a `#` inside a word is not a comment: the `;` after `a#b` is real",
+         [question_watcher(QB + s) for s in (" | grep a#b ; gh run watch 1", " | grep x #; gh run watch 1")], [False, False])
+    case("an unbalanced quote is no watcher; neither is anything but a string",
+         lambda: [question_watcher(QB + " | grep 'x"), question_watcher(None), question_watcher(["tail"])], [False] * 3)
+    case("⭐ a NEW shape is no watcher, so it blocks up to the ceiling (the r2 BOUND, fail-safe): one character of "
+         "program text, a bare tail, an extra filter, a relative path",
+         [question_watcher(c) for c in (QW_CMD.replace("fflush()", "fflush( )"), "tail -F ~/explainers/questions.md",
+                                        QS2 + " | cat", QW_CMD.replace("~/explainers", "explainers"),
+                                        QB + " 2>/dev/null | awk '/x/{print $0 \"; |\" > \"/dev/stderr\"; fflush()}'")],
+         [False] * 5)
+    case("⭐ a template is anchored at the START: work before the watcher is no watcher",
+         [question_watcher(p + c) for p, c in (("gh run watch 1; ", QW_CMD), ("echo hi | ", QW_CMD),
+                                               ("gh run watch 1 & ", QS2), (" ", QS4))],
+         [False] * 4)
+    case("⭐ a template is anchored at the END: work after the watcher is no watcher, after a newline too",
+         [question_watcher(c + s) for c, s in ((QW_CMD, "; gh run watch 1"), (QS2, " &"), (QS5, "\ngh run watch 1"),
+                                               (QS4, "\n"), (QS3, " "))],
+         [False] * 5)
+    case("⭐ ADJACENT to a real shape: no -F, an N that is not digits, a directory that only ENDS in `explainers`",
+         [question_watcher(c) for c in (QW_CMD.replace(" -F", ""), QS2.replace("-n0", "-n0;gh"),
+                                        QW_CMD.replace("-n 0", "-n $N"),
+                                        QW_CMD.replace("~/explainers", "/srv/repo/myexplainers"))],
+         [False] * 4)
+    case("⭐ R2-1: a filter's FILE argument reads another source — `| cat FIFO`, awk or grep given a file (r2 Codex R2-1)",
+         [question_watcher(c) for c in (QB + " | cat /tmp/ci-events.fifo", QW_CMD + " /tmp/ci-events.fifo",
+                                        QS4 + " /tmp/ci.log")],
+         [False] * 3)
+    case("⭐ R2-2: a split or quoted redirect is no watcher — bash follows a file named `2` (r2 Codex R2-2)",
+         [question_watcher(c) for c in (QB + " 2 >&1", QB + " '2'>&1", QW_CMD.replace(" 2>/dev/null", " 2 >/dev/null"),
+                                        QW_CMD.replace(" 2>/dev/null", " \"2\">/dev/null"))],
+         [False] * 4)
+    case("⭐ R2-3: brace or glob expansion turns one path into several (r2 Codex R2-3)",
+         [question_watcher(QW_CMD.replace("~/explainers", p)) for p in (
+             "/tmp/{questions,ci}/explainers", "/tmp/*/explainers", "/tmp/c?/explainers", "/tmp/[cq]i/explainers",
+             "~/{a,b}/explainers")],
+         [False] * 5)
+    case("⭐ r3 F1: a SECOND file INSIDE the path position — a space, a `$IFS` word-split, a `~user` home — is no watcher "
+         "(widening the path's character class must go red)",
+         [question_watcher(QW_CMD.replace(a, b)) for a, b in (("~/explainers", "/tmp/ci.log /x/explainers"),
+                                                              ("~/explainers", "/tmp/ci.log$IFS/explainers"),
+                                                              ("~/", "~root/"))],
+         [False] * 3)
 
     # ── the plan sentinel ──
     case("⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
