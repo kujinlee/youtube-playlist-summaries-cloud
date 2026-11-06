@@ -2336,8 +2336,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    for seed in (seeds or (None,)):",
-        "    for seed in (seeds or (None,))[:1]:"
+        "    for seed, rc, so, se in seed_runs(d, name, seeds):",
+        "    for seed, rc, so, se in seed_runs(d, name, seeds)[:1]:"
       ]
     ],
     "expect": [
@@ -2349,7 +2349,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            return rc, so, (se if seed is None else f\"[under PYTHONHASHSEED={seed}] {se}\")",
+        "            return rc, so, f\"[under PYTHONHASHSEED={seed}] {se}\"",
         "            return rc, so, se"
       ]
     ],
@@ -2486,6 +2486,84 @@
     ],
     "expect": [
       "...ADJACENT: the SAME mutant under two seeds that both kill it is KILLED and attributed"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 Codex M2: a seed whose suite stopped early is read as agreeing with one that completed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if len(set(done.values())) > 1:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Codex M2: a suite that COMPLETED under one seed and stopped early under another is a cannot-run"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 Claude M1: the seeds are compared on EVERY red case, not on the named ones",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "if not named or f in named)",
+        "if True)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 M1: the expect case red under EVERY seed, an extra case under one, is an ordinary attributed kill"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 Claude M1: a mutation with no expect compares no red case at all across seeds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "sorted(f for f in parse_fail_names(out) if not named or",
+        "sorted(f for f in parse_fail_names(out) if"
+      ]
+    ],
+    "expect": [
+      "...killed under every seed but by DIFFERENT cases is NONDETERMINISTIC too (the named kill was luck)"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 Claude M1: run_mutations never hands the expect list to the seed classifier",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "wants=mut.get(\"expect\"))",
+        "wants=None)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 M1 END TO END: the named case red under every seed + an incidental one under one seed is KILLED"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 Codex M1: every seed runs in the one shared tree, so a later seed reads an earlier one's files",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "zip(seeds, [d, *(c / \"t\" for c in copies)])",
+        "zip(seeds, [d] * len(seeds))"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Codex M1 END TO END: a seed never reads the files an EARLIER seed's run left — NONDETERMINISTIC"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 Codex M1: a tree that cannot be copied for a seed is reported as a red run, not a cannot-run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                return [(seed, 2, \"\", f\"CANNOT RUN — the tree for",
+        "                return [(seed, 1, \"\", f\"CANNOT RUN — the tree for"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 Codex M1: seed_runs cannot isolate a seed (the tree cannot be copied) -> CANNOT RUN, never a run"
     ]
   }
 ]

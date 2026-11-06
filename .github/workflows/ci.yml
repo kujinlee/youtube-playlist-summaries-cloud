@@ -1042,6 +1042,9 @@ jobs:
     # ⟳ 2026-11-06, backlog #506: the SCHEDULED sweep runs every suite under TWO hash seeds (see `--seeds`
     # below), so its shard does about twice the work — slowest shard ~1,184s at one seed (N=18), so ~2,400s
     # PREDICTED, not measured, at two. 60 on the schedule only; every other event keeps 30.
+    # ⟳ r1 fold: the second seed runs in its own COPY of the staged tree (Codex M1), one copy per mutant
+    # and per control. Measured on a Mac: 4-6 s a copy, and a 30-mutant slice went 16 s -> 201 s. Not
+    # measured on this runner; the first nightly is the measurement, and a timeout still files `sweep-red`.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
