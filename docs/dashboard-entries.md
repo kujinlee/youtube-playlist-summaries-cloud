@@ -18834,3 +18834,8 @@ The goal tree page is quieter (your 17:28 messages). When nothing waits on you, 
 <!--tech-->
 `scripts/goal-tree.py`: `story(ch)` derives the sentence from `changes()`'s lines by kind (refs named, three at most, then a count; a line of no known kind falls back to "N change(s)."); `render_page` renders it as the entry's summary, the lines in `ul.lines`, and folds entries past `TIMELINE_SHOWN = 6` into `details.older`; `needs_html` draws the "none" state as `p.quiet`. 391 cases (+14, one re-expected); 15 new mutations; pin 282 → 297. A state change is read from its own `A → B` slot, never searched for in the line, so a detail that mentions a merge is not a landing (review round 1). Over the real log, 150 of 156 entries get a named sentence.
 
+## 2026-11-05
+A fix to the agenda's **Running now / Owed** split from earlier today. A thread with one part already merged and another part still open as a PR used to show that open PR as separate "running" work, even when the thread said it was waiting on something. It now counts the open PR as part of its own thread, and the thread's wait holds it under Owed. Backlog #518.
+<!--tech-->
+`scripts/goal-tree.py`: `derive_thread` collects `resolved` (every live row's open PR, by title) before the named-PR / merged / open precedence, so a mixed thread records its `open_prs`; `agenda_digest` admits a FINISHED leaf only when it still owns an open PR. Backlog #518's (b), the join keeping every PR identity, was already pinned by r3's `_fold_item` cases. 394 cases (+3); 2 new mutations, 3 re-bound; pin 297 → 299.
+
