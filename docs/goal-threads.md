@@ -170,7 +170,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #491, backlog #493, backlog #494 · filed from PR #491's and PR #489's rounds: whitespace path names, the regen hooks' unseen failure channel, render-time key linking
 - bookkeeping · backlog #495 · filed from PR #489's CI: the completion-order kill case races `as_completed`, so its mutation survives on a loaded runner; register rows 22 (the compaction deferral) and 4 (the owner keeps the 300k window) and the backlog #47 indexed-search note ride in the same docs PR
 - side · backlog #492 · the owner's destructive-command recovery gate (11-03 14:20), filed to build after backlog #330 when the usage margin allows
-- fix · backlog #506 · two mutations killed only by chance red unrelated PRs' sweeps
+- fix · backlog #506 · two mutations killed only by chance red unrelated PRs' sweeps — both now fail on every run; the seed-varied sweep remains
 - fix · backlog #512 · self-tests leave temp directories behind, and the pile slows long-path shell commands · waits on the weekly reset (Fri 11-06 02:00)
 
 ## GOAL product
