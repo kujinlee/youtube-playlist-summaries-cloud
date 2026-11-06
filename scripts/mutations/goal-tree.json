@@ -3832,5 +3832,18 @@
     "expect": [
       "timeline story: a plan newly owed, one no longer owing and progress are three different words (r1 P2)"
     ]
+  },
+  {
+    "name": "an added thread's ref keeps its state and detail (timeline-story r2 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "[ref(c[6:].split(\": \", 1)[0]) for c in ch if c.startswith(\"added [\")]",
+        "[ref(c[6:]) for c in ch if c.startswith(\"added [\")]"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: an added thread is named by its key alone, never its state or detail (r2 P2)"
+    ]
   }
 ]

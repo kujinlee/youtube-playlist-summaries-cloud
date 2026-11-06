@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 389 cases
+    python3 scripts/goal-tree.py --self-test                 # 390 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1725,7 +1725,8 @@ def story(ch: list[str]) -> str:
     goals = [c.split(": ", 1)[1] for c in ch if c.startswith("goal added: ")]
     bits = [f"{head} {names(refs)}" for head, refs in (
         ("goal opened:", goals), ("landed", landed),
-        ("added", [ref(c[6:]) for c in ch if c.startswith("added [")]),
+        # "added [rel] KEY: GLYPH detail" — a key is refs only, so it ends at the first ": " (timeline-story r2 P2)
+        ("added", [ref(c[6:].split(": ", 1)[0]) for c in ch if c.startswith("added [")]),
         # "declared on master: [rel] name (was in the ledger as …): …" — the ref ends at the hand-off note (r1 P2)
         ("declared on master:", [ref(c[20:].split(" (was in the ledger", 1)[0]) for c in ch
                                  if c.startswith("declared on master: ")]),
@@ -2359,6 +2360,11 @@ def _self_test_body() -> int:
          "when its key and goal changed (r1 Codex M2)",
          ([l.split(":")[0] for l in _ch if "PR #30" in l], any(l.startswith(("added", "removed")) for l in _ch)),
          (["declared on master"], False))
+    _a0 = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'), src(), "T1")
+    _a1 = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
+                               '- fix · PR #20 · new: with a colon\n'), src(), "T2")
+    case("timeline story, from the REAL producer: an added thread is named by its key alone, never its state or "
+         "detail (r2 P2)", story(changes(_a0, _a1)), "Added PR #20.")
     case("timeline story, from the REAL producer: a hand-off names its ref alone, never the ledger note (r1 P2)",
          story([l for l in _ch if l.startswith("declared on master: ")]), "Declared on master: backlog #11, PR #30.")
     _w1, _w2 = dict(_e, id="b-first"), dict(_e, id="a-second", goal="h", thread="side · PR #30 · again")
