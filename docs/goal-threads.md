@@ -176,6 +176,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #512 · self-tests leave temp directories behind, and the pile slows long-path shell commands · waits on the weekly reset (Fri 11-06 02:00)
 - fix · backlog #533 · a mutation pin bump no longer sweeps the whole manifest: the pins move out of the sweep harness into a data file (phase 1 of the owner's card A, 11-06 09:10)
 - fix · backlog #534 · one full sweep on a batch branch of master plus every ready PR head, instead of one per PR (phase 2 of card A); build after backlog #533
+- fix · backlog #537 · the explainer question watcher no longer holds every auto compaction, so compaction comes at a pause (owner 11-06 card A; the window lowers to 200k locally)
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
