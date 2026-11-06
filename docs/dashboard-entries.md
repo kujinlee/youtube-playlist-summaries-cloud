@@ -18849,6 +18849,7 @@ Two checks that sometimes went red on unrelated pull requests, purely by luck of
 <!--tech-->
 `check-review-decision.py`: a case gives tied components one per round in REVERSE order, so dropping `sorted()` fails under every `PYTHONHASHSEED` (measured at seeds 266 and 312, where the old case passed). `check-selftest-counts.py`: a case patches `concurrent.futures.as_completed` to yield futures in reverse, so the "completion order" mutant fails on every run. Each joins its mutation's `expect`. 119 and 60 cases (+1 each).
 
+## 2026-11-05
 The usage warnings now always come from the reviewed version on master. Before, they came from whatever branch the session was working on — tonight they showed one branch's new, unreviewed wording, then the old wording again after a switch. A branch that weakened the limit would have weakened it for the session that wrote it. Backlog #522.
 <!--tech-->
 New `.claude/hooks/usage-pace-run.sh`: the prompt, spawn and wake hooks run `scripts/check-usage-pace.py` from `git show origin/master:` (refs/remotes, `GIT_*` unset, `--no-replace-objects`), written to a per-call temp file named `check-usage-pace.py` so the ratchet contract still sees its caller; unreadable → the prompt hook says CANNOT RUN in context, spawn/wake exit 1 (non-blocking), never a fallback to the checkout's copy. The self-test's fixture now commits the guard and sets `origin/master`; 324 cases (+3). The launcher is a shell file the mutation harness cannot target, so 4 hand mutations were measured, each red (recorded in the PR).
