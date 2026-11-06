@@ -3525,7 +3525,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 Codex H1: a thread naming an OPEN PR runs even when its backlog row cannot be read"
+      "⭐ r1 Codex H1 / backlog #518: a NAMED open PR that no row's title resolves to still runs, its row unread"
     ]
   },
   {

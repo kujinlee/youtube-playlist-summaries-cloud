@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 394 cases
+    python3 scripts/goal-tree.py --self-test                 # 395 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -3784,6 +3784,12 @@ def _self_test_body() -> int:
              _rv(_rt("- fix · PR #30, backlog #11 · w\n"), fates=None,
                  ledger=[{"id": "j", "what": "building backlog #11", "on_done": "d", "at": "t"}]),
              [("PR #30, backlog #11", True, None)])
+        # backlog #518 moved `resolved` before the precedence, so the case above now also reaches PR #30 through backlog #11's
+        # TITLE: a named PR NO row resolves to is what still tests that the named ones are recorded (sweep shard 18, PR #516)
+        case("⭐ r1 Codex H1 / backlog #518: a NAMED open PR that no row's title resolves to still runs, its row unread",
+             _rv(_rt("- fix · PR #21, backlog #12 · w\n"), fates=None,
+                 ledger=[{"id": "j", "what": "building backlog #12", "on_done": "d", "at": "t"}]),
+             [("PR #21, backlog #12", True, None)])
         _two = ('## GOAL gb\n> 2026-11-01 09:00 "b"\n- fix · backlog #11 · via its row\n')
         case("⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
              _rv(_rt("- fix · PR #30 · named\n" + _two)), [("PR #30", True, None)])
