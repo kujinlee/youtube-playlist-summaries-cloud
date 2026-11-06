@@ -18835,10 +18835,6 @@ The goal tree page is quieter (your 17:28 messages). When nothing waits on you, 
 `scripts/goal-tree.py`: `story(ch)` derives the sentence from `changes()`'s lines by kind (refs named, three at most, then a count; a line of no known kind falls back to "N change(s)."); `render_page` renders it as the entry's summary, the lines in `ul.lines`, and folds entries past `TIMELINE_SHOWN = 6` into `details.older`; `needs_html` draws the "none" state as `p.quiet`. 391 cases (+14, one re-expected); 15 new mutations; pin 282 → 297. A state change is read from its own `A → B` slot, never searched for in the line, so a detail that mentions a merge is not a landing (review round 1). Over the real log, 150 of 156 entries get a named sentence.
 
 ## 2026-11-05
-A fix to the agenda's **Running now / Owed** split from earlier today. A thread with one part already merged and another part still open as a PR used to show that open PR as separate "running" work, even when the thread said it was waiting on something. It now counts the open PR as part of its own thread, and the thread's wait holds it under Owed. Backlog #518.
-<!--tech-->
-`scripts/goal-tree.py`: `derive_thread` collects `resolved` (every live row's open PR, by title) before the named-PR / merged / open precedence, so a mixed thread records its `open_prs`; `agenda_digest` admits a FINISHED leaf only when it still owns an open PR. Backlog #518's (b), the join keeping every PR identity, was already pinned by r3's `_fold_item` cases. 394 cases (+3); 2 new mutations, 3 re-bound; pin 297 → 299.
-
 A small correction to the timeline's one-line stories: a thread that first appears already merged now reads as **landed**, not merely "added" — at 18:55 the page said "Added backlog #519" for work that had just shipped. Backlog #520's test gap is closed too.
 <!--tech-->
 `scripts/goal-tree.py` `story()`: an `added` line whose glyph is the merged one goes to `landed`. A wording-only case now runs two snapshots whose stored trees differ in a thread's text, through `derive` and `changes()`. 393 cases (+2, one re-expected: the r2 producer case's fixture PR #20 is merged, so it now reads "Landed PR #20."); 1 new mutation, 1 re-bound; pin 297 → 298.
@@ -18859,3 +18855,7 @@ Two checks that sometimes went red on unrelated pull requests, purely by luck of
 <!--tech-->
 `check-review-decision.py`: a case gives tied components one per round in REVERSE order, so dropping `sorted()` fails under every `PYTHONHASHSEED` (measured at seeds 266 and 312, where the old case passed). `check-selftest-counts.py`: a case patches `concurrent.futures.as_completed` to yield futures in reverse, so the "completion order" mutant fails on every run. Each joins its mutation's `expect`. 119 and 60 cases (+1 each).
 
+## 2026-11-05
+A fix to the agenda's **Running now / Owed** split from earlier today. A thread with one part already merged and another part still open as a PR used to show that open PR as separate "running" work, even when the thread said it was waiting on something. It now counts the open PR as part of its own thread, and the thread's wait holds it under Owed. Backlog #518.
+<!--tech-->
+`scripts/goal-tree.py`: `derive_thread` collects `resolved` (every live row's open PR, by title) before the named-PR / merged / open precedence, so a mixed thread records its `open_prs`; `agenda_digest` admits a FINISHED leaf only when it still owns an open PR. Backlog #518's (b), the join keeping every PR identity, was already pinned by r3's `_fold_item` cases. 394 cases (+3); 2 new mutations, 3 re-bound; pin 297 → 299.
