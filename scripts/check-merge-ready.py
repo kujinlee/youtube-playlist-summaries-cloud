@@ -284,6 +284,11 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     # older run is cancelled, a push to master's never is. It gates no step.
     ("ci.yml", "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"):
         (1, "which runs a newer push CANCELS (pull requests only) — gates no step"),
+    # ⟳ 2026-11-06, backlog #506: the sweep shard's TIMEOUT is keyed on the event — 60 min on the schedule,
+    # which runs every suite under two hash seeds, 30 otherwise. A job SETTING, not a condition: it gates no
+    # step, and the shard runs on a pull request exactly as before.
+    ("ci.yml", "timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}"):
+        (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     ("schema-gates.yml", "pull_request:"):

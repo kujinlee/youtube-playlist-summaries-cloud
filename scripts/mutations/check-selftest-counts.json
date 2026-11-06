@@ -1,41 +1,15 @@
 [
   {
-    "name": "printed_total takes the FIRST summary instead of the last",
+    "name": "printed_total stops reading the borrowed summary rule (backlog #506 r2: the rule moved to check-plan-code's summary_total)",
     "file": "scripts/check-selftest-counts.py",
     "edits": [
       [
-        "        if m:\n            total = int(m.group(2))\n    return total",
-        "        if m:\n            return int(m.group(2))\n    return total"
+        "    return _summary_total()(out)\n",
+        "    return None\n"
       ]
     ],
     "expect": [
-      "an earlier quoted summary does not win over the real one",
-      "a trailing SECOND summary is what gets read (known limit)"
-    ]
-  },
-  {
-    "name": "the `passed` requirement is dropped, so any ratio counts",
-    "file": "scripts/check-selftest-counts.py",
-    "edits": [
-      [
-        "        if \"passed\" not in line:\n            continue",
-        "        if False:\n            continue"
-      ]
-    ],
-    "expect": [
-      "a ratio on a line without the word is ignored"
-    ]
-  },
-  {
-    "name": "the `N of M` arm is dropped from RATIO",
-    "file": "scripts/check-selftest-counts.py",
-    "edits": [
-      [
-        "RATIO = re.compile(r\"\\b(\\d+)\\s*(?:/|\\s+of\\s+)\\s*(\\d+)\\b\")",
-        "RATIO = re.compile(r\"\\b(\\d+)\\s*(?:/)\\s*(\\d+)\\b\")"
-      ]
-    ],
-    "expect": [
+      "a `12/12 self-test cases passed` summary reads 12",
       "`32 of 32 … passed` reads 32"
     ]
   },
@@ -325,7 +299,6 @@
       ]
     ],
     "expect": [
-      "outcomes come back in the given order, not completion order",
       "backlog #506: outcomes come back in the given order when completion is forced to the reverse"
     ]
   },
