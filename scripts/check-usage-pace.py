@@ -144,7 +144,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 327 cases
+    python3 scripts/check-usage-pace.py --self-test  # 329 cases
 """
 from __future__ import annotations
 
@@ -1749,6 +1749,14 @@ def _self_test_body() -> int:
             check("run-hook: the spawn hook's systemMessage names the MAIN checkout's file",
                   os.path.realpath(main_co) in hso(out).get("systemMessage", ""), True)
             check("run-hook: the spawn hook allows at 50%", hook("usage-pace-spawn.sh", 50), (0, ""))
+            # hook-master-guard r4 Codex BLOCKER: an unusable TMPDIR is a visible CANNOT RUN, never a silent exit
+            _gone = os.path.join(tmp, "no-such-tmpdir")
+            _rc, _out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522t"}', TMPDIR=_gone)
+            check("⭐ backlog #522 r4: a TMPDIR naming a missing directory — the prompt hook SAYS cannot run",
+                  (_rc, "CANNOT RUN" in _out, "no temp directory" in _out), (0, True, True))
+            _rc, _out = hook("usage-pace-spawn.sh", 98.5, TMPDIR=_gone)
+            check("backlog #522 r4: …and the spawn hook allows with a systemMessage, never a bare exit",
+                  (_rc, "no temp directory" in hso(_out).get("systemMessage", "")), (0, True))
             # backlog #522: a branch's OWN copy of the guard never governs the session — master's does
             _own = os.path.join(wt, "scripts", "check-usage-pace.py")
             with open(_own) as fh:
