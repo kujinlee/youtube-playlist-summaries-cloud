@@ -3603,5 +3603,57 @@
     "expect": [
       "r2 Codex L1: an undeclared PR whose number is not an integer is not listed, and nothing crashes"
     ]
+  },
+  {
+    "name": "a thread owns only the first PR its rows resolve to (running-vs-owed r3 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " | set(resolved))",
+        " | set())"
+      ]
+    ],
+    "expect": [
+      "r3 Codex M1: …so neither resolved PR is reported UNDECLARED"
+    ]
+  },
+  {
+    "name": "a resolved PR beyond the first is reported undeclared (running-vs-owed r3 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    named_prs |= {n for g in out_goals for t in g[\"threads\"] for n in t.get(\"open_prs\") or []}   # r3 Codex M1\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "r3 Codex M1: …so neither resolved PR is reported UNDECLARED"
+    ]
+  },
+  {
+    "name": "joining two items drops the later one's wait (running-vs-owed r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_fold_item(g[\"item\"], o[\"item\"][\"goals\"], o[\"item\"])",
+        "_fold_item(g[\"item\"], o[\"item\"][\"goals\"], dict(o[\"item\"], waits=None))"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
+    ]
+  },
+  {
+    "name": "joining two items drops the later one's running (running-vs-owed r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "o[\"item\"][\"goals\"], o[\"item\"])\n",
+        "o[\"item\"][\"goals\"], dict(o[\"item\"], running=False))\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
+    ]
   }
 ]

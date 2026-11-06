@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 374 cases
+    python3 scripts/goal-tree.py --self-test                 # 377 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -432,6 +432,7 @@ def derive_thread(t: dict, src: dict) -> dict:
     whens: list = []          # backlog #497: the merge minute of every merged PR (None where it was not read)
     closes: list = []         # review r1 C6: the close minute of every closed PR (None where it was not read)
     open_pr = None            # review r1 X1: the open PR a backlog-only thread resolved to by its TITLE
+    resolved: list = []       # running-vs-owed r3 Codex M1: EVERY open PR its rows resolved to, not only the first
     if prs:
         found = [_pr_state(n, src) for n in prs]
         state = next(s for s in PRECEDENCE if any(f[0] == s for f in found))
@@ -451,6 +452,7 @@ def derive_thread(t: dict, src: dict) -> dict:
         elif opened:
             p = opened[0]
             open_pr = int(p["number"])
+            resolved = [int(q["number"]) for q in opened]
             state, detail = "open", (f"PR #{p['number']} open" + (" · draft" if p.get("isDraft") else "")
                                      + " · " + _SS.check_summary(p.get("statusCheckRollup")))
         else:
@@ -495,7 +497,7 @@ def derive_thread(t: dict, src: dict) -> dict:
     merged_at = max(whens) if whens and all(whens) else None
     # running-vs-owed r1 Codex H1/M1: the open PRs this thread's work IS — a named one or the one its row resolved to,
     # read whatever the leaf's worst state is (an unread row must not hide an open PR) and the identity items merge by
-    open_prs = sorted({n for n in prs if n in src["open"]} | ({open_pr} if open_pr is not None else set()))
+    open_prs = sorted({n for n in prs if n in src["open"]} | ({open_pr} if open_pr is not None else set()) | set(resolved))
     out = dict(t, state=state, detail=detail, merged_at=merged_at, parked=bool(parked), inflight=bool(flying),
                open_pr=open_pr, open_prs=open_prs)
     if state == "closed":
@@ -515,6 +517,7 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
     # its backlog row resolved to — never by a mention in detail text (a ledger entry quoting `PR #99` hid PR #99).
     named_prs = {n for g in out_goals for t in g["threads"] for k, n in t["refs"] if k == "PR"}
     named_prs |= {t["open_pr"] for g in out_goals for t in g["threads"] if t.get("open_pr") is not None}
+    named_prs |= {n for g in out_goals for t in g["threads"] for n in t.get("open_prs") or []}   # r3 Codex M1
     undeclared = [{"pr": n, "title": _SS.clean(p.get("title") or "", 160),
                    "draft": bool(p.get("isDraft"))}
                   for n, p in sorted(src["open"].items()) if n not in named_prs]
@@ -3679,6 +3682,24 @@ def _self_test_body() -> int:
         case("⭐ r2 Codex M1: a thread naming TWO open PRs is one item with a row resolved to its SECOND, and that row's wait holds it",
              _rv(_rt("- fix · PR #21, PR #30 · both\n" + _two.replace("via its row", "via its row · waits on the owner"))),
              [("PR #21, PR #30", False, "the owner")])
+        case("⭐ r3 Codex M1: a thread whose TWO rows resolve to two open PRs owns both — the second is not stray running work",
+             _rv(_rt("- fix · backlog #11, backlog #12 · two rows · waits on the owner\n"),
+                 open={30: {"number": 30, "title": "a (backlog #11)"}, 31: {"number": 31, "title": "b (backlog #12)"}}),
+             [("backlog #11, backlog #12", False, "the owner")])
+        case("r3 Codex M1: …so neither resolved PR is reported UNDECLARED",
+             [u["pr"] for u in derive(_rt("- fix · backlog #11, backlog #12 · two rows\n"), src(
+                 open={30: {"number": 30, "title": "a (backlog #11)"}, 31: {"number": 31, "title": "b (backlog #12)"},
+                       32: {"number": 32, "title": "other"}}), "t")["undeclared"]], [32])
+        case("⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits",
+             [(x["running"], x["waits"]) for x in agenda_now_items({"now": [
+                 {"label": "a", "goal": "g1", "what": "", "running": True, "waits": None, "prs": [21]},
+                 {"label": "b", "goal": "g2", "what": "", "running": False, "waits": "w", "prs": [30]},
+                 {"label": "c", "goal": "g3", "what": "", "running": True, "waits": None, "prs": [21, 30]}]})
+              + agenda_now_items({"now": [
+                 {"label": "a", "goal": "g1", "what": "", "running": False, "waits": None, "prs": [21]},
+                 {"label": "b", "goal": "g2", "what": "", "running": True, "waits": None, "prs": [30]},
+                 {"label": "c", "goal": "g3", "what": "", "running": False, "waits": None, "prs": [21, 30]}]})],
+             [(False, "w"), (True, None)])
         case("r2 Codex M1: an entry sharing a PR with TWO items joins them into one, in first-seen order",
              [(x["label"], x["goals"]) for x in agenda_now_items({"now": [
                  {"label": "a", "goal": "g1", "what": "", "running": True, "waits": None, "prs": [21]},
