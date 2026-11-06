@@ -2671,7 +2671,7 @@ EXPECTED_MUTATIONS = {
     # one per clause (-F, one path, the path's two boundaries, the first program, the filter allowlist, a later stage's
     # operator, the newline, the substitution scan and its four clauses, `#`, an unparsable command, each redirect).
     # 55 - 5 + 18 = 68.
-    "scripts/check-compaction-boundary.py": 68,
+    "scripts/check-compaction-boundary.py": 64,
     # backlog #455 (2026-11-01): a subagent's foreground Bash call that can block past 270 s is refused. Pinned in the
     # commit that creates it (21). ⟳ r1 fold: the sleep and watch rules removed, the effective timeout read the way
     # the harness reads it — one entry per clause of that reading, the exemptions, the deny JSON and NOT CHECKED: 29.
