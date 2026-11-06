@@ -100,7 +100,6 @@ import ast
 import concurrent.futures
 import importlib.util
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -329,19 +328,15 @@ POPULATION: frozenset[str] = frozenset({
     "check-usage-pace.py",           # backlog #399 — pinned in the commit that creates it.
 })
 
-# The denominator is the total. Scripts differ on the words around it, so the line is matched on
-# the RATIO plus the word `passed` rather than on any one phrasing. Requiring `passed` is what
-# stops an unrelated "3/4 files" line being read as a case total.
-#
-# The `N of M` arm is not speculative: `check-paid-caller-arrival.py` prints
-# "32 of 32 self-test cases passed". It declares no count today so it is out of population, but a
-# parser that silently cannot read a form the repo already uses would turn a future member into a
-# CANNOT RUN for a reason nobody would look for. Enumerated from what the scripts actually print,
-# not from what a summary line ought to look like.
-RATIO = re.compile(r"\b(\d+)\s*(?:/|\s+of\s+)\s*(\d+)\b")
+# The denominator is the total, read from the suite's summary LINE. ⟳ 2026-11-06 (backlog #506 r2 Codex M1): the
+# rule that recognises that line is `check-plan-code.py`'s `summary_total` — ONE definition, borrowed below, because
+# the mutation harness asks the same question ("did this suite print its summary?") and its own copy, a substring
+# test for `passed`, read a case NAME as a summary. This script's copy was the RATIO plus the word `passed` anywhere on
+# a line; a whole-line match over the enumerated shapes (including the `N of M` arm that
+# `check-paid-caller-arrival.py`'s "32 of 32 self-test cases passed" needs) replaced both.
 
 
-BORROWED = ("count_drift", "child_env")
+BORROWED = ("count_drift", "child_env", "summary_total")
 
 
 def borrow_errors(mod) -> list[str]:
@@ -464,7 +459,7 @@ def kill_group(proc: subprocess.Popen, grace: float) -> None:
 
 
 def printed_total(out: str) -> int | None:
-    """The denominator of the LAST `N/M … passed` line, or None if there is none.
+    """The denominator of the LAST summary line, or None if there is none — `check-plan-code`'s `summary_total`.
 
     ⚠ LAST, NOT FIRST, and this script is why. The first version took the first match and was
     wrong on its OWN suite: the case labels here quote example summaries (`` `12/12 … passed` ``),
@@ -478,14 +473,18 @@ def printed_total(out: str) -> int | None:
     surfaces as a loud DRIFT (77 vs 6), not a silent pass. The case below pins that behaviour so
     it is a known shape rather than a surprise.
     """
-    total = None
-    for line in out.split("\n"):
-        if "passed" not in line:
-            continue
-        m = RATIO.search(line)
-        if m:
-            total = int(m.group(2))
-    return total
+    return _summary_total()(out)
+
+
+_SUMMARY: list = []
+
+
+def _summary_total():
+    """`check-plan-code.py`'s `summary_total`, loaded once. `main` primes it before the pool starts, so the suites'
+    threads never race to load it."""
+    if not _SUMMARY:
+        _SUMMARY.append(_load_plan_code().summary_total)
+    return _SUMMARY[0]
 
 
 # ── the pool (backlog #487) ─────────────────────────────────────────────────────────────────────
@@ -720,6 +719,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ImportError, OSError) as exc:
         print(f"CANNOT RUN — {exc}. Treat this as NOT RUN.", file=sys.stderr)
         return 2
+    _SUMMARY[:] = [pc.summary_total]
 
     only = None
     try:
@@ -1089,7 +1089,8 @@ def _self_test_body() -> int:
     import types
     saved = (globals()["audit"], globals()["_load_plan_code"], os.cpu_count)
     globals()["audit"] = fake_audit
-    globals()["_load_plan_code"] = lambda: types.SimpleNamespace(count_drift=cd, child_env=pc.child_env)
+    globals()["_load_plan_code"] = lambda: types.SimpleNamespace(count_drift=cd, child_env=pc.child_env,
+                                                                      summary_total=pc.summary_total)
     os.cpu_count = lambda: 8
     try:
         with contextlib.redirect_stdout(io.StringIO()):

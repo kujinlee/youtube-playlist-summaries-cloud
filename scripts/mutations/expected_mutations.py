@@ -803,7 +803,21 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06, backlog #533: 178 -> 182, none retired. The pins moved into this file: the pins file
     # as a harness file again (1), an unreadable pins file read as agreement (1), importing the harness
     # needing the pins (1), and the read's reason dropped (1).
-    "scripts/check-plan-code.py": 182,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-06 backlog #506: 178 -> 199 — the seed-varied sweep (`--seeds`): the seed reaching the
+    # child, `seed_outcome`'s four verdicts, `parse_seeds`' three refusals, the control under EVERY seed,
+    # and the wiring through `run_mutations`, `mutate_delivered`, `main` and the tally.
+    # ⟳ 2026-11-06 #506 r1 fold: 199 -> 205 — the stopped-early seed (Codex M2), the NAMED-case comparison and its
+    # no-expect fallback and wiring (Claude M1), the per-seed tree copy and its cannot-copy refusal (Codex M1).
+    # ⟳ 2026-11-06 #506 r1 fold, COST: 205 -> 215 — one tree per seed for the WHOLE run: seed_runs using the run's
+    # trees, run_mutations / mutate_delivered / both controls sharing them, the mutant applied to every tree, a
+    # tree it cannot be written to, a tree that cannot be restored, and the run stopping on it.
+    # ⟳ 2026-11-06 backlog #506 r2 Codex M1: 215 -> 224 — the summary LINE rule (`summary_total`): seed completion and
+    # control greenness each reverted to the substring `passed`, whole-line -> search, last -> first, and one per
+    # SUMMARY_LINE arm (`passed`, `N of M`, `self-test: `, the `cases` words, `N cases, N passed, N failed`).
+    # The r4 M1 control entry was re-bound.
+    # ⟳ 2026-11-06, merging PR #523 (backlog #506) into backlog #533: 182 + 46 = 228. The two lines above are
+    # each PR measured from the common 178; the merged manifest holds both sets (4 + 46 added, none retired).
+    "scripts/check-plan-code.py": 228,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1296,7 +1310,9 @@ EXPECTED_MUTATIONS = {
     # PR #487 r1 fold: 29 -> 36, a timeout kills the suite's whole process group (own session,
     # SIGKILL after SIGTERM), a signal-killed suite is CANNOT RUN, a CANNOT RUN hides no red suite,
     # and `main`'s --jobs wiring and its refusal of 0.
-    "scripts/check-selftest-counts.py": 36,
+    # ⟳ 2026-11-06 backlog #506 r2: 36 -> 34 — its three printed_total/RATIO entries moved to check-plan-code.json
+    # with the rule (`summary_total`); one entry pins that printed_total still reads the borrowed rule.
+    "scripts/check-selftest-counts.py": 34,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
