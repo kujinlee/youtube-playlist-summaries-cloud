@@ -3659,5 +3659,139 @@
     "expect": [
       "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
     ]
+  },
+  {
+    "name": "timeline story: a landed PR is not named as landed (owner 11-05 17:28)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    landed = [ref(c) for c in ch if c.startswith(\"[\") and \"→ ✅ merged\" in c]",
+        "    landed = []"
+      ]
+    ],
+    "expect": [
+      "timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal"
+    ]
+  },
+  {
+    "name": "timeline story: a moved thread shows its glyph, not its new state",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".split(\" — \", 1)[0].split(\" \", 1)[-1]",
+        ".split(\" — \", 1)[0].split(\" \", 1)[0]"
+      ]
+    ],
+    "expect": [
+      "timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal"
+    ]
+  },
+  {
+    "name": "timeline story: every ref is named, so a busy entry runs past one line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\", \".join(refs[:3])",
+        "\", \".join(refs[:5])"
+      ]
+    ],
+    "expect": [
+      "timeline story: past three refs it counts the rest, so one sentence stays one line"
+    ]
+  },
+  {
+    "name": "timeline story: an unknown change kind yields no count",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    out = \"; \".join(bits) or f\"{len(ch)} change(s)\"",
+        "    out = \"; \".join(bits) or \"x\""
+      ]
+    ],
+    "expect": [
+      "timeline story: a line of no known kind still yields a sentence — a count, never an empty summary"
+    ]
+  },
+  {
+    "name": "timeline story: the asks are not told",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"needs you, new: \"), \"a new ask for you\"",
+        "(0, \"a new ask for you\""
+      ]
+    ],
+    "expect": [
+      "timeline story: the asks and the agenda are told by kind"
+    ]
+  },
+  {
+    "name": "the timeline summary repeats the first change line, not the story",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"story\">{html.escape(story(ch))}</span>",
+        "<span class=\"story\">{html.escape(ch[0])}</span>"
+      ]
+    ],
+    "expect": [
+      "the timeline entry's summary is the story; its change lines sit muted inside, not in the summary"
+    ]
+  },
+  {
+    "name": "the older timeline entries never fold",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if i == len(log) - 1 - TIMELINE_SHOWN:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "past the newest TIMELINE_SHOWN entries the rest fold into ONE older block, which counts them"
+    ]
+  },
+  {
+    "name": "the older block is never closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if len(log) > TIMELINE_SHOWN:\n        parts.append('</details>')\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the older block closes after the oldest entry, so the page's tags balance"
+    ]
+  },
+  {
+    "name": "the older block opens even on a short timeline",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if len(log) > TIMELINE_SHOWN:\n",
+        "    if True:\n"
+      ],
+      [
+        "        if i == len(log) - 1 - TIMELINE_SHOWN:",
+        "        if i == len(log) - 1 - min(TIMELINE_SHOWN, len(log) - 1):"
+      ]
+    ],
+    "expect": [
+      "a timeline no longer than TIMELINE_SHOWN has no older block"
+    ]
+  },
+  {
+    "name": "nothing waiting is shown as a bright heading again (owner 11-05 17:28)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if st == \"none\":   # owner",
+        "    if False:   # owner"
+      ]
+    ],
+    "expect": [
+      "owner 17:28: NOTHING waiting is said quietly — a muted line, never a bright NEEDS YOU heading"
+    ]
   }
 ]

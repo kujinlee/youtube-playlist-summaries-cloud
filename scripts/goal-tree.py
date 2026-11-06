@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 377 cases
+    python3 scripts/goal-tree.py --self-test                 # 386 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1702,6 +1702,43 @@ def _item_line(n: dict) -> str:
     return " · ".join(bits)
 
 
+def story(ch: list[str]) -> str:
+    """PURE. ONE sentence for a timeline entry (owner 2026-11-05 17:28: "one prose summary for the story line"): what
+    happened, by kind, naming only what LANDED and the goals that opened. The change lines stay underneath, muted."""
+    if ch == ["first snapshot"]:
+        return "The first snapshot."
+
+    def ref(line):  # "[fix] PR #511 · what: open → ✅ merged — …" → "PR #511"
+        return line.split("] ", 1)[1].split(" · ", 1)[0].split(":", 1)[0]
+
+    def n(*pfx):
+        return sum(c.startswith(pfx) for c in ch)
+    def names(refs):   # at most three named, then a count, so one sentence stays one line
+        return ", ".join(refs[:3]) + (f" and {len(refs) - 3} more" if len(refs) > 3 else "")
+
+    def to(c):   # "… open → ⏳ waits — …" → "waits"
+        return c.split("→ ", 1)[1].split(" — ", 1)[0].split(" ", 1)[-1]
+    landed = [ref(c) for c in ch if c.startswith("[") and "→ ✅ merged" in c]
+    moved = [f"{ref(c)} → {to(c)}" for c in ch if c.startswith("[") and "→ ✅ merged" not in c]
+    goals = [c.split(": ", 1)[1] for c in ch if c.startswith("goal added: ")]
+    bits = [f"{head} {names(refs)}" for head, refs in (
+        ("goal opened:", goals), ("landed", landed),
+        ("added", [ref(c[6:]) for c in ch if c.startswith("added [")]),
+        ("declared on master:", [ref(c.split(": ", 1)[1]) for c in ch if c.startswith("declared on master: ")]),
+        ("moved", moved), ("removed", [ref(c[8:]) for c in ch if c.startswith("removed [")]),
+        ("goal removed:", [c.split(": ", 1)[1] for c in ch if c.startswith("goal removed: ")])) if refs]
+    for count, one, many in ((n("needs you, new: "), "a new ask for you", "{} new asks for you"),
+                             (n("needs you, cleared: "), "an ask cleared", "{} asks cleared"),
+                             (n("agenda "), "the agenda changed", "the agenda changed"),
+                             (n("plan "), "plan progress", "plan progress"),
+                             (n("in flight, ", "no longer in flight", "ledger problem", "undeclared PR"),
+                              "in-flight work changed", "in-flight work changed")):
+        if count:
+            bits.append(one if count == 1 else many.format(count))
+    out = "; ".join(bits) or f"{len(ch)} change(s)"
+    return out[0].upper() + out[1:] + "."
+
+
 def needs_lines(snap: dict) -> list[str]:
     """PURE. The NEEDS YOU block as text, for --print; the page draws the same items as links. Two
     lists (X4): decisions only the owner can make, and actions only the owner can take."""
@@ -1737,7 +1774,9 @@ def needs_html(snap: dict) -> str:
     lines = needs_lines(snap)
     parts = [f'<section class="needs {st}">']
     heads = [ln for ln in lines if ln.startswith("NEEDS YOU")]
-    if st != "items":
+    if st == "none":   # owner 2026-11-05 17:28: nothing waiting is said quietly, never as a bright heading
+        parts.append(f'<p class="quiet" title="{html.escape(heads[0])}">Needs you — nothing</p>')
+    elif st != "items":
         parts.append(f"<h2>{html.escape(heads[0])}</h2>")
     for kind in ("decision", "action"):
         group = [n for n in items if n.get("kind", "decision") == kind]
@@ -1907,6 +1946,9 @@ def render_tree_html(snap: dict, ids: bool = False, at=None) -> str:
     return '<div class="tree">' + _blocks_html(tree_blocks(snap, at), snap.get("repo"), seen) + "</div>"
 
 
+TIMELINE_SHOWN = 6   # newest timeline entries shown open; the rest fold (owner 2026-11-05 17:28)
+
+
 def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
     """PURE. The page body: the newest snapshot as the current tree, then the timeline newest first.
 
@@ -1946,13 +1988,19 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed. Before this '
               f'page, the plan history was drawn by the work-lines page, now retired and FROZEN: '
               f'<a href="{WORK_LINES_ARCHIVE}">the work-lines archive</a> (backlog #389).</p>']
+    # owner 2026-11-05 17:28: each entry reads as ONE sentence; its change lines are muted inside; past the newest
+    # TIMELINE_SHOWN the entries fold into one "older" block, so the list does not run on
     for i in range(len(log) - 1, -1, -1):
+        if i == len(log) - 1 - TIMELINE_SHOWN:
+            parts.append(f'<details class="older"><summary>{i + 1} older snapshot(s), back to '
+                         f'<time>{html.escape(log[0]["at"])}</time></summary>')
         snap, ch = log[i], changes(log[i - 1] if i else None, log[i])
         parts.append(f'<details class="snap"><summary><time>{html.escape(snap["at"])}</time> · '
-                     f'{len(ch)} change(s): ' + _html_line(ch[0], snap.get("repo"))
-                     + ('…' if len(ch) > 1 else '') + '</summary><ul>'
+                     f'<span class="story">{html.escape(story(ch))}</span></summary><ul class="lines">'
                      + "".join(f'<li>{_html_line(c, snap.get("repo"))}</li>' for c in ch)
                      + '</ul>' + render_tree_html(snap) + '</details>')
+    if len(log) > TIMELINE_SHOWN:
+        parts.append('</details>')
     parts.append('</main>')
     return "\n".join(parts)
 
@@ -1995,11 +2043,14 @@ details.snap{border-bottom:1px solid var(--rule);padding:.35rem 0}
 details.snap summary{cursor:pointer;font-size:.9rem}
 details.snap time{font-family:var(--mono);font-size:.78rem;color:var(--ink-faint)}
 details.snap ul{font-size:.85rem;margin:.4rem 0}
+details.snap ul.lines{color:var(--ink-faint)}
+details.older>summary{cursor:pointer;font-size:.85rem;color:var(--ink-faint);padding:.4rem 0}
 .replay{background:var(--card);border:1px solid var(--rule);border-radius:.4rem;padding:.4rem .8rem;
         font-size:.9rem}
 section.needs{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--pending);
               border-radius:.5rem;padding:.4rem 1.1rem .7rem;margin:1rem 0}
-section.needs.none{border-left-color:var(--rule)}
+section.needs.none{background:none;border:none;padding:0;margin:.4rem 0}
+section.needs p.quiet{margin:0;font-size:.8rem;color:var(--ink-faint)}
 section.needs h2{margin:.5rem 0}
 section.needs ul{margin:.3rem 0;padding-left:1.1rem;font-size:.9rem}
 section.needs li{margin:.2rem 0}
@@ -3098,6 +3149,9 @@ def _self_test_body() -> int:
          any("backlog #5" in ln and "also recorded in ledger ask-1: decision: backlog #5 — Choose A or B "
              "(answers-open: 3) (stands for 3 open answers)" in ln for ln in _ml), True)
     _pg = render_page([_ns, _mixed], "t")
+    case("owner 17:28: NOTHING waiting is said quietly — a muted line, never a bright NEEDS YOU heading",
+         (needs_html(_ns).count('>Needs you — nothing</p>'), "<h2>" in needs_html(_ns),
+          'title="NEEDS YOU — nothing waits on you (dashboard asks' in needs_html(_ns)), (1, False, True))
     case("⭐ the NEEDS YOU list is at the top, above the tree, and every source links",
          (_pg.index('<section class="needs') < _pg.index("<h2>Now</h2>"),
           '<a href="/backlog-table#i5">backlog #5</a>' in _pg,
@@ -3223,7 +3277,32 @@ def _self_test_body() -> int:
          True)
     case("every snapshot expands to its full tree", page.count('<div class="tree">'), 3)
     case("a log of ONE snapshot renders it as current and as the first timeline entry",
-         render_page([snap], "t").count("1 change(s): first snapshot"), 1)
+         render_page([snap], "t").count('<span class="story">The first snapshot.</span>'), 1)
+    # owner 2026-11-05 17:28: ONE sentence per entry, naming the work; the change lines muted beneath
+    case("timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal",
+         story(["goal added: product", "[fix] PR #511 · recap: open → ✅ merged — e5f6",
+                "added [fix] backlog #517 · split: ⬜ next", "[fix] backlog #511 · x: next → ❌ blocked — the reset",
+                "removed [side] PR #9"]),
+         "Goal opened: product; landed PR #511; added backlog #517; moved backlog #511 → blocked; removed PR #9.")
+    case("timeline story: past three refs it counts the rest, so one sentence stays one line",
+         story([f"added [fix] PR #{n} · w: ⬜ next" for n in (1, 2, 3, 4, 5)]), "Added PR #1, PR #2, PR #3 and 2 more.")
+    case("timeline story: the asks and the agenda are told by kind",
+         story(["needs you, new: backlog #9 (backlog)", "needs you, new: PR #8 (dashboard)",
+                "needs you, cleared: PR #7 (ledger)", "agenda recorded: set t, 2 step(s)"]),
+         "2 new asks for you; an ask cleared; the agenda changed.")
+    case("timeline story: a line of no known kind still yields a sentence — a count, never an empty summary",
+         story(["something new"]), "1 change(s).")
+    _tl = render_page([snap] * (TIMELINE_SHOWN + 2), "t")
+    case("the timeline entry's summary is the story; its change lines sit muted inside, not in the summary",
+         ('<span class="story">The first snapshot.</span></summary><ul class="lines"><li>first snapshot</li>' in _tl,
+          "change(s): first snapshot" in _tl), (True, False))
+    case("past the newest TIMELINE_SHOWN entries the rest fold into ONE older block, which counts them",
+         (_tl.count('<details class="older">'), "2 older snapshot(s), back to" in _tl,
+          _tl.split('class="older"')[0].count('<details class="snap">')), (1, True, TIMELINE_SHOWN))
+    case("...and the older block closes after the oldest entry, so the page's tags balance",
+         _tl.count("<details") == _tl.count("</details>"), True)
+    case("a timeline no longer than TIMELINE_SHOWN has no older block",
+         '"older"' in render_page([snap] * TIMELINE_SHOWN, "t"), False)
     case("a failed live read is announced above the tree, with its reason",
          "could NOT run, so it was not logged: gh: gh pr list" in
          render_page(log2, "t", derive(goals, gh_down, "2026-10-28 08:00")), True)
