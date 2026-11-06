@@ -516,8 +516,9 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
     # ⛔ review r1 X1: an open PR is represented only by a STRUCTURED association — a thread's refs, or the open PR
     # its backlog row resolved to — never by a mention in detail text (a ledger entry quoting `PR #99` hid PR #99).
     named_prs = {n for g in out_goals for t in g["threads"] for k, n in t["refs"] if k == "PR"}
-    named_prs |= {t["open_pr"] for g in out_goals for t in g["threads"] if t.get("open_pr") is not None}
-    named_prs |= {n for g in out_goals for t in g["threads"] for n in t.get("open_prs") or []}   # r3 Codex M1
+    # …every open PR a thread's work IS: named, or resolved from its rows by title (running-vs-owed r3 Codex M1:
+    # every one, not only the first — `open_prs` holds `open_pr` too, so one line, not two that mask each other)
+    named_prs |= {n for g in out_goals for t in g["threads"] for n in t.get("open_prs") or []}
     undeclared = [{"pr": n, "title": _SS.clean(p.get("title") or "", 160),
                    "draft": bool(p.get("isDraft"))}
                   for n, p in sorted(src["open"].items()) if n not in named_prs]

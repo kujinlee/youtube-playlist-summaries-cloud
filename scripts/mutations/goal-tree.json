@@ -1781,7 +1781,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    named_prs |= {t[\"open_pr\"] for g in out_goals for t in g[\"threads\"] if t.get(\"open_pr\") is not None}",
+        "    named_prs |= {n for g in out_goals for t in g[\"threads\"] for n in t.get(\"open_prs\") or []}",
         "    named_prs |= {int(m) for g in out_goals for t in g[\"threads\"] for m in re.findall(r\"PR #(\\d+)\", t[\"detail\"])}"
       ]
     ],
@@ -1795,6 +1795,10 @@
     "edits": [
       [
         "            open_pr = int(p[\"number\"])\n",
+        ""
+      ],
+      [
+        "            resolved = [int(q[\"number\"]) for q in opened]\n",
         ""
       ]
     ],
@@ -3622,8 +3626,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    named_prs |= {n for g in out_goals for t in g[\"threads\"] for n in t.get(\"open_prs\") or []}   # r3 Codex M1\n",
-        ""
+        "for n in t.get(\"open_prs\") or []}",
+        "for n in (t.get(\"open_prs\") or [])[:1]}"
       ]
     ],
     "expect": [
