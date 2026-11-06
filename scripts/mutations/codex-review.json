@@ -846,5 +846,60 @@
       ]
     ],
     "expect": "⭐ #121 r7 X1 an --out through a symlink NESTED in docs/reviews is refused by the real CLI, and the victim is untouched"
+  },
+  {
+    "name": "#508: a later `not a loosening` overwrites an earlier FINDING for the same id",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "            out[m.group(1)] = \"finding\" if \"finding\" in (said, out.get(m.group(1))) else said",
+        "            out[m.group(1)] = said"
+      ]
+    ],
+    "expect": "#508: a FINDING beats `not a loosening` for the same id, in either order"
+  },
+  {
+    "name": "#508: an answer is searched for anywhere in the line, so a quoted, listed or indented one counts",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        m = ANSWER_LINE.fullmatch(line.rstrip())",
+        "        m = ANSWER_LINE.search(line.rstrip())"
+      ]
+    ],
+    "expect": "#508: an indented, quoted, prefixed, suffixed or placeholder answer is no answer"
+  },
+  {
+    "name": "#508: the flagged block is never appended to the prompt — the call site in main()",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    prompt = with_flagged_block(prompt, _block)\n",
+        "\n"
+      ]
+    ],
+    "expect": "⭐ #508 the real CLI appends the reviewed tree's flagged block to the prompt Codex gets"
+  },
+  {
+    "name": "#508: a successful run's verdict does not carry the review's answers",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "                        hits=hits, answers=loosening_answers(body))",
+        "                        hits=hits, answers=None)"
+      ]
+    ],
+    "expect": "⭐ #508 …and records the review's answer in the verdict file the merge gate reads"
+  },
+  {
+    "name": "#508: verdict_record drops the answers it is given",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "        rec[\"loosening_answers\"] = dict(loosening_answers)",
+        "        pass"
+      ]
+    ],
+    "expect": "#508: the record carries the answers only when given, so an older record is unchanged"
   }
 ]

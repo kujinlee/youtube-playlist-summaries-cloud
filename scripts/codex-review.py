@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 213 cases
+  scripts/codex-review.py --self-test  # 221 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -799,7 +799,8 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
                    intrusions_seen: "list[str] | None" = None,
                    head: "str | None" = None, dirty: "dict[str, str] | None" = None,
                    prompt: "str | None" = None, refused: bool = False,
-                   tree: "str | None" = None) -> dict:
+                   tree: "str | None" = None,
+                   loosening_answers: "dict[str, str] | None" = None) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
@@ -849,7 +850,7 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
     filename rule so the evidence carries its own meaning; `refusal_verdict_path` is the separate
     concern of not destroying the record next door.
     """
-    return {
+    rec = {
         "schema": VERDICT_SCHEMA,
         "tool": "codex-review",
         "gate_ran": bool(gate_ran),
@@ -865,6 +866,55 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
         "dirty": None if dirty is None else dict(dirty),
         "prompt": prompt,
     }
+    # backlog #508: present only when the review was read for answers, so an older record is unchanged.
+    if loosening_answers is not None:
+        rec["loosening_answers"] = dict(loosening_answers)
+    return rec
+
+
+# ── backlog #508: THE REVIEWER'S ANSWERS TO THE MERGE GATE'S FLAGGED LINES — the ONE parser ──────────
+# `check-merge-ready.py --flagged-block` lists the lines its syntactic detector flags; the reviewer
+# answers each with a WHOLE line, unindented: `LOOSENING-CHECK <12-hex id>: not a loosening` or
+# `LOOSENING-CHECK <id>: finding<anything>`. Both recorders (this wrapper for Codex, and
+# `record-review-verdict.py` for a Claude half) copy them into the verdict through this function, and
+# the merge gate reads them from there. ⛔ FAILS CLOSED: a finding for an id beats `not a loosening`
+# for it wherever either appears; any other wording, indentation, quote or list marker is no answer.
+ANSWER_LINE = re.compile(r"LOOSENING-CHECK ([0-9a-f]{12}): (not a loosening|finding\b.*)")
+
+
+def loosening_answers(text: str) -> "dict[str, str]":
+    """PURE. {id: "not a loosening" | "finding"} from a review's whole answer lines."""
+    out: "dict[str, str]" = {}
+    for line in text.split("\n"):
+        m = ANSWER_LINE.fullmatch(line.rstrip())
+        if m:
+            said = "not a loosening" if m.group(2) == "not a loosening" else "finding"
+            out[m.group(1)] = "finding" if "finding" in (said, out.get(m.group(1))) else said
+    return out
+
+
+def with_flagged_block(prompt: str, block: "str | None") -> str:
+    """PURE. The prompt with the merge gate's flagged-lines section appended, if there is one."""
+    return f"{prompt}\n\n{block}" if block and block.strip() else prompt
+
+
+def flagged_block_for(tree: str) -> "tuple[str | None, str]":
+    """(the flagged-lines section for `tree`'s branch, a note). IMPURE: runs `tree`'s own
+    `check-merge-ready.py --flagged-block`. NEVER blocks the review: on any failure the section is
+    None and the note says so — the merge gate then finds no answers and HOLDS, which is fail-closed."""
+    script = os.path.join(tree, "scripts", "check-merge-ready.py")
+    if not os.path.isfile(script):
+        return None, f"no {script}, so no flagged lines were asked about"
+    try:
+        p = subprocess.run([sys.executable, script, "--flagged-block"], cwd=tree, capture_output=True,
+                           text=True, timeout=180, env=unredirected())
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"--flagged-block did not run ({exc}); the merge gate will HOLD any flagged line"
+    if p.returncode != 0:
+        return None, (f"--flagged-block exited {p.returncode} ({(p.stderr or '').strip()[:160]}); "
+                      f"the merge gate will HOLD any flagged line")
+    return p.stdout, (f"{p.stdout.count(chr(10) + '- id ')} flagged line(s) appended to the prompt"
+                      if p.stdout.strip() else "no flagged lines")
 
 
 REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
@@ -1401,6 +1451,10 @@ def main() -> int:
             prompt = f.read()
     if not prompt:
         ap.error("provide a prompt argument or --prompt-file")
+    # backlog #508: the merge gate's flagged lines, asked of the reviewer in every round it runs.
+    _block, _note = flagged_block_for(tree_at_dispatch)
+    print(f"[codex-review] flagged lines: {_note}", file=sys.stderr)
+    prompt = with_flagged_block(prompt, _block)
 
     # ── backlog #68 (b): the one input that guarantees a rejected capture ──
     # Warn rather than refuse: a brief is free to *discuss* writing files, and a wrapper that
@@ -1453,9 +1507,9 @@ def main() -> int:
     # evidence for. The choice is made by `testimony_path`, not by an `if` here, so a case can
     # drive both directions and a mutation can invert it.
     def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None,
-             refused: bool = False) -> int:
+             refused: bool = False, answers=None) -> int:
         rec = verdict_record(gate_ran=gate_ran, exit_code=rc, review_id=args.review_id,
-                             reason=reason, refused=refused,
+                             reason=reason, refused=refused, loosening_answers=answers,
                              model=model, attempts=attempts,
                              head=head_at_dispatch, dirty=dirty_at_dispatch,
                              tree=tree_at_dispatch,
@@ -1564,7 +1618,7 @@ def main() -> int:
             print(f"[codex-review] OK via {slug} -> {dest} (captured at {args.out}; {reason})",
                   file=sys.stderr)
             return emit(0, gate_ran=True, reason=reason, model=slug, attempts=attempts,
-                        hits=hits)
+                        hits=hits, answers=loosening_answers(body))
 
         print(f"[codex-review] {slug} unusable: {reason}", file=sys.stderr)
 
@@ -2469,6 +2523,31 @@ def _self_test_body() -> int:
                         prompt="/tmp/r11.md")
     chk("the verdict records the prompt the run was dispatched with", _p["prompt"], "/tmp/r11.md")
     chk("…and says null rather than omitting it when there was none", _r["prompt"], None)
+    # ── backlog #508: the reviewer's answers to the merge gate's flagged lines, one parser ──
+    _a, _b = "0123456789ab", "ba9876543210"
+    chk("#508: a whole answer line is read, `not a loosening` and a finding alike",
+        loosening_answers(f"x\nLOOSENING-CHECK {_a}: not a loosening\n"
+                          f"LOOSENING-CHECK {_b}: finding: exit 1 is now exit 0\n"),
+        {_a: "not a loosening", _b: "finding"})
+    chk("#508: a FINDING beats `not a loosening` for the same id, in either order",
+        (loosening_answers(f"LOOSENING-CHECK {_a}: not a loosening\nLOOSENING-CHECK {_a}: finding: x\n"),
+         loosening_answers(f"LOOSENING-CHECK {_a}: finding: x\nLOOSENING-CHECK {_a}: not a loosening\n")),
+        ({_a: "finding"}, {_a: "finding"}))
+    chk("#508: an indented, quoted, prefixed, suffixed or placeholder answer is no answer",
+        loosening_answers(f"    LOOSENING-CHECK {_a}: not a loosening\n> LOOSENING-CHECK {_a}: not a loosening\n"
+                          f"- LOOSENING-CHECK {_a}: not a loosening\nLOOSENING-CHECK {_a}: not a loosening, mostly\n"
+                          "LOOSENING-CHECK <id>: not a loosening\n"), {})
+    chk("#508: a CRLF line and trailing spaces are still the answer",
+        loosening_answers(f"LOOSENING-CHECK {_a}: not a loosening  \r\n"), {_a: "not a loosening"})
+    chk("#508: the record carries the answers only when given, so an older record is unchanged",
+        ("loosening_answers" in _r,
+         verdict_record(gate_ran=True, exit_code=0, review_id="x-r1-codex", reason="r",
+                        loosening_answers={_a: "finding"}).get("loosening_answers")),
+        (False, {_a: "finding"}))
+    chk("#508: the flagged block is appended to the prompt; none leaves it unchanged",
+        (with_flagged_block("review this", "## Flagged\n- x\n"), with_flagged_block("brief two", ""),
+         with_flagged_block("brief three", None)),
+        ("review this\n\n## Flagged\n- x\n", "brief two", "brief three"))
     # ⛔ REPOSITORY REDIRECTION IS STRIPPED — r11 High, the finding that moved a real branch ref.
     _env_in = {"GIT_DIR": "/elsewhere/.git", "GIT_WORK_TREE": "/elsewhere",
                "GIT_COMMON_DIR": "/elsewhere/.git", "GIT_INDEX_FILE": "/tmp/i", "PATH": "/bin"}
@@ -2931,6 +3010,37 @@ def _self_test_body() -> int:
         _rx5 = _drive4("wt-r9-codex", os.path.join(_scr, "kept.md"), _wb)
         chk("#121 r4 …and without --allow-overwrite a pre-existing --out is still refused",
             _rx5.returncode, 2)
+        # ── backlog #508, through the REAL CLI: the reviewed tree's `--flagged-block` is appended to
+        # the prompt Codex is handed, and the review's answer lines land in the verdict file.
+        _k = os.path.join(td3, "k508")
+        os.makedirs(os.path.join(_k, "scripts"))
+        with open(os.path.join(_k, "scripts", "check-merge-ready.py"), "w", encoding="utf-8") as f:
+            f.write('import sys\nassert sys.argv[1:] == ["--flagged-block"]\n'
+                    'print("## Flagged lines MARK-508\\n- id `0123456789ab` in `scripts/x.py`: `return 1`")\n')
+        _git3(_k, "init", "-q", ".")
+        _git3(_k, "add", "-A")
+        _git3(_k, "commit", "-q", "--no-verify", "-m", "k")
+        _bin5 = os.path.join(td3, "bin5")
+        os.makedirs(_bin5)
+        with open(os.path.join(_bin5, "codex"), "w", encoding="utf-8") as f:
+            f.write('#!/bin/sh\no=""; prev=""; last=""\nfor a in "$@"; do [ "$prev" = "-o" ] && o="$a"; '
+                    'prev="$a"; last="$a"; done\nprintf "%s" "$last" > "$CR_PROMPT"\n'
+                    'printf "%s\\n" "$CR_REVIEW" > "$o"\nexit 0\n')
+        os.chmod(os.path.join(_bin5, "codex"), 0o755)
+        _pp = os.path.join(td3, "prompt508.txt")
+        _rx508 = subprocess.run(
+            [sys.executable, os.path.join(_was, "codex-review.py"), "--timeout", "20", "--model",
+             "stub-slug", "--review-id", "k508-r1-codex", "--out", os.path.join(_scr, "k508.md"),
+             "a prompt"], capture_output=True, text=True, cwd=_k,
+            env=dict(_env3, PATH=_bin5 + os.pathsep + os.environ.get("PATH", ""), CR_PROMPT=_pp,
+                     CR_REVIEW=_review + "\nLOOSENING-CHECK 0123456789ab: not a loosening\n"))
+        _pr508 = open(_pp, encoding="utf-8").read() if os.path.isfile(_pp) else ""
+        _vp508 = os.path.join(_wa, "docs", "reviews", "verdicts", "k508-r1-codex.verdict.json")
+        _v508 = json.load(open(_vp508, encoding="utf-8")) if os.path.isfile(_vp508) else {}
+        chk("⭐ #508 the real CLI appends the reviewed tree's flagged block to the prompt Codex gets",
+            (_rx508.returncode, _pr508.startswith("a prompt\n\n"), "MARK-508" in _pr508), (0, True, True))
+        chk("⭐ #508 …and records the review's answer in the verdict file the merge gate reads",
+            _v508.get("loosening_answers"), {"0123456789ab": "not a loosening"})
         # ── r6 X1 (Codex), the reviewer's input: docs/reviews is ALREADY a symlink out of B ──────
         # `B/docs/reviews -> <tmp>/external/reviews`. The resolved --out is outside both checkouts,
         # so the identity rule alone passed it: rc 0, the filed review overwritten, no intrusion.

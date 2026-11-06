@@ -638,8 +638,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "head, args.app_tests_passed, bool(nr), fs=fs, pins=pins)",
-    "head, args.app_tests_passed, bool(nr), fs=None, pins=pins)"
+    "head, args.app_tests_passed, bool(nr), fs=fs, pins=pins,",
+    "head, args.app_tests_passed, bool(nr), fs=None, pins=pins,"
    ]
   ],
   "expect": [
@@ -1243,5 +1243,170 @@
    ]
   ],
   "expect": "⭐ r8 F1: main() is CANNOT RUN, rc=2, when pin_display returns {} for a present file"
+ },
+ {
+  "name": "#508 (1): the rising-count exemption is skipped, so a `--self-test  # N cases` line whose count only ROSE beside a FAIL word is held again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                rose = rising_count(l[1:].rstrip(), readded)",
+    "                rose = None"
+   ]
+  ],
+  "expect": "#508: a rising self-test count 6 -> 9 beside a FAIL word is not a failure-path removal"
+ },
+ {
+  "name": "#508 (1): any CHANGED count is exempt, so a FALLING `--self-test` count beside a FAIL word leaves the failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if (len(new) == 1 and int(new[0][\"n\"]) > int(old[0][\"n\"])",
+    "        if (len(new) == 1 and int(new[0][\"n\"]) != int(old[0][\"n\"])"
+   ]
+  ],
+  "expect": "#508: ...but a FALLING count there still is (and the count rule holds it too)"
+ },
+ {
+  "name": "#508 (1): the text BEFORE the count is not compared, so a re-indented count line is exempt",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                and a[:new[0].start(\"n\")] == removed[:old[0].start(\"n\")]",
+    "                and True"
+   ]
+  ],
+  "expect": "#508: ...and a rising count RE-INDENTED still is (in Python indentation is meaning)"
+ },
+ {
+  "name": "#508 (1): the text AFTER the count is not compared, so `# 9 cases; exit 0 always` is exempt",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                and a[new[0].end(\"n\"):] == removed[old[0].end(\"n\"):]):",
+    "                and True):"
+   ]
+  ],
+  "expect": "#508: ...and a rising count with text changed AFTER the count still is"
+ },
+ {
+  "name": "#508 (2): a flagged line's occurrence is not in its id, so one answer covers every identical removed line",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            out.append((flag_id(path, t, seen.get(t, 0)), path, t))",
+    "            out.append((flag_id(path, t, 0), path, t))"
+   ]
+  ],
+  "expect": "#508: ...and the two ids differ"
+ },
+ {
+  "name": "#508 (2): a `dirty: null` record (the tree could not be described) is read as a clean tree",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not isinstance(dirty, dict):\n        return False\n    for p in set(changed) | set(dirty):",
+    "    if not isinstance(dirty, dict):\n        dirty = {}\n    for p in set(changed) | set(dirty):"
+   ]
+  ],
+  "expect": "#508: a tree the wrapper COULD NOT DESCRIBE (dirty None) never matches"
+ },
+ {
+  "name": "#508 (2): every docs/ path may change after the round, not only the round's own records",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if p.startswith(REVIEW_RECORDS):",
+    "        if p.startswith(\"docs/\"):"
+   ]
+  ],
+  "expect": "#508: ...nor does a DOC changed after it (the tree is EXACT, not gate files only)"
+ },
+ {
+  "name": "#508 (2): the uncommitted overlay is ignored, so a fix the reviewer saw and the author REVERTED still matches",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        saw = dirty[p] if p in dirty else reviewed.get(p)",
+    "        saw = merged.get(p)"
+   ]
+  ],
+  "expect": "#508: ...nor one the reviewer saw that was then REVERTED (dirty, but the head has the old blob)"
+ },
+ {
+  "name": "#508 (2): a reviewer's FINDING no longer beats another verdict's `not a loosening`",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return frozenset(clear - other)",
+    "    return frozenset(clear)"
+   ]
+  ],
+  "expect": "#508: ...a FINDING in any matching verdict beats `not a loosening` in another"
+ },
+ {
+  "name": "#508 (2): any answer CONTAINING the words clears a line, not only the exact answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            (clear if a == NOT_A_LOOSENING else other).add(i)",
+    "            (clear if NOT_A_LOOSENING in a.lower() else other).add(i)"
+   ]
+  ],
+  "expect": "#508: ...and any other answer text is not an answer"
+ },
+ {
+  "name": "#508 (2): hold_reasons ignores the answers, so an answered line is still held",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        gone = [t for i, t in mine if i not in answered]",
+    "        gone = [t for i, t in mine]"
+   ]
+  ],
+  "expect": "#508: ...with BOTH answered, the failure-path hold is cleared"
+ },
+ {
+  "name": "#508 (2): main() never passes the answers it read to hold_reasons — the call site, reverted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                              answered=answered)",
+    "                              answered=frozenset())"
+   ]
+  ],
+  "expect": "⭐ #508 real git: answered `not a loosening` by a verdict on the EXACT tree, the HOLD clears, rc=0"
+ },
+ {
+  "name": "#508 (2): review_answers does not compare the reviewed tree with HEAD's, so an edit after the round keeps the answer",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not tree_matches(reviewed, rec.get(\"dirty\"), head_t, changed):",
+    "        if False:"
+   ]
+  ],
+  "expect": "⭐ #508 real git: ...and ANY edit after the round (a doc) voids the answer, rc=3, saying why"
+ },
+ {
+  "name": "#508 (2): a verdict whose gate did NOT run still answers",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if rec.get(\"gate_ran\") is not True or rec.get(\"refused\"):",
+    "        if False:"
+   ]
+  ],
+  "expect": "#508 real git: an answer in a verdict whose gate did NOT run clears nothing, rc=3"
+ },
+ {
+  "name": "#508 (2): --flagged-block prints nothing, so no reviewer is ever asked",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        print(flagged_block(failure_path_flags(\"\", _fs)), end=\"\")",
+    "        print(\"\", end=\"\")"
+   ]
+  ],
+  "expect": "#508 real git: --flagged-block prints the branch's flagged line with its id, rc=0"
  }
 ]

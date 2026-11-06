@@ -2035,11 +2035,14 @@ EXPECTED_MUTATIONS = {
     #   r7 67 -> 71 — master's rule is kept VERBATIM beside the identity rule and either refuses
     #   (X1, a symlink nested in docs/reviews): the OR's master branch, its reviewed-root half, its
     #   lexical reading, and main asking it before --out is resolved.
-    "scripts/codex-review.py": 71,
+    #   backlog #508 71 -> 76 — the reviewer's answers to the merge gate's flagged lines: the finding-wins
+    #   rule, the whole-line match, the block appended in main(), the answers in the OK verdict, the field.
+    "scripts/codex-review.py": 76,
     # ⟳ new (review-round cap, 2026-10-31): a Claude half's verdict — one entry per refusal, plus the
     # three fields a consumer reads (gate_ran, the full head, the clean overlay). ⟳ PR #457 r2: 19 -> 21,
     # the fixed-position reads (the `\n` split, the unstripped first line); seven retargeted.
-    "scripts/record-review-verdict.py": 21,
+    # ⟳ backlog #508: 21 -> 23, the filed review's answers into the record (call site and field).
+    "scripts/record-review-verdict.py": 23,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -2528,7 +2531,11 @@ EXPECTED_MUTATIONS = {
     # exemption value, and an uncoerced class name each go red. Three entries are RE-BOUND to `_cross`.
     # ⚠ Returning the original object instead of the copy is an EQUIVALENT mutant (measured: the exact-
     # type checks already refuse every subclass), so it is not pinned.
-    "scripts/check-merge-ready.py": 97,
+    # ⟳ backlog #508: 97 -> 112 — the rising-count exemption (4: skipped, any change, the prefix, the
+    # suffix) and the reviewer's answers (11: the occurrence in the id, a null overlay, the exact tree,
+    # the overlay read, finding-wins, the exact answer, hold_reasons, main's call site, the tree check,
+    # a gate that did not run, --flagged-block).
+    "scripts/check-merge-ready.py": 112,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
