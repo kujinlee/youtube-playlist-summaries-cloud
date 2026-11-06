@@ -1861,5 +1861,71 @@
     "expect": [
       "use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side"
     ]
+  },
+  {
+    "name": "backlog #523: the last night keeps the day's stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if last_night(now, resets):\n        return HARD_LIMIT\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: the stop becomes the hard limit at the last night's start — a minute either side",
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night starts only at the rise's end",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return now >= resets - LAST_NIGHT_S",
+        "    return now >= resets - RISE_END_S"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: the stop becomes the hard limit at the last night's start — a minute either side"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night's room is called room under the stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "{'before the hard limit' if stop == HARD_LIMIT else 'under the stop'}",
+        "{'under the stop'}"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night's stop note is not said",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "\"commit before every long step (owner 11-05 20:46).\" if stop == HARD_LIMIT",
+        "\"commit before every long step (owner 11-05 20:46).\" if False"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
+  },
+  {
+    "name": "backlog #523: the last night still says start only what fits the room",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "new week. \" if stop == HARD_LIMIT else",
+        "new week. \" if False else"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit"
+    ]
   }
 ]

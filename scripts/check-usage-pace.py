@@ -144,7 +144,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 332 cases
+    python3 scripts/check-usage-pace.py --self-test  # 336 cases
 """
 from __future__ import annotations
 
@@ -176,6 +176,13 @@ STOP_CAP = 97.0
 # computed. ⚠ For a reset late in the evening the rise starts the day before; the reserve formula keeps that day lower.
 LAST_DAY_CAP = 99.0
 RISE_END_S = 3600
+# backlog #523 (the owner, 2026-11-05 20:46 and 20:53: "do not stop tonight as un-used capacity by the reset time (tomorrow
+# 2am) will be lost"; strategy B, "keep working until reset. If limit hit, wait until reset"): for the LAST NIGHT_S before
+# the reset there is NO soft stop — the stop is the hard 100% limit itself. A reserve kept then is lost at the reset, and
+# an unfinished item is not: it waits, committed, for the fresh week. The only cost of hitting the hard limit is waiting
+# for the reset, which the night makes short. 8 h is a 02:00 reset's 18:00, while the owner is still often present.
+LAST_NIGHT_S = 8 * 3600
+HARD_LIMIT = 100.0
 LINE_CAP = 97.0
 LINE_FRONT_LOAD = 1.5
 METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
@@ -347,9 +354,16 @@ def cap_at(now: float, resets: float) -> float:
     return STOP_CAP + (LAST_DAY_CAP - STOP_CAP) * (now - start) / (end - start)
 
 
+def last_night(now: float, resets: float) -> bool:
+    """The last LAST_NIGHT_S before the reset (backlog #523): the stop is the hard limit."""
+    return now >= resets - LAST_NIGHT_S
+
+
 def refuse_at(now: float, resets: float) -> float:
     """The hard stop (backlog #500): 100 − RESERVE_PER_DAY × the days left after today, never above the cap
-    (`cap_at`: STOP_CAP, rising on the last day — backlog #510)."""
+    (`cap_at`: STOP_CAP, rising on the last day — backlog #510) — and on the last night the hard limit (backlog #523)."""
+    if last_night(now, resets):
+        return HARD_LIMIT
     return min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))
 
 
@@ -409,7 +423,9 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                      f"resets {local_time(five[1])}.")
     stop, days = refuse_at(now, resets), days_after_today(now, resets)
     # r2 Codex L1: the note names the limit that BINDS — the reserve can sit above 97 and below the rising cap
-    stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < cap_at(now, resets)
+    stop_note = (" The last night has no soft stop — only the hard 100% limit; if it is hit, work waits for the reset, so "
+                 "commit before every long step (owner 11-05 20:46)." if stop == HARD_LIMIT
+                 else f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < cap_at(now, resets)
                  else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
                  else f" The stop rises over the last day, {pct_up(stop)} now and {pct(LAST_DAY_CAP)} from "
                       f"{local_time(resets - RISE_END_S)}: what is left under it is lost at the reset.")
@@ -423,9 +439,12 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     # week that has run out — is not shown, because "97% — a guide" next to 97% read as a stop.
     last_day = now > rise_start(resets)   # the same instant the stop starts rising (use-it-or-lose-it r1 P2)
     # r1 P2: a positive room under 0.1 floors to "0%", which reads as NOTHING left; it is "<0.1%"
-    use_it = (f"⏳ USE IT — {pct(stop - weekly) if stop - weekly >= 0.1 else '<0.1%'} is left under the stop and is LOST at the reset "
-              f"({local_time(resets)}): idling is waste. Keep starting queued items that fit the room, never wait "
-              f"for the reset. " if last_day and weekly < stop else "")
+    use_it = (f"⏳ USE IT — {pct(stop - weekly) if stop - weekly >= 0.1 else '<0.1%'} is left {'before the hard limit' if stop == HARD_LIMIT else 'under the stop'} and is LOST at the reset "
+              f"({local_time(resets)}): idling is waste. "
+              + ("Keep starting queued items, never wait for the reset: one the limit cuts waits, committed, for the "
+                 "new week. " if stop == HARD_LIMIT else
+                 "Keep starting queued items that fit the room, never wait for the reset. ")
+              if last_day and weekly < stop else "")
     if last_day:
         line_note = ""
     if weekly >= stop:
@@ -968,6 +987,19 @@ def _self_test_body() -> int:
               ["USE IT" in evm(cache(90, week_reset=_sat2, at=t), m85, t)[1] for t in (rise_start(_sat2) - 60, rise_start(_sat2) + 60)]
               + [cap_at(rise_start(_sat2) - 60, _sat2) == STOP_CAP, cap_at(rise_start(_sat2) + 60, _sat2) > STOP_CAP],
               [False, True, True, True])
+        # backlog #523 (owner 11-05 20:46/20:53, strategy B): on the last night the stop IS the hard limit
+        _ln = _sat2 - LAST_NIGHT_S
+        check("⭐ backlog #523: the stop becomes the hard limit at the last night's start — a minute either side",
+              (refuse_at(_ln - 60, _sat2) < HARD_LIMIT, refuse_at(_ln + 60, _sat2)), (True, HARD_LIMIT))
+        _n = _sat2 - 3 * 3600
+        _r = evm(cache(99.5, week_reset=_sat2, at=_n), m85, _n)
+        check("⭐ backlog #523: at 99.5% on the last night nothing is refused, and the message leads with the room before the hard limit",
+              (_r[0], _r[1].startswith("⏳ USE IT — 0.5% is left before the hard limit and is LOST at the reset"),
+               "commit before every long step" in _r[1], "fit the room" in _r[1]), (WARN, True, True, False))
+        check("backlog #523: …while a minute BEFORE the last night 99.5% is still refused by the day's stop",
+              evm(cache(99.5, week_reset=_sat2, at=_ln - 60), m85, _ln - 60)[0], REFUSE)
+        check("backlog #523: …and at the hard limit itself the last night refuses",
+              evm(cache(100, week_reset=_sat2, at=_n), m85, _n)[0], REFUSE)
         check("11-05 19:44: at the stop there is no room, so no USE IT — the refusal stands",
               (lambda r: (r[0], "USE IT" in r[1]))(evm(cache(98, week_reset=_sat2, at=_l), m85, _l)), (REFUSE, False))
         check("11-05 19:44: before the last day there is no USE IT — the room is still next week's",
@@ -1111,7 +1143,8 @@ def _self_test_body() -> int:
         check("a seven_day reset in the past is CANNOT RUN", kind(cache(98.5, week_reset=NOW - 1)), CANNOT_RUN)
         check("a seven_day reset exactly now is CANNOT RUN", kind(cache(98.5, week_reset=NOW)), CANNOT_RUN)
         # ⟳ backlog #510: 98.5 refused under the flat 97 cap; an hour before a reset the stop is 99, so 99.5 (still read)
-        check("a seven_day reset 1 s ahead is read", kind(cache(99.5, week_reset=NOW + 1)), REFUSE)
+        # backlog #523: a reset 1 s ahead is on the last night, where only the hard limit refuses
+        check("a seven_day reset 1 s ahead is read", kind(cache(100, week_reset=NOW + 1)), REFUSE)
         check("a string percentage is CANNOT RUN", kind(cache("95")), CANNOT_RUN)
         check("a boolean percentage is CANNOT RUN", kind(cache(True)), CANNOT_RUN)
         check("a negative percentage is CANNOT RUN", kind(cache(-1)), CANNOT_RUN)
