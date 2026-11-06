@@ -2865,8 +2865,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if ag[\"steps\"] and all(st[\"state\"] in (\"merged\", \"closed\") for st in ag[\"steps\"]):",
-        "if False:"
+        "\"done\": bool(ag[\"steps\"]) and all(",
+        "\"done\": False and all("
       ]
     ],
     "expect": [
@@ -2891,12 +2891,12 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"warn\" if kind_ == \"stale\" else \"lede\"",
-        "\"lede\""
+        "parts.append(f'<p class=\"warn\">{_html_line(text, repo)}</p>')",
+        "parts.append(f'<p class=\"lede\">{_html_line(text, repo)}</p>')"
       ]
     ],
     "expect": [
-      "⭐ #509: the page shows NOW and focus as lede lines and STALE in the warning colour, each once, above the steps"
+      "⭐ #509: the page lays out what is in flight and the focus as lists above the steps, and STALE once in the warning colour"
     ]
   },
   {
@@ -2930,8 +2930,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    now += [f\"⏳ {u['id']} → no goal\" for u in snap.get(\"inflight_loose\") or [] if isinstance(u, dict) and \"id\" in u]",
-        "    pass"
+        "    now += [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line(",
+        "    now += [] if 1 else [{\"label\": u[\"id\"], \"goal\": \"no goal\", \"what\": _one_line("
       ]
     ],
     "expect": [
@@ -3040,6 +3040,332 @@
     ],
     "expect": [
       "#509 r3 Codex L2: a merge in the SAME minute the plan was set is not stale; one a minute later is"
+    ]
+  },
+  {
+    "name": "the recap counts a piece of work once per goal it serves (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "n = len(agenda_now_items(d))",
+        "n = len(d[\"now\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "the recap counts a step once per goal it serves (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    left = d.get(\"left\", 0)   # every step",
+        "    left = d.get(\"left\", 0) + sum(len(v) for v in d[\"focus\"].values()) - len({st[\"n\"] for sts in d[\"focus\"].values() for st in sts})   # every step"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "a piece of work under two goals is listed twice (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it = out.setdefault(x[\"label\"], {",
+        "it = out.setdefault(x[\"label\"] + x[\"goal\"], {"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves",
+      "⭐ owner 11-05 14:37: the recap counts each piece of work ONCE, its goals, and where the next steps lean — a step under two goals counted once"
+    ]
+  },
+  {
+    "name": "an in-flight line shows only its first goal (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"\".join(chip(g) for g in x[\"goals\"])}",
+        "{chip(x[\"goals\"][0])}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: each piece of work in flight is ONE line, with a chip for every goal it serves"
+    ]
+  },
+  {
+    "name": "an in-flight line drops the work's purpose (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "repo)}</span>' if x[\"what\"] else \"\")",
+        "repo)}</span>' if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "owner 11-05 14:37: an in-flight line says the work's PURPOSE, the thread's `what`"
+    ]
+  },
+  {
+    "name": "the agenda heading is the long sentence again (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "'<h2 class=\"agenda-h\">Agenda</h2>',",
+        "f'<h2>{html.escape(lines[0])}</h2>',"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE and its window sit on a meta line beneath (r4 X1: the page's age line)"
+    ]
+  },
+  {
+    "name": "the page drops the plan's age (r4 X1, owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    age = f\" ({d['mins'] // 60}",
+        "    age = \"\" if 1 else f\" ({d['mins'] // 60}"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the agenda heading is a short title in the goals' accent style; the plan's time, its AGE and its window sit on a meta line beneath (r4 X1: the page's age line)"
+    ]
+  },
+  {
+    "name": "the focus loses its step numbers (owner 2026-11-05 14:37)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<li><b>{st[\"n\"]}.</b> {_html_line(st[\"text\"], repo)}</li>'",
+        "f'<li>{_html_line(st[\"text\"], repo)}</li>'"
+      ]
+    ],
+    "expect": [
+      "⭐ owner 11-05 14:37: the focus is the next steps under a chip per goal, in step order, one step per line"
+    ]
+  },
+  {
+    "name": "the goal chip is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "chip = lambda g: f'<span class=\"chip\">{html.escape(g)}</span>'",
+        "chip = lambda g: f'<span class=\"chip\">{g}</span>'"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the in-flight purpose is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}",
+        "<span class=\"what\">— {x[\"what\"]}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the agenda window is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{age} · {html.escape(ag[\"window\"])}</p>",
+        "{age} · {ag[\"window\"]}</p>"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "the change-if is not escaped (agenda-digest r1 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "changes if: {html.escape(ag.get(\"change_if\") or \"\")}",
+        "changes if: {ag.get(\"change_if\") or \"\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M3: every value the agenda block interpolates is ESCAPED — goal chip, purpose, window, change-if"
+    ]
+  },
+  {
+    "name": "a recap tie picks the alphabetically larger goal (agenda-digest r1 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "key=lambda kv: len(kv[1]))   # ties keep",
+        "key=lambda kv: (len(kv[1]), kv[0]))   # ties keep"
+      ]
+    ],
+    "expect": [
+      "r1 Codex L1: a TIE keeps the first goal in step order, never the alphabetically larger one"
+    ]
+  },
+  {
+    "name": "an open free step is not counted as left (agenda-digest r1 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "left = sum(st[\"state\"] not in (\"merged\", \"closed\") for st in ag[\"steps\"])",
+        "left = sum(st[\"state\"] not in (\"merged\", \"closed\") and bool(st[\"refs\"]) for st in ag[\"steps\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M1: an open FREE step is still left — the recap never says none is left while one shows open"
+    ]
+  },
+  {
+    "name": "work under no goal loses its purpose (agenda-digest r1 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"goal\": \"no goal\", \"what\": _one_line(u.get(\"what\"))}",
+        "\"goal\": \"no goal\", \"what\": \"\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 Codex M2: work under no goal keeps its purpose, cut to one line"
+    ]
+  },
+  {
+    "name": "the page drops the recap (agenda-digest r2 Codex M2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    parts.append(f'<p class=\"recap\">{html.escape(agenda_recap(d))}</p>')",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count"
+    ]
+  },
+  {
+    "name": "the page drops the undeclared-PR count (agenda-digest r2 Codex M3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "           if d[\"undeclared\"] else \"\") + \"</ul></div>\")",
+        "           if False else \"\") + \"</ul></div>\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M2/M3: the page SHOWS the recap sentence and the undeclared-PR count"
+    ]
+  },
+  {
+    "name": "Focus says no step left while a free step is open (agenda-digest r2 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{\"no remaining step names a goal\" if d[\"left\"] else \"no step left\"}",
+        "{\"no step left\"}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: with only a FREE step open, Focus says no remaining step names a goal — never 'no step left'"
+    ]
+  },
+  {
+    "name": "the purpose's references are plain text (agenda-digest r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"what\">— {_html_line(x[\"what\"], repo)}</span>",
+        "<span class=\"what\">— {html.escape(x[\"what\"])}</span>"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L1: a reference in an in-flight purpose is a LINK, like everywhere else on the page"
+    ]
+  },
+  {
+    "name": "the recap always says pieces (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "head = (f\"{n} piece{'s' if n != 1 else ''} of work",
+        "head = (f\"{n} pieces of work"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "the recap always says goals (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f\"goal{'s' if len(goals_now) != 1 else ''}\"",
+        "f\"goals\""
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "the free-step recap always says step (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{left} step{'s' if left != 1 else ''} left, none",
+        "{left} step left, none"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: the recap's words agree in number — one piece, one goal, one step; two free steps"
+    ]
+  },
+  {
+    "name": "a later entry's purpose is dropped (agenda-digest r2 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "it[\"what\"] = it[\"what\"] or x[\"what\"]",
+        "it[\"what\"] = it[\"what\"]"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L2: one item under two goals keeps the purpose a LATER entry gives when the first has none"
+    ]
+  },
+  {
+    "name": "a later empty entry erases an item's purpose (agenda-digest r3 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " = it[\"what\"] or x[\"what\"]",
+        " = x[\"what\"]"
+      ]
+    ],
+    "expect": [
+      "r3 Codex L1: an item's purpose is never ERASED by a later entry for it that has none"
+    ]
+  },
+  {
+    "name": "the agenda heading loses the accent colour (agenda-digest r3 Codex L2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "h2.agenda-h{margin:.4rem 0 .1rem;color:var(--accent);",
+        "h2.agenda-h{margin:.4rem 0 .1rem;color:red;"
+      ]
+    ],
+    "expect": [
+      "⭐ r3 Codex L2 (owner 11-05 14:37): the agenda heading is drawn in the goals' ACCENT colour, as they are"
     ]
   }
 ]
