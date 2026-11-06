@@ -2279,8 +2279,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if text and not text.endswith(\"\\n\"):\n            fh.write(\"\\n\")",
-        "        if False:\n            fh.write(\"\\n\")"
+        "        out = \"\" if not text or text.endswith(\"\\n\") else \"\\n\"",
+        "        out = \"\""
       ]
     ],
     "expect": [
@@ -2565,8 +2565,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    return _is(steps, list) and all(isinstance(st, dict)",
-        "    return _is(steps, list) or all(isinstance(st, dict)"
+        "    return (_is(steps, list) and all(isinstance(st, dict)",
+        "    return (_is(steps, list) or all(isinstance(st, dict)"
       ]
     ],
     "expect": [
@@ -2630,8 +2630,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "                                    and all(_ref_ok(r) for r in st.get(\"refs\") or []) for st in steps)",
-        "                                    for st in steps)"
+        "                                     and all(_ref_ok(r) for r in st.get(\"refs\", [])) for st in steps)",
+        "                                     for st in steps)"
       ]
     ],
     "expect": [
@@ -3901,6 +3901,214 @@
     ],
     "expect": [
       "⭐ backlog #518: a MIXED thread — one row merged, another resolving to an open PR — owns that PR, and its wait holds it"
+    ]
+  },
+  {
+    "name": "an agenda step's refs are not checked where the log is read (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if rec[\"kind\"] == \"agenda\" and not all(_ref_ok(x) for st in rec[\"steps\"] for x in st[\"refs\"]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref that is not a list is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref of any length passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "len(r) == 2 and r[0] in REF_KINDS",
+        "r[0] in REF_KINDS"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref with three parts is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref of an unknown kind passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "r[0] in REF_KINDS and _is(r[1], int)",
+        "_is(r[0], str) and _is(r[1], int)"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref of an unknown kind is MALFORMED where it is read (backlog #504)"
+    ]
+  },
+  {
+    "name": "a ref whose number is a bool or a string passes (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "and _is(r[1], int)",
+        "and isinstance(r[1], (int, str))"
+      ]
+    ],
+    "expect": [
+      "⛔ an agenda step's ref whose number is not an int (a bool, a string) is MALFORMED (backlog #504)"
+    ]
+  },
+  {
+    "name": "a lone-newline log is kept ahead of the first record (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        pos = m.end()\n",
+        "        keep = m.end() if pos == m.start() else keep\n        pos = m.end()\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a log that is a lone newline is emptied too, so the first record is not preceded by a blank line (backlog #504)"
+    ]
+  },
+  {
+    "name": "a whitespace-only log is not emptied (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            fh.truncate(keep)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a log that is only whitespace, with no final newline, is emptied before the newline repair — no blank line left ahead of the first record (backlog #504)"
+    ]
+  },
+  {
+    "name": "trailing blanks after a record are kept (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not _blank(raw[pos:].decode(\"utf-8\")):",
+        "    if raw[pos:]:"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose last line is blanks after a record leaves no blank line before the next write (backlog #504)"
+    ]
+  },
+  {
+    "name": "the known ref kinds include one the step grammar does not write (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        ".group(1).split(\"|\"))",
+        ".group(1).split(\"|\") + [\"zzz\"])"
+      ]
+    ],
+    "expect": [
+      "the known ref kinds are exactly the alternatives of the step grammar, each one parsed by it (backlog #504)"
+    ]
+  },
+  {
+    "name": "blanks on the last record's own line are cut (backlog #504, r2 Codex F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        keep = len(raw)                          # a last line with no line ending",
+        "        keep = pos + len(raw[pos:].rstrip())                          # a last line with no line ending"
+      ]
+    ],
+    "expect": [
+      "⛔ a CRLF log is kept byte for byte ahead of the appended record — the blank repair never cuts into a record or its line ending (backlog #504, r2 Codex F1)"
+    ]
+  },
+  {
+    "name": "a CR is taken for data when the blank tail is measured (backlog #504, r2 Codex F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_EOL_B = re.compile(_EOL.pattern.encode())",
+        "_EOL_B = re.compile(rb\"\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the reader and the cut (backlog #504, r3 Claude N2)"
+    ]
+  },
+  {
+    "name": "a lone CR does not end a line, for the reader or the writers (backlog #504, r3 Claude N1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_EOL = re.compile(r\"\\r\\n|\\r|\\n\")",
+        "_EOL = re.compile(r\"\\r?\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ a log whose lines end in a lone CR is read AND written: the writers' line model is the reader's (backlog #504, r3 Claude N1)"
+    ]
+  },
+  {
+    "name": "the blank repair's blank is narrower than the reader's (backlog #504, r3 Claude N2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not _blank(raw[pos:m.start()].decode(\"utf-8\")):",
+        "        if raw[pos:m.start()].strip(b\" \\t\\r\\n\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ a blank tail the reader skips is cut, whatever its whitespace or line ending — one meaning of blank for the reader and the cut (backlog #504, r3 Claude N2)"
+    ]
+  },
+  {
+    "name": "the blank tail is cut before the log is validated (backlog #504, r2 Codex F3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        lines, said = write(agendas(_agenda_records(text, path.name)))\n        if keep != len(raw):\n            fh.truncate(keep)\n",
+        "        if keep != len(raw):\n            fh.truncate(keep)\n        lines, said = write(agendas(_agenda_records(text, path.name)))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a log recording refuses as malformed is left unchanged — nothing is cut before it is validated (backlog #504, r2 Codex F3)"
+    ]
+  },
+  {
+    "name": "the step grammar is read case-insensitively (backlog #504, r2 Codex F2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "REF_RE = page_markup.KEY_REF      #",
+        "REF_RE = re.compile(page_markup.KEY_REF.pattern, re.I)      #"
+      ]
+    ],
+    "expect": [
+      "⛔ no `<word> #7` the step grammar accepts names a kind outside the known ref kinds — a case-insensitive or regrouped grammar is caught (backlog #504, r2 Codex F2)"
+    ]
+  },
+  {
+    "name": "a snapshot step's refs are iterated without checking it is a list (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                                     and _is(st.get(\"refs\", []), list)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ an earlier agenda's step whose refs is not a list is SAID by snap_history and the page replay, never a TypeError (backlog #504)"
+    ]
+  },
+  {
+    "name": "a snapshot's steps may share an n (backlog #504)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\n            and len({st[\"n\"] for st in steps}) == len(steps))",
+        ")"
+      ]
+    ],
+    "expect": [
+      "⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step move (backlog #504)"
     ]
   }
 ]
