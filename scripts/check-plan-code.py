@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 352 cases
+    python3 scripts/check-plan-code.py --self-test          # 360 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -259,8 +259,9 @@ def seed_outcome(runs: list, wants=None) -> "tuple[int, str, str | None]":
     ⛔ FAIL CLOSED, in this order:
       * any seed rc 2 (did not complete) -> rc 2, a CANNOT RUN naming that seed — never a kill;
       * killed (rc 1) under some seeds and not others -> NONDETERMINISTIC, naming both sides;
-      * ⟳ r1 Codex M2: killed under every seed, but the suite COMPLETED (printed its `passed` summary, the token
-        `control_is_green` reads) under some and not others -> rc 2, NOT CHECKED. A run that stopped early printed a
+      * ⟳ r1 Codex M2: killed under every seed, but the suite COMPLETED (printed a whole summary LINE,
+        `summary_total` — ⟳ r2 Codex M1, never the substring `passed`, which a case name can hold) under some and
+        not others -> rc 2, NOT CHECKED. A run that stopped early printed a
         TRUNCATED red set, so its agreement with the others on case names is not evidence of anything;
       * killed under every seed, but the NAMED red cases differ -> NONDETERMINISTIC: the attribution is luck.
         ⟳ r1 Claude M1: the NAMED ones, not every red case. MEASURED on #506's own mutant: the expect case red under
@@ -280,11 +281,11 @@ def seed_outcome(runs: list, wants=None) -> "tuple[int, str, str | None]":
             "killed under " + ", ".join(f"PYTHONHASHSEED={x}" for x in killed)
             + " but survived under " + ", ".join(f"PYTHONHASHSEED={x}" for x in spared))
     if killed:
-        done = {seed: "passed" in out for seed, _, out in runs}
+        done = {seed: summary_total(out) is not None for seed, _, out in runs}
         if len(set(done.values())) > 1:
             stopped = [x for x, ok in done.items() if not ok]
             return 2, (f"[under PYTHONHASHSEED={stopped[0]}] CANNOT RUN — the suite did not complete under "
-                       + ", ".join(f"PYTHONHASHSEED={x}" for x in stopped) + " (no `passed` summary: it crashed "
+                       + ", ".join(f"PYTHONHASHSEED={x}" for x in stopped) + " (no summary line: it crashed "
                        "or stopped early) but completed under "
                        + ", ".join(f"PYTHONHASHSEED={x}" for x, ok in done.items() if ok)
                        + ", so its red cases there are a truncated list. NOT CHECKED."), None
@@ -927,6 +928,36 @@ def home_escapes(src: str) -> list[str]:
 # moved with them, to scripts/mutations/coverage_verdict.json.
 
 
+# ⛔ THE ONE DEFINITION OF A SUITE'S SUMMARY LINE — `check-selftest-counts.py` borrows `summary_total` rather than
+# keeping its own (it used to: the RATIO plus the word `passed` anywhere on a line).
+# ⟳ r2 Codex MAJOR (backlog #506): completion was `"passed" in out`, a SUBSTRING of everything the child printed,
+# so a case named `value passed validation` read as a summary and a suite that crashed under one seed was credited
+# as a clean kill. Only a WHOLE line in a shape the suites actually print counts. ENUMERATED from the scripts'
+# own `print` calls (2026-11-06, every `print` under scripts/ naming `passed`) and CHECKED by running all 88 suites
+# that a manifest mutates or check-selftest-counts pins: `N/M passed`, `N/M cases passed`, `N/M self-test cases
+# passed`, `N/M cannot-run cases passed`, `N of M self-test cases passed`, and check-storage-independence's
+# `N cases, N passed, N failed` (whose total is its FIRST number) — each optionally led by `self-test: `.
+# A `[FAIL] …` line, or a label quoting a summary inside backticks, is never one.
+SUMMARY_LINE = re.compile(
+    r"\s*(?:self-test:\s*)?(?:"
+    r"(\d+)\s*(?:/|\s+of\s+)\s*(\d+)"
+    r"(?:\s+(?:self-test\s+cases|cannot-run\s+cases|cases))?\s+passed"
+    r"|(\d+)\s+cases,\s+\d+\s+passed,\s+\d+\s+failed)\s*")
+
+
+def summary_total(out: str) -> "int | None":
+    """The denominator of the LAST whole-line summary in `out`, or None if the suite printed none. PURE.
+
+    LAST, because a suite's own case labels may quote an example summary earlier in its output.
+    """
+    total = None
+    for line in out.split("\n"):
+        m = SUMMARY_LINE.fullmatch(line)
+        if m:
+            total = int(m.group(2) or m.group(3))
+    return total
+
+
 def control_is_green(rc: int, out: str) -> bool:
     """Did this control run actually PROVE the suite works?
 
@@ -942,7 +973,7 @@ def control_is_green(rc: int, out: str) -> bool:
     the harm was a mislabelled flag rather than a false green — but it is the same clause,
     named the same thing, meaning two different things in the two producers of one predicate.
     """
-    return rc == 0 and "passed" in out
+    return rc == 0 and summary_total(out) is not None
 
 
 def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None, only=None,
@@ -1919,7 +1950,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06 #506 r1 fold, COST: 205 -> 215 — one tree per seed for the WHOLE run: seed_runs using the run's
     # trees, run_mutations / mutate_delivered / both controls sharing them, the mutant applied to every tree, a
     # tree it cannot be written to, a tree that cannot be restored, and the run stopping on it.
-    "scripts/check-plan-code.py": 215,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-06 backlog #506 r2 Codex M1: 215 -> 224 — the summary LINE rule (`summary_total`): seed completion and
+    # control greenness each reverted to the substring `passed`, whole-line -> search, last -> first, and one per
+    # SUMMARY_LINE arm (`passed`, `N of M`, `self-test: `, the `cases` words, `N cases, N passed, N failed`).
+    # The r4 M1 control entry was re-bound.
+    "scripts/check-plan-code.py": 224,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2412,7 +2447,9 @@ EXPECTED_MUTATIONS = {
     # PR #487 r1 fold: 29 -> 36, a timeout kills the suite's whole process group (own session,
     # SIGKILL after SIGTERM), a signal-killed suite is CANNOT RUN, a CANNOT RUN hides no red suite,
     # and `main`'s --jobs wiring and its refusal of 0.
-    "scripts/check-selftest-counts.py": 36,
+    # ⟳ 2026-11-06 backlog #506 r2: 36 -> 34 — its three printed_total/RATIO entries moved to check-plan-code.json
+    # with the rule (`summary_total`); one entry pins that printed_total still reads the borrowed rule.
+    "scripts/check-selftest-counts.py": 34,
     "scripts/check-sentinel-meanings.py": 5,
     # ⟳ 2026-09-07. First of the four guards that PR #247 made stageable: their subjects
     # live outside scripts/, so before HARNESS_TREE their control could never be green.
@@ -4516,6 +4553,32 @@ def _self_test_body() -> int:
         _inc2 = seed_outcome([(3, 1, _crash), (7, 1, _crash)], wants=["f returns one"])
         case("...ADJACENT: a suite that stops at the same place under EVERY seed is judged as the unseeded run judges it",
              (_inc2[0], _inc2[2]), (1, None))
+        # ⟳ r2 Codex MAJOR: completion was `"passed" in out`, so a CASE NAME containing the word read as a summary.
+        _pv = "  [FAIL] value passed validation\n"
+        _inc3 = seed_outcome([(3, 1, _pv + "0/1 passed\n"), (7, 1, _pv + "Traceback (most recent call last):\n")],
+                             wants=["value passed validation"])
+        case("⛔ r2 Codex M1: a case NAME containing `passed` is not a summary — the stopped seed is still a cannot-run",
+             (_inc3[0], "PYTHONHASHSEED=7" in _inc3[1]), (2, True))
+        _pv2 = "  [FAIL] 3/4 passed is the shape\n"
+        _inc4 = seed_outcome([(3, 1, _pv2 + "0/1 passed\n"), (7, 1, _pv2)], wants=["3/4 passed is the shape"])
+        case("...nor is a case name that CONTAINS the whole summary shape: only a summary LINE completes a suite",
+             _inc4[0], 2)
+        case("⛔ r2 Codex M1: a control that exits 0 printing only a case name with `passed` in it is NOT green",
+             (control_is_green(0, _pv), control_is_green(0, _pv + "1/1 passed\n"), control_is_green(1, "0/1 passed\n")),
+             (False, True, False))
+        # `summary_total` — the ONE summary-line rule (check-selftest-counts borrows it). One case per shape arm.
+        case("summary_total: every summary shape the suites print reads its denominator",
+             [summary_total(s) for s in ("\n12/12 self-test cases passed", "self-test: 9/9 passed", "5/7 cases passed",
+                                         "32 of 32 self-test cases passed", "  4/4 passed  ",
+                                         "self-test: 50 cases, 49 passed, 1 failed")],
+             [12, 9, 7, 32, 4, 50])
+        case("...a ratio line WITHOUT `passed` is not a summary, even one that would otherwise win as the last",
+             summary_total("8/8 passed\n3/4"), 8)
+        case("...the LAST summary line wins (a trailing SECOND summary is what gets read)",
+             summary_total("77/77 passed\n6/6 cannot-run cases passed"), 6)
+        case("...a `[FAIL]` line or a backticked label quoting a summary is never one; no summary -> None",
+             [summary_total(s) for s in ("  [FAIL] 3/4 passed", "  ok `12/12 cases passed` -> 12", "fine")],
+             [None, None, None])
         case("⛔ r1 Codex M1: seed_runs cannot isolate a seed (the tree cannot be copied) -> CANNOT RUN, never a run",
              [(s, rc, "CANNOT RUN" in se) for s, rc, _, se in seed_runs(pathlib.Path("/nonexistent-svs"), "x.py",
                                                                          (3, 7)) if rc == 2],
@@ -4683,6 +4746,29 @@ def _self_test_body() -> int:
             # cannot balance and the caller can build no tally (NOT MEASURED) — fail closed.
             case("⛔ r1 fold END TO END: an unrestored seed tree STOPS the run — the later mutant is never measured",
                  (_okp, len(_evp), any("STOPS" in r for r in _repp)), (False, 0, True))
+            # ⟳ r2 Codex MAJOR END TO END — Codex's fixture verbatim: r1's incomplete-suite reproduction with its case
+            # renamed `value passed validation`. Seed 7 crashes before its summary; the case name alone said `passed`,
+            # so the run was credited `1 killed, 1 attributed` over a suite that never finished under seed 7.
+            (_ds / "v.py").write_text(
+                'import os, sys\n'
+                'VALUE = 1\n'
+                'def _self_test():\n'
+                '    if VALUE != 1:\n'
+                '        print("  [FAIL] value passed validation", flush=True)\n'
+                '        if os.environ["PYTHONHASHSEED"] == "7":\n'
+                '            raise RuntimeError("seed 7 suite did not finish")\n'
+                '        print("0/1 passed")\n'
+                '        return 1\n'
+                '    print("1/1 passed")\n'
+                '    return 0\n'
+                'if __name__ == "__main__":\n'
+                '    sys.exit(_self_test())\n')
+            _okv, _repv, _evv, _ = run_mutations(
+                _ds, [{"name": "value is two", "file": "v.py", "edits": [["VALUE = 1", "VALUE = 2"]],
+                       "expect": "value passed validation"}], {"v.py"}, seeds=(3, 7))
+            case("⛔ r2 Codex M1 END TO END: a seed that crashed before its summary is never credited as a kill",
+                 (_okv, [e.get("caught") for e in _evv], any("did not complete" in r for r in _repv)),
+                 (False, [False], True))
 
         # ⛔ ⟳ 2026-09-09, THE DELETION SLICE — AND CI IS WHAT FOUND THIS, NOT ANY LOCAL GATE.
         # Three mutations on THIS function had their only red case over in plan mode, which
@@ -5084,10 +5170,11 @@ def _self_test_body() -> int:
         #     ENTIRELY — measured — so the harness's own control-failure diagnostic contained
         #     none of the failure. That undid r1 F7 (2026-09-09) for the one subject that
         #     matters most: the harness itself;
-        #   * `control_is_green` is `rc == 0 and "passed" in out`, so author-written labels
+        #   * `control_is_green` was `rc == 0 and "passed" in out`, so author-written labels
         #     entered the stream whose substring decides greenness. Two of the 434 live
         #     manifest names contain "passed". Not reachable then, held by a naming
-        #     coincidence rather than by anything;
+        #     coincidence rather than by anything (⟳ r2 Codex M1 of #506: now a whole
+        #     summary LINE, `summary_total`, so the coincidence no longer holds it);
         #   * nested runs printed progress nobody asked for.
         # The fix is the seam `run_mutations` already had. THE PROGRESS ARGUMENT IS THE WHOLE
         # POINT OF THESE TWO CASES: the first pins every site that must report, the second

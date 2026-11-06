@@ -251,11 +251,113 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return rc == 0 and \"passed\" in out",
+        "    return rc == 0 and summary_total(out) is not None",
         "    return rc == 0"
       ]
     ],
     "expect": "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+  },
+  {
+    "name": "r2 Codex M1 (#506): seed completion is a SUBSTRING `passed` again, so a case name reads as a summary",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        done = {seed: summary_total(out) is not None for seed, _, out in runs}",
+        "        done = {seed: \"passed\" in out for seed, _, out in runs}"
+      ]
+    ],
+    "expect": "⛔ r2 Codex M1: a case NAME containing `passed` is not a summary — the stopped seed is still a cannot-run"
+  },
+  {
+    "name": "r2 Codex M1 (#506): a control is green on a SUBSTRING `passed` again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        " and summary_total(out) is not None\n",
+        " and \"passed\" in out\n"
+      ]
+    ],
+    "expect": "⛔ r2 Codex M1: a control that exits 0 printing only a case name with `passed` in it is NOT green"
+  },
+  {
+    "name": "r2 Codex M1 (#506): the summary is SEARCHED for inside a line instead of matched as the WHOLE line",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        m = SUMMARY_LINE.fullmatch(line)",
+        "        m = SUMMARY_LINE.search(line)"
+      ]
+    ],
+    "expect": [
+      "...nor is a case name that CONTAINS the whole summary shape: only a summary LINE completes a suite",
+      "...a `[FAIL]` line or a backticked label quoting a summary is never one; no summary -> None"
+    ]
+  },
+  {
+    "name": "summary_total takes the FIRST summary line instead of the last",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if m:\n            total = int(m.group(2) or m.group(3))\n    return total",
+        "        if m:\n            return int(m.group(2) or m.group(3))\n    return total"
+      ]
+    ],
+    "expect": "...the LAST summary line wins (a trailing SECOND summary is what gets read)"
+  },
+  {
+    "name": "the `passed` requirement is dropped from SUMMARY_LINE, so a bare ratio line counts",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "\\s+passed\"\n",
+        "(?:\\s+passed)?\"\n"
+      ]
+    ],
+    "expect": "...a ratio line WITHOUT `passed` is not a summary, even one that would otherwise win as the last"
+  },
+  {
+    "name": "the `N of M` arm is dropped from SUMMARY_LINE",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "(\\d+)\\s*(?:/|\\s+of\\s+)\\s*(\\d+)\"\n",
+        "(\\d+)\\s*(?:/)\\s*(\\d+)\"\n"
+      ]
+    ],
+    "expect": "summary_total: every summary shape the suites print reads its denominator"
+  },
+  {
+    "name": "the `self-test: ` prefix arm is dropped from SUMMARY_LINE",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "r\"\\s*(?:self-test:\\s*)?(?:\"",
+        "r\"\\s*(?:\""
+      ]
+    ],
+    "expect": "summary_total: every summary shape the suites print reads its denominator"
+  },
+  {
+    "name": "the `… cases` words arm is dropped from SUMMARY_LINE",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    r\"(?:\\s+(?:self-test\\s+cases|cannot-run\\s+cases|cases))?\\s+passed",
+        "    r\"\\s+passed"
+      ]
+    ],
+    "expect": "summary_total: every summary shape the suites print reads its denominator"
+  },
+  {
+    "name": "the `N cases, N passed, N failed` arm (check-storage-independence's summary) is dropped from SUMMARY_LINE",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "\\s+\\d+\\s+failed)\\s*\")",
+        "\\s+\\d+\\s+NEVER)\\s*\")"
+      ]
+    ],
+    "expect": "summary_total: every summary shape the suites print reads its denominator"
   },
   {
     "name": "the case-name match becomes a SUBSTRING again (r1 F1)",
