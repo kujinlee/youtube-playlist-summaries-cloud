@@ -1672,8 +1672,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "start, end = local_midnight(resets - 86400), resets - RISE_END_S",
-        "start, end = local_midnight(resets - 86400), resets"
+        "start, end = rise_start(resets), resets - RISE_END_S",
+        "start, end = rise_start(resets), resets"
       ]
     ],
     "expect": [
@@ -1685,8 +1685,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "start, end = local_midnight(resets - 86400)",
-        "start, end = local_midnight(resets)"
+        "    return local_midnight(resets - 86400)\n",
+        "    return local_midnight(resets)\n"
       ]
     ],
     "expect": [
@@ -1750,8 +1750,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "start, end = local_midnight(resets - 86400)",
-        "start, end = local_midnight(resets) - 86400"
+        "    ruled the rise starts at the midnight before `resets − 24 h`.\"\"\"\n    return local_midnight(resets - 86400)",
+        "    ruled the rise starts at the midnight before `resets − 24 h`.\"\"\"\n    return local_midnight(resets) - 86400"
       ]
     ],
     "expect": [
@@ -1815,7 +1815,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    last_day = now > local_midnight(resets - 86400)",
+        "    last_day = now > rise_start(resets)",
         "    last_day = True"
       ]
     ],
@@ -1834,6 +1834,32 @@
     ],
     "expect": [
       "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
+    ]
+  },
+  {
+    "name": "a room under 0.1 shows as '0%' left (use-it-or-lose-it r1 P2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if stop - weekly >= 0.1 else '<0.1%'}",
+        "if True else '<0.1%'}"
+      ]
+    ],
+    "expect": [
+      "use-it-or-lose-it r1 P2: a room under 0.1 is '<0.1%' left, never '0%' — which reads as nothing"
+    ]
+  },
+  {
+    "name": "USE IT keeps its own last-day start, apart from the rise (use-it-or-lose-it r1 P2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "rise_start(resets)   # the same instant the stop starts rising",
+        "rise_start(resets) + 3600   # the same instant the stop starts rising"
+      ]
+    ],
+    "expect": [
+      "use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side"
     ]
   }
 ]
