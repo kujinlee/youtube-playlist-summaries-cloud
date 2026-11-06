@@ -8,12 +8,12 @@ halves:
   codex: skipped
   claude: ran
 findings:
-  - {id: R3-F1, severity: Minor, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
-  - {id: R3-F2, severity: Minor, aim: deliverable, fix_induced: true, component: question-watcher-rule, disposition: fixed}
-  - {id: R3-F3, severity: Minor, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
-  - {id: R3-F4, severity: Nit, aim: deliverable, fix_induced: true, component: question-watcher-rule, disposition: fixed}
-  - {id: R3-F5, severity: Nit, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
-  - {id: R3-F6, severity: Nit, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
+  - {id: R3-F1, severity: Low, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
+  - {id: R3-F2, severity: Low, aim: deliverable, fix_induced: true, component: question-watcher-rule, disposition: fixed}
+  - {id: R3-F3, severity: Low, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
+  - {id: R3-F4, severity: Low, aim: deliverable, fix_induced: true, component: question-watcher-rule, disposition: fixed}
+  - {id: R3-F5, severity: Low, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
+  - {id: R3-F6, severity: Low, aim: deliverable, fix_induced: false, component: question-watcher-rule, disposition: fixed}
 ```
 
 REVIEW GAP: codex — alternation; one reviewer per round in rounds 2+, the owner's 2026-10-28 answer to backlog #339.
