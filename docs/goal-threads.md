@@ -133,6 +133,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #510 · the weekly stop rises from 97% to 99% over the whole last day before the reset, only on a fresh meter reading (owner card A, 08:47, replacing the 08:38 six-hour window)
 - fix · backlog #521 · on the last day the usage hook leads with the room the reset would lose — USE IT — instead of only saying hold back
 - fix · backlog #522 · the usage hooks run origin/master's guard, never the checked-out branch's (measured 11-05 19:58 and 20:38)
+- fix · backlog #523 · on the last night the only stop is the hard 100% limit (owner 11-05 20:46/20:53, strategy B)
+- bookkeeping · backlog #524 · a finer weekly estimate from the five-hour meter, so a finishing reserve can be measured
 - fix · backlog #503 · measure whether agents spawned close together share one cached start-up
 - fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio · waits on days of meter data
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop

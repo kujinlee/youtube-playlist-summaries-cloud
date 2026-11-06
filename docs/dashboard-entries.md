@@ -18861,6 +18861,11 @@ The usage warnings now always come from the reviewed version on master. Before, 
 New `.claude/hooks/usage-pace-run.sh`: the prompt, spawn and wake hooks run `scripts/check-usage-pace.py` from `git show origin/master:` (refs/remotes, `GIT_*` unset, `--no-replace-objects`), written to a per-call temp file named `check-usage-pace.py` so the ratchet contract still sees its caller; unreadable → the prompt hook says CANNOT RUN in context, spawn/wake exit 1 (non-blocking), never a fallback to the checkout's copy. The self-test's fixture now commits the guard and sets `origin/master`; 324 cases (+3). The launcher is a shell file the mutation harness cannot target, so 4 hand mutations were measured, each red (recorded in the PR).
 
 ## 2026-11-05
+On the final night before the weekly usage reset, nothing holds work back early any more: the only stop is the real 100% limit, because anything kept in reserve would be lost at the reset anyway. If the limit is reached, work simply waits for the reset. Backlog #523, at the owner's request. A finer usage reading, so a small reserve for finishing a merge can be measured, is filed as backlog #524.
+<!--tech-->
+`scripts/check-usage-pace.py`: `last_night()` (the last `LAST_NIGHT_S` = 8 h before the reset); `refuse_at` returns `HARD_LIMIT` then; the WARN message leads with the room "before the hard limit" and says to commit before every long step. 331 cases (+4); 5 new mutations; pin 141 → 146 (stacked on #522).
+
+## 2026-11-05
 A fix to the agenda's **Running now / Owed** split from earlier today. A thread with one part already merged and another part still open as a PR used to show that open PR as separate "running" work, even when the thread said it was waiting on something. It now counts the open PR as part of its own thread, and the thread's wait holds it under Owed. Backlog #518.
 <!--tech-->
 `scripts/goal-tree.py`: `derive_thread` collects `resolved` (every live row's open PR, by title) before the named-PR / merged / open precedence, so a mixed thread records its `open_prs`; `agenda_digest` admits a FINISHED leaf only when it still owns an open PR. Backlog #518's (b), the join keeping every PR identity, was already pinned by r3's `_fold_item` cases. 394 cases (+3); 2 new mutations, 3 re-bound; pin 297 → 299.
