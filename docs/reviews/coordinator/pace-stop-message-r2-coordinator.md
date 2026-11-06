@@ -1,5 +1,27 @@
 # pace-stop-message (backlog #525) — round 2 fold (coordinator)
 
+```yaml
+round: 2
+fixes_nontrivial: true
+subject: pace-stop-message
+halves:
+  codex: ran
+  claude: gap
+findings:
+  - id: codex-1
+    severity: Low
+    aim: deliverable
+    component: scripts/check-usage-pace.py
+    fix_induced: true
+    disposition: fixed
+  - id: codex-2
+    severity: Low
+    aim: deliverable
+    component: scripts/check-usage-pace.py
+    fix_induced: false
+    disposition: fixed
+```
+
 Reviewed HEAD ae36dac5; Codex r2 verdict NOT CONVERGED with two MINORs.
 
 | # | Finding | Disposition | Case |

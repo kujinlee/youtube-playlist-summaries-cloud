@@ -1,5 +1,39 @@
 # pace-stop-message r1 fold (backlog #525)
 
+```yaml
+round: 1
+fixes_nontrivial: true
+subject: pace-stop-message
+halves:
+  codex: ran
+  claude: ran
+findings:
+  - id: codex-1
+    severity: Low
+    aim: deliverable
+    component: scripts/check-usage-pace.py
+    fix_induced: false
+    disposition: fixed
+  - id: codex-2
+    severity: Low
+    aim: deliverable
+    component: scripts/check-usage-pace.py
+    fix_induced: false
+    disposition: fixed
+  - id: claude-m1
+    severity: Low
+    aim: deliverable
+    component: scripts/check-usage-pace.py
+    fix_induced: false
+    disposition: fixed
+  - id: claude-m2
+    severity: Low
+    aim: deliverable
+    component: scripts/check-usage-pace.py
+    fix_induced: false
+    disposition: fixed
+```
+
 Both halves of r1 returned MINORs only (Codex: NOT CONVERGED on two; Claude: see its file). Each finding is fixed with a case that was RED before the fix.
 
 | Finding | Source | Fix | Case (scripts/check-usage-pace.py) | Mutation (scripts/mutations/check-usage-pace.json) |

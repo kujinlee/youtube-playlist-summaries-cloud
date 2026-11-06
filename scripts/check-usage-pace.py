@@ -21,7 +21,7 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
                   except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
                   — and for the last 8 h before the reset (the LAST NIGHT) there is no soft stop: the stop is the hard
                   100% limit (backlog #523), which comes before that 99% for the SHIPPED constants (RISE_END_S < LAST_NIGHT_S), so there the 99% is never reached as a
-                  stop; the message names whichever of the two transitions really comes next (#525)
+                  stop; for the shipped constants the message names whichever transition really comes next (#525; other constants are untested)
                   — a NEW subagent spawn, and a message from the MAIN SESSION that
                   WAKES an agent, are denied; work in flight continues, and so does a control message that
                   ends or unblocks it (a `shutdown_request`, a `plan_approval_response`)
