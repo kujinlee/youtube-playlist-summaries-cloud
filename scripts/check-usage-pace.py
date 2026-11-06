@@ -1730,11 +1730,14 @@ def _self_test_body() -> int:
                 env.update(HOME=home, CLAUDE_PROJECT_DIR=main_co, **env_extra)
                 return env
 
+            last_err = [""]
+
             def hook(name: str, weekly: float | None, co: str = wt, stdin: str = '{"tool_name":"Agent","tool_input":{}}',
                      **env_extra: str) -> tuple[int, str]:
                 env = hook_env(weekly, **env_extra)
                 p = subprocess.run(["bash", os.path.join(co, ".claude", "hooks", "run-hook.sh"), name], cwd=co,
                                    env=env, input=stdin, capture_output=True, text=True, timeout=30)
+                last_err[0] = p.stderr     # r6: the launcher's CANNOT RUN reason goes to stderr, its JSON is fixed
                 return p.returncode, p.stdout.strip()
 
             def decision(out: str) -> object:
@@ -1753,10 +1756,17 @@ def _self_test_body() -> int:
             _gone = os.path.join(tmp, "no-such-tmpdir")
             _rc, _out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522t"}', TMPDIR=_gone)
             check("⭐ backlog #522 r4: a TMPDIR naming a missing directory — the prompt hook SAYS cannot run",
-                  (_rc, "CANNOT RUN" in _out, "no temp directory" in _out), (0, True, True))
+                  (_rc, "CANNOT RUN" in hso(_out).get("hookSpecificOutput", {}).get("additionalContext", ""),
+                   "no temp directory" in last_err[0]), (0, True, True))
             _rc, _out = hook("usage-pace-spawn.sh", 98.5, TMPDIR=_gone)
             check("backlog #522 r4: …and the spawn hook allows with a systemMessage, never a bare exit",
-                  (_rc, "no temp directory" in hso(_out).get("systemMessage", "")), (0, True))
+                  (_rc, "CANNOT RUN" in hso(_out).get("systemMessage", ""), "no temp directory" in last_err[0]),
+                  (0, True, True))
+            # r6 Codex BLOCKER: a control character in the path made the JSON invalid — a silent allow
+            _rc, _out = hook("usage-pace-spawn.sh", 98.5, TMPDIR=os.path.join(tmp, 'nl\npath\t"q"\\'))
+            check("backlog #522 r6: a TMPDIR holding a newline, a tab, a quote and a backslash still says CANNOT RUN in valid JSON",
+                  (_rc, "CANNOT RUN" in hso(_out).get("systemMessage", ""), "no temp directory" in last_err[0]),
+                  (0, True, True))
             # backlog #522: a branch's OWN copy of the guard never governs the session — master's does
             _own = os.path.join(wt, "scripts", "check-usage-pace.py")
             with open(_own) as fh:
@@ -1794,7 +1804,8 @@ def _self_test_body() -> int:
             git("update-ref", "-d", "refs/remotes/origin/master", cwd=main_co)
             _rc, _out = hook("usage-pace-prompt.sh", 85, stdin='{"session_id":"s-522"}')
             check("⭐ backlog #522: no origin/master — the prompt hook SAYS cannot run, never runs the checkout's copy",
-                  (_rc, "CANNOT RUN" in _out, "could not be read" in _out, "WARN at 80%" in _out), (0, True, True, False))
+                  (_rc, "CANNOT RUN" in hso(_out).get("hookSpecificOutput", {}).get("additionalContext", ""),
+                   "could not be read" in last_err[0], "WARN at 80%" in _out), (0, True, True, False))
             _rc, _out = hook("usage-pace-spawn.sh", 98.5)
             check("backlog #522: …and the spawn hook ALLOWS (unknown is not a stop) but SAYS so in a systemMessage",
                   (_rc, decision(_out), "CANNOT RUN" in hso(_out).get("systemMessage", "")), (0, None, True))

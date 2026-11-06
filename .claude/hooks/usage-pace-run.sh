@@ -19,14 +19,15 @@ mode="$1"
 # ⛔ EVERY failure to run origin/master's guard goes through `cannot`, never a bare exit (r4 Codex BLOCKER: a TMPDIR
 # naming a missing directory exited 1 with stderr only — a silent allow).
 cannot() {
-    msg="⚠ usage pace CANNOT RUN — $1 (backlog #522: the checkout's own copy is not trusted). Treat the usage verdict as NOT RUN; unknown is not a stop."
-    # r5 Codex BLOCKER: built WITHOUT python, since a python that cannot start (a bad PYTHONHOME) is one of the failures
-    msg="${msg//\\/\\\\}"; msg="${msg//\"/\\\"}"
+    # r4-r6 Codex BLOCKERs THRASHED here: each fix of the JSON (python that may not start, then unescaped control
+    # characters) opened the next. So the JSON is now a FIXED literal — no variable is interpolated into it, nothing to
+    # escape, no python — and the detail goes to stderr, where a transcript-mode reader still finds it.
+    printf 'usage-pace-run.sh: CANNOT RUN — %s\n' "$1" >&2
     if [ "$mode" = prompt ]; then
-        printf '{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "%s"}}\n' "$msg"
+        printf '%s\n' '{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "⚠ usage pace CANNOT RUN — origin/master'"'"'s guard could not be run (backlog #522: the checkout'"'"'s own copy is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}}'
     else
         # security review 11-05: stderr alone is not seen — say it as a systemMessage, and ALLOW (unknown is not a stop)
-        printf '{"systemMessage": "%s"}\n' "$msg"
+        printf '%s\n' '{"systemMessage": "⚠ usage pace CANNOT RUN — origin/master'"'"'s guard could not be run (backlog #522: the checkout'"'"'s own copy is not trusted; the reason is on stderr). Treat the usage verdict as NOT RUN; unknown is not a stop."}'
     fi
     exit 0
 }
