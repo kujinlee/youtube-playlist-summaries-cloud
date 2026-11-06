@@ -3845,5 +3845,18 @@
     "expect": [
       "timeline story, from the REAL producer: an added thread is named by its key alone, never its state or detail (r2 P2)"
     ]
+  },
+  {
+    "name": "a wording-only snapshot is told as one change (timeline-story r3 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ch == [NO_READER_CHANGE]:   # timeline-story r3 P2",
+        "    if False:   # timeline-story r3 P2"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: a wording-only snapshot says so, never '1 change(s)' (r3 P2)"
+    ]
   }
 ]

@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 390 cases
+    python3 scripts/goal-tree.py --self-test                 # 391 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -549,6 +549,9 @@ def fingerprint(snap: dict) -> str:
     return json.dumps({k: v for k, v in snap.items() if k not in ("at", "head")}, sort_keys=True)
 
 
+NO_READER_CHANGE = "no change a reader would see (the stored tree differs only in wording)"
+
+
 def changes(prev: dict | None, cur: dict) -> list[str]:
     """PURE. One line per difference a reader would care about, oldest-to-newest direction."""
     if prev is None:
@@ -616,7 +619,7 @@ def changes(prev: dict | None, cur: dict) -> list[str]:
         was = {st["n"]: st["state"] for st in pa["steps"]}
         out += [f"agenda step {st['n']}: {was[st['n']]} → {step_glyph(st['state'])} {st['state']} — {st['text']}"
                 for st in ca["steps"] if st["n"] in was and was[st["n"]] != st["state"]]
-    return out or ["no change a reader would see (the stored tree differs only in wording)"]
+    return out or [NO_READER_CHANGE]
 
 
 # ── NEEDS YOU: a decision only the owner can make, open now (owner decision D1, 2026-10-28) ────
@@ -1707,6 +1710,8 @@ def story(ch: list[str]) -> str:
     happened, by kind, naming only what LANDED and the goals that opened. The change lines stay underneath, muted."""
     if ch == ["first snapshot"]:
         return "The first snapshot."
+    if ch == [NO_READER_CHANGE]:   # timeline-story r3 P2: the producer's own "nothing to see" is never "1 change(s)"
+        return "No change a reader would see; only the wording moved."
 
     def ref(line):  # "[fix] PR #511 · what" → "PR #511"
         return line.split("] ", 1)[1].split(" · ", 1)[0]
@@ -3313,6 +3318,9 @@ def _self_test_body() -> int:
          story(["needs you, new: backlog #9 (backlog)", "needs you, new: PR #8 (dashboard)",
                 "needs you, cleared: PR #7 (ledger)", "agenda recorded: set t, 2 step(s)"]),
          "2 new asks for you; an ask cleared; the agenda changed.")
+    case("timeline story, from the REAL producer: a wording-only snapshot says so, never '1 change(s)' (r3 P2)",
+         story(changes(_a0, dict(_a0, at="T9"))) if changes(_a0, dict(_a0, at="T9")) == [NO_READER_CHANGE] else "n/a",
+         "No change a reader would see; only the wording moved.")
     case("timeline story: a line of no known kind still yields a sentence — a count, never an empty summary",
          story(["something new"]), "1 change(s).")
     _tl = render_page([snap] * (TIMELINE_SHOWN + 2), "t")
