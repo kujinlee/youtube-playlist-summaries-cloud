@@ -18865,6 +18865,11 @@ On the final night before the weekly usage reset, nothing holds work back early 
 <!--tech-->
 `scripts/check-usage-pace.py`: `last_night()` (the last `LAST_NIGHT_S` = 8 h before the reset); `refuse_at` returns `HARD_LIMIT` then; the WARN message leads with the room "before the hard limit" and says to commit before every long step. 331 cases (+4); 5 new mutations; pin 141 → 146 (stacked on #522).
 
+## 2026-11-05
+Closing a piece of tracked work no longer makes it silently vanish from the goal tree: if the work was never written into the goal file on master, closing it now prints a warning naming the exact line to add. Backlog #507.
+<!--tech-->
+`scripts/session-state.py`: `thread_handoff(entry, main, run)` reads `origin/master:docs/goal-threads.md` and parses the entry's thread and the file with goal-tree's own parsers (`parse_thread_line`, `parse_threads`) and compares their refs as (kind, number) — a ref in a line's WHAT text does not count, `PR #30` ≠ `PR #305`, `PR #030` = `PR #30`; `--done` calls it after removing the entry and prints the warning on stderr (a warning, never a refusal); an unreadable file, one goal-tree refuses, or an entry thread that does not parse is NOT CHECKED; the entry checked is the one removed under the ledger lock. 129 cases (+16); 12 new mutations; pin 97 → 109.
+
 ## 2026-11-06
 The merge check no longer leaves its false "loosens a gate" alarms to the pull request's own author. Counted first from the written records: of 21 such alarms judged since the rule began, 19 were false. A self-test count that only went up is no longer flagged at all. Every other flagged line is now put to the final reviewer, who answers each one, and the merge check clears the alarm only for lines the reviewer answered "not a loosening" on exactly the code being merged. An unanswered line, a reviewer's finding, a verdict it cannot read, or any change after the review still holds the merge for you. Backlog #508.
 The architecture review that the repeated fix-induced findings called for has run: it found the answer channel needs no redesign, and it filed two follow-ups, backlog #527 (move pairing that depends on line order) and backlog #528 (one home for the review-file names and the answer format).
