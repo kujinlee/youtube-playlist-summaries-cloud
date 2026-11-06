@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 416 cases
+    python3 scripts/goal-tree.py --self-test                 # 430 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -41,7 +41,8 @@ can make, open now, from three sources, each read by its owner's code and never 
     could not read, NAMED as unreadable (it may be an ask);
   * in-flight entries marked `WAITS-ON-OWNER:` — `session-state.waits_on_owner()`, main checkout's ledger;
   * open backlog rows still marked NEEDS-OWNER (`needs_owner`), parsed by `gen-backlog-page.parse`, with
-    any line that parser refused to read reported as unreadable.
+    any line that parser refused to read reported as unreadable; a row whose status says it was settled after
+    its marker is FLAGGED "may already be settled" with the remedy, and stays listed (backlog #496).
 "Nothing waits on you" is said only when ALL THREE were read; a source that cannot be read — or that holds
 even one record it cannot read (a truncated ledger line, an unparseable dashboard entry, a refused backlog
 line) — is NOT READ, its readable items are still shown, and the snapshot is not logged, like any other
@@ -649,11 +650,81 @@ def needs_owner(row: dict) -> bool:
     """PURE. Does this backlog row still wait on the OWNER? Open, carries `NEEDS-OWNER` (or
     `NEEDS-OWNER-ACTION`), and the text after its LAST marker does not begin `answered`. ⚠ BOUND: a row
     whose decision was recorded in some other wording, with the marker left in place, still reads as
-    waiting — the marker is the claim."""
+    waiting — the marker is the claim. backlog #496 FLAGS the two measured shapes of that (`settled_in_prose`,
+    `head_moved_on`); it does not hide them."""
     s = row.get("status") or ""
     i = s.rfind(NEEDS_OWNER)
     return (not row.get("closed") and i >= 0
             and not re.match(r"\W*answered\b", s[i + len(NEEDS_OWNER):], re.I))
+
+
+# backlog #496: a decision recorded in PROSE leaves the marker asking. Measured 2026-11-03: of the six rows
+# NEEDS YOU listed, backlog #306 said `DECIDED … by the owner` after its marker and backlog #384's status head had been rewritten
+# (spec merged) after its marker was written; neither said `answered`, so both were still asked. Two clauses, each
+# a FLAG on a row that stays listed (C2) — never a hide, because prose can be wrong both ways.
+#   * CLAUSE 1 (text): `DECIDED` (upper case, this repo's recording word) or `answered by the owner` in the text
+#     AFTER the last marker. ⚠ Case-sensitive on purpose: backlog #384's own tail says "is decided after backlog #392 is
+#     built" — a future call, and the case-insensitive form false-fired on it.
+#   * CLAUSE 2 (history): the status HEAD (the text before the first ⟳, which this repo rewrites in place to the
+#     current state) differs now from the head at the commit that first wrote the marker's segment. ⚠ BOUND: a
+#     rewrite is evidence the row moved on after the ask, not proof the ask is settled — a sweep that rewrote
+#     every head would flag every row. Measured 0 such rewrites over 6 revisions 10-27..11-03.
+SETTLED_WORDS = re.compile(r"\bDECIDED\b|\banswered by the owner\b")
+SETTLED_REMEDY = "if so, write `NEEDS-OWNER answered`"
+
+
+def status_head(status: str) -> str:
+    """PURE. A status's HEAD: the text before its first ⟳ — the part this repo rewrites to the current state."""
+    return status.split("⟳", 1)[0].strip()
+
+
+def marker_segment(status: str) -> str:
+    """PURE. The LAST marker's own segment: from `NEEDS-OWNER` up to the next ⟳ (or the end)."""
+    return status[status.rfind(NEEDS_OWNER):].split("⟳", 1)[0].strip()
+
+
+def settled_in_prose(status: str):
+    """PURE. Clause 1 of backlog #496: the flag text when the status records a decision AFTER its last
+    marker in the repo's recording words, else None."""
+    m = SETTLED_WORDS.search(status[status.rfind(NEEDS_OWNER):])
+    return (f"may already be settled: its status says “{m.group(0)}” after the NEEDS-OWNER marker — "
+            + SETTLED_REMEDY) if m else None
+
+
+def head_moved_on(status: str, num: int, history):
+    """Clause 2 of backlog #496: the flag text when the status head was rewritten after the marker was
+    written, else None. `history(num, segment)` returns the head as it stood at the commit that first wrote
+    `segment`, None when no commit did, and raises when it cannot read. A marker INSIDE the head is not
+    checked: rewriting that head IS rewriting the marker. ⛔ A history that cannot be read is said, never
+    taken as "unchanged"."""
+    if history is None or status.rfind(NEEDS_OWNER) < len(status.split("⟳", 1)[0]):
+        return None
+    try:
+        then = history(num, marker_segment(status))
+    except Exception as exc:                      # noqa: BLE001 - NOT READ, named, never silence
+        return f"its history was NOT READ ({_SS.clean(exc, 120)}), so a rewritten status was not checked"
+    if then is not None and then != status_head(status):
+        return ("may already be settled: its status head was rewritten after the NEEDS-OWNER marker was "
+                "written — " + SETTLED_REMEDY)
+    return None
+
+
+def git_head_when_marked(root: pathlib.Path, run):
+    """The `history` clause 2 reads, from git: the oldest commit whose diff adds `segment` to the backlog
+    (`git log --reverse -S`), then that row's status head in the file at that commit."""
+    def history(num: int, segment: str):
+        rc, out = run(["git", "log", "--reverse", "--format=%H", "-S" + segment, "--", BACKLOG_REL], root, 30)
+        if rc != 0:
+            raise ValueError(f"git log -S exited {rc}: {_SS.clean(out, 80)}")
+        if not out.split():
+            return None
+        sha = out.split()[0]
+        rc, out = run(["git", "show", f"{sha}:{BACKLOG_REL}"], root, 30)
+        if rc != 0:
+            raise ValueError(f"git show {sha[:8]} exited {rc}: {_SS.clean(out, 80)}")
+        row = {r["num"]: r for r in _sibling("gen-backlog-page").parse(out.split("\n"))}.get(num)
+        return status_head(row["status"]) if row else None
+    return history
 
 
 def multiplicity(text: str):
@@ -722,10 +793,12 @@ def needs_from_ledger(entries: list[dict]) -> list[dict]:
     return out
 
 
-def needs_from_backlog(text: str) -> tuple[list[dict], list[str]]:
+def needs_from_backlog(text: str, history=None) -> tuple[list[dict], list[str]]:
     """(items, problems). Open rows still marked NEEDS-OWNER, parsed by gen-backlog-page's ONE row parser.
     Any line that parser refused is a PROBLEM (X1). A listed row whose tail names ANOTHER row that is
-    closed or recorded as decided/answered is FLAGGED, never hidden (C2): the dependency is prose."""
+    closed or recorded as decided/answered is FLAGGED, never hidden (C2): the dependency is prose.
+    backlog #496: so is a row whose OWN status records a decision after its marker (clause 1), or whose head
+    was rewritten after the marker was written (clause 2, through `history`; None skips it, as tests do)."""
     gb = _sibling("gen-backlog-page")
     unread: list[str] = []
     rows = gb.parse(text.split("\n"), unread)
@@ -743,13 +816,16 @@ def needs_from_backlog(text: str) -> tuple[list[dict], list[str]]:
                    full=f"{r['title']} {tail}")
         it["row"] = r["num"]
         it["identity"] = [r["num"], kind]
+        it["flag"] = settled_in_prose(r["status"])   # backlog #496 clause 1: the row's OWN words first
         # Y4: only an explicit `backlog #N` is a row — never a bare `#N`, a `pr #N` or an `issue #N`.
-        for n in sorted({int(x) for x in BACKLOG_REF.findall(tail)} - {r["num"]}):
+        for n in sorted({int(x) for x in BACKLOG_REF.findall(tail)} - {r["num"]}) if it["flag"] is None else []:
             o = by_num.get(n)
             if o is not None and (o["closed"] or (not needs_owner(o) and re.search(
                     r"\bDECIDED\b|\banswered\b", o["status"], re.I))):
                 it["flag"] = f"may already be answered by backlog #{n}"
                 break
+        if it["flag"] is None:                        # backlog #496 clause 2: only where nothing else flagged
+            it["flag"] = head_moved_on(r["status"], r["num"], history)
         out.append(it)
     return out, ([f"{len(unread)} line(s) of {BACKLOG_REL} the row parser could not read"]
                  if unread else [])
@@ -941,7 +1017,8 @@ def collect(root: pathlib.Path, run=None, read_plans=None) -> dict:
     for key, rel, fn in (("dashboard", DASHBOARD_REL, needs_from_dashboard),
                          ("backlog", BACKLOG_REL, needs_from_backlog)):
         try:
-            items, problems = fn((root / rel).read_text(encoding="utf-8"))
+            text = (root / rel).read_text(encoding="utf-8")
+            items, problems = (fn(text, git_head_when_marked(root, run)) if key == "backlog" else fn(text))
         except Exception as exc:                  # noqa: BLE001 - NOT READ, named, never "none"
             errors[key] = f"{rel} NOT READ ({type(exc).__name__}: {_SS.clean(exc, 120)})"
             continue
@@ -3095,6 +3172,59 @@ def _self_test_body() -> int:
          needs_from_backlog(BACKLOG_FIXTURE.replace("| 11 | **Parent**", "| 11 | ✅ **Parent**").replace(
              "DECIDED 2026-10-28 by the owner: A", "✅ done"))[0][2]["flag"],
          "may already be answered by backlog #11")
+    # ── backlog #496: a decision recorded in prose, with the marker left asking ──────────────────
+    # The FAILS-IF corpus: the six rows NEEDS YOU listed on 2026-11-03, VERBATIM from origin/master
+    # 11a70deb, each with its status head as it stood at the commit that wrote its marker (derived by
+    # `git log -S`, independently of this code). backlog #306 and backlog #384 were already settled; the other four were not.
+    _c = json.loads((SCRIPTS / "fixtures" / "needs-owner-2026-11-03.json").read_text(encoding="utf-8"))
+    _ctext = "# B\n\n## Items\n\n" + "\n".join(_c["header"] + [v["line"] for v in _c["rows"].values()]) + "\n"
+    _then = {int(k): v["head_when_marked"] for k, v in _c["rows"].items()}
+
+    def _hist(table):
+        return lambda num, segment: table[num]
+
+    def _flags(text, history=None):
+        return {n["row"]: n["flag"] for n in needs_from_backlog(text, history)[0]}
+    _cf = _flags(_ctext, _hist(_then))
+    case("⭐ backlog #496 FAILS-IF: on the 2026-11-03 corpus backlog #306 and backlog #384 are flagged as settled",
+         (bool(_cf[306]), bool(_cf[384])), (True, True))
+    case("⛔ backlog #496 adjacent negatives: backlog #2, backlog #86, backlog #198, backlog #307 (each still open that day) are not",
+         [_cf[n] for n in (2, 86, 198, 307)], [None, None, None, None])
+    case("⛔ backlog #496: every corpus row stays LISTED — a flag, never a hide (C2)",
+         sorted(_cf), [2, 86, 198, 306, 307, 384])
+    case("backlog #496 clause 1: the flag names the word it found and the remedy",
+         _cf[306], "may already be settled: its status says “DECIDED” after the NEEDS-OWNER marker — "
+                   "if so, write `NEEDS-OWNER answered`")
+    case("backlog #496 clause 2: the flag says the head was rewritten after the marker, and the remedy",
+         _cf[384], "may already be settled: its status head was rewritten after the NEEDS-OWNER marker "
+                   "was written — if so, write `NEEDS-OWNER answered`")
+
+    def _one(status, history=None):
+        t = BACKLOG_FIXTURE.replace("NEEDS-OWNER — waits on you", status)
+        return _flags(t, history)[5]
+    case("backlog #496 clause 1: `answered by the owner` after the marker flags too",
+         _one("NEEDS-OWNER — pick A or B ⟳ 2026-10-28: answered by the owner's card: A"),
+         "may already be settled: its status says “answered by the owner” after the NEEDS-OWNER marker — "
+         "if so, write `NEEDS-OWNER answered`")
+    case("⛔ backlog #496 clause 1: a DECIDED BEFORE the last marker is an older question, never this one",
+         _one("DECIDED 2026-10-20 by the owner: A ⟳ NEEDS-OWNER — a new question"), None)
+    case("⛔ backlog #496 clause 1: a lower-case 'decided' is prose about a future call (backlog #384's own tail)",
+         _one("NEEDS-OWNER — pick A ⟳ whether briefs stay is decided after backlog #392 is built"), None)
+    case("⛔ backlog #496 clause 2: an unchanged head does not flag",
+         _one("OPEN ⟳ NEEDS-OWNER — pick A", _hist({5: "OPEN"})), None)
+    case("⛔ backlog #496 clause 2: a marker IN the head is not checked — its rewrite IS the marker's",
+         _one("NEEDS-OWNER — pick A", _hist({5: "something else"})), None)
+    case("⛔ backlog #496 clause 2: a marker not found in history does not flag",
+         _one("OPEN ⟳ NEEDS-OWNER — pick A", _hist({5: None})), None)
+
+    def _boom(num, segment):
+        raise ValueError("git log -S exited 128")
+    case("⛔ backlog #496 clause 2: history that cannot be read says NOT READ — never silence",
+         _one("OPEN ⟳ NEEDS-OWNER — pick A", _boom),
+         "its history was NOT READ (git log -S exited 128), so a rewritten status was not checked")
+    case("backlog #496 clause 2: the history is asked about the marker's OWN segment, up to the next ⟳",
+         (lambda seen: (_one("OPEN ⟳ NEEDS-OWNER — pick A ⟳ later note", lambda n, s: seen.append(s) or "OPEN"),
+                        seen)[1])([]), ["NEEDS-OWNER — pick A"])
     case("the ledger source is session-state's WAITS-ON-OWNER predicate, marker stripped",
          [(n["ref"], n["kind"], n["text"]) for n in needs_from_ledger(
              [{"id": "a", "what": "WAITS-ON-OWNER: choose"}, {"id": "b", "what": "owner said hi"},
@@ -3460,6 +3590,20 @@ def _self_test_body() -> int:
              [("2026-10-01/1", "/dashboard#2026-10-01-1", []),
               ("backlog #5", "/backlog-table#i5", ["ask-1"]),
               ("backlog #9", "/backlog-table#i9", []), ("backlog #10", "/backlog-table#i10", [])])
+        # backlog #496: collect hands NEEDS YOU the git history, so clause 2 runs on the page, not only here.
+        (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE.replace("NEEDS-OWNER — waits on you",
+                                                             "OPEN now ⟳ NEEDS-OWNER — waits on you"))
+        # The OLDEST commit adding the segment is the one read (git lists it first under --reverse); any other
+        # commit answers with today's head, so reading the wrong one goes quiet.
+        run_h, calls_h = fake([(["git", "log", "--reverse"], (0, "c0ffee11\nfeed2222\n")),
+                               (["git", "show", f"c0ffee11:{BACKLOG_REL}"], (0, BACKLOG_FIXTURE.replace(
+                                   "NEEDS-OWNER — waits on you", "OPEN then ⟳ NEEDS-OWNER — waits on you"))),
+                               (["git", "show"], (0, (r / BACKLOG_REL).read_text()))] + ok)
+        case("⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged",
+             [n["flag"] for n in collect(r, run_h)["needs"] if n["ref"] == "backlog #5"],
+             ["may already be settled: its status head was rewritten after the NEEDS-OWNER marker was written "
+              "— if so, write `NEEDS-OWNER answered`"])
+        (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
         (r / "main" / ".claude" / "inflight.jsonl").write_text(
             '{"id": "build-12", "what": "w"}\n{"id":"pick","what":"WAITS-ON-OWNER: Choose A or B"\n')
         (r / DASHBOARD_REL).write_text("")

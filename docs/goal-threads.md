@@ -85,6 +85,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #519 · the timeline tells each entry as one sentence and folds the older ones; an empty NEEDS YOU is a muted line
 - fix · backlog #520 · the wording-only timeline case tests a real wording-only tree; an added thread already merged is told as landed
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
+- fix · backlog #496 · NEEDS YOU flags a row whose status records a decision after its NEEDS-OWNER marker (DECIDED / answered by the owner, or a status head rewritten after the marker), with the remedy, and keeps it listed
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
 > 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"

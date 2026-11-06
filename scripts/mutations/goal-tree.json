@@ -4110,5 +4110,174 @@
     "expect": [
       "⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step move (backlog #504)"
     ]
+  },
+  {
+    "name": "backlog #496: clause 1 never reads the row's own words",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        it[\"flag\"] = settled_in_prose(r[\"status\"])   #",
+        "        it[\"flag\"] = None   #"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 FAILS-IF: on the 2026-11-03 corpus backlog #306 and backlog #384 are flagged as settled"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 reads the WHOLE status, before the marker too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    m = SETTLED_WORDS.search(status[status.rfind(NEEDS_OWNER):])",
+        "    m = SETTLED_WORDS.search(status)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: a DECIDED BEFORE the last marker is an older question, never this one"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 matches any case of 'decided'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_WORDS = re.compile(r\"\\bDECIDED",
+        "SETTLED_WORDS = re.compile(r\"(?i)\\bDECIDED"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: a lower-case 'decided' is prose about a future call (backlog #384's own tail)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 drops `answered by the owner`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|\\banswered by the owner\\b\")",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: `answered by the owner` after the marker flags too"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2 never compares the heads",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if then is not None and then != status_head(status):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 FAILS-IF: on the 2026-11-03 corpus backlog #306 and backlog #384 are flagged as settled"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2 takes a marker git never wrote as a rewrite",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if then is not None and then != status_head",
+        "    if then != status_head"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 2: a marker not found in history does not flag"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2 checks a marker that sits IN the head",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if history is None or status.rfind(NEEDS_OWNER) < len(status.split(\"⟳\", 1)[0]):",
+        "    if history is None:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 2: a marker IN the head is not checked — its rewrite IS the marker's"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2 swallows a history it cannot read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return f\"its history was NOT READ ({_SS.clean(exc, 120)}), so a rewritten status was not checked\"",
+        "        return None"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 2: history that cannot be read says NOT READ — never silence"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2 asks history about the whole tail, not the marker's segment",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return status[status.rfind(NEEDS_OWNER):].split(\"⟳\", 1)[0].strip()",
+        "    return status[status.rfind(NEEDS_OWNER):].strip()"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 2: the history is asked about the marker's OWN segment, up to the next ⟳"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2 runs over a flag clause 1 already set",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if it[\"flag\"] is None:                        # backlog #496 clause 2",
+        "        if True:                        # backlog #496 clause 2"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 FAILS-IF: on the 2026-11-03 corpus backlog #306 and backlog #384 are flagged as settled"
+    ]
+  },
+  {
+    "name": "backlog #496: collect never hands NEEDS YOU the git history",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "fn(text, git_head_when_marked(root, run)) if key == \"backlog\"",
+        "fn(text, None) if key == \"backlog\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged"
+    ]
+  },
+  {
+    "name": "backlog #496: the history reads the NEWEST commit adding the segment",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        sha = out.split()[0]\n        rc, out = run([\"git\", \"show\"",
+        "        sha = out.split()[-1]\n        rc, out = run([\"git\", \"show\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged"
+    ]
+  },
+  {
+    "name": "backlog #496: the history asks git without --reverse",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "[\"git\", \"log\", \"--reverse\", \"--format=%H\", \"-S\" + segment",
+        "[\"git\", \"log\", \"--format=%H\", \"-S\" + segment"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged"
+    ]
   }
 ]

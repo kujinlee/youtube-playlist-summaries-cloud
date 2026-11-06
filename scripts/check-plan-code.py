@@ -1485,7 +1485,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06, backlog #504 r3 fold: 312 -> 314 — a lone CR ends a line for reader and writers alike (N1),
     # and the blank repair's blank is the reader's (N2); four blank-repair entries re-anchored onto the rewrite.
     # ⟳ 2026-11-06, merging master (backlog #518, PR #516: 298 -> 300) into backlog #504: 316, the merged manifest's count.
-    "scripts/goal-tree.py": 316,
+    # ⟳ 2026-11-06, backlog #496: 316 -> 329 — a decision recorded in prose after the NEEDS-OWNER marker is flagged:
+    # clause 1 (own words, after the marker, upper case, both phrases: 4), clause 2 (compare, None, marker in head,
+    # NOT READ, segment, precedence: 6), and the git read from collect (handed, oldest commit, --reverse: 3).
+    "scripts/goal-tree.py": 329,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
