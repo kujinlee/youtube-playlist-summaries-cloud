@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 308 cases
+    python3 scripts/check-plan-code.py --self-test          # 310 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -448,7 +448,8 @@ def _import_spellings(stem: str) -> set:
     """The spellings that IMPORT module `stem`: its stem quoted (`_sibling`, `import_module`, a
     `_load` wrapper) and, for an identifier, `import stem` / `from stem import`. Prose that only
     MENTIONS a module is not among them — the import graph is closed over these alone (r1 C5)."""
-    out = {f'"{stem}"', f"'{stem}'", f'"{stem}.py"', f"'{stem}.py'"}   # backlog #498: `_load("gen-dashboard.py", …)`
+    out = {f'"{stem}"', f"'{stem}'"}
+    out |= {f'"{stem}.py"', f"'{stem}.py'"}   # backlog #498: `_load("gen-dashboard.py", …)`
     if stem.isidentifier():
         out |= {f"import {stem}\n", f"import {stem} ", f"import {stem},", f", {stem}\n",
                 f"from {stem} import"}

@@ -2086,8 +2086,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    out = {f'\"{stem}\"', f\"'{stem}'\", f'\"{stem}.py\"', f\"'{stem}.py'\"}",
-        "    out = {f'\"{stem}.py\"', f\"'{stem}.py'\"}"
+        "    out = {f'\"{stem}\"', f\"'{stem}'\"}\n",
+        "    out = set()\n"
       ]
     ],
     "expect": [
@@ -2204,8 +2204,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    out = {f'\"{stem}\"', f\"'{stem}'\", f'\"{stem}.py\"', f\"'{stem}.py'\"}",
-        "    out = {f'\"{stem}\"', f\"'{stem}'\"}"
+        "    out |= {f'\"{stem}.py\"', f\"'{stem}.py'\"}",
+        "    pass"
       ]
     ],
     "expect": [
