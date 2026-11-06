@@ -18839,3 +18839,23 @@ A fix to the agenda's **Running now / Owed** split from earlier today. A thread 
 <!--tech-->
 `scripts/goal-tree.py`: `derive_thread` collects `resolved` (every live row's open PR, by title) before the named-PR / merged / open precedence, so a mixed thread records its `open_prs`; `agenda_digest` admits a FINISHED leaf only when it still owns an open PR. Backlog #518's (b), the join keeping every PR identity, was already pinned by r3's `_fold_item` cases. 394 cases (+3); 2 new mutations, 3 re-bound; pin 297 → 299.
 
+A small correction to the timeline's one-line stories: a thread that first appears already merged now reads as **landed**, not merely "added" — at 18:55 the page said "Added backlog #519" for work that had just shipped. Backlog #520's test gap is closed too.
+<!--tech-->
+`scripts/goal-tree.py` `story()`: an `added` line whose glyph is the merged one goes to `landed`. A wording-only case now runs two snapshots whose stored trees differ in a thread's text, through `derive` and `changes()`. 393 cases (+2, one re-expected: the r2 producer case's fixture PR #20 is merged, so it now reads "Landed PR #20."); 1 new mutation, 1 re-bound; pin 297 → 298.
+
+## 2026-11-05
+On the last day of the week the usage warning now tells me to **use** the room, not only to hold back (your 19:44 messages). Tonight I sat idle for about an hour at 97% with the stop at 98.6%, because every line of the warning said hold back and none said that whatever is unused vanishes at the 02:00 reset. Now, on the last day, the warning opens with "⏳ USE IT — N% is left under the stop and is LOST at the reset", even when usage is low. The pace line is no longer shown that day, because "97% — a guide" next to 97% read as a stop. An unreadable meter now also says "keep working". Backlog #521.
+<!--tech-->
+`scripts/check-usage-pace.py` `evaluate`: `last_day` (after the reset's own local midnight) and `use_it` lead the WARN message; below WARN on the last day the verdict is WARN with the room, never `OK, ""`; `line_note` is dropped on the last day; the rising-stop note reads "what is left under it is lost at the reset"; `cannot()` adds "Unknown is not a stop: keep working." 320 cases (+8, two re-expected: the rising-stop text and the run-hook case at 50%, whose fixture reset is 24 h out and so IS the last day). A room under 0.1 reads "<0.1%", never "0%"; `rise_start` is ONE helper for when the stop starts rising and when USE IT starts, so they cannot disagree (across DST it keeps #510 r1 M1's ruling). 7 new mutations, 4 re-bound; pin 134 → 141.
+
+
+## 2026-11-05
+A pull request that changes the dashboard's grammar now re-tests the session-summary tool that depends on it; before, that test only ran in the nightly full sweep. Backlog #498.
+<!--tech-->
+`scripts/check-plan-code.py` `_import_spellings`: the scoped sweep's import closure also matches a sibling loaded by its FILENAME (`"gen-dashboard.py"`, `'x.py'`), so `check-dashboard-entry.py` → `gen-dashboard.py` → `compaction-state.py` selects `compaction-state`'s manifest. Two cases (a two-hop synthetic chain; the real tree's chain); one new mutation, with the stem and filename spellings on separate statements so the two mutations have distinct anchors; pin 177 → 178; 310 cases.
+
+## 2026-11-05
+Two checks that sometimes went red on unrelated pull requests, purely by luck of timing or ordering, now behave the same on every run. Backlog #506, its two known instances; a broader check for the whole class is still open.
+<!--tech-->
+`check-review-decision.py`: a case gives tied components one per round in REVERSE order, so dropping `sorted()` fails under every `PYTHONHASHSEED` (measured at seeds 266 and 312, where the old case passed). `check-selftest-counts.py`: a case patches `concurrent.futures.as_completed` to yield futures in reverse, so the "completion order" mutant fails on every run. Each joins its mutation's `expect`. 119 and 60 cases (+1 each).
+

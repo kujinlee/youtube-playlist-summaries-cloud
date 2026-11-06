@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 118 cases
+    python3 scripts/check-review-decision.py --self-test  # 119 cases
 
 WHY THIS EXISTS
 ---------------
@@ -819,6 +819,11 @@ def _self_test_body() -> int:
     case("...and the tied names are reported in a stable order, because the reader prints them",
          scope_lead(_five)["top"],
          ["cron-comment", "doc-row", "drift-window", "merge-readiness", "schedule-durability"])
+    # backlog #506 (2): `_five`'s tally is filled by iterating a SET, so under some hash seeds (266, 312, 342, 449 in 0-599)
+    # its unsorted order is already alphabetical and dropping `sorted()` passes. One component per round, in REVERSE
+    # order, fills the tally in a fixed, unsorted order — so the mutant fails under every seed.
+    case("backlog #506: tied names given in REVERSE order still come back sorted, under every hash seed",
+         scope_lead([_r(1, "c"), _r(2, "b"), _r(3, "a")])["top"], ["a", "b", "c"])
     case("the reader says NO LEAD and lists the tied names on a second line",
          scope_lead_lines(scope_lead(_five))[:2],
          ["  scope-rank: NO LEAD — 5 components tied at 1 appearance(s) — first place is the "

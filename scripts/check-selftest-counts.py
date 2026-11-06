@@ -91,7 +91,7 @@ Usage:
     python3 scripts/check-selftest-counts.py --changed --base <ref>
     python3 scripts/check-selftest-counts.py --only check-run-hook.py fixture_git.py
     python3 scripts/check-selftest-counts.py --jobs 1                # serially
-    python3 scripts/check-selftest-counts.py --self-test  # 59 cases
+    python3 scripts/check-selftest-counts.py --self-test  # 60 cases
 """
 from __future__ import annotations
 
@@ -964,6 +964,21 @@ def _self_test_body() -> int:
     check("two suites run AT ONCE in a pool of two", got[0], ("problem", "a saw b"))
     check("outcomes come back in the given order, not completion order", [g[1] for g in got],
           ["a saw b", "b"])
+    # backlog #506 (1): the case above sees `b` finish first only when the scheduler lets it — `a` can return between
+    # `b` setting the event and `b`'s result being recorded. Here the completion order is FORCED: `as_completed`
+    # yields the futures in reverse, so an implementation returning completion order fails on every run.
+    _real_as_completed = concurrent.futures.as_completed
+
+    def _reversed_completion(fs, timeout=None):
+        concurrent.futures.wait(list(fs), timeout=timeout)
+        return list(reversed(list(fs)))
+    concurrent.futures.as_completed = _reversed_completion
+    try:
+        _forced = run_suites(["a", "b", "c"], lambda n: ("problem", n), 3)
+    finally:
+        concurrent.futures.as_completed = _real_as_completed
+    check("backlog #506: outcomes come back in the given order when completion is forced to the reverse",
+          [g[1] for g in _forced], ["a", "b", "c"])
     # The other value of `jobs`: a pool of one is serial, so `a` finishes before `b` starts.
     check("a pool of one runs the suites one at a time",
           [g[1] for g in run_suites(["a", "b"], ordered(0.3), 1)], ["a ran alone", "b"])
