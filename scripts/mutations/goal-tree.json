@@ -4129,8 +4129,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    m = SETTLED_WORDS.search(status[status.rfind(NEEDS_OWNER):])",
-        "    m = SETTLED_WORDS.search(status)"
+        "    tail = status[status.rfind(NEEDS_OWNER):]\n    m = next(",
+        "    tail = status\n    m = next("
       ]
     ],
     "expect": [
@@ -4168,7 +4168,7 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if then is not None and then != status_head(status):",
+        "    if then != status_head(status):",
         "    if False:"
       ]
     ],
@@ -4177,16 +4177,16 @@
     ]
   },
   {
-    "name": "backlog #496: clause 2 takes a marker git never wrote as a rewrite",
+    "name": "backlog #496: clause 2 takes a history that answers nothing as a rewrite",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if then is not None and then != status_head",
-        "    if then != status_head"
+        "        if then is None:\n            raise ValueError(\"no head was found",
+        "        if False:\n            raise ValueError(\"no head was found"
       ]
     ],
     "expect": [
-      "⛔ backlog #496 clause 2: a marker not found in history does not flag"
+      "⛔ backlog #496 clause 2: a history that answers nothing says NOT READ — never a silent \"unchanged\""
     ]
   },
   {
@@ -4255,29 +4255,263 @@
     ]
   },
   {
-    "name": "backlog #496: the history reads the NEWEST commit adding the segment",
+    "name": "backlog #496: clause 1 ignores a negation before the word (r1 Codex R4)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        sha = out.split()[0]\n        rc, out = run([\"git\", \"show\"",
-        "        sha = out.split()[-1]\n        rc, out = run([\"git\", \"show\""
+        "    m = next((m for m in SETTLED_WORDS.finditer(tail) if not NEGATED.search(tail[:m.start()])), None)",
+        "    m = SETTLED_WORDS.search(tail)"
       ]
     ],
     "expect": [
-      "⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged"
+      "⛔ backlog #496 clause 1: `not DECIDED` after the marker does not flag (r1 Codex R4)"
     ]
   },
   {
-    "name": "backlog #496: the history asks git without --reverse",
+    "name": "backlog #496: clause 1's negation drops `not yet`",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "[\"git\", \"log\", \"--reverse\", \"--format=%H\", \"-S\" + segment",
-        "[\"git\", \"log\", \"--format=%H\", \"-S\" + segment"
+        "NEGATED = re.compile(r\"\\b(?:not|never)(?:\\s+yet)?\\s*$\"",
+        "NEGATED = re.compile(r\"\\b(?:not|never)\\s*$\""
       ]
     ],
     "expect": [
-      "⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged"
+      "⛔ backlog #496 clause 1: `not yet answered by the owner` does not flag (r1 Codex R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1's negation reads a `not` anywhere before the word",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?:\\s+yet)?\\s*$\", re.I)",
+        "(?:\\s+yet)?\", re.I)"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: a `not` FAR before the word does not negate it (adjacent to R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 gives up at the first, negated, word",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_WORDS.finditer(tail) if not",
+        "list(SETTLED_WORDS.finditer(tail))[:1] if not"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: a negated word does not hide a LATER un-negated one"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 2's flag drops the restate-the-question remedy (r1 Codex R5, Claude F7)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_REMEDY + RESTATE_REMEDY)",
+        "SETTLED_REMEDY)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 real git: a head rewritten after the marker's commit is flagged"
+    ]
+  },
+  {
+    "name": "backlog #496: a cross-reference overwrites clause 1's own words (r1 Claude F6)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " - {r[\"num\"]}) if it[\"flag\"] is None else []:",
+        " - {r[\"num\"]}):"
+      ]
+    ],
+    "expect": [
+      "backlog #496: clause 1 wins over a cross-reference to a decided row (r1 Claude F6)"
+    ]
+  },
+  {
+    "name": "backlog #496: a shallow repository is read as if whole (r1 Codex R3, Claude F4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if out.strip() != \"false\":",
+        "    if out.strip() not in (\"false\", \"true\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a SHALLOW repository is NOT READ, never a silent 'unchanged' (r1 Codex R3, Claude F4)"
+    ]
+  },
+  {
+    "name": "backlog #496: a failing git rev-parse is passed over (r1 Claude F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        raise ValueError(f\"git rev-parse exited {rc}",
+        "        return []\n        raise ValueError(f\"git rev-parse exited {rc}"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a failing `git rev-parse` is NOT READ (r1 Claude F1)"
+    ]
+  },
+  {
+    "name": "backlog #496: a failing git log is read as an empty history (r1 Claude F1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        raise ValueError(f\"git log exited {rc}",
+        "        return []\n        raise ValueError(f\"git log exited {rc}"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a failing `git log` (no commits yet) is NOT READ (r1 Claude F1)"
+    ]
+  },
+  {
+    "name": "backlog #496: an empty history is not refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not commits:\n        raise ValueError(f\"git log found no commit",
+        "    if False:\n        raise ValueError(f\"git log found no commit"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a history with no backlog commit at all is NOT READ"
+    ]
+  },
+  {
+    "name": "backlog #496: a historic row with no status cell is read anyway (r1 Claude F5)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        raise ValueError(f\"backlog #{num}'s row at {sha[:8]} has no status cell\")",
+        "        return line"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a historic row with no status cell is NOT READ (r1 Claude F5's bound)"
+    ]
+  },
+  {
+    "name": "backlog #496: a marker no commit introduced answers nothing, quietly",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    raise ValueError(f\"no commit introduces this marker into backlog #{num}'s row\")",
+        "    return None"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a marker no commit introduced (uncommitted) is NOT READ, never 'unchanged'"
+    ]
+  },
+  {
+    "name": "backlog #496: the lookup reads any row holding the marker text (r1 Codex R1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        now = after.get(num)",
+        "        now = next((v for v in after.values() if segment in v), None)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: each row reads its OWN row's commit, never another row's identical text (r1 Codex R1)"
+    ]
+  },
+  {
+    "name": "backlog #496: the lookup takes the OLDEST introduction (r1 Codex R2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    for sha, before, after in commits:",
+        "    for sha, before, after in reversed(commits):"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a marker removed and re-added is compared with its RENEWAL, not its first add (r1 Codex R2)"
+    ]
+  },
+  {
+    "name": "backlog #496: any commit whose row holds the marker counts as its introduction",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if was is not None and segment in was and segment in status_cell(was, num, sha + \"^\", split):\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 real git: a head rewritten after the marker's commit is flagged"
+    ]
+  },
+  {
+    "name": "backlog #496: the lookup answers the whole old status, not its head (r1 Claude F2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        return status_head(status_cell(now, num, sha, split))",
+        "        return status_cell(now, num, sha, split)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: an UNCHANGED head is not flagged, though the row changed since (r1 Claude F2)"
+    ]
+  },
+  {
+    "name": "backlog #496: marker words in the item cell count as the introduction",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " or segment not in now or segment not in status_cell(now, num, sha, split):",
+        " or segment not in now:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496: marker words added to the ITEM cell are not the marker's introduction"
+    ]
+  },
+  {
+    "name": "backlog #496: marker words in the parent's item cell hide the introduction",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " and segment in was and segment in status_cell(was, num, sha + \"^\", split):",
+        " and segment in was:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496: ...nor do those words in the PARENT's item cell hide an introduction into the status"
+    ]
+  },
+  {
+    "name": "backlog #496: the history is read again for every row (r1 Claude F3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if \"commits\" not in cache:",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496: two rows, three asks → ONE `git log` and one lookup per (row, marker) (r1 Claude F3)"
+    ]
+  },
+  {
+    "name": "backlog #496: the per-(row, marker) lookup is not memoised (r1 Claude F3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if (num, segment) not in cache:",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496: two rows, three asks → ONE `git log` and one lookup per (row, marker) (r1 Claude F3)"
     ]
   }
 ]

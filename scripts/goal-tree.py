@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 430 cases
+    python3 scripts/goal-tree.py --self-test                 # 450 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -663,14 +663,19 @@ def needs_owner(row: dict) -> bool:
 # (spec merged) after its marker was written; neither said `answered`, so both were still asked. Two clauses, each
 # a FLAG on a row that stays listed (C2) — never a hide, because prose can be wrong both ways.
 #   * CLAUSE 1 (text): `DECIDED` (upper case, this repo's recording word) or `answered by the owner` in the text
-#     AFTER the last marker. ⚠ Case-sensitive on purpose: backlog #384's own tail says "is decided after backlog #392 is
-#     built" — a future call, and the case-insensitive form false-fired on it.
+#     AFTER the last marker, unless `not`/`never` (optionally `yet`) stands right before it (r1 Codex R4:
+#     "not DECIDED", "not yet answered by the owner"). ⚠ Case-sensitive on purpose: backlog #384's own tail says
+#     "is decided after backlog #392 is built" — a future call, and the case-insensitive form false-fired on it.
 #   * CLAUSE 2 (history): the status HEAD (the text before the first ⟳, which this repo rewrites in place to the
-#     current state) differs now from the head at the commit that first wrote the marker's segment. ⚠ BOUND: a
-#     rewrite is evidence the row moved on after the ask, not proof the ask is settled — a sweep that rewrote
-#     every head would flag every row. Measured 0 such rewrites over 6 revisions 10-27..11-03.
+#     current state) differs now from the head at the commit that LAST introduced the marker's segment into THIS
+#     row. ⚠ BOUND (r1 Codex R5, Claude F7): a head edited for an unrelated reason (a typo, an IN PROGRESS
+#     tick) is a KNOWN false positive. The heuristic FLAGS and never hides, and it does not try to read what an
+#     edit meant; the flag says how to dismiss it — restate the question as a new marker, which moves the
+#     introduction to a commit whose head is today's. Measured 0 such rewrites over 1131 row-revisions 10-23..11-05.
 SETTLED_WORDS = re.compile(r"\bDECIDED\b|\banswered by the owner\b")
+NEGATED = re.compile(r"\b(?:not|never)(?:\s+yet)?\s*$", re.I)
 SETTLED_REMEDY = "if so, write `NEEDS-OWNER answered`"
+RESTATE_REMEDY = ", or restate the question as a new `NEEDS-OWNER` marker if it is still open"
 
 
 def status_head(status: str) -> str:
@@ -685,45 +690,119 @@ def marker_segment(status: str) -> str:
 
 def settled_in_prose(status: str):
     """PURE. Clause 1 of backlog #496: the flag text when the status records a decision AFTER its last
-    marker in the repo's recording words, else None."""
-    m = SETTLED_WORDS.search(status[status.rfind(NEEDS_OWNER):])
+    marker in the repo's recording words, not negated right before them, else None."""
+    tail = status[status.rfind(NEEDS_OWNER):]
+    m = next((m for m in SETTLED_WORDS.finditer(tail) if not NEGATED.search(tail[:m.start()])), None)
     return (f"may already be settled: its status says “{m.group(0)}” after the NEEDS-OWNER marker — "
             + SETTLED_REMEDY) if m else None
 
 
 def head_moved_on(status: str, num: int, history):
     """Clause 2 of backlog #496: the flag text when the status head was rewritten after the marker was
-    written, else None. `history(num, segment)` returns the head as it stood at the commit that first wrote
-    `segment`, None when no commit did, and raises when it cannot read. A marker INSIDE the head is not
-    checked: rewriting that head IS rewriting the marker. ⛔ A history that cannot be read is said, never
-    taken as "unchanged"."""
+    written, else None. `history(num, segment)` returns the head as it stood at the commit that last
+    introduced `segment` into row `num`, and raises when it cannot say. A marker INSIDE the head is not
+    checked: rewriting that head IS rewriting the marker. ⛔ A history that cannot be read — or that answers
+    nothing — is said, never taken as "unchanged"."""
     if history is None or status.rfind(NEEDS_OWNER) < len(status.split("⟳", 1)[0]):
         return None
     try:
         then = history(num, marker_segment(status))
+        if then is None:
+            raise ValueError("no head was found for the commit that wrote it")
     except Exception as exc:                      # noqa: BLE001 - NOT READ, named, never silence
         return f"its history was NOT READ ({_SS.clean(exc, 120)}), so a rewritten status was not checked"
-    if then is not None and then != status_head(status):
+    if then != status_head(status):
         return ("may already be settled: its status head was rewritten after the NEEDS-OWNER marker was "
-                "written — " + SETTLED_REMEDY)
+                "written — " + SETTLED_REMEDY + RESTATE_REMEDY)
     return None
 
 
-def git_head_when_marked(root: pathlib.Path, run):
-    """The `history` clause 2 reads, from git: the oldest commit whose diff adds `segment` to the backlog
-    (`git log --reverse -S`), then that row's status head in the file at that commit."""
+COMMIT_MARK = "\x00commit "
+
+
+def backlog_commits(root: pathlib.Path, run, rev: str = "HEAD") -> list[tuple[str, dict, dict]]:
+    """Every commit that changed the backlog, NEWEST FIRST, as (sha, rows before, rows after): item number →
+    that row's raw line, for the rows the commit changed. ONE `git log -p` along the first-parent line (a merge
+    is diffed against its first parent), so the cost is one call per refresh, not two per listed row (r1 Claude
+    F3: 20.5 s on the 10-27 revision's 28 waiting rows). A row is a line `gen-backlog-page.ROW` matches — the
+    history walk's own looser reading, which knows older layouts. Raises — NOT READ — in a shallow
+    repository (its boundary commit diffs as a full add of today's text, r1 Codex R3 / Claude F4), on any git
+    failure, and when no commit is found. `rev` reads the history as it stood at an older commit (a corpus
+    measurement); the page reads HEAD. ⚠ BOUND: a row is keyed by its number, so a number used in BOTH item
+    tables at once would merge their lines."""
+    rc, out = run(["git", "rev-parse", "--is-shallow-repository"], root, 30)
+    if rc != 0:
+        raise ValueError(f"git rev-parse exited {rc}: {_SS.clean(out, 80)}")
+    if out.strip() != "false":
+        raise ValueError("the repository is shallow, so the commit that wrote a marker may be cut off"
+                         if out.strip() == "true" else f"git rev-parse answered {_SS.clean(out, 40)!r}")
+    rc, out = run(["git", "log", "--first-parent", "--diff-merges=first-parent", "-p", "-U0", "--no-color",
+                   "--no-ext-diff", "--no-renames", "--format=%x00commit %H", rev, "--", BACKLOG_REL], root, 60)
+    if rc != 0:
+        raise ValueError(f"git log exited {rc}: {_SS.clean(out, 80)}")
+    row = _sibling("gen-backlog-page").ROW
+    commits = []
+    for block in out.split(COMMIT_MARK)[1:]:
+        lines = block.split("\n")
+        sides: tuple[dict, dict] = ({}, {})
+        for line in lines[1:]:
+            m = row.match(line[1:]) if line[:1] in "-+" and line[:3] not in ("---", "+++") else None
+            if m:
+                sides[line[0] == "+"][int(m.group(1))] = line[1:]
+        commits.append((lines[0].strip(), *sides))
+    if not commits:
+        raise ValueError(f"git log found no commit of {BACKLOG_REL}")
+    return commits
+
+
+def status_cell(line: str, num: int, sha: str, split) -> str:
+    """A historic row line's STATUS — its last cell, as in both of today's item tables. ⚠ BOUND (r1 Claude F5):
+    a line with no status cell is NOT READ, and stays so while that marker stands, because history does not
+    change; restating the marker moves the read to the new commit. Today's `parse` is not applied to history."""
+    cells = split.split(line)[1:-1]
+    if not line.rstrip().endswith("|") or len(cells) < 3:
+        raise ValueError(f"backlog #{num}'s row at {sha[:8]} has no status cell")
+    return cells[-1].strip()
+
+
+def head_when_marked(commits, num: int, segment: str, split) -> str:
+    """PURE. Row `num`'s status head at the NEWEST commit whose row holds `segment` in its status while the
+    parent's row does not (r1 Codex R1, R2): another row's identical text is never read, and a marker removed
+    and re-added is compared with its renewal. Raises when no commit introduced it (e.g. it is uncommitted)."""
+    for sha, before, after in commits:
+        now = after.get(num)
+        if now is None or segment not in now or segment not in status_cell(now, num, sha, split):
+            continue
+        was = before.get(num)
+        if was is not None and segment in was and segment in status_cell(was, num, sha + "^", split):
+            continue
+        return status_head(status_cell(now, num, sha, split))
+    raise ValueError(f"no commit introduces this marker into backlog #{num}'s row")
+
+
+def git_head_when_marked(root: pathlib.Path, run, rev: str = "HEAD"):
+    """The `history` clause 2 reads, from git: `backlog_commits` read ONCE, on the first row that needs it,
+    then `head_when_marked`, memoised per (row, marker text). A failure is memoised too, and raised to every
+    row that asks, each of which says NOT READ."""
+    split = _sibling("gen-backlog-page").CELL_SPLIT
+    cache: dict = {}
+
     def history(num: int, segment: str):
-        rc, out = run(["git", "log", "--reverse", "--format=%H", "-S" + segment, "--", BACKLOG_REL], root, 30)
-        if rc != 0:
-            raise ValueError(f"git log -S exited {rc}: {_SS.clean(out, 80)}")
-        if not out.split():
-            return None
-        sha = out.split()[0]
-        rc, out = run(["git", "show", f"{sha}:{BACKLOG_REL}"], root, 30)
-        if rc != 0:
-            raise ValueError(f"git show {sha[:8]} exited {rc}: {_SS.clean(out, 80)}")
-        row = {r["num"]: r for r in _sibling("gen-backlog-page").parse(out.split("\n"))}.get(num)
-        return status_head(row["status"]) if row else None
+        if "commits" not in cache:
+            try:
+                cache["commits"] = backlog_commits(root, run, rev)
+            except Exception as exc:              # noqa: BLE001 - re-raised to every row, below
+                cache["commits"] = exc
+        if (num, segment) not in cache:
+            try:
+                if isinstance(cache["commits"], Exception):
+                    raise cache["commits"]
+                cache[(num, segment)] = head_when_marked(cache["commits"], num, segment, split)
+            except Exception as exc:              # noqa: BLE001 - re-raised, below
+                cache[(num, segment)] = exc
+        if isinstance(cache[(num, segment)], Exception):
+            raise cache[(num, segment)]
+        return cache[(num, segment)]
     return history
 
 
@@ -3197,7 +3276,8 @@ def _self_test_body() -> int:
                    "if so, write `NEEDS-OWNER answered`")
     case("backlog #496 clause 2: the flag says the head was rewritten after the marker, and the remedy",
          _cf[384], "may already be settled: its status head was rewritten after the NEEDS-OWNER marker "
-                   "was written — if so, write `NEEDS-OWNER answered`")
+                   "was written — if so, write `NEEDS-OWNER answered`, or restate the question as a new "
+                   "`NEEDS-OWNER` marker if it is still open")
 
     def _one(status, history=None):
         t = BACKLOG_FIXTURE.replace("NEEDS-OWNER — waits on you", status)
@@ -3214,8 +3294,28 @@ def _self_test_body() -> int:
          _one("OPEN ⟳ NEEDS-OWNER — pick A", _hist({5: "OPEN"})), None)
     case("⛔ backlog #496 clause 2: a marker IN the head is not checked — its rewrite IS the marker's",
          _one("NEEDS-OWNER — pick A", _hist({5: "something else"})), None)
-    case("⛔ backlog #496 clause 2: a marker not found in history does not flag",
-         _one("OPEN ⟳ NEEDS-OWNER — pick A", _hist({5: None})), None)
+    case("⛔ backlog #496 clause 2: a history that answers nothing says NOT READ — never a silent \"unchanged\"",
+         _one("OPEN ⟳ NEEDS-OWNER — pick A", _hist({5: None})),
+         "its history was NOT READ (no head was found for the commit that wrote it), so a rewritten status "
+         "was not checked")
+    # r1 Codex R4: a decision word NEGATED right before it is the question still open, not a record.
+    case("⛔ backlog #496 clause 1: `not DECIDED` after the marker does not flag (r1 Codex R4)",
+         _one("NEEDS-OWNER — not DECIDED; still choose A or B"), None)
+    case("⛔ backlog #496 clause 1: `not yet answered by the owner` does not flag (r1 Codex R4)",
+         _one("NEEDS-OWNER — not yet answered by the owner"), None)
+    case("backlog #496 clause 1: a `not` FAR before the word does not negate it (adjacent to R4)",
+         _one("NEEDS-OWNER — the owner was not sure, then DECIDED A"),
+         "may already be settled: its status says “DECIDED” after the NEEDS-OWNER marker — "
+         "if so, write `NEEDS-OWNER answered`")
+    case("backlog #496 clause 1: a negated word does not hide a LATER un-negated one",
+         _one("NEEDS-OWNER — not DECIDED on 10-20 ⟳ 10-28: answered by the owner: A"),
+         "may already be settled: its status says “answered by the owner” after the NEEDS-OWNER marker — "
+         "if so, write `NEEDS-OWNER answered`")
+    # r1 Claude F6: clause 1 and a closed cross-reference both apply — the row's OWN words win.
+    case("backlog #496: clause 1 wins over a cross-reference to a decided row (r1 Claude F6)",
+         _one("NEEDS-OWNER — DECIDED by the owner, as backlog #11 recorded"),
+         "may already be settled: its status says “DECIDED” after the NEEDS-OWNER marker — "
+         "if so, write `NEEDS-OWNER answered`")
 
     def _boom(num, segment):
         raise ValueError("git log -S exited 128")
@@ -3225,6 +3325,135 @@ def _self_test_body() -> int:
     case("backlog #496 clause 2: the history is asked about the marker's OWN segment, up to the next ⟳",
          (lambda seen: (_one("OPEN ⟳ NEEDS-OWNER — pick A ⟳ later note", lambda n, s: seen.append(s) or "OPEN"),
                         seen)[1])([]), ["NEEDS-OWNER — pick A"])
+
+    # ── backlog #496 r1: clause 2 through the REAL git reader, over real repositories (r1 Claude F1/F2/F4,
+    # Codex R1-R3). The suite runs inside `fixture_git.isolated()`, so no caller GIT_* reaches these.
+    import subprocess as _sp496
+    _NR = "its history was NOT READ ("
+    _MOVED = ("may already be settled: its status head was rewritten after the NEEDS-OWNER marker was written — "
+              "if so, write `NEEDS-OWNER answered`, or restate the question as a new `NEEDS-OWNER` marker if it "
+              "is still open")
+
+    def _g496(root, *args):
+        return _sp496.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+                           "-C", str(root), *args], capture_output=True, text=True, timeout=60)
+
+    def _fx(s5, s8="OPEN"):
+        return BACKLOG_FIXTURE.replace("NEEDS-OWNER — waits on you", s5).replace(
+            "| (t) | OPEN |", f"| (t) | {s8} |")
+
+    def _repo496(root, versions, init=True):
+        """Commit each (path → text) version in turn; the LAST backlog text is also today's working tree."""
+        root.mkdir(parents=True, exist_ok=True)
+        if init:
+            _g496(root, "init", "-q")
+        for files in versions:
+            for rel, text in files.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text)
+            _g496(root, "add", "-A")
+            _g496(root, "commit", "-q", "-m", "v")
+        return root
+
+    def _real(root, text, rows=(5,), run=None):
+        hist = git_head_when_marked(root, run or _SS._run)
+        got = {n["row"]: n["flag"] for n in needs_from_backlog(text, hist)[0]}
+        return got[rows[0]] if len(rows) == 1 else [got[n] for n in rows]
+
+    with tempfile.TemporaryDirectory() as dg:
+        dg = pathlib.Path(dg).resolve()
+        _moved = _repo496(dg / "moved", [{BACKLOG_REL: _fx("OPEN then ⟳ NEEDS-OWNER — pick A")},
+                                         {BACKLOG_REL: _fx("OPEN now ⟳ NEEDS-OWNER — pick A")}])
+        case("⭐ backlog #496 real git: a head rewritten after the marker's commit is flagged",
+             _real(_moved, _fx("OPEN now ⟳ NEEDS-OWNER — pick A")), _MOVED)
+        _same = _repo496(dg / "same", [{BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A")},
+                                       {BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A ⟳ later note")}])
+        case("⛔ backlog #496 real git: an UNCHANGED head is not flagged, though the row changed since (r1 Claude F2)",
+             _real(_same, _fx("OPEN ⟳ NEEDS-OWNER — pick A ⟳ later note")), None)
+        # r1 Codex R1: row 8 later carries the IDENTICAL marker text under today's head. Reading row 8's commit for
+        # row 5 answers "unchanged" and misses row 5's settlement.
+        _rows = _repo496(dg / "rows", [{BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A")},
+                                       {BACKLOG_REL: _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A")},
+                                       {BACKLOG_REL: _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A",
+                                                         "SPEC MERGED ⟳ NEEDS-OWNER — pick A")}])
+        case("⛔ backlog #496 real git: each row reads its OWN row's commit, never another row's identical text (r1 Codex R1)",
+             _real(_rows, _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A", "SPEC MERGED ⟳ NEEDS-OWNER — pick A"), (5, 8)),
+             [_MOVED, None])
+        # r1 Codex R2: the ask was answered and removed, then renewed with the same words under a new head.
+        _renew = _repo496(dg / "renew", [{BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A")},
+                                         {BACKLOG_REL: _fx("DONE — the owner picked A")},
+                                         {BACKLOG_REL: _fx("NEW OPEN QUESTION ⟳ NEEDS-OWNER — pick A")}])
+        case("⛔ backlog #496 real git: a marker removed and re-added is compared with its RENEWAL, not its first add (r1 Codex R2)",
+             _real(_renew, _fx("NEW OPEN QUESTION ⟳ NEEDS-OWNER — pick A")), None)
+        # r1 Claude F2 (mutation G): with two markers, the LAST one's segment is the one looked up.
+        _two = _repo496(dg / "two", [{BACKLOG_REL: _fx("OPEN then ⟳ NEEDS-OWNER — old ask, answered 10-20")},
+                                     {BACKLOG_REL: _fx("OPEN now ⟳ NEEDS-OWNER — old ask, answered 10-20")},
+                                     {BACKLOG_REL: _fx("OPEN now ⟳ NEEDS-OWNER — old ask, answered 10-20 "
+                                                       "⟳ NEEDS-OWNER — new ask")}])
+        case("⛔ backlog #496 real git: the LAST marker's commit is read, not an older marker's (r1 Claude F2)",
+             _real(_two, _fx("OPEN now ⟳ NEEDS-OWNER — old ask, answered 10-20 ⟳ NEEDS-OWNER — new ask")), None)
+        # r1 Claude F2 (mutation F): a NEWER commit to another file holds a numbered row with the same text.
+        _other = _repo496(dg / "other", [{BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A")},
+                                         {"docs/other.md": "| 5 | x | NEWER ⟳ NEEDS-OWNER — pick A |\n"}])
+        case("⛔ backlog #496 real git: only the backlog's own history is read (the `-- docs/backlog.md` filter)",
+             _real(_other, _fx("OPEN ⟳ NEEDS-OWNER — pick A")), None)
+        # r1 Codex R3 / Claude F4: a depth-1 clone diffs its boundary commit as a full add of TODAY's text.
+        _sp496.run(["git", "clone", "-q", "--depth", "1", f"file://{_moved}", str(dg / "shallow")],
+                   capture_output=True, text=True, timeout=60)
+        case("⛔ backlog #496 real git: a SHALLOW repository is NOT READ, never a silent 'unchanged' (r1 Codex R3, Claude F4)",
+             _real(dg / "shallow", _fx("OPEN now ⟳ NEEDS-OWNER — pick A")),
+             _NR + "the repository is shallow, so the commit that wrote a marker may be cut off), so a rewritten "
+             "status was not checked")
+        # r1 Claude F1: each git failure on the real path is NOT READ, naming the call.
+        (dg / "broken").mkdir()
+        (dg / "broken" / ".git").write_text(f"gitdir: {dg / 'nowhere'}\n")
+        case("⛔ backlog #496 real git: a failing `git rev-parse` is NOT READ (r1 Claude F1)",
+             _real(dg / "broken", _fx("OPEN ⟳ NEEDS-OWNER — pick A")).startswith(_NR + "git rev-parse exited 128"),
+             True)
+        (dg / "unborn").mkdir()
+        _g496(dg / "unborn", "init", "-q")
+        case("⛔ backlog #496 real git: a failing `git log` (no commits yet) is NOT READ (r1 Claude F1)",
+             _real(dg / "unborn", _fx("OPEN ⟳ NEEDS-OWNER — pick A")).startswith(_NR + "git log exited 128"), True)
+        _none = _repo496(dg / "none", [{"README.md": "x\n"}])
+        case("⛔ backlog #496 real git: a history with no backlog commit at all is NOT READ",
+             _real(_none, _fx("OPEN ⟳ NEEDS-OWNER — pick A")),
+             _NR + "git log found no commit of docs/backlog.md), so a rewritten status was not checked")
+        _bad = _repo496(dg / "bad", [{BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A").replace(
+                                         "| (t) | OPEN ⟳ NEEDS-OWNER — pick A |", "| (t) | OPEN ⟳ NEEDS-OWNER — pick A")},
+                                     {BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A")}])
+        _badf = _real(_bad, _fx("OPEN ⟳ NEEDS-OWNER — pick A"))
+        case("⛔ backlog #496 real git: a historic row with no status cell is NOT READ (r1 Claude F5's bound)",
+             (_badf.startswith(_NR + "backlog #5's row at "), "has no status cell" in _badf), (True, True))
+        _new = _repo496(dg / "new", [{BACKLOG_REL: _fx("OPEN")}])
+        case("⛔ backlog #496 real git: a marker no commit introduced (uncommitted) is NOT READ, never 'unchanged'",
+             _real(_new, _fx("OPEN ⟳ NEEDS-OWNER — pick A")),
+             _NR + "no commit introduces this marker into backlog #5's row), so a rewritten status was not checked")
+        # r1 Claude F3: the cost is ONE history read per refresh, however many rows ask, and one lookup per row.
+        _calls, _looks = [], []
+        _orig_hwm = globals()["head_when_marked"]
+        globals()["head_when_marked"] = lambda *a: _looks.append(a[1]) or _orig_hwm(*a)
+        try:
+            _h = git_head_when_marked(_rows, lambda c, cwd, t: _calls.append(c[1]) or _SS._run(c, cwd, t))
+            _ans = [_h(5, "NEEDS-OWNER — pick A"), _h(8, "NEEDS-OWNER — pick A"), _h(5, "NEEDS-OWNER — pick A")]
+        finally:
+            globals()["head_when_marked"] = _orig_hwm
+        case("⛔ backlog #496: two rows, three asks → ONE `git log` and one lookup per (row, marker) (r1 Claude F3)",
+             (_ans, _calls, _looks), (["OPEN", "SPEC MERGED", "OPEN"], ["rev-parse", "log"], [5, 8]))
+    # The marker must enter the STATUS cell: the same words in the item text are not the ask.
+    _split = _sibling("gen-backlog-page").CELL_SPLIT
+
+    def _hwm(commits):
+        try:
+            return head_when_marked(commits, 5, "NEEDS-OWNER — pick A", _split)
+        except ValueError as exc:
+            return f"raised: {exc}"
+    case("⛔ backlog #496: marker words added to the ITEM cell are not the marker's introduction",
+         _hwm([("c2", {5: "| 5 | x | OPEN |"}, {5: "| 5 | about NEEDS-OWNER — pick A | OPEN |"}),
+               ("c1", {}, {5: "| 5 | x | OPEN |"})]),
+         "raised: no commit introduces this marker into backlog #5's row")
+    case("⛔ backlog #496: ...nor do those words in the PARENT's item cell hide an introduction into the status",
+         _hwm([("c3", {5: "| 5 | ask: NEEDS-OWNER — pick A | OPEN now |"},
+                {5: "| 5 | ask: NEEDS-OWNER — pick A | OPEN now ⟳ NEEDS-OWNER — pick A |"})]), "OPEN now")
     case("the ledger source is session-state's WAITS-ON-OWNER predicate, marker stripped",
          [(n["ref"], n["kind"], n["text"]) for n in needs_from_ledger(
              [{"id": "a", "what": "WAITS-ON-OWNER: choose"}, {"id": "b", "what": "owner said hi"},
@@ -3592,17 +3821,21 @@ def _self_test_body() -> int:
               ("backlog #9", "/backlog-table#i9", []), ("backlog #10", "/backlog-table#i10", [])])
         # backlog #496: collect hands NEEDS YOU the git history, so clause 2 runs on the page, not only here.
         (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE.replace("NEEDS-OWNER — waits on you",
-                                                             "OPEN now ⟳ NEEDS-OWNER — waits on you"))
-        # The OLDEST commit adding the segment is the one read (git lists it first under --reverse); any other
-        # commit answers with today's head, so reading the wrong one goes quiet.
-        run_h, calls_h = fake([(["git", "log", "--reverse"], (0, "c0ffee11\nfeed2222\n")),
-                               (["git", "show", f"c0ffee11:{BACKLOG_REL}"], (0, BACKLOG_FIXTURE.replace(
-                                   "NEEDS-OWNER — waits on you", "OPEN then ⟳ NEEDS-OWNER — waits on you"))),
-                               (["git", "show"], (0, (r / BACKLOG_REL).read_text()))] + ok)
+                                                             "OPEN now ⟳ NEEDS-OWNER — pick A"))
+        # ONE `git log -p`, newest first: c2 rewrote the head, c1 introduced the marker. The wiring is what is
+        # pinned here; the real git path has its own cases (r1 Claude F1/F2, Codex R1-R3).
+        _r5 = "| 5 | **Pick a name** — body | x | S | (t) | {} |"
+        _diff = ("\x00commit c2\n\n@@ -3 +3 @@\n-" + _r5.format("OPEN then ⟳ NEEDS-OWNER — pick A")
+                 + "\n+" + _r5.format("OPEN now ⟳ NEEDS-OWNER — pick A")
+                 + "\n\x00commit c1\n\n@@ -3 +3 @@\n-" + _r5.format("NEEDS-OWNER — waits on you")
+                 + "\n+" + _r5.format("OPEN then ⟳ NEEDS-OWNER — pick A") + "\n")
+        run_h, calls_h = fake([(["git", "rev-parse", "--is-shallow-repository"], (0, "false\n")),
+                               (["git", "log", "--first-parent"], (0, _diff))] + ok)
         case("⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged",
              [n["flag"] for n in collect(r, run_h)["needs"] if n["ref"] == "backlog #5"],
              ["may already be settled: its status head was rewritten after the NEEDS-OWNER marker was written "
-              "— if so, write `NEEDS-OWNER answered`"])
+              "— if so, write `NEEDS-OWNER answered`, or restate the question as a new `NEEDS-OWNER` marker "
+              "if it is still open"])
         (r / BACKLOG_REL).write_text(BACKLOG_FIXTURE)
         (r / "main" / ".claude" / "inflight.jsonl").write_text(
             '{"id": "build-12", "what": "w"}\n{"id":"pick","what":"WAITS-ON-OWNER: Choose A or B"\n')

@@ -1488,7 +1488,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06, backlog #496: 316 -> 329 — a decision recorded in prose after the NEEDS-OWNER marker is flagged:
     # clause 1 (own words, after the marker, upper case, both phrases: 4), clause 2 (compare, None, marker in head,
     # NOT READ, segment, precedence: 6), and the git read from collect (handed, oldest commit, --reverse: 3).
-    "scripts/goal-tree.py": 329,
+    # ⟳ 2026-11-06, backlog #496 r1 fold: 329 -> 347 — the git -S reader became ONE `git log -p` read per refresh,
+    # walked per ROW for the NEWEST introduction (-2 retired -S entries, +20): negation (4), the restate remedy,
+    # clause 1 over a cross-reference, shallow / rev-parse / log / empty / no-status-cell / never-introduced NOT READ (6),
+    # row identity, newest introduction, the parent check, the head, item-cell words (2), the two memos (2).
+    "scripts/goal-tree.py": 347,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
