@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 343 cases
+    python3 scripts/check-plan-code.py --self-test          # 352 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -297,37 +297,95 @@ def seed_outcome(runs: list, wants=None) -> "tuple[int, str, str | None]":
     return first_rc, first_out, None
 
 
-def seed_runs(d: pathlib.Path, name: str, seeds) -> list:
-    """`[(seed, rc, stdout, stderr), ...]`: `name`'s suite under each seed, EACH FROM THE SAME STARTING TREE.
+def seed_trees(d: pathlib.Path, seeds, cleanup: contextlib.ExitStack) -> dict:
+    """`{seed: tree}` — ONE tree per seed for a WHOLE run: the first seed's is `d`, every later seed's a copy of `d`.
 
     ⛔ r1 Codex M1, MEASURED: every seed used to run in the one tree `d`, so a suite that leaves files behind (a
     result cache, a log it reads back) let a LATER seed replay an EARLIER seed's red — a kill under seed 3 only
-    read as killed under 3 and 7, `1 killed, 1 attributed, 0 survivor(s)`. So every seed after the first runs in
-    its own COPY of `d`, all copies taken BEFORE any seed has run. Measured cost: one copy of the staged tree
-    (86 MB, ~3,700 files) took 4.0 s on a Mac laptop; CI's is not measured.
-    ⚠ BOUND: the seeds are independent of EACH OTHER. All of them start from the tree as `d` holds it, which
-    carries whatever earlier mutants' runs left — the unseeded harness's own, pre-existing, exposure.
-    A tree that cannot be copied is a CANNOT RUN (rc 2) for the seed it was for — never a run in the shared tree.
+    read as killed under 3 and 7, `1 killed, 1 attributed, 0 survivor(s)`. So each seed gets a tree of its own.
+    ⟳ r1 fold, COST, MEASURED: the fold copied the tree for EVERY mutant and EVERY control, which took a 30-mutant
+    slice from 16 s to 201 s with two seeds (Mac laptop) — on the nightly shards, past their 60-minute timeout.
+    So the copies are taken ONCE, before the first control, and `cleanup` deletes them when the run ends.
+    Callers apply and revert each mutation in EVERY tree (`seed_apply`, `seed_revert`), so a seed's tree differs
+    from `d` only by what that seed's own runs left behind.
+    ⚠ BOUND: the seeds are independent of EACH OTHER. Within one seed's tree, a later mutant still sees what an
+    earlier mutant's run left there — the unseeded harness's own, pre-existing, exposure, not introduced here.
+    A tree that cannot be copied maps to its CANNOT RUN reason (a str): every run under that seed is NOT CHECKED.
     """
-    copies: list = []
-    try:
-        for seed in seeds[1:]:
-            c = pathlib.Path(tempfile.mkdtemp(prefix=f"seed-{seed}-"))
-            copies.append(c)
-            try:
-                shutil.copytree(d, c / "t", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
-            except (OSError, shutil.Error) as e:
-                return [(seed, 2, "", f"CANNOT RUN — the tree for PYTHONHASHSEED={seed} could not be copied "
-                                      f"({type(e).__name__}: {e}), so that seed would have run in a tree another "
-                                      f"seed had already used. NOT CHECKED.")]
-        return [(seed, *run_suite_parts(where, name, seed))
-                for seed, where in zip(seeds, [d, *(c / "t" for c in copies)])]
-    finally:
-        for c in copies:
-            shutil.rmtree(c, ignore_errors=True)
+    trees: dict = {}
+    for seed in seeds[1:]:
+        c = pathlib.Path(tempfile.mkdtemp(prefix=f"seed-{seed}-"))
+        cleanup.callback(shutil.rmtree, c, ignore_errors=True)
+        try:
+            shutil.copytree(d, c / "t", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+            trees[seed] = c / "t"
+        except (OSError, shutil.Error) as e:
+            trees[seed] = (f"CANNOT RUN — the tree for PYTHONHASHSEED={seed} could not be copied "
+                           f"({type(e).__name__}: {e}), so that seed would have run in a tree another "
+                           f"seed had already used. NOT CHECKED.")
+    return {seeds[0]: d, **trees}
 
 
-def control_parts(d: pathlib.Path, name: str, seeds) -> tuple[int, str, str]:
+def seed_apply(trees: dict, d: pathlib.Path, fname: str, text: str) -> dict:
+    """Write `text` to `fname` in every seed's tree except `d` (the caller writes `d`'s); return the trees to run in.
+
+    A tree it cannot write maps to a CANNOT RUN reason, so that seed is NOT CHECKED for this mutant — never a run
+    of the UNMUTATED file, which would read as a survivor under that seed.
+    """
+    out = dict(trees)
+    for seed, t in trees.items():
+        if isinstance(t, str) or t == d:
+            continue
+        try:
+            (t / fname).write_text(text)
+        except OSError as e:
+            out[seed] = (f"CANNOT RUN — the mutant of {fname} could not be written to the tree for "
+                         f"PYTHONHASHSEED={seed} ({type(e).__name__}: {e}), so that seed would have run the "
+                         f"UNMUTATED file. NOT CHECKED.")
+    return out
+
+
+def seed_revert(trees: dict, d: pathlib.Path, fname: str, text: str) -> "str | None":
+    """Restore `fname` to `text` in every seed's tree except `d`, READING EACH BACK. None, or why the run must STOP.
+
+    ⛔ An unrestored tree carries a mutant into every LATER run under its seed — the next mutant's, and the
+    after-control — so like the main tree's after-control it stops the run rather than let them be read.
+    """
+    for seed, t in trees.items():
+        if isinstance(t, str) or t == d:
+            continue
+        try:
+            (t / fname).write_text(text)
+            back = (t / fname).read_text()
+        except OSError as e:
+            back = None
+            why = f"{type(e).__name__}: {e}"
+        else:
+            why = "it reads back different"
+        if back != text:
+            return (f"CANNOT RUN — {fname} could not be restored in the tree for PYTHONHASHSEED={seed} after a "
+                    f"mutant ({why}), so every later run under that seed would test a mutant. The run STOPS "
+                    f"here; treat it as NOT CHECKED.")
+    return None
+
+
+def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> list:
+    """`[(seed, rc, stdout, stderr), ...]`: `name`'s suite under each seed, each in ITS OWN tree (`seed_trees`).
+
+    `trees` are the run's trees; without them this call makes its own, used once and deleted.
+    Any seed whose tree is a CANNOT RUN reason (not copied, or not written) is rc 2 for that seed, and nothing
+    runs — never a run in a tree another seed used.
+    """
+    if trees is None:
+        with contextlib.ExitStack() as cleanup:
+            return seed_runs(d, name, seeds, seed_trees(d, seeds, cleanup))
+    cannot = [(seed, 2, "", trees[seed]) for seed in seeds if isinstance(trees[seed], str)]
+    if cannot:
+        return cannot
+    return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]
+
+
+def control_parts(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> tuple[int, str, str]:
     """A CONTROL run under EVERY seed (backlog #506): the first one that is not green, else the last green one.
 
     ⛔ THIS IS WHAT STOPS A RED CONTROL FROM FORGING A KILL. A suite red under seed B WITHOUT any mutation
@@ -336,7 +394,7 @@ def control_parts(d: pathlib.Path, name: str, seeds) -> tuple[int, str, str]:
     if not seeds:
         return run_suite_parts(d, name)
     rc, so, se = 0, "", ""
-    for seed, rc, so, se in seed_runs(d, name, seeds):
+    for seed, rc, so, se in seed_runs(d, name, seeds, trees):
         if not control_is_green(rc, merged_output(so, se)):
             return rc, so, f"[under PYTHONHASHSEED={seed}] {se}"
     return rc, so, se
@@ -1858,7 +1916,10 @@ EXPECTED_MUTATIONS = {
     # and the wiring through `run_mutations`, `mutate_delivered`, `main` and the tally.
     # ⟳ 2026-11-06 #506 r1 fold: 199 -> 205 — the stopped-early seed (Codex M2), the NAMED-case comparison and its
     # no-expect fallback and wiring (Claude M1), the per-seed tree copy and its cannot-copy refusal (Codex M1).
-    "scripts/check-plan-code.py": 205,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-06 #506 r1 fold, COST: 205 -> 215 — one tree per seed for the WHOLE run: seed_runs using the run's
+    # trees, run_mutations / mutate_delivered / both controls sharing them, the mutant applied to every tree, a
+    # tree it cannot be written to, a tree that cannot be restored, and the run stopping on it.
+    "scripts/check-plan-code.py": 215,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -3489,7 +3550,7 @@ def mutate_delivered(root: pathlib.Path,
     # green first — and must not pay for the suites of files it never touches, which is the cost
     # this flag exists to cut.
     targets = sorted({m["file"] for m in shard_muts})
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
         d = pathlib.Path(td)
         staging = stage_tree(root, d)
         if staging:
@@ -3497,6 +3558,9 @@ def mutate_delivered(root: pathlib.Path,
         # The redirected home the suites will resolve `Path.home()` to — see `child_env`.
         # Inside the TemporaryDirectory, so it is removed with everything else.
         (d / CHILD_HOME).mkdir()
+        # ⟳ #506 r1 fold, COST: ONE tree per extra seed for the WHOLE run, copied here — after the home exists,
+        # before the first control — and shared by every control, mutant and re-control below (`seed_trees`).
+        trees = seed_trees(d, seeds, cleanup) if seeds else None
         report = []
         control_seconds: dict = {}
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
@@ -3513,7 +3577,7 @@ def mutate_delivered(root: pathlib.Path,
             if progress is not None:
                 progress(position, len(targets), f"control {name}")
             _t0 = time.monotonic()
-            rc, so, se = control_parts(d, name, seeds)
+            rc, so, se = control_parts(d, name, seeds, trees)
             control_seconds[name] = time.monotonic() - _t0
             out = merged_output(so, se)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
@@ -3536,7 +3600,7 @@ def mutate_delivered(root: pathlib.Path,
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
-                                                          progress=progress, seeds=seeds)
+                                                          progress=progress, seeds=seeds, trees=trees)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
         # ⚠ WHAT THIS SHARD DECLARED, not what the manifest holds. `len(muts)` here makes every
@@ -3558,7 +3622,7 @@ def mutate_delivered(root: pathlib.Path,
         for position, name in enumerate(targets, 1):
             if progress is not None:
                 progress(position, len(targets), f"re-control {name}")
-            rc, so, se = control_parts(d, name, seeds)
+            rc, so, se = control_parts(d, name, seeds, trees)
             out = merged_output(so, se)
             if not control_is_green(rc, out):
                 ok = False
@@ -3587,7 +3651,7 @@ def mutate_delivered(root: pathlib.Path,
 
 
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
-                  progress=None, seeds=None) -> tuple[bool, list[str], list[dict], list[str]]:
+                  progress=None, seeds=None, trees=None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -3598,7 +3662,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     guard below was bought with a review round, so a diff that alters behaviour is a
     defect in the refactor, not an improvement. Proof is a measurement, not a reading:
     43 mutations / 0 survivors before and after.
+
+    `trees` (#506 r1 fold): the run's per-seed trees (`seed_trees`). Without them, a seeded call makes its own,
+    ONCE for all of `muts` — never one per mutant, which was the fold's 12x cost.
     """
+    if seeds and trees is None:
+        with contextlib.ExitStack() as cleanup:
+            return run_mutations(d, muts, known, progress, seeds, seed_trees(d, seeds, cleanup))
     ok, report, ev_muts, ev_survivors = True, [], [], []
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
@@ -3641,11 +3711,17 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
         if seeds:
-            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se in seed_runs(d, fname, seeds)],
+            here = seed_apply(trees, d, fname, src)
+            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se in seed_runs(d, fname, seeds, here)],
                                         wants=mut.get("expect"))
         else:
             (rc, out), odd = run_suite(d, fname), None
         (d / fname).write_text(orig)
+        stuck = seed_revert(trees, d, fname, orig) if seeds else None
+        if stuck:
+            ok = False
+            report.append(stuck)
+            return ok, report, ev_muts, ev_survivors
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
         # git is a could-not-tell"), and splitting on the first one truncated it to
@@ -4490,6 +4566,13 @@ def _self_test_body() -> int:
             case("...ADJACENT: the SAME mutant under two seeds that both kill it is KILLED and attributed",
                  (_okk, _svk, [(e.get("caught"), e.get("attributed"), e.get("seeds")) for e in _evk]),
                  (True, [], [(True, True, [3, 5])]))
+            # A caller's trees (as `mutate_delivered` passes them) are the ones used, and stay the CALLER's to delete.
+            with contextlib.ExitStack() as _cs3:
+                _tk = seed_trees(_ds, (3, 5), _cs3)
+                _okt5, _, _evt5, _ = run_mutations(_ds, _sm, {"s.py"}, seeds=(3, 5), trees=_tk)
+                case("...run_mutations runs in the trees it is handed, and leaves them for their owner to delete",
+                     (_okt5, [e.get("attributed") for e in _evt5], (_tk[5] / "s.py").read_text() == (_ds / "s.py").read_text()),
+                     (True, [True], True))
             _oks, _reps, _, _svs = run_mutations(_ds, [{"name": "noop", "file": "s.py",
                                                        "edits": [["import os, sys", "import os, sys, re"]],
                                                        "expect": "f returns one"}], {"s.py"}, seeds=(3, 7))
@@ -4546,8 +4629,60 @@ def _self_test_body() -> int:
             case("...seed_runs, three seeds: each runs under ITS seed, in order, and none sees the marker another left",
                  [(s, rc, so.split()) for s, rc, so, _ in seed_runs(_ds, "m.py", (266, 312, 5))],
                  [(266, 0, ["266", "fresh"]), (312, 0, ["312", "fresh"]), (5, 0, ["5", "fresh"])])
+            # ⟳ r1 fold, COST: ONE tree per seed for a whole run. Run twice in the SAME trees, each seed sees exactly
+            # what ITS OWN first run left — never another seed's, and never a fresh tree (a copy per call was 12x).
+            (_ds / "m2.py").write_text(
+                'import os, pathlib\n'
+                'print(os.environ["PYTHONHASHSEED"], *sorted(p.name for p in pathlib.Path(".").glob("mk-*")))\n'
+                'pathlib.Path("mk-" + os.environ["PYTHONHASHSEED"]).write_text("x")\n')
+            with contextlib.ExitStack() as _cs:
+                _tr = seed_trees(_ds, (266, 312), _cs)
+                _twice = [[so.split() for _, _, so, _ in seed_runs(_ds, "m2.py", (266, 312), _tr)] for _ in (1, 2)]
+            case("⭐ r1 fold COST: seed_runs in a run's trees — each seed's tree PERSISTS and holds only its own leftovers",
+                 _twice, [[["266"], ["312"]], [["266", "mk-266"], ["312", "mk-312"]]])
+            _bad = _ds / "no-such-tree"
+            _ap = seed_apply({3: _ds, 7: _bad}, _ds, "q.py", "x = 1\n")
+            case("⛔ r1 fold: a seed's tree the mutant cannot be written to is that seed's CANNOT RUN, never a run",
+                 (_ap[3] == _ds, "CANNOT RUN" in str(_ap[7]), (_ds / "q.py").exists()), (True, True, False))
+            # A SECOND tree as `d` (fixture variation): the copy is of the `d` it is given — its file is there.
+            _rvd = _ds / "rv"; _rvd.mkdir(); (_rvd / "q.py").write_text("x = 0\n")
+            with contextlib.ExitStack() as _cs2:
+                _tr = seed_trees(_rvd, (3, 7), _cs2)
+                _copied = (_tr[3], (_tr[7] / "q.py").read_text())
+                _apd = seed_apply(_tr, _rvd, "r.py", "y = 2\n")
+                case("...seed_apply writes the mutant into every seed's tree but d, and returns those trees to run in",
+                     (_apd == _tr, (_tr[7] / "r.py").read_text(), (_rvd / "r.py").exists()), (True, "y = 2\n", False))
+                (_tr[7] / "q.py").write_text("x = 2\n")
+                _rv = seed_revert(_tr, _rvd, "q.py", "x = 1\n")
+                case("...seed_trees copies the d it is given; seed_revert restores every seed's tree and reports nothing",
+                     (_copied, _rv, (_tr[7] / "q.py").read_text(), (_rvd / "q.py").read_text()),
+                     ((_rvd, "x = 0\n"), None, "x = 1\n", "x = 0\n"))
+            case("...and the run's cleanup deletes the seed's copy when the run ends", _tr[7].exists(), False)
+            _rvb = seed_revert({3: _ds, 7: _bad}, _ds, "r.py", "y = 3\n")
+            case("⛔ r1 fold: a seed's tree that cannot be restored STOPS the run, naming the seed",
+                 (_rvb is not None and "STOPS" in _rvb, "PYTHONHASHSEED=7" in (_rvb or "")), (True, True))
             case("⛔ r1 Codex M1 END TO END: a seed never reads the files an EARLIER seed's run left — NONDETERMINISTIC",
                  (_okc, _svc, any("NONDETERMINISTIC" in r for r in _repc2)), (False, ["value is two"], True))
+            # ⚠ AFTER Codex's case: under a shared-tree mutant this suite turns the MAIN tree's file into a
+            # directory, and the crash must not hide that case's red.
+            # END TO END: the suite, under seed 7, replaces its own file with a DIRECTORY, so the revert cannot
+            # write it back. The run stops after that mutant; the second is never applied or counted.
+            (_ds / "p.py").write_text(
+                'import os, sys\n'
+                'VALUE = 1\n'
+                'if __name__ == "__main__":\n'
+                '    if os.environ.get("PYTHONHASHSEED") == "7":\n'
+                '        os.remove(__file__)\n'
+                '        os.mkdir(__file__)\n'
+                '    print("  [FAIL] value is one" if VALUE != 1 else "1/1 passed")\n'
+                '    sys.exit(int(VALUE != 1))\n')
+            _okp, _repp, _evp, _ = run_mutations(
+                _ds, [{"name": f"value is {_v}", "file": "p.py", "edits": [["VALUE = 1", f"VALUE = {_v}"]],
+                       "expect": "value is one"} for _v in (2, 3)], {"p.py"}, seeds=(3, 7))
+            # 0 entries, not 1: the run stops BEFORE crediting the mutant whose revert failed, so the declared count
+            # cannot balance and the caller can build no tally (NOT MEASURED) — fail closed.
+            case("⛔ r1 fold END TO END: an unrestored seed tree STOPS the run — the later mutant is never measured",
+                 (_okp, len(_evp), any("STOPS" in r for r in _repp)), (False, 0, True))
 
         # ⛔ ⟳ 2026-09-09, THE DELETION SLICE — AND CI IS WHAT FOUND THIS, NOT ANY LOCAL GATE.
         # Three mutations on THIS function had their only red case over in plan mode, which
@@ -4860,6 +4995,30 @@ def _self_test_body() -> int:
                  (_okr, isinstance(_evr, NotMeasured),
                   any("control run of scripts/thing.py" in x and "PYTHONHASHSEED=7" in x for x in _repr)),
                  (False, True, True))
+            # ⟳ r1 fold, COST, THROUGH `mutate_delivered`: the seed trees are made ONCE, before the first control, and
+            # every control, mutant and re-control under a seed runs in that seed's tree. This suite reds on another
+            # seed's leftovers, and skips its check in a tree it has never run in — so a tree copied per call
+            # (seed 3's control leftovers in it, seed 7's own absent) makes the mutant survive under seed 7 only.
+            with tempfile.TemporaryDirectory() as _tdt:
+                _rt = pathlib.Path(_tdt); _mini(_rt)
+                _th = _rt / "scripts" / "thing.py"
+                _th.write_text(_th.read_text().replace(
+                    "def _self_test():\n",
+                    'def _self_test():\n'
+                    '    import os\n'
+                    '    own = pathlib.Path("seen-" + os.environ.get("PYTHONHASHSEED", "none"))\n'
+                    '    other = sorted(p.name for p in pathlib.Path(".").glob("seen-*") if p.name != own.name)\n'
+                    '    had = own.exists()\n'
+                    '    own.write_text("x")\n'
+                    '    if other:\n'
+                    '        print("  [FAIL] another seed\'s leftovers: %s" % other)\n'
+                    '        return 1\n'
+                    '    if not had:\n'
+                    '        print("1/1 passed")\n'
+                    '        return 0\n', 1))
+                _okt, _rept, _evt = mutate_delivered(_rt, seeds=(3, 7))
+            case("⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it",
+                 (_okt, isinstance(_evt, Measured), _rept), (True, True, []))
             # backlog #252: an anchor that no longer binds is refused BEFORE any tree is staged — it used to
             # surface only when its mutation ran, 15 minutes into a CI shard. And it is a whole-manifest
             # check, so --only naming ANOTHER target still sees it.

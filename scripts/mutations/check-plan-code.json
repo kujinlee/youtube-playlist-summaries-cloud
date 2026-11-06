@@ -2336,8 +2336,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    for seed, rc, so, se in seed_runs(d, name, seeds):",
-        "    for seed, rc, so, se in seed_runs(d, name, seeds)[:1]:"
+        "    for seed, rc, so, se in seed_runs(d, name, seeds, trees):",
+        "    for seed, rc, so, se in seed_runs(d, name, seeds, trees)[:1]:"
       ]
     ],
     "expect": [
@@ -2362,7 +2362,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "rc, so, se = control_parts(d, name, seeds)\n            control_seconds",
+        "rc, so, se = control_parts(d, name, seeds, trees)\n            control_seconds",
         "rc, so, se = control_parts(d, name, None)\n            control_seconds"
       ]
     ],
@@ -2375,8 +2375,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "progress=progress, seeds=seeds)",
-        "progress=progress)"
+        "seeds=seeds, trees=trees)",
+        "seeds=None, trees=trees)"
       ]
     ],
     "expect": [
@@ -2440,8 +2440,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if seeds:\n            rc, out, odd = seed_outcome",
-        "        if False:\n            rc, out, odd = seed_outcome"
+        "        if seeds:\n            here = seed_apply",
+        "        if False:\n            here = seed_apply"
       ]
     ],
     "expect": [
@@ -2545,8 +2545,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "zip(seeds, [d, *(c / \"t\" for c in copies)])",
-        "zip(seeds, [d] * len(seeds))"
+        "run_suite_parts(trees[seed], name, seed)) for seed in seeds]",
+        "run_suite_parts(d, name, seed)) for seed in seeds]"
       ]
     ],
     "expect": [
@@ -2558,12 +2558,142 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                return [(seed, 2, \"\", f\"CANNOT RUN — the tree for",
-        "                return [(seed, 1, \"\", f\"CANNOT RUN — the tree for"
+        "    cannot = [(seed, 2, \"\", trees[seed]) for seed in seeds",
+        "    cannot = [(seed, 1, \"\", trees[seed]) for seed in seeds"
       ]
     ],
     "expect": [
       "⛔ r1 Codex M1: seed_runs cannot isolate a seed (the tree cannot be copied) -> CANNOT RUN, never a run"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold COST: seed_runs ignores the run's trees and copies afresh on every call",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]\n",
+        "    with contextlib.ExitStack() as fresh:\n        trees = seed_trees(d, seeds, fresh)\n        return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold COST: seed_runs in a run's trees — each seed's tree PERSISTS and holds only its own leftovers"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold COST: run_mutations copies the trees afresh for every mutant (the fold's 12x)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seed_runs(d, fname, seeds, here)]",
+        "seed_runs(d, fname, seeds)]"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold COST: mutate_delivered makes no trees for the run, so every call copies its own",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        trees = seed_trees(d, seeds, cleanup) if seeds else None\n",
+        "        trees = None\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold COST: mutate_delivered's mutants run in trees of their own, not the controls'",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "progress=progress, seeds=seeds, trees=trees)",
+        "progress=progress, seeds=seeds)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold COST: the BEFORE-control runs in trees of its own, not the run's",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "control_parts(d, name, seeds, trees)\n            control_seconds",
+        "control_parts(d, name, seeds)\n            control_seconds"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold COST: the re-control runs in trees of its own, not the run's",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "control_parts(d, name, seeds, trees)\n            out = merged_output",
+        "control_parts(d, name, seeds)\n            out = merged_output"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 fold COST END TO END: one tree per seed for the whole run — controls and mutants share it"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold: the mutant is applied to the first seed's tree only, so later seeds run the original",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            here = seed_apply(trees, d, fname, src)\n",
+        "            here = trees\n"
+      ]
+    ],
+    "expect": [
+      "...ADJACENT: the SAME mutant under two seeds that both kill it is KILLED and attributed"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold: a seed tree the mutant cannot be written to keeps running, unmutated",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            out[seed] = (f\"CANNOT RUN — the mutant of {fname} could not be written",
+        "            pass; (f\"CANNOT RUN — the mutant of {fname} could not be written"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 fold: a seed's tree the mutant cannot be written to is that seed's CANNOT RUN, never a run"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold: seed_revert never reports a tree it could not restore",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if back != text:\n            return (f\"CANNOT RUN — {fname} could not be restored",
+        "        if False:\n            return (f\"CANNOT RUN — {fname} could not be restored"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 fold: a seed's tree that cannot be restored STOPS the run, naming the seed"
+    ]
+  },
+  {
+    "name": "backlog #506 r1 fold: run_mutations carries on past a seed tree it could not restore",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if stuck:\n            ok = False\n            report.append(stuck)\n            return ok,",
+        "        if stuck and False:\n            ok = False\n            report.append(stuck)\n            return ok,"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 fold END TO END: an unrestored seed tree STOPS the run — the later mutant is never measured"
     ]
   }
 ]
