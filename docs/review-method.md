@@ -121,9 +121,12 @@ settled three earlier findings on the branch that built this.
    half's brief** (`codex-review.py` appends it itself). The half ends its review, just before the
    `VERDICT:` line, with a line that is exactly `## Loosening answers` followed only by lines
    `LOOSENING-CHECK <id>: not a loosening` or `…: finding: <why>`. Nothing outside that section is
-   read, and any other line inside it makes the whole section a finding (r2). The merge gate clears a
+   read, and any other line inside it makes the whole section a finding (r2); so does a second such
+   heading, or an id after the `VERDICT:` line (r3). The merge gate clears a
    "loosens a gate" HOLD only for lines answered that way in a verdict on the exact tree it merges.
    A finding stands until a later round of the same half answers `not a loosening` on that tree.
+   ⛔ So **commit the backlog, dashboard and goal-thread ticks BEFORE the final round**: only the
+   round's own review records may change after it, and any other edit is `reviewed a different tree`.
    ⚠ A Claude half's overlay is captured when its verdict is RECORDED: record before any fold edit.
 5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
    boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each

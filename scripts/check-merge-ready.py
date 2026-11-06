@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 324 cases
+    python3 scripts/check-merge-ready.py --self-test # 328 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -848,16 +848,23 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
         # for moves and one raw for counts, let a moved line also excuse a space-dropping count rise.
         added = [l[1:] for hk in f["hunks"] for l in hk
                  if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
+        # ⟳ r3 CLAUDE M1: the budget was spent GREEDILY in hunk order, so a rise met first took a moved
+        # line's addition and the move went unpartnered (Codex 1 in its MIRROR order). ORDER-INDEPENDENT
+        # now: every EXACT re-add claims its addition first, across all hunks; a rise may then use only an
+        # addition no exact re-add claimed. Each exempted removal has its own distinct added line.
+        removed = []                    # (hunk, old-side index, line, the hunk's old-side code lines)
         for hk in f["hunks"]:
             old_side = [l for l in hk if not l.startswith("+")]
             code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
-            for i, l in code:
+            removed += [(hk, i, l, code) for i, l in code if l.startswith("-") and l[1:].strip()]
+        moved = set()
+        for n, (_hk, _i, l, _code) in enumerate(removed):
+            if l[1:] in added:
+                added.remove(l[1:])
+                moved.add(n)
+        for n, (hk, i, l, code) in enumerate(removed):
+            if n not in moved:
                 t = l[1:].strip()
-                if not l.startswith("-") or not t:
-                    continue
-                if l[1:] in added:
-                    added.remove(l[1:])
-                    continue
                 rose = rising_count(l[1:], added)
                 if rose is not None:
                     added.remove(rose)
@@ -2098,11 +2105,35 @@ def _self_test_body() -> int:
     check("#508 r2 Codex 1: ...one re-added line excuses ONE identical removal, not two",
           [t for _i, _p, t in failure_path_flags(DF(_CK, "-    return 1", "-    return 1", "+    return 1"))],
           ["return 1"])
-    check("#508 r2 Codex 1: ...and a line a rising count consumed cannot also excuse a move",
+    # ⟳ r3 M1: the exact move now claims the one addition first, so the UNPARTNERED rise is the flag
+    # (it was the move under greedy order). Still exactly one flag for two removals and one addition.
+    check("#508 r2 Codex 1: ...and one addition cannot excuse both a move and a rising count",
           [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
                                                     "-    z --self-test  # 6 cases", "-    z --self-test  # 9 cases",
                                                     "+    z --self-test  # 9 cases"))],
-          ["z --self-test  # 9 cases"])
+          ["z --self-test  # 6 cases"])
+    # ⟳ r3 CLAUDE M1: the shared budget was spent GREEDILY in hunk order, so in Codex 1's MIRROR order
+    # (the rise first) the rise took the moved line's addition and the move went unpartnered. Every
+    # exact re-add is now claimed before any rise, so the result does not depend on line order.
+    check("#508 r3 M1: in the MIRROR order (the rise first) the rise cannot take the moved line's addition",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
+                                                    '-    expected = """--self-test # 6 cases ',
+                                                    '-    expected = """--self-test # 9 cases ',
+                                                    '+    expected = """--self-test # 9 cases',
+                                                    '+    expected = """--self-test # 9 cases '))],
+          ['expected = """--self-test # 6 cases'])
+    check("#508 r3 M1: ...and a move in a LATER hunk still claims its addition before an earlier hunk's rise",
+          [t for _i, _p, t in failure_path_flags(
+              DF(_CK, "     0 = PASS   1 = FAIL", '-    expected = """--self-test # 6 cases ',
+                 '+    expected = """--self-test # 9 cases')
+              + '@@ -40 +40 @@\n-    expected = """--self-test # 9 cases \n'
+              + '+    expected = """--self-test # 9 cases \n     return 1\n')],
+          ['expected = """--self-test # 6 cases'])
+    check("#508 r3 M1: ...and one raised-count addition excuses ONE rise, not two",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
+                                                    "-    z --self-test  # 6 cases", "-    z --self-test  # 6 cases",
+                                                    "+    z --self-test  # 9 cases"))],
+          ["z --self-test  # 6 cases"])
     G = "scripts/check-x.py"
     # ⭐ PR #398's own shape: the removed line names no failure word; `fails.append` is 4 lines on.
     _398 = DF(G, '     ("3 LOST", t3(rows)),', '-    ("4 NO IMPROVEMENT", t4(rows)),', '     ("5 RANKER", t5(rows)),',
@@ -3114,6 +3145,39 @@ def _self_test_body() -> int:
         shutil.rmtree(_r1x, ignore_errors=True)
     check("⭐ #508 r2 Codex 1 real git: the verbatim move + space-dropping rise is flagged and HELD",
           _got1x, (['expected = """--self-test # 6 cases'], True))
+    # ⟳ r3 CLAUDE M1, the reviewer's reproduction VERBATIM: Codex 1's file in the MIRROR order, `b()`
+    # BEFORE `a()`, and `a()` padded past FAIL_WINDOW so its moved line is near no failure word. Greedy
+    # pairing let `b()`'s rise take `c()`'s addition: nothing flagged, while master flagged `b()`'s line.
+    _r3m = Path(tempfile.mkdtemp())
+    def _run3m(cmd, **kw):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_r3m,
+                              capture_output=True, env=fixture_git.env(HOME=str(_r3m)), **kw)
+    _rd3m = git_reader(_run3m)
+    _pad = "".join(f"    v{_n} = {_n}\n" for _n in range(8))
+    _B3 = ('def b():\n    expected = """--self-test # {n} cases{sp}\n"""\n'
+           '    if expected.split("cases",1)[1].startswith(" "):\n        return 1\n    return 0\n')
+    _M1 = (_B3.format(n=6, sp=" ") + 'def a():\n' + _pad + '    expected = """--self-test # 9 cases \n"""\n'
+           + _pad + 'def c():\n    pass\n')
+    _M2 = (_B3.format(n=9, sp="") + 'def a():\n' + _pad + _pad
+           + 'def c():\n    expected = """--self-test # 9 cases \n"""\n    pass\n')
+    try:
+        _rd3m(["git", "init", "-q"])
+        (_r3m / "scripts").mkdir()
+        (_r3m / "scripts/check-k.py").write_text(_M1)
+        _rd3m(["git", "add", "-A"])
+        _rd3m(["git", "commit", "-qm", "base"])
+        _b3m = _rd3m(["git", "rev-parse", "HEAD"]).strip()
+        (_r3m / "scripts/check-k.py").write_text(_M2)
+        _rd3m(["git", "commit", "-qam", "move a()'s line into c(); b() drops the space"])
+        _f3m, _fs3m = gather(_rd3m, _b3m)
+        _got3m = ([t for _i, _p, t in failure_path_flags("", fs=_fs3m)],
+                  has(hold_reasons(_f3m, "", "h", None, False, fs=_fs3m, pins=({}, {})), "failure path"))
+    except Exception as exc:                          # git missing or the parse raised: a red case, said
+        _got3m = f"{exc.__class__.__name__}: {exc}"
+    finally:
+        shutil.rmtree(_r3m, ignore_errors=True)
+    check("⭐ #508 r3 M1 real git: the MIRROR order (b() before a(), a() padded) is flagged and HELD too",
+          _got3m, (['expected = """--self-test # 6 cases'], True))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

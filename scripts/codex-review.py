@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 228 cases
+  scripts/codex-review.py --self-test  # 232 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -885,6 +885,7 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
 # finding, a wrapped dissent was lost. Now nothing outside the section is read at all, and inside it every
 # non-blank line must be an exact answer. ⛔ FAILS CLOSED: if ANY line there is anything else, the whole
 # section is MALFORMED — no assent, and every id it names, in any case, is a finding.
+# ⟳ r3 CLAUDE m1: exactly ONE heading; a second, or an id named after the `VERDICT:` line, is malformed.
 # ⚠ BOUND: a dissent written only OUTSIDE the section is not seen, so it does not hold the line by
 # itself; the review gave no answer either, and only another review's exact assent can clear the line.
 LOOSENING_SECTION = "## Loosening answers"
@@ -893,22 +894,30 @@ HEX_ID = re.compile(r"(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])")
 
 
 def loosening_answers(text: str) -> "dict[str, str]":
-    """PURE. {id: "not a loosening" | "finding"} from the review's LAST `## Loosening answers` section."""
+    """PURE. {id: "not a loosening" | "finding"} from the review's ONE `## Loosening answers` section."""
     lines = [l.rstrip() for l in text.split("\n")]
     starts = [n for n, l in enumerate(lines) if l == LOOSENING_SECTION]
     if not starts:
         return {}
-    section = []
-    for line in lines[starts[-1] + 1:]:
+    tail = lines[starts[0] + 1:]
+    section, rest = [], []
+    for n, line in enumerate(tail):
         if line.startswith("VERDICT:"):
+            rest = tail[n:]
             break
         if line:
             section.append(line)
+    # ⟳ r3 CLAUDE m1: the LAST heading was read, so a later one ERASED an earlier section's dissent, and a
+    # stray `VERDICT:` cut the section short and dropped the findings after it. A second exact heading, or
+    # any id named after the section ends, is MALFORMED: every id after the first heading is a finding.
+    findings = {i.lower(): "finding" for l in tail for i in HEX_ID.findall(l)}
+    if len(starts) > 1 or any(HEX_ID.search(l) for l in rest):
+        return findings
     out: "dict[str, str]" = {}
     for line in section:
         m = ANSWER_LINE.fullmatch(line)
         if m is None:                       # malformed: no assent, every id named a finding
-            return {i.lower(): "finding" for l in section for i in HEX_ID.findall(l)}
+            return findings
         if m.group(2) is None or out.get(m.group(1)) != "finding":
             out[m.group(1)] = "not a loosening" if m.group(2) else "finding"
     return out
@@ -2546,14 +2555,25 @@ def _self_test_body() -> int:
     chk("…and says null rather than omitting it when there was none", _r["prompt"], None)
     # ── backlog #508: the reviewer's answers to the merge gate's flagged lines, one parser ──
     # ⟳ r2 (Codex 2, 4, 6 and r1's M1/m4 — ONE class: answers parsed out of free text). Answers are read
-    # ONLY from the last `## Loosening answers` section, up to `VERDICT:`; every non-blank line there must be
+    # ONLY from the ONE `## Loosening answers` section (r3: a second heading is malformed), up to `VERDICT:`; every non-blank line there must be
     # an exact answer, or the whole section is malformed: no assent, and every id it names a finding.
     _a, _b, _S = "0123456789ab", "ba9876543210", "## Loosening answers"
     chk("#508 r2: answers are read only from the `## Loosening answers` section, and only up to VERDICT:",
         loosening_answers(f"x\n{_S}\nLOOSENING-CHECK {_a}: not a loosening\n"
                           f"LOOSENING-CHECK {_b}: finding: exit 1 is now exit 0\n\nVERDICT: CONVERGED\n"
-                          f"LOOSENING-CHECK 1111aaaa2222: not a loosening\n"),
+                          f"Reviewed head: 57a1def7ded2e787602742323295a4c2c801c0e2\n"),
         {_a: "not a loosening", _b: "finding"})
+    # ⟳ r3 CLAUDE m1: an id named AFTER the section ends (a stray `VERDICT:` cut it short, or an answer
+    # follows the verdict) makes the section malformed: its assents void, every id after the heading a finding.
+    chk("#508 r3 m1: an answer AFTER the VERDICT: line is not read as assent: the section is malformed",
+        loosening_answers(f"x\n{_S}\nLOOSENING-CHECK {_a}: not a loosening\n"
+                          f"LOOSENING-CHECK {_b}: finding: exit 1 is now exit 0\n\nVERDICT: CONVERGED\n"
+                          f"LOOSENING-CHECK 1111aaaa2222: not a loosening\n"),
+        {_a: "finding", _b: "finding", "1111aaaa2222": "finding"})
+    chk("#508 r3 m1: ...so a stray `VERDICT:CONVERGED` inside the section does not drop the findings after it",
+        loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\nVERDICT:CONVERGED\n"
+                          f"LOOSENING-CHECK {_b}: finding: exit 1 now 0\n\nVERDICT: NOT CONVERGED\n"),
+        {_a: "finding", _b: "finding"})
     chk("#508: a FINDING beats `not a loosening` for the same id, in either order",
         (loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\nLOOSENING-CHECK {_a}: finding: x\n"),
          loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: x\nLOOSENING-CHECK {_a}: not a loosening\n")),
@@ -2564,9 +2584,23 @@ def _self_test_body() -> int:
          loosening_answers(f"### Loosening answers\nLOOSENING-CHECK {_a}: not a loosening\n"),
          loosening_answers(f"## Loosening answers:\nLOOSENING-CHECK {_a}: not a loosening\n")),
         ({}, {}, {}, {}))
-    chk("#508 r2: ...and only the LAST section is read (an earlier one, e.g. a quoted example, is not)",
+    # ⟳ r3 CLAUDE m1: only the LAST heading was read, so a later heading ERASED an earlier section's dissent
+    # and the other half's assent cleared it. More than one exact heading is now malformed.
+    chk("#508 r3 m1: ...even when the section is EMPTY: a heading, then `VERDICT:`, then a finding",
+        loosening_answers(f"{_S}\nVERDICT: NOT CONVERGED\nLOOSENING-CHECK {_a}: finding: exit 1 now 0\n"),
+        {_a: "finding"})
+    chk("#508 r3 m1: TWO exact headings are malformed: no assent, every id after the first a finding",
         loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\n\n{_S}\n"
-                          f"LOOSENING-CHECK {_b}: not a loosening\n"), {_b: "not a loosening"})
+                          f"LOOSENING-CHECK {_b}: not a loosening\n"), {_a: "finding", _b: "finding"})
+    chk("#508 r3 m1: the reviewer's three reproductions, verbatim — an earlier section's finding is never lost",
+        (loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: exit 1 now 0\n"
+                           f"LOOSENING-CHECK {_b}: not a loosening\nVERDICT: NOT CONVERGED\n\n{_S}\n"),
+         loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: exit 1 now 0\n"
+                           f"LOOSENING-CHECK {_b}: not a loosening\n```\n{_S}\n"
+                           f"LOOSENING-CHECK {_b}: not a loosening\n```\nVERDICT: NOT CONVERGED\n"),
+         loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: x\nVERDICT: NOT CONVERGED\n{_S}\n"
+                           f"LOOSENING-CHECK {_a}: not a loosening\n")),
+        ({_a: "finding", _b: "finding"}, {_a: "finding", _b: "finding"}, {_a: "finding"}))
     # Codex r2 finding 2, verbatim: a comment that closes and REOPENS on one line exposed a quoted assent.
     chk("#508 r2 Codex 2: an assent in an HTML comment closed and reopened on one line is no answer",
         (loosening_answers("<!-- first --> <!-- still quoted\n"

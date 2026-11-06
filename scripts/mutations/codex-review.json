@@ -907,8 +907,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "return {i.lower(): \"finding\" for l in section",
-        "return {i: \"finding\" for l in section"
+        "findings = {i.lower(): \"finding\" for l in tail",
+        "findings = {i: \"finding\" for l in tail"
       ]
     ],
     "expect": "#508 r2: ANY other line in the section makes it malformed — indented, quoted, bold, `Finding`, suffixed, upper-case, a fence, a comment, prose, the placeholder"
@@ -918,7 +918,7 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "        if m is None:                       # malformed: no assent, every id named a finding\n            return {i.lower(): \"finding\" for l in section for i in HEX_ID.findall(l)}",
+        "        if m is None:                       # malformed: no assent, every id named a finding\n            return findings",
         "        if m is None:\n            continue"
       ]
     ],
@@ -929,8 +929,8 @@
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "for l in section for i in HEX_ID.findall(l)}",
-        "for l in [line] for i in HEX_ID.findall(l)}"
+        "            return findings\n        if m.group(2)",
+        "            return {i.lower(): \"finding\" for i in HEX_ID.findall(line)}\n        if m.group(2)"
       ]
     ],
     "expect": "#508 r2 Codex 6: a dissent WRAPPED inside the section voids its assent: every id a finding"
@@ -947,23 +947,23 @@
     "expect": "#508 r2: ANY other line in the section makes it malformed — indented, quoted, bold, `Finding`, suffixed, upper-case, a fence, a comment, prose, the placeholder"
   },
   {
-    "name": "#508 r2: the FIRST section is read, so an earlier quoted example answers",
+    "name": "#508 r2 / r3 m1: the LAST heading's section is read, so a later heading erases an earlier section's findings",
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "lines[starts[-1] + 1:]",
-        "lines[starts[0] + 1:]"
+        "tail = lines[starts[0] + 1:]",
+        "tail = lines[starts[-1] + 1:]"
       ]
     ],
-    "expect": "#508 r2: ...and only the LAST section is read (an earlier one, e.g. a quoted example, is not)"
+    "expect": "#508 r3 m1: the reviewer's three reproductions, verbatim — an earlier section's finding is never lost"
   },
   {
     "name": "#508 r2: the section does not stop at VERDICT:, so a line after the verdict answers",
     "file": "scripts/codex-review.py",
     "edits": [
       [
-        "        if line.startswith(\"VERDICT:\"):\n            break",
-        "        if False:\n            break"
+        "        if line.startswith(\"VERDICT:\"):\n            rest = tail[n:]",
+        "        if False:\n            rest = tail[n:]"
       ]
     ],
     "expect": "#508 r2: answers are read only from the `## Loosening answers` section, and only up to VERDICT:"
@@ -1022,5 +1022,53 @@
       ]
     ],
     "expect": "#508: blank lines, a CRLF and trailing spaces in the section are still the answer"
+  },
+  {
+    "name": "#508 r3 m1: a second exact heading is not malformed, so a section followed by another heading after its VERDICT: keeps its assents",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if len(starts) > 1 or any(",
+        "    if any("
+      ]
+    ],
+    "expect": "#508 r3 m1: the reviewer's three reproductions, verbatim — an earlier section's finding is never lost"
+  },
+  {
+    "name": "#508 r3 m1: an id named after the section's VERDICT: line is not malformed, so a stray VERDICT: drops the findings after it",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        " or any(HEX_ID.search(l) for l in rest):",
+        ":"
+      ]
+    ],
+    "expect": "#508 r3 m1: an answer AFTER the VERDICT: line is not read as assent: the section is malformed"
+  },
+  {
+    "name": "#508 r3 m1: a malformed tail is judged only inside the loop, so an EMPTY section followed by a finding answers nothing",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "    if len(starts) > 1 or any(HEX_ID.search(l) for l in rest):\n        return findings\n",
+        "    bad = len(starts) > 1 or any(HEX_ID.search(l) for l in rest)\n"
+      ],
+      [
+        "        m = ANSWER_LINE.fullmatch(line)\n",
+        "        m = None if bad else ANSWER_LINE.fullmatch(line)\n"
+      ]
+    ],
+    "expect": "#508 r3 m1: ...even when the section is EMPTY: a heading, then `VERDICT:`, then a finding"
+  },
+  {
+    "name": "#508 r3 m1: a malformed section's findings are only the ids BEFORE its VERDICT: line, so an answer after it is lost",
+    "file": "scripts/codex-review.py",
+    "edits": [
+      [
+        "\"finding\" for l in tail for i in",
+        "\"finding\" for l in section for i in"
+      ]
+    ],
+    "expect": "#508 r3 m1: an answer AFTER the VERDICT: line is not read as assent: the section is malformed"
   }
 ]

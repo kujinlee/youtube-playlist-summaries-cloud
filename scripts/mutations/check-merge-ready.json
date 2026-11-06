@@ -235,8 +235,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                if l[1:] in added:\n                    added.remove(l[1:])\n                    continue\n",
-    ""
+    "            if l[1:] in added:\n                added.remove(l[1:])\n                moved.add(n)\n",
+    "            if False:\n                pass\n"
    ]
   ],
   "expect": [
@@ -903,8 +903,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                if l[1:] in added:\n                    added.remove(l[1:])",
-    "                if l[1:].strip() in [a.strip() for a in added]:\n                    added.remove(next(a for a in added if a.strip() == l[1:].strip()))"
+    "            if l[1:] in added:\n                added.remove(l[1:])\n                moved",
+    "            if l[1:].strip() in [a.strip() for a in added]:\n                added.remove(next(a for a in added if a.strip() == l[1:].strip()))\n                moved"
    ]
   ],
   "expect": [
@@ -1696,7 +1696,7 @@
   "expect": "⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3"
  },
  {
-  "name": "#508 r2 Codex 1: a line a rising count consumed stays in the budget, so it also excuses a move",
+  "name": "#508 r2 Codex 1 / r3 M1: a line a rising count consumed stays in the budget, so it also excuses a second rise",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
@@ -1704,15 +1704,15 @@
     "                    pass\n"
    ]
   ],
-  "expect": "#508 r2 Codex 1: ...and a line a rising count consumed cannot also excuse a move"
+  "expect": "#508 r3 M1: ...and one raised-count addition excuses ONE rise, not two"
  },
  {
   "name": "#508 r2 Codex 1: a moved line stays in the budget, so one re-added line excuses two removals",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                    added.remove(l[1:])\n",
-    "                    pass\n"
+    "                added.remove(l[1:])\n",
+    "                pass\n"
    ]
   ],
   "expect": "#508 r2 Codex 1: ...one re-added line excuses ONE identical removal, not two"
@@ -1722,14 +1722,45 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                if l[1:] in added:\n",
-    "                if l[1:].rstrip() in [a.rstrip() for a in added]:\n"
+    "            if l[1:] in added:\n",
+    "            if l[1:].rstrip() in [a.rstrip() for a in added]:\n"
    ],
    [
-    "                    added.remove(l[1:])\n                    continue",
-    "                    added.remove(next(a for a in added if a.rstrip() == l[1:].rstrip()))\n                    continue"
+    "                added.remove(l[1:])\n                moved.add(n)",
+    "                added.remove(next(a for a in added if a.rstrip() == l[1:].rstrip()))\n                moved.add(n)"
    ]
   ],
   "expect": "#508 r2 Codex 1: a MOVED line cannot also excuse a rising count that drops a trailing space"
+ },
+ {
+  "name": "#508 r3 Claude M1: moves are paired in hunk order WITH the rises again (greedy), so a rise met first takes a moved line's addition",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        moved = set()\n        for n, (_hk, _i, l, _code) in enumerate(removed):\n",
+    "        moved = set()\n        for n, (_hk, _i, l, _code) in enumerate([]):\n"
+   ],
+   [
+    "            if n not in moved:\n                t = l[1:].strip()\n",
+    "            if n not in moved:\n                t = l[1:].strip()\n                if l[1:] in added:\n                    added.remove(l[1:])\n                    continue\n"
+   ]
+  ],
+  "expect": [
+   "#508 r3 M1: in the MIRROR order (the rise first) the rise cannot take the moved line's addition",
+   "⭐ #508 r3 M1 real git: the MIRROR order (b() before a(), a() padded) is flagged and HELD too"
+  ]
+ },
+ {
+  "name": "#508 r3 Claude M1: a removal the exact pass paired as a MOVE is judged again, so a moved line beside a failure word is flagged",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if n not in moved:\n",
+    "            if True:\n"
+   ]
+  ],
+  "expect": [
+   "...but the SAME line MOVED (removed and re-added) is not"
+  ]
  }
 ]
