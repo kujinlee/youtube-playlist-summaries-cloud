@@ -3659,5 +3659,204 @@
     "expect": [
       "⭐ r3 Codex L1: joining two items keeps a wait from EITHER, and running from either when none waits"
     ]
+  },
+  {
+    "name": "timeline story: a landed PR is not named as landed (owner 11-05 17:28)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    landed = [r for r, a, b in trans if b == \"merged\" and a != \"merged\"]",
+        "    landed = []"
+      ]
+    ],
+    "expect": [
+      "timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal"
+    ]
+  },
+  {
+    "name": "timeline story: a moved thread shows its glyph, not its new state",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    moved = [f\"{r} → {b}\" for r, a, b in trans if b != \"merged\" and a != b]",
+        "    moved = [f\"{r} → {a}\" for r, a, b in trans if b != \"merged\" and a != b]"
+      ]
+    ],
+    "expect": [
+      "timeline story: each kind is named by its ref — landed, added, moved with its new state, removed, a goal"
+    ]
+  },
+  {
+    "name": "timeline story: every ref is named, so a busy entry runs past one line",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\", \".join(refs[:3])",
+        "\", \".join(refs[:5])"
+      ]
+    ],
+    "expect": [
+      "timeline story: past three refs it counts the rest, so one sentence stays one line"
+    ]
+  },
+  {
+    "name": "timeline story: an unknown change kind yields no count",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    out = \"; \".join(bits) or f\"{len(ch)} change(s)\"",
+        "    out = \"; \".join(bits) or \"x\""
+      ]
+    ],
+    "expect": [
+      "timeline story: a line of no known kind still yields a sentence — a count, never an empty summary"
+    ]
+  },
+  {
+    "name": "timeline story: the asks are not told",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"needs you, new: \"), \"a new ask for you\"",
+        "(0, \"a new ask for you\""
+      ]
+    ],
+    "expect": [
+      "timeline story: the asks and the agenda are told by kind"
+    ]
+  },
+  {
+    "name": "the timeline summary repeats the first change line, not the story",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "<span class=\"story\">{html.escape(story(ch))}</span>",
+        "<span class=\"story\">{html.escape(ch[0])}</span>"
+      ]
+    ],
+    "expect": [
+      "the timeline entry's summary is the story; its change lines sit muted inside, not in the summary"
+    ]
+  },
+  {
+    "name": "the older timeline entries never fold",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if i == len(log) - 1 - TIMELINE_SHOWN:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "past the newest TIMELINE_SHOWN entries the rest fold into ONE older block, which counts them"
+    ]
+  },
+  {
+    "name": "the older block is never closed",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if len(log) > TIMELINE_SHOWN:\n        parts.append('</details>')\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the older block closes after the oldest entry, so the page's tags balance"
+    ]
+  },
+  {
+    "name": "the older block opens even on a short timeline",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if len(log) > TIMELINE_SHOWN:\n",
+        "    if True:\n"
+      ],
+      [
+        "        if i == len(log) - 1 - TIMELINE_SHOWN:",
+        "        if i == len(log) - 1 - min(TIMELINE_SHOWN, len(log) - 1):"
+      ]
+    ],
+    "expect": [
+      "a timeline no longer than TIMELINE_SHOWN has no older block"
+    ]
+  },
+  {
+    "name": "nothing waiting is shown as a bright heading again (owner 11-05 17:28)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if st == \"none\":   # owner",
+        "    if False:   # owner"
+      ]
+    ],
+    "expect": [
+      "owner 17:28: NOTHING waiting is said quietly — a muted line, never a bright NEEDS YOU heading"
+    ]
+  },
+  {
+    "name": "a detail-only change on a merged thread is told as another landing (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if b == \"merged\" and a != \"merged\"]",
+        "if b == \"merged\"]"
+      ]
+    ],
+    "expect": [
+      "timeline story: a detail that SAYS '→ ✅ merged' is not a landing, and a detail-only change is not a move (r1 P2)"
+    ]
+  },
+  {
+    "name": "a hand-off keeps its ledger note in the ref (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "ref(c[20:].split(\" (was in the ledger\", 1)[0])",
+        "ref(c[20:])"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: a hand-off names its ref alone, never the ledger note (r1 P2)"
+    ]
+  },
+  {
+    "name": "a plan newly owing is told as progress (timeline-story r1 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(n(\"plan not ticked closed, new: \"), \"a plan newly owing\"",
+        "(0, \"a plan newly owing\""
+      ]
+    ],
+    "expect": [
+      "timeline story: a plan newly owed, one no longer owing and progress are three different words (r1 P2)"
+    ]
+  },
+  {
+    "name": "an added thread's ref keeps its state and detail (timeline-story r2 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "[ref(c[6:].split(\": \", 1)[0]) for c in ch if c.startswith(\"added [\")]",
+        "[ref(c[6:]) for c in ch if c.startswith(\"added [\")]"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: an added thread is named by its key alone, never its state or detail (r2 P2)"
+    ]
+  },
+  {
+    "name": "a wording-only snapshot is told as one change (timeline-story r3 P2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if ch == [NO_READER_CHANGE]:   # timeline-story r3 P2",
+        "    if False:   # timeline-story r3 P2"
+      ]
+    ],
+    "expect": [
+      "timeline story, from the REAL producer: a wording-only snapshot says so, never '1 change(s)' (r3 P2)"
+    ]
   }
 ]
