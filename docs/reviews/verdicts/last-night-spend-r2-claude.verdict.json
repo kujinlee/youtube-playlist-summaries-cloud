@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 222ae0c2b676246cb21e268cdc29d448f71c25a7",
+    "docs/reviews/claude/last-night-spend-r2-claude.md": "100644 c6c48b3b5ca534c3ed06ed0980a34deff743c8c9"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "0cfdc461b12a592f4f6aac4f338d7dab2829c65e",
+  "intrusions": [],
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 3868 chars, names 0cfdc461b12a",
+  "refused": false,
+  "review": "last-night-spend-r2-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/lns",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
