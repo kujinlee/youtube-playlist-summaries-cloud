@@ -83,7 +83,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #517 · the agenda lists RUNNING work apart from OWED work, and each owed item says what it waits for
 - bookkeeping · backlog #518 · two thread shapes where the Running/Owed split still mis-owns an open PR (filed from the capped round)
 - fix · backlog #519 · the timeline tells each entry as one sentence and folds the older ones; an empty NEEDS YOU is a muted line
-- bookkeeping · backlog #520 · the wording-only timeline case tests an unchanged tree, not a wording-only one (filed from the capped round)
+- fix · backlog #520 · the wording-only timeline case tests a real wording-only tree; an added thread already merged is told as landed
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"

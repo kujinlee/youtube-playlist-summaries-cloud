@@ -18834,3 +18834,8 @@ The goal tree page is quieter (your 17:28 messages). When nothing waits on you, 
 <!--tech-->
 `scripts/goal-tree.py`: `story(ch)` derives the sentence from `changes()`'s lines by kind (refs named, three at most, then a count; a line of no known kind falls back to "N change(s)."); `render_page` renders it as the entry's summary, the lines in `ul.lines`, and folds entries past `TIMELINE_SHOWN = 6` into `details.older`; `needs_html` draws the "none" state as `p.quiet`. 391 cases (+14, one re-expected); 15 new mutations; pin 282 → 297. A state change is read from its own `A → B` slot, never searched for in the line, so a detail that mentions a merge is not a landing (review round 1). Over the real log, 150 of 156 entries get a named sentence.
 
+## 2026-11-05
+A small correction to the timeline's one-line stories: a thread that first appears already merged now reads as **landed**, not merely "added" — at 18:55 the page said "Added backlog #519" for work that had just shipped. Backlog #520's test gap is closed too.
+<!--tech-->
+`scripts/goal-tree.py` `story()`: an `added` line whose glyph is the merged one goes to `landed`. A wording-only case now runs two snapshots whose stored trees differ in a thread's text, through `derive` and `changes()`. 393 cases (+2, one re-expected: the r2 producer case's fixture PR #20 is merged, so it now reads "Landed PR #20."); 1 new mutation, 1 re-bound; pin 297 → 298.
+
