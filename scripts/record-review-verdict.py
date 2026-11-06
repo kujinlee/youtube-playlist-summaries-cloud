@@ -437,9 +437,10 @@ def _self_test_body() -> int:
         case("a head that is not a commit here: refused, nothing written",
              (rc, os.path.exists(os.path.join(root, verdict))), (RC_REFUSED, False))
         case("...and says it is not a commit", "is not a commit" in out, True)
-        # backlog #508: an answer line in the body, so the end-to-end record must carry it.
-        write(review, GOOD.replace(H, h1).replace("\n\nVERDICT:",
-                                                  "\n\nLOOSENING-CHECK 0123456789ab: not a loosening\n\nVERDICT:"))
+        # backlog #508: an answers section in the body (r2: answers are read ONLY from it), so the
+        # end-to-end record must carry it.
+        write(review, GOOD.replace(H, h1).replace(
+            "\n\nVERDICT:", "\n\n## Loosening answers\nLOOSENING-CHECK 0123456789ab: not a loosening\n\nVERDICT:"))
         # A good review filed where this tool would look for it, so ONLY the writer rule can refuse.
         write("docs/reviews/claude/x-r1-codex.md", GOOD.replace(H, h1))
         rc, out = run("--review-id", "x-r1-codex", "--head", h1)

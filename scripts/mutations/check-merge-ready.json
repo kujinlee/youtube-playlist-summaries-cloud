@@ -235,7 +235,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                if l[1:].rstrip() in readded:\n                    readded.remove(l[1:].rstrip())\n                    continue\n",
+    "                if l[1:] in added:\n                    added.remove(l[1:])\n                    continue\n",
     ""
    ]
   ],
@@ -903,12 +903,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        readded = [l[1:].rstrip() for hk in f[\"hunks\"] for l in hk",
-    "        readded = [l[1:].strip() for hk in f[\"hunks\"] for l in hk"
-   ],
-   [
-    "                if l[1:].rstrip() in readded:\n                    readded.remove(l[1:].rstrip())",
-    "                if l[1:].strip() in readded:\n                    readded.remove(l[1:].strip())"
+    "                if l[1:] in added:\n                    added.remove(l[1:])",
+    "                if l[1:].strip() in [a.strip() for a in added]:\n                    added.remove(next(a for a in added if a.strip() == l[1:].strip()))"
    ]
   ],
   "expect": [
@@ -1249,7 +1245,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                rose = rising_count(l[1:], [a for a in raw if a.rstrip() in readded])",
+    "                rose = rising_count(l[1:], added)",
     "                rose = None"
    ]
   ],
@@ -1315,7 +1311,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if p.startswith(REVIEW_RECORDS):",
+    "        if REVIEW_RECORD.fullmatch(p):",
     "        if p.startswith(\"docs/\"):"
    ]
   ],
@@ -1337,8 +1333,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    return frozenset(clear - other - held)",
-    "    return frozenset(clear - held)"
+    "    for p, r, _ok in records:\n        k = key(p)",
+    "    for p, r, _ok in [x for x in records if not x[2]]:\n        k = key(p)"
    ]
   ],
   "expect": "#508: ...a FINDING in any matching verdict beats `not a loosening` in another"
@@ -1348,8 +1344,12 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "            (clear if a == NOT_A_LOOSENING else other).add(i)",
-    "            (clear if NOT_A_LOOSENING in a.lower() else other).add(i)"
+    "             if a == NOT_A_LOOSENING}",
+    "             if NOT_A_LOOSENING in a.lower()}"
+   ],
+   [
+    "            if a == NOT_A_LOOSENING:\n                continue",
+    "            if NOT_A_LOOSENING in a.lower():\n                continue"
    ]
   ],
   "expect": "#508: ...and any other answer text is not an answer"
@@ -1414,8 +1414,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "rose = rising_count(l[1:], [a for a in raw if",
-    "rose = rising_count(l[1:].rstrip(), [a.rstrip() for a in raw if"
+    "rose = rising_count(l[1:], added)",
+    "rose = rising_count(l[1:].rstrip(), [a.rstrip() for a in added])"
    ]
   ],
   "expect": "#508 r1 Codex 3: a rising count that also DROPS a trailing space is still a failure-path removal"
@@ -1447,8 +1447,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "\"docs/reviews/coordinator/\", \"docs/reviews/decision-scheme/decision-log.jsonl\")",
-    "\"docs/reviews/decision-scheme/decision-log.jsonl\")"
+    "(claude|codex|coordinator)/",
+    "(claude|codex)/"
    ]
   ],
   "expect": "#508 r1 M2: the round's coordinator document and decision log, added after it, match"
@@ -1458,8 +1458,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    ", \"docs/reviews/decision-scheme/decision-log.jsonl\")",
-    ")"
+    "|decision-scheme/decision-log\\.jsonl)\")",
+    "|decision-scheme/no-log)\")"
    ]
   ],
   "expect": "#508 r1 M2: the round's coordinator document and decision log, added after it, match"
@@ -1469,8 +1469,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "\"docs/reviews/decision-scheme/decision-log.jsonl\")",
-    "\"docs/reviews/decision-scheme/\")"
+    "decision-scheme/decision-log\\.jsonl)",
+    "decision-scheme/.*)"
    ]
   ],
   "expect": "#508 r1 M2: ...but the decision scheme's BASELINE changed after it does not (only the log is a record)"
@@ -1502,8 +1502,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "- other - held)",
-    "- other)"
+    "    for p, r, _ok in records:\n        k = key(p)\n        for i, a in",
+    "    for p, r, _ok in [x for x in records if x[2]]:\n        k = key(p)\n        for i, a in"
    ]
   ],
   "expect": "#508 r1 m3: a FINDING from a record on ANOTHER tree still beats an assent on this one"
@@ -1513,8 +1513,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    got = answered_flags(usable, [r for _p, r in anywhere])",
-    "    got = answered_flags(usable)"
+    "    got, standing = answered_flags(anywhere), standing_findings(anywhere)",
+    "    got, standing = answered_flags([x for x in anywhere if x[2]]), standing_findings([x for x in anywhere if x[2]])"
    ]
   ],
   "expect": "⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3"
@@ -1573,5 +1573,163 @@
    ]
   ],
   "expect": "#508 r1 m5 real git: ...and names where each line was in the base file"
+ },
+ {
+  "name": "#508 r2 Codex 3: a coordinator record's name is a prefix pattern, so any file under coordinator/ is a record",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "-r[0-9]+-\\1\\.md\"",
+    ".*\""
+   ]
+  ],
+  "expect": "#508 r2 Codex 3: a file under docs/reviews/coordinator/ that is not a round's coordinator doc does not match"
+ },
+ {
+  "name": "#508 r2 Codex 3: a record is matched at the START of the path, so a name extending one is a record",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if REVIEW_RECORD.fullmatch(p):\n            continue",
+    "        if REVIEW_RECORD.match(p):\n            continue"
+   ]
+  ],
+  "expect": "#508 r2 Codex 3: ...nor a file whose name only STARTS with the decision log's"
+ },
+ {
+  "name": "#508 r2 Codex 3: a review doc may sit in ANY half's directory",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "-\\1\\.md\"",
+    "-(?:claude|codex|coordinator)\\.md\""
+   ]
+  ],
+  "expect": "#508 r2 Codex 3: ...nor any other name in a review directory — a script, no round, the wrong half's directory, a coordinator doc that is not .md"
+ },
+ {
+  "name": "#508 r2 Codex 5: a finding is never retired, so a repaired line stays held for ever",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if k is not None and any(",
+    "            if False and any("
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: a LATER round of the SAME half, on this tree, answering `not a loosening` retires its finding"
+ },
+ {
+  "name": "#508 r2 Codex 5: the OTHER half's later assent retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "k2[:2] == k[:2]",
+    "k2[0] == k[0]"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...but not a later round of the OTHER half"
+ },
+ {
+  "name": "#508 r2 Codex 5: another SUBJECT's later round retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(k2 := key(p2)) is not None and k2[:2] == k[:2]",
+    "(k2 := key(p2)) is not None and k2[1] == k[1]"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor another SUBJECT's later round, nor anything after a verdict whose name gives no round"
+ },
+ {
+  "name": "#508 r2 Codex 5: any OTHER round, earlier too, retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "k2[2] > k[2]",
+    "k2[2] != k[2]"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor an EARLIER round's assent — rounds compare as numbers, r10 after r9"
+ },
+ {
+  "name": "#508 r2 Codex 5: rounds compare as TEXT, so r10 reads as earlier than r9",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(m[1], m[3], int(m[2]))",
+    "(m[1], m[3], m[2])"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor an EARLIER round's assent — rounds compare as numbers, r10 after r9"
+ },
+ {
+  "name": "#508 r2 Codex 5: a later assent on ANOTHER tree retires a finding",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                    ok2 and (r2.get(",
+    "                    (r2.get("
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor the same half's later assent on ANOTHER tree"
+ },
+ {
+  "name": "#508 r2 Codex 5: a later round of the same half retires a finding without answering that id",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(r2.get(\"loosening_answers\") or {}).get(i) == NOT_A_LOOSENING\n",
+    "True\n"
+   ]
+  ],
+  "expect": "#508 r2 Codex 5: ...nor a later round of the same half that does not answer THAT id"
+ },
+ {
+  "name": "#508 r2 Codex 5: review_answers names no verdict whose finding stands",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for i in sorted(set(standing) & {i for _p, r, ok in anywhere if ok for i in r[\"loosening_answers\"]}):",
+    "    for i in []:"
+   ]
+  ],
+  "expect": "⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3"
+ },
+ {
+  "name": "#508 r2 Codex 1: a line a rising count consumed stays in the budget, so it also excuses a move",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                    added.remove(rose)\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "#508 r2 Codex 1: ...and a line a rising count consumed cannot also excuse a move"
+ },
+ {
+  "name": "#508 r2 Codex 1: a moved line stays in the budget, so one re-added line excuses two removals",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                    added.remove(l[1:])\n",
+    "                    pass\n"
+   ]
+  ],
+  "expect": "#508 r2 Codex 1: ...one re-added line excuses ONE identical removal, not two"
+ },
+ {
+  "name": "#508 r2 Codex 1: a move is compared without trailing whitespace again, so it spends the line a count rise needed",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if l[1:] in added:\n",
+    "                if l[1:].rstrip() in [a.rstrip() for a in added]:\n"
+   ],
+   [
+    "                    added.remove(l[1:])\n                    continue",
+    "                    added.remove(next(a for a in added if a.rstrip() == l[1:].rstrip()))\n                    continue"
+   ]
+  ],
+  "expect": "#508 r2 Codex 1: a MOVED line cannot also excuse a rising count that drops a trailing space"
  }
 ]

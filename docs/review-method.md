@@ -118,9 +118,12 @@ settled three earlier findings on the branch that built this.
    nothing else in the file read for either, so no quote, fence or comment can stand in for them
    (PR #457 r2). The tool refuses a tree not at that head, and records its uncommitted overlay.
    ⟳ **backlog #508: append `python3 scripts/check-merge-ready.py --flagged-block` to a Claude
-   half's brief** (`codex-review.py` appends it itself). The half answers each flagged line
-   `LOOSENING-CHECK <id>: not a loosening` or `…: finding: <why>`; the merge gate clears a
+   half's brief** (`codex-review.py` appends it itself). The half ends its review, just before the
+   `VERDICT:` line, with a line that is exactly `## Loosening answers` followed only by lines
+   `LOOSENING-CHECK <id>: not a loosening` or `…: finding: <why>`. Nothing outside that section is
+   read, and any other line inside it makes the whole section a finding (r2). The merge gate clears a
    "loosens a gate" HOLD only for lines answered that way in a verdict on the exact tree it merges.
+   A finding stands until a later round of the same half answers `not a loosening` on that tree.
    ⚠ A Claude half's overlay is captured when its verdict is RECORDED: record before any fold edit.
 5. ⛔ **EVERY FINDING NAMES A SAMPLE, NOT A SCOPE — say what you did about that.** A finding's
    boundary is the evidence the reviewer happened to have, never the extent of the defect. **Each

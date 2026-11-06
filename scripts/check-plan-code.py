@@ -2040,7 +2040,11 @@ EXPECTED_MUTATIONS = {
     #   ⟳ #508 r1 76 -> 84 — the parser: loose dissent (2: the line rule, the id's case), strict assent
     #   outside quotes (fence and comment: 6 — the gate, the comment open, its continuation, its close,
     #   the fence close, the fence character).
-    "scripts/codex-review.py": 84,
+    #   ⟳ #508 r2 84 -> 87 — the free-text parser is REPLACED by one answers section: the mention rule and
+    #   the six fence/comment entries are deleted with their code (-7); three re-anchored; ten added (a
+    #   malformed line skipped, only its ids, the id's case, the FIRST section, no VERDICT: stop, a blank
+    #   line, a loose heading, no section read whole, an empty finding, no right-strip).
+    "scripts/codex-review.py": 87,
     # ⟳ new (review-round cap, 2026-10-31): a Claude half's verdict — one entry per refusal, plus the
     # three fields a consumer reads (gate_ran, the full head, the clean overlay). ⟳ PR #457 r2: 19 -> 21,
     # the fixed-position reads (the `\n` split, the unstripped first line); seven retargeted.
@@ -2542,7 +2546,10 @@ EXPECTED_MUTATIONS = {
     # added path); the round's own records (3: coordinator, decision log, the baseline NOT exempt); the
     # working-tree block (2: the stash commit, the status head); an earlier tree's finding (2: the rule,
     # the call site); the block's file:line (5: the offset, the row, both hunk parsers, main's call site).
-    "scripts/check-merge-ready.py": 127,
+    # ⟳ #508 r2: 127 -> 141 — exact record names (3: the coordinator pattern, fullmatch, the half's own
+    # directory); a finding retired only by a later round of the same subject and half on this tree (8);
+    # one budget of added lines for the move and rising-count exemptions (3). Twelve re-anchored.
+    "scripts/check-merge-ready.py": 141,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
