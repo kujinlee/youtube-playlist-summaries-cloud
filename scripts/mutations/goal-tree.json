@@ -2787,8 +2787,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "(t.get(\"inflight\") or t[\"state\"] in (\"open\", \"inflight\")) and not t.get(\"parked\")",
-        "t[\"state\"] in (\"open\", \"inflight\") and not t.get(\"parked\")"
+        "if ((t.get(\"inflight\") or t.get(\"open_prs\")",
+        "if ((False or t.get(\"open_prs\")"
       ]
     ],
     "expect": [
@@ -3073,8 +3073,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "it = out.setdefault(x.get(\"key\") or x[\"label\"], {",
-        "it = out.setdefault((x.get(\"key\") or x[\"label\"]) + x[\"goal\"], {"
+        "hits = [g for g in groups if x[\"label\"] in g[\"labels\"] or prs & g[\"prs\"]]",
+        "hits = [g for g in groups if g[\"item\"][\"goals\"] == [x[\"goal\"]] and x[\"label\"] in g[\"labels\"]]"
       ]
     ],
     "expect": [
@@ -3529,8 +3529,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "out.setdefault(x.get(\"key\") or x[\"label\"],",
-        "out.setdefault(x[\"label\"],"
+        "x[\"label\"] in g[\"labels\"] or prs & g[\"prs\"]",
+        "x[\"label\"] in g[\"labels\"]"
       ]
     ],
     "expect": [
@@ -3543,13 +3543,65 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "\"key\": f\"PR #{ops[0]}\" if ops else label",
-        "\"key\": label"
+        "\"prs\": list(ops)})",
+        "\"prs\": []})"
       ]
     ],
     "expect": [
       "⭐ r1 Codex M1: one open PR reached by two declarations (its number; a row whose title resolves to it) is ONE running item",
       "⭐ r1 Codex M1: …and a wait declared on EITHER declaration holds that one item as owed"
+    ]
+  },
+  {
+    "name": "a thread with an open PR but an unread row is hidden (running-vs-owed r2 Codex H1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " or t.get(\"open_prs\") or t[\"state\"] in",
+        " or t[\"state\"] in"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex H1: a thread naming an open PR, its row unread and NO ledger entry, is still listed as running"
+    ]
+  },
+  {
+    "name": "a thread records only its first open PR (running-vs-owed r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "{n for n in prs if n in src[\"open\"]}",
+        "{n for n in prs[:1] if n in src[\"open\"]}"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Codex M1: a thread naming TWO open PRs is one item with a row resolved to its SECOND, and that row's wait holds it"
+    ]
+  },
+  {
+    "name": "an entry sharing a PR with two items joins only the first (running-vs-owed r2 Codex M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        for o in hits[1:]:",
+        "        for o in []:"
+      ]
+    ],
+    "expect": [
+      "r2 Codex M1: an entry sharing a PR with TWO items joins them into one, in first-seen order"
+    ]
+  },
+  {
+    "name": "an undeclared PR's number is not checked (running-vs-owed r2 Codex L1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "if isinstance(u, dict) and isinstance(u.get(\"pr\"), int)]",
+        "if isinstance(u, dict)]"
+      ]
+    ],
+    "expect": [
+      "r2 Codex L1: an undeclared PR whose number is not an integer is not listed, and nothing crashes"
     ]
   }
 ]
