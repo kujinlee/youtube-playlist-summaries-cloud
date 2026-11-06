@@ -1611,7 +1611,7 @@ EXPECTED_MUTATIONS = {
     # read before it (1).
     # ⟳ 2026-11-06, sweep-pin-select r1 (Claude F1): 99 -> 102, none retired. HEAD's harness must bind the
     # pins file this script reads: the check skipped (1), a second write allowed (1), a nested binding (1).
-    "scripts/check-merge-ready.py": 102,
+    "scripts/check-merge-ready.py": 104,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

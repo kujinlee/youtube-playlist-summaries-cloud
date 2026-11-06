@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 264 cases
+    python3 scripts/check-merge-ready.py --self-test # 265 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -1057,7 +1057,37 @@ def pins_at(run, rev: str) -> dict:
 # ⚠ BOUND, stated: the BODIES of `own_pins_path` and `read_pins` are trusted, as this script trusts any
 # other harness code the same PR can edit; and a head with NO harness at all is not checked here (that
 # head has deleted the mutation gate, which is not a pin falling).
+# ⚠ r2 (Codex F1), DECLINED as a pre-existing class, backlog #535: `globals()['PINS_FILE'] = ...`, an
+# imported `PINS_FILE`, or an `own_pins_path` returning another file pass this check. Master has the same
+# class — one write in its manifest loader (backlog #431) was READY with every gate green, measured. This
+# check closes the plain rebinding r1 measured; it is not a defence against harness code the PR edits.
 PINS_BINDING = "read_pins(own_pins_path())[0]"
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def module_writes(tree: ast.Module, name: str) -> list:
+    """PURE. Every `ast.Name` that stores or deletes the MODULE global `name`: in the module's own scope
+    (nested `if`/`for`/`try` included), or in a function that declares it `global`. ⟳ sweep-pin-select r2
+    (Codex F2): a function's or a class's LOCAL of the same name is not a module binding, and counting it
+    made the real harness CANNOT RUN over a harmless helper."""
+    out = []
+
+    def visit(node, is_global):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, _SCOPES):
+                # A new scope: its own body binds the global only through a `global` declaration in it.
+                decl = isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+                    isinstance(g, ast.Global) and name in g.names for g in ast.walk(child))
+                visit(child, decl)
+            else:
+                if (is_global and isinstance(child, ast.Name) and child.id == name
+                        and isinstance(child.ctx, (ast.Store, ast.Del))):
+                    out.append(child)
+                visit(child, is_global)
+    visit(tree, True)
+    return out
 
 
 def harness_binding_problems(src: str) -> list[str]:
@@ -1072,8 +1102,7 @@ def harness_binding_problems(src: str) -> list[str]:
             "EXPECTED_MUTATIONS": lambda v: ast.dump(v) == ast.dump(ast.parse(PINS_BINDING, mode="eval").body)}
     out = []
     for name, ok in want.items():
-        writes = [n for n in ast.walk(tree)
-                  if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, (ast.Store, ast.Del))]
+        writes = module_writes(tree, name)
         if len(writes) != 1:
             out.append(f"{name} is written {len(writes)} times, not once")
             continue
@@ -2218,6 +2247,15 @@ def _self_test_body() -> int:
           harness_binding_problems(_HARN.replace(f"EXPECTED_MUTATIONS = {PINS_BINDING}",
                                                  f"if True:\n    EXPECTED_MUTATIONS = {PINS_BINDING}")),
           [f"line 9: EXPECTED_MUTATIONS is not bound, at module level, to {PINS_BINDING}"])
+    # ⟳ sweep-pin-select r2 (Codex F2): a LOCAL of the same name is not a module binding. The reviewer's
+    # helper, on the REAL harness, made it CANNOT RUN ("PINS_FILE is written 2 times, not once").
+    _local = 'def _helper():\n    PINS_FILE = "fixture.py"\n    return PINS_FILE\n'
+    check("⛔ sweep-pin-select r2 F2: a helper's LOCAL `PINS_FILE` or `EXPECTED_MUTATIONS` (or a class attribute) "
+          "is not a module binding — the real harness with one still binds",
+          [harness_binding_problems(_real_src + "\n\n" + _local),
+           harness_binding_problems(_HARN + _local + "def _g():\n    EXPECTED_MUTATIONS = {}\n    return EXPECTED_MUTATIONS\n"
+                                    "class _C:\n    PINS_FILE = 'x.py'\n")],
+          [[], []])
     # ⛔ r4 Codex F2: importing the WORKING-TREE reader executes it. Every way that import or the reader
     # can misbehave is CANNOT RUN, never an answer — and never an escape past `main()`'s handler.
     _rd = Path(tempfile.mkdtemp())

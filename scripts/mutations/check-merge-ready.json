@@ -1309,5 +1309,31 @@
   "expect": [
    "...and a binding nested under an `if` is not at module level"
   ]
+ },
+ {
+  "name": "sweep-pin-select r2 F2: the binding scan walks the whole tree, so a helper's LOCAL PINS_FILE makes the real harness CANNOT RUN",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if isinstance(child, _SCOPES):",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "⛔ sweep-pin-select r2 F2: a helper's LOCAL `PINS_FILE` or `EXPECTED_MUTATIONS` (or a class attribute) is not a module binding — the real harness with one still binds"
+  ]
+ },
+ {
+  "name": "sweep-pin-select r2 F2: a function's `global` declaration is ignored, so a rebinding inside a function passes",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "visit(child, decl)",
+    "visit(child, False)"
+   ]
+  ],
+  "expect": [
+   "⛔ F1: a harness whose EXPECTED_MUTATIONS is bound to anything but the pins file, or rebound, is refused"
+  ]
  }
 ]
