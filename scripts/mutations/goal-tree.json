@@ -4513,5 +4513,45 @@
     "expect": [
       "⛔ backlog #496: two rows, three asks → ONE `git log` and one lookup per (row, marker) (r1 Claude F3)"
     ]
+  },
+  {
+    "name": "backlog #496: the history walks only the first-parent line again (r2 Codex R2-1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"--topo-order\", \"--diff-merges=off\"",
+        "\"--first-parent\", \"--diff-merges=first-parent\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: a marker introduced and settled on master, then MERGED in, is flagged (r2 Codex R2-1)"
+    ]
+  },
+  {
+    "name": "backlog #496: a merge is diffed against its first parent (r2 Codex R2-1, evil merge)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"--diff-merges=off\", \"-p\"",
+        "\"--diff-merges=first-parent\", \"-p\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: an EVIL merge that rewrites the head is a rewrite, never the marker's introduction",
+      "⛔ backlog #496 real git: a marker only an EVIL merge wrote is NOT READ — a merge is never an introduction"
+    ]
+  },
+  {
+    "name": "backlog #496: the walk is in commit-date order, not topological (r2 Codex R2-1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "[\"git\", \"log\", \"--topo-order\",",
+        "[\"git\", \"log\","
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 real git: the NEWEST introduction is topological, never by commit date (r2 Codex R2-1)"
+    ]
   }
 ]

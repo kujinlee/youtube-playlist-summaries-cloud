@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 450 cases
+    python3 scripts/goal-tree.py --self-test                 # 455 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -721,22 +721,31 @@ COMMIT_MARK = "\x00commit "
 
 
 def backlog_commits(root: pathlib.Path, run, rev: str = "HEAD") -> list[tuple[str, dict, dict]]:
-    """Every commit that changed the backlog, NEWEST FIRST, as (sha, rows before, rows after): item number →
-    that row's raw line, for the rows the commit changed. ONE `git log -p` along the first-parent line (a merge
-    is diffed against its first parent), so the cost is one call per refresh, not two per listed row (r1 Claude
-    F3: 20.5 s on the 10-27 revision's 28 waiting rows). A row is a line `gen-backlog-page.ROW` matches — the
+    """Every commit that changed the backlog, NEWEST FIRST in TOPOLOGICAL order (a child before its parents,
+    whatever the commit dates say), as (sha, rows before, rows after): item number → that row's raw line, for
+    the rows the commit changed. ONE `git log -p` over the WHOLE history, every line of it, so the cost is one
+    call per refresh, not two per listed row (r1 Claude F3: 20.5 s on the 10-27 revision's 28 waiting rows).
+    ⛔ A MERGE IS NEVER DIFFED (`--diff-merges=off`, r2 Codex R2-1): each change is attributed to the commit
+    that made it, on whichever line it was made. Diffed against its first parent (r1's reading), a merge of
+    master into a feature branch "introduced" every marker master had added and settled, under the settled
+    head, so none was flagged. ⚠ BOUND — an EVIL merge (a conflict resolution that edits the row) is not
+    read: a head it rewrites after the marker is still a rewrite (today's head is compared with the head at
+    the commit that introduced the marker), and a marker ONLY the merge wrote has no introduction, so it is
+    NOT READ — never "unchanged". A row is a line `gen-backlog-page.ROW` matches — the
     history walk's own looser reading, which knows older layouts. Raises — NOT READ — in a shallow
     repository (its boundary commit diffs as a full add of today's text, r1 Codex R3 / Claude F4), on any git
     failure, and when no commit is found. `rev` reads the history as it stood at an older commit (a corpus
     measurement); the page reads HEAD. ⚠ BOUND: a row is keyed by its number, so a number used in BOTH item
-    tables at once would merge their lines."""
+    tables at once would merge their lines; and ⚠ BOUND (r2 Codex R2-2) a RENUMBERED row is a new row — its
+    new number's first marker is an introduction under the head it had then, so a head rewritten BEFORE the
+    renumber is no longer seen. Renumbering is rare here; following a row across numbers is not attempted."""
     rc, out = run(["git", "rev-parse", "--is-shallow-repository"], root, 30)
     if rc != 0:
         raise ValueError(f"git rev-parse exited {rc}: {_SS.clean(out, 80)}")
     if out.strip() != "false":
         raise ValueError("the repository is shallow, so the commit that wrote a marker may be cut off"
                          if out.strip() == "true" else f"git rev-parse answered {_SS.clean(out, 40)!r}")
-    rc, out = run(["git", "log", "--first-parent", "--diff-merges=first-parent", "-p", "-U0", "--no-color",
+    rc, out = run(["git", "log", "--topo-order", "--diff-merges=off", "-p", "-U0", "--no-color",
                    "--no-ext-diff", "--no-renames", "--format=%x00commit %H", rev, "--", BACKLOG_REL], root, 60)
     if rc != 0:
         raise ValueError(f"git log exited {rc}: {_SS.clean(out, 80)}")
@@ -768,7 +777,9 @@ def status_cell(line: str, num: int, sha: str, split) -> str:
 def head_when_marked(commits, num: int, segment: str, split) -> str:
     """PURE. Row `num`'s status head at the NEWEST commit whose row holds `segment` in its status while the
     parent's row does not (r1 Codex R1, R2): another row's identical text is never read, and a marker removed
-    and re-added is compared with its renewal. Raises when no commit introduced it (e.g. it is uncommitted)."""
+    and re-added is compared with its renewal. "Newest" is the first in `commits`' TOPOLOGICAL order; two
+    introductions on parallel lines, neither an ancestor of the other, are ordered as git's walk puts them.
+    Raises when no commit introduced it (e.g. it is uncommitted, or only an evil merge wrote it)."""
     for sha, before, after in commits:
         now = after.get(num)
         if now is None or segment not in now or segment not in status_cell(now, num, sha, split):
@@ -3328,6 +3339,7 @@ def _self_test_body() -> int:
 
     # ── backlog #496 r1: clause 2 through the REAL git reader, over real repositories (r1 Claude F1/F2/F4,
     # Codex R1-R3). The suite runs inside `fixture_git.isolated()`, so no caller GIT_* reaches these.
+    import os as _os496
     import subprocess as _sp496
     _NR = "its history was NOT READ ("
     _MOVED = ("may already be settled: its status head was rewritten after the NEEDS-OWNER marker was written — "
@@ -3439,6 +3451,94 @@ def _self_test_body() -> int:
             globals()["head_when_marked"] = _orig_hwm
         case("⛔ backlog #496: two rows, three asks → ONE `git log` and one lookup per (row, marker) (r1 Claude F3)",
              (_ans, _calls, _looks), (["OPEN", "SPEC MERGED", "OPEN"], ["rev-parse", "log"], [5, 8]))
+
+        # ── r2: MERGES. The walk covers every line of history, and a merge is never diffed (r2 Codex R2-1).
+        def _gd(root, when, *args):
+            """`_g496` with the commit pinned to `when`, so the walk's ORDER is constructed, not ambient."""
+            env = {**_os496.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+            return _sp496.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+                               "-C", str(root), *args], capture_output=True, text=True, timeout=60, env=env)
+
+        def _put(root, when, text, rel=BACKLOG_REL):
+            (root / rel).write_text(text)
+            _gd(root, when, "add", "-A")
+            return _gd(root, when, "commit", "-q", "-m", "v")
+
+        def _merge(root, when, other, resolved=None):
+            """Merge `other` into the checked-out branch; `resolved` is the backlog an EVIL merge commits."""
+            _gd(root, when, "merge", "-q", "--no-ff", "--no-commit", other)
+            if resolved is not None:
+                (root / BACKLOG_REL).write_text(resolved)
+                _gd(root, when, "add", BACKLOG_REL)
+            return _gd(root, when, "commit", "-q", "-m", "merge")
+
+        _T = "2026-01-0{} 12:00:00 +0000"
+        # Codex's R2-1: the feature branch forks first; master introduces the ask under OPEN and then rewrites the
+        # head; master is merged into the feature. Diffed against its first parent, the MERGE introduces the
+        # marker, already under the settled head — so it was never flagged.
+        _mm = dg / "merged-master"
+        _repo496(_mm, [{BACKLOG_REL: _fx("OPEN")}])
+        _gd(_mm, _T.format(1), "branch", "-M", "trunk")
+        _gd(_mm, _T.format(1), "checkout", "-q", "-b", "feat")
+        _put(_mm, _T.format(2), "x\n", "README.md")
+        _gd(_mm, _T.format(2), "checkout", "-q", "trunk")
+        _put(_mm, _T.format(3), _fx("OPEN ⟳ NEEDS-OWNER — pick A"))
+        _put(_mm, _T.format(4), _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A"))
+        _gd(_mm, _T.format(5), "checkout", "-q", "feat")
+        _merge(_mm, _T.format(5), "trunk")
+        case("⛔ backlog #496 real git: a marker introduced and settled on master, then MERGED in, is flagged (r2 Codex R2-1)",
+             _real(_mm, _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A")), _MOVED)
+        # EVIL MERGE, part 1: master introduces the ask; the feature edited the same row, so the merge conflicts and
+        # its resolution rewrites the head. The resolution is not an introduction: master's commit is.
+        _ev = dg / "evil-edit"
+        _repo496(_ev, [{BACKLOG_REL: _fx("OPEN")}])
+        _gd(_ev, _T.format(1), "branch", "-M", "trunk")
+        _gd(_ev, _T.format(1), "checkout", "-q", "-b", "feat")
+        _put(_ev, _T.format(2), _fx("OPEN — feature note"))
+        _gd(_ev, _T.format(2), "checkout", "-q", "trunk")
+        _put(_ev, _T.format(3), _fx("OPEN ⟳ NEEDS-OWNER — pick A"))
+        _gd(_ev, _T.format(4), "checkout", "-q", "feat")
+        _merge(_ev, _T.format(4), "trunk", _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A"))
+        case("⛔ backlog #496 real git: an EVIL merge that rewrites the head is a rewrite, never the marker's introduction",
+             _real(_ev, _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A")), _MOVED)
+        # EVIL MERGE, part 2: neither parent holds the marker; the resolution WRITES it. No commit that is not a
+        # merge introduced it, so it is NOT READ — said, never "unchanged".
+        _ew = dg / "evil-write"
+        _repo496(_ew, [{BACKLOG_REL: _fx("OPEN")}])
+        _gd(_ew, _T.format(1), "branch", "-M", "trunk")
+        _gd(_ew, _T.format(1), "checkout", "-q", "-b", "feat")
+        _put(_ew, _T.format(2), _fx("OPEN — feature note"))
+        _gd(_ew, _T.format(2), "checkout", "-q", "trunk")
+        _put(_ew, _T.format(3), _fx("OPEN — trunk note"))
+        _gd(_ew, _T.format(4), "checkout", "-q", "feat")
+        _merge(_ew, _T.format(4), "trunk", _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A"))
+        case("⛔ backlog #496 real git: a marker only an EVIL merge wrote is NOT READ — a merge is never an introduction",
+             _real(_ew, _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A")),
+             _NR + "no commit introduces this marker into backlog #5's row), so a rewritten status was not checked")
+        # "Newest" is TOPOLOGICAL. c1 introduces the ask under OPEN with a clock-skewed 2030 date; one branch
+        # removes it and renews it under NEW, another edits another row. By commit date the walk reaches c1
+        # before the renewal (and flags it); in topological order the renewal comes first.
+        _to = dg / "topo"
+        _repo496(_to, [{BACKLOG_REL: _fx("OPEN")}])
+        _gd(_to, _T.format(1), "branch", "-M", "trunk")
+        _put(_to, "2030-01-01 12:00:00 +0000", _fx("OPEN ⟳ NEEDS-OWNER — pick A"))
+        _gd(_to, _T.format(1), "checkout", "-q", "-b", "side")
+        _put(_to, _T.format(2), _fx("DONE — the owner picked A"))
+        _put(_to, _T.format(3), _fx("NEW OPEN QUESTION ⟳ NEEDS-OWNER — pick A"))
+        _gd(_to, _T.format(3), "checkout", "-q", "trunk")
+        _put(_to, _T.format(5), _fx("OPEN ⟳ NEEDS-OWNER — pick A", "OPEN, edited"))
+        _merge(_to, _T.format(6), "side", _fx("NEW OPEN QUESTION ⟳ NEEDS-OWNER — pick A", "OPEN, edited"))
+        case("⛔ backlog #496 real git: the NEWEST introduction is topological, never by commit date (r2 Codex R2-1)",
+             _real(_to, _fx("NEW OPEN QUESTION ⟳ NEEDS-OWNER — pick A", "OPEN, edited")), None)
+        # r2 Codex R2-2 — a STATED BOUND, pinned: a row is keyed by its number, so renumbering it is a fresh
+        # introduction under the head it had then, and a head rewritten BEFORE the renumber is no longer seen.
+        _rn = dg / "renumber"
+        _repo496(_rn, [{BACKLOG_REL: _fx("OPEN ⟳ NEEDS-OWNER — pick A")},
+                       {BACKLOG_REL: _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A")},
+                       {BACKLOG_REL: _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A").replace("| 5 | **Pick", "| 15 | **Pick")}])
+        case("backlog #496 real git BOUND: a RENUMBERED row is compared with its new number's first marker (r2 Codex R2-2)",
+             _real(_rn, _fx("SPEC MERGED ⟳ NEEDS-OWNER — pick A").replace("| 5 | **Pick", "| 15 | **Pick"), (15,)),
+             None)
     # The marker must enter the STATUS cell: the same words in the item text are not the ask.
     _split = _sibling("gen-backlog-page").CELL_SPLIT
 
@@ -3830,7 +3930,7 @@ def _self_test_body() -> int:
                  + "\n\x00commit c1\n\n@@ -3 +3 @@\n-" + _r5.format("NEEDS-OWNER — waits on you")
                  + "\n+" + _r5.format("OPEN then ⟳ NEEDS-OWNER — pick A") + "\n")
         run_h, calls_h = fake([(["git", "rev-parse", "--is-shallow-repository"], (0, "false\n")),
-                               (["git", "log", "--first-parent"], (0, _diff))] + ok)
+                               (["git", "log", "--topo-order"], (0, _diff))] + ok)
         case("⭐ backlog #496: collect reads the marker's commit from git, so a rewritten head is flagged",
              [n["flag"] for n in collect(r, run_h)["needs"] if n["ref"] == "backlog #5"],
              ["may already be settled: its status head was rewritten after the NEEDS-OWNER marker was written "

@@ -1492,7 +1492,9 @@ EXPECTED_MUTATIONS = {
     # walked per ROW for the NEWEST introduction (-2 retired -S entries, +20): negation (4), the restate remedy,
     # clause 1 over a cross-reference, shallow / rev-parse / log / empty / no-status-cell / never-introduced NOT READ (6),
     # row identity, newest introduction, the parent check, the head, item-cell words (2), the two memos (2).
-    "scripts/goal-tree.py": 347,
+    # ⟳ 2026-11-06, backlog #496 r2 fold: 347 -> 350 — the history read walks every line in topological order and never
+    # diffs a merge (r2 Codex R2-1): first-parent restored, a merge diffed against its first parent, commit-date order.
+    "scripts/goal-tree.py": 350,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
