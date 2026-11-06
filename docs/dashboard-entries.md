@@ -18849,3 +18849,9 @@ On the last day of the week the usage warning now tells me to **use** the room, 
 A pull request that changes the dashboard's grammar now re-tests the session-summary tool that depends on it; before, that test only ran in the nightly full sweep. Backlog #498.
 <!--tech-->
 `scripts/check-plan-code.py` `_import_spellings`: the scoped sweep's import closure also matches a sibling loaded by its FILENAME (`"gen-dashboard.py"`, `'x.py'`), so `check-dashboard-entry.py` → `gen-dashboard.py` → `compaction-state.py` selects `compaction-state`'s manifest. Two cases (a two-hop synthetic chain; the real tree's chain); one new mutation, with the stem and filename spellings on separate statements so the two mutations have distinct anchors; pin 177 → 178; 310 cases.
+
+## 2026-11-05
+Two checks that sometimes went red on unrelated pull requests, purely by luck of timing or ordering, now behave the same on every run. Backlog #506, its two known instances; a broader check for the whole class is still open.
+<!--tech-->
+`check-review-decision.py`: a case gives tied components one per round in REVERSE order, so dropping `sorted()` fails under every `PYTHONHASHSEED` (measured at seeds 266 and 312, where the old case passed). `check-selftest-counts.py`: a case patches `concurrent.futures.as_completed` to yield futures in reverse, so the "completion order" mutant fails on every run. Each joins its mutation's `expect`. 119 and 60 cases (+1 each).
+
