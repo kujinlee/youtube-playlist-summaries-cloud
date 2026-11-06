@@ -359,16 +359,22 @@ def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str, kind: st
         _write(path, entries, raw)
 
 
-def ledger_done(path: Path, id_: str) -> bool:
+def ledger_take(path: Path, id_: str) -> dict | None:
+    """Remove the entry `id_` and return it — read UNDER the lock that removes it (done-thread-check r3 Codex: reading it
+    before the lock checked an entry a concurrent re-add had already replaced). None when there is no such id."""
     if not id_.strip():
         raise ValueError("an empty id names no job")
     with _locked(path):
         entries, raw = _for_update(path)
-        kept = [e for e in entries if e.get("id") != id_]
-        if len(kept) == len(entries):
-            return False
-        _write(path, kept, raw)
-        return True
+        gone = [e for e in entries if e.get("id") == id_]
+        if not gone:
+            return None
+        _write(path, [e for e in entries if e.get("id") != id_], raw)
+        return gone[-1]
+
+
+def ledger_done(path: Path, id_: str) -> bool:
+    return ledger_take(path, id_) is not None
 
 
 THREADS_REL = "docs/goal-threads.md"
@@ -396,7 +402,7 @@ def thread_handoff(entry: dict, main: Path, run=_run, gt=None) -> str | None:
         return None
     add = f"add under `## GOAL {goal}` of {THREADS_REL}:  - {thread}"
     gt = gt or _goal_tree()
-    mine, why = gt.parse_thread_line("- " + thread)
+    mine, why = gt.parse_thread_line("- " + thread.removeprefix("- "))   # r3: goal-tree's own ledger normalisation
     if mine is None:
         return f"⚠ this entry's thread does not parse ({why}), so the goal tree never showed it; fix it, then {add}"
     refs = {tuple(r) for r in mine["refs"]}
@@ -1320,6 +1326,11 @@ def _self_test_body() -> int:
                                              _show("## GOAL g\n" + _rq + "- fix · PR #30 · x\n## Notes\n")) or ""), True)
         case("backlog #507 r2: an entry thread that does not parse says so",
              "does not parse" in (thread_handoff(_e("fix PR #30"), root, _show(_tracked)) or ""), True)
+        case("backlog #507 r3: an entry thread written WITH its bullet (`- fix · …`) reads as goal-tree reads it",
+             thread_handoff(_e("- fix · backlog #11 · y"), root, _show(_tracked)), None)
+        case("backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`",
+             thread_handoff(_e("fix · PR #30 · x"), root, _show("## GOAL g\n" + _rq + "- fix · backlog #30 · x\n")) is None,
+             False)
         case("backlog #507: …an entry with no thread is silent",
              [thread_handoff({"id": "j"}, root, _show(_tracked)), thread_handoff(_e("  "), root, _show(_tracked))], [None, None])
         _err = io.StringIO()
@@ -1328,6 +1339,27 @@ def _self_test_body() -> int:
             _rc7 = main(["--done", "t7"], root=r2, run=_show(_tracked))
         case("⭐ backlog #507: main --done on an untracked thread removes the entry AND warns on stderr",
              (_rc7, read_ledger(r2 / LEDGER_REL)[0], "- fix · PR #30 · x" in _err.getvalue()), (0, [], True))
+        # r3 Codex MAJOR: a re-add landing between a pre-lock read and the lock — simulated by re-adding as the lock is taken
+        with redirect_stdout(io.StringIO()):
+            main(["--add", "t8", "build", "merge", "--goal", "g", "--thread", "fix · backlog #11 · y"], root=r2, run=_show(_tracked))
+        _real_locked, _err8 = _locked, io.StringIO()
+
+        @contextmanager
+        def _racing(path):
+            with _real_locked(path):
+                _e8, _raw8 = _for_update(path)
+                _write(path, [e for e in _e8 if e.get("id") != "t8"]
+                       + [{"id": "t8", "what": "w", "on_done": "d", "at": "x", "kind": "build", "goal": "g",
+                           "thread": "fix · PR #31 · re-added"}], _raw8)
+                yield
+        globals()["_locked"] = _racing
+        try:
+            with redirect_stdout(io.StringIO()), redirect_stderr(_err8):
+                main(["--done", "t8"], root=r2, run=_show(_tracked))
+        finally:
+            globals()["_locked"] = _real_locked
+        case("backlog #507 r3: --done checks the entry it REMOVED, so a re-add racing it still warns",
+             ("- fix · PR #31 · re-added" in _err8.getvalue(), read_ledger(r2 / LEDGER_REL)[0]), (True, []))
         case("⭐ an entry that only MENTIONS the owner is not a wait; one marked WAITS-ON-OWNER: is",
              [waits_on_owner({"what": "PAUSED 04:03 by owner: resume later"}),
               waits_on_owner({"what": f"{OWNER_MARKER} roles page answers", "on_done": "fold"}),
@@ -1431,10 +1463,9 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT, run=_run) -> int
             print(f"ledger: added {args.add[0]}")
             return 0
         if args.done is not None:
-            closing = next((e for e in read_ledger(led)[0] if e.get("id") == args.done), None) if args.done.strip() else None
-            removed = ledger_done(led, args.done)
-            print(f"ledger: {'removed' if removed else 'no such id'} {args.done}")
-            warn = thread_handoff(closing, main, run) if removed and closing else None
+            closing = ledger_take(led, args.done)
+            print(f"ledger: {'removed' if closing is not None else 'no such id'} {args.done}")
+            warn = thread_handoff(closing, main, run) if closing is not None else None
             if warn:   # backlog #507: a warning, never a refusal — the entry is already closed
                 print(warn, file=sys.stderr)
             return 0

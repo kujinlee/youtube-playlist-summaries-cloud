@@ -160,8 +160,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "_write(path, entries, raw)\n\n\ndef ledger_done",
-        "_write(path, entries, [])\n\n\ndef ledger_done"
+        "_write(path, entries, raw)\n\n\ndef ledger_take",
+        "_write(path, entries, [])\n\n\ndef ledger_take"
       ]
     ],
     "expect": [
@@ -1260,7 +1260,7 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "            warn = thread_handoff(closing, main, run) if removed and closing else None",
+        "            warn = thread_handoff(closing, main, run) if closing is not None else None",
         "            warn = None"
       ]
     ],
@@ -1371,6 +1371,45 @@
     ],
     "expect": [
       "backlog #507 r2: an entry thread that does not parse says so"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: --done reads the entry before the lock that removes it",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            closing = ledger_take(led, args.done)\n",
+        "            closing = next((e for e in read_ledger(led)[0] if e.get(\"id\") == args.done), None)\n            ledger_take(led, args.done)\n"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: --done checks the entry it REMOVED, so a re-add racing it still warns"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: an entry thread written with its bullet is not normalised",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "gt.parse_thread_line(\"- \" + thread.removeprefix(\"- \"))",
+        "gt.parse_thread_line(\"- \" + thread)"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: an entry thread written WITH its bullet (`- fix · …`) reads as goal-tree reads it"
+    ]
+  },
+  {
+    "name": "backlog #507 r3: refs compare by number alone",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    tracked = {tuple(r) for g in goals",
+        "    refs = {(\"PR\", r[1]) for r in refs}\n    tracked = {(\"PR\", r[1]) for g in goals"
+      ]
+    ],
+    "expect": [
+      "backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`"
     ]
   }
 ]
