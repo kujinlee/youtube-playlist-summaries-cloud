@@ -621,5 +621,110 @@
     "expect": [
       "⭐ FAILS IF a log error changes the decision: an armed plan and an unwritable log still ALLOW, one snapshot (r3 Codex 2)"
     ]
+  },
+  {
+    "name": "the monitor signal ignores the watcher flag",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "    if any(st[\"open\"] and not st[\"watcher\"] and (st[\"expires\"]",
+        "    if any(st[\"open\"] and (st[\"expires\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)"
+    ]
+  },
+  {
+    "name": "one watcher silences EVERY monitor, a CI monitor beside it included",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "and not st[\"watcher\"] and (st[\"expires\"]",
+        "and not any(m[\"watcher\"] for m in scanned[\"monitors\"].values()) and (st[\"expires\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ the question watcher beside a CI monitor still gives monitor"
+    ]
+  },
+  {
+    "name": "the watcher no longer needs -F: a one-shot tail of questions.md is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "\\s+-F(?:\\s+-n\\s*\\d+)?\\s+",
+        "(?:\\s+-F)?(?:\\s+-n\\s*\\d+)?\\s+"
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), a -F tail that is not the FIRST stage, work chained after the watcher, another file's name"
+    ]
+  },
+  {
+    "name": "work chained outside quotes no longer disqualifies a watcher",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "            and CHAINED_RE.search(re.sub(r\"'[^']*'\", \"\", command)) is None)",
+        "            )"
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), a -F tail that is not the FIRST stage, work chained after the watcher, another file's name"
+    ]
+  },
+  {
+    "name": "quoted text is no longer stripped before the chaining test: the canonical awk's `;` disqualifies it",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "CHAINED_RE.search(re.sub(r\"'[^']*'\", \"\", command))",
+        "CHAINED_RE.search(command)"
+      ]
+    ],
+    "expect": [
+      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)"
+    ]
+  },
+  {
+    "name": "the path loses its directory boundary: myexplainers/questions.md is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "(?:\\S*/)?explainers/questions\\.md\"",
+        "\\S*explainers/questions\\.md\""
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), a -F tail that is not the FIRST stage, work chained after the watcher, another file's name"
+    ]
+  },
+  {
+    "name": "the file name loses its end boundary: questions.md.bak is exempted",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "r\"(?:\\s+2>(?:/dev/null|&1))?\\s*(?:\\||\\Z)\")",
+        "r\"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), a -F tail that is not the FIRST stage, work chained after the watcher, another file's name"
+    ]
+  },
+  {
+    "name": "the watcher is not recorded at all: every question watcher blocks again",
+    "file": "scripts/check-compaction-boundary.py",
+    "edits": [
+      [
+        "\"watcher\": question_watcher(inp.get(\"command\")),",
+        "\"watcher\": False,"
+      ]
+    ],
+    "expect": [
+      "⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)",
+      "the watcher's other shapes are watchers too: an absolute path, -n0, a grep filter, no filter at all"
+    ]
   }
 ]

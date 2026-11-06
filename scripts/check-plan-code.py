@@ -2433,7 +2433,10 @@ EXPECTED_MUTATIONS = {
     # non-blocking opens, undecodable snapshot output. 28 + 13 = 41.
     # ⟳ r2 fold: +4 — a report quoting the launch phrase, the ceiling's floor at W, its `no-headroom` label, a
     # nested repo's checkout. 41 + 4 = 45.
-    "scripts/check-compaction-boundary.py": 47,
+    # ⟳ backlog #537 (2026-11-06): the explainer question watcher is not a monitor signal — the flag ignored, one
+    # watcher silencing a CI monitor, -F, the chaining test, quote stripping, the path's two boundaries, the flag
+    # never recorded: +8. 47 + 8 = 55.
+    "scripts/check-compaction-boundary.py": 55,
     # backlog #455 (2026-11-01): a subagent's foreground Bash call that can block past 270 s is refused. Pinned in the
     # commit that creates it (21). ⟳ r1 fold: the sleep and watch rules removed, the effective timeout read the way
     # the harness reads it — one entry per clause of that reading, the exemptions, the deny JSON and NOT CHECKED: 29.

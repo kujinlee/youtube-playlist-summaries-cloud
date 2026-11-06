@@ -48,7 +48,13 @@ THE DECISION, in this order (the first that applies wins):
                                   the signal for the whole tail (r1: 6 of 253 agents never closed; the longest live
                                   one was ~1.2 h)
                          monitor  a Monitor whose task has no `<status>` notification, no `TaskStop`, and whose own
-                                  expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed
+                                  expiry (the "expires in Nm" its result states, else `timeout_ms`) has not passed.
+                                  EXCEPT the explainer QUESTION WATCHER (`question_watcher`, backlog #537): a command
+                                  whose FIRST stage is `tail [-n N] -F <...>/explainers/questions.md`, with nothing
+                                  chained outside quotes. It waits on the human, never ends and is re-armed every 30
+                                  min, so it held all 3 offers of 2026-11-06 11:00-11:05 (238k-241k). ⚠ BOUND: matched
+                                  by COMMAND only — a watcher of another page type, or this one in another shape,
+                                  still blocks, up to the ceiling; a CI monitor beside the watcher still blocks.
     allow-no-signal    none of the above — the work is at a boundary.
 
     NOT a signal: uncommitted tracked changes. The main checkout is always dirty with generated files, so that
@@ -72,7 +78,7 @@ snapshot directly. If this script dies, `.claude/hooks/compaction-boundary.sh` r
 
     python3 scripts/check-compaction-boundary.py --hook < payload.json   # what the PreCompact hook runs
     python3 scripts/check-compaction-boundary.py --summary               # verdict counts from the log
-    python3 scripts/check-compaction-boundary.py --self-test  # 83 cases
+    python3 scripts/check-compaction-boundary.py --self-test  # 87 cases
 
 EVERY FILE IS OPENED NON-BLOCKING AND MUST BE A REGULAR FILE: a FIFO at the transcript or the log hung `open()`
 past the hook's own bounds (r1 Codex 6), and the runner's timeout then allows the compaction with NO snapshot.
@@ -114,6 +120,12 @@ END_TYPES = ("idle_notification", "shutdown_response")
 NOTE_RE = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TEAM_RE = re.compile(r'<teammate-message teammate_id="([^"]+)"[^>]*>(.*?)</teammate-message>', re.S)
 EXPIRES_RE = re.compile(r"expires in (\d+)m")
+# The explainer QUESTION WATCHER (explainer-delivery.md §5): its first stage is a `tail ... -F` of
+# `explainers/questions.md`, and nothing is chained outside quotes (`;`, `&&`, `||`, `$(`, a backtick) — so a
+# later stage can only filter. It waits on the human and never ends, so it is not work in flight (backlog #537).
+WATCHER_RE = re.compile(r"\A\s*tail(?:\s+-n\s*\d+)?\s+-F(?:\s+-n\s*\d+)?\s+(?:\S*/)?explainers/questions\.md"
+                        r"(?:\s+2>(?:/dev/null|&1))?\s*(?:\||\Z)")
+CHAINED_RE = re.compile(r";|&&|\|\||\$\(|`")
 
 
 class CannotRun(Exception):
@@ -200,6 +212,7 @@ def scan(lines: list[str]) -> dict:
                 elif x.get("name") == "Monitor":
                     ms = inp.get("timeout_ms")
                     monitors[x.get("id")] = {"open": True, "task": None, "at": at,
+                                             "watcher": question_watcher(inp.get("command")),
                                              "expires": None if at is None or not isinstance(ms, int)
                                              else at + ms / 1000}
                 elif x.get("name") == "TaskStop":
@@ -252,12 +265,19 @@ def scan(lines: list[str]) -> dict:
     return out
 
 
+def question_watcher(command) -> bool:
+    """A Monitor command that is the explainer question watcher (`WATCHER_RE`). PURE. The ONE place the rule lives."""
+    return (isinstance(command, str) and WATCHER_RE.match(command) is not None
+            and CHAINED_RE.search(re.sub(r"'[^']*'", "", command)) is None)
+
+
 def signals(scanned: dict, now: float, plan_armed: bool) -> list[str]:
     """The mid-work signals present. PURE. An agent past its lease stops counting, as a Monitor past its expiry does."""
     out = ["plan"] if plan_armed else []
     if any(st["open"] and (st["at"] is None or now - st["at"] < AGENT_LEASE_S) for st in scanned["agents"].values()):
         out.append("agent")
-    if any(st["open"] and (st["expires"] is None or now < st["expires"]) for st in scanned["monitors"].values()):
+    if any(st["open"] and not st["watcher"] and (st["expires"] is None or now < st["expires"])
+           for st in scanned["monitors"].values()):
         out.append("monitor")
     return out
 
@@ -677,6 +697,34 @@ def _self_test_body() -> int:
          signals(scan([asst(T0, uses=[M]), result(T0, "tM", "Error: bad", err=True)]), T0 + 60, False), [])
     case("the signals combine in order", signals(scan([asst(T0, uses=[A, M]), result(T0, "tM", MON)]), T0 + 60, True),
          ["plan", "agent", "monitor"])
+    QW_CMD = ("tail -n 0 -F ~/explainers/questions.md 2>/dev/null | awk '/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} "
+              "/^   Q: /{printf \"%s | quoted: %s | %s\\n\", (s?s:\"(no section)\"), (q?substr(q,1,160):\"(nothing "
+              "highlighted)\"), $0; fflush(); q=\"\"}'")       # explainer-delivery.md §5, byte for byte
+    QW = ("tQ", "Monitor", {"timeout_ms": 3_600_000, "command": QW_CMD})
+    QMON = "Monitor started (task bq1, expires in 30m unless the source ends first)"
+
+    def mon_alone(cmd):
+        return signals(scan([asst(T0, uses=[("tX", "Monitor", {"timeout_ms": 3_600_000, "command": cmd})]),
+                             result(T0, "tX", QMON)]), T0 + 60, False)
+    case("⭐ the explainer QUESTION WATCHER alone is no signal: it waits on the human and has no end (backlog #537)",
+         signals(scan([asst(T0, uses=[QW]), result(T0, "tQ", QMON)]), T0 + 60, False), [])
+    case("⭐ the question watcher beside a CI monitor still gives monitor",
+         signals(scan([asst(T0, uses=[QW, M]), result(T0, "tQ", QMON), result(T0, "tM", MON)]), T0 + 60, False),
+         ["monitor"])
+    case("the watcher's other shapes are watchers too: an absolute path, -n0, a grep filter, no filter at all",
+         [mon_alone(c) for c in ("tail -n 0 -F /srv/repo/docs/explainers/questions.md 2>&1 | grep -E --line-buffered 'Q:'",
+                                 "tail -n0 -F ~/explainers/questions.md | grep --line-buffered -v '^\\s*$'",
+                                 "tail -F ~/explainers/questions.md")],
+         [[], [], []])
+    case("⭐ ADJACENT negatives — a command that merely MENTIONS questions.md still counts: a one-shot tail (no -F), "
+         "a -F tail that is not the FIRST stage, work chained after the watcher, another file's name",
+         [mon_alone(c) for c in ("tail -6 ~/explainers/questions.md", "tail -n 0 ~/explainers/questions.md",
+                                 "gh run watch 1 && tail -F ~/explainers/questions.md",
+                                 "tail -F ~/explainers/questions.md | awk '{print}'; gh run watch 1",
+                                 "tail -F ~/explainers/questions.md.bak",
+                                 "tail -F ~/myexplainers/questions.md",
+                                 "tail -F ~/explainers/questions.md | while read l; do gh pr checks 1; done")],
+         [["monitor"]] * 7)
 
     # ── the plan sentinel ──
     case("⭐ a PAUSED sentinel is not mid-work (r1 Claude F1 — the live one had been paused two days)",
