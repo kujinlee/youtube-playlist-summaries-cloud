@@ -143,7 +143,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 320 cases
+    python3 scripts/check-usage-pace.py --self-test  # 321 cases
 """
 from __future__ import annotations
 
@@ -971,8 +971,12 @@ def _self_test_body() -> int:
               (lambda r: (r[0], "USE IT" in r[1]))(evm(cache(98, week_reset=_sat2, at=_l), m85, _l)), (REFUSE, False))
         check("11-05 19:44: before the last day there is no USE IT — the room is still next week's",
               "USE IT" in evm(cache(85), m85)[1], False)
-        check("11-05 19:44: an unknown meter is not a stop either — it says keep working",
-              "Unknown is not a stop: keep working." in cannot("x")[1], True)
+        check("11-05 19:44: an unknown meter is not a stop either — it says keep working, after ITS reason",
+              [(m.endswith("Unknown is not a stop: keep working."), r in m)
+               for r, m in (("no cache", cannot("no cache")[1]), ("a stale cache", cannot("a stale cache")[1]))],
+              [(True, True), (True, True)])
+        check("use-it-or-lose-it r1 P2: rise_start is the stop's rise on ANY reset — a minute after it, the cap has left 97",
+              [cap_at(rise_start(x) + 60, x) > STOP_CAP for x in (_sat2, WEEK_RESET)], [True, True])
         check("#500: the pace line on the last day is its 97 cap by the formula alone (50 at midnight)",
               pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0], 97.0)
         check("#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)",
