@@ -3838,8 +3838,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "[ref(c[6:].split(\": \", 1)[0]) for c in ch if c.startswith(\"added [\")]",
-        "[ref(c[6:]) for c in ch if c.startswith(\"added [\")]"
+        "for c in ch if c.startswith(\"added [\") for k, _, rest in [c[6:].partition(\": \")]]",
+        "for c in ch if c.startswith(\"added [\") for k, rest in [(c[6:], c[6:].partition(\": \")[2])]]"
       ]
     ],
     "expect": [
@@ -3857,6 +3857,23 @@
     ],
     "expect": [
       "timeline story, from the REAL producer: a wording-only snapshot says so, never '1 change(s)' (r3 P2)"
+    ]
+  },
+  {
+    "name": "an added thread already merged is told only as added (backlog #520 PR)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        r for r, rest in added if rest.startswith(GLYPH[\"merged\"])]",
+        "        ]"
+      ],
+      [
+        "(\"added\", [r for r, rest in added if not rest.startswith(GLYPH[\"merged\"])]),",
+        "(\"added\", [r for r, rest in added]),"
+      ]
+    ],
+    "expect": [
+      "timeline story: a thread added already merged is told as landed, not merely added"
     ]
   }
 ]

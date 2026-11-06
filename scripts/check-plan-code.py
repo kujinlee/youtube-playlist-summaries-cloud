@@ -1264,7 +1264,7 @@ EXPECTED_MUTATIONS = {
     # --ink-soft on the fold summary and counts (C5: 2), and the closed PR's age (C6: 2).
     # ⟳ same day, review round 2's fold: 150 -> 152 — recency judged across EVERY ref, not the aggregate's time,
     # and an unread ref time never folds (X1: 2).
-    "scripts/goal-tree.py": 297,
+    "scripts/goal-tree.py": 298,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -2707,7 +2707,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ PR #446 r4 fold: 94 -> 102, none retired. The stdin read's deadline at both call sites, as a daemon,
     # failing toward the gate (4), its byte bound through real stdin (2), the control type as a string (1), and
     # the missing-cache case's precondition (1).
-    "scripts/check-usage-pace.py": 134,
+    "scripts/check-usage-pace.py": 141,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree

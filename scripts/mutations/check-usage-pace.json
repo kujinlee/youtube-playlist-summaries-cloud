@@ -1672,8 +1672,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "start, end = local_midnight(resets - 86400), resets - RISE_END_S",
-        "start, end = local_midnight(resets - 86400), resets"
+        "start, end = rise_start(resets), resets - RISE_END_S",
+        "start, end = rise_start(resets), resets"
       ]
     ],
     "expect": [
@@ -1685,8 +1685,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "local_midnight(resets - 86400)",
-        "local_midnight(resets)"
+        "    return local_midnight(resets - 86400)\n",
+        "    return local_midnight(resets)\n"
       ]
     ],
     "expect": [
@@ -1750,8 +1750,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "start, end = local_midnight(resets - 86400)",
-        "start, end = local_midnight(resets) - 86400"
+        "    ruled the rise starts at the midnight before `resets − 24 h`.\"\"\"\n    return local_midnight(resets - 86400)",
+        "    ruled the rise starts at the midnight before `resets − 24 h`.\"\"\"\n    return local_midnight(resets) - 86400"
       ]
     ],
     "expect": [
@@ -1769,6 +1769,97 @@
     ],
     "expect": [
       "⭐ #510 r2 Codex L1: when the reserve binds above 97 the message names the reserve, not the rising cap"
+    ]
+  },
+  {
+    "name": "the last day's room is never said (owner 11-05 19:44)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if last_day and weekly < stop else \"\")",
+        "if False else \"\")"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
+    ]
+  },
+  {
+    "name": "the pace line is still shown on the last day, beside the usage it reads as a stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if last_day:\n        line_note = \"\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: ...and the pace line is not shown on the last day — '97% — a guide' beside 97% read as a stop"
+    ]
+  },
+  {
+    "name": "below WARN on the last day the room is a silent OK",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if use_it:   # below the WARN line",
+        "    if False:   # below the WARN line"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: below the WARN line on the last day the room is SAID, never a silent OK"
+    ]
+  },
+  {
+    "name": "every day is the last day, so next week's room is called lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    last_day = now > rise_start(resets)",
+        "    last_day = True"
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: before the last day there is no USE IT — the room is still next week's"
+    ]
+  },
+  {
+    "name": "the WARN on the last day does not lead with the room",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return WARN, (f\"{use_it}⚠ usage pace: weekly",
+        "        return WARN, (f\"⚠ usage pace: weekly"
+      ]
+    ],
+    "expect": [
+      "⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset"
+    ]
+  },
+  {
+    "name": "a room under 0.1 shows as '0%' left (use-it-or-lose-it r1 P2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "if stop - weekly >= 0.1 else '<0.1%'}",
+        "if True else '<0.1%'}"
+      ]
+    ],
+    "expect": [
+      "use-it-or-lose-it r1 P2: a room under 0.1 is '<0.1%' left, never '0%' — which reads as nothing"
+    ]
+  },
+  {
+    "name": "USE IT keeps its own last-day start, apart from the rise (use-it-or-lose-it r1 P2)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "rise_start(resets)   # the same instant the stop starts rising",
+        "rise_start(resets) + 3600   # the same instant the stop starts rising"
+      ]
+    ],
+    "expect": [
+      "use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side"
     ]
   }
 ]

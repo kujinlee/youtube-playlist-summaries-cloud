@@ -83,7 +83,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #517 · the agenda lists RUNNING work apart from OWED work, and each owed item says what it waits for
 - bookkeeping · backlog #518 · two thread shapes where the Running/Owed split still mis-owns an open PR (filed from the capped round)
 - fix · backlog #519 · the timeline tells each entry as one sentence and folds the older ones; an empty NEEDS YOU is a muted line
-- bookkeeping · backlog #520 · the wording-only timeline case tests an unchanged tree, not a wording-only one (filed from the capped round)
+- fix · backlog #520 · the wording-only timeline case tests a real wording-only tree; an added thread already merged is told as landed
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
@@ -131,6 +131,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-05 08:36 "by reset time is approaching, gradually loosing the hard stop limit or do not apply the hard stop altogether after certain time of last day might be better"
 > 2026-11-05 08:40 "what has been the burning rate of usage? Will the 6 hours before the reset be enough to utilize the remaining capacity?"
 - fix · backlog #510 · the weekly stop rises from 97% to 99% over the whole last day before the reset, only on a fresh meter reading (owner card A, 08:47, replacing the 08:38 six-hour window)
+- fix · backlog #521 · on the last day the usage hook leads with the room the reset would lose — USE IT — instead of only saying hold back
+- bookkeeping · backlog #522 · the usage hooks run the checked-out branch's guard, not master's (measured 11-05 19:58)
 - fix · backlog #503 · measure whether agents spawned close together share one cached start-up
 - fix · backlog #444 · revisit Opus-vs-Sonnet routing once the meter regression has a ratio · waits on days of meter data
 - blocker · backlog #513 · the usage hook runs the checked-out branch's guard, so an unmerged branch sets the stop

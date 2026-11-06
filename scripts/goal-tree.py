@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 391 cases
+    python3 scripts/goal-tree.py --self-test                 # 393 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -1725,13 +1725,16 @@ def story(ch: list[str]) -> str:
     # for in the whole line: a detail can say "→ ✅ merged" (timeline-story r1 Codex P2)
     trans = [(ref(c[:m.start()]), m[1], m[2]) for c in ch if c.startswith("[")
              for m in [re.search(r": (\w+) → \S+ (\w+) — ", c)] if m]
-    landed = [r for r, a, b in trans if b == "merged" and a != "merged"]
+    added = [(ref(k), rest) for c in ch if c.startswith("added [") for k, _, rest in [c[6:].partition(": ")]]
+    # an added thread already merged LANDED in this interval (its glyph is the merged one), so it is told as landed
+    landed = [r for r, a, b in trans if b == "merged" and a != "merged"] + [
+        r for r, rest in added if rest.startswith(GLYPH["merged"])]
     moved = [f"{r} → {b}" for r, a, b in trans if b != "merged" and a != b]
     goals = [c.split(": ", 1)[1] for c in ch if c.startswith("goal added: ")]
     bits = [f"{head} {names(refs)}" for head, refs in (
         ("goal opened:", goals), ("landed", landed),
         # "added [rel] KEY: GLYPH detail" — a key is refs only, so it ends at the first ": " (timeline-story r2 P2)
-        ("added", [ref(c[6:].split(": ", 1)[0]) for c in ch if c.startswith("added [")]),
+        ("added", [r for r, rest in added if not rest.startswith(GLYPH["merged"])]),
         # "declared on master: [rel] name (was in the ledger as …): …" — the ref ends at the hand-off note (r1 P2)
         ("declared on master:", [ref(c[20:].split(" (was in the ledger", 1)[0]) for c in ch
                                  if c.startswith("declared on master: ")]),
@@ -2369,7 +2372,7 @@ def _self_test_body() -> int:
     _a1 = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked\n'
                                '- fix · PR #20 · new: with a colon\n'), src(), "T2")
     case("timeline story, from the REAL producer: an added thread is named by its key alone, never its state or "
-         "detail (r2 P2)", story(changes(_a0, _a1)), "Added PR #20.")
+         "detail (r2 P2)", story(changes(_a0, _a1)), "Landed PR #20.")   # the fixture's PR #20 is merged
     case("timeline story, from the REAL producer: a hand-off names its ref alone, never the ledger note (r1 P2)",
          story([l for l in _ch if l.startswith("declared on master: ")]), "Declared on master: backlog #11, PR #30.")
     _w1, _w2 = dict(_e, id="b-first"), dict(_e, id="a-second", goal="h", thread="side · PR #30 · again")
@@ -3321,6 +3324,16 @@ def _self_test_body() -> int:
     case("timeline story, from the REAL producer: a wording-only snapshot says so, never '1 change(s)' (r3 P2)",
          story(changes(_a0, dict(_a0, at="T9"))) if changes(_a0, dict(_a0, at="T9")) == [NO_READER_CHANGE] else "n/a",
          "No change a reader would see; only the wording moved.")
+    # backlog #520: a tree that differs in its stored WORDING alone (the thread's text), not merely in `at`
+    _w1 = derive(parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #10 · tracked, reworded\n'), src(), "T3")
+    case("backlog #520: two snapshots whose stored trees differ only in a thread's wording tell 'no change a reader "
+         "would see', through the real derive and changes()",
+         (_a0 != dict(_w1, at=_a0["at"]), changes(_a0, _w1), story(changes(_a0, _w1))),
+         (True, [NO_READER_CHANGE], "No change a reader would see; only the wording moved."))
+    # a thread first seen ALREADY merged landed in that interval — "added" alone hid the landing (seen 11-05 18:55)
+    case("timeline story: a thread added already merged is told as landed, not merely added",
+         story(["added [fix] backlog #519: ✅ merged 11-05 18:50 · 5408912 via PR #514",
+                "added [fix] backlog #520: ⬜ next"]), "Landed backlog #519; added backlog #520.")
     case("timeline story: a line of no known kind still yields a sentence — a count, never an empty summary",
          story(["something new"]), "1 change(s).")
     _tl = render_page([snap] * (TIMELINE_SHOWN + 2), "t")

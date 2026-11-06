@@ -143,7 +143,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 312 cases
+    python3 scripts/check-usage-pace.py --self-test  # 321 cases
 """
 from __future__ import annotations
 
@@ -328,10 +328,17 @@ def days_after_today(now: float, resets: float) -> float:
     return max(0.0, whole + (b.tm_hour * 3600 + b.tm_min * 60 + b.tm_sec) / 86400)
 
 
+def rise_start(resets: float) -> float:
+    """When the LAST DAY starts: the stop begins its rise (backlog #510) and the room under it becomes room the reset
+    will lose (backlog #521). One definition, so the two cannot disagree — across a DST change too, where #510 r1 M1
+    ruled the rise starts at the midnight before `resets − 24 h`."""
+    return local_midnight(resets - 86400)
+
+
 def cap_at(now: float, resets: float) -> float:
     """The cap (backlog #510): STOP_CAP until the last day starts, then linear to LAST_DAY_CAP at RISE_END_S before
     the reset, and LAST_DAY_CAP from then on."""
-    start, end = local_midnight(resets - 86400), resets - RISE_END_S
+    start, end = rise_start(resets), resets - RISE_END_S
     if now <= start:
         return STOP_CAP
     if now >= end:
@@ -347,7 +354,7 @@ def refuse_at(now: float, resets: float) -> float:
 
 def cannot(reason: str) -> tuple[str, str]:
     return CANNOT_RUN, (f"⚠ usage pace: CANNOT RUN — {reason}. The weekly usage is UNKNOWN: treat this as "
-                        f"NOT RUN, never as fine. Spawns are not blocked.")
+                        f"NOT RUN, never as fine. Spawns are not blocked. Unknown is not a stop: keep working.")
 
 
 def evaluate(text: str | None, now: float, missing: str = "the cache is missing",
@@ -404,19 +411,32 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
     stop_note = (f" The stop keeps {RESERVE_PER_DAY:g}% for each of the {days:.1f} days after today." if stop < cap_at(now, resets)
                  else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
                  else f" The stop rises over the last day, {pct_up(stop)} now and {pct(LAST_DAY_CAP)} from "
-                      f"{local_time(resets - RISE_END_S)}: start only work that finishes before the reset.")
+                      f"{local_time(resets - RISE_END_S)}: what is left under it is lost at the reset.")
     # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
     line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
     line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
                  else f" Today's pace line cannot be read ({why}): treat it as NOT RUN." if why else "")
+    # owner 2026-11-05 19:44 ("fix token management logic so that remaining capacity will not be wasted"): on the LAST
+    # day the room under the stop is lost at the reset. Every note above says HOLD BACK, so at 97% with a stale meter
+    # the session went idle for an hour with room left. The room is said FIRST, and the pace line — a fraction of a
+    # week that has run out — is not shown, because "97% — a guide" next to 97% read as a stop.
+    last_day = now > rise_start(resets)   # the same instant the stop starts rising (use-it-or-lose-it r1 P2)
+    # r1 P2: a positive room under 0.1 floors to "0%", which reads as NOTHING left; it is "<0.1%"
+    use_it = (f"⏳ USE IT — {pct(stop - weekly) if stop - weekly >= 0.1 else '<0.1%'} is left under the stop and is LOST at the reset "
+              f"({local_time(resets)}): idling is waste. Keep starting queued items that fit the room, never wait "
+              f"for the reset. " if last_day and weekly < stop else "")
+    if last_day:
+        line_note = ""
     if weekly >= stop:
         return REFUSE, (f"⛔ usage pace: weekly usage is {pct(weekly)} — new subagent spawns, and messages that "
                         f"wake an agent, are REFUSED (at {pct_up(stop)}); work in flight continues, and a "
                         f"subagent's report is allowed. Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if weekly >= WARN_AT:
-        return WARN, (f"⚠ usage pace: weekly usage is {pct(weekly)} (WARN at {pct(WARN_AT)}; at "
+        return WARN, (f"{use_it}⚠ usage pace: weekly usage is {pct(weekly)} (WARN at {pct(WARN_AT)}; at "
                       f"{pct_up(stop)} new spawns and agent wake-ups are refused). "
                       f"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
+    if use_it:   # below the WARN line on the last day is the MOST room to lose: it is said, never silent
+        return WARN, f"{use_it}Weekly usage is {pct(weekly)}; the stop is {pct_up(stop)}.{stop_note}{five_note}"
     if five_note:
         return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{five_note}"
     return OK, ""
@@ -927,9 +947,36 @@ def _self_test_body() -> int:
               (evm(cache(97.9, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[0],
                evm(cache(98, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[0]), (WARN, REFUSE))
         check("#510: the message says the stop is rising, its value now, and when it reaches 99",
-              "The stop rises over the last day, 98% now and 99% from Sat 01-16 01:00 PST: start only work that finishes "
-              "before the reset." in evm(cache(97.5, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[1],
+              "The stop rises over the last day, 98% now and 99% from Sat 01-16 01:00 PST: what is left under it is "
+              "lost at the reset." in evm(cache(97.5, week_reset=_sat2, at=NOW + 12.5 * 3600), m85, NOW + 12.5 * 3600)[1],
               True)
+        # owner 2026-11-05 19:44: the room left on the LAST day is lost at the reset, and the message must say so FIRST
+        _l = NOW + 12.5 * 3600
+        _lw = evm(cache(97, week_reset=_sat2, at=_l), m85, _l)
+        check("⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset",
+              (_lw[0], _lw[1].startswith("⏳ USE IT — 1% is left under the stop and is LOST at the reset (Sat 01-16 02:00 PST)")),
+              (WARN, True))
+        check("11-05 19:44: ...and the pace line is not shown on the last day — '97% — a guide' beside 97% read as a stop",
+              "pace line" in _lw[1], False)
+        check("⭐ 11-05 19:44: below the WARN line on the last day the room is SAID, never a silent OK",
+              (lambda r: (r[0], r[1].startswith("⏳ USE IT — 48% is left")))(evm(cache(50, week_reset=_sat2, at=_l), m85, _l)),
+              (WARN, True))
+        check("use-it-or-lose-it r1 P2: a room under 0.1 is '<0.1%' left, never '0%' — which reads as nothing",
+              evm(cache(97.95, week_reset=_sat2, at=_l), m85, _l)[1].startswith("⏳ USE IT — <0.1% is left"), True)
+        check("use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side",
+              ["USE IT" in evm(cache(90, week_reset=_sat2, at=t), m85, t)[1] for t in (rise_start(_sat2) - 60, rise_start(_sat2) + 60)]
+              + [cap_at(rise_start(_sat2) - 60, _sat2) == STOP_CAP, cap_at(rise_start(_sat2) + 60, _sat2) > STOP_CAP],
+              [False, True, True, True])
+        check("11-05 19:44: at the stop there is no room, so no USE IT — the refusal stands",
+              (lambda r: (r[0], "USE IT" in r[1]))(evm(cache(98, week_reset=_sat2, at=_l), m85, _l)), (REFUSE, False))
+        check("11-05 19:44: before the last day there is no USE IT — the room is still next week's",
+              "USE IT" in evm(cache(85), m85)[1], False)
+        check("11-05 19:44: an unknown meter is not a stop either — it says keep working, after ITS reason",
+              [(m.endswith("Unknown is not a stop: keep working."), r in m)
+               for r, m in (("no cache", cannot("no cache")[1]), ("a stale cache", cannot("a stale cache")[1]))],
+              [(True, True), (True, True)])
+        check("use-it-or-lose-it r1 P2: rise_start is the stop's rise on ANY reset — a minute after it, the cap has left 97",
+              [cap_at(rise_start(x) + 60, x) > STOP_CAP for x in (_sat2, WEEK_RESET)], [True, True])
         check("#500: the pace line on the last day is its 97 cap by the formula alone (50 at midnight)",
               pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0], 97.0)
         check("#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)",
@@ -1796,7 +1843,12 @@ def _self_test_body() -> int:
             check("run-hook: the prompt hook adds the WARN to context",
                   (rc, "85%" in hso(out).get("hookSpecificOutput", {}).get("additionalContext", "")), (0, True))
             check("run-hook: the prompt hook tells the owner at WARN", "85%" in hso(out).get("systemMessage", ""), True)
-            check("run-hook: the prompt hook is silent at 50%", hook("usage-pace-prompt.sh", 50), (0, ""))
+            # the fixture's reset is 24 h out, so this IS the last day: 50% is room that the reset would lose, and the
+            # hook says so (owner 11-05 19:44) — silence below WARN on other days is the unit cases' `OK, ""`
+            rc, out = hook("usage-pace-prompt.sh", 50)
+            check("run-hook: on the last day the prompt hook SAYS the room at 50%, never silent (owner 11-05 19:44)",
+                  (rc, hso(out).get("hookSpecificOutput", {}).get("additionalContext", "").startswith("⏳ USE IT")),
+                  (0, True))
             fresh()
             check("run-hook: the prompt hook says an absent cache ONCE per session (stdin reaches it)",
                   [bool(hook("usage-pace-prompt.sh", None, stdin=sess("s-9"))[1]) for _ in range(2)], [True, False])
