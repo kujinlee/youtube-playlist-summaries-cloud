@@ -18925,10 +18925,10 @@ The usage warning keeps showing today's pace line after the meter log grows past
 ## 2026-11-07
 Two new backlog items explain two red marks on the main branch today that were not real test failures. In both, a test
 job ran out of time on a slow machine, and the result looked exactly like a test that had missed a bug. One was a whole
-group of tests hitting its 30-minute limit; the other was a single check hitting its 2-minute limit. Nothing is broken,
-but until these are fixed a red on the main branch needs a person to read it before believing it.
+group of tests hitting its 30-minute limit; the other was a single check hitting its 2-minute limit. Nothing is broken, but the
+first one will now happen on most merges, and until these are fixed a red on the main branch needs a person to read it before believing it.
 <!--tech-->
 Backlog 557: shards 3, 12, 14 of push run 42387350733 (`fcf00068`) cancelled at `timeout-minutes: 30`; the completion
 job reports 'failure'. Backlog 558: `SUITE_TIMEOUT = 120` in `scripts/check-plan-code.py` is flat across suites;
-`check-fixture-variation.py --self-test` exceeded it on shard 16 of the `1d5fd219` push run. Both intermittent — the
-schedule run on `1d5fd219` was green.
+`check-fixture-variation.py --self-test` exceeded it on shard 16 of the `1d5fd219` push run. 558 is intermittent (the schedule run on `1d5fd219`
+was green); 557 is not — a re-run cancelled shard 3 again at 30 min, and the push budget is 30 against the schedule's 60.
