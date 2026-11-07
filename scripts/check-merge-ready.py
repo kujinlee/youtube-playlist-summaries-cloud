@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 256 cases
+    python3 scripts/check-merge-ready.py --self-test # 263 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -996,6 +996,13 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
 # base-only import fallback are deleted with it.
 # ⚠ NO WRITTEN-REASON ESCAPE, as before: `PIN_LINE` had none either. The reason for a fall is
 # written at the pin by convention, and the HOLD is what puts it in front of the owner.
+# ⟳ backlog #533: the display moved OUT of the harness into `PINS_FILE`, so a pin bump is no longer a
+# harness change (which swept the WHOLE manifest). A revision is read from `PINS_FILE` when it holds
+# one, and otherwise from `PINS_SCRIPT`, where every revision before backlog #533 kept the display, so a
+# merge base that predates the move is still read and a fall across the move is still HELD. After the
+# move `PINS_SCRIPT` holds no display: a head that DELETES `PINS_FILE` falls back to it, and that
+# display is refused (CANNOT RUN), never read as {}.
+PINS_FILE = "scripts/mutations/expected_mutations.py"
 PINS_SCRIPT = "scripts/check-plan-code.py"
 
 
@@ -1017,31 +1024,73 @@ def _pins_reader(src: Path):
     return _import_sibling(src, "_cpc_for_merge_ready", PinsUnreadable)
 
 
-def pins_at(run, rev: str) -> dict:
-    """The mutation pins `rev`'s `PINS_SCRIPT` DISPLAYS. `run(cmd, **kw)` is `_run`'s shape.
+def pins_home(run, rev: str) -> "str | None":
+    """The file `rev` keeps its pins display in: `PINS_FILE`, else `PINS_SCRIPT` (backlog #533), else None."""
+    for path in (PINS_FILE, PINS_SCRIPT):
+        ls = run(["git", "ls-tree", "--name-only", rev, "--", path], text=True)
+        if ls.returncode != 0:
+            raise PinsUnreadable(f"{rev}: `git ls-tree` exited {ls.returncode}")
+        if ls.stdout.strip():
+            return path
+    return None
 
-    A tree without `PINS_SCRIPT` — no `scripts/` at all included — pins nothing, `{}`. Every other
+
+def pins_at(run, rev: str) -> dict:
+    """The mutation pins `rev` DISPLAYS, in `pins_home`. `run(cmd, **kw)` is `_run`'s shape.
+
+    A tree with neither file — no `scripts/` at all included — pins nothing, `{}`. Every other
     failure, and a display `pin_display` refuses, raises `PinsUnreadable`."""
-    ls = run(["git", "ls-tree", "--name-only", rev, "--", PINS_SCRIPT], text=True)
-    if ls.returncode != 0:
-        raise PinsUnreadable(f"{rev}: `git ls-tree` exited {ls.returncode}")
-    if not ls.stdout.strip():
+    home = pins_home(run, rev)
+    if home is None:
         return {}
-    shown = run(["git", "show", f"{rev}:{PINS_SCRIPT}"], text=True, encoding="utf-8")
+    shown = run(["git", "show", f"{rev}:{home}"], text=True, encoding="utf-8")
     if shown.returncode != 0:
         raise PinsUnreadable(f"{rev}: `git show` exited {shown.returncode}")
     reader = _pins_reader(PINS_READER)
     # A refused display, a reader that misbehaves, or an answer that is not an exact {str: int} (r7 F2).
     return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,
-                  error=lambda d: PinsUnreadable(f"{rev}: {PINS_SCRIPT}: {d}"))
+                  error=lambda d: PinsUnreadable(f"{rev}: {home}: {d}"))
+
+
+def held_pins() -> dict:
+    """The pins the head harness HOLDS after import: `EXPECTED_MUTATIONS` of the module `_pins_reader` already
+    loaded for `pin_display`, as an exact, non-empty `{str: int}` (`_exact_pins`). Anything else is
+    `PinsUnreadable`."""
+    reader = _pins_reader(PINS_READER)
+    return _cross(lambda: reader.EXPECTED_MUTATIONS, reduce=_exact_pins,
+                  error=lambda d: PinsUnreadable(f"HEAD: {PINS_SCRIPT}'s EXPECTED_MUTATIONS: {d}"))
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
-    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`."""
+    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`. HEAD's are read from its display,
+    and must equal what the head harness HOLDS, or `PinsUnreadable` (CANNOT RUN)."""
     mb = run(["git", "merge-base", base, "HEAD"], text=True)
     if mb.returncode != 0:
         raise PinsUnreadable(f"`git merge-base {base} HEAD` exited {mb.returncode}")
-    return pins_at(run, mb.stdout.strip()), pins_at(run, "HEAD")
+    old = pins_at(run, mb.stdout.strip())
+    new = pins_at(run, "HEAD")
+    # ⟳ backlog #536, replacing a static proof that three review rounds thrashed on (sweep-pin-select r1-r3,
+    # `docs/reviews/architecture-review-2026-11-06-sweep-pin-select.md`). This script reads HEAD's DISPLAY;
+    # the harness enforces whatever ITS module holds. A head that points the harness at another pins file
+    # with a lowered pin, leaving the display stale, was READY. The old check proved the harness's SPELLING
+    # ("binds `PINS_FILE` once, to this literal"), and Python binds a global in a dozen spellings. This
+    # compares the VALUE: the dict the head harness holds after the import `pins_at` already made (the
+    # working tree is the PR head: `main()` refuses any other HEAD), against the display, on BOTH sides'
+    # keys. A head with no pins at all ({}) has no harness to compare, and every pin it drops is HELD.
+    # ⚠ BOUND, stated (backlog #535's class, which master also has as its E2): harness code that acts
+    # differently when IMPORTED than when RUN is not seen here. (R8) a write to `EXPECTED_MUTATIONS` inside
+    # a function called at run time, such as one line in `load_manifests`; (R9) a rebinding under
+    # `if __name__ == "__main__":`, or a branch on `sys.argv`; (R9b) the same through `globals()`. Each
+    # edits `check-plan-code.py`, the sweep harness, so the PR sweeps FULL and the edit is in the reviewed
+    # diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
+    if new:
+        held = held_pins()
+        differ = sorted(k for k in held.keys() | new.keys() if held.get(k) != new.get(k))
+        if differ:
+            raise PinsUnreadable(f"HEAD: {PINS_SCRIPT} holds pins that differ from the display this script reads, "
+                                 "for " + "; ".join(f"{k} (held {held.get(k)}, displayed {new.get(k)})"
+                                                    for k in differ))
+    return old, new
 
 
 def pin_falls(old: dict, new: dict) -> list[str]:
@@ -2011,6 +2060,37 @@ def _self_test_body() -> int:
     # this script's to see: the harness refuses them where the pins are used (check-plan-code's cases).
     def _syn(extra="", pins='    "scripts/a.py": 5,\n    "scripts/b.py": 3,\n'):
         return "import json, sys\nEXPECTED_MUTATIONS = {\n" + pins + "}\n" + extra
+    # THE READER IS THE WORKING TREE. ⟳ backlog #536: `pin_pair` compares HEAD's display with the pins the
+    # head harness HOLDS after import, so every case's reader is a tree as CI has it at the PR head: the
+    # harness (`harness`, the real one by default) and, beside it, the pins file showing `display`. One
+    # directory per content, because `_pins_reader` is cached by path.
+    import contextlib
+    _here = Path(__file__).resolve().parent
+    _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
+    _real_pins = (_here.parent / PINS_FILE).read_text(encoding="utf-8")     # backlog #533
+    _tree_root, _trees = Path(tempfile.mkdtemp()), {}
+    def _tree(display, harness=None, extra=()):
+        """The head harness's path in a working tree holding `display` as its pins file (None = no file)."""
+        key = (display, harness, extra)
+        if key not in _trees:
+            d = _tree_root / str(len(_trees))
+            (d / "scripts" / "mutations").mkdir(parents=True)
+            (d / PINS_SCRIPT).write_text(_real_src if harness is None else harness, encoding="utf-8")
+            for rel, text in ((PINS_FILE, display), *extra):
+                if text is not None:
+                    (d / rel).write_text(text, encoding="utf-8")
+            _trees[key] = d / PINS_SCRIPT
+        return _trees[key]
+    @contextlib.contextmanager
+    def _reading(path):
+        """`PINS_READER` pointed at `path` for the block (None leaves it as it is)."""
+        saved = globals()["PINS_READER"]
+        if path is not None:
+            globals()["PINS_READER"] = path
+        try:
+            yield
+        finally:
+            globals()["PINS_READER"] = saved
     def _prun(trees):
         """A runner over in-memory trees: `ls-tree` and `show` are answered from `trees`."""
         def run(cmd, **kw):
@@ -2023,13 +2103,22 @@ def _self_test_body() -> int:
                 return subprocess.CompletedProcess(cmd, 0, trees[rev][path], "")
             return subprocess.CompletedProcess(cmd, 128, "", f"unexpected {cmd}")
         return run
-    PCP = "scripts/check-plan-code.py"
-    import fixture_git
-    def PH(head_src, base_src=None):
-        """HOLD reasons for a head tree against the plain base, or `CANNOT RUN: <reason>`."""
+    PCP = PINS_FILE                                  # backlog #533: where the display lives now
+    def _pp(trees, harness=None, extra=()):
+        """`pin_pair` over `trees`, read by a working tree holding HEAD's pins file, or `CANNOT RUN: <reason>`."""
         try:
-            return pin_falls(*pin_pair(_prun({"base": {PCP: base_src or _syn()},
-                                              "HEAD": {PCP: head_src}}), "origin/master"))
+            with _reading(_tree(trees["HEAD"].get(PCP), harness, extra)):
+                return pin_pair(_prun(trees), "m")
+        except PinsUnreadable as exc:
+            return f"CANNOT RUN: {exc}"
+    import fixture_git
+    def PH(head_src, base_src=None, harness=None, reader=None):
+        """HOLD reasons for a head tree against the plain base, or `CANNOT RUN: <reason>`. The reader is a
+        working tree holding `head_src` and `harness`, or `reader` when a case names its own path."""
+        try:
+            with _reading(reader or _tree(head_src, harness)):
+                return pin_falls(*pin_pair(_prun({"base": {PCP: base_src or _syn()},
+                                                  "HEAD": {PCP: head_src}}), "origin/master"))
         except PinsUnreadable as exc:
             return f"CANNOT RUN: {exc}"
     def PHs(*a):
@@ -2056,13 +2145,28 @@ def _self_test_body() -> int:
           [True, True, True])
     check("⛔ ...and so is a BASE whose display cannot be read — the base is not trusted to be empty",
           PHs(_syn(), "EXPECTED_MUTATIONS = dict(a=5)\n").startswith("CANNOT RUN: base:"), True)
-    check("a base with no check-plan-code.py (a new repository) pins nothing, {}",
-          pin_pair(_prun({"base": {}, "HEAD": {PCP: _syn()}}), "m"),
+    check("a base with no pins file (a new repository) pins nothing, {}", _pp({"base": {}, "HEAD": {PCP: _syn()}}),
           ({}, {"scripts/a.py": 5, "scripts/b.py": 3}))
-    check("a head with no check-plan-code.py at all removes every pin",
+    check("a head with no pins file at all removes every pin",
           pin_falls(*pin_pair(_prun({"base": {PCP: _syn()}, "HEAD": {}}), "m")),
           ["loosens a gate: the mutation pin for scripts/a.py (5) is removed",
            "loosens a gate: the mutation pin for scripts/b.py (3) is removed"])
+    # ── backlog #533: the display MOVED from `PINS_SCRIPT` to `PINS_FILE` ─────────────────────────
+    # The harness after the move: it binds the pins from the pins file and has no display of its own.
+    _NODISP = f'PINS_FILE = "{PINS_FILE}"\n\n\ndef own_pins_path():\n    pass\n\n\nEXPECTED_MUTATIONS = read_pins(own_pins_path())[0]\n'
+    _low = _syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')
+    check("⭐ backlog #533: a base that PREDATES the move is read from check-plan-code.py's display, so a fall "
+          "across the move is HELD",
+          (lambda r: pin_falls(*r) if isinstance(r, tuple) else r)(   # a CANNOT RUN is compared, not unpacked
+              _pp({"base": {PINS_SCRIPT: _syn()}, "HEAD": {PCP: _low, PINS_SCRIPT: _NODISP}})),
+          [f"loosens a gate: {_drop}"])
+    check("⭐ backlog #533: a revision holding BOTH files is read from the pins file, never the harness",
+          _pp({"base": {PCP: _syn(), PINS_SCRIPT: _syn(pins='    "scripts/a.py": 9,\n')},
+               "HEAD": {PCP: _syn(), PINS_SCRIPT: _NODISP}}),
+          ({"scripts/a.py": 5, "scripts/b.py": 3}, {"scripts/a.py": 5, "scripts/b.py": 3}))
+    check("⛔ backlog #533: a head that DELETES the pins file falls back to a harness with no display: CANNOT RUN",
+          str(_pp({"base": {PCP: _syn()}, "HEAD": {PINS_SCRIPT: _NODISP}})).startswith(f"CANNOT RUN: HEAD: {PINS_SCRIPT}:"),
+          True)
     def _err(run_rc_for):
         def run(cmd, **kw):
             rc = run_rc_for(cmd)
@@ -2075,41 +2179,98 @@ def _self_test_body() -> int:
             return pin_pair(run, "m")
         except PinsUnreadable as exc:
             return f"CANNOT RUN: {exc}"
+    # ⟳ backlog #536 masked this case's ls-tree third: a pins read that ignores the failing `ls-tree` falls
+    # through to the held-versus-displayed comparison, which ALSO says CANNOT RUN (the synthetic display is not
+    # the real harness's pins). A bare "CANNOT RUN" was answered by that second clause, and the full sweep
+    # reported the mutation SURVIVED. So each third must be refused for ITS OWN failing command.
     check("⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}",
-          [str(_err(lambda c, w=w: 128 if c[1] == w else 0)).startswith("CANNOT RUN")
+          [(lambda r: r.startswith("CANNOT RUN") and f"`git {w}" in r and "exited 128" in r)(
+               str(_err(lambda c, w=w: 128 if c[1] == w else 0)))
            for w in ("merge-base", "ls-tree", "show")], [True, True, True])
     # THE REAL `check-plan-code.py`: the synthetic texts above prove the rule; only the real one
     # proves its display is what `pin_display` reads.
-    _here = Path(__file__).resolve().parent
-    _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _k = "scripts/check-vocabulary-collisions.py"
+    _base_pins: dict = {}                            # so a failed read below reds its cases, never kills the suite
     try:
         _rdr = _pins_reader(PINS_READER)
-        _base_pins = _cross(lambda: _rdr.pin_display(_real_src), reduce=_exact_pins, error=PinsUnreadable)
-        _hit = _real_src.replace(f'    "{_k}": {_base_pins[_k]},', f'    "{_k}": 0,', 1)
-        _rp = pin_pair(_prun({"base": {PCP: _real_src}, "HEAD": {PCP: _hit}}), "m")
+        _base_pins = _cross(lambda: _rdr.pin_display(_real_pins), reduce=_exact_pins, error=PinsUnreadable)
+        _hit = _real_pins.replace(f'    "{_k}": {_base_pins[_k]},', f'    "{_k}": 0,', 1)
+        with _reading(_tree(_hit)):
+            _rp = pin_pair(_prun({"base": {PCP: _real_pins, PINS_SCRIPT: _real_src},
+                                  "HEAD": {PCP: _hit, PINS_SCRIPT: _real_src}}), "m")
         _rerr = None
     except Exception as exc:
         _rp, _rerr = ({}, {}), f"{exc.__class__.__name__}: {exc}"
-    check("⭐ the REAL check-plan-code.py's display is read on both sides", (_rerr, len(_rp[0]) > 10), (None, True))
+    check("⭐ the REAL pins file's display is read on both sides", (_rerr, len(_rp[0]) > 10), (None, True))
     check("⭐ ...and a pin lowered in it is HELD at the value it shows",
           [r for r in pin_falls(*_rp) if _k in r], [f"loosens a gate: the mutation pin for {_k} drops {_rp[0].get(_k)} -> 0"])
+    # ⟳ backlog #536 (the THRASHING architecture review of PR #526): HEAD's harness is repointed at a NEW pins
+    # file holding a lowered pin, and `PINS_FILE` is left untouched. Each route below was READY on the stale
+    # file, or passed the static binding proof it replaced. Every case runs the REAL harness, edited, through
+    # a real import in a working tree, and `pin_pair` must refuse it by what the harness HOLDS.
+    _v2 = "scripts/mutations/pins_v2.py"
+    _k1 = "scripts/check-anchors.py"
+    _k1v = _base_pins.get(_k1) or 1
+    _v2pins = _real_pins.replace(f'    "{_k1}": {_k1v},', f'    "{_k1}": {_k1v - 1},', 1)
+    _v2gone = _real_pins.replace(f'    "{_k1}": {_k1v},\n', "", 1)
+    _em = "EXPECTED_MUTATIONS = read_pins(own_pins_path())[0]\n"
+    _opp = "def own_pins_path() -> pathlib.Path:\n"
+    _ret = "    return pathlib.Path(__file__).resolve().parent.parent / PINS_FILE\n"
+    def _ed(old, new):
+        """The real harness with `old` replaced by `new` once, or None when `old` is not in it (a red case)."""
+        return _real_src.replace(old, new, 1) if _real_src.count(old) == 1 else None
+    _routes = {
+        "R1 a plain rebinding": _ed(_em, f"PINS_FILE = '{_v2}'\n" + _em),
+        "R2 globals()['PINS_FILE']": _ed(_em, f"globals()['PINS_FILE'] = '{_v2}'\n" + _em),
+        "R3 an imported PINS_FILE": _ed(_em, "import sys as _s\n_s.path.insert(0, str(pathlib.Path(__file__).parent))\n"
+                                             "from _redir import PINS_FILE\n" + _em),
+        "R4 a class-body global (r3 F1)": _ed(_opp, f"class _Cfg:\n    global PINS_FILE\n    PINS_FILE = '{_v2}'\n\n\n" + _opp),
+        "R5 own_pins_path returning another file": _ed(_ret, _ret.replace("PINS_FILE", f"'{_v2}'")),
+        "R6 a module globals()['EXPECTED_MUTATIONS']": _ed(_em, _em + f"globals()['EXPECTED_MUTATIONS'] = "
+                                                                 f"dict(EXPECTED_MUTATIONS, **{{'{_k1}': {_k1v - 1}}})\n"),
+        "R7 exec": _ed(_em, f'exec("PINS_FILE = \'{_v2}\'")\n' + _em),
+    }
+    _legit = {
+        "L0 the real harness": _real_src,
+        "L1 a helper's local PINS_FILE (r2 F2)": _ed(_opp, 'def _helper():\n    PINS_FILE = "fixture.py"\n'
+                                                          '    return PINS_FILE\n\n\n' + _opp),
+        "L2 a class attribute PINS_FILE": _ed(_opp, 'class _C:\n    PINS_FILE = "x.py"\n\n\n' + _opp),
+        "L3 a module-level comprehension target (r3 F2)": _ed(_em, _em + '_l = [PINS_FILE for PINS_FILE in ("a",)]\n'),
+        "L4 an outer local whose nested function says global (r3 F2)": _ed(
+            _opp, 'def _o():\n    PINS_FILE = "x"\n    def _i():\n        global PINS_FILE\n    return PINS_FILE\n\n\n' + _opp),
+    }
+    _redir = (("scripts/_redir.py", f"PINS_FILE = '{_v2}'\n"),)
+    def _route(harness, v2=_v2pins):
+        """`pin_pair` at a head whose `PINS_FILE` is the real, unchanged one and whose harness is `harness`."""
+        if harness is None:
+            return "NO SUCH EDIT: the anchor is gone from the real harness"
+        return _pp({"base": {PCP: _real_pins, PINS_SCRIPT: _real_src},
+                    "HEAD": {PCP: _real_pins, _v2: v2, PINS_SCRIPT: harness}},
+                   harness, ((_v2, v2), *_redir))
+    _refused = f"CANNOT RUN: HEAD: {PINS_SCRIPT} holds pins that differ from the display this script reads"
+    check("⛔ backlog #536: a head harness REDIRECTED to a new pins file with a lowered pin is CANNOT RUN, by every "
+          "import-time route (R1-R7), never READY on the stale file",
+          {n: (str(r).startswith(_refused), f"{_k1} (held {_k1v - 1}, displayed {_k1v})" in str(r))
+           for n, r in ((n, _route(h)) for n, h in _routes.items())},
+          {n: (True, True) for n in _routes})
+    check("⛔ backlog #536: ...and so is a redirect to a pins file that DROPS a target (the comparison reads both sides)",
+          (lambda r: (str(r).startswith(_refused), f"{_k1} (held None, displayed {_k1v})" in str(r)))(
+              _route(_routes["R1 a plain rebinding"], _v2gone)),
+          (True, True))
+    check("backlog #536: ...while the real harness and harmless shapes of the same names are read, and hold nothing "
+          "(the adjacent negatives, L0-L4)",
+          {n: (lambda r: pin_falls(*r) if isinstance(r, tuple) else r)(_route(h)) for n, h in _legit.items()},
+          {n: [] for n in _legit})
     # ⛔ r4 Codex F2: importing the WORKING-TREE reader executes it. Every way that import or the reader
     # can misbehave is CANNOT RUN, never an answer — and never an escape past `main()`'s handler.
     _rd = Path(tempfile.mkdtemp())
     def _reader_says(body, name):
-        """`PH` over a fall, with `PINS_READER` pointed at `body` (None = no such file)."""
-        src = _rd / name
-        if body is not None:
-            src.write_text(body, encoding="utf-8")
-        saved = globals()["PINS_READER"]
-        globals()["PINS_READER"] = src
+        """`PH` over a fall, read by a working tree whose harness is `body` (None = no such file)."""
+        fall = _syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')
         try:
-            return PHs(_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
+            return str(PH(fall, reader=_rd / name if body is None else _tree(fall, body)))
         except BaseException as exc:          # an escape is a RED case, never a dead suite
             return f"ESCAPED {exc.__class__.__name__}"
-        finally:
-            globals()["PINS_READER"] = saved
     _codex_f2 = _real_src + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n'
     check("⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
           _reader_says(_codex_f2, "exit.py")[:11], "CANNOT RUN:")
@@ -2139,14 +2300,15 @@ def _self_test_body() -> int:
         _pgrun(["git", "add", "-A"], text=True)
         _pgrun(["git", "commit", "-qm", "root"], text=True)
         _pgrun(["git", "branch", "rootbr"], text=True)
-        (_pg / "scripts").mkdir()
+        (_pg / PCP).parent.mkdir(parents=True)
         (_pg / PCP).write_text(_syn())
         _pgrun(["git", "add", "-A"], text=True)
         _pgrun(["git", "commit", "-qm", "base"], text=True)
         _pgrun(["git", "branch", "basebr"], text=True)
         (_pg / PCP).write_text(_syn(pins='    "scripts/a.py": 5,\n    "scripts/b.py": 2,\n'))
         _pgrun(["git", "commit", "-qam", "head"], text=True)
-        _pgr = (pin_falls(*pin_pair(_pgrun, "basebr")), pin_pair(_pgrun, "rootbr")[0])
+        with _reading(_tree(_syn(pins='    "scripts/a.py": 5,\n    "scripts/b.py": 2,\n'))):
+            _pgr = (pin_falls(*pin_pair(_pgrun, "basebr")), pin_pair(_pgrun, "rootbr")[0])
     except Exception as exc:
         _pgr = f"{exc.__class__.__name__}: {exc}"
     finally:
@@ -2211,11 +2373,14 @@ def _self_test_body() -> int:
                 return cp("refused\n", 1)          # a gate that REFUSES, so the escape cross-check runs
             return cp("ok\n")                       # the three gate scripts
         return run
-    def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None, refuse=()):
+    def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None, refuse=(),
+              harness=None, extra=()):
+        """`main()` over the fake, read by a working tree holding HEAD's pins file and `harness` (backlog #536)."""
         globals()["_run"] = _fake(files, diff, body, status, tree, pins_head, refuse)
         buf = io.StringIO()
         try:
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
+                    _reading(_tree(pins_head or _syn(), harness, extra)):
                 if tests_at is None:
                     rc = main(["--pr", pr])
                 else:
@@ -2243,45 +2408,44 @@ def _self_test_body() -> int:
           (_rc, "mutation pins" in _o), (2, True))
     # ⛔ r4 Codex F2, through the REAL `main()`: Codex's exact input (a module-level `SystemExit(0)`
     # appended to the reader) left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
-    _f2 = Path(tempfile.mkdtemp())
-    (_f2 / "check-plan-code.py").write_text(_codex_f2, encoding="utf-8")
-    _saved_reader = globals()["PINS_READER"]
-    globals()["PINS_READER"] = _f2 / "check-plan-code.py"
     try:
-        _rc, _o = _main(["scripts/check-plan-code.py"], "15",
+        _rc, _o = _main(["scripts/check-plan-code.py"], "15", harness=_codex_f2,
                         pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
     except BaseException as exc:          # SystemExit escaping main() is exactly the defect
         _rc, _o = f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
-    finally:
-        globals()["PINS_READER"] = _saved_reader
-        shutil.rmtree(_f2, ignore_errors=True)
     check("⭐ main() is CANNOT RUN, rc=2, when importing the reader raises SystemExit (Codex r4 F2)",
           (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
     # ⛔ r8 Codex F1: an ORDINARY edit — `pin_display` returning `{}` — turned base and head into `{}` and a
     # pin falling 5 -> 4 into READY, rc 0. A present file with no pins is unreadable.
     def _reader_main(body, pr):
-        """`main()` over a falling pin, with `PINS_READER` pointed at a copy holding `body`."""
-        d = Path(tempfile.mkdtemp())
-        (d / "check-plan-code.py").write_text(body, encoding="utf-8")
-        saved = globals()["PINS_READER"]
-        globals()["PINS_READER"] = d / "check-plan-code.py"
+        """`main()` over a falling pin, read by a working tree whose harness is `body`."""
         try:
-            return _main(["scripts/check-plan-code.py"], pr,
+            return _main(["scripts/check-plan-code.py"], pr, harness=body,
                          pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
         except BaseException as exc:
             return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
-        finally:
-            globals()["PINS_READER"] = saved
-            shutil.rmtree(d, ignore_errors=True)
     _rc, _o = _reader_main(_real_src + "\ndef pin_display(src):\n    return {}\n", "17")
     check("⭐ r8 F1: main() is CANNOT RUN, rc=2, when pin_display returns {} for a present file",
           (_rc, "CANNOT RUN" in _o, "no pins" in _o), (2, True, True))
     _rc, _o = _reader_main(_real_src, "18")
     check("...and the same fall through the REAL reader is still HELD, rc=3 (the adjacent negative)",
           (_rc, "loosens a gate" in _o), (HOLD_RC, True))
+    # ⟳ backlog #536, the architecture review's §5: the redirect routes through the REAL `main()`, not only
+    # through `pin_pair`. HEAD's display is the real, unchanged pins file; the harness enforces a lowered pin.
+    _mr = {}
+    for _i, _n in enumerate(("R1 a plain rebinding", "R2 globals()['PINS_FILE']", "R4 a class-body global (r3 F1)",
+                             "R5 own_pins_path returning another file")):
+        try:
+            _rc, _o = _main(["scripts/check-plan-code.py"], str(40 + _i), pins_head=_real_pins,
+                            harness=_routes[_n] or "", extra=((_v2, _v2pins),))
+        except BaseException as exc:
+            _rc, _o = f"ESCAPED {exc.__class__.__name__}", ""
+        _mr[_n] = (_rc, "holds pins that differ from the display" in _o, _k1 in _o)
+    check("⭐ backlog #536: main() is CANNOT RUN, rc=2, naming the target, for a harness redirected by R1, R2, R4 or R5",
+          _mr, {n: (2, True, True) for n in _mr})
     def _absent_run(cmd, **kw):
-        """`_fake`'s answers, except that NEITHER revision has check-plan-code.py at all."""
-        if cmd[:3] == ["git", "ls-tree", "--name-only"] and cmd[-1] == PCP:
+        """`_fake`'s answers, except that NEITHER revision has a pins file or check-plan-code.py at all."""
+        if cmd[:3] == ["git", "ls-tree", "--name-only"] and cmd[-1] in (PINS_FILE, PINS_SCRIPT):
             return subprocess.CompletedProcess(cmd, 0, "", "")
         return _fake(["docs/x.md"], "")(cmd, **kw)
     globals()["_run"] = _absent_run
@@ -2290,7 +2454,7 @@ def _self_test_body() -> int:
             _rc = main(["--pr", "19"])
     finally:
         globals()["_run"] = _real_run
-    check("...and an ABSENT check-plan-code.py at both revisions still pins {}: READY, rc=0 (kept)",
+    check("...and an ABSENT pins file and check-plan-code.py at both revisions still pins {}: READY, rc=0 (kept)",
           _rc, 0)
     # ⛔ r5 Claude F1: the SAME class at the other in-process importer. Codex's r4 input appended to
     # the dashboard gate left `main()` at rc 0 with no verdict, on a head whose pin falls 5 -> 4.
@@ -2328,19 +2492,12 @@ def _self_test_body() -> int:
     _rc, _o = _gate_main(_real_cde + _broken + "def exemption_reason(body, marker):\n    raise Broken()\n", "20")
     check("⭐ ...and when the gate's exemption_reason raises one",
           (_rc, "CANNOT RUN" in _o), (2, True))
-    _f6 = Path(tempfile.mkdtemp())
-    (_f6 / "check-plan-code.py").write_text(_real_src + _broken + "def pin_display(src):\n    raise Broken()\n",
-                                            encoding="utf-8")
-    _saved_reader = globals()["PINS_READER"]
-    globals()["PINS_READER"] = _f6 / "check-plan-code.py"
     try:
         _rc, _o = _main(["scripts/check-plan-code.py"], "24",
+                        harness=_real_src + _broken + "def pin_display(src):\n    raise Broken()\n",
                         pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
     except BaseException as exc:          # SystemExit escaping main() is exactly the defect
         _rc, _o = f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
-    finally:
-        globals()["PINS_READER"] = _saved_reader
-        shutil.rmtree(_f6, ignore_errors=True)
     check("⭐ ...and when the pins reader's pin_display raises one",
           (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
     class _EvilMeta(type):
@@ -2360,20 +2517,12 @@ def _self_test_body() -> int:
     # text's `format()` — and each left `main()` at rc 0 with no verdict on a pin falling 5 -> 4. The
     # rule (`_cross`): nothing a sibling returns or raises leaves the boundary until it is EXACT builtins.
     def _reader_main(extra, pr, **kw):
-        """`main()` over a falling pin, with `PINS_READER` pointed at the real reader plus `extra`."""
-        d = Path(tempfile.mkdtemp())
-        (d / "check-plan-code.py").write_text(_real_src + "\n_real_pd = pin_display\n" + extra,
-                                              encoding="utf-8")
-        saved = globals()["PINS_READER"]
-        globals()["PINS_READER"] = d / "check-plan-code.py"
+        """`main()` over a falling pin, read by a working tree whose harness is the real one plus `extra`."""
         try:
-            return _main(["scripts/check-plan-code.py"], pr, **kw,
+            return _main(["scripts/check-plan-code.py"], pr, **kw, harness=_real_src + "\n_real_pd = pin_display\n" + extra,
                          pins_head=_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n'))
         except BaseException as exc:      # an escape from main() is exactly the defect
             return f"ESCAPED {exc.__class__.__name__}({getattr(exc, 'code', '')})", ""
-        finally:
-            globals()["PINS_READER"] = saved
-            shutil.rmtree(d, ignore_errors=True)
     _exit = "(_ for _ in ()).throw(SystemExit(0))"
     for _pr, _why, _extra in [
         ("25", "a dict subclass whose __iter__ exits (r7 P1)",
@@ -2395,8 +2544,12 @@ def _self_test_body() -> int:
          "def pin_display(src):\n    return {k: True for k in _real_pd(src)}\n"),
     ]:
         _rc, _o = _reader_main(_extra, _pr)
+        # ⟳ backlog #536: the held-versus-displayed comparison ALSO says CANNOT RUN for a display that is not the
+        # real harness's pins, so a bare "CANNOT RUN" let it answer for `_exact_pins` (bool pins passing an
+        # `isinstance` check were caught there, and the mutation was attributed elsewhere). The refusal must
+        # come from the reader's answer: `_exact_pins`'s TypeError on what pin_display returned.
         check(f"⭐ main() is CANNOT RUN, rc=2, when pin_display returns {_why}",
-              (_rc, "CANNOT RUN" in _o, "mutation pins" in _o), (2, True, True))
+              (_rc, "CANNOT RUN" in _o, "mutation pins" in _o, "TypeError: pin_display" in _o), (2, True, True, True))
     _rc, _o = _reader_main("def pin_display(src):\n    return dict(_real_pd(src))\n", "32")
     check("...while a reader returning a PLAIN dict still HOLDS the fall, rc=3 (the adjacent negative)",
           (_rc, "scripts/a.py drops 5 -> 4" in _o), (3, True))
@@ -2441,6 +2594,7 @@ def _self_test_body() -> int:
     check("main() clears app code with a local test run pinned to the head, rc=0",
           (_rc, "HOLD" in _o), (0, False))
 
+    shutil.rmtree(_tree_root, ignore_errors=True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
