@@ -3,9 +3,11 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 263 cases
+    python3 scripts/check-merge-ready.py --self-test # 335 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
+    python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
+                                                 # branch's flagged lines (backlog #508)
 
     0 = READY   1 = NOT READY   2 = CANNOT RUN   3 = HOLD (ready, but a house-rule exception
     applies: do NOT merge, tell the owner — see `hold_reasons`)
@@ -704,6 +706,22 @@ def name_status(z: str) -> list[dict]:
     return out
 
 
+class Hunk(list):
+    """A hunk's raw lines, and `old`: the base-file line its old side starts at (r1 m5), None if unknown.
+    A list, so every reader of a hunk is unchanged."""
+    old: "int | None" = None
+
+
+HUNK_OLD = re.compile(r"@@ -(\d+)")
+
+
+def _hunk(header: str) -> Hunk:
+    h = Hunk()
+    m = HUNK_OLD.match(header)
+    h.old = int(m[1]) if m else None
+    return h
+
+
 def diff_files(diff: str) -> list[dict]:
     """PURE. THE ONE DIFF PARSER — every loosening detector reads this and parses nothing itself.
 
@@ -738,7 +756,7 @@ def diff_files(diff: str) -> list[dict]:
         elif hunk is None and line.startswith("+++ "):
             cur["new"] = _side(line[4:], "b/")
         elif line.startswith("@@"):
-            hunk = []
+            hunk = _hunk(line)
             cur["hunks"].append(hunk)
         elif hunk is not None and line[:1] in ("+", "-", " "):
             hunk.append(line)
@@ -789,7 +807,30 @@ def diff_lines(diff: str, fs: list[dict] | None = None) -> dict[str, tuple[list[
 FAIL_WINDOW = 5
 
 
-def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None = None) -> dict[str, list[str]]:
+def rising_count(removed: str, added: list[str]) -> str | None:
+    """PURE. The added line that is `removed` with ONLY its `--self-test  # N cases` count RAISED, or None.
+
+    ⟳ backlog #508 (1), owner 2026-11-05 card A: such a line is not a loosening. The comparison is on
+    the unstripped line (indentation kept) with the one count replaced, so any other edit to the line —
+    a flag added, a re-indent — is still read as a rewrite. A FALLING count is not matched here and stays
+    flagged; `hold_reasons` also holds it as "fewer self-test cases". ⟳ r1 CODEX 3: compared UNSTRIPPED —
+    a trailing space dropped with the rise is a change. ⚠ BOUND (r1 CLAUDE m7): it assumes the count is
+    PROSE; a line where that number is code (`int('--self-test # 3 cases'.split()[3])`) is exempted too.
+    None exists in the repo today."""
+    old = list(CASE_COUNT.finditer(removed))
+    if len(old) != 1:
+        return None
+    for a in added:
+        new = list(CASE_COUNT.finditer(a))
+        if (len(new) == 1 and int(new[0]["n"]) > int(old[0]["n"])
+                and a[:new[0].start("n")] == removed[:old[0].start("n")]
+                and a[new[0].end("n"):] == removed[old[0].end("n"):]):
+            return a
+    return None
+
+
+def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None = None,
+                          at: list | None = None) -> dict[str, list[str]]:
     """PURE. {gate: removed code lines within `k` lines of a failure-path line in the hunk}.
 
     Reads a `git diff -U<k>` text. A file is a gate if EITHER path is (r2: a rename out of scope
@@ -797,6 +838,7 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
     identically anywhere in the same file is a MOVE, not a removal. ⛔ Distance is in OLD-FILE
     lines: r1 found six added comment lines pushed an adjacent removal out of the window, so an
     added line has no position and cannot anchor — only the source as it WAS is measured.
+    `at`, when a list, also receives `(gate, line, base line number or None)` per removal, in order.
     """
     out: dict[str, list[str]] = {}
     for f in (fs if fs is not None else diff_files(diff)):
@@ -806,21 +848,221 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
         fail = NODE_FAIL_PATH if node else FAIL_PATH
         # ⟳ r9 (HONEST): a MOVE keeps its INDENTATION. Stripped comparison read `return 1` pushed under
         # a new `if verbose:` as moved, cancelling a real removal — in Python indentation is meaning.
-        readded = [l[1:].rstrip() for hk in f["hunks"] for l in hk
-                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
+        # ⟳ r2 CODEX 1: ONE budget of added lines for both exemptions, each line spent once, compared
+        # EXACTLY (trailing whitespace too, which r1 CODEX 3 found can be meaning). Two lists, one stripped
+        # for moves and one raw for counts, let a moved line also excuse a space-dropping count rise.
+        added = [l[1:] for hk in f["hunks"] for l in hk
+                 if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
+        # ⟳ r3 CLAUDE M1: the budget was spent GREEDILY in hunk order, so a rise met first took a moved
+        # line's addition and the move went unpartnered (Codex 1 in its MIRROR order). ORDER-INDEPENDENT
+        # now: every EXACT re-add claims its addition first, across all hunks; a rise may then use only an
+        # addition no exact re-add claimed. Each exempted removal has its own distinct added line.
+        removed = []                    # (hunk, old-side index, line, the hunk's old-side code lines)
         for hk in f["hunks"]:
             old_side = [l for l in hk if not l.startswith("+")]
             code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
-            for i, l in code:
+            removed += [(hk, i, l, code) for i, l in code if l.startswith("-") and l[1:].strip()]
+        moved = set()
+        for n, (_hk, _i, l, _code) in enumerate(removed):
+            if l[1:] in added:
+                added.remove(l[1:])
+                moved.add(n)
+        for n, (hk, i, l, code) in enumerate(removed):
+            if n not in moved:
                 t = l[1:].strip()
-                if not l.startswith("-") or not t:
-                    continue
-                if l[1:].rstrip() in readded:
-                    readded.remove(l[1:].rstrip())
+                rose = rising_count(l[1:], added)
+                if rose is not None:
+                    added.remove(rose)
                     continue
                 if any(abs(j - i) <= k and fail.search(w[1:]) for j, w in code):
                     out.setdefault(_name(f), []).append(t)
+                    if at is not None:          # r1 m5: where it was, for the prompt block
+                        at.append((_name(f), t, None if getattr(hk, "old", None) is None else hk.old + i))
     return out
+
+
+# ── backlog #508 (2): A FLAGGED LINE IS ANSWERED BY THE REVIEWER, ON THE EXACT TREE BEING MERGED ────
+# ⛔ WHY. The failure-path proxy is syntactic and cannot tell a rewrite that refuses MORE from one that
+# refuses less. MEASURED 2026-11-06 from the written records (PR comments and bodies via `gh pr view`,
+# PRs #400-#519; backlog #508's row for #505): of 21 loosening HOLDs judged in writing, 19 were judged
+# FALSE by the PR's own side and 2 real (#442, chosen by the owner; one line of #454). The owner (2026-11-05, card A) moved that judgment to the reviewer: the flagged
+# lines go into the final round's prompt (`--flagged-block`, which `codex-review.py` appends itself),
+# the reviewer answers EACH in its review, the recorder copies the answers into the verdict file
+# (`codex-review.loosening_answers`, the ONE parser), and this gate clears a flagged line only when a
+# verdict recorded on the tree being merged answers it `not a loosening` and none answers it a finding.
+# ⛔ FAILS CLOSED, every way: an unanswered line, an answer on another tree, a verdict that cannot be
+# read, a `dirty: null` record, a reviewer's finding — each leaves the line HELD. REJECTED by the owner:
+# any rule that reads "text inserted mid-line" as harmless (`if bad` -> `if bad and False` passes it).
+# ⚠ BOUND: a Claude half's verdict is written by the coordinator from the filed review — the same trust
+# `record-review-verdict.py` states for its `head`. The answer is the reviewer's text, copied, not proof.
+VERDICT_DIR = "docs/reviews/verdicts/"
+# What may differ between the reviewed tree and the merging one: the round's own records. Nothing else —
+# a docs edit after the round also voids its answers (owner: the EXACT tree).
+# ⟳ r1 CLAUDE M2: the coordinator document and the decision log are the round's own records too — they
+# cannot exist before the round, and #515-#519 each committed them after it. The decision scheme's
+# baseline is NOT a record: only the log file is named.
+# ⟳ r2 CODEX 3: these were PREFIXES, so `docs/reviews/coordinator/policy.py`, loaded by a gate, and
+# `decision-log.jsonl.extra.py` changed after the round kept its answers. Now each is an EXACT name: a
+# round's review, verdict or coordinator document by the `<subject>-r<N>-<half>` convention, and the
+# decision log by equality. ⚠ BOUND: a gate that EXECUTES a record by that exact name (`runpy` runs a
+# `.md` too) is not caught; the name says what the file is for, and nothing in the repo runs one.
+REVIEW_RECORD = re.compile(r"docs/reviews/(?:(claude|codex|coordinator)/[a-z0-9][a-z0-9-]*-r[0-9]+-\1\.md"
+                           r"|verdicts/[a-z0-9][a-z0-9-]*-r[0-9]+-(?:claude|codex)\.verdict\.json"
+                           r"|decision-scheme/decision-log\.jsonl)")
+NOT_A_LOOSENING = "not a loosening"
+
+
+def flag_id(path: str, line: str, nth: int) -> str:
+    """PURE. A flagged line's id: its file, its text, and which occurrence of that text it is."""
+    import hashlib
+    return hashlib.sha256(f"{path}\0{nth}\0{line}".encode("utf-8", "surrogatepass")).hexdigest()[:12]
+
+
+def failure_path_flags(diff: str, fs: list[dict] | None = None,
+                       lines: dict | None = None) -> list[tuple[str, str, str]]:
+    """PURE. [(id, file, removed line)] — `failure_path_removals`, each line given its id. `lines`, when
+    a dict, receives {id: its base-file line number or None} (r1 m5; the id does NOT include it)."""
+    out = []
+    at: list = []
+    for path, gone in sorted(failure_path_removals(diff, fs=fs, at=at).items()):
+        seen: dict[str, int] = {}
+        where = [n for q, _t, n in at if q == path]
+        for t, n in zip(gone, where):
+            out.append((flag_id(path, t, seen.get(t, 0)), path, t))
+            seen[t] = seen.get(t, 0) + 1
+            if lines is not None:
+                lines[out[-1][0]] = n
+    return out
+
+
+def flagged_block(flags: list[tuple[str, str, str]], lines: dict | None = None) -> str:
+    """PURE. The review-prompt section that asks for one answer per flagged line; "" when none. Each row
+    names `file:line` in the BASE file when `lines` knows it (r1 CLAUDE m5)."""
+    if not flags:
+        return ""
+    def where(i, p):
+        n = (lines or {}).get(i)
+        return f"{p}:{n}" if n is not None else p
+    rows = "\n".join(f"- id `{i}` in `{where(i, p)}`: `{t}`" for i, p, t in flags)
+    return ("## Flagged lines: answer each one (merge gate, backlog #508)\n\n"
+            "`check-merge-ready.py` flags the lines below: each is removed or rewritten near a failure "
+            "path, and its detector cannot tell a stricter rewrite from a looser one. For EACH id, read the "
+            "change in context. Then END your review with this section, immediately before your `VERDICT:` "
+            "line: a line that is exactly `## Loosening answers`, then one line per id, unindented, in "
+            "exactly one of these two forms (the id where the angle brackets are):\n\n"
+            "    ## Loosening answers\n"
+            "    LOOSENING-CHECK <id>: not a loosening\n"
+            "    LOOSENING-CHECK <id>: finding: <what the branch now lets through that master refused>\n\n"
+            "Answer `not a loosening` only if the branch still refuses everything master refused on that "
+            "path. Only that section is read; nothing else in your review answers. Put NOTHING else in "
+            "it — no prose, no wrapped line, no fence or comment: any other non-blank line makes the WHOLE "
+            "section a finding for every id it names. A line with no answer keeps the merge on HOLD.\n\n"
+            f"{rows}\n")
+
+
+def _entry(e) -> str | None:
+    """A tree entry as `mode oid`, or None for an absent one (a `000000` mode is git's absent)."""
+    s = " ".join(e) if isinstance(e, tuple) else e
+    return None if s is None or s.startswith("000000 ") else s
+
+
+def tree_matches(reviewed: dict, dirty, merged: dict) -> bool:
+    """PURE. Is the tree a verdict reviewed — `reviewed` (its head's entries) overlaid by `dirty` — the
+    tree being merged (`merged`), apart from a REVIEW_RECORD? A `dirty` that is not a dict (the wrapper
+    could not describe the tree) is never a match. ⟳ r1 CODEX 2: EVERY entry of either tree is compared;
+    the paths were once those `git diff --name-only` named, and a submodule with `ignore = all` is named
+    by no diff, so a gitlink moved after the round kept the answer."""
+    if not isinstance(dirty, dict):
+        return False
+    for p in set(reviewed) | set(merged) | set(dirty):
+        if REVIEW_RECORD.fullmatch(p):
+            continue
+        saw = dirty[p] if p in dirty else reviewed.get(p)
+        if _entry(saw) != _entry(merged.get(p)):
+            return False
+    return True
+
+
+# A verdict's subject, round and half, from its name — the order "later" is read in (no record carries a time).
+VERDICT_NAME = re.compile(r"docs/reviews/verdicts/([a-z0-9][a-z0-9-]*)-r([0-9]+)-(claude|codex)\.verdict\.json")
+
+
+def standing_findings(records) -> "dict[str, list[str]]":
+    """PURE. {id: the verdict paths whose finding for it still stands}. `records` is every verdict the
+    branch adds, as (path, record, on the tree being merged). Any answer other than exactly
+    `not a loosening` is a finding.
+    ⟳ r1 CLAUDE m3: a finding counts from a record on ANY tree, since an unrelated edit does not touch it.
+    ⟳ r2 CODEX 5: but an id hashes the REMOVED base text, so a repaired replacement keeps the id, and the
+    finding held for ever. A finding is RETIRED only by a LATER round (by number) of the SAME subject and
+    half, on the tree being merged, answering that id `not a loosening` — the half that objected says the
+    repair satisfies it. The other half's assent never retires it, and a verdict whose name gives no
+    round can never be followed, so its finding stands."""
+    def key(p):
+        m = VERDICT_NAME.fullmatch(p)
+        return (m[1], m[3], int(m[2])) if m else None
+    out: "dict[str, list[str]]" = {}
+    for p, r, _ok in records:
+        k = key(p)
+        for i, a in (r.get("loosening_answers") or {}).items():
+            if a == NOT_A_LOOSENING:
+                continue
+            if k is not None and any(
+                    ok2 and (r2.get("loosening_answers") or {}).get(i) == NOT_A_LOOSENING
+                    and (k2 := key(p2)) is not None and k2[:2] == k[:2] and k2[2] > k[2]
+                    for p2, r2, ok2 in records):
+                continue
+            out.setdefault(i, []).append(p)
+    return out
+
+
+def answered_flags(records) -> frozenset[str]:
+    """PURE. The ids a record ON the tree being merged answers exactly `not a loosening`, less every id
+    with a standing finding (`standing_findings`; `records` as there)."""
+    clear = {i for _p, r, ok in records if ok for i, a in (r.get("loosening_answers") or {}).items()
+             if a == NOT_A_LOOSENING}
+    return frozenset(clear - set(standing_findings(records)))
+
+
+def review_answers(read, files: list[str]) -> tuple[frozenset[str], list[str]]:
+    """(answered ids, notes) from the verdicts this branch adds, each kept only if its tree is HEAD's.
+    `read(cmd)` returns stdout or raises; a raise here leaves every line held (the caller's `except`).
+    A record that cannot be used is SKIPPED with a note — never read as an answer."""
+    notes, anywhere = [], []
+    head_t = None
+    for p in sorted(f for f in files if f.startswith(VERDICT_DIR) and f.endswith(".json")):
+        if not read(["git", "ls-tree", "-z", "--full-tree", "HEAD", "--", p]).strip("\0"):
+            continue                                    # deleted on the branch
+        try:
+            rec = json.loads(read(["git", "cat-file", "blob", f"HEAD:{p}"]))
+        except ValueError:
+            notes.append(f"{p}: not JSON, so not an answer")
+            continue
+        if not (isinstance(rec, dict) and isinstance(rec.get("loosening_answers"), dict)):
+            continue                                    # a verdict from before #508, or no answers
+        anywhere.append([p, rec, False])                # r1 m3: its findings count on any tree
+        if rec.get("gate_ran") is not True or rec.get("refused"):
+            notes.append(f"{p}: the gate did not run, so its answers do not count")
+            continue
+        vhead = rec.get("head")
+        if not (isinstance(vhead, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", vhead)):
+            notes.append(f"{p}: no reviewed head, so its answers do not count")
+            continue
+        try:
+            reviewed = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", vhead]))
+        except PathsDisagree as exc:
+            notes.append(f"{p}: its reviewed head {vhead[:12]} cannot be read here ({exc})")
+            continue
+        if head_t is None:
+            head_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]))
+        if not tree_matches(reviewed, rec.get("dirty"), head_t):
+            notes.append(f"{p}: reviewed a different tree ({vhead[:12]}), so its answers do not count")
+            continue
+        anywhere[-1][2] = True
+    got, standing = answered_flags(anywhere), standing_findings(anywhere)
+    for i in sorted(set(standing) & {i for _p, r, ok in anywhere if ok for i in r["loosening_answers"]}):
+        notes.append(f"{', '.join(standing[i])}: answered {i} a finding, and no later round of the same "
+                     f"half answered it `not a loosening` on this tree, so it stays HELD")
+    return got, notes
 
 
 def gate_invocation_removals(diff: str, fs: list[dict] | None = None) -> dict[str, list[str]]:
@@ -866,10 +1108,10 @@ def changed_paths(status: str) -> list[str]:
 GIT_PLAIN = ["--no-ext-diff", "--no-relative"]
 
 
-def status_cmd(base: str) -> list[str]:
+def status_cmd(base: str, head: str = "HEAD") -> list[str]:
     """The machine list of what changed — every file's status and exact paths (backlog #353)."""
     return ["git", "--literal-pathspecs", "diff", "--name-status", "-z", "-M", *GIT_PLAIN,
-            f"{base}...HEAD"]
+            f"{base}...{head}"]
 
 
 # Hunks are read only where a detector looks: gate code and callers, the pins, the declared counts.
@@ -898,7 +1140,7 @@ def patch_hunks(patch: str) -> list[list[str]]:
         if line.startswith("diff --git "):
             hunk = None
         elif line.startswith("@@"):
-            hunk = []
+            hunk = _hunk(line)
             out.append(hunk)
         elif hunk is not None and line[:1] in ("+", "-", " "):
             hunk.append(line)
@@ -923,7 +1165,9 @@ def blob_hunks(read, old: "tuple[str, str] | None", new: "tuple[str, str] | None
     lines = read(["git", "cat-file", "blob", oid]).split("\n")
     if lines and lines[-1] == "":
         lines.pop()
-    return [[sign + line for line in lines]] if lines else []
+    whole = Hunk(sign + line for line in lines)
+    whole.old = 1
+    return [whole] if lines else []
 
 
 def git_reader(run):
@@ -938,7 +1182,7 @@ def git_reader(run):
     return read
 
 
-def gather(read, base: str) -> tuple[list[str], list[dict]]:
+def gather(read, base: str, head: str = "HEAD") -> tuple[list[str], list[dict]]:
     """(changed paths, one record per changed file) — what `main()` and the real-git self-test BOTH
     use, so they cannot drift. `read(cmd)` returns a command's stdout or raises.
 
@@ -947,11 +1191,12 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
     patches — a pathspec matches a directory's descendants, and attributes rewrite a path's patch —
     gave two more. Now the list says WHICH files changed, both trees (read once, NUL-separated) say
     which BLOB each side is, and the hunks are the diff of those two blobs. Ownership is by
-    construction, and nothing about a path, its attributes or a pathspec enters the hunks."""
-    mb = read(["git", "merge-base", base, "HEAD"]).strip()
-    st = read(status_cmd(base))
+    construction, and nothing about a path, its attributes or a pathspec enters the hunks.
+    `head` is the commit read as the branch's tip — `--flagged-block` passes the working tree's (r1 M2)."""
+    mb = read(["git", "merge-base", base, head]).strip()
+    st = read(status_cmd(base, head))
     old_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", mb]))
-    new_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]))
+    new_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", head]))
     fs = []
     changed = set(changed_paths(st))
     for e in name_status(st):
@@ -1106,7 +1351,7 @@ def pin_falls(old: dict, new: dict) -> list[str]:
 
 def hold_reasons(files: list[str], diff: str, head: str | None,
                  app_tests_at: str | None, no_review: bool, fs: list[dict] | None = None, *,
-                 pins: "tuple[dict, dict]") -> list[str]:
+                 pins: "tuple[dict, dict]", answered: frozenset = frozenset()) -> list[str]:
     """PURE. Why a READY pull request must still be HELD for the owner. Empty = no exception.
 
     `no_review` is the review gate's OWN matcher's answer for `NO-REVIEW:` (passed in, so the
@@ -1130,9 +1375,17 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
         nc = [int(m["n"]) for m in map(CASE_COUNT.search, ad) if m]
         if oc and nc and nc[0] < oc[0]:
             out.append(f"loosens a gate: {path} declares fewer self-test cases, {oc[0]} -> {nc[0]}")
-    for path, gone in sorted(failure_path_removals(diff, fs=fs).items()):
-        out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
-                   f"failure path, e.g. {gone[0][:70]!r}")
+    # ⟳ backlog #508: a line answered `not a loosening` by a review of THIS tree is cleared; `answered`
+    # is `review_answers`' set, read outside so this stays pure, and empty unless one was read.
+    flags = failure_path_flags(diff, fs)
+    for path in sorted({p for _i, p, _t in flags}):
+        mine = [(i, t) for i, p, t in flags if p == path]
+        gone = [t for i, t in mine if i not in answered]
+        if gone:
+            done = len(mine) - len(gone)
+            out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
+                       f"failure path, e.g. {gone[0][:70]!r}"
+                       + (f" ({done} other answered `not a loosening` by a review of this tree)" if done else ""))
     for path, gone in sorted(gate_invocation_removals(diff, fs).items()):
         out.append(f"loosens a gate: {path} drops or rewrites {len(gone)} gate invocation(s), "
                    f"e.g. {gone[0][:70]!r}")
@@ -1230,7 +1483,26 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--pr", type=int, default=None)
     ap.add_argument("--app-tests-passed", metavar="SHA", default=None,
                     help="the PR head at which test:integration and test:e2e passed locally")
+    ap.add_argument("--flagged-block", action="store_true",
+                    help="print the review-prompt section asking about this branch's flagged lines "
+                         "(backlog #508; codex-review.py appends it itself) and exit")
     args = ap.parse_args(argv)
+    if args.flagged_block:
+        # ⟳ r1 CLAUDE M2: the WORKING TREE, not only the commits — step 5 holds the last round's fixes
+        # uncommitted, and a line only they flag must be asked about in that round. `git stash create`
+        # writes a commit of the tracked working tree WITHOUT touching the stash list (empty = clean).
+        # ⚠ BOUND: an UNTRACKED file is not in it; a new file removes no line, so it flags none.
+        try:
+            _rd = git_reader(_run)
+            _wt = _rd(["git", "stash", "create"]).strip() or "HEAD"
+            _files, _fs = gather(_rd, BASE_REF, _wt)
+        except Exception as exc:          # fails CLOSED: no block means no answers, so the gate HOLDS
+            print(f"CANNOT RUN — could not read the branch's diff ({_describe(exc)}). Treat this as "
+                  f"NOT RUN.", file=sys.stderr)
+            return 2
+        _ln: dict = {}
+        print(flagged_block(failure_path_flags("", _fs, lines=_ln), _ln), end="")
+        return 0
 
     if not WORKFLOW.is_file():
         print(f"CANNOT RUN — {WORKFLOW} is missing. Treat this as NOT RUN.", file=sys.stderr)
@@ -1366,7 +1638,25 @@ def main(argv: list[str]) -> int:
                              f"so the waiver exception was NOT checked. Treat this as NOT RUN.")
         # Paths from the machine list — never `.split()` of `--name-only`, which cut a path
         # containing a space into two "files"; hunks from each file's own patch.
-        holds = (hold_reasons(files, "", head, args.app_tests_passed, bool(nr), fs=fs, pins=pins)
+        # ⟳ backlog #508: the flagged lines a review of THIS tree answered `not a loosening`. Read only
+        # when a line is flagged; ANY error leaves every line held — "cannot read" is never a pass.
+        answered: frozenset = frozenset()
+        flags = failure_path_flags("", fs)
+        if flags and nr is not None:
+            try:
+                answered, notes = review_answers(git_reader(_run), files)
+            except Exception as exc:
+                notes = [f"the branch's verdicts could not be read ({_describe(exc)}), so every "
+                         f"flagged line stays HELD"]
+            for n in notes:
+                print(f"  ⚠ answers: {n}")
+            left = [f for f in flags if f[0] not in answered]
+            if left:
+                print(f"  {len(left)} flagged line(s) have no `not a loosening` answer on this tree. "
+                      f"Ask the final review round (`--flagged-block` prints the prompt section): "
+                      + ", ".join(i for i, _p, _t in left[:6]) + (" …" if len(left) > 6 else ""))
+        holds = (hold_reasons(files, "", head, args.app_tests_passed, bool(nr), fs=fs, pins=pins,
+                              answered=answered)
                  if nr is not None else [])
     for h in holds:
         print(f"  HOLD {h}")
@@ -1676,6 +1966,228 @@ def _self_test_body() -> int:
                                          f"+    python3 scripts/z.py --self-test  # {n} cases")), "fewer self-test"), True)
     check("...but a count that rises is not",
           H(["scripts/z.py"], DF("scripts/z.py", "-    z --self-test  # 271 cases", "+    z --self-test  # 274 cases")), [])
+    # ── backlog #508 (1): a RISING count beside a failure word is not a loosening. Two distinct inputs,
+    # each beside a FAIL word, and the adjacent negatives: a falling count, other text changed with
+    # the count, and a re-indent. PR #520's `--self-test  # 113 cases` line is the measured shape.
+    _CK = "scripts/check-k.py"
+    for o, n in ((6, 9), (113, 114)):
+        check(f"#508: a rising self-test count {o} -> {n} beside a FAIL word is not a failure-path removal",
+              failure_path_removals(DF(_CK, "     0 = PASS   1 = FAIL",
+                                       f"-    python3 scripts/check-k.py --self-test  # {o} cases",
+                                       f"+    python3 scripts/check-k.py --self-test  # {n} cases")), {})
+    check("#508: ...but a FALLING count there still is (and the count rule holds it too)",
+          (list(failure_path_removals("", k=1, fs=diff_files(DF(_CK, "     0 = PASS   1 = FAIL",
+                                         "-    python3 scripts/check-k.py --self-test  # 9 cases",
+                                         "+    python3 scripts/check-k.py --self-test  # 6 cases")))),
+           has(H([_CK], DF(_CK, "     0 = PASS   1 = FAIL",
+                           "-    python3 scripts/check-k.py --self-test  # 9 cases",
+                           "+    python3 scripts/check-k.py --self-test  # 6 cases")), "fewer self-test")),
+          ([_CK], True))
+    check("#508: ...and a rising count with OTHER text changed on the line still is",
+          list(failure_path_removals(DF(_CK, "     0 = PASS   1 = FAIL",
+                                        "-    python3 scripts/check-k.py --self-test  # 6 cases",
+                                        "+    python3 scripts/check-k.py --self-test --loose  # 9 cases"))), [_CK])
+    check("#508: ...and a rising count with text changed AFTER the count still is",
+          list(failure_path_removals(DF(_CK, "     0 = PASS   1 = FAIL",
+                                        "-    python3 scripts/check-k.py --self-test  # 6 cases",
+                                        "+    python3 scripts/check-k.py --self-test  # 9 cases; exit 0 always"))), [_CK])
+    check("#508: ...and a rising count RE-INDENTED still is (in Python indentation is meaning)",
+          list(failure_path_removals(DF(_CK, "     0 = PASS   1 = FAIL",
+                                        "-    python3 scripts/check-k.py --self-test  # 6 cases",
+                                        "+python3 scripts/check-k.py --self-test  # 9 cases"))), [_CK])
+    # ⟳ r1 CODEX 3: the comparison STRIPPED trailing whitespace, so `"6 cases "` -> `"9 cases"` — a count
+    # rise that also drops a meaningful trailing space inside a string — was exempt. Kept-space control beside it.
+    check("#508 r1 Codex 3: a rising count that also DROPS a trailing space is still a failure-path removal",
+          list(failure_path_removals(DF(_CK, "     0 = PASS   1 = FAIL",
+                                        '-    expected = """--self-test # 6 cases ',
+                                        '+    expected = """--self-test # 9 cases'))), [_CK])
+    check("#508 r1 Codex 3: ...while the same rise with the trailing space KEPT is exempt",
+          failure_path_removals(DF(_CK, "     0 = PASS   1 = FAIL",
+                                   '-    expected = """--self-test # 6 cases ',
+                                   '+    expected = """--self-test # 9 cases ')), {})
+    # ── backlog #508 (2): the flagged lines, answered by the reviewer on the EXACT tree being merged.
+    check("#508: a flag id is stable and differs by path, by line and by occurrence",
+          (flag_id("a.py", "return 1", 0) == flag_id("a.py", "return 1", 0),
+           len({flag_id("a.py", "return 1", 0), flag_id("b.py", "return 1", 0),
+                flag_id("a.py", "return 2", 0), flag_id("a.py", "return 1", 1)}),
+           bool(re.fullmatch(r"[0-9a-f]{12}", flag_id("a.py", "x", 0)))), (True, 4, True))
+    _two = DF(_CK, "-    return 1", "-    return 1", "+    pass")
+    check("#508: the SAME line removed twice is two flags, each with its own id",
+          [(p, t) for _i, p, t in failure_path_flags("", fs=diff_files(_two))], [(_CK, "return 1"), (_CK, "return 1")])
+    check("#508: ...and the two ids differ", len({i for i, _p, _t in failure_path_flags(_two)}), 2)
+    _R = {"scripts/a.py": ("100644", "1" * 40), "docs/x.md": ("100644", "2" * 40)}
+    _M = dict(_R)
+    check("#508: an unchanged tree matches",
+          tree_matches({"lib/b.ts": ("100755", "9" * 40)}, {}, {"lib/b.ts": ("100755", "9" * 40)}), True)
+    check("#508: a GATE changed after the reviewed head does not match",
+          tree_matches(_R, {}, {**_M, "scripts/a.py": ("100644", "3" * 40)}), False)
+    check("#508: ...nor does a DOC changed after it (the tree is EXACT, not gate files only)",
+          tree_matches(_R, {}, {**_M, "docs/x.md": ("100644", "4" * 40)}), False)
+    check("#508: ...while a verdict and review docs added after it do",
+          tree_matches(_R, {}, {**_M, "docs/reviews/verdicts/k-r1-codex.verdict.json": ("100644", "5" * 40),
+                                "docs/reviews/claude/k-r1-claude.md": ("100644", "6" * 40),
+                                "docs/reviews/codex/k-r10-codex.md": ("100644", "9" * 40)}), True)
+    check("#508: an uncommitted fix the reviewer SAW, committed as seen, matches",
+          tree_matches(_R, {"scripts/a.py": "100644 " + "3" * 40},
+                       {**_M, "scripts/a.py": ("100644", "3" * 40)}), True)
+    check("#508: ...one changed again after the round does not",
+          tree_matches(_R, {"scripts/a.py": "100644 " + "3" * 40},
+                       {**_M, "scripts/a.py": ("100644", "7" * 40)}), False)
+    check("#508: ...nor one the reviewer saw that was then REVERTED (dirty, but the head has the old blob)",
+          tree_matches(_R, {"scripts/a.py": "100644 " + "3" * 40}, _M), False)
+    check("#508: a deletion the reviewer saw, committed, matches",
+          tree_matches(_R, {"scripts/a.py": "000000 " + "0" * 40},
+                       {"docs/x.md": _M["docs/x.md"]}), True)
+    check("#508: a tree the wrapper COULD NOT DESCRIBE (dirty None) never matches",
+          tree_matches(_R, None, _M), False)
+    # ⟳ r1 CODEX 2: the paths compared were those `git diff --name-only` named, and a submodule with
+    # `ignore = all` is named by no diff. Every entry of either tree is compared now.
+    _G = {**_R, "policy": ("160000", "a" * 40)}
+    check("#508 r1 Codex 2: a GITLINK changed after the round does not match, though no diff named it",
+          tree_matches(_G, {}, {**_G, "policy": ("160000", "b" * 40)}), False)
+    check("#508 r1 Codex 2: ...nor a file ADDED after the round that no diff named",
+          tree_matches(_R, {}, {**_M, "scripts/n.py": ("100644", "8" * 40)}), False)
+    # ⟳ r1 CLAUDE M2: the round's coordinator document and the decision log are committed AFTER the
+    # final round on every PR (#515-#519); voiding the answers over them made every flagged PR HOLD.
+    _late = {"docs/reviews/coordinator/k-r1-coordinator.md": ("100644", "a" * 40),
+             "docs/reviews/decision-scheme/decision-log.jsonl": ("100644", "b" * 40)}
+    check("#508 r1 M2: the round's coordinator document and decision log, added after it, match",
+          tree_matches(_R, {}, {**_M, **_late}), True)
+    check("#508 r1 M2: ...but the decision scheme's BASELINE changed after it does not (only the log is a record)",
+          tree_matches(_R, {}, {**_M, "docs/reviews/decision-scheme/baseline.json": ("100644", "c" * 40)}), False)
+    # ⟳ r2 CODEX 3: the records were PREFIXES, so a gate that loads `docs/reviews/coordinator/policy.py`
+    # changed after the round kept its answer, and so did `decision-log.jsonl.extra.py`. Exact names only.
+    check("#508 r2 Codex 3: a file under docs/reviews/coordinator/ that is not a round's coordinator doc does not match",
+          tree_matches(_R, {}, {**_M, "docs/reviews/coordinator/policy.py": ("100644", "d" * 40)}), False)
+    check("#508 r2 Codex 3: ...nor a file whose name only STARTS with the decision log's",
+          tree_matches(_R, {}, {**_M, "docs/reviews/decision-scheme/decision-log.jsonl.extra.py": ("100644", "e" * 40)}),
+          False)
+    check("#508 r2 Codex 3: ...nor any other name in a review directory — a script, no round, the wrong half's "
+          "directory, a coordinator doc that is not .md",
+          [tree_matches(_R, {}, {**_M, q: ("100644", "f" * 40)}) for q in (
+              "docs/reviews/codex/policy.py", "docs/reviews/verdicts/v.verdict.json",
+              "docs/reviews/claude/k-r1-codex.md", "docs/reviews/coordinator/k-r1-coordinator.py",
+              "docs/reviews/verdicts/k-r1-codex.verdict.json.py", "docs/reviews/verdicts/sub/k-r1-codex.verdict.json")],
+          [False] * 6)
+    _ids = [i for i, _p, _t in failure_path_flags(DF(_CK, "-    return 1", "-    sys.exit(2)", "+    pass"))]
+    def V(name, answers, on_tree):
+        return (f"docs/reviews/verdicts/{name}.verdict.json", {"loosening_answers": answers}, on_tree)
+    _N, _F = "not a loosening", "finding"
+    check("#508: answers — every id `not a loosening` is answered",
+          answered_flags([V("k-r1-codex", {_ids[0]: _N}, True), V("k-r1-claude", {_ids[1]: _N}, True)]),
+          frozenset(_ids))
+    check("#508: ...but an assent from a record on ANOTHER tree answers nothing",
+          answered_flags([V("k-r1-codex", {_ids[0]: _N}, False), V("k-r1-claude", {_ids[1]: _N}, True)]),
+          frozenset(_ids[1:]))
+    check("#508: ...a FINDING in any matching verdict beats `not a loosening` in another",
+          answered_flags([V("k-r1-codex", {_ids[0]: _N}, True), V("k-r1-claude", {_ids[0]: _F}, True)]), frozenset())
+    check("#508 r1 m3: a FINDING from a record on ANOTHER tree still beats an assent on this one",
+          answered_flags([V("k-r2-codex", {_ids[0]: _N, _ids[1]: _N}, True),
+                          V("k-r1-claude", {_ids[0]: _F, _ids[1]: _N}, False)]), frozenset(_ids[1:]))
+    check("#508: ...and any other answer text is not an answer",
+          answered_flags([V("k-r1-codex", {_ids[0]: "Not a loosening", _ids[1]: "not a loosening."}, True)]),
+          frozenset())
+    # ⟳ r2 CODEX 5 (with r1 CLAUDE m3): an id hashes the REMOVED base text, so a repaired replacement keeps
+    # it and its earlier finding held for ever. A finding now stands until a LATER round (by number) of the
+    # SAME subject and half answers that id `not a loosening` on the tree being merged.
+    check("#508 r2 Codex 5: a LATER round of the SAME half, on this tree, answering `not a loosening` retires its finding",
+          answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, True)]),
+          frozenset(_ids[:1]))
+    check("#508 r2 Codex 5: ...but not a later round of the OTHER half",
+          answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset())
+    check("#508 r2 Codex 5: ...nor a later round of the same half that does not answer THAT id",
+          answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[1]: _N}, True),
+                          V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset(_ids[1:]))
+    check("#508 r2 Codex 5: ...nor the same half's later assent on ANOTHER tree",
+          answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, False),
+                          V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset())
+    check("#508 r2 Codex 5: ...nor an EARLIER round's assent — rounds compare as numbers, r10 after r9",
+          (answered_flags([V("k-r10-codex", {_ids[0]: _F}, False), V("k-r9-codex", {_ids[0]: _N}, True)]),
+           answered_flags([V("k-r9-codex", {_ids[0]: _F}, False), V("k-r10-codex", {_ids[0]: _N}, True)])),
+          (frozenset(), frozenset(_ids[:1])))
+    check("#508 r2 Codex 5: ...nor another SUBJECT's later round, nor anything after a verdict whose name gives no round",
+          (answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("j-r2-codex", {_ids[0]: _N}, True)]),
+           answered_flags([V("codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, True)])),
+          (frozenset(), frozenset()))
+    _fp = DF(_CK, "-    return 1", "-    sys.exit(2)", "+    pass")
+    check("#508: hold_reasons with NO answers holds both flagged lines",
+          [r for r in hold_reasons([_CK], _fp, "abc", None, False, pins=({}, {})) if "failure path" in r],
+          [f"loosens a gate: {_CK} removes or rewrites 2 line(s) on a failure path, e.g. 'return 1'"])
+    check("#508: ...with ONE answered, the other still holds",
+          [r for r in hold_reasons([_CK], _fp, "abc", None, False, pins=({}, {}), answered=frozenset(_ids[:1]))
+           if "failure path" in r],
+          [f"loosens a gate: {_CK} removes or rewrites 1 line(s) on a failure path, e.g. 'sys.exit(2)'"
+           f" (1 other answered `not a loosening` by a review of this tree)"])
+    check("#508: ...with BOTH answered, the failure-path hold is cleared",
+          hold_reasons([_CK], _fp, "abc", None, False, pins=({}, {}), answered=frozenset(_ids)), [])
+    check("#508: ...and an answer never clears a DIFFERENT hold (a falling count stays held)",
+          has(hold_reasons([_CK], DF(_CK, "-    z --self-test  # 9 cases", "+    z --self-test  # 6 cases"),
+                           "abc", None, False, pins=({}, {}), answered=frozenset(_ids)), "fewer self-test"), True)
+    _blk = flagged_block(failure_path_flags(_fp))
+    check("#508: the prompt block names every flagged id, its path and its line",
+          all(i in _blk for i in _ids) and _CK in _blk and "sys.exit(2)" in _blk, True)
+    # The parser is codex-review's — the one rule both review halves are recorded through.
+    _cx508 = _load(Path(__file__).resolve().parent / "codex-review.py", "_cx_for_508_selftest")
+    check("#508: ...and no line of it is itself an answer (an echoed prompt answers nothing)",
+          _cx508.loosening_answers(_blk), {})
+    check("#508 r2: ...while the section it asks for IS read by the recorders' parser",
+          ("\n    ## Loosening answers\n" in _blk,
+           _cx508.loosening_answers(f"## Loosening answers\nLOOSENING-CHECK {_ids[0]}: not a loosening\n")),
+          (True, {_ids[0]: "not a loosening"}))
+    check("#508: no flags, no block", flagged_block([]), "")
+    # ⟳ r1 CLAUDE m5: a row showed a line's text but not WHERE, so two identical removals were not
+    # tellable apart. Each row names the line in the base file (`@@ -1` + its place on the old side).
+    _fp5 = DF(_CK, "     0 = PASS   1 = FAIL", "     x = 1", "-    return 1", "+    pass")
+    _at5: list = []
+    failure_path_removals(_fp5 + "@@ -40 +40 @@\n-    sys.exit(2)\n", at=_at5)
+    check("#508 r1 m5: failure_path_removals reports each removal's gate, text and base line, hunk by hunk",
+          _at5, [(_CK, "return 1", 3), (_CK, "sys.exit(2)", 40)])
+    _ln5: dict = {}
+    _f5 = failure_path_flags(_fp5, lines=_ln5)
+    check("#508 r1 m5: each block row names its file AND base line",
+          (_ln5, f"`{_CK}:3`" in flagged_block(_f5, _ln5)), ({_f5[0][0]: 3}, True))
+    # ⟳ r2 CODEX 1: the move and the rising-count exemptions each consumed from their OWN list of added
+    # lines, so one added line excused two removals: a moved `9 cases ` and a `6 cases ` -> `9 cases`
+    # that drops a meaningful space. One budget now, each added line spent once, compared exactly.
+    check("#508 r2 Codex 1: a MOVED line cannot also excuse a rising count that drops a trailing space",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
+                                                    '-    expected = """--self-test # 9 cases ',
+                                                    '-    expected = """--self-test # 6 cases ',
+                                                    '+    expected = """--self-test # 9 cases',
+                                                    '+    expected = """--self-test # 9 cases '))],
+          ['expected = """--self-test # 6 cases'])
+    check("#508 r2 Codex 1: ...one re-added line excuses ONE identical removal, not two",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "-    return 1", "-    return 1", "+    return 1"))],
+          ["return 1"])
+    # ⟳ r3 M1: the exact move now claims the one addition first, so the UNPARTNERED rise is the flag
+    # (it was the move under greedy order). Still exactly one flag for two removals and one addition.
+    check("#508 r2 Codex 1: ...and one addition cannot excuse both a move and a rising count",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
+                                                    "-    z --self-test  # 6 cases", "-    z --self-test  # 9 cases",
+                                                    "+    z --self-test  # 9 cases"))],
+          ["z --self-test  # 6 cases"])
+    # ⟳ r3 CLAUDE M1: the shared budget was spent GREEDILY in hunk order, so in Codex 1's MIRROR order
+    # (the rise first) the rise took the moved line's addition and the move went unpartnered. Every
+    # exact re-add is now claimed before any rise, so the result does not depend on line order.
+    check("#508 r3 M1: in the MIRROR order (the rise first) the rise cannot take the moved line's addition",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
+                                                    '-    expected = """--self-test # 6 cases ',
+                                                    '-    expected = """--self-test # 9 cases ',
+                                                    '+    expected = """--self-test # 9 cases',
+                                                    '+    expected = """--self-test # 9 cases '))],
+          ['expected = """--self-test # 6 cases'])
+    check("#508 r3 M1: ...and a move in a LATER hunk still claims its addition before an earlier hunk's rise",
+          [t for _i, _p, t in failure_path_flags(
+              DF(_CK, "     0 = PASS   1 = FAIL", '-    expected = """--self-test # 6 cases ',
+                 '+    expected = """--self-test # 9 cases')
+              + '@@ -40 +40 @@\n-    expected = """--self-test # 9 cases \n'
+              + '+    expected = """--self-test # 9 cases \n     return 1\n')],
+          ['expected = """--self-test # 6 cases'])
+    check("#508 r3 M1: ...and one raised-count addition excuses ONE rise, not two",
+          [t for _i, _p, t in failure_path_flags(DF(_CK, "     0 = PASS   1 = FAIL",
+                                                    "-    z --self-test  # 6 cases", "-    z --self-test  # 6 cases",
+                                                    "+    z --self-test  # 9 cases"))],
+          ["z --self-test  # 6 cases"])
     G = "scripts/check-x.py"
     # ⭐ PR #398's own shape: the removed line names no failure word; `fails.append` is 4 lines on.
     _398 = DF(G, '     ("3 LOST", t3(rows)),', '-    ("4 NO IMPROVEMENT", t4(rows)),', '     ("5 RANKER", t5(rows)),',
@@ -1957,6 +2469,12 @@ def _self_test_body() -> int:
             [{"old": "scripts/o p", "new": "scripts/n", "copy": False, "status": "R", "hunks": [["-a", "+b"]]},
              {"old": None, "new": "docs/d.md", "copy": False, "status": "A", "hunks": []}]),
            ["merge-base", "status", "ls-tree", "ls-tree", "diff"]))
+    _asked.clear()
+    _rdw = lambda cmd: _rd(cmd[:-1] + ["HEAD"]) if cmd[-1] == "w0" and "ls-tree" in cmd else (
+        _asked.append(cmd[-1]) or _rd(cmd))
+    gather(_rdw, "b0", "w0")
+    check("#508 r1 M2: gather reads the head it is GIVEN (the working tree's commit) for the base, the list and the tree",
+          [c for c in _asked if "w0" in c], ["w0", "b0...w0"])
     check("tree_index reads modes and ids by exact path, a space and a gitlink included",
           tree_index("100644 blob a1\tx y\x00160000 commit c2\tsub\0"), {"x y": ("100644", "a1"), "sub": ("160000", "c2")})
     _read_gl: list = []
@@ -1975,6 +2493,7 @@ def _self_test_body() -> int:
     check("...and a modify and a delete each name one path", changed_paths("M\0a\0D\0b\0"), ["a", "b"])
     check("...and the machine list's range follows the base it is given, literally",
           (status_cmd("f00dbab")[-1], "--literal-pathspecs" in status_cmd("origin/master")), ("f00dbab...HEAD", True))
+    check("#508 r1 M2: ...and the head it is given", status_cmd("f00dbab", "c0ffee1")[-1], "f00dbab...c0ffee1")
     check("...and an incomplete --name-status entry",
           _raises(lambda: name_status("R100\0only-one\0"), PathsDisagree), True)
     check("name_status reads a rename, an add and a delete",
@@ -2593,6 +3112,230 @@ def _self_test_body() -> int:
     _rc, _o = _main(["lib/x.ts"], "3", "abc")
     check("main() clears app code with a local test run pinned to the head, rc=0",
           (_rc, "HOLD" in _o), (0, False))
+
+    # ── backlog #508 THROUGH main(), IN A REAL GIT REPOSITORY: the answers are read from the branch's
+    # verdicts, the tree is compared by git, and only the call site passing `answered` clears a line.
+    _r8 = Path(tempfile.mkdtemp())
+    def _g8(*a):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=_r8,
+                              capture_output=True, text=True, env=fixture_git.env(HOME=str(_r8))).stdout.strip()
+    def _w8(rel, text):
+        (_r8 / rel).parent.mkdir(parents=True, exist_ok=True)
+        (_r8 / rel).write_text(text)
+    def _run8(cmd, **kw):
+        def cp(out="", rc=0):
+            return subprocess.CompletedProcess(cmd, rc, out, "")
+        if cmd[0] == "git":
+            kw.setdefault("text", True)
+            return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_r8,
+                                  capture_output=True, env=fixture_git.env(HOME=str(_r8)), **kw)
+        if cmd[0] == "mktemp":
+            return cp(str(_tmp))
+        if cmd[:3] == ["gh", "pr", "view"] and "body" in cmd:
+            return cp("")
+        if cmd[:3] == ["gh", "pr", "view"]:
+            return cp(json.dumps({"state": "OPEN", "isDraft": False, "baseRefName": "master",
+                                  "headRefOid": _g8("rev-parse", "HEAD"), "mergeStateStatus": "CLEAN"}))
+        if cmd[:3] == ["gh", "pr", "checks"]:
+            return cp(json.dumps([{"name": "verify", "bucket": "pass"}]))
+        return cp("ok\n")                           # the three gate scripts
+    def _main8(*argv):
+        globals()["_run"] = _run8
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                rc = main(list(argv))
+        finally:
+            globals()["_run"] = _real_run
+        return rc, buf.getvalue()
+    def _verdict8(name, head, answers, dirty=None, ran=True):
+        _half = name.rsplit("-", 1)[1]
+        _w8(f"docs/reviews/{_half}/{name}.md", "review\n")
+        _w8(f"docs/reviews/verdicts/{name}.verdict.json", json.dumps(
+            {"gate_ran": ran, "refused": False, "head": head, "dirty": {} if dirty is None else dirty,
+             "loosening_answers": answers}))
+        # Its own two paths only: `add -A` would also stage the absent `policy/` gitlink's deletion.
+        _g8("add", f"docs/reviews/{_half}/{name}.md", f"docs/reviews/verdicts/{name}.verdict.json")
+        _g8("commit", "-qm", name)
+    try:
+        _g8("init", "-q")
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 1\n    return 0\n")
+        _w8("docs/a.md", "a\n")
+        _w8("scripts/check-j.py", "def g(bad):\n    if bad:\n        return 1\n    return 0\n")
+        _g8("add", "-A")
+        _g8("commit", "-qm", "base")
+        _g8("update-ref", "refs/remotes/origin/master", "HEAD")
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 2\n    return 0\n")
+        _g8("commit", "-qam", "rewrite")
+        _c1 = _g8("rev-parse", "HEAD")
+        _rcb, _blk8 = _main8("--flagged-block")
+        _id8 = flag_id("scripts/check-k.py", "return 1", 0)
+        _verdict8("k-r0-codex", _c1, {_id8: "not a loosening"}, ran=False)
+        _rc, _o = _main8("--pr", "80")
+        check("#508 real git: an answer in a verdict whose gate did NOT run clears nothing, rc=3",
+              (_rc, "failure path" in _o, "did not run" in _o), (3, True, True))
+        _g8("reset", "-q", "--hard", _c1)
+        check("#508 real git: --flagged-block prints the branch's flagged line with its id, rc=0",
+              (_rcb, _id8 in _blk8, "`return 1`" in _blk8), (0, True, True))
+        _rc, _o = _main8("--pr", "81")
+        check("#508 real git: a flagged line with NO answer HOLDS, rc=3, and names the id to ask about",
+              (_rc, "failure path" in _o, _id8 in _o), (3, True, True))
+        _verdict8("k-r1-codex", _c1, {_id8: "not a loosening"})
+        _rc, _o = _main8("--pr", "82")
+        check("⭐ #508 real git: answered `not a loosening` by a verdict on the EXACT tree, the HOLD clears, rc=0",
+              (_rc, "failure path" in _o), (0, False))
+        _c2 = _g8("rev-parse", "HEAD")
+        _verdict8("k-r2-claude", _c1, {_id8: "finding"})
+        _rc, _o = _main8("--pr", "83")
+        check("⭐ #508 real git: ...a FINDING from another verdict on that tree keeps it HELD, rc=3",
+              (_rc, "failure path" in _o), (3, True))
+        _g8("reset", "-q", "--hard", _c2)
+        _w8("docs/a.md", "edited after the round\n")
+        _g8("commit", "-qam", "late doc edit")
+        _rc, _o = _main8("--pr", "84")
+        check("⭐ #508 real git: ...and ANY edit after the round (a doc) voids the answer, rc=3, saying why",
+              (_rc, "failure path" in _o, "different tree" in _o), (3, True, True))
+        _g8("reset", "-q", "--hard", _c2)
+        _w8("docs/reviews/verdicts/k-r3-codex.verdict.json", "{not json")
+        _g8("add", "-A")
+        _g8("commit", "-qm", "broken verdict")
+        _rc, _o = _main8("--pr", "85")
+        check("#508 real git: an unreadable verdict beside a good one answers nothing, and the good one still does",
+              (_rc, "not JSON" in _o), (0, True))
+        _c3 = _g8("rev-parse", "HEAD")
+        # r1 M2: the round's coordinator document and the decision log are committed after it.
+        _w8("docs/reviews/coordinator/k-r1-coordinator.md", "folded\n")
+        _w8("docs/reviews/decision-scheme/decision-log.jsonl", "{}\n")
+        _g8("add", "-A")
+        _g8("commit", "-qm", "post-round records")
+        _rc, _o = _main8("--pr", "86")
+        check("⭐ #508 r1 M2 real git: the coordinator doc and decision log committed AFTER the round keep its answer, rc=0",
+              (_rc, "failure path" in _o), (0, False))
+        # r1 M2 (second gap): the documented finish holds the last fixes UNCOMMITTED, so the block must
+        # read the working tree, not only the branch's commits.
+        # check-j.py is untouched by the branch's commits, so only the working tree names it at all.
+        _w8("scripts/check-j.py", "def g(bad):\n    if bad:\n        return 0\n    return 0\n")
+        _rcw, _blkw = _main8("--flagged-block")
+        _g8("checkout", "--", "scripts/check-j.py")
+        check("⭐ #508 r1 M2 real git: --flagged-block asks about a line an UNCOMMITTED fix flags",
+              (_rcw, flag_id("scripts/check-j.py", "return 1", 0) in _blkw, _id8 in _blkw), (0, True, True))
+        check("#508 r1 m5 real git: ...and names where each line was in the base file",
+              ("`scripts/check-j.py:3`" in _blkw, "`scripts/check-k.py:3`" in _blkw), (True, True))
+        # r1 CODEX 2: a submodule with `ignore = all` changed after the round is named by no diff.
+        _g8("reset", "-q", "--hard", _c1)
+        _w8(".gitmodules", '[submodule "policy"]\n\tpath = policy\n\turl = ./policy\n\tignore = all\n')
+        _g8("add", ".gitmodules")
+        _g8("update-index", "--add", "--cacheinfo", f"160000,{'a' * 40},policy")
+        _g8("commit", "-qm", "policy A")
+        _cg = _g8("rev-parse", "HEAD")
+        _verdict8("k-r6-codex", _cg, {_id8: "not a loosening"})
+        _rc0, _o0 = _main8("--pr", "87")
+        _g8("update-index", "--cacheinfo", f"160000,{'b' * 40},policy")
+        _g8("commit", "-qm", "policy B after the round")
+        _rc, _o = _main8("--pr", "88")
+        check("⭐ #508 r1 Codex 2 real git: an ignored submodule moved after the round voids its answer, rc=3",
+              (_rc0, _rc, "different tree" in _o), (0, 3, True))
+        # r1 CLAUDE m3: a FINDING on an earlier tree, for a line that has not changed since, still holds.
+        _g8("reset", "-q", "--hard", _c1)
+        _verdict8("k-r7-claude", _c1, {_id8: "finding"})
+        _w8("docs/a.md", "a docs-only fix after round 1\n")
+        _g8("commit", "-qam", "docs fix")
+        _verdict8("k-r8-codex", _g8("rev-parse", "HEAD"), {_id8: "not a loosening"})
+        _rc, _o = _main8("--pr", "89")
+        check("⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3",
+              (_rc, "failure path" in _o, f"k-r7-claude.verdict.json: answered {_id8} a finding" in _o), (3, True, True))
+        # r2 CODEX 5, its sequence: master `return 1`; round 1 sees `return 0` and answers a finding; the
+        # fix makes it `return 2`; round 2 of the same half answers `not a loosening` on that exact tree.
+        _g8("reset", "-q", "--hard", "refs/remotes/origin/master")
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 0\n    return 0\n")
+        _g8("commit", "-qam", "loosen")
+        _verdict8("k-r11-codex", _g8("rev-parse", "HEAD"), {_id8: "finding"})
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 2\n    return 0\n")
+        _g8("commit", "-qam", "repair")
+        _fix = _g8("rev-parse", "HEAD")
+        _verdict8("k-r12-claude", _fix, {_id8: "not a loosening"})
+        _rcx, _ox = _main8("--pr", "90")
+        _verdict8("k-r12-codex", _fix, {_id8: "not a loosening"})
+        _rc, _o = _main8("--pr", "91")
+        check("⭐ #508 r2 Codex 5 real git: a REPAIRED line's finding is retired by the same half's later assent "
+              "on the exact tree (rc=0), and not by the other half's (rc=3)",
+              (_rcx, "k-r11-codex" in _ox, _rc, "failure path" in _o), (3, True, 0, False))
+        # r2 CODEX 3, its reproduction: a gate loads its policy from a .py under docs/reviews/coordinator/.
+        _w8("docs/reviews/coordinator/policy.py", "DENY = False\n")
+        _g8("add", "docs/reviews/coordinator/policy.py")
+        _g8("commit", "-qm", "policy flipped after the round")
+        _rc, _o = _main8("--pr", "92")
+        check("⭐ #508 r2 Codex 3 real git: a .py under docs/reviews/coordinator/ committed after the round voids "
+              "its answer, rc=3",
+              (_rc, "k-r12-codex.verdict.json: reviewed a different tree" in _o), (3, True))
+    finally:
+        shutil.rmtree(_r8, ignore_errors=True)
+    # ⟳ r2 CODEX 1, VERBATIM and through `gather`: `a()`'s assignment moves into `c()` while `b()`'s
+    # `6 cases ` becomes `9 cases`, dropping the space `b()` tests for. Its result changes 1 -> 0.
+    _r1x = Path(tempfile.mkdtemp())
+    def _run1x(cmd, **kw):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_r1x,
+                              capture_output=True, env=fixture_git.env(HOME=str(_r1x)), **kw)
+    _rd1x = git_reader(_run1x)
+    _K1 = ('def a():\n    expected = """--self-test # 9 cases \n"""\n    return 1\n\n'
+           'def b():\n    expected = """--self-test # 6 cases \n"""\n'
+           '    if expected.split("cases", 1)[1].startswith(" "):\n        return 1\n    return 0\n\n'
+           'def c():\n    pass\n')
+    _K2 = ('def a():\n    return 1\n\n'
+           'def b():\n    expected = """--self-test # 9 cases\n"""\n'
+           '    if expected.split("cases", 1)[1].startswith(" "):\n        return 1\n    return 0\n\n'
+           'def c():\n    expected = """--self-test # 9 cases \n"""\n    pass\n')
+    try:
+        _rd1x(["git", "init", "-q"])
+        (_r1x / "scripts").mkdir()
+        (_r1x / "scripts/check-k.py").write_text(_K1)
+        _rd1x(["git", "add", "-A"])
+        _rd1x(["git", "commit", "-qm", "base"])
+        _b1x = _rd1x(["git", "rev-parse", "HEAD"]).strip()
+        (_r1x / "scripts/check-k.py").write_text(_K2)
+        _rd1x(["git", "commit", "-qam", "move a() into c(); b() drops the space"])
+        _f1x, _fs1x = gather(_rd1x, _b1x)
+        _got1x = ([t for _i, _p, t in failure_path_flags("", fs=_fs1x)],
+                  has(hold_reasons(_f1x, "", "h", None, False, fs=_fs1x, pins=({}, {})), "failure path"))
+    except Exception as exc:                          # git missing or the parse raised: a red case, said
+        _got1x = f"{exc.__class__.__name__}: {exc}"
+    finally:
+        shutil.rmtree(_r1x, ignore_errors=True)
+    check("⭐ #508 r2 Codex 1 real git: the verbatim move + space-dropping rise is flagged and HELD",
+          _got1x, (['expected = """--self-test # 6 cases'], True))
+    # ⟳ r3 CLAUDE M1, the reviewer's reproduction VERBATIM: Codex 1's file in the MIRROR order, `b()`
+    # BEFORE `a()`, and `a()` padded past FAIL_WINDOW so its moved line is near no failure word. Greedy
+    # pairing let `b()`'s rise take `c()`'s addition: nothing flagged, while master flagged `b()`'s line.
+    _r3m = Path(tempfile.mkdtemp())
+    def _run3m(cmd, **kw):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_r3m,
+                              capture_output=True, env=fixture_git.env(HOME=str(_r3m)), **kw)
+    _rd3m = git_reader(_run3m)
+    _pad = "".join(f"    v{_n} = {_n}\n" for _n in range(8))
+    _B3 = ('def b():\n    expected = """--self-test # {n} cases{sp}\n"""\n'
+           '    if expected.split("cases",1)[1].startswith(" "):\n        return 1\n    return 0\n')
+    _M1 = (_B3.format(n=6, sp=" ") + 'def a():\n' + _pad + '    expected = """--self-test # 9 cases \n"""\n'
+           + _pad + 'def c():\n    pass\n')
+    _M2 = (_B3.format(n=9, sp="") + 'def a():\n' + _pad + _pad
+           + 'def c():\n    expected = """--self-test # 9 cases \n"""\n    pass\n')
+    try:
+        _rd3m(["git", "init", "-q"])
+        (_r3m / "scripts").mkdir()
+        (_r3m / "scripts/check-k.py").write_text(_M1)
+        _rd3m(["git", "add", "-A"])
+        _rd3m(["git", "commit", "-qm", "base"])
+        _b3m = _rd3m(["git", "rev-parse", "HEAD"]).strip()
+        (_r3m / "scripts/check-k.py").write_text(_M2)
+        _rd3m(["git", "commit", "-qam", "move a()'s line into c(); b() drops the space"])
+        _f3m, _fs3m = gather(_rd3m, _b3m)
+        _got3m = ([t for _i, _p, t in failure_path_flags("", fs=_fs3m)],
+                  has(hold_reasons(_f3m, "", "h", None, False, fs=_fs3m, pins=({}, {})), "failure path"))
+    except Exception as exc:                          # git missing or the parse raised: a red case, said
+        _got3m = f"{exc.__class__.__name__}: {exc}"
+    finally:
+        shutil.rmtree(_r3m, ignore_errors=True)
+    check("⭐ #508 r3 M1 real git: the MIRROR order (b() before a(), a() padded) is flagged and HELD too",
+          _got3m, (['expected = """--self-test # 6 cases'], True))
 
     shutil.rmtree(_tree_root, ignore_errors=True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")

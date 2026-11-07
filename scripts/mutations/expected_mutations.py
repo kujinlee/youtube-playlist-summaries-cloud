@@ -1134,11 +1134,23 @@ EXPECTED_MUTATIONS = {
     #   r7 67 -> 71 — master's rule is kept VERBATIM beside the identity rule and either refuses
     #   (X1, a symlink nested in docs/reviews): the OR's master branch, its reviewed-root half, its
     #   lexical reading, and main asking it before --out is resolved.
-    "scripts/codex-review.py": 71,
+    #   backlog #508 71 -> 76 — the reviewer's answers to the merge gate's flagged lines: the finding-wins
+    #   rule, the whole-line match, the block appended in main(), the answers in the OK verdict, the field.
+    #   ⟳ #508 r1 76 -> 84 — the parser: loose dissent (2: the line rule, the id's case), strict assent
+    #   outside quotes (fence and comment: 6 — the gate, the comment open, its continuation, its close,
+    #   the fence close, the fence character).
+    #   ⟳ #508 r2 84 -> 87 — the free-text parser is REPLACED by one answers section: the mention rule and
+    #   the six fence/comment entries are deleted with their code (-7); three re-anchored; ten added (a
+    #   malformed line skipped, only its ids, the id's case, the FIRST section, no VERDICT: stop, a blank
+    #   line, a loose heading, no section read whole, an empty finding, no right-strip).
+    #   ⟳ #508 r3 87 -> 91 — ONE heading (r3 m1): a second heading not malformed, an id after VERDICT: not
+    #   malformed, the malformed tail judged only in the loop, findings only before VERDICT:. Five re-anchored.
+    "scripts/codex-review.py": 91,
     # ⟳ new (review-round cap, 2026-10-31): a Claude half's verdict — one entry per refusal, plus the
     # three fields a consumer reads (gate_ran, the full head, the clean overlay). ⟳ PR #457 r2: 19 -> 21,
     # the fixed-position reads (the `\n` split, the unstripped first line); seven retargeted.
-    "scripts/record-review-verdict.py": 21,
+    # ⟳ backlog #508: 21 -> 23, the filed review's answers into the record (call site and field).
+    "scripts/record-review-verdict.py": 23,
     # ⟳ 2026-09-07, R4 manifest debt 7 -> 6. Writing these found FIVE of the guard's 16 cases
     # unable to fail via the mechanism they are named after — all one shape: the FIXTURE used an
     # input that a DIFFERENT rule filters first, so the named rule was never reached.
@@ -1648,7 +1660,24 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06, backlog #536 (the THRASHING architecture review, r4 fold): 104 -> 102. The static binding proof is
     # DELETED with its 5 mutations (3 from r1, 2 from r2); the held-versus-display comparison in `pin_pair` adds 3:
     # skipped (1), inverted (1), and reading only the held side's keys (1).
-    "scripts/check-merge-ready.py": 102,
+    # ⟳ backlog #508: 97 -> 112 — the rising-count exemption (4: skipped, any change, the prefix, the
+    # suffix) and the reviewer's answers (11: the occurrence in the id, a null overlay, the exact tree,
+    # the overlay read, finding-wins, the exact answer, hold_reasons, main's call site, the tree check,
+    # a gate that did not run, --flagged-block).
+    # ⟳ #508 r1: 112 -> 127 — the unstripped rising count (1); every tree entry compared (2: gitlinks, an
+    # added path); the round's own records (3: coordinator, decision log, the baseline NOT exempt); the
+    # working-tree block (2: the stash commit, the status head); an earlier tree's finding (2: the rule,
+    # the call site); the block's file:line (5: the offset, the row, both hunk parsers, main's call site).
+    # ⟳ #508 r2: 127 -> 141 — exact record names (3: the coordinator pattern, fullmatch, the half's own
+    # directory); a finding retired only by a later round of the same subject and half on this tree (8);
+    # one budget of added lines for the move and rising-count exemptions (3). Twelve re-anchored.
+    # ⟳ #508 r3: 141 -> 143 — the budget is ORDER-INDEPENDENT (r3 M1): moves claimed before rises
+    # (the greedy order restored), and a claimed move skipped (2). Four re-anchored.
+    # ⟳ 2026-11-06, MERGE of backlog #508 with backlog #533/#536 (PR #526): both sides moved this pin from the
+    # base's 97 — #508 to 143 (+46, none retired) and #533/#536 to 102 (+5, none retired) — over disjoint
+    # entries, so the merged manifest holds 97 + 46 + 5 = 148 (per-entry 3-way merge: 0 missing, 0 extra,
+    # 0 duplicate names).
+    "scripts/check-merge-ready.py": 148,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
