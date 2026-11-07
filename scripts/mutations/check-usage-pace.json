@@ -369,8 +369,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except Malformed as e:",
-        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except ZeroDivisionError as e:"
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except ZeroDivisionError as e:"
       ]
     ],
     "expect": [
@@ -473,8 +473,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
-        "os.open(path, os.O_RDONLY)"
+        "    timeout).\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "    timeout).\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY)"
       ]
     ],
     "expect": [
@@ -525,8 +525,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    except FileNotFoundError:\n        return None, \"\"",
-        "    except FileNotFoundError:\n        return None, \"x\""
+        "    except FileNotFoundError:\n        return None, \"\"\n",
+        "    except FileNotFoundError:\n        return None, \"x\"\n"
       ]
     ],
     "expect": [
@@ -920,8 +920,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "evaluate(text, now, reason, cache_path, meter_text, meter_why)",
-        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why)"
+        "evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
+        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why, meter_cut=meter_cut)"
       ]
     ],
     "expect": [
@@ -1490,7 +1490,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)",
+        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
         "    verdict, message = evaluate(text, now, reason, cache_path)"
       ]
     ],
@@ -1555,8 +1555,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES)",
-        "read_regular(args.meter, METER_MAX_BYTES)"
+        "read_meter(os.path.expanduser(args.meter), METER_MAX_BYTES)",
+        "read_meter(args.meter, METER_MAX_BYTES)"
       ]
     ],
     "expect": [
@@ -1594,8 +1594,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n",
-        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n    stop = line if line is not None else stop\n"
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)\n",
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)\n    stop = line if line is not None else stop\n"
       ]
     ],
     "expect": [
@@ -2044,6 +2044,126 @@
     ],
     "expect": [
       "backlog #525 r1 fold: …while BEFORE a rise end that precedes the last night, the 99% IS the next stop (the other branch stays reachable)"
+    ]
+  },
+  {
+    "name": "backlog #501: the tail read seeks to offset 0 (the first bytes are read, not the last)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        start = max(0, st.st_size - limit)\n",
+        "        start = 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's line (92.5)"
+    ]
+  },
+  {
+    "name": "backlog #501: the partial first line of a cut read is kept, not dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "data = b\"\" if newline < 0 else data[newline + 1:]",
+        "data = data"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: a tail that starts MID-LINE drops the partial line — neither parsed nor refused",
+      "#501: one byte over the bound cuts the first line, which is DROPPED, not parsed"
+    ]
+  },
+  {
+    "name": "backlog #501: the read starts AT the window, not one byte before it (a whole first line is dropped)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "os.lseek(fd, max(0, start - 1), os.SEEK_SET)",
+        "os.lseek(fd, start, os.SEEK_SET)"
+      ]
+    ],
+    "expect": [
+      "#501: a cut that falls exactly on a line start keeps that line WHOLE (the byte before is a newline)"
+    ]
+  },
+  {
+    "name": "backlog #501: a cut read is never refused when it misses midnight (falls back to a later row)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and before is None and not earlier_window:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+      "#501: a cut that drops the midnight row's partial line is refused the same way",
+      "#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it"
+    ]
+  },
+  {
+    "name": "backlog #501: a cut log is read as if it were whole (the exactly-at-bound read reports a cut)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return data.decode(\"utf-8\", errors=\"replace\"), \"\", start > 0",
+        "return data.decode(\"utf-8\", errors=\"replace\"), \"\", start >= 0"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: a log EXACTLY at the bound is read whole and NOT cut — its first line is kept"
+    ]
+  },
+  {
+    "name": "backlog #501: an earlier window's pre-midnight row no longer proves the cut reaches midnight",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            earlier_window = True\n",
+        "            earlier_window = False\n"
+      ]
+    ],
+    "expect": [
+      "#501: a cut part that reaches back past midnight through LAST week's row still yields the line"
+    ]
+  },
+  {
+    "name": "backlog #501: main() drops the cut flag on its way to evaluate (unit-green, wiring-dead)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "cache_path, meter_text, meter_why, meter_cut)",
+        "cache_path, meter_text, meter_why)"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: main() over the bound with the midnight row outside the tail says WHY, as NOT RUN, and the stop is unchanged"
+    ]
+  },
+  {
+    "name": "backlog #501: the meter tail is opened blocking, so a FIFO meter log stalls the read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "the `fstat` are not read; a half-written last row fails to parse and is skipped.\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "the `fstat` are not read; a half-written last row fails to parse and is skipped.\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "#501: a FIFO meter log is 'not a regular file' at once — opened non-blocking, never a stall"
+    ]
+  },
+  {
+    "name": "backlog #501: a missing meter log reads as unreadable, not absent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return None, \"\", False\n",
+        "    except FileNotFoundError:\n        return None, \"x\", False\n"
+      ]
+    ],
+    "expect": [
+      "#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache"
     ]
   }
 ]

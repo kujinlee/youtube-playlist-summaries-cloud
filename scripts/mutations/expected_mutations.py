@@ -1860,7 +1860,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #525 r1 fold: 148 -> 153, none retired. The next-stop choice for a tie, a past rise end and the 99% branch (3),
     # seconds on a non-aligned forecast and minutes on an aligned one (2).
     # ⟳ backlog #525 r2 fold: 153 -> 155, none retired. A fractional forecast rounded up (1), and the seconds test on the rounded value (1).
-    "scripts/check-usage-pace.py": 155,
+    # ⟳ backlog #501: 155 -> 164, none retired, 7 re-bound to the new signatures. The meter log's TAIL read: the seek
+    # (1), the partial-line drop (1), the byte before the window (1), the out-of-window refusal (1), the cut flag itself
+    # (1), an earlier window's row reaching midnight (1), main() passing the cut flag to evaluate (1), the tail's
+    # non-blocking open (1) and its missing-file answer (1).
+    "scripts/check-usage-pace.py": 164,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree

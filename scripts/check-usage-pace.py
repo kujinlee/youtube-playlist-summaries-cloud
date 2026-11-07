@@ -147,7 +147,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 347 cases
+    python3 scripts/check-usage-pace.py --self-test  # 361 cases
 """
 from __future__ import annotations
 
@@ -189,7 +189,11 @@ HARD_LIMIT = 100.0
 LINE_CAP = 97.0
 LINE_FRONT_LOAD = 1.5
 METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
+# backlog #501: the bound is on the TAIL read, never the file — the log grows ~100 rows a day, and a whole-file bound
+# refused every read after ~9 months. Today's start% needs only the newest row at or before local midnight.
 METER_MAX_BYTES = 4 * 1024 * 1024
+TAIL_MISSES_MIDNIGHT = ("the meter log is over its read bound and the part read begins after local midnight, so today's "
+                        "start% is outside it")
 FIVE_HOUR_WARN_AT = 90.0
 MAX_AGE_S = 15 * 60
 # The statusline and this hook read the same clock, so a cache from the future is a broken writer, not skew.
@@ -298,18 +302,25 @@ def local_midnight(now: float) -> float:
     return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
 
 
-def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tuple[float | None, str]:
+def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: bool = False) -> tuple[float | None, str]:
     """The RULE (backlog #500): today's pace line from the meter log's text, or (None, why) when it cannot be
     read. The owner's 11-01 15:38 rule: start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at
     97; the last day before the reset is 97. start% is the weekly value AT local midnight — the last row at or
     before it — or, when the window began after midnight, the window's first row. Only rows of THIS window
     (same `resets_at`) count, so last week's numbers never set this week's line; a reading outside 0..100 is
     skipped, so start% is at most 100 and the last day's line is the cap (r1 X2/C3/C6). `why` is the read's own
-    reason when it failed (r1 C5). No I/O."""
+    reason when it failed (r1 C5). No I/O.
+
+    `cut` (backlog #501) says `text` is only the TAIL of a log over its bound. Then the newest row at or before
+    midnight may lie before the part read, and a row after midnight would be a WRONG start, so the part must reach
+    back past midnight: it holds this window's row at or before midnight, or a row of an EARLIER window at or before
+    midnight (the window began after it). Otherwise (None, TAIL_MISSES_MIDNIGHT) — never a later row. ⚠ BOUND: this
+    rests on the statusline APPENDING rows in time order; a row written out of order could hide an older start."""
     if text is None:
         return None, f"the meter log is unreadable: {why}" if why else "the meter log is missing or unreadable"
     midnight = local_midnight(now)
     before = after = None
+    earlier_window = False
     for line in text.splitlines():
         if '"seven_day"' not in line:  # every row carries it; a C-speed skip of blank and garbage lines (r3 C1)
             continue
@@ -319,12 +330,16 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "") -> tup
             at, p, r = row["at"], w["used_percentage"], w["resets_at"]
         except (ValueError, KeyError, TypeError):
             continue
+        if is_number(at) and is_number(r) and at <= midnight and r < resets:
+            earlier_window = True
         if not (is_number(at) and is_number(p) and is_number(r)) or not 0 <= p <= 100 or r != resets or at > now:
             continue
         if at <= midnight and (before is None or at >= before[0]):
             before = (at, p)
         elif at > midnight and (after is None or at < after[0]):
             after = (at, p)
+    if cut and before is None and not earlier_window:
+        return None, TAIL_MISSES_MIDNIGHT
     start = before or after
     if start is None:
         return None, "the meter log has no reading of this week's window"
@@ -380,17 +395,18 @@ def cannot(reason: str) -> tuple[str, str]:
 
 
 def evaluate(text: str | None, now: float, missing: str = "the cache is missing",
-             path: str = DEFAULT_CACHE, meter: str | None | bool = False, meter_why: str = "") -> tuple[str, str]:
+             path: str = DEFAULT_CACHE, meter: str | None | bool = False, meter_why: str = "",
+             meter_cut: bool = False) -> tuple[str, str]:
     """The RULE: (verdict, one-line message) from the cache's text (None = no file) at `now`. No I/O, and
     TOTAL: a time this platform cannot format is CANNOT RUN, never an exception (r1 X1/M3)."""
     try:
-        return _evaluate(text, now, missing, path, meter, meter_why)
+        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)
     except Malformed as e:
         return cannot(f"the cache is malformed: {e}")
 
 
 def _evaluate(text: str | None, now: float, missing: str, path: str,
-              meter: str | None | bool = False, meter_why: str = "") -> tuple[str, str]:
+              meter: str | None | bool = False, meter_why: str = "", meter_cut: bool = False) -> tuple[str, str]:
     if text is None:
         return cannot(missing)
     try:
@@ -444,7 +460,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                  else f" The stop rises over the last day, {pct_up(stop)} now and {next_stop} from "
                       f"{local_time(next_at, exact=True)}: what is left under it is lost at the reset.")
     # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
-    line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why)
+    line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)
     line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
                  else f" Today's pace line cannot be read ({why}): treat it as NOT RUN." if why else "")
     # owner 2026-11-05 19:44 ("fix token management logic so that remaining capacity will not be wasted"): on the LAST
@@ -495,19 +511,31 @@ def read_regular(path: str, limit: int, deadline: float = READ_DEADLINE_S) -> tu
     function always and the process for interruptible stalls. NOT REPRODUCED: macOS offers no such read
     without FUSE. ⟳ scripts/bounded_read.py (PR #440, not yet merged) should replace `_read_now` once it
     lands."""
+    return _bounded(lambda: _read_now(path, limit), path, deadline)
+
+
+def read_meter(path: str, limit: int = METER_MAX_BYTES, deadline: float = READ_DEADLINE_S) -> tuple[str | None, str, bool]:
+    """backlog #501: the meter log's TAIL, bounded like every read: (text, reason-if-None, cut). `cut` is True when the
+    file is over `limit`, so only its last `limit` bytes were read — `pace_line` must then check the part reaches
+    back to midnight."""
+    return _bounded(lambda: _read_tail(path, limit), path, deadline, (False,))
+
+
+def _bounded(read: object, path: str, deadline: float, extra: tuple = ()) -> tuple:
+    """`read()` in a DAEMON thread joined with `deadline` (see read_regular); a failure is (None, why, *extra)."""
     box: list = []
 
     def work() -> None:
         try:
-            box.append(_read_now(path, limit))
+            box.append(read())  # type: ignore[operator]
         except Exception as e:  # noqa: BLE001 — a reader bug is a reason, never a silent empty box
-            box.append((None, f"{path} could not be read ({type(e).__name__}: {e})"))
+            box.append((None, f"{path} could not be read ({type(e).__name__}: {e})", *extra))
 
     worker = threading.Thread(target=work, daemon=True)
     worker.start()
     worker.join(deadline)
     if worker.is_alive():
-        return None, f"{path} was not read within {deadline:g} s (a stalled filesystem?)"
+        return (None, f"{path} was not read within {deadline:g} s (a stalled filesystem?)", *extra)
     return box[0]
 
 
@@ -568,6 +596,44 @@ def _read_now(path: str, limit: int) -> tuple[str | None, str]:
         return b"".join(chunks).decode("utf-8", errors="replace"), ""
     except OSError as e:
         return None, f"{path} is unreadable ({e.strerror or e})"
+    finally:
+        os.close(fd)
+
+
+def _read_tail(path: str, limit: int) -> tuple[str | None, str, bool]:
+    """backlog #501: the last `limit` bytes of a REGULAR file (opened like `_read_now`), as (text, why, cut). A file
+    at or under `limit` is read whole from offset 0 and is not cut. Over it, the read seeks to `size - limit` and
+    starts ONE BYTE EARLIER: everything through the first newline is dropped, so a partial first line is never
+    parsed, and a window that starts exactly on a line keeps that line whole (the byte before it is the newline).
+    A window with no newline at all is "" and cut, which `pace_line` refuses with its reason. Rows appended after
+    the `fstat` are not read; a half-written last row fails to parse and is skipped."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None, "", False
+    except OSError as e:
+        return None, f"{path} is unreadable ({e.strerror or e})", False
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return None, f"{path} is not a regular file", False
+        start = max(0, st.st_size - limit)
+        os.lseek(fd, max(0, start - 1), os.SEEK_SET)
+        want = limit + (1 if start else 0)
+        chunks, n = [], 0
+        while n < want:
+            b = os.read(fd, want - n)
+            if not b:
+                break
+            chunks.append(b)
+            n += len(b)
+        data = b"".join(chunks)
+        if start:
+            newline = data.find(b"\n")
+            data = b"" if newline < 0 else data[newline + 1:]
+        return data.decode("utf-8", errors="replace"), "", start > 0
+    except OSError as e:
+        return None, f"{path} is unreadable ({e.strerror or e})", False
     finally:
         os.close(fd)
 
@@ -796,9 +862,9 @@ def main(argv: list[str] | None = None, env: dict | None = None, payload: str | 
     if absent:
         reason = f"no cache at {cache_path}; {STATUSLINE}"
     # The meter matters only beside a readable cache, so a stalled cache costs ONE deadline, not two (r1 C4).
-    meter_text, meter_why = ((None, "") if text is None else
-                             read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES))
-    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)
+    meter_text, meter_why, meter_cut = ((None, "", False) if text is None else
+                                        read_meter(os.path.expanduser(args.meter), METER_MAX_BYTES))
+    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)
     if args.hook is None:
         print(f"{verdict}: {message}" if message else f"{verdict}: weekly usage is below {pct(WARN_AT)}")
         return RC[verdict]
@@ -1138,6 +1204,95 @@ def _self_test_body() -> int:
               (rc_default, "Today's pace line is 92.5%" in buf2.getvalue()), (RC[WARN], True))
         check("⭐ #500: main() reads --meter: its message names the 92.5 line from that file",
               (rc_line, "Today's pace line is 92.5%" in buf.getvalue()), (RC[WARN], True))
+
+        # ── backlog #501: only the TAIL of a large meter log is read ───────────────────────────────
+        # The log grows ~100 rows a day, so a whole-file bound refused every read after ~9 months. `_read_tail` reads the
+        # last `limit` bytes (plus the byte before them, which says whether the first line is whole), drops a partial
+        # first line, and says the read was CUT; `pace_line(..., cut=True)` refuses when the part read cannot reach
+        # back to local midnight, rather than taking a later row as today's start.
+        WR, LAST_WR = WEEK_RESET, WEEK_RESET - 7 * 86400
+        with tempfile.TemporaryDirectory() as td:
+            def put(name: str, content: str) -> str:
+                p = os.path.join(td, name)
+                with open(p, "wb") as f:
+                    f.write(content.encode())
+                return p
+
+            def size(p: str) -> int:
+                return os.path.getsize(p)
+
+            old_rows = meter(*[(NOW - 2 * 86400, 40, LAST_WR)] * (METER_MAX_BYTES // 80 + 1))
+            big = put("big.jsonl", old_rows + m85)
+            cbig = put("c.json", cache(85))
+            out_big = io.StringIO()
+            with contextlib.redirect_stdout(out_big):
+                rc_big = main(["--cache", cbig, "--meter", big, "--now", str(NOW)], env={}, payload="")
+            check("⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's line (92.5)",
+                  (size(big) > METER_MAX_BYTES, rc_big, "Today's pace line is 92.5%" in out_big.getvalue()),
+                  (True, RC[WARN], True))
+
+            two = m85 + meter((NOW + 60, 88, WR))
+            exact = put("exact.jsonl", two)
+            check("⭐ #501: a log EXACTLY at the bound is read whole and NOT cut — its first line is kept",
+                  _read_tail(exact, size(exact)), (two, "", False))
+            check("⭐ #501: a log exactly at the bound yields today's line from its FIRST line (92.5)",
+                  pace_line(_read_tail(exact, size(exact))[0], NOW + 600, WR, cut=False), (92.5, ""))
+            row2 = meter((NOW + 60, 88, WR))
+            check("#501: one byte over the bound cuts the first line, which is DROPPED, not parsed",
+                  _read_tail(exact, size(exact) - 1), (row2, "", True))
+            check("#501: a cut that falls exactly on a line start keeps that line WHOLE (the byte before is a newline)",
+                  _read_tail(exact, len(row2)), (row2, "", True))
+
+            # A tail that starts MID-LINE, where the fragment parses as a row with a WRONG start (10%, newer than the
+            # real midnight row): dropped, so the line is the real row's 92.5, not 10 + 1.5 × 90 ÷ 3 = 55.
+            frag = json.dumps({"at": NOW - 60, "rate_limits": {"seven_day": {"used_percentage": 10, "resets_at": WR}}})
+            pad = "x" * 40 + " "
+            mid = put("mid.jsonl", pad + frag + "\n" + m85)
+            cut_at = len(pad)          # the window begins just after the pad's space; the byte before it is that space
+            t_mid = _read_tail(mid, size(mid) - cut_at)
+            check("⭐ #501: a tail that starts MID-LINE drops the partial line — neither parsed nor refused",
+                  (t_mid, pace_line(t_mid[0], NOW + 600, WR, cut=t_mid[2])), ((m85, "", True), (92.5, "")))
+            check("#501: the whole mid-line file, read uncut, skips that line as garbage (the control)",
+                  pace_line(_read_tail(mid, size(mid))[0], NOW + 600, WR), (92.5, ""))
+
+            # Over the bound, the midnight row lies BEFORE the window: refused with a reason. Read uncut, the same rows
+            # would give 94.0 from the first row after midnight — the wrong start the refusal must never fall back to.
+            three = m85 + meter((NOW + 60, 88, WR), (NOW + 120, 89, WR))
+            late = put("late.jsonl", three)
+            t_late = _read_tail(late, len(meter((NOW + 60, 88, WR), (NOW + 120, 89, WR))))
+            check("⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+                  (t_late[2], pace_line(t_late[0], NOW + 600, WR, cut=t_late[2]),
+                   pace_line(t_late[0], NOW + 600, WR, cut=False)),
+                  (True, (None, TAIL_MISSES_MIDNIGHT), (94.0, "")))
+            check("#501: a cut that drops the midnight row's partial line is refused the same way",
+                  pace_line(_read_tail(exact, size(exact) - 1)[0], NOW + 600, WR, cut=True), (None, TAIL_MISSES_MIDNIGHT))
+            # A window that began AFTER midnight: the cut part holds last week's pre-midnight row, so it reaches back
+            # past midnight and this window's first row is the start — 3 + 1.5 × 97 ÷ 3 = 51.5.
+            fresh = meter((NOW - 2 * 86400, 70, LAST_WR), (NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))
+            fresh_p = put("fresh.jsonl", fresh)
+            t_fresh = _read_tail(fresh_p, len(meter((NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))))
+            check("#501: a cut part that reaches back past midnight through LAST week's row still yields the line",
+                  (t_fresh[2], pace_line(t_fresh[0], NOW + 600, WR, cut=True)), (True, (51.5, "")))
+            t_fresh2 = _read_tail(fresh_p, len(meter((NOW + 60, 3, WR))))
+            check("#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
+                  pace_line(t_fresh2[0], NOW + 600, WR, cut=t_fresh2[2]), (None, TAIL_MISSES_MIDNIGHT))
+
+            late_big = put("late_big.jsonl", m85 + meter(*[(NOW + 60, 88, WR)] * (METER_MAX_BYTES // 80 + 1)))
+            out_late = io.StringIO()
+            with contextlib.redirect_stdout(out_late):
+                rc_late = main(["--cache", put("c2.json", cache(85, at=NOW + 3600)), "--meter", late_big,
+                                "--now", str(NOW + 3600)], env={}, payload="")
+            check("⭐ #501: main() over the bound with the midnight row outside the tail says WHY, as NOT RUN, and the "
+                  "stop is unchanged",
+                  (rc_late, f"Today's pace line cannot be read ({TAIL_MISSES_MIDNIGHT}): treat it as NOT RUN."
+                   in out_late.getvalue(), "pace line is" in out_late.getvalue()), (RC[WARN], True, False))
+            check("#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache",
+                  read_meter(os.path.join(td, "nope.jsonl")), (None, "", False))
+            fifo = os.path.join(td, "fifo.jsonl")
+            os.mkfifo(fifo)
+            got_fifo = read_meter(fifo)
+            check("#501: a FIFO meter log is 'not a regular file' at once — opened non-blocking, never a stall",
+                  (got_fifo[0], "not a regular file" in got_fifo[1], got_fifo[2]), (None, True, False))
 
         # ── the weekly boundaries ──────────────────────────────────────────────────────────────────
         check("weekly 0 is OK", kind(cache(0)), OK)
