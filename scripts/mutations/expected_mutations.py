@@ -1864,7 +1864,10 @@ EXPECTED_MUTATIONS = {
     # (1), the partial-line drop (1), the byte before the window (1), the out-of-window refusal (1), the cut flag itself
     # (1), an earlier window's row reaching midnight (1), main() passing the cut flag to evaluate (1), the tail's
     # non-blocking open (1) and its missing-file answer (1).
-    "scripts/check-usage-pace.py": 164,
+    # ⟳ PR #531 r1 fold: 164 -> 171, none retired. A cut part out of time order refused (1), equal times in order (1),
+    # the order check advancing (1), a whole log never refused for order (1), an earlier window's row after midnight
+    # proving the cut (1), read_meter's 3-tuple failure (1) and the tail's lenient decode (1).
+    "scripts/check-usage-pace.py": 171,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree

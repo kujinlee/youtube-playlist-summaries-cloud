@@ -2115,7 +2115,7 @@
     ]
   },
   {
-    "name": "backlog #501: an earlier window's pre-midnight row no longer proves the cut reaches midnight",
+    "name": "backlog #501: an earlier window's row no longer proves the cut reaches midnight",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
@@ -2124,7 +2124,8 @@
       ]
     ],
     "expect": [
-      "#501: a cut part that reaches back past midnight through LAST week's row still yields the line"
+      "#501: a cut part that reaches back past midnight through LAST week's row still yields the line",
+      "⭐ #501 r1 F3: a reset between midnight and the first row read is answered from this window's first row (51), not refused"
     ]
   },
   {
@@ -2164,6 +2165,102 @@
     ],
     "expect": [
       "#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache"
+    ]
+  },
+  {
+    "name": "PR #531 r1 C1: a cut part out of time order is not refused (a wrong start, silently)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and out_of_order:\n        return None, TAIL_OUT_OF_ORDER\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
+      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order"
+    ]
+  },
+  {
+    "name": "PR #531 r1 C1: rows with the SAME time count as out of order",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            if prev_at is not None and at < prev_at:\n",
+        "            if prev_at is not None and at <= prev_at:\n"
+      ]
+    ],
+    "expect": [
+      "#501 r1 C1: two rows with the SAME time are not out of order — a cut part holding them still answers"
+    ]
+  },
+  {
+    "name": "PR #531 r1 C1: the order check never advances, so it sees no pair",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            prev_at = at\n",
+        "            prev_at = prev_at\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
+      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order"
+    ]
+  },
+  {
+    "name": "PR #531 r1 C1: a WHOLE log out of order is refused too (it can see every row)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and out_of_order:\n",
+        "    if out_of_order:\n"
+      ]
+    ],
+    "expect": [
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F3: an earlier window's row proves the cut only when it is at or before midnight",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if is_number(r) and r < resets:\n",
+        "        if is_number(r) and is_number(at) and at <= midnight and r < resets:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F3: a reset between midnight and the first row read is answered from this window's first row (51), not refused"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F2: read_meter's failure is a 2-tuple, so main's unpack crashes and the stop is lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "path, deadline, (False,))\n",
+        "path, deadline)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F2: read_meter(deadline=0.3) of a stalled log is (None, why, False) within the deadline",
+      "⭐ #501 r1 F2: read_meter of a reader that RAISES is (None, why, False) — a reason, not a crash",
+      "⭐ #501 r1 F2: at the stop, a STALLED meter read still DENIES the spawn — main does not crash, the line is NOT RUN",
+      "⭐ #501 r1 F2: at the stop, a meter reader that RAISES still DENIES the spawn"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F4: the tail is decoded strictly, so one invalid byte makes the whole read fail",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return data.decode(\"utf-8\", errors=\"replace\"), \"\", start > 0\n",
+        "        return data.decode(\"utf-8\"), \"\", start > 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% that would give 55); the line still reads"
     ]
   }
 ]

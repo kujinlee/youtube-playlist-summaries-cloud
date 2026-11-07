@@ -147,7 +147,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 361 cases
+    python3 scripts/check-usage-pace.py --self-test  # 374 cases
 """
 from __future__ import annotations
 
@@ -194,6 +194,8 @@ METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
 METER_MAX_BYTES = 4 * 1024 * 1024
 TAIL_MISSES_MIDNIGHT = ("the meter log is over its read bound and the part read begins after local midnight, so today's "
                         "start% is outside it")
+TAIL_OUT_OF_ORDER = ("the meter log is over its read bound and the part read holds rows out of time order, so it cannot "
+                     "prove that today's start% is not among the rows before it")
 FIVE_HOUR_WARN_AT = 90.0
 MAX_AGE_S = 15 * 60
 # The statusline and this hook read the same clock, so a cache from the future is a broken writer, not skew.
@@ -313,14 +315,26 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
 
     `cut` (backlog #501) says `text` is only the TAIL of a log over its bound. Then the newest row at or before
     midnight may lie before the part read, and a row after midnight would be a WRONG start, so the part must reach
-    back past midnight: it holds this window's row at or before midnight, or a row of an EARLIER window at or before
-    midnight (the window began after it). Otherwise (None, TAIL_MISSES_MIDNIGHT) — never a later row. ⚠ BOUND: this
-    rests on the statusline APPENDING rows in time order; a row written out of order could hide an older start."""
+    back past midnight: it holds this window's row at or before midnight, or a row of an EARLIER window anywhere
+    (under append order this window's first row then follows it, so it is in the part too — PR #531 r1 F3: the old
+    `at <= midnight` clause refused a reset between midnight and the first row read). Otherwise
+    (None, TAIL_MISSES_MIDNIGHT) — never a later row.
+
+    That proof rests on the statusline APPENDING rows in time order, so a cut part is CHECKED for it (PR #531 r1 C1:
+    a 10% row stamped before midnight but appended after a later row gave 55 where the whole log gives 92.5, with no
+    refusal). When any two rows of the part, of any window, are out of time order (a later line with an EARLIER `at`;
+    equal times are in order), the part is refused: (None, TAIL_OUT_OF_ORDER). Uncut, the whole log is seen, so the
+    newest row at or before midnight is taken whatever the order. ⚠ BLIND SPOT, exactly: disorder that CROSSES THE
+    WINDOW EDGE cannot be seen — a row before the part read that is newer than a row inside it, with the part itself
+    in order. Nothing can be proved about rows that were not read. MEASURED in order: the real log, 592 rows
+    from 11-01 02:13 to 11-07 01:51 (PR #531 r1, Claude half). Every row of the part is walked, oldest first: the
+    order check needs every pair, so stopping at the first row that settles the start would hide disorder in the rest
+    (PR #531 r1 F5, declined: 0.27 s at the bound)."""
     if text is None:
         return None, f"the meter log is unreadable: {why}" if why else "the meter log is missing or unreadable"
     midnight = local_midnight(now)
-    before = after = None
-    earlier_window = False
+    before = after = prev_at = None
+    earlier_window = out_of_order = False
     for line in text.splitlines():
         if '"seven_day"' not in line:  # every row carries it; a C-speed skip of blank and garbage lines (r3 C1)
             continue
@@ -330,7 +344,11 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
             at, p, r = row["at"], w["used_percentage"], w["resets_at"]
         except (ValueError, KeyError, TypeError):
             continue
-        if is_number(at) and is_number(r) and at <= midnight and r < resets:
+        if is_number(at):
+            if prev_at is not None and at < prev_at:
+                out_of_order = True
+            prev_at = at
+        if is_number(r) and r < resets:
             earlier_window = True
         if not (is_number(at) and is_number(p) and is_number(r)) or not 0 <= p <= 100 or r != resets or at > now:
             continue
@@ -338,6 +356,8 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
             before = (at, p)
         elif at > midnight and (after is None or at < after[0]):
             after = (at, p)
+    if cut and out_of_order:
+        return None, TAIL_OUT_OF_ORDER
     if cut and before is None and not earlier_window:
         return None, TAIL_MISSES_MIDNIGHT
     start = before or after
@@ -1293,6 +1313,102 @@ def _self_test_body() -> int:
             got_fifo = read_meter(fifo)
             check("#501: a FIFO meter log is 'not a regular file' at once — opened non-blocking, never a stall",
                   (got_fifo[0], "not a regular file" in got_fifo[1], got_fifo[2]), (None, True, False))
+
+            # ── PR #531 r1 fold ────────────────────────────────────────────────────────────────────
+            def run_main(args: list[str]) -> tuple[object, str]:
+                """main(), with a crash turned into a value, so a crash reddens ITS case and not the suite."""
+                buf = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(buf):
+                        return main(args, env={}, payload=""), buf.getvalue()
+                except Exception as e:  # noqa: BLE001 — the point is to name it
+                    return f"raised {type(e).__name__}", buf.getvalue()
+
+            # r1 C1 (Codex): rows OUT OF TIME ORDER. The real 85% midnight row lies before the part read; a 10% row
+            # stamped an hour before midnight was appended AFTER a post-midnight row, inside it. Today's rule takes
+            # the newest row at or before midnight IN THE PART READ, so 10 + 1.5 × 90 ÷ 3 = 55 — a wrong start, with
+            # no refusal. Out-of-order rows inside a cut part mean the part cannot prove what lies before it.
+            c1_tail = meter((NOW + 60, 88, WR), (NOW - 3600, 10, WR), (NOW + 120, 89, WR))
+            c1 = meter((NOW - 1, 85, WR)) + c1_tail
+            t_c1 = _read_tail(put("c1.jsonl", c1), len(c1_tail))
+            check("⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
+                  (t_c1[2], pace_line(t_c1[0], NOW + 600, WR, cut=t_c1[2])), (True, (None, TAIL_OUT_OF_ORDER)))
+            check("#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)",
+                  pace_line(c1, NOW + 600, WR), (92.5, ""))
+            check("#501 r1 C1: two rows with the SAME time are not out of order — a cut part holding them still answers",
+                  pace_line(meter((NOW - 3600, 85, WR), (NOW - 3600, 85, WR), (NOW + 60, 88, WR)), NOW + 600, WR, cut=True),
+                  (92.5, ""))
+            check("#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
+                  pace_line(meter((NOW - 3600, 98, LAST_WR), (NOW - 7200, 97, LAST_WR), (NOW + 60, 3, WR)), NOW + 600, WR,
+                            cut=True), (None, TAIL_OUT_OF_ORDER))
+
+            # r1 F3 (Claude): the week reset falls between local midnight and the first row read. The part holds the
+            # LAST window's rows written after midnight, then this window's; under append order an earlier window's row
+            # ANYWHERE in the part proves this window's first row is in it too. Start 2 → 2 + 1.5 × 98 ÷ 3 = 51.
+            OLD_AFTER = NOW + 100
+            f3_tail = meter((NOW + 60, 99, OLD_AFTER), (NOW + 120, 2, WR), (NOW + 180, 3, WR))
+            f3 = meter((NOW - 3600, 97, OLD_AFTER)) + f3_tail
+            t_f3 = _read_tail(put("f3.jsonl", f3), len(f3_tail))
+            check("⭐ #501 r1 F3: a reset between midnight and the first row read is answered from this window's first row "
+                  "(51), not refused", (t_f3[2], pace_line(t_f3[0], NOW + 10 * 3600, WR, cut=t_f3[2])), (True, (51.0, "")))
+
+            # r1 F1/F2 (Claude): `read_meter`'s limit and deadline, `evaluate`'s meter_cut, and the failure arity.
+            check("#501 r1 F1: read_meter(limit=…) under the file's size reads the TAIL and says it was cut",
+                  (read_meter(late, len(meter((NOW + 60, 88, WR), (NOW + 120, 89, WR)))), read_meter(late, size(late))),
+                  (t_late, (three, "", False)))
+            ev_cut = evaluate(cache(85), NOW + 600, meter=t_late[0], meter_cut=True)
+            ev_whole = evaluate(cache(85), NOW + 600, meter=t_late[0], meter_cut=False)
+            check("⭐ #501 r1 F1: evaluate(meter_cut=True) says the line is NOT RUN and why; the same text uncut gives 94",
+                  (ev_cut[0], f"Today's pace line cannot be read ({TAIL_MISSES_MIDNIGHT}): treat it as NOT RUN." in ev_cut[1],
+                   ev_whole[0], "Today's pace line is 94% — a guide" in ev_whole[1]), (WARN, True, WARN, True))
+            real_tail = _read_tail
+
+            def slow_tail(path: str, limit: int) -> tuple[str | None, str, bool]:
+                time.sleep(3)
+                return real_tail(path, limit)
+
+            def raising_tail(path: str, limit: int) -> tuple[str | None, str, bool]:
+                raise RuntimeError("boom")
+
+            c95 = put("c95.json", cache(95))
+            g = globals()
+            try:
+                g["_read_tail"] = slow_tail
+                t0 = time.monotonic()
+                got_slow_m = read_meter(big, METER_MAX_BYTES, deadline=0.3)
+                took_m = time.monotonic() - t0
+                rc_stall, out_stall = run_main(["--cache", c95, "--meter", big, "--now", str(NOW), "--hook", "spawn"])
+                g["_read_tail"] = raising_tail
+                got_raise_m = read_meter(big)
+                rc_raise, out_raise = run_main(["--cache", c95, "--meter", big, "--now", str(NOW), "--hook", "spawn"])
+            finally:
+                g["_read_tail"] = real_tail
+            check("⭐ #501 r1 F2: read_meter(deadline=0.3) of a stalled log is (None, why, False) within the deadline",
+                  (got_slow_m[0], "not read within 0.3 s" in got_slow_m[1], got_slow_m[2:], took_m < 1.5),
+                  (None, True, (False,), True))
+            check("⭐ #501 r1 F2: read_meter of a reader that RAISES is (None, why, False) — a reason, not a crash",
+                  got_raise_m, (None, f"{big} could not be read (RuntimeError: boom)", False))
+            check("⭐ #501 r1 F2: at the stop, a STALLED meter read still DENIES the spawn — main does not crash, the line is NOT RUN",
+                  (rc_stall, '"permissionDecision": "deny"' in out_stall, "not read within 1 s" in out_stall),
+                  (0, True, True))
+            check("⭐ #501 r1 F2: at the stop, a meter reader that RAISES still DENIES the spawn",
+                  (rc_raise, '"permissionDecision": "deny"' in out_raise, "RuntimeError: boom" in out_raise), (0, True, True))
+
+            # r1 F4 (Claude): a cut INSIDE a multi-byte character, and one invalid byte in the tail. The partial first
+            # line is dropped as BYTES before the decode, and 0x0A never occurs inside a UTF-8 sequence.
+            wide = json.dumps({"at": NOW - 7200, "note": "€€€€", "rate_limits": {}}, ensure_ascii=False) + "\n"
+            wide_p = put("wide.jsonl", wide + m85)
+            euro = (wide + m85).encode().index("€".encode())
+            got_wide = [_read_tail(wide_p, size(wide_p) - (euro + k)) for k in (1, 2)]
+            check("⭐ #501 r1 F4: a cut one and two bytes INSIDE a 3-byte character drops that line whole — no U+FFFD",
+                  got_wide, [(m85, "", True)] * 2)
+            bad_tail = m85.encode() + b"\xff" + meter((NOW - 60, 10, WR)).encode()
+            bad_p = os.path.join(td, "bad.jsonl")
+            with open(bad_p, "wb") as f:
+                f.write(meter((NOW - 2 * 86400, 40, LAST_WR)).encode() + bad_tail)
+            got_bad = read_meter(bad_p, len(bad_tail))
+            check("⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% that would give 55); the line still reads",
+                  (got_bad[1:], pace_line(got_bad[0], NOW + 600, WR, cut=got_bad[2])), (("", True), (92.5, "")))
 
         # ── the weekly boundaries ──────────────────────────────────────────────────────────────────
         check("weekly 0 is OK", kind(cache(0)), OK)
