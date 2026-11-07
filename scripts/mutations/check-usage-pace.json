@@ -369,8 +369,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except Malformed as e:",
-        "        return _evaluate(text, now, missing, path, meter, meter_why)\n    except ZeroDivisionError as e:"
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except Malformed as e:",
+        "        return _evaluate(text, now, missing, path, meter, meter_why, meter_cut)\n    except ZeroDivisionError as e:"
       ]
     ],
     "expect": [
@@ -473,8 +473,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
-        "os.open(path, os.O_RDONLY)"
+        "    timeout).\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "    timeout).\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY)"
       ]
     ],
     "expect": [
@@ -525,8 +525,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    except FileNotFoundError:\n        return None, \"\"",
-        "    except FileNotFoundError:\n        return None, \"x\""
+        "    except FileNotFoundError:\n        return None, \"\"\n",
+        "    except FileNotFoundError:\n        return None, \"x\"\n"
       ]
     ],
     "expect": [
@@ -920,8 +920,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "evaluate(text, now, reason, cache_path, meter_text, meter_why)",
-        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why)"
+        "evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
+        "evaluate(text, now, reason, meter=meter_text, meter_why=meter_why, meter_cut=meter_cut)"
       ]
     ],
     "expect": [
@@ -1490,7 +1490,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why)",
+        "    verdict, message = evaluate(text, now, reason, cache_path, meter_text, meter_why, meter_cut)",
         "    verdict, message = evaluate(text, now, reason, cache_path)"
       ]
     ],
@@ -1555,8 +1555,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "read_regular(os.path.expanduser(args.meter), METER_MAX_BYTES)",
-        "read_regular(args.meter, METER_MAX_BYTES)"
+        "read_meter(os.path.expanduser(args.meter), METER_MAX_BYTES)",
+        "read_meter(args.meter, METER_MAX_BYTES)"
       ]
     ],
     "expect": [
@@ -1594,8 +1594,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n",
-        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why)\n    stop = line if line is not None else stop\n"
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)\n",
+        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)\n    stop = line if line is not None else stop\n"
       ]
     ],
     "expect": [
@@ -2044,6 +2044,270 @@
     ],
     "expect": [
       "backlog #525 r1 fold: …while BEFORE a rise end that precedes the last night, the 99% IS the next stop (the other branch stays reachable)"
+    ]
+  },
+  {
+    "name": "backlog #501: the tail read seeks to offset 0 (the first bytes are read, not the last)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        start = max(0, st.st_size - limit)\n",
+        "        start = 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's line (92.5)"
+    ]
+  },
+  {
+    "name": "backlog #501: the partial first line of a cut read is kept, not dropped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "data = b\"\" if newline < 0 else data[newline + 1:]",
+        "data = data"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: a tail that starts MID-LINE drops the partial line — neither parsed nor refused",
+      "#501: one byte over the bound cuts the first line, which is DROPPED, not parsed"
+    ]
+  },
+  {
+    "name": "backlog #501: the read starts AT the window, not one byte before it (a whole first line is dropped)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "os.lseek(fd, max(0, start - 1), os.SEEK_SET)",
+        "os.lseek(fd, start, os.SEEK_SET)"
+      ]
+    ],
+    "expect": [
+      "#501: a cut that falls exactly on a line start keeps that line WHOLE (the byte before is a newline)"
+    ]
+  },
+  {
+    "name": "backlog #501 → PR #531 r3: the witness is removed, so a cut part too short in time answers from a later row",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if min_at is None or not min_at < needed - METER_SKEW_S:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+      "#501: a cut that drops the midnight row's partial line is refused the same way",
+      "#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
+      "⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 55",
+      "⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 75"
+    ]
+  },
+  {
+    "name": "backlog #501: a cut log is read as if it were whole (the exactly-at-bound read reports a cut)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "return data.decode(\"utf-8\", errors=\"replace\"), \"\", start > 0",
+        "return data.decode(\"utf-8\", errors=\"replace\"), \"\", start >= 0"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: a log EXACTLY at the bound is read whole and NOT cut — its first line is kept"
+    ]
+  },
+  {
+    "name": "backlog #501: main() drops the cut flag on its way to evaluate (unit-green, wiring-dead)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "cache_path, meter_text, meter_why, meter_cut)",
+        "cache_path, meter_text, meter_why)"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: main() over the bound with the midnight row outside the tail says WHY, as NOT RUN, and the stop is unchanged"
+    ]
+  },
+  {
+    "name": "backlog #501: the meter tail is opened blocking, so a FIFO meter log stalls the read",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "the `fstat` are not read; a half-written last row fails to parse and is skipped.\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)",
+        "the `fstat` are not read; a half-written last row fails to parse and is skipped.\"\"\"\n    try:\n        fd = os.open(path, os.O_RDONLY)"
+      ]
+    ],
+    "expect": [
+      "#501: a FIFO meter log is 'not a regular file' at once — opened non-blocking, never a stall"
+    ]
+  },
+  {
+    "name": "backlog #501: a missing meter log reads as unreadable, not absent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return None, \"\", False\n",
+        "    except FileNotFoundError:\n        return None, \"x\", False\n"
+      ]
+    ],
+    "expect": [
+      "#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F2: read_meter's failure is a 2-tuple, so main's unpack crashes and the stop is lost",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "path, deadline, (False,))\n",
+        "path, deadline)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F2: read_meter(deadline=0.3) of a stalled log is (None, why, False) within the deadline",
+      "⭐ #501 r1 F2: read_meter of a reader that RAISES is (None, why, False) — a reason, not a crash",
+      "⭐ #501 r1 F2: at the stop, a STALLED meter read still DENIES the spawn — main does not crash, the line is NOT RUN",
+      "⭐ #501 r1 F2: at the stop, a meter reader that RAISES still DENIES the spawn"
+    ]
+  },
+  {
+    "name": "PR #531 r1 F4: the tail is decoded strictly, so one invalid byte makes the whole read fail",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        return data.decode(\"utf-8\", errors=\"replace\"), \"\", start > 0\n",
+        "        return data.decode(\"utf-8\"), \"\", start > 0\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% that would give 55); the line still reads"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the canary is removed, so a part that breaks the writer contract answers",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and breach:\n        late, above = breach\n",
+        "    if False:\n        late, above = breach\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
+      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
+      "⭐ #501 r3: the canary — a row exactly S before the row above it answers; S + 1 s is a broken contract",
+      "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract",
+      "#501 r3: a broken contract names the two rows, so the late row can be found and deleted"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness admits a part whose oldest row is EXACTLY S before what it must reach (<= for <)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "not min_at < needed - METER_SKEW_S",
+        "not min_at <= needed - METER_SKEW_S"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness drops the skew, so an unseen row within S of the oldest one can be the start",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "< needed - METER_SKEW_S:",
+        "< needed:"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
+    ]
+  },
+  {
+    "name": "PR #531 r3: with a midnight row, the witness reaches back to the window's start instead of to that row",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "needed = before[0] if before else",
+        "needed = resets - SEVEN_DAY_S - HORIZON_SLACK_S if before else"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3 SWEEP: no in-contract cut answer differs from the whole log; the out-of-contract CONTROL finds at least one (wrong in contract, cuts > 1000, control can fail)"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the window's earliest stamp loses HORIZON_SLACK_S (W2's reset rounding)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "else resets - SEVEN_DAY_S - HORIZON_SLACK_S\n",
+        "else resets - SEVEN_DAY_S\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the canary compares with the row above, not the running maximum",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "max_at = at if max_at is None else max(max_at, at)",
+        "max_at = at"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the oldest row is taken over THIS window's rows only",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "min_at = at if min_at is None else min(min_at, at)",
+        "min_at = min_at if r != resets else (at if min_at is None else min(min_at, at))"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (21.96)",
+      "⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 22.99"
+    ]
+  },
+  {
+    "name": "PR #531 r3: a WHOLE log that breaks the contract is refused too (it can see every row)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and breach:\n",
+        "    if breach:\n"
+      ]
+    ],
+    "expect": [
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness applies to a WHOLE log too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut:\n        needed",
+        "    if True:\n        needed"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
     ]
   }
 ]

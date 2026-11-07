@@ -1889,7 +1889,24 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #525 r1 fold: 148 -> 153, none retired. The next-stop choice for a tie, a past rise end and the 99% branch (3),
     # seconds on a non-aligned forecast and minutes on an aligned one (2).
     # ⟳ backlog #525 r2 fold: 153 -> 155, none retired. A fractional forecast rounded up (1), and the seconds test on the rounded value (1).
-    "scripts/check-usage-pace.py": 155,
+    # ⟳ backlog #501: 155 -> 164, none retired, 7 re-bound to the new signatures. The meter log's TAIL read: the seek
+    # (1), the partial-line drop (1), the byte before the window (1), the out-of-window refusal (1), the cut flag itself
+    # (1), an earlier window's row reaching midnight (1), main() passing the cut flag to evaluate (1), the tail's
+    # non-blocking open (1) and its missing-file answer (1).
+    # ⟳ PR #531 r1 fold: 164 -> 171, none retired. A cut part out of time order refused (1), equal times in order (1),
+    # the order check advancing (1), a whole log never refused for order (1), an earlier window's row after midnight
+    # proving the cut (1), read_meter's 3-tuple failure (1) and the tail's lenient decode (1).
+    # ⟳ PR #531 r2 fold: 171 -> 178, none retired, 1 re-bound (the r1 F3 entry, to the new earlier-window line). The
+    # order check scoped to the horizon (1), the horizon's boundary (1), the horizon's width (1), a resets_at that goes
+    # back refused (1), that check advancing (1), an earlier window's row counted only before this window's first (1),
+    # and this window's first row being marked (1).
+    # ⟳ PR #531 r3 fold (the Phase 6 redesign, docs/reviews/architecture-review-2026-11-07-meter-log-tail-proof.md):
+    # 178 -> 174. 13 retired with the code they mutated: the earlier-window row (2: marking it, and the r1 F3 clause),
+    # the old order check (4: removed, equal times, advancing, a whole log refused), and the r2 horizon and resets_at
+    # order (7). 1 re-bound (the witness removed, was "a cut read is never refused when it misses midnight"). 9 new:
+    # the canary removed, the witness's strict < and its skew, `before[0]` and the window bound's slack, the running
+    # maximum, `min_at` over every window, a whole log refused for a breach, and the witness applied to a whole log.
+    "scripts/check-usage-pace.py": 174,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
