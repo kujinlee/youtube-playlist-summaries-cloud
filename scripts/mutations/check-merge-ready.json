@@ -1115,8 +1115,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if ls.returncode != 0:\n        raise PinsUnreadable",
-    "    if False:\n        raise PinsUnreadable"
+    "        if ls.returncode != 0:\n            raise PinsUnreadable",
+    "        if False:\n            raise PinsUnreadable"
    ]
   ],
   "expect": [
@@ -1142,8 +1142,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,\n                  error=lambda d: PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {d}\"))",
-    "    try:\n        return _exact_pins(reader.pin_display(shown.stdout))\n    except Exception as exc:\n        raise PinsUnreadable(f\"{rev}: {PINS_SCRIPT}: {_describe(exc)}\") from None"
+    "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,\n                  error=lambda d: PinsUnreadable(f\"{rev}: {home}: {d}\"))",
+    "    try:\n        return _exact_pins(reader.pin_display(shown.stdout))\n    except Exception as exc:\n        raise PinsUnreadable(f\"{rev}: {home}: {_describe(exc)}\") from None"
    ]
   ],
   "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
@@ -1761,6 +1761,72 @@
   ],
   "expect": [
    "...but the SAME line MOVED (removed and re-added) is not"
+  ]
+ },
+ {
+  "name": "backlog #533: a revision is read ONLY from the pins file, so a merge base that predates the move pins nothing and a fall across the move is READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for path in (PINS_FILE, PINS_SCRIPT):",
+    "    for path in (PINS_FILE,):"
+   ]
+  ],
+  "expect": [
+   "⭐ backlog #533: a base that PREDATES the move is read from check-plan-code.py's display, so a fall across the move is HELD",
+   "⛔ backlog #533: a head that DELETES the pins file falls back to a harness with no display: CANNOT RUN"
+  ]
+ },
+ {
+  "name": "backlog #533: the harness is read BEFORE the pins file, so a revision holding both is read from the wrong home",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "path in (PINS_FILE, PINS_SCRIPT):",
+    "path in (PINS_SCRIPT, PINS_FILE):"
+   ]
+  ],
+  "expect": [
+   "⭐ backlog #533: a revision holding BOTH files is read from the pins file, never the harness"
+  ]
+ },
+ {
+  "name": "backlog #536: the held-versus-display comparison is skipped, so a head harness redirected to a new pins file with a lowered pin is READY on the stale display",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if differ:\n            raise PinsUnreadable(",
+    "        if False:\n            raise PinsUnreadable("
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #536: a head harness REDIRECTED to a new pins file with a lowered pin is CANNOT RUN, by every import-time route (R1-R7), never READY on the stale file"
+  ]
+ },
+ {
+  "name": "backlog #536: the comparison is inverted, so the real harness, whose held pins equal its display, is CANNOT RUN",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if differ:\n",
+    "        if not differ:\n"
+   ]
+  ],
+  "expect": [
+   "backlog #536: ...while the real harness and harmless shapes of the same names are read, and hold nothing (the adjacent negatives, L0-L4)"
+  ]
+ },
+ {
+  "name": "backlog #536: the comparison reads only the held side's keys, so a redirect to a pins file that drops a target is READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "held.keys() | new.keys()",
+    "held.keys()"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #536: ...and so is a redirect to a pins file that DROPS a target (the comparison reads both sides)"
   ]
  }
 ]
