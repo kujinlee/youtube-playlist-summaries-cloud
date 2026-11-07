@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 270 cases
+    python3 scripts/check-merge-ready.py --self-test # 276 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -443,9 +443,14 @@ def ci_conclusion(checks: list[dict]) -> tuple[int, str]:
 # the day it lands, before one batch has ever run on GitHub. So this prints an `ok` or `info` line and never
 # enters `results`: it can neither move the verdict nor HOLD. Making it a requirement is a later, separate act.
 BATCH_PREFIX = "batch/"
+# ⟳ batch-ci r1 R1-F8: BOUNDED, so an advisory can never stall the gate. Each `gh` call it makes carries this
+# timeout (seconds), and at most BATCH_COMPARE_CAP green batch runs (the newest, as `gh run list` orders them) are
+# compared — worst case 1 + 5 calls of 15 s, 90 s. A timeout or a failed call is `advisory: not checked`.
+BATCH_CALL_TIMEOUT = 15
+BATCH_COMPARE_CAP = 5
 
 
-def batch_note(runs: list, contains, head: str) -> tuple[str, str]:
+def batch_note(runs: list, contains, head: str, cap: int = BATCH_COMPARE_CAP) -> tuple[str, str]:
     """(mark, line) for the advisory batch line. PURE given `contains(batch_sha) -> bool`.
 
     A batch counts only when its run is GREEN and its branch is `batch/*`; a green master run is not a batch.
@@ -454,12 +459,12 @@ def batch_note(runs: list, contains, head: str) -> tuple[str, str]:
     """
     green = [r for r in runs if r.get("conclusion") == "success"
              and str(r.get("headBranch", "")).startswith(BATCH_PREFIX)]
-    for r in green:
+    for r in green[:cap]:
         if contains(r.get("headSha", "")):
             return "ok ", (f"green batch {r.get('headBranch')} (run {r.get('databaseId')}) contains head "
                            f"{head[:8]} — advisory (backlog #534)")
-    return "info", (f"no green batch run contains head {head[:8]} ({len(green)} green batch run(s) read) — "
-                    f"advisory (backlog #534), it never blocks a merge")
+    return "info", (f"no green batch run contains head {head[:8]} ({min(cap, len(green))} of {len(green)} green "
+                    f"batch run(s) checked) — advisory (backlog #534), it never blocks a merge")
 
 
 # ── THE FETCH, impure ─────────────────────────────────────────────────────────────────────────
@@ -1377,16 +1382,20 @@ def main(argv: list[str]) -> int:
     bhead = info.get("headRefOid") or head or ""
     try:
         rr = _run(["gh", "run", "list", "--workflow", "CI", "--event", "push", "--limit", "100",
-                   "--json", "databaseId,headBranch,headSha,conclusion"])
+                   "--json", "databaseId,headBranch,headSha,conclusion"], timeout=BATCH_CALL_TIMEOUT)
         if rr.returncode != 0:
             raise RuntimeError((rr.stderr or "gh run list failed").strip()[:120])
 
         def _contains(sha: str) -> bool:
-            rc_ = _run(["gh", "api", f"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}", "--jq", ".status"])
-            return rc_.returncode == 0 and rc_.stdout.strip() in ("ahead", "identical")
+            rc_ = _run(["gh", "api", f"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}", "--jq", ".status"],
+                       timeout=BATCH_CALL_TIMEOUT)
+            if rc_.returncode != 0:           # a failed compare is NOT "does not contain": it was not checked
+                raise RuntimeError((rc_.stderr or "gh api compare failed").strip()[:120])
+            return rc_.stdout.strip() in ("ahead", "identical")
         bmark, bline = batch_note(json.loads(rr.stdout), _contains, bhead)
     except Exception as exc:                  # an advisory that cannot run says so, and moves nothing
-        bmark, bline = "info", f"NOT RUN ({_describe(exc, text=False)}) — advisory (backlog #534), it never blocks a merge"
+        bmark, bline = "info", (f"advisory: not checked ({_describe(exc, text=False)}) — backlog #534, "
+                                f"it never blocks a merge")
     print(f"  {bmark} {'batch sweep':18s} {bline}")
 
     code, line = verdict(results)
@@ -2399,8 +2408,14 @@ def _self_test_body() -> int:
             if cmd[:3] == ["gh", "pr", "checks"]:
                 return cp(json.dumps([{"name": "verify", "bucket": "pass"}]))
             if cmd[:3] == ["gh", "run", "list"]:          # backlog #534: the batch runs
+                _batch_calls.append(("list", kw.get("timeout")))
+                if batch_runs == "TIMEOUT":                 # R1-F8: a call that hangs past its bound
+                    raise subprocess.TimeoutExpired(cmd, kw.get("timeout") or 0)
                 return cp(batch_runs)
             if cmd[:2] == ["gh", "api"]:                    # ...and whether each contains the head
+                _batch_calls.append(("api", kw.get("timeout")))
+                if ahead == "FAIL":                         # R1-F8: GitHub refuses the compare
+                    return cp("", 1)
                 return cp("ahead\n" if any(cmd[2].endswith("..." + x) for x in ahead) else "diverged\n")
             if cmd[:2] == ["git", "rev-parse"]:
                 return cp("abc\n")
@@ -2420,6 +2435,7 @@ def _self_test_body() -> int:
                 return cp("refused\n", 1)          # a gate that REFUSES, so the escape cross-check runs
             return cp("ok\n")                       # the three gate scripts
         return run
+    _batch_calls: list = []                       # R1-F8: every batch-line call, with the timeout it carried
     def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None, refuse=(),
               harness=None, extra=(), batch_runs="[]", ahead=()):
         """`main()` over the fake, read by a working tree holding HEAD's pins file and `harness` (backlog #536)."""
@@ -2661,7 +2677,29 @@ def _self_test_body() -> int:
           (_rc, "green batch batch/20261106-1820 (run 1) contains head abc" in _o), (0, True))
     _rc, _o = _main(["docs/x.md"], "18", batch_runs=json.dumps(_bruns), ahead=())
     check("#534: main() reports NO containing batch when GitHub says no green batch descends from the head",
-          (_rc, "no green batch run contains head abc (1 green batch run(s) read)" in _o), (0, True))
+          (_rc, "no green batch run contains head abc (1 of 1 green batch run(s) checked)" in _o), (0, True))
+    # ── batch-ci r1 R1-F8: the advisory line is BOUNDED — a timeout per call, a cap on calls ──
+    _many = [{"databaseId": i, "headBranch": f"batch/2026110{i}-0000", "headSha": f"s{i}", "conclusion": "success"}
+             for i in range(1, 8)]
+    _asked: list = []
+    check("R1-F8: the batch line compares at most BATCH_COMPARE_CAP green batch runs, and says how many of how many",
+          (batch_note(_many, lambda sha: _asked.append(sha) or False, "abc")[1].count("(5 of 7 green"), len(_asked)),
+          (1, 5))
+    _asked.clear()
+    check("R1-F8: ...the cap is a parameter: cap 2 compares the newest 2, and a match beyond the cap is not seen",
+          (batch_note(_many, lambda sha: _asked.append(sha) or sha == "s4", "abc", cap=2)[0], _asked), ("info", ["s1", "s2"]))
+    _batch_calls.clear()
+    _rc, _o = _main(["docs/x.md"], "19", batch_runs=json.dumps(_many), ahead=())
+    check("R1-F8: main() gives EVERY batch-line call (the run list and each compare) the per-call timeout",
+          (_rc, sorted(set(_batch_calls))), (0, [("api", BATCH_CALL_TIMEOUT), ("list", BATCH_CALL_TIMEOUT)]))
+    check("R1-F8: ...and makes at most one list call plus BATCH_COMPARE_CAP compares",
+          len(_batch_calls), 1 + BATCH_COMPARE_CAP)
+    _rc, _o = _main(["docs/x.md"], "21", batch_runs=json.dumps(_bruns), ahead="FAIL")
+    check("R1-F8: a compare GitHub refused is `advisory: not checked`, never read as `does not contain`",
+          (_rc, "advisory: not checked" in _o, "no green batch run contains" in _o), (0, True, False))
+    _rc, _o = _main(["docs/x.md"], "20", batch_runs="TIMEOUT")
+    check("R1-F8: a batch-line call that times out says `advisory: not checked`, and the verdict is untouched (rc 0)",
+          (_rc, "advisory: not checked" in _o, "READY" in _o), (0, True, True))
 
     shutil.rmtree(_tree_root, ignore_errors=True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")

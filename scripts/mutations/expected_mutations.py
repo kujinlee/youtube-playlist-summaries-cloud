@@ -1478,7 +1478,13 @@ EXPECTED_MUTATIONS = {
     # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which
     # `resolve_text` backs up (a mutation there is masked by design), and `_refresh`'s own tree check, which the
     # per-step tree assertion after each merge backs up.
-    "scripts/batch-ci.py": 28,
+    # ⟳ 28 -> 68, batch-ci r1 fold, none retired (6 re-bound: four anchors and three expects moved with the code).
+    # The 11 survivors R1-F7 named (11); check-merge-ready admission and its re-ask in land (R1-F1, 8); the base
+    # re-read (C2, 2); master unmoved and the predicted squash (C1/R1-F3, 2); the latest run and what is a verdict
+    # (C3/R1-F4, 5); Schema gates required and the coverage line (R1-F6, 2); whole-block union and its policies
+    # (C4/R1-F2, 5); the import closure and its call site (C5/R1-F5, 5). Not mutated: `_run`'s timeout, which only a
+    # real hung subprocess exercises; `_refresh`'s pre-push tree check IS mutated now (Codex r1).
+    "scripts/batch-ci.py": 68,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -1656,7 +1662,9 @@ EXPECTED_MUTATIONS = {
     # skipped (1), inverted (1), and reading only the held side's keys (1).
     # ⟳ 2026-11-06, backlog #534: 102 -> 106, none retired. The advisory batch line: a green master run read as a
     # batch (1), a red batch read as green (1), the line moving the verdict (1), a diverged batch read as containing (1).
-    "scripts/check-merge-ready.py": 106,
+    # ⟳ 2026-11-06, batch-ci r1 fold (R1-F8): 106 -> 110, none retired. The advisory line's bounds: uncapped compares
+    # (1), the run list's timeout (1), a compare's timeout (1), a refused compare read as "does not contain" (1).
+    "scripts/check-merge-ready.py": 110,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

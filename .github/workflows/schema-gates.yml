@@ -114,7 +114,12 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    # backlog #534 (batch-ci r1, R1-F6): `batch/**` is a BATCH — origin/master plus every ready PR head
+    # (`scripts/batch-ci.py`). Two PRs whose migrations compose badly each pass this alone; the batch is where
+    # they meet before merging, and `batch-ci.py land` requires this workflow's latest run at the tip to be green.
+    # Its `schema-gates` job touches no production (`prod-drift` runs only on the schedule or a dispatch), and each
+    # batch has its own ref, so the concurrency group below holds only that batch's runs.
+    branches: [master, 'batch/**']
   # ✅ ARMED 2026-09-15, AND ONLY AFTER A REAL RUN PASSED — the order matters more than the change.
   # This block spent two days saying the schedule was deliberately NOT armed because `prod-drift`
   # needs `CLAUDE_RO_DATABASE_URL` and that secret did not exist: "a gate that cries wolf nightly is

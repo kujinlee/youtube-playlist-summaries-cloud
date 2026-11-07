@@ -1354,12 +1354,64 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "            return rc_.returncode == 0 and rc_.stdout.strip() in (\"ahead\", \"identical\")\n",
-    "            return rc_.returncode == 0\n"
+    "            return rc_.stdout.strip() in (\"ahead\", \"identical\")\n",
+    "            return True\n"
    ]
   ],
   "expect": [
    "#534: main() reports NO containing batch when GitHub says no green batch descends from the head"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: the batch line compares every green batch run, uncapped",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for r in green[:cap]:\n",
+    "    for r in green:\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: the batch line compares at most BATCH_COMPARE_CAP green batch runs, and says how many of how many"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: the batch run list carries no timeout",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                   \"--json\", \"databaseId,headBranch,headSha,conclusion\"], timeout=BATCH_CALL_TIMEOUT)\n",
+    "                   \"--json\", \"databaseId,headBranch,headSha,conclusion\"])\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: main() gives EVERY batch-line call (the run list and each compare) the per-call timeout"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: a batch compare carries no timeout",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            rc_ = _run([\"gh\", \"api\", f\"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}\", \"--jq\", \".status\"],\n                       timeout=BATCH_CALL_TIMEOUT)\n",
+    "            rc_ = _run([\"gh\", \"api\", f\"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}\", \"--jq\", \".status\"])\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: main() gives EVERY batch-line call (the run list and each compare) the per-call timeout"
+  ]
+ },
+ {
+  "name": "batch-ci r1 R1-F8: a refused compare reads as `does not contain`",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if rc_.returncode != 0:           # a failed compare is NOT \"does not contain\": it was not checked\n",
+    "            if rc_.returncode != 0:           # a failed compare is NOT \"does not contain\": it was not checked\n                return False\n"
+   ]
+  ],
+  "expect": [
+   "R1-F8: a compare GitHub refused is `advisory: not checked`, never read as `does not contain`"
   ]
  }
 ]
