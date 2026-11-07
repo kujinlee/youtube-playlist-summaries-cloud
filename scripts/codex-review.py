@@ -66,7 +66,7 @@ field), so it was not a cheaper version of this fix.
 Usage:
   scripts/codex-review.py --review-id <subject>-r<N>-codex --out "$(mktemp -d)/r.md" "<prompt>"
   scripts/codex-review.py --review-id <stem> --out <scratch> --prompt-file <file> [--timeout 900]
-  scripts/codex-review.py --self-test  # 213 cases
+  scripts/codex-review.py --self-test  # 232 cases
 
 Exit codes:  0 = a real review was written and promoted
              1 = no candidate produced one (the gate did NOT run) — fall back to a Claude half
@@ -799,7 +799,8 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
                    intrusions_seen: "list[str] | None" = None,
                    head: "str | None" = None, dirty: "dict[str, str] | None" = None,
                    prompt: "str | None" = None, refused: bool = False,
-                   tree: "str | None" = None) -> dict:
+                   tree: "str | None" = None,
+                   loosening_answers: "dict[str, str] | None" = None) -> dict:
     """The testimony, as data. PURE — no clock, no filesystem, so a case can assert every field.
 
     `gate_ran` is the load-bearing field and is stated SEPARATELY from `exit_code`, not derived
@@ -849,7 +850,7 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
     filename rule so the evidence carries its own meaning; `refusal_verdict_path` is the separate
     concern of not destroying the record next door.
     """
-    return {
+    rec = {
         "schema": VERDICT_SCHEMA,
         "tool": "codex-review",
         "gate_ran": bool(gate_ran),
@@ -865,6 +866,85 @@ def verdict_record(*, gate_ran: bool, exit_code: int, review_id: str, reason: st
         "dirty": None if dirty is None else dict(dirty),
         "prompt": prompt,
     }
+    # backlog #508: present only when the review was read for answers, so an older record is unchanged.
+    if loosening_answers is not None:
+        rec["loosening_answers"] = dict(loosening_answers)
+    return rec
+
+
+# ── backlog #508: THE REVIEWER'S ANSWERS TO THE MERGE GATE'S FLAGGED LINES — the ONE parser ──────────
+# `check-merge-ready.py --flagged-block` lists the lines its syntactic detector flags; the reviewer
+# answers them in ONE section at the end of the review: a line that is exactly `## Loosening answers`,
+# then one line per id, `LOOSENING-CHECK <12-hex id>: not a loosening` or
+# `LOOSENING-CHECK <id>: finding: <text>`, then the `VERDICT:` line. Both recorders (this wrapper for
+# Codex, and `record-review-verdict.py` for a Claude half) copy them into the verdict through this
+# function, and the merge gate reads them from there.
+# ⟳ r2 REDESIGN (Codex 2, 4, 6, and r1's CLAUDE M1 / m4 — ONE class): r1 read answers out of FREE TEXT,
+# skipping fences and comments and reading any mention as dissent, and each patch opened the next hole —
+# a comment reopened on its closing line exposed a quoted assent, prose naming an id became a permanent
+# finding, a wrapped dissent was lost. Now nothing outside the section is read at all, and inside it every
+# non-blank line must be an exact answer. ⛔ FAILS CLOSED: if ANY line there is anything else, the whole
+# section is MALFORMED — no assent, and every id it names, in any case, is a finding.
+# ⟳ r3 CLAUDE m1: exactly ONE heading; a second, or an id named after the `VERDICT:` line, is malformed.
+# ⚠ BOUND: a dissent written only OUTSIDE the section is not seen, so it does not hold the line by
+# itself; the review gave no answer either, and only another review's exact assent can clear the line.
+LOOSENING_SECTION = "## Loosening answers"
+ANSWER_LINE = re.compile(r"LOOSENING-CHECK ([0-9a-f]{12}): (?:(not a loosening)|finding: \S.*)")
+HEX_ID = re.compile(r"(?i)(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])")
+
+
+def loosening_answers(text: str) -> "dict[str, str]":
+    """PURE. {id: "not a loosening" | "finding"} from the review's ONE `## Loosening answers` section."""
+    lines = [l.rstrip() for l in text.split("\n")]
+    starts = [n for n, l in enumerate(lines) if l == LOOSENING_SECTION]
+    if not starts:
+        return {}
+    tail = lines[starts[0] + 1:]
+    section, rest = [], []
+    for n, line in enumerate(tail):
+        if line.startswith("VERDICT:"):
+            rest = tail[n:]
+            break
+        if line:
+            section.append(line)
+    # ⟳ r3 CLAUDE m1: the LAST heading was read, so a later one ERASED an earlier section's dissent, and a
+    # stray `VERDICT:` cut the section short and dropped the findings after it. A second exact heading, or
+    # any id named after the section ends, is MALFORMED: every id after the first heading is a finding.
+    findings = {i.lower(): "finding" for l in tail for i in HEX_ID.findall(l)}
+    if len(starts) > 1 or any(HEX_ID.search(l) for l in rest):
+        return findings
+    out: "dict[str, str]" = {}
+    for line in section:
+        m = ANSWER_LINE.fullmatch(line)
+        if m is None:                       # malformed: no assent, every id named a finding
+            return findings
+        if m.group(2) is None or out.get(m.group(1)) != "finding":
+            out[m.group(1)] = "not a loosening" if m.group(2) else "finding"
+    return out
+
+
+def with_flagged_block(prompt: str, block: "str | None") -> str:
+    """PURE. The prompt with the merge gate's flagged-lines section appended, if there is one."""
+    return f"{prompt}\n\n{block}" if block and block.strip() else prompt
+
+
+def flagged_block_for(tree: str) -> "tuple[str | None, str]":
+    """(the flagged-lines section for `tree`'s branch, a note). IMPURE: runs `tree`'s own
+    `check-merge-ready.py --flagged-block`. NEVER blocks the review: on any failure the section is
+    None and the note says so — the merge gate then finds no answers and HOLDS, which is fail-closed."""
+    script = os.path.join(tree, "scripts", "check-merge-ready.py")
+    if not os.path.isfile(script):
+        return None, f"no {script}, so no flagged lines were asked about"
+    try:
+        p = subprocess.run([sys.executable, script, "--flagged-block"], cwd=tree, capture_output=True,
+                           text=True, timeout=180, env=unredirected())
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"--flagged-block did not run ({exc}); the merge gate will HOLD any flagged line"
+    if p.returncode != 0:
+        return None, (f"--flagged-block exited {p.returncode} ({(p.stderr or '').strip()[:160]}); "
+                      f"the merge gate will HOLD any flagged line")
+    return p.stdout, (f"{p.stdout.count(chr(10) + '- id ')} flagged line(s) appended to the prompt"
+                      if p.stdout.strip() else "no flagged lines")
 
 
 REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
@@ -1401,6 +1481,10 @@ def main() -> int:
             prompt = f.read()
     if not prompt:
         ap.error("provide a prompt argument or --prompt-file")
+    # backlog #508: the merge gate's flagged lines, asked of the reviewer in every round it runs.
+    _block, _note = flagged_block_for(tree_at_dispatch)
+    print(f"[codex-review] flagged lines: {_note}", file=sys.stderr)
+    prompt = with_flagged_block(prompt, _block)
 
     # ── backlog #68 (b): the one input that guarantees a rejected capture ──
     # Warn rather than refuse: a brief is free to *discuss* writing files, and a wrapper that
@@ -1453,9 +1537,9 @@ def main() -> int:
     # evidence for. The choice is made by `testimony_path`, not by an `if` here, so a case can
     # drive both directions and a mutation can invert it.
     def emit(rc: int, *, gate_ran: bool, reason: str, model=None, attempts=None, hits=None,
-             refused: bool = False) -> int:
+             refused: bool = False, answers=None) -> int:
         rec = verdict_record(gate_ran=gate_ran, exit_code=rc, review_id=args.review_id,
-                             reason=reason, refused=refused,
+                             reason=reason, refused=refused, loosening_answers=answers,
                              model=model, attempts=attempts,
                              head=head_at_dispatch, dirty=dirty_at_dispatch,
                              tree=tree_at_dispatch,
@@ -1564,7 +1648,7 @@ def main() -> int:
             print(f"[codex-review] OK via {slug} -> {dest} (captured at {args.out}; {reason})",
                   file=sys.stderr)
             return emit(0, gate_ran=True, reason=reason, model=slug, attempts=attempts,
-                        hits=hits)
+                        hits=hits, answers=loosening_answers(body))
 
         print(f"[codex-review] {slug} unusable: {reason}", file=sys.stderr)
 
@@ -2469,6 +2553,100 @@ def _self_test_body() -> int:
                         prompt="/tmp/r11.md")
     chk("the verdict records the prompt the run was dispatched with", _p["prompt"], "/tmp/r11.md")
     chk("…and says null rather than omitting it when there was none", _r["prompt"], None)
+    # ── backlog #508: the reviewer's answers to the merge gate's flagged lines, one parser ──
+    # ⟳ r2 (Codex 2, 4, 6 and r1's M1/m4 — ONE class: answers parsed out of free text). Answers are read
+    # ONLY from the ONE `## Loosening answers` section (r3: a second heading is malformed), up to `VERDICT:`; every non-blank line there must be
+    # an exact answer, or the whole section is malformed: no assent, and every id it names a finding.
+    _a, _b, _S = "0123456789ab", "ba9876543210", "## Loosening answers"
+    chk("#508 r2: answers are read only from the `## Loosening answers` section, and only up to VERDICT:",
+        loosening_answers(f"x\n{_S}\nLOOSENING-CHECK {_a}: not a loosening\n"
+                          f"LOOSENING-CHECK {_b}: finding: exit 1 is now exit 0\n\nVERDICT: CONVERGED\n"
+                          f"Reviewed head: 57a1def7ded2e787602742323295a4c2c801c0e2\n"),
+        {_a: "not a loosening", _b: "finding"})
+    # ⟳ r3 CLAUDE m1: an id named AFTER the section ends (a stray `VERDICT:` cut it short, or an answer
+    # follows the verdict) makes the section malformed: its assents void, every id after the heading a finding.
+    chk("#508 r3 m1: an answer AFTER the VERDICT: line is not read as assent: the section is malformed",
+        loosening_answers(f"x\n{_S}\nLOOSENING-CHECK {_a}: not a loosening\n"
+                          f"LOOSENING-CHECK {_b}: finding: exit 1 is now exit 0\n\nVERDICT: CONVERGED\n"
+                          f"LOOSENING-CHECK 1111aaaa2222: not a loosening\n"),
+        {_a: "finding", _b: "finding", "1111aaaa2222": "finding"})
+    chk("#508 r3 m1: ...so a stray `VERDICT:CONVERGED` inside the section does not drop the findings after it",
+        loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\nVERDICT:CONVERGED\n"
+                          f"LOOSENING-CHECK {_b}: finding: exit 1 now 0\n\nVERDICT: NOT CONVERGED\n"),
+        {_a: "finding", _b: "finding"})
+    chk("#508: a FINDING beats `not a loosening` for the same id, in either order",
+        (loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\nLOOSENING-CHECK {_a}: finding: x\n"),
+         loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: x\nLOOSENING-CHECK {_a}: not a loosening\n")),
+        ({_a: "finding"}, {_a: "finding"}))
+    chk("#508 r2: no section, no answers — an exact answer line anywhere else is not read",
+        (loosening_answers(f"LOOSENING-CHECK {_a}: not a loosening\n"),
+         loosening_answers(f"LOOSENING-CHECK {_a}: finding: x\n"),
+         loosening_answers(f"### Loosening answers\nLOOSENING-CHECK {_a}: not a loosening\n"),
+         loosening_answers(f"## Loosening answers:\nLOOSENING-CHECK {_a}: not a loosening\n")),
+        ({}, {}, {}, {}))
+    # ⟳ r3 CLAUDE m1: only the LAST heading was read, so a later heading ERASED an earlier section's dissent
+    # and the other half's assent cleared it. More than one exact heading is now malformed.
+    chk("#508 r3 m1: ...even when the section is EMPTY: a heading, then `VERDICT:`, then a finding",
+        loosening_answers(f"{_S}\nVERDICT: NOT CONVERGED\nLOOSENING-CHECK {_a}: finding: exit 1 now 0\n"),
+        {_a: "finding"})
+    chk("#508 r3 m1: TWO exact headings are malformed: no assent, every id after the first a finding",
+        loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\n\n{_S}\n"
+                          f"LOOSENING-CHECK {_b}: not a loosening\n"), {_a: "finding", _b: "finding"})
+    chk("#508 r3 m1: the reviewer's three reproductions, verbatim — an earlier section's finding is never lost",
+        (loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: exit 1 now 0\n"
+                           f"LOOSENING-CHECK {_b}: not a loosening\nVERDICT: NOT CONVERGED\n\n{_S}\n"),
+         loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: exit 1 now 0\n"
+                           f"LOOSENING-CHECK {_b}: not a loosening\n```\n{_S}\n"
+                           f"LOOSENING-CHECK {_b}: not a loosening\n```\nVERDICT: NOT CONVERGED\n"),
+         loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: finding: x\nVERDICT: NOT CONVERGED\n{_S}\n"
+                           f"LOOSENING-CHECK {_a}: not a loosening\n")),
+        ({_a: "finding", _b: "finding"}, {_a: "finding", _b: "finding"}, {_a: "finding"}))
+    # Codex r2 finding 2, verbatim: a comment that closes and REOPENS on one line exposed a quoted assent.
+    chk("#508 r2 Codex 2: an assent in an HTML comment closed and reopened on one line is no answer",
+        (loosening_answers("<!-- first --> <!-- still quoted\n"
+                           "LOOSENING-CHECK c8dcfcab4a36: not a loosening\n-->\n"),
+         loosening_answers("<!-- first\n--> <!-- still quoted\n"
+                           "LOOSENING-CHECK c8dcfcab4a36: not a loosening\n-->\n")), ({}, {}))
+    chk("#508 r2 Codex 2: ...and the same comment INSIDE the section makes it malformed: a finding",
+        loosening_answers(f"{_S}\n<!-- first --> <!-- still quoted\n"
+                          "LOOSENING-CHECK c8dcfcab4a36: not a loosening\n-->\n"),
+        {"c8dcfcab4a36": "finding"})
+    # Codex r2 finding 4, verbatim: neutral prose naming an id became a permanent finding.
+    chk("#508 r2 Codex 4: prose naming an id OUTSIDE the section is ignored; the section's assent stands",
+        (loosening_answers("The LOOSENING-CHECK parser was exercised for c8dcfcab4a36.\n"
+                           f"{_S}\nLOOSENING-CHECK c8dcfcab4a36: not a loosening\n"),
+         loosening_answers("The LOOSENING-CHECK parser was exercised for c8dcfcab4a36.\n"
+                           "LOOSENING-CHECK c8dcfcab4a36: not a loosening\n")),
+        ({"c8dcfcab4a36": "not a loosening"}, {}))
+    # Codex r2 finding 6, verbatim: a dissent wrapped across two lines was lost.
+    chk("#508 r2 Codex 6: a dissent WRAPPED inside the section voids its assent: every id a finding",
+        loosening_answers(f"{_S}\nLOOSENING-CHECK {_b}: not a loosening\n"
+                          "LOOSENING-CHECK\nc8dcfcab4a36: finding: return 1 now 0\n"),
+        {_b: "finding", "c8dcfcab4a36": "finding"})
+    chk("#508 r2: ANY other line in the section makes it malformed — indented, quoted, bold, `Finding`, "
+        "suffixed, upper-case, a fence, a comment, prose, the placeholder",
+        [loosening_answers(f"{_S}\nLOOSENING-CHECK {_a}: not a loosening\n{t}\n") for t in (
+            f"    LOOSENING-CHECK {_a}: not a loosening", f"> LOOSENING-CHECK {_a}: not a loosening",
+            f"**LOOSENING-CHECK {_a}: finding: exit 1 now 0**", f"LOOSENING-CHECK {_a}: Finding: exit 1 now 0",
+            f"LOOSENING-CHECK {_a}: not a loosening, mostly", f"LOOSENING-CHECK {_a.upper()}: not a loosening",
+            f"LOOSENING-CHECK {_b.upper()}: finding: x", "```", "<!-- x -->", "I agree with all of these.",
+            "LOOSENING-CHECK <id>: not a loosening")],
+        [{_a: "finding"}] * 6 + [{_a: "finding", _b: "finding"}] + [{_a: "finding"}] * 4)
+    chk("#508 r2: a finding with NO text is not an answer either, so it voids the section's assents",
+        loosening_answers(f"{_S}\nLOOSENING-CHECK {_b}: not a loosening\nLOOSENING-CHECK {_a}: finding:\n"),
+        {_a: "finding", _b: "finding"})
+    chk("#508: blank lines, a CRLF and trailing spaces in the section are still the answer",
+        loosening_answers(f"{_S}  \r\n\r\nLOOSENING-CHECK {_a}: not a loosening  \r\n   \r\n"),
+        {_a: "not a loosening"})
+    chk("#508: the record carries the answers only when given, so an older record is unchanged",
+        ("loosening_answers" in _r,
+         verdict_record(gate_ran=True, exit_code=0, review_id="x-r1-codex", reason="r",
+                        loosening_answers={_a: "finding"}).get("loosening_answers")),
+        (False, {_a: "finding"}))
+    chk("#508: the flagged block is appended to the prompt; none leaves it unchanged",
+        (with_flagged_block("review this", "## Flagged\n- x\n"), with_flagged_block("brief two", ""),
+         with_flagged_block("brief three", None)),
+        ("review this\n\n## Flagged\n- x\n", "brief two", "brief three"))
     # ⛔ REPOSITORY REDIRECTION IS STRIPPED — r11 High, the finding that moved a real branch ref.
     _env_in = {"GIT_DIR": "/elsewhere/.git", "GIT_WORK_TREE": "/elsewhere",
                "GIT_COMMON_DIR": "/elsewhere/.git", "GIT_INDEX_FILE": "/tmp/i", "PATH": "/bin"}
@@ -2931,6 +3109,37 @@ def _self_test_body() -> int:
         _rx5 = _drive4("wt-r9-codex", os.path.join(_scr, "kept.md"), _wb)
         chk("#121 r4 …and without --allow-overwrite a pre-existing --out is still refused",
             _rx5.returncode, 2)
+        # ── backlog #508, through the REAL CLI: the reviewed tree's `--flagged-block` is appended to
+        # the prompt Codex is handed, and the review's answer lines land in the verdict file.
+        _k = os.path.join(td3, "k508")
+        os.makedirs(os.path.join(_k, "scripts"))
+        with open(os.path.join(_k, "scripts", "check-merge-ready.py"), "w", encoding="utf-8") as f:
+            f.write('import sys\nassert sys.argv[1:] == ["--flagged-block"]\n'
+                    'print("## Flagged lines MARK-508\\n- id `0123456789ab` in `scripts/x.py`: `return 1`")\n')
+        _git3(_k, "init", "-q", ".")
+        _git3(_k, "add", "-A")
+        _git3(_k, "commit", "-q", "--no-verify", "-m", "k")
+        _bin5 = os.path.join(td3, "bin5")
+        os.makedirs(_bin5)
+        with open(os.path.join(_bin5, "codex"), "w", encoding="utf-8") as f:
+            f.write('#!/bin/sh\no=""; prev=""; last=""\nfor a in "$@"; do [ "$prev" = "-o" ] && o="$a"; '
+                    'prev="$a"; last="$a"; done\nprintf "%s" "$last" > "$CR_PROMPT"\n'
+                    'printf "%s\\n" "$CR_REVIEW" > "$o"\nexit 0\n')
+        os.chmod(os.path.join(_bin5, "codex"), 0o755)
+        _pp = os.path.join(td3, "prompt508.txt")
+        _rx508 = subprocess.run(
+            [sys.executable, os.path.join(_was, "codex-review.py"), "--timeout", "20", "--model",
+             "stub-slug", "--review-id", "k508-r1-codex", "--out", os.path.join(_scr, "k508.md"),
+             "a prompt"], capture_output=True, text=True, cwd=_k,
+            env=dict(_env3, PATH=_bin5 + os.pathsep + os.environ.get("PATH", ""), CR_PROMPT=_pp,
+                     CR_REVIEW=_review + "\n## Loosening answers\nLOOSENING-CHECK 0123456789ab: not a loosening\n"))
+        _pr508 = open(_pp, encoding="utf-8").read() if os.path.isfile(_pp) else ""
+        _vp508 = os.path.join(_wa, "docs", "reviews", "verdicts", "k508-r1-codex.verdict.json")
+        _v508 = json.load(open(_vp508, encoding="utf-8")) if os.path.isfile(_vp508) else {}
+        chk("⭐ #508 the real CLI appends the reviewed tree's flagged block to the prompt Codex gets",
+            (_rx508.returncode, _pr508.startswith("a prompt\n\n"), "MARK-508" in _pr508), (0, True, True))
+        chk("⭐ #508 …and records the review's answer in the verdict file the merge gate reads",
+            _v508.get("loosening_answers"), {"0123456789ab": "not a loosening"})
         # ── r6 X1 (Codex), the reviewer's input: docs/reviews is ALREADY a symlink out of B ──────
         # `B/docs/reviews -> <tmp>/external/reviews`. The resolved --out is outside both checkouts,
         # so the identity rule alone passed it: rc 0, the filed review overwritten, no intrusion.

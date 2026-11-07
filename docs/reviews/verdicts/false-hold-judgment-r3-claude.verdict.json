@@ -1,0 +1,30 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 677ef8641a41ba451930ec435e984a7f89899ed6",
+    "docs/reviews/claude/false-hold-judgment-r3-claude.md": "100644 efe0515ad895cf20cda5311fab860fc6383030f9",
+    "scripts/check-merge-ready.py": "100644 961868fd741168eb15d0576117579c3d7dc243cf"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "57a1def7ded2e787602742323295a4c2c801c0e2",
+  "intrusions": [],
+  "loosening_answers": {
+    "26a23836138b": "finding",
+    "6bd002a6d73a": "finding",
+    "795043e96b8f": "not a loosening",
+    "c7f21f95034a": "finding",
+    "e8b3c3bfbf22": "finding",
+    "f13e64d753fa": "not a loosening"
+  },
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 10824 chars, names 57a1def7ded2",
+  "refused": false,
+  "review": "false-hold-judgment-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/fhj",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
