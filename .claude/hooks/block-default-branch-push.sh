@@ -86,6 +86,8 @@ if [ "${1:-}" = "--self-test" ]; then
                                                         "git push --force-with-lease origin feat/x" allow
   probe "--no-verify is denied"                         "git push --no-verify origin feat/x"  deny
   probe "an ordinary feature-branch push is allowed"    "git push origin feat/x"              allow
+  # backlog #534: `scripts/batch-ci.py plan --push` pushes `batch/<time>` with an explicit refspec.
+  probe "a batch/ branch push is allowed (backlog #534)" "git push origin refs/heads/batch/20261106-1820:refs/heads/batch/20261106-1820" allow
   probe "the dangerous-push escape is honoured"         "ALLOW_DANGEROUS_PUSH=1 git push --force origin feat/x" allow
   # The branch escape must NOT grant the force decision — two intents, two flags.
   probe "the BRANCH escape does not authorise a force push" \

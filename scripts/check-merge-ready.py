@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 263 cases
+    python3 scripts/check-merge-ready.py --self-test # 269 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -264,8 +264,10 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     # backlog #330: the alert runs on everything EXCEPT a pull request — the opposite of PR-only.
     # ⟳ PR #496 r1 C4: one step now opens, comments on, or CLOSES the issue, so it runs on a green
     # run too (`!cancelled()`, not `failure()`).
-    ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' }}"):
-        (1, "the sweep-red alert, which runs on a master push or the schedule and never on a PR"),
+    # ⟳ backlog #534: and never on a `batch/**` push, whose red is a batch verdict for `batch-ci.py status`.
+    ("ci.yml", "if: ${{ !cancelled() && github.event_name != 'pull_request' && "
+               "!startsWith(github.ref, 'refs/heads/batch/') }}"):
+        (1, "the sweep-red alert, which runs on a master push or the schedule and never on a PR or a batch"),
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
     ("ci.yml", "if: github.event_name == 'pull_request'"):
@@ -433,6 +435,31 @@ def ci_conclusion(checks: list[dict]) -> tuple[int, str]:
     if bad:
         return 1, "failing: " + ", ".join(bad)
     return 0, f"{len(checks)} check(s) green"
+
+
+# ── backlog #534: THE BATCH SWEEP, ADVISORY ───────────────────────────────────────────────────
+# ⛔ ADVISORY IN THE FIRST BUILD, ON PURPOSE. A pull request's own sweep is diff-scoped; the full sweep runs on a
+# `batch/**` branch (`scripts/batch-ci.py`). Requiring a green batch for every merge would change EVERY merge on
+# the day it lands, before one batch has ever run on GitHub. So this prints an `ok` or `info` line and never
+# enters `results`: it can neither move the verdict nor HOLD. Making it a requirement is a later, separate act.
+BATCH_PREFIX = "batch/"
+
+
+def batch_note(runs: list, contains, head: str) -> tuple[str, str]:
+    """(mark, line) for the advisory batch line. PURE given `contains(batch_sha) -> bool`.
+
+    A batch counts only when its run is GREEN and its branch is `batch/*`; a green master run is not a batch.
+    "Contains" is ancestry — the head is an ancestor of the batch commit — which is what membership produces:
+    `batch-ci.py` merges each member's exact head into the batch.
+    """
+    green = [r for r in runs if r.get("conclusion") == "success"
+             and str(r.get("headBranch", "")).startswith(BATCH_PREFIX)]
+    for r in green:
+        if contains(r.get("headSha", "")):
+            return "ok ", (f"green batch {r.get('headBranch')} (run {r.get('databaseId')}) contains head "
+                           f"{head[:8]} — advisory (backlog #534)")
+    return "info", (f"no green batch run contains head {head[:8]} ({len(green)} green batch run(s) read) — "
+                    f"advisory (backlog #534), it never blocks a merge")
 
 
 # ── THE FETCH, impure ─────────────────────────────────────────────────────────────────────────
@@ -1345,6 +1372,22 @@ def main(argv: list[str]) -> int:
         code, note = 2, "could not parse `gh pr checks` output"
     results["CI"] = code
     print(f"  {MARK[code]} {'CI':18s} rc={code}  {note}")
+
+    # backlog #534: the batch line. ADVISORY — it is printed and never enters `results` (see `batch_note`).
+    bhead = info.get("headRefOid") or head or ""
+    try:
+        rr = _run(["gh", "run", "list", "--workflow", "CI", "--event", "push", "--limit", "100",
+                   "--json", "databaseId,headBranch,headSha,conclusion"])
+        if rr.returncode != 0:
+            raise RuntimeError((rr.stderr or "gh run list failed").strip()[:120])
+
+        def _contains(sha: str) -> bool:
+            rc_ = _run(["gh", "api", f"repos/{{owner}}/{{repo}}/compare/{bhead}...{sha}", "--jq", ".status"])
+            return rc_.returncode == 0 and rc_.stdout.strip() in ("ahead", "identical")
+        bmark, bline = batch_note(json.loads(rr.stdout), _contains, bhead)
+    except Exception as exc:                  # an advisory that cannot run says so, and moves nothing
+        bmark, bline = "info", f"NOT RUN ({_describe(exc, text=False)}) — advisory (backlog #534), it never blocks a merge"
+    print(f"  {bmark} {'batch sweep':18s} {bline}")
 
     code, line = verdict(results)
     # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
@@ -2338,7 +2381,7 @@ def _self_test_body() -> int:
     import contextlib, io
     _real_run = globals()["_run"]
     _tmp = Path(tempfile.mkdtemp()) / "body.md"
-    def _fake(files, diff, body="", status=None, tree="", pins_head=None, refuse=()):
+    def _fake(files, diff, body="", status=None, tree="", pins_head=None, refuse=(), batch_runs="[]", ahead=()):
         # The machine list defaults to one `M` per file; `diff` is every file's patch (no hunks
         # unless a case gives some), since each file's patch is asked for separately.
         if status is None:
@@ -2355,6 +2398,10 @@ def _self_test_body() -> int:
                                       "headRefOid": "abc", "mergeStateStatus": "CLEAN"}))
             if cmd[:3] == ["gh", "pr", "checks"]:
                 return cp(json.dumps([{"name": "verify", "bucket": "pass"}]))
+            if cmd[:3] == ["gh", "run", "list"]:          # backlog #534: the batch runs
+                return cp(batch_runs)
+            if cmd[:2] == ["gh", "api"]:                    # ...and whether each contains the head
+                return cp("ahead\n" if any(cmd[2].endswith("..." + x) for x in ahead) else "diverged\n")
             if cmd[:2] == ["git", "rev-parse"]:
                 return cp("abc\n")
             if cmd[:3] == ["git", "--literal-pathspecs", "diff"] and "--name-status" in cmd:
@@ -2374,9 +2421,9 @@ def _self_test_body() -> int:
             return cp("ok\n")                       # the three gate scripts
         return run
     def _main(files, pr, tests_at=None, diff="", body="", status=None, tree="", pins_head=None, refuse=(),
-              harness=None, extra=()):
+              harness=None, extra=(), batch_runs="[]", ahead=()):
         """`main()` over the fake, read by a working tree holding HEAD's pins file and `harness` (backlog #536)."""
-        globals()["_run"] = _fake(files, diff, body, status, tree, pins_head, refuse)
+        globals()["_run"] = _fake(files, diff, body, status, tree, pins_head, refuse, batch_runs, ahead)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
@@ -2593,6 +2640,25 @@ def _self_test_body() -> int:
     _rc, _o = _main(["lib/x.ts"], "3", "abc")
     check("main() clears app code with a local test run pinned to the head, rc=0",
           (_rc, "HOLD" in _o), (0, False))
+
+    # ── backlog #534: the batch line is ADVISORY ──
+    _bruns = [{"databaseId": 1, "headBranch": "batch/20261106-1820", "headSha": "b1", "conclusion": "success"},
+              {"databaseId": 2, "headBranch": "batch/20261106-1830", "headSha": "b2", "conclusion": "failure"},
+              {"databaseId": 3, "headBranch": "master", "headSha": "m3", "conclusion": "success"}]
+    check("#534: a GREEN batch run containing the head is `ok`",
+          batch_note(_bruns, lambda sha: sha == "b1", "abc")[0], "ok ")
+    check("#534: a RED batch run containing the head is only `info`",
+          batch_note(_bruns, lambda sha: sha == "b2", "abc")[0], "info")
+    check("#534: a green MASTER run containing the head is not a batch — `info`",
+          batch_note(_bruns, lambda sha: sha == "m3", "abc")[0], "info")
+    check("#534: a green batch that does NOT contain the head is `info`",
+          batch_note(_bruns, lambda sha: False, "abc")[0], "info")
+    _rc, _o = _main(["docs/x.md"], "16")
+    check("⭐ #534: main() leaves a READY PR with NO green batch READY, rc=0 — the batch line never moves the verdict",
+          (_rc, "batch sweep" in _o, "no green batch run contains head abc" in _o), (0, True, True))
+    _rc, _o = _main(["docs/x.md"], "17", batch_runs=json.dumps(_bruns), ahead=("b1",))
+    check("#534: main() reads the batch runs and asks GitHub whether each contains the PR head",
+          (_rc, "green batch batch/20261106-1820 (run 1) contains head abc" in _o), (0, True))
 
     shutil.rmtree(_tree_root, ignore_errors=True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")
