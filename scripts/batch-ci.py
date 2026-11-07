@@ -690,6 +690,15 @@ def _self_test_body() -> int:
         except Exception as exc:
             return f"raised {type(exc).__name__}"
 
+    def refusal(fn):                                # the REASON: a refusal for another cause must not pass
+        try:
+            fn()
+            return None
+        except Refuse as exc:
+            return str(exc)
+        except Exception as exc:
+            return f"raised {type(exc).__name__}"
+
     # ── names and readiness ──
     case("the batch branch is batch/<UTC yyyymmdd-hhmm>",
          guarded(lambda: batch_name(dt.datetime(2026, 11, 6, 18, 20, 59, tzinfo=dt.timezone.utc))),
@@ -741,7 +750,7 @@ def _self_test_body() -> int:
     case("a text with no conflict parses to itself",
          guarded(lambda: "".join("\n".join(s[1]) for s in parse_conflicts("a\nb\n"))), "a\nb\n")
     case("a conflict WITHOUT a base section is refused (it needs diff3 to know what each side changed)",
-         refused(lambda: parse_conflicts("<<<<<<< o\na\n=======\nb\n>>>>>>> t\n")), True)
+         "no base section" in str(refusal(lambda: parse_conflicts("<<<<<<< o\na\n=======\nb\n>>>>>>> t\n"))), True)
     case("an unterminated conflict is refused", refused(lambda: parse_conflicts("<<<<<<< o\na\n||||||| b\n")), True)
 
     r1, r2, r3 = "| 1 | one | x |", "| 2 | two | x |", "| 3 | three | x |"
@@ -1077,10 +1086,13 @@ def _e2e_body(case, td: Path) -> None:
     case("⛔ land STOPS LOUDLY when the merged master's tree is not the batch's tree at that step",
          (rc, "is NOT the batch's" in "\n".join(lines)), (1, True))
 
-    def _no_run(cmd, cwd=None):
-        raise AssertionError(f"ran {cmd}")
+    _ran: list = []                                 # RECORDED, never raised: main turns an exception into rc 2,
+    def _no_run(cmd, cwd=None):                     # the same rc the guard returns, so a raise could not fail
+        _ran.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
     case("status/land refuse a branch that is not batch/*, before running anything (rc 2)",
-         [main([c, "master"], run=_no_run, root=root, out=lambda _l: None) for c in ("status", "land")], [2, 2])
+         ([main([c, "master"], run=_no_run, root=root, out=lambda _l: None) for c in ("status", "land")], _ran),
+         ([2, 2], []))
 
 
 if __name__ == "__main__":
