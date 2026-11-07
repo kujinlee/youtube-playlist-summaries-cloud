@@ -1309,5 +1309,57 @@
   "expect": [
    "⛔ backlog #536: ...and so is a redirect to a pins file that DROPS a target (the comparison reads both sides)"
   ]
+ },
+ {
+  "name": "backlog #534: a green master run counts as a batch",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "             and str(r.get(\"headBranch\", \"\")).startswith(BATCH_PREFIX)]\n",
+    "             ]\n"
+   ]
+  ],
+  "expect": [
+   "#534: a green MASTER run containing the head is not a batch — `info`"
+  ]
+ },
+ {
+  "name": "backlog #534: a red batch run counts as green",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    green = [r for r in runs if r.get(\"conclusion\") == \"success\"\n",
+    "    green = [r for r in runs if True\n"
+   ]
+  ],
+  "expect": [
+   "#534: a RED batch run containing the head is only `info`"
+  ]
+ },
+ {
+  "name": "backlog #534: the advisory batch line moves the verdict",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    print(f\"  {bmark} {'batch sweep':18s} {bline}\")\n",
+    "    results[\"batch sweep\"] = 0 if bmark == \"ok \" else 1\n    print(f\"  {bmark} {'batch sweep':18s} {bline}\")\n"
+   ]
+  ],
+  "expect": [
+   "⭐ #534: main() leaves a READY PR with NO green batch READY, rc=0 — the batch line never moves the verdict"
+  ]
+ },
+ {
+  "name": "backlog #534: a batch that diverged from the head is read as containing it",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            return rc_.returncode == 0 and rc_.stdout.strip() in (\"ahead\", \"identical\")\n",
+    "            return rc_.returncode == 0\n"
+   ]
+  ],
+  "expect": [
+   "#534: main() reports NO containing batch when GitHub says no green batch descends from the head"
+  ]
  }
 ]

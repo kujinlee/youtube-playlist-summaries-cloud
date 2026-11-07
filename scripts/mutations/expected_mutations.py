@@ -1473,6 +1473,12 @@ EXPECTED_MUTATIONS = {
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
     # only the first issue, or is handled as red; the marker dropped; a second red opens another issue; gh swallowed.
     "scripts/sweep-red-alert.py": 6,
+    # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
+    # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
+    # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which
+    # `resolve_text` backs up (a mutation there is masked by design), and `_refresh`'s own tree check, which the
+    # per-step tree assertion after each merge backs up.
+    "scripts/batch-ci.py": 28,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -1648,7 +1654,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-06, backlog #536 (the THRASHING architecture review, r4 fold): 104 -> 102. The static binding proof is
     # DELETED with its 5 mutations (3 from r1, 2 from r2); the held-versus-display comparison in `pin_pair` adds 3:
     # skipped (1), inverted (1), and reading only the held side's keys (1).
-    "scripts/check-merge-ready.py": 102,
+    # ⟳ 2026-11-06, backlog #534: 102 -> 106, none retired. The advisory batch line: a green master run read as a
+    # batch (1), a red batch read as green (1), the line moving the verdict (1), a diverged batch read as containing (1).
+    "scripts/check-merge-ready.py": 106,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

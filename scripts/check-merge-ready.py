@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 269 cases
+    python3 scripts/check-merge-ready.py --self-test # 270 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -2652,13 +2652,16 @@ def _self_test_body() -> int:
     check("#534: a green MASTER run containing the head is not a batch — `info`",
           batch_note(_bruns, lambda sha: sha == "m3", "abc")[0], "info")
     check("#534: a green batch that does NOT contain the head is `info`",
-          batch_note(_bruns, lambda sha: False, "abc")[0], "info")
+          batch_note(_bruns[:1], lambda sha: False, "def")[0], "info")
     _rc, _o = _main(["docs/x.md"], "16")
     check("⭐ #534: main() leaves a READY PR with NO green batch READY, rc=0 — the batch line never moves the verdict",
           (_rc, "batch sweep" in _o, "no green batch run contains head abc" in _o), (0, True, True))
     _rc, _o = _main(["docs/x.md"], "17", batch_runs=json.dumps(_bruns), ahead=("b1",))
     check("#534: main() reads the batch runs and asks GitHub whether each contains the PR head",
           (_rc, "green batch batch/20261106-1820 (run 1) contains head abc" in _o), (0, True))
+    _rc, _o = _main(["docs/x.md"], "18", batch_runs=json.dumps(_bruns), ahead=())
+    check("#534: main() reports NO containing batch when GitHub says no green batch descends from the head",
+          (_rc, "no green batch run contains head abc (1 green batch run(s) read)" in _o), (0, True))
 
     shutil.rmtree(_tree_root, ignore_errors=True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")

@@ -7,7 +7,7 @@
     python3 scripts/batch-ci.py status batch/20261106-1820          # green? on red, which PR to eject
     python3 scripts/batch-ci.py land batch/20261106-1820            # DRY RUN: the merge plan
     python3 scripts/batch-ci.py land batch/20261106-1820 --land     # squash-merge each member, in order
-    python3 scripts/batch-ci.py --self-test              # 50 cases
+    python3 scripts/batch-ci.py --self-test              # 55 cases
 
     0 = assembled / green / landed   1 = red, or a land STOPPED   2 = CANNOT RUN (treat as NOT RUN)
 
@@ -657,12 +657,14 @@ def main(argv: list[str], run=_run, root=ROOT, now=None, out=print) -> int:
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: it builds git repositories (backlog #373)."""
     import fixture_git
-    with fixture_git.isolated(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
-                              GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com"):
+    with fixture_git.isolated():
         return _self_test_body()
 
 
 def _self_test_body() -> int:
+    import os                                       # the fixture's commits need an identity; `isolated()`
+    os.environ.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",    # restores the caller's
+                      GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")  # environment on exit
     ok = fail = 0
 
     def case(label, got, want):
@@ -727,6 +729,9 @@ def _self_test_body() -> int:
     _sel = guarded(lambda: select(_prs, {8}))
     case("READY = open, not a draft, based on master, same repository, own CI green — and in PR number order",
          guarded(lambda: [p["number"] for p in _sel[0]]), [3, 9])
+    case("...with nothing excluded and both ready, both are batched, in number order",
+         guarded(lambda: ([p["number"] for p in select([pr(12), pr(2)], set())[0]], select([pr(12), pr(2)], set())[1])),
+         ([2, 12], []))
     case("...and every PR left out is named with its reason",
          guarded(lambda: [n for n, _ in _sel[1]]), [4, 5, 6, 7, 8])
     case("...an --exclude'd PR says so",
@@ -764,14 +769,14 @@ def _self_test_body() -> int:
          guarded(lambda: resolve_text("docs/backlog.md", _two)),
          "# t\n" + r1 + "\n" + r2 + "\nmid\n" + r3 + "\n| 4 | f | x |\n")
     case("a file not in UNION_FILES is refused, whatever its conflict",
-         refused(lambda: resolve_text("scripts/x.py", _two)), True)
+         refused(lambda: resolve_text("scripts/x.py", "<<<<<<< o\nx\n||||||| b\n=======\ny\n>>>>>>> t\n")), True)
 
     # ── membership, attribution, bisection ──
     _h = "a" * 40
     case("a batch merge commit's subject and parents name its member",
          guarded(lambda: parse_member(merge_message(12, _h), ["p" * 40, _h])), (12, _h))
     case("...a subject whose SHA is not the second parent is not a member",
-         guarded(lambda: parse_member(merge_message(12, _h), ["p" * 40, "b" * 40])), None)
+         guarded(lambda: parse_member(merge_message(7, "c" * 40), ["p" * 40, "b" * 40])), None)
     _entries = [("scripts/mutations/a.json", {"name": "drop the guard", "file": "scripts/a.py"}),
                 ("scripts/mutations/b.json", {"name": "flip the sign", "file": "scripts/b.py"})]
     _log = ("mutation-sweep (2)\tstep\t2026Z mutation SURVIVED — drop the guard: the suite stayed green, so no\n"
@@ -780,7 +785,7 @@ def _self_test_body() -> int:
          guarded(lambda: [sorted(f["paths"]) for f in failures(_log, _entries)]),
          [["scripts/a.py", "scripts/mutations/a.json"], ["scripts/b.py", "scripts/mutations/b.json"]])
     case("a log naming no known mutation reads as NO failure (and so bisects)",
-         guarded(lambda: failures("something else went red", _entries)), [])
+         guarded(lambda: failures("something else went red", _entries[1:])), [])
     _f = [{"what": "drop the guard", "paths": {"scripts/a.py", "scripts/mutations/a.json"}}]
     case("the ONE PR whose diff touches the target is ejected",
          guarded(lambda: attribute(_f, {3: {"scripts/a.py"}, 9: {"docs/x.md"}})), ("eject", [3]))
@@ -790,7 +795,8 @@ def _self_test_body() -> int:
          guarded(lambda: attribute(_f, {3: {"scripts/a.py"}, 9: {"scripts/mutations/a.json"}})[0]), "bisect")
     case("no PR touching it -> bisect", guarded(lambda: attribute(_f, {3: {"docs/x.md"}})[0]), "bisect")
     case("nothing read from the log -> bisect", guarded(lambda: attribute([], {3: {"scripts/a.py"}})[0]), "bisect")
-    case("bisection drops one PR at a time, newest first", guarded(lambda: bisection_order([3, 12, 9])), [12, 9, 3])
+    case("bisection drops one PR at a time, newest first",
+         guarded(lambda: (bisection_order([3, 12, 9]), bisection_order([1, 2]))), ([12, 9, 3], [2, 1]))
 
     # ── end to end, over real git repositories and a fake gh ──
     try:
@@ -823,6 +829,7 @@ class _FakeGitHub:
         self.jobs: dict[int, list] = {}
         self.logs: dict[int, str] = {}
         self.calls: list[list[str]] = []
+        self.tamper = False                         # a squash whose tree is NOT what was asked for
 
     def head(self, n):
         return _fx(self.origin, "rev-parse", f"refs/heads/{self.prs[n]['branch']}")
@@ -873,6 +880,12 @@ class _FakeGitHub:
             tree = self._squash_tree(h)
             if tree is None:
                 return no("Pull request is not mergeable: the merge commit cannot be cleanly created")
+            if self.tamper:
+                blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], input="extra\n", capture_output=True,
+                                      text=True, cwd=str(self.origin)).stdout.strip()
+                listing = _fx(self.origin, "ls-tree", tree) + f"\n100644 blob {blob}\textra.txt\n"
+                tree = subprocess.run(["git", "mktree"], input=listing, capture_output=True, text=True,
+                                      cwd=str(self.origin)).stdout.strip()
             c = _fx(self.origin, "commit-tree", tree, "-p", "refs/heads/master", "-m", f"squash PR #{n}")
             _fx(self.origin, "update-ref", "refs/heads/master", c)
             self.prs[n]["state"] = "MERGED"
@@ -1016,11 +1029,16 @@ def _e2e_body(case, td: Path) -> None:
     b2 = "batch/20261106-1821"
     case("a PR ejected last time rejoins the next batch once it no longer conflicts... (here it still does: nothing to "
          "push, rc 0)", (rc, _fx(origin, "branch", "--list", b2).strip()), (0, ""))
-    make_pr(4, {"docs/backlog.md": row(5)})
+    h4 = make_pr(4, {"docs/backlog.md": row(5)})
+    make_pr(5, {"docs/dashboard-entries.md": entry(5)})
+    _fx(origin, "update-ref", "refs/pull/5/head", h4)      # GitHub's ref is not the head its CI ran on
     lines.clear()
     rc = main(["plan", "--push", "--exclude", "3"], run=run, root=root, now=now + dt.timedelta(minutes=2),
               out=lines.append)
     b3 = "batch/20261106-1822"
+    case("a PR whose fetched head is not the head its CI ran on is EJECTED, never batched",
+         "EJECTED PR #5: its head moved" in "\n".join(lines), True)
+    gh.prs[5]["state"] = "CLOSED"
     t3 = _fx(origin, "rev-parse", f"refs/heads/{b3}")
     gh.runs.append({"databaseId": 71, "headBranch": b3, "headSha": t3, "status": "completed",
                     "conclusion": "success", "event": "push"})
@@ -1034,6 +1052,35 @@ def _e2e_body(case, td: Path) -> None:
     rc = main(["land", b3, "--land"], run=run, root=root, out=lines.append)
     case("⛔ land STOPS LOUDLY when origin/master's tree is not the batch's base tree, merging nothing",
          (rc, "STOP" in "\n".join(lines), len([c for c in gh.calls if c[1:3] == ["pr", "merge"]]) - before), (1, True, 0))
+
+    lines.clear()
+    rc = main(["plan", "--push", "--exclude", "3"], run=run, root=root, now=now + dt.timedelta(minutes=3),
+              out=lines.append)
+    b4 = "batch/20261106-1823"
+    t4 = _fx(origin, "rev-parse", f"refs/heads/{b4}")
+    gh.runs.append({"databaseId": 72, "headBranch": b4, "headSha": t4, "status": "completed",
+                    "conclusion": "success", "event": "push"})
+    _fx(dev, "checkout", "-q", "-B", "pr4", "origin/pr4")
+    (dev / "docs" / "late.md").write_text("pushed after the batch\n")
+    _fx(dev, "add", "-A")
+    _fx(dev, "commit", "-q", "-m", "late")
+    _fx(dev, "push", "-q", "origin", "pr4")
+    gh.green_heads.add(gh.head(4))
+    lines.clear()
+    rc = main(["land", b4, "--land"], run=run, root=root, out=lines.append)
+    case("land STOPS when a member's head moved since the batch and is not its landing refresh",
+         (rc, "moved since the batch" in "\n".join(lines), gh.prs[4]["state"]), (1, True, "OPEN"))
+    _fx(dev, "push", "-q", "-f", "origin", "pr4~1:pr4")
+    gh.tamper = True
+    lines.clear()
+    rc = main(["land", b4, "--land"], run=run, root=root, out=lines.append)
+    case("⛔ land STOPS LOUDLY when the merged master's tree is not the batch's tree at that step",
+         (rc, "is NOT the batch's" in "\n".join(lines)), (1, True))
+
+    def _no_run(cmd, cwd=None):
+        raise AssertionError(f"ran {cmd}")
+    case("status/land refuse a branch that is not batch/*, before running anything (rc 2)",
+         [main([c, "master"], run=_no_run, root=root, out=lambda _l: None) for c in ("status", "land")], [2, 2])
 
 
 if __name__ == "__main__":

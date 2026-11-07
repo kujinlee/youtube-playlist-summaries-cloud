@@ -314,6 +314,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #534 (2026-11-06): the batch full sweep, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source; every parameter varied by a case except `main.root`, EXEMPT with its reason.
+    "batch-ci.py": ("attribute.diffs", "attribute.found", "batch_name.now", "bisection_order.members",
+                    "failures.entries", "failures.log", "main.argv", "main.now", "main.out", "main.root", "main.run",
+                    "merge_message.n", "merge_message.sha", "parse_conflicts.text", "parse_member.parents",
+                    "parse_member.subject", "pr_ci_green.rollup", "resolve_hunk.base", "resolve_hunk.ours",
+                    "resolve_hunk.policy", "resolve_hunk.theirs", "resolve_text.path", "resolve_text.text",
+                    "select.exclude", "select.prs"),
     # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #465 r1 fold: `classify.*`, `digest.inputs`, `git_refs.argv`, `last_green.*` and `read_ledger.path` leave with
@@ -1296,6 +1304,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #534 (2026-11-06): batch-ci.py's main() runs against ONE fixture clone — every repository, PR and run
+    # it acts on lives inside that clone and its fake gh, and those ARE varied (five batches, eight PRs, three runs).
+    "batch-ci.py:main.root": "main() is driven against ONE fixture clone: building a second clone would vary the path and nothing main decides on; what it decides on (the batches, PRs, runs and trees inside that clone and the fake gh) is varied across fifteen calls",
     # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
     # backlog #457 (2026-11-01): check-agent-large-read.py's main() is driven from one helper.
     "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",

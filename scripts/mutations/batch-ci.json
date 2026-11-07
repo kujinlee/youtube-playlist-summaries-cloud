@@ -1,0 +1,366 @@
+[
+  {
+    "name": "a batch name is taken from the local clock, not converted to UTC",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    return BRANCH_PREFIX + now.astimezone(dt.timezone.utc).strftime(\"%Y%m%d-%H%M\")\n",
+        "    return BRANCH_PREFIX + now.strftime(\"%Y%m%d-%H%M\")\n"
+      ]
+    ],
+    "expect": [
+      "...a non-UTC clock is converted to UTC, never used as is"
+    ]
+  },
+  {
+    "name": "a required check that never reported counts as green",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if missing:\n        return False, \", \".join(missing) + \" has not reported\"\n",
+        "    if False:\n        return False, \", \".join(missing) + \" has not reported\"\n"
+      ]
+    ],
+    "expect": [
+      "a required check that never REPORTED is not green — absence is not a pass"
+    ]
+  },
+  {
+    "name": "a failed StatusContext counts as green",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            if state != \"SUCCESS\":\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "SKIPPED and NEUTRAL count as green; a StatusContext is read by its state"
+    ]
+  },
+  {
+    "name": "a draft PR is batched",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        elif p.get(\"isDraft\"):\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "READY = open, not a draft, based on master, same repository, own CI green — and in PR number order"
+    ]
+  },
+  {
+    "name": "the batch order is the order gh listed, not PR number ascending",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    for p in sorted(prs, key=lambda p: p[\"number\"]):\n",
+        "    for p in prs:\n"
+      ]
+    ],
+    "expect": [
+      "READY = open, not a draft, based on master, same repository, own CI green — and in PR number order"
+    ]
+  },
+  {
+    "name": "a PR from a fork is batched, though a landing refresh could not be pushed to it",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        elif p.get(\"isCrossRepository\"):\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "READY = open, not a draft, based on master, same repository, own CI green — and in PR number order"
+    ]
+  },
+  {
+    "name": "a PR whose own CI is red is batched",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            why = None if green else f\"its own CI is not green ({note})\"\n",
+        "            why = None\n"
+      ]
+    ],
+    "expect": [
+      "READY = open, not a draft, based on master, same repository, own CI green — and in PR number order"
+    ]
+  },
+  {
+    "name": "a conflict with no diff3 base section is resolved by guessing",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            elif line == \"=======\" or line.startswith(\"<<<<<<<\"):\n",
+        "            elif line.startswith(\"<<<<<<<\"):\n"
+      ]
+    ],
+    "expect": [
+      "a conflict WITHOUT a base section is refused (it needs diff3 to know what each side changed)"
+    ]
+  },
+  {
+    "name": "a backlog row changed on both sides takes ours silently",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            else:\n                raise Refuse(f\"backlog row {k} was changed on both sides\")\n",
+        "            else:\n                v = ov\n"
+      ]
+    ],
+    "expect": [
+      "rows: the SAME row changed on both sides is refused"
+    ]
+  },
+  {
+    "name": "a row changed only on theirs keeps ours",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            elif ov == bv:\n                v = tv\n",
+        "            elif ov == bv:\n                v = ov\n"
+      ]
+    ],
+    "expect": [
+      "rows: each side appended a different row -> both, in row order"
+    ]
+  },
+  {
+    "name": "an edited or deleted base line is unioned instead of refused",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if +need:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "lines: a line present at the merge base and edited on one side is refused"
+    ]
+  },
+  {
+    "name": "a line added on both sides lands twice",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        ta = [x for x in _added(theirs, base, \"theirs\") if not (x.strip() and x in oa)]\n",
+        "        ta = [x for x in _added(theirs, base, \"theirs\")]\n"
+      ]
+    ],
+    "expect": [
+      "lines: the same line added on both sides lands once"
+    ]
+  },
+  {
+    "name": "two dashboard entries fuse under one header",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if out and out[-1].strip() and ta[0].startswith(\"#\"):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "lines: a block led by a heading gets a blank line after a non-blank last line"
+    ]
+  },
+  {
+    "name": "a conflict in a file outside UNION_FILES is resolved as lines",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if policy is None:\n        raise Refuse(f\"{path} is not an append-only file this script resolves\")\n",
+        "    if policy is None:\n        policy = \"lines\"\n"
+      ]
+    ],
+    "expect": [
+      "a file not in UNION_FILES is refused, whatever its conflict"
+    ]
+  },
+  {
+    "name": "a merge commit whose second parent is not the named head is read as a member",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if not m or len(parents) != 2 or parents[1] != m.group(2):\n",
+        "    if not m or len(parents) != 2:\n"
+      ]
+    ],
+    "expect": [
+      "...a subject whose SHA is not the second parent is not a member"
+    ]
+  },
+  {
+    "name": "a red control line is not read back to its file",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if f\"control run of {f} did not\" in log or f\"CANNOT RUN — {f} is no longer green AFTER\" in log:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "a SURVIVED line and a red CONTROL line are each read back to their manifest and target"
+    ]
+  },
+  {
+    "name": "a failure touched by two members ejects the first",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if len(owners) != 1:\n",
+        "        if not owners:\n"
+      ]
+    ],
+    "expect": [
+      "two PRs touching it -> bisect, never a guess"
+    ]
+  },
+  {
+    "name": "nothing read from the log ejects nobody instead of bisecting",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if not found:\n        return \"bisect\", \"no failing mutation could be read from the red shards' logs\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "nothing read from the log -> bisect"
+    ]
+  },
+  {
+    "name": "bisection drops the oldest PR first",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    return sorted(members, reverse=True)\n",
+        "    return sorted(members)\n"
+      ]
+    ],
+    "expect": [
+      "bisection drops one PR at a time, newest first"
+    ]
+  },
+  {
+    "name": "a PR whose fetched head is not the head its CI ran on is batched anyway",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            if got != head:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "a PR whose fetched head is not the head its CI ran on is EJECTED, never batched"
+    ]
+  },
+  {
+    "name": "a red non-sweep job is attributed through the sweep log",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    other = [b for b in bad if not SWEEP_JOB.match(b)]\n",
+        "    other = []\n"
+      ]
+    ],
+    "expect": [
+      "status: a red job that is not a sweep shard BISECTS, newest first"
+    ]
+  },
+  {
+    "name": "land merges a batch with no green run",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if not any(r.get(\"status\") == \"completed\" and r.get(\"conclusion\") == \"success\"\n",
+        "    if False and not any(r.get(\"status\") == \"completed\" and r.get(\"conclusion\") == \"success\"\n"
+      ]
+    ],
+    "expect": [
+      "land refuses a batch with no GREEN run at its tip, and merges nothing"
+    ]
+  },
+  {
+    "name": "land merges onto a master that moved outside the batch",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if master_tree != trees[k]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ land STOPS LOUDLY when origin/master's tree is not the batch's base tree, merging nothing"
+    ]
+  },
+  {
+    "name": "land without --land merges",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if not do_land:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "land WITHOUT --land is a dry run: it prints the plan and merges nothing"
+    ]
+  },
+  {
+    "name": "a DIRTY member is merged as is instead of refreshed",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            if v.get(\"mergeStateStatus\") == \"DIRTY\":\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "...the second is DIRTY after the first lands: a refresh is pushed whose first parent is the batch's head, and land STOPS for its CI (rc 1)"
+    ]
+  },
+  {
+    "name": "a member head that moved since the batch is merged",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            if parents[1:2] != [m[\"head\"]] or _tree(run, root, cur) != want:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "land STOPS when a member's head moved since the batch and is not its landing refresh"
+    ]
+  },
+  {
+    "name": "land does not check master's tree after each merge",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if got != want:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ land STOPS LOUDLY when the merged master's tree is not the batch's tree at that step"
+    ]
+  },
+  {
+    "name": "status and land accept a branch that is not batch/*",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if not a.branch.startswith(BRANCH_PREFIX):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "status/land refuse a branch that is not batch/*, before running anything (rc 2)"
+    ]
+  }
+]
