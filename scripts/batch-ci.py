@@ -7,7 +7,7 @@
     python3 scripts/batch-ci.py status batch/20261106-1820          # green? on red, which PR to eject
     python3 scripts/batch-ci.py land batch/20261106-1820            # DRY RUN: the merge plan
     python3 scripts/batch-ci.py land batch/20261106-1820 --land     # squash-merge each member, in order
-    python3 scripts/batch-ci.py --self-test              # 123 cases
+    python3 scripts/batch-ci.py --self-test              # 142 cases
 
     0 = assembled / green / landed   1 = red, or a land STOPPED   2 = CANNOT RUN (treat as NOT RUN)
 
@@ -16,7 +16,8 @@ defect that only ANOTHER manifest's suite catches is seen only by a full sweep, 
 master. This runs the full sweep BEFORE the merges, once for many PRs: the owner's design of 2026-11-06 18:20.
 
   1. `plan` starts at origin/master and merges each READY PR head into `batch/<UTC yyyymmdd-hhmm>` one by one,
-     PR number ascending. READY = open, not a draft, its own CI green (`select`), AND `check-merge-ready.py --pr N`,
+     PR number ascending — except that a PR whose READY rests on exact-tree loosening answers (backlog #508,
+     `answer_records`) goes first and is admitted only if it merges with NO conflict (see THE LANDING REFRESH). READY = open, not a draft, its own CI green (`select`), AND `check-merge-ready.py --pr N`,
      run at the PR's head, admits it (`merge_ready_admits`): READY, or NOT READY only because it conflicts with
      master. A PR the house rule HOLDS (a deploy, a loosened gate, `NO-REVIEW:`, app code with no local tests) is
      never batched. A conflict in an APPEND-ONLY file (`UNION_FILES`) is resolved here, once, keeping each side's
@@ -25,8 +26,10 @@ master. This runs the full sweep BEFORE the merges, once for many PRs: the owner
   2. `--push` pushes the branch. Its `push: batch/**` triggers run CI (the FULL sweep plus the ordinary suite, with
      fail-fast shards: a batch needs a verdict, not an inventory) and Schema gates.
   3. `status` reads the LATEST run of each workflow at the tip. RED only when a job in it FAILED; cancelled,
-     skipped, stale or still running is NO VERDICT (re-run, never eject). On red, the ONE member whose diff
-     touches the failing manifest, its target or anything that target loads (`import_closure`) is EJECTED; when
+     skipped, stale or still running is NO VERDICT (re-run, never eject), and so is a FIRST red whose log names
+     no failing mutation or control (`first_red`: re-run the failed jobs once). On red, the ONE member whose diff
+     touches the failing manifest or its target, or REACHES that target by the sweep harness's own rule
+     (`check-plan-code.select_manifests`, `reached`), is EJECTED; when
      no single member does, the batch is BISECTED by dropping one PR at a time, newest first. Either way the next
      step is `plan --push --exclude N`. A fixed culprit rejoins the NEXT batch, never a solo sweep.
   4. `land --land` needs the latest run of EVERY workflow at the tip green. For each member, in batch order, it
@@ -45,6 +48,10 @@ sees the second as CONFLICTING (DIRTY) and refuses to squash it. The batch alrea
 origin/master), asserts its tree IS the batch's tree for that step, pushes it to the PR branch and STOPS: the
 PR's required checks must pass on the new head. Re-running `land --land` accepts exactly that commit (first
 parent = the batch's head, tree = the batch's step tree) in place of the batch's head, and nothing else.
+⟳ batch-ci r2 (R2-F3): a member whose READY rests on `loosening_answers` (backlog #508) is NEVER refreshed: those
+answers count only on the exact tree reviewed, so a refresh would void them and HOLD the member for good, after its
+branch was rewritten. `plan` puts such members first and ejects one that conflicts ("needs re-review after the
+master merge"); `land` STOPS before pushing if one is DIRTY anyway. Backlog #544 would make the refresh safe.
 
 NO-CALLER: the owner (or an agent for the owner) runs this between pull-request CI and merging. CI cannot call
 it: it reads CI's verdicts, and `land` merges pull requests, which CI must never do on its own.
@@ -103,12 +110,23 @@ READY_LINE = re.compile(r"^\s+\S+\s+(?P<name>\S.*?)\s+rc=(?P<rc>\d)\s+(?P<note>.
 # The ONE not-ready reason a batch answers itself: a conflict with master. The batch either resolves it (an
 # append-only file) or ejects the PR, and `land` re-creates the resolution as a refresh the PR's CI then checks.
 ANSWERED_BY_BATCH = "mergeStateStatus is DIRTY"
+# ⟳ batch-ci r2 (R2-F3): where `check-merge-ready.review_answers` reads a review's `loosening_answers` (backlog #508).
+# An answer counts only on the EXACT tree that round reviewed, so a landing refresh (a merge of master pushed to the
+# branch) voids it, and the member is then HELD for good. A member whose diff carries such a record is never
+# refreshed: `plan` puts it first and admits it only if it merges with no conflict; `land` refuses to refresh one.
+# ⚠ backlog #544 will bind each answer to the flagged FILE's blob instead of the whole tree. Then a refresh that
+# leaves the flagged files alone keeps the answers, and this rule can be relaxed. Must equal check-merge-ready's.
+VERDICT_DIR = "docs/reviews/verdicts/"
+# ⟳ batch-ci r2 (R2-F5): GitHub computes mergeability lazily; right after a squash a PR may read UNKNOWN. `land`
+# re-reads it this many times, this many seconds apart, and then STOPS rather than guess DIRTY or not.
+MERGEABILITY_POLLS = 4
+MERGEABILITY_WAIT = 3
 
-# ⟳ batch-ci r1 (C5, R1-F5): a failing target OWNS more than its manifest and itself — every `scripts/` file it
-# can load, and the harness that runs it. Attribution ejects only when ONE member touches anything in that set.
-HARNESS = ("scripts/check-plan-code.py", "scripts/mutations/expected_mutations.py")
-IMPORT = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_]\w*)", re.M)
-PY_LITERAL = re.compile(r"""["'](?:[\w./-]*/)?([\w.-]+\.py)["']""")
+# ⟳ batch-ci r2 (R2-F2): what a member's diff REACHES is decided by the sweep harness's own rule,
+# `check-plan-code.select_manifests` — the one the pull-request sweep uses to pick its manifests — never by a second
+# copy here. Round 1's own import closure missed hook scripts, workflow files, `import a, b`, `import_module` and
+# data files, and each miss EJECTED an innocent member. Loaded from beside this file.
+SELECTOR = "check-plan-code.py"
 
 # A ready PR's own CI: every check it reported is green, and these reported at all. They are the three
 # `required_status_checks` contexts on master (read with `gh api …/branches/master/protection`, 2026-11-06);
@@ -116,6 +134,7 @@ PY_LITERAL = re.compile(r"""["'](?:[\w./-]*/)?([\w.-]+\.py)["']""")
 REQUIRED_CHECKS = ("verify", "schema-gates", "mutation-sweep-complete")
 GOOD_CONCLUSIONS = ("SUCCESS", "NEUTRAL", "SKIPPED")
 ROW = re.compile(r"^\| (\d+) \|")
+SECTION = re.compile(r"^#{1,2} ")                # a section heading, for the union's placement check
 MEMBER = re.compile(r"^batch-ci: merge PR #(\d+) at ([0-9a-f]{40})$")
 SWEEP_JOB = re.compile(r"^mutation-sweep\b")
 
@@ -302,21 +321,76 @@ def resolve_hunk(policy: str, ours: list[str], base: list[str], theirs: list[str
         return list(ours) + ta
     if policy == "blocks":
         mine = {_trim(b) for b in _blocks(_added(ours, base, "ours")) if _trim(b)}
-        ta = [x for b in _blocks(_added(theirs, base, "theirs")) if not _trim(b) or _trim(b) not in mine for x in b]
-        if not any(x.strip() for x in ta):
+        to, tt = _tagged(ours, base, "o"), _tagged(theirs, base, "t")
+        keep = [b for b in _blocks([y for y in tt if y[1][0] == "t"], key=lambda y: y[0])
+                if not _trim([x for x, _ in b]) or _trim([x for x, _ in b]) not in mine]
+        # ⟳ batch-ci r2 (R2-F1): theirs' HEADLESS prefix (added lines before its first `## `) belongs to the
+        # section open where the hunk starts. Appended after ours' new `## ` block it would move under OURS'
+        # new heading (a product thread filed under a new billing goal), so it goes in BEFORE ours' first
+        # heading, ahead of the blank lines that lead it.
+        prefix = keep.pop(0) if keep and not keep[0][0][0].startswith("## ") else []
+        while prefix and not prefix[-1][0].strip():
+            prefix = prefix[:-1]
+        at = next((j for j, (x, _) in enumerate(to) if SECTION.match(x)), len(to))
+        if prefix and at < len(to):
+            while at and not to[at - 1][0].strip():
+                at -= 1
+        rest = [y for b in keep for y in b]
+        if not any(x.strip() for x, _ in prefix + rest):
             return list(ours)
-        out = list(ours)
-        if out and out[-1].strip() and ta[0].startswith("#"):
-            out.append("")
-        return out + ta
+        out = to[:at] + prefix + to[at:]
+        if rest and out and out[-1][0].strip() and rest[0][0].startswith("#"):
+            out.append(("", ("sep",)))
+        out += rest
+        # ⛔ R2-F1: and whatever the placement, every line must sit under the SAME section heading in the result
+        # as in the side it came from. A placement that cannot keep that is refused (the PR is ejected); a union
+        # never writes a tree in which a member's line moved to another section.
+        moved = _moved(out, to, tt)
+        if moved:
+            raise Refuse(f"the union would move {moved[:60]!r} under another section heading")
+        return [x for x, _ in out]
     raise Refuse(f"unknown policy {policy!r}")
 
 
-def _blocks(lines: list[str]) -> list[list[str]]:
+def _tagged(side: list[str], base: list[str], tag: str) -> list[tuple]:
+    """Each line of one side with an IDENTITY: ("b", text, k) for the k-th base line of that text it keeps (the
+    same identity on both sides), (tag, i) for a line it added. PURE."""
+    need, seen, out = collections.Counter(base), collections.Counter(), []
+    for i, x in enumerate(side):
+        if need[x] > 0:
+            need[x] -= 1
+            out.append((x, ("b", x, seen[x])))
+            seen[x] += 1
+        else:
+            out.append((x, (tag, i)))
+    return out
+
+
+def _sections(tagged: list[tuple]) -> dict:
+    """{identity: the identity of the section heading it sits under, None for the one open before the hunk}."""
+    cur, out = None, {}
+    for x, ident in tagged:
+        if SECTION.match(x):
+            cur = ident
+        out[ident] = cur
+    return out
+
+
+def _moved(out: list[tuple], *sides: list[tuple]) -> list[str]:
+    """The non-blank lines of `out` that sit under another section than in a side they came from. PURE."""
+    got = _sections(out)
+    bad = []
+    for side in sides:
+        want = _sections(side)
+        bad += [x for x, ident in side if x.strip() and ident in got and got[ident] != want[ident]]
+    return bad
+
+
+def _blocks(lines: list, key=lambda x: x) -> list[list]:
     """Added lines split into blocks, each new one starting at a `## ` heading. PURE."""
-    out: list[list[str]] = []
+    out: list[list] = []
     for x in lines:
-        if not out or (x.startswith("## ") and out[-1]):
+        if not out or (key(x).startswith("## ") and out[-1]):
             out.append([])
         out[-1].append(x)
     return out
@@ -380,17 +454,41 @@ def failures(log: str, entries: list[tuple[str, dict]]) -> list[dict]:
     return found
 
 
-def attribute(found: list[dict], diffs: dict[int, set[str]]) -> tuple[str, object]:
-    """("eject", [PR…]) when every failure is owned by exactly ONE member's diff, else ("bisect", why). PURE."""
+def attribute(found: list[dict], diffs: dict[int, set[str]], reach: "dict | None" = None) -> tuple[str, object]:
+    """("eject", [PR…]) when every failure is owned by exactly ONE member, else ("bisect", why). PURE.
+
+    A member owns a failure when its diff touches the failure's manifest or target, or when its diff REACHES a
+    failing target by the harness's rule (`reach[n]`: `reached`'s answer; None = the whole manifest).
+    """
     if not found:
         return "bisect", "no failing mutation could be read from the red shards' logs"
+
+    def reaches(n, f):
+        r = (reach or {}).get(n, frozenset())
+        return r is None or bool(r & f.get("targets", set()))
     eject = set()
     for f in found:
-        owners = sorted(n for n, files in diffs.items() if files & f["paths"])
+        owners = sorted(n for n, files in diffs.items() if files & f["paths"] or reaches(n, f))
         if len(owners) != 1:
             return "bisect", f"{f['what']!r} is touched by {len(owners)} member(s) {owners}, not exactly one"
         eject.add(owners[0])
     return "eject", sorted(eject)
+
+
+def first_red(latest: dict, runs: list[dict]) -> bool:
+    """Is `latest` the FIRST red at this tip? PURE. True when it is attempt 1 and no other run at the tip ended red.
+
+    ⟳ batch-ci r2 (R2-F4): a red whose log names no failing mutation or control (a runner or setup failure, a
+    known flake) measured nothing. The first such red is re-run once (`gh run rerun <id> --failed` makes attempt
+    2), never bisected — a bisect that then goes green would convict the newest PR of a flake. A second one at the
+    same tip bisects.
+    """
+    try:
+        again = int(latest.get("attempt") or 1) > 1
+    except (TypeError, ValueError):
+        again = True                                # unreadable: do not loop on re-runs, bisect
+    me = latest.get("databaseId")
+    return not again and not any(r.get("databaseId") != me and r.get("conclusion") in RED_RUNS for r in runs)
 
 
 def bisection_order(members: list[int]) -> list[int]:
@@ -398,38 +496,54 @@ def bisection_order(members: list[int]) -> list[int]:
     return sorted(members, reverse=True)
 
 
-def import_closure(target: str, read) -> set[str]:
-    """Every file a failing target's verdict depends on, PURE over `read(path) -> text | None` at the batch tip.
+def reached(select, diffs: dict[int, set[str]], sources: dict, harness: frozenset,
+            modules: dict) -> dict:
+    """{member: the manifest targets its diff reaches, or None for ALL of them}. PURE over `select`, which is
+    `check-plan-code.select_manifests`: the harness's own answer to "which targets can this diff affect?".
 
-    The target, every `scripts/<name>.py` it imports (`import x`, `from x import`, at any indentation) or names
-    as a `.py` string literal (the `importlib` load by FILENAME this repository uses), transitively, plus the
-    HARNESS. ⚠ A CONSERVATIVE PROXY, not Python's resolver: a name that is not a file under `scripts/` is
-    ignored (the standard library), and a module named some other way is missed — which can only turn an
-    eject into a bisect, never the reverse, because this set only ever GROWS what a failure owns.
+    ⛔ batch-ci r2 (R2-F2): round 1 answered that with its own import closure and claimed a miss "can only turn an
+    eject into a bisect". FALSE: a missed dependency SHRINKS what a failure owns, so the innocent member that touched
+    the target became the sole owner and was ejected. Now there is ONE rule, and the batch can never disagree with
+    the pull-request sweep about what a diff reaches. ⚠ It inherits that rule's stated limit (`_walks_dir`: a lister
+    applied to a bare parameter is not seen), and a miss there can still eject an innocent member — as it would
+    leave a defect unswept on that member's own PR. ⚠ MEASURED 2026-11-07: a `docs/backlog.md` edit reaches 64 of
+    89 targets, and nearly every member makes one, so most failures BISECT; an eject survives only for a target no
+    union-file edit reaches. That is the honest answer, and a bisect only costs sweeps.
     """
-    seen: set[str] = set()
-    todo = [target]
-    while todo:
-        f = todo.pop()
-        if f in seen:
-            continue
-        text = read(f)
-        if text is None:
-            continue
-        seen.add(f)
-        names = {f"scripts/{m}.py" for m in IMPORT.findall(text)} | {f"scripts/{b}" for b in PY_LITERAL.findall(text)}
-        todo += sorted(names - seen)
-    return seen | set(HARNESS)
+    return {n: select("pull_request", sorted(files), "", sources, harness, modules=modules)[0]
+            for n, files in diffs.items()}
 
 
-def widen(found: list[dict], read) -> list[dict]:
-    """Each failure, owning its targets' whole `import_closure` too. PURE over `read`."""
+def _selector():
+    """`check-plan-code`, loaded once from beside this file (its name has a hyphen, so it is not importable)."""
+    import importlib.util
+    name = "_batch_ci_selector"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / SELECTOR)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException:
+            del sys.modules[name]
+            raise
+    return sys.modules[name]
+
+
+def answer_records(texts: dict) -> list[str]:
+    """The review verdicts among a member's changed files `{path: text at its head, or None}` that carry a
+    non-empty `loosening_answers`: what makes its READY depend on its exact tree (R2-F3). PURE. A record that is not
+    JSON is not an answer (as `review_answers` reads it), so it binds nothing here either."""
     out = []
-    for f in found:
-        paths = set(f["paths"])
-        for t in sorted(f.get("targets", ())):
-            paths |= import_closure(t, read)
-        out.append({**f, "paths": paths})
+    for path, text in sorted(texts.items()):
+        if not (path.startswith(VERDICT_DIR) and path.endswith(".json")) or text is None:
+            continue
+        try:
+            rec = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and isinstance(rec.get("loosening_answers"), dict) and rec["loosening_answers"]:
+            out.append(path)
     return out
 
 
@@ -534,9 +648,10 @@ def _tree(run, cwd, rev: str) -> str:
     return _git(run, cwd, "rev-parse", f"{rev}^{{tree}}").strip()
 
 
-def merge_into(run, wt, sha: str) -> "str | None":
+def merge_into(run, wt, sha: str, clean_only: bool = False) -> "str | None":
     """Merge `sha` into the worktree's HEAD WITHOUT committing, resolving `UNION_FILES`. None, or why it was
-    refused — and then the merge is ABORTED, so the worktree is as it was."""
+    refused — and then the merge is ABORTED, so the worktree is as it was. `clean_only` refuses ANY conflict, even
+    one in an append-only file (R2-F3: a member that must never be refreshed)."""
     r = run(["git", "-c", "merge.conflictStyle=diff3", "-c", "rerere.enabled=false",
              "merge", "--no-ff", "--no-commit", sha], wt)
     if r.returncode == 0:
@@ -549,6 +664,8 @@ def merge_into(run, wt, sha: str) -> "str | None":
     unmerged = [f for f in _git(run, wt, "diff", "--name-only", "--diff-filter=U", "-z").split("\0") if f]
     if not unmerged:
         return abort(f"git merge failed: {(r.stderr or r.stdout).strip()[:200]}")
+    if clean_only:
+        return abort("it conflicts in " + ", ".join(unmerged))
     outside = [f for f in unmerged if f not in UNION_FILES]
     if outside:
         return abort("a conflict outside the append-only files: " + ", ".join(outside))
@@ -593,6 +710,17 @@ def _merge_ready(run, root, n: int, head: str, conflict_ok: bool) -> tuple[bool,
 PR_FIELDS = "number,state,isDraft,baseRefName,isCrossRepository,headRefOid,headRefName,statusCheckRollup"
 
 
+def _answer_bound(run, root, base: str, head: str) -> list[str]:
+    """`answer_records` over the member's own diff (`base...head`), read at its head."""
+    files = [f for f in _git(run, root, "diff", "--name-only", "-z", "--no-renames", f"{base}...{head}").split("\0")
+             if f.startswith(VERDICT_DIR)]
+    texts = {}
+    for f in files:
+        r = run(["git", "show", f"{head}:{f}"], root)
+        texts[f] = r.stdout if r.returncode == 0 else None
+    return answer_records(texts)
+
+
 def plan(run, root, exclude: set[int], push: bool, now: dt.datetime, out) -> int:
     prs = _gh_json(run, root, "pr", "list", "--state", "open", "--base", BASE, "--limit", "200", "--json", PR_FIELDS)
     ready, skipped = select(prs, exclude)
@@ -608,12 +736,20 @@ def plan(run, root, exclude: set[int], push: bool, now: dt.datetime, out) -> int
     base = _git(run, root, "rev-parse", REMOTE_BASE).strip()
     if run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], root).returncode == 0:
         raise CannotRun(f"the branch {branch} already exists here; wait a minute or delete it")
+    # ⛔ R2-F3: a member whose READY rests on exact-tree answers can never take a landing refresh, so it must merge
+    # with NO conflict at its step. Such members go FIRST (number order among them): the first lands onto the very
+    # master it was reviewed against, so every batch lands at least one of them — none waits for ever.
+    fetched = {p["number"]: _git(run, root, "rev-parse", f"refs/remotes/origin/batch-ci/pr/{p['number']}").strip()
+               for p in ready}
+    bound = {n: _answer_bound(run, root, base, h) for n, h in fetched.items()}
+    ready = sorted(ready, key=lambda p: (not bound[p["number"]], p["number"]))
     wt = _worktree(run, root, "-b", branch, base)
     members, ejected, held = [], [], []
+    done = False
     try:
         for p in ready:
             n, head = p["number"], p["headRefOid"]
-            got = _git(run, root, "rev-parse", f"refs/remotes/origin/batch-ci/pr/{n}").strip()
+            got = fetched[n]
             if got != head:
                 ejected.append((n, f"its head moved to {got[:8]} after its CI ran on {head[:8]}"))
                 continue
@@ -621,14 +757,21 @@ def plan(run, root, exclude: set[int], push: bool, now: dt.datetime, out) -> int
             if not ok:
                 held.append((n, note))
                 continue
-            why = merge_into(run, wt, head)
+            why = merge_into(run, wt, head, clean_only=bool(bound[n]))
+            if why and bound[n]:
+                why = (f"{why}. Its READY rests on loosening answers bound to its exact tree ({bound[n][0]}, backlog "
+                       f"#508), and landing it would need a refresh that voids them: it needs re-review after the "
+                       f"master merge")
             if why:
                 ejected.append((n, why))
                 continue
             _git(run, wt, "commit", "-q", "-m", merge_message(n, head))
             members.append((n, head))
+        done = True
     finally:
         _drop_worktree(run, root, wt)
+        if not done:                                # R2-F5: a run that stopped part-way leaves no branch behind,
+            run(["git", "branch", "-D", branch], root)  # so a re-run in the same minute is not refused
     for n, why in held:
         out(f"  skip   PR #{n}: not admitted by check-merge-ready — {why}")
     for n, why in ejected:
@@ -678,15 +821,31 @@ def _runs_at(run, root, branch: str, tip: str, workflow: str) -> list[dict]:
 
 
 def _verdicts(run, root, branch: str, tip: str) -> dict[str, tuple]:
-    """{workflow: (latest run, classify(...))} for every workflow in WORKFLOWS, at the tip."""
+    """{workflow: (latest run, classify(...), every run at the tip)} for every workflow in WORKFLOWS."""
     got = {}
     for wf in WORKFLOWS:
-        latest = latest_run(_runs_at(run, root, branch, tip, wf))
+        runs = _runs_at(run, root, branch, tip, wf)
+        latest = latest_run(runs)
         jobs = []
         if latest and latest.get("status") == "completed" and latest.get("conclusion") in RED_RUNS:
             jobs = _gh_json(run, root, "run", "view", str(latest["databaseId"]), "--json", "jobs").get("jobs", [])
-        got[wf] = (latest, classify(latest, jobs))
+        got[wf] = (latest, classify(latest, jobs), runs)
     return got
+
+
+def _reach_at(run, root, tip: str, diffs: dict[int, set[str]]) -> "tuple[dict, str | None]":
+    """(`reached` over the batch tip's own tree, None), or ({}, why) when the selector could not run — and then the
+    red BISECTS, saying so: an attribution that was not measured never ejects anyone."""
+    wt = _worktree(run, root, "--detach", tip)
+    try:
+        sel = _selector()
+        sources, harness = sel.sweep_sources(wt)
+        return reached(sel.select_manifests, diffs, sources, harness, sel.module_sources(wt)), None
+    except Exception as exc:
+        return {}, (f"the sweep harness's selector could not run at the tip ({type(exc).__name__}: "
+                    f"{str(exc)[:120]}), so nothing is attributed")
+    finally:
+        _drop_worktree(run, root, wt)
 
 
 def status(run, root, branch: str, out) -> int:
@@ -723,19 +882,24 @@ def status(run, root, branch: str, out) -> int:
             except json.JSONDecodeError:
                 continue                        # an unreadable manifest owns nothing; the red then bisects
 
-        def read(path):
-            r = run(["git", "show", f"{tip}:{path}"], root)
-            return r.stdout if r.returncode == 0 else None
+        found = failures(lr.stdout, entries)
+        if not found and first_red(got["CI"][0], got["CI"][2]):
+            out(f"NO VERDICT — CI run {rid} on {branch} at {tip[:12]} failed {_few(failed['CI'])}, and its log names "
+                f"no failing mutation or red control: a runner, setup or flaky failure measured nothing.")
+            out(f"  Re-run the failed jobs ONCE: gh run rerun {rid} --failed. Treat this as NOT RUN: no PR is "
+                f"ejected. A second red at this tip that names nothing BISECTS.")
+            return 2
         base = members[0]["parent"]
         diffs = {m["pr"]: set(f for f in _git(run, root, "diff", "--name-only", "-z", "--no-renames",
                                                f"{base}...{m['head']}").split("\0") if f) for m in members}
-        verdict = attribute(widen(failures(lr.stdout, entries), read), diffs)
+        reach, why = _reach_at(run, root, tip, diffs) if found else ({}, None)
+        verdict = ("bisect", why) if why else attribute(found, diffs, reach)
     which = "; ".join(f"{wf} run {got[wf][0].get('databaseId')} failed {_few(failed[wf])}" for wf in reds)
     out(f"RED — {which} on {branch}; members {nums}")
     if verdict[0] == "eject":
         ex = ",".join(map(str, verdict[1]))
         out(f"  EJECT PR {', '.join('#' + str(n) for n in verdict[1])}: the only member whose diff touches the "
-            f"failing manifest, its target, or anything that target loads.")
+            f"failing manifest or its target, or reaches that target by the sweep harness's rule.")
         out(f"  Re-assemble without it: python3 scripts/batch-ci.py plan --push --exclude {ex}")
     else:
         order = bisection_order(nums)
@@ -797,9 +961,33 @@ def land(run, root, branch: str, do_land: bool, out) -> int:
             return 1
         cur = v.get("headRefOid")
         if cur == m["head"]:
+            # ⟳ R2-F5: UNKNOWN (not computed yet, usual right after the previous squash) is re-read, bounded; it is
+            # never read as "not DIRTY", which sent a member that needed a refresh down the READY path.
+            for _ in range(MERGEABILITY_POLLS):
+                if v.get("mergeStateStatus") != "UNKNOWN":
+                    break
+                _pause(MERGEABILITY_WAIT)
+                v = _view(run, root, n)
+            if v.get("mergeStateStatus") == "UNKNOWN" or v.get("headRefOid") != cur:
+                out(f"STOP — GitHub has not said whether PR #{n} conflicts with master after {MERGEABILITY_POLLS} "
+                    f"re-reads (mergeStateStatus {v.get('mergeStateStatus')}, head {str(v.get('headRefOid'))[:12]}). "
+                    f"Nothing pushed, nothing merged: re-run land --land.")
+                return 1
+        if cur == m["head"]:
             if v.get("mergeStateStatus") == "DIRTY":
                 if v.get("baseRefName") != BASE:
                     out(f"STOP — PR #{n} is based on {v.get('baseRefName')}, not {BASE}. Nothing pushed.")
+                    return 1
+                # ⛔ R2-F3: a refresh pushed to a member whose READY rests on exact-tree answers voids them, and the
+                # member is then HELD for good after its branch was already rewritten. `plan` never admits one that
+                # would need it; a batch assembled otherwise STOPS here, before any push.
+                # ⚠ backlog #544 (answers bound to the flagged file's blob) would make this refresh safe.
+                bound = _answer_bound(run, root, master, m["head"])
+                if bound:
+                    out(f"STOP — PR #{n} needs re-review after the master merge: its READY rests on loosening answers "
+                        f"bound to its exact tree ({bound[0]}, backlog #508), and the refresh it needs would void "
+                        f"them. Nothing pushed, nothing merged. Land the rest without it: "
+                        f"python3 scripts/batch-ci.py plan --push --exclude {n}")
                     return 1
                 ok, why = _merge_ready(run, root, n, cur, conflict_ok=True)
                 if not ok:
@@ -884,6 +1072,11 @@ def _refresh(run, root, branch: str, m: dict, v: dict, want: str, out) -> int:
         f"STOPPED — its required checks must pass on the new head. Then re-run: "
         f"python3 scripts/batch-ci.py land {branch} --land")
     return 1
+
+
+def _pause(seconds: float) -> None:
+    import time
+    time.sleep(seconds)
 
 
 def _numbers(s: str) -> set[int]:
@@ -1045,6 +1238,16 @@ def _self_test_body() -> int:
          guarded(lambda: resolve_hunk("blocks", ["# E"] + _d("A"), ["# E"], ["# E"] + _d("A"))), ["# E"] + _d("A"))
     case("blocks: an identical block is dropped, a different one beside it is kept whole",
          guarded(lambda: resolve_hunk("blocks", _d("A"), [], _d("A") + _d("B"))), _d("A") + _d("B"))
+    case("⛔ R2-F1: a HEADLESS addition (a thread under the last goal) stays in its section when ours opened a new one",
+         guarded(lambda: resolve_hunk("blocks", ["", "## GOAL billing", "> new goal", "- fix · PR 600"], [],
+                                      ["- fix · PR 601"])),
+         ["- fix · PR 601", "", "## GOAL billing", "> new goal", "- fix · PR 600"])
+    case("R2-F1: ...and the mirror (ours headless, theirs opens a section) keeps both where they were added",
+         guarded(lambda: resolve_hunk("blocks", ["- fix · PR 600"], [], ["", "## GOAL b", "- fix · PR 601"])),
+         ["- fix · PR 600", "", "## GOAL b", "- fix · PR 601"])
+    case("⛔ R2-F1: a union that cannot keep every line under its own section heading is REFUSED, never written",
+         "another section heading" in str(refusal(lambda: resolve_hunk("blocks", ["x", "## A"], ["## A", "x"],
+                                                                       ["## A", "x", "- t"]))), True)
     case("records: the same record added on both sides lands once, a different one is kept",
          guarded(lambda: resolve_hunk("records", ["{\"d\":1}"], [], ["{\"d\":1}", "{\"d\":2}"])),
          ["{\"d\":1}", "{\"d\":2}"])
@@ -1089,30 +1292,46 @@ def _self_test_body() -> int:
     case("bisection drops one PR at a time, newest first",
          guarded(lambda: (bisection_order([3, 12, 9]), bisection_order([1, 2]))), ([12, 9, 3], [2, 1]))
 
-    # ── C5 / R1-F5: a failure owns its target's import closure ──
-    _src = {"scripts/a.py": "import os\nfrom lib_helper import h\n", "scripts/lib_helper.py": "import json\n"
-            "def f():\n    import fixture_git\n    return 'scripts/load-me.py'\n",
-            "scripts/fixture_git.py": "X = 1\n", "scripts/load-me.py": "Y = 2\n", "scripts/unrelated.py": "Z = 3\n"}
-    case("the import closure: imports at any indentation and a `.py` literal, transitively, plus the harness",
-         guarded(lambda: sorted(import_closure("scripts/a.py", _src.get))),
-         sorted({"scripts/a.py", "scripts/lib_helper.py", "scripts/fixture_git.py", "scripts/load-me.py", *HARNESS}))
+    # ── C5 / R1-F5 / R2-F2: a failure is owned by every member whose diff REACHES its target (the harness's rule) ──
+    _sel = guarded(_selector)
+    _sm = getattr(_sel, "select_manifests", None)
+    _H = frozenset({"scripts/check-plan-code.py", ".github/workflows/ci.yml"})
+    _src = {"scripts/a.py": "import os\nfrom lib_helper import h\n",
+            "scripts/check-merge-ready.py": 'WORKFLOW_DIR = ROOT / ".github" / "workflows"\n',
+            "scripts/t.py": "import os, helper2\nm = importlib.import_module('helper3')\n"
+                            "subprocess.run(['bash', '.claude/hooks/h.sh'])\nX = load('scripts/ci/sub.py')\n",
+            "scripts/unrelated.py": "Z = 3\n"}
+    _mods = {**_src, "scripts/lib_helper.py": "import json\n", "scripts/helper2.py": "", "scripts/helper3.py": ""}
+
+    def _att(found, diffs):
+        return attribute(found, diffs, reached(_sm, diffs, _src, _H, _mods))
     _fa = [{"what": "drop the guard", "paths": {"scripts/a.py", "scripts/mutations/a.json"}, "targets": {"scripts/a.py"}}]
     case("⛔ C5: one PR edits the manifest, ANOTHER breaks a helper the target imports -> BISECT, never eject the first",
-         guarded(lambda: attribute(widen(_fa, _src.get),
-                                   {3: {"scripts/mutations/a.json"}, 9: {"scripts/lib_helper.py"}})[0]), "bisect")
-    case("...the ONLY member touching anything in the closure (here the helper) is ejected",
-         guarded(lambda: attribute(widen(_fa, _src.get), {3: {"docs/x.md"}, 9: {"scripts/lib_helper.py"}})),
-         ("eject", [9]))
-    case("...a member touching the HARNESS shares the failure too -> bisect",
-         guarded(lambda: attribute(widen(_fa, _src.get), {3: {"scripts/a.py"}, 9: {HARNESS[0]}})[0]), "bisect")
-    case("...a target absent at the tip owns only the harness",
-         guarded(lambda: sorted(import_closure("scripts/gone.py", {}.get))), sorted(HARNESS))
-    case("...a failure naming no target (a red control line on an unknown file) is widened by nothing but itself",
-         guarded(lambda: [sorted(f["paths"]) for f in widen([{"what": "w", "paths": {"docs/x.md"}}],
-                                                             {"scripts/a.py": "import b\n"}.get)]), [["docs/x.md"]])
-    case("...a file the target does not load owns nothing",
-         guarded(lambda: attribute(widen(_fa, _src.get), {3: {"scripts/a.py"}, 9: {"scripts/unrelated.py"}})),
-         ("eject", [3]))
+         guarded(lambda: _att(_fa, {3: {"scripts/mutations/a.json"}, 9: {"scripts/lib_helper.py"}})[0]), "bisect")
+    case("...the ONLY member reaching the target (here through the helper) is ejected",
+         guarded(lambda: _att(_fa, {3: {"app/x.ts"}, 9: {"scripts/lib_helper.py"}})), ("eject", [9]))
+    case("...a member touching the HARNESS reaches every target -> bisect",
+         guarded(lambda: _att(_fa, {3: {"scripts/a.py"}, 9: {"scripts/check-plan-code.py"}})[0]), "bisect")
+    case("...a file the target does not reach owns nothing",
+         guarded(lambda: _att(_fa, {3: {"scripts/a.py"}, 9: {"scripts/unrelated.py"}})), ("eject", [3]))
+    _fc = [{"what": "scripts/check-merge-ready.py", "paths": {"scripts/check-merge-ready.py"},
+            "targets": {"scripts/check-merge-ready.py"}}]
+    case("⛔ R2-F2: a WORKFLOW edit reaches check-merge-ready (it reads .github/workflows): its red BISECTS, and the "
+         "innocent member that edited check-merge-ready is never ejected",
+         guarded(lambda: _att(_fc, {3: {"scripts/check-merge-ready.py"}, 9: {".github/workflows/schema-gates.yml"}})),
+         ("bisect", "'scripts/check-merge-ready.py' is touched by 2 member(s) [3, 9], not exactly one"))
+    _ft = [{"what": "t", "paths": {"scripts/t.py"}, "targets": {"scripts/t.py"}}]
+    case("⛔ R2-F2: a hook script, `import a, b`'s second name, an `import_module` name and a nested `.py` path each "
+         "reach the target, so the member editing the target is never the sole owner",
+         guarded(lambda: [_att(_ft, {3: {"scripts/t.py"}, 9: {c}})[0] for c in
+                          (".claude/hooks/h.sh", "scripts/helper2.py", "scripts/helper3.py", "scripts/ci/sub.py")]),
+         ["bisect"] * 4)
+    case("R2-F2: a member the selector answers FULL for (None) is kept as None — it reaches every target",
+         guarded(lambda: reached(lambda *a, **k: (None, ["full"]), {7: {"package.json"}}, {"scripts/q.py": ""},
+                                 frozenset({"scripts/h.py"}), {"scripts/m.py": ""})), {7: None})
+    case("R2-F2: the selector that decides is the sweep harness's own (`check-plan-code.select_manifests`)",
+         guarded(lambda: (_sel.__file__ == str(Path(__file__).resolve().parent / SELECTOR),
+                          _sm.__name__)), (True, "select_manifests"))
 
     # ── R1-F1: what check-merge-ready's answer admits ──
     _ok = "  ok  dashboard entry    rc=0  fine\n"
@@ -1136,6 +1355,20 @@ def _self_test_body() -> int:
          (False, "check-merge-ready says CANNOT RUN: CANNOT RUN — no gh"))
     case("an rc 1 with no line it can read does not admit (it fails CLOSED on its own parse)",
          guarded(lambda: merge_ready_admits(1, "garbled\n", True)[0]), False)
+
+    # ── R2-F3: which members' READY rests on exact-tree answers ──
+    case("R2-F3: a verdict with a non-empty `loosening_answers` binds a member's READY to its exact tree; an empty "
+         "one, a non-JSON one, an unreadable one and a file outside the verdicts do not",
+         guarded(lambda: answer_records({VERDICT_DIR + "a.json": '{"loosening_answers": {"x": "not a loosening"}}',
+                                         VERDICT_DIR + "b.json": '{"loosening_answers": {}}',
+                                         VERDICT_DIR + "c.json": "not json", VERDICT_DIR + "e.json": None,
+                                         "docs/d.json": '{"loosening_answers": {"x": "y"}}'})),
+         [VERDICT_DIR + "a.json"])
+    case("R2-F3: ...a member that changes no verdict at all is not answer-bound",
+         guarded(lambda: answer_records({"docs/backlog.md": "| 1 | x |"})), [])
+    case("R2-F3: VERDICT_DIR is check-merge-ready's own (an independent copy, checked against the original)",
+         guarded(lambda: re.search(r'^VERDICT_DIR = "([^"]+)"', (Path(__file__).resolve().parent
+                                   / Path(MERGE_READY).name).read_text(encoding="utf-8"), re.M).group(1)), VERDICT_DIR)
 
     # ── C3 / R1-F4: which run decides, and what it decides ──
     def _r(num, concl, att=1, st="completed", rid=None):
@@ -1161,6 +1394,12 @@ def _self_test_body() -> int:
          guarded(lambda: classify(_r(1, "failure"), [{"name": "mutation-sweep (2)", "conclusion": "failure"},
                                                      {"name": SWEEP_AGGREGATE, "conclusion": "failure"}])),
          ("red", ["mutation-sweep (2)"]))
+    case("⛔ R2-F4: the first red at a tip (attempt 1, no other red run there) is re-run before any bisect",
+         guarded(lambda: [first_red(_r(4, "failure"), [_r(4, "failure")]),
+                          first_red(_r(4, "failure"), [_r(3, "success"), _r(4, "failure")]),
+                          first_red(_r(4, "failure", att=2), [_r(4, "failure", att=2)]),
+                          first_red(_r(4, "failure"), [_r(3, "failure"), _r(4, "failure")])]),
+         [True, True, False, False])
     case("...a timed_out run with a failed job is RED too; success is GREEN",
          guarded(lambda: (classify(_r(1, "timed_out"), [{"name": "verify", "conclusion": "failure"}])[0],
                           classify(_r(1, "success"), [])[0])), ("red", "green"))
@@ -1203,6 +1442,7 @@ class _FakeGitHub:
         self.ready_override: dict[int, tuple] = {}
         self.ready_calls: list[tuple] = []
         self.on_ready = None                        # called as on_ready(n) while check-merge-ready "runs"
+        self.unknown_views: dict[int, int] = {}     # PR -> how many more `pr view`s read mergeability UNKNOWN
         self._n = 0
 
     def add_run(self, branch, sha, conclusion="success", status="completed", workflow="CI"):
@@ -1265,6 +1505,9 @@ class _FakeGitHub:
             mss = "CLEAN" if self._squash_tree(h) else "DIRTY"
             if mss == "CLEAN" and h not in self.green_heads:
                 mss = "BLOCKED"
+            if self.unknown_views.get(n, 0) > 0:
+                self.unknown_views[n] -= 1
+                mss = "UNKNOWN"
             return ok(json.dumps({"state": p["state"], "baseRefName": p.get("base", "master"), "headRefOid": h,
                                   "headRefName": p["branch"], "mergeStateStatus": mss}))
         if a[:2] == ["pr", "merge"]:
@@ -1303,10 +1546,12 @@ class _FakeGitHub:
 
 def _e2e(case) -> None:
     td = Path(tempfile.mkdtemp(prefix="batch-ci-"))
+    pause = _pause
     try:
         _e2e_body(case, td)
         _e2e_union(case, td)
     finally:
+        globals()["_pause"] = pause
         shutil.rmtree(td, ignore_errors=True)
 
 
@@ -1331,9 +1576,11 @@ def _e2e_body(case, td: Path) -> None:
     (dev / "scripts" / "a.py").write_text("from helper import H\nA = 1\n")
     (dev / "scripts" / "helper.py").write_text("H = 1\n")
     (dev / "scripts" / "x.py").write_text("X = 1\n")
-    (dev / "scripts" / "mutations" / "a.json").write_text(json.dumps(
-        [{"name": "drop the guard", "file": "scripts/a.py", "edits": [["A = 1", "A = 0"]], "expect": "c"},
-         {"name": "flip x", "file": "scripts/x.py", "edits": [["X = ", "X = -"]], "expect": "c"}]))
+    (dev / "scripts" / "docs_reader.py").write_text("D = ROOT / 'docs'\n")    # as the real gates read docs/
+    for stem, entry_ in (("a", {"name": "drop the guard", "file": "scripts/a.py", "edits": [["A = 1", "A = 0"]]}),
+                         ("x", {"name": "flip x", "file": "scripts/x.py", "edits": [["X = ", "X = -"]]}),
+                         ("docs_reader", {"name": "d", "file": "scripts/docs_reader.py", "edits": [["D", "E"]]})):
+        (dev / "scripts" / "mutations" / f"{stem}.json").write_text(json.dumps([{**entry_, "expect": "c"}]))
     _fx(dev, "add", "-A")
     _fx(dev, "commit", "-q", "-m", "base")
     _fx(dev, "push", "-q", "origin", "master")
@@ -1344,6 +1591,7 @@ def _e2e_body(case, td: Path) -> None:
         _fx(dev, "checkout", "-q", "-B", f"pr{n}", base)
         for path, fn in edits.items():
             p = dev / path
+            p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(fn(p.read_text() if p.exists() else ""))
         _fx(dev, "add", "-A")
         _fx(dev, "commit", "-q", "-m", f"PR {n}")
@@ -1390,6 +1638,17 @@ def _e2e_body(case, td: Path) -> None:
         lines.clear()
         return main(list(argv), run=run, root=root, now=at or now, out=lines.append)
 
+    pauses: list = []
+    globals()["_pause"] = pauses.append             # restored by `_e2e`; the bound is asserted, not waited out
+
+    def _boom(n):
+        raise CannotRun("a worktree could not be made")
+    gh.on_ready = _boom
+    rc = go("plan", at=now - dt.timedelta(minutes=2))
+    gh.on_ready = None
+    gh.ready_calls.clear()
+    case("⛔ R2-F5: a plan that stops part-way (CANNOT RUN, rc 2) deletes its local batch branch, so a re-run in the "
+         "same minute is not refused", (rc, _fx(root, "branch", "--list", "batch/20261106-1818")), (2, ""))
     _fx(root, "branch", "batch/20261106-1819", "HEAD")
     rc = go("plan", "--push", at=now - dt.timedelta(minutes=1))
     case("R1-F7: plan refuses a batch name that already exists here (rc 2), naming why",
@@ -1440,6 +1699,20 @@ def _e2e_body(case, td: Path) -> None:
     case("⛔ R1-F4: a failed run whose only casualty is a CANCELLED (timed-out) shard is NO VERDICT, not a bisect",
          (rc, "no job FAILED" in text(), "BISECT" in text()), (2, True, False))
     gh.jobs[rid] = [{"name": "mutation-sweep (2)", "conclusion": "failure"},
+                    {"name": SWEEP_AGGREGATE, "conclusion": "failure"}]
+    gh.logs[rid] = "mutation-sweep (2)\tx\tZ ##[error]The runner has received a shutdown signal\n"
+    rc = go("status", branch)
+    case("⛔ R2-F4: a FIRST red whose log names no failing mutation is NO VERDICT: re-run the failed jobs once, "
+         "eject nobody, bisect nothing",
+         (rc, f"gh run rerun {rid} --failed" in text(), "BISECT —" in text(), "--exclude" in text()),
+         (2, True, False, False))
+    _rr = next(r for r in gh.runs if r["databaseId"] == rid)
+    _rr["attempt"] = 2
+    rc = go("status", branch)
+    case("R2-F4: ...a SECOND red at the same tip that names nothing BISECTS, newest first",
+         (rc, "BISECT —" in text(), "--exclude 2" in text()), (1, True, True))
+    _rr["attempt"] = 1
+    gh.jobs[rid] = [{"name": "mutation-sweep (2)", "conclusion": "failure"},
                     {"name": "mutation-sweep (3)", "conclusion": "cancelled"},
                     {"name": SWEEP_AGGREGATE, "conclusion": "failure"}]
     gh.logs[rid] = "mutation-sweep (2)\tx\tZ mutation SURVIVED — flip x: the suite stayed green, so no\n"
@@ -1450,6 +1723,17 @@ def _e2e_body(case, td: Path) -> None:
     rc = go("status", branch)
     case("⛔ C5 at the call site: PR 1 edits the target, PR 2 a helper it imports -> BISECT, never eject PR 1",
          (rc, "BISECT" in text(), "EJECT" in text()), (1, True, False))
+    _keep = SELECTOR
+    try:
+        globals()["SELECTOR"] = "no-such-selector.py"
+        sys.modules.pop("_batch_ci_selector", None)
+        gh.logs[rid] = "mutation-sweep (2)\tx\tZ mutation SURVIVED — flip x: the suite stayed green, so no\n"
+        rc = go("status", branch)
+        case("R2-F2: a selector that cannot run BISECTS and says so — an unmeasured attribution ejects nobody",
+             (rc, "selector could not run" in text(), "EJECT" in text()), (1, True, False))
+    finally:
+        globals()["SELECTOR"] = _keep
+        sys.modules.pop("_batch_ci_selector", None)
     gh.jobs[rid][0] = {"name": "verify", "conclusion": "failure"}
     gh.logs[rid] = "mutation-sweep (2)\tx\tZ mutation SURVIVED — flip x: the suite stayed green, so no\n"
     rc = go("status", branch)
@@ -1497,7 +1781,16 @@ def _e2e_body(case, td: Path) -> None:
     case("⛔ R1-F7 / Codex: a refresh whose tree is not the batch's is NEVER pushed",
          (rc, "Nothing pushed" in text(), gh.head(2) == before), (1, True, True))
     hooks.clear()
+    gh.unknown_views[2] = 99
     rc = go("land", branch, "--land")
+    case("⛔ R2-F5: a member whose mergeability stays UNKNOWN is re-read a BOUNDED number of times, then land STOPS, "
+         "pushing nothing", (rc, "has not said whether PR #2 conflicts" in text(), len(pauses), gh.head(2) == before),
+         (1, True, MERGEABILITY_POLLS, True))
+    gh.unknown_views[2] = 3                         # land's first read of every member, then the member's own read
+    pauses.clear()
+    rc = go("land", branch, "--land")
+    case("⛔ R2-F5: ...an UNKNOWN that turns DIRTY within the bound takes the REFRESH path, never the READY one",
+         (len(pauses), gh.unknown_views[2], "REFRESHED PR #2" in text()), (2, 0, True))
     refreshed = gh.head(2)
     case("...the second is DIRTY after the first lands: a refresh is pushed whose first parent is the batch's head, "
          "and land STOPS for its CI (rc 1)",
@@ -1633,6 +1926,34 @@ def _e2e_body(case, td: Path) -> None:
          (_fx(origin, "show", f"{t6}:docs/stack.md"), _fx(origin, "show", "refs/heads/master:docs/stack.md")),
          ("a\nb\nc", "a\nL\nb\nc"))
 
+    # ── R2-F3: a member whose READY rests on exact-tree loosening answers is never refreshed ──
+    answers = lambda s: json.dumps({"loosening_answers": {"x1": "not a loosening"}})
+    h11 = make_pr(11, {"docs/backlog.md": row(11)})
+    h12 = make_pr(12, {"docs/backlog.md": row(12), VERDICT_DIR + "r-r1.json": answers})
+    make_pr(13, {"docs/backlog.md": row(13), VERDICT_DIR + "s-r1.json": answers})
+    rc = go("plan", "--push", "--exclude", "3,9", at=now + dt.timedelta(minutes=6))
+    t7 = _fx(root, "rev-parse", "refs/heads/batch/20261106-1826")
+    case("⛔ R2-F3: a member whose READY rests on exact-tree loosening answers is placed FIRST, ahead of a lower PR, "
+         "so it lands onto the master it was reviewed against", [m["pr"] for m in members_of(run, root, t7)], [12, 11])
+    case("⛔ R2-F3: a SECOND such member that conflicts with the first is EJECTED, never refreshed later: it needs "
+         "re-review after the master merge",
+         ("EJECTED PR #13" in text(), "needs re-review after the master merge" in text()), (True, True))
+    bw = td / "bw"                                  # a batch assembled OTHERWISE: the answer-bound member second
+    _fx(root, "worktree", "add", "-q", "--detach", str(bw), REMOTE_BASE)
+    for n_, h_ in ((11, h11), (12, h12)):
+        case(f"R2-F3 fixture: PR {n_} merges into the hand-built batch", merge_into(run, bw, h_), None)
+        _fx(bw, "commit", "-q", "-m", merge_message(n_, h_))
+    t8 = _fx(bw, "rev-parse", "HEAD")
+    _fx(bw, "push", "-q", "origin", "HEAD:refs/heads/batch/20261106-1827")
+    _fx(root, "worktree", "remove", "--force", str(bw))
+    gh.green("batch/20261106-1827", t8)
+    before12 = gh.head(12)
+    rc = go("land", "batch/20261106-1827", "--land")
+    case("⛔ R2-F3: land never REFRESHES an answer-bound member that went DIRTY: it STOPS before any push, naming the "
+         "re-review and how to land the rest",
+         (rc, "needs re-review after the master merge" in text(), "--exclude 12" in text(), gh.head(12) == before12,
+          gh.prs[11]["state"]), (1, True, True, True, "MERGED"))
+
     try:
         members_of(run, root, _fx(root, "rev-parse", REMOTE_BASE))
         _why = "no exception"
@@ -1661,7 +1982,7 @@ def _e2e_union(case, td: Path) -> None:
     def run(cmd, cwd=None):
         return subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd or repo))
 
-    def merged(path, base, ours, theirs):
+    def merged(path, base, ours, theirs, clean_only=False):
         """`base` committed; ours/theirs are full new contents (None = delete). The merged text, or why refused."""
         _fx(repo, "checkout", "-q", "-B", "master")
         (repo / path).parent.mkdir(parents=True, exist_ok=True)
@@ -1677,7 +1998,7 @@ def _e2e_union(case, td: Path) -> None:
                 _fx(repo, "add", "-A")
             _fx(repo, "commit", "-q", "-m", side)
         _fx(repo, "checkout", "-q", "ours")
-        why = merge_into(run, repo, "theirs")
+        why = merge_into(run, repo, "theirs", clean_only=clean_only)
         if why:
             return "REFUSED: " + why
         out = (repo / path).read_text()
@@ -1692,11 +2013,25 @@ def _e2e_union(case, td: Path) -> None:
          merged(e, "# E\n", "# E\n" + entry("A"), "# E\n" + entry("B")), "# E\n" + entry("A") + entry("B"))
     case("...through real git: the same entry appended by both lands once",
          merged(e, "# F\n", "# F\n" + entry("A"), "# F\n" + entry("A")), "# F\n" + entry("A"))
+    case("R2-F3 through real git: clean_only refuses even an append-only conflict the union would resolve",
+         merged(e, "# G\n", "# G\n" + entry("A"), "# G\n" + entry("B"), clean_only=True),
+         "REFUSED: it conflicts in docs/dashboard-entries.md")
     g = "docs/goal-threads.md"
     gb = "## GOAL g\n> 2026-11-06 09:00 \"x\"\n- fix · backlog #1 · one\n"
     case("goal threads through real git: two threads appended to one goal are both kept",
          merged(g, gb, gb + "- fix · backlog #2 · two\n", gb + "- fix · backlog #3 · three\n"),
          gb + "- fix · backlog #2 · two\n- fix · backlog #3 · three\n")
+    rb = "## GOAL dev-speed\n- fix · one\n## GOAL product\n- fix · PR #392 · held\n"
+    case("⛔ R2-F1 through real git: a thread appended to the LAST goal stays under it when the other member "
+         "opened a new goal",
+         merged(g, rb, rb + "\n## GOAL billing\n> new goal\n- fix · PR #600 · billing thing\n",
+                rb + "- fix · PR #601 · a product thread\n"),
+         rb + "- fix · PR #601 · a product thread\n\n## GOAL billing\n> new goal\n- fix · PR #600 · billing thing\n")
+    eb = "# E\n" + entry("A")
+    case("⛔ R2-F1 through real git: a line added to the last dashboard entry stays in it when the other member "
+         "added a new entry",
+         merged(e, eb, eb + entry("B", "2026-11-07"), eb + "addendum A\n"),
+         eb + "addendum A\n" + entry("B", "2026-11-07"))
     d = "docs/reviews/decision-scheme/decision-log.jsonl"
     case("decision log through real git: one record per line, a record both sides added lands once",
          merged(d, '{"a":0}\n', '{"a":0}\n{"a":1}\n{"a":2}\n', '{"a":0}\n{"a":1}\n{"a":3}\n'),

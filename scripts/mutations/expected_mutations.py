@@ -1494,9 +1494,14 @@ EXPECTED_MUTATIONS = {
     # The 11 survivors R1-F7 named (11); check-merge-ready admission and its re-ask in land (R1-F1, 8); the base
     # re-read (C2, 2); master unmoved and the predicted squash (C1/R1-F3, 2); the latest run and what is a verdict
     # (C3/R1-F4, 5); Schema gates required and the coverage line (R1-F6, 2); whole-block union and its policies
-    # (C4/R1-F2, 5); the import closure and its call site (C5/R1-F5, 5). Not mutated: `_run`'s timeout, which only a
-    # real hung subprocess exercises; `_refresh`'s pre-push tree check IS mutated now (Codex r1).
-    "scripts/batch-ci.py": 68,
+    # (C4/R1-F2, 5); the import closure and its call site (C5/R1-F5, 5). `_refresh`'s pre-push tree check is mutated
+    # (Codex r1). Not mutated: `_run`'s timeout, which only a real hung subprocess exercises.
+    # ⟳ 68 -> 83, batch-ci r2 fold: 4 RETIRE with their subject (the home-grown import closure's regexes, harness
+    # and transitivity — attribution now uses `check-plan-code.select_manifests`), 5 re-bound (the union rewrite
+    # moved four anchors; the call site's moved), and 19 added: the union keeps each line in its section (R2-F1, 4),
+    # the harness's reach and an unrunnable selector (R2-F2, 3), re-run a red that names nothing (R2-F4, 3),
+    # answer-bound members never refreshed (R2-F3, 6), and the UNKNOWN re-read and the plan clean-up (R2-F5, 3).
+    "scripts/batch-ci.py": 83,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real

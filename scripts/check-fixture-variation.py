@@ -319,16 +319,21 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⟳ batch-ci r1 fold: re-derived — 25 -> 41 keys, none lost: `classify`, `import_closure`, `latest_run`,
     # `merge_ready_admits` and `widen` are new, and `members_of`/`merge_into` gained direct call sites. Five are
     # EXEMPT (`members_of.root`/`.run`, `merge_into.run`/`.sha`/`.wt`), each with its reason.
-    "batch-ci.py": ("attribute.diffs", "attribute.found", "batch_name.now", "bisection_order.members",
-                    "classify.jobs", "classify.latest", "failures.entries", "failures.log", "import_closure.read",
-                    "import_closure.target", "latest_run.runs", "main.argv", "main.now", "main.out", "main.root",
-                    "main.run", "members_of.root", "members_of.run", "members_of.tip", "merge_into.run",
-                    "merge_into.sha", "merge_into.wt", "merge_message.n", "merge_message.sha",
-                    "merge_ready_admits.conflict_ok", "merge_ready_admits.rc", "merge_ready_admits.text",
-                    "parse_conflicts.text", "parse_member.parents", "parse_member.subject", "pr_ci_green.rollup",
-                    "resolve_hunk.base", "resolve_hunk.ours", "resolve_hunk.policy", "resolve_hunk.theirs",
-                    "resolve_text.path", "resolve_text.text", "select.exclude", "select.prs", "widen.found",
-                    "widen.read"),
+    # ⟳ batch-ci r2 fold: re-derived — 41 -> 47 keys. `import_closure.*` and `widen.*` (4) leave with the home-grown
+    # closure they belonged to (deleted, not renamed: R2-F2 attributes through `check-plan-code.select_manifests`);
+    # `answer_records`, `attribute.reach`, `first_red`, `merge_into.clean_only` and `reached` (10) join. The
+    # `merge_into.sha`/`.wt` exemptions are deleted: the R2-F3 e2e merges real PR heads in a second worktree.
+    "batch-ci.py": ("answer_records.texts", "attribute.diffs", "attribute.found", "attribute.reach",
+                    "batch_name.now", "bisection_order.members", "classify.jobs", "classify.latest",
+                    "failures.entries", "failures.log", "first_red.latest", "first_red.runs", "latest_run.runs",
+                    "main.argv", "main.now", "main.out", "main.root", "main.run", "members_of.root",
+                    "members_of.run", "members_of.tip", "merge_into.clean_only", "merge_into.run", "merge_into.sha",
+                    "merge_into.wt", "merge_message.n", "merge_message.sha", "merge_ready_admits.conflict_ok",
+                    "merge_ready_admits.rc", "merge_ready_admits.text", "parse_conflicts.text",
+                    "parse_member.parents", "parse_member.subject", "pr_ci_green.rollup", "reached.diffs",
+                    "reached.harness", "reached.modules", "reached.select", "reached.sources", "resolve_hunk.base",
+                    "resolve_hunk.ours", "resolve_hunk.policy", "resolve_hunk.theirs", "resolve_text.path",
+                    "resolve_text.text", "select.exclude", "select.prs"),
     # backlog #438 (2026-11-01): the per-PR battery runner, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case, none exempt.
     # ⟳ PR #465 r1 fold: `classify.*`, `digest.inputs`, `git_refs.argv`, `last_green.*` and `read_ledger.path` leave with
@@ -1318,8 +1323,6 @@ EXEMPT: dict[str, str] = {
     "batch-ci.py:members_of.root": "members_of() is called against the ONE fixture clone, like main(); what it decides on is the TIP, varied (a batch with members, and master with none)",
     "batch-ci.py:members_of.run": "the e2e's ONE runner, real git over the fixture clone; a second runner would vary nothing members_of decides on, which is the tip's history",
     "batch-ci.py:merge_into.run": "merge_into() is driven through ONE helper (`merged`) in the union fixture, whose runner is real git; what it decides on is the two sides' CONTENT, varied across five real merges (and through plan/land in the main e2e)",
-    "batch-ci.py:merge_into.wt": "the union fixture's ONE repository; the merges inside it differ in path, policy and content, which is what merge_into decides on",
-    "batch-ci.py:merge_into.sha": "always the branch `theirs` of the union fixture, whose CONTENT is varied across five merges; the main e2e also merges real PR heads by SHA through plan and land",
     # backlog #440 (2026-11-01): check-compaction-boundary.py's main() is driven once.
     # backlog #457 (2026-11-01): check-agent-large-read.py's main() is driven from one helper.
     "check-agent-large-read.py:main.argv": "main() has ONE call site, `drive` (one call site keeps check-main-drivable fast); the payloads and environments it decides on are varied at `decide`, which main only forwards to, and `drive` passes seven distinct payloads",
