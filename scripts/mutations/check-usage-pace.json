@@ -2226,8 +2226,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        if is_number(r) and r < resets:\n",
-        "        if is_number(r) and is_number(at) and at <= midnight and r < resets:\n"
+        "        if is_number(r) and r < resets and not this_window_seen:\n",
+        "        if is_number(r) and is_number(at) and at <= midnight and r < resets and not this_window_seen:\n"
       ]
     ],
     "expect": [
@@ -2261,6 +2261,99 @@
     ],
     "expect": [
       "⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% that would give 55); the line still reads"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F1: the order check covers every row of the part again (one old inversion refuses for ~280 days)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        if is_number(at) and at >= horizon:\n",
+        "        if is_number(at):\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r2 F1: a 1 s inversion 200 days back, in a CUT part, does not refuse — the line still reads 92.5",
+      "#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second before it is not (92.5)"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F1: a row stamped exactly AT the horizon is not checked",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "at >= horizon",
+        "at > horizon"
+      ]
+    ],
+    "expect": [
+      "#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second before it is not (92.5)"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F1: the horizon narrowed to this window only, so last week's disorder is missed",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    horizon = resets - 2 * SEVEN_DAY_S",
+        "    horizon = resets - SEVEN_DAY_S"
+      ]
+    ],
+    "expect": [
+      "#501 r2 F1: an inversion INSIDE the horizon (10 days back, last week's window) still refuses a cut part",
+      "#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second before it is not (92.5)"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F2: a resets_at that goes back in file order is not refused",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                if prev_r is not None and r < prev_r:\n",
+        "                if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 94 — a stale row between, a stale row last, and R−1 jitter"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F2: the resets_at order check never advances, so it sees no pair",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "                prev_r = r\n",
+        "                prev_r = prev_r\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 94 — a stale row between, a stale row last, and R−1 jitter"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F2: an earlier window's row AFTER this window's first row still proves the cut (the wrong 94)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "r < resets and not this_window_seen",
+        "r < resets"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r2 F2: an earlier window's row proves the cut only when it PRECEDES this window's first row in the file — one after it, stamped outside the horizon, is refused, never the wrong 94"
+    ]
+  },
+  {
+    "name": "PR #531 r2 F2: this window's first row is never marked as seen",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "            this_window_seen = True\n",
+        "            this_window_seen = False\n"
+      ]
+    ],
+    "expect": [
+      "⭐ #501 r2 F2: an earlier window's row proves the cut only when it PRECEDES this window's first row in the file — one after it, stamped outside the horizon, is refused, never the wrong 94"
     ]
   }
 ]
