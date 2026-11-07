@@ -862,32 +862,6 @@
     ]
   },
   {
-    "name": "R2-F1: a union that moves a line to another section is written",
-    "file": "scripts/batch-ci.py",
-    "edits": [
-      [
-        "        if moved:\n",
-        "        if False:\n"
-      ]
-    ],
-    "expect": [
-      "\u26d4 R2-F1: a union that cannot keep every line under its own section heading is REFUSED, never written"
-    ]
-  },
-  {
-    "name": "R2-F1: the section check reads only ours",
-    "file": "scripts/batch-ci.py",
-    "edits": [
-      [
-        "        moved = _moved(out, to, tt)\n",
-        "        moved = _moved(out, to)\n"
-      ]
-    ],
-    "expect": [
-      "\u26d4 R2-F1: a union that cannot keep every line under its own section heading is REFUSED, never written"
-    ]
-  },
-  {
     "name": "R2-F2: a member's reach is ignored",
     "file": "scripts/batch-ci.py",
     "edits": [
@@ -1083,6 +1057,204 @@
     ],
     "expect": [
       "\u26d4 R2-F5: a plan that stops part-way (CANNOT RUN, rc 2) deletes its local batch branch, so a re-run in the same minute is not refused"
+    ]
+  },
+  {
+    "name": "R3-F1-CLEAN: a clean merge is accepted without the postcondition",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if r.returncode == 0:\n        return _checked(run, wt, sha, abort)\n",
+        "    if r.returncode == 0:\n        return None\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 PC15 R3-F1-CLEAN: git merges a mid-section heading with NO conflict, misplacing ours' thread \u2014 the postcondition runs on the CLEAN path and ejects it (P4), and the merge is aborted"
+    ]
+  },
+  {
+    "name": "R3: the whole-file postcondition's verdict is ignored",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        bad = postcondition(b, o, t, res, UNION_FILES[f])\n",
+        "        bad = []\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 PC15 R3-F1-CLEAN: git merges a mid-section heading with NO conflict, misplacing ours' thread \u2014 the postcondition runs on the CLEAN path and ejects it (P4), and the merge is aborted",
+      "\u26d4 PC16 R3-F1 through real git (one conflict hunk; the heading merged cleanly) -> ejected, P4",
+      "\u26d4 PC17 R3-F2 through real git: theirs' replacement of a base line is not undone -> ejected, P3"
+    ]
+  },
+  {
+    "name": "P1 deleted: theirs' additions are not checked",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if want != got:                                                     # P1\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 PC4 R1-F2: the fused output (theirs' same-date heading and marker lost) -> P1 and P4",
+      "PC11: theirs' two additions landed in REVERSE order -> P1",
+      "PC10 (\u00a76 bound 3): the SAME line added on both sides and landed once -> P1 (an identical addition ejects)"
+    ]
+  },
+  {
+    "name": "P2 deleted: ours' additions are not checked",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if oid[j][0] == \"o\" and oid[j] not in present:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "PC12: a base line BOTH kept is missing -> P3; an added line of ours is missing -> P2",
+      "\u26d4 PC7 the rows RE-SORT (\u00a76 bound 4): base 5, 1 re-emitted as 1, 5 is a violation, so it EJECTS"
+    ]
+  },
+  {
+    "name": "P3 deleted: base lines are not checked (R3-F2)",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    for i in range(len(B)):                                             # P3\n",
+        "    for i in []:\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 PC1 R3-F2: theirs REPLACED a base line and the union kept it too -> P3, naming the line",
+      "\u26d4 PC17 R3-F2 through real git: theirs' replacement of a base line is not undone -> ejected, P3",
+      "PC12: a base line BOTH kept is missing -> P3; an added line of ours is missing -> P2"
+    ]
+  },
+  {
+    "name": "P4 deleted: sections are not checked (R2-F1, R3-F1)",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if h != expect:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 PC2 R3-F1: ours' product thread landed under theirs' NEW billing heading -> P4, naming it",
+      "\u26d4 PC15 R3-F1-CLEAN: git merges a mid-section heading with NO conflict, misplacing ours' thread \u2014 the postcondition runs on the CLEAN path and ejects it (P4), and the merge is aborted",
+      "\u26d4 PC16 R3-F1 through real git (one conflict hunk; the heading merged cleanly) -> ejected, P4",
+      "PC14: the prefix cut \u2014 20,000 shared leading lines plus PC2's tail give PC2's verdict, fast"
+    ]
+  },
+  {
+    "name": "P4: a base line follows the base's section, not the side that re-sectioned it",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "            expect = ho if ho != h0 else ht\n",
+        "            expect = h0\n"
+      ]
+    ],
+    "expect": [
+      "PC13: a base line re-sectioned by ONE side (a heading inserted above it), the result honouring it, holds"
+    ]
+  },
+  {
+    "name": "P6 deleted: a backlog row number may land twice",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if policy == \"rows\":                                                # P6\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "PC8: two members each file a DIFFERENT row 3 and both land -> P6",
+      "PC9: one row edited differently on both sides, both versions landed -> P6 and P7"
+    ]
+  },
+  {
+    "name": "P6 reads only the part after the prefix cut",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "map(ROW.match, full_r)",
+        "map(ROW.match, R)"
+      ]
+    ],
+    "expect": [
+      "PC6b: P6 reads the WHOLE result: a row number reused from the shared prefix is still a duplicate"
+    ]
+  },
+  {
+    "name": "P7 deleted: a base line changed on both sides is unioned",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    for i in range(len(B)):                                             # P7\n",
+        "    for i in []:\n"
+      ]
+    ],
+    "expect": [
+      "PC9: one row edited differently on both sides, both versions landed -> P6 and P7"
+    ]
+  },
+  {
+    "name": "the prefix cut is not applied to the result",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    B, O, T, R = B[cut:], O[cut:], T[cut:], R[cut:]\n",
+        "    B, O, T = B[cut:], O[cut:], T[cut:]\n"
+      ]
+    ],
+    "expect": [
+      "PC14: the prefix cut \u2014 20,000 shared leading lines plus PC2's tail give PC2's verdict, fast",
+      "PC5: the CORRECT outputs of PC1, PC3 and PC4 hold ([])"
+    ]
+  },
+  {
+    "name": "a union file one side left alone is checked anyway",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        if o == b or t == b:                        # git took one side whole: nothing was merged\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "PC20: a union file changed on ONE side only is git's whole-side take: merged, and NOT checked"
+    ]
+  },
+  {
+    "name": "several merge bases are checked against the first",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "    if len(bases) != 1:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 PC19: SEVERAL merge bases with a union file changed on both sides -> refused, naming why; aborted"
+    ]
+  },
+  {
+    "name": "R3-F3: the worktree is created before the clean-up",
+    "file": "scripts/batch-ci.py",
+    "edits": [
+      [
+        "        wt = _worktree(run, root, \"-b\", branch, base)\n        for p in ready:\n",
+        "        for p in ready:\n"
+      ],
+      [
+        "    done, wt = False, None\n    try:\n",
+        "    done, wt = False, None\n    wt = _worktree(run, root, \"-b\", branch, base)\n    try:\n"
+      ]
+    ],
+    "expect": [
+      "\u26d4 R3-F3: a worktree creation that made the branch and then FAILED (CANNOT RUN, rc 2) deletes that branch too, so a re-run in the same minute is not refused"
     ]
   }
 ]

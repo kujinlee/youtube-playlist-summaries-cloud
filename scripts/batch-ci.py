@@ -7,7 +7,7 @@
     python3 scripts/batch-ci.py status batch/20261106-1820          # green? on red, which PR to eject
     python3 scripts/batch-ci.py land batch/20261106-1820            # DRY RUN: the merge plan
     python3 scripts/batch-ci.py land batch/20261106-1820 --land     # squash-merge each member, in order
-    python3 scripts/batch-ci.py --self-test              # 142 cases
+    python3 scripts/batch-ci.py --self-test              # 168 cases
 
     0 = assembled / green / landed   1 = red, or a land STOPPED   2 = CANNOT RUN (treat as NOT RUN)
 
@@ -22,7 +22,8 @@ master. This runs the full sweep BEFORE the merges, once for many PRs: the owner
      master. A PR the house rule HOLDS (a deploy, a loosened gate, `NO-REVIEW:`, app code with no local tests) is
      never batched. A conflict in an APPEND-ONLY file (`UNION_FILES`) is resolved here, once, keeping each side's
      added rows, entries and records whole; a conflict anywhere else EJECTS that PR (its merge is aborted, the
-     reason printed, the rest go on).
+     reason printed, the rest go on). Every merge step, clean or resolved, must then pass `postcondition`, a
+     WHOLE-FILE check of each union file both sides changed; a violation EJECTS the PR too (batch-ci r3).
   2. `--push` pushes the branch. Its `push: batch/**` triggers run CI (the FULL sweep plus the ordinary suite, with
      fail-fast shards: a batch needs a verdict, not an inventory) and Schema gates.
   3. `status` reads the LATEST run of each workflow at the tip. RED only when a job in it FAILED; cancelled,
@@ -62,6 +63,8 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime as dt
+import difflib
+import itertools
 import json
 import re
 import shutil
@@ -84,6 +87,9 @@ BRANCH_PREFIX = "batch/"
 #             block of theirs is dropped only when ours added the IDENTICAL block. No single line is ever dropped.
 #   records — additions only, one record per line (JSON lines): a line of theirs that ours added too lands once
 #   Under every policy, a line present at the merge base must survive on both sides, else the PR is refused.
+# ⟳ batch-ci r3 → Phase 6 (docs/reviews/architecture-review-2026-11-07-batch-ci-docs-union.md): the resolvers only
+# PROPOSE. Whether a merged union file is right is decided by `postcondition` over the WHOLE file, on every merge
+# step, clean or conflicted (git itself can misplace a line with no conflict: R3-F1-CLEAN); a violation ejects.
 # ⟳ batch-ci r1 (C4, R1-F2): a per-LINE dedupe fused two same-day dashboard entries — both carry `## <date>` and
 # `<!--tech-->`, so the second lost its heading and its marker. Lines are records only in the decision log.
 # `docs/goal-threads.md` is `## GOAL` blocks holding one thread per `- ` line: two PRs appending different
@@ -134,7 +140,7 @@ SELECTOR = "check-plan-code.py"
 REQUIRED_CHECKS = ("verify", "schema-gates", "mutation-sweep-complete")
 GOOD_CONCLUSIONS = ("SUCCESS", "NEUTRAL", "SKIPPED")
 ROW = re.compile(r"^\| (\d+) \|")
-SECTION = re.compile(r"^#{1,2} ")                # a section heading, for the union's placement check
+SECTION = re.compile(r"^#{1,2} ")                # a section heading: the postcondition's P4 (and the prefix cut)
 MEMBER = re.compile(r"^batch-ci: merge PR #(\d+) at ([0-9a-f]{40})$")
 SWEEP_JOB = re.compile(r"^mutation-sweep\b")
 
@@ -342,12 +348,9 @@ def resolve_hunk(policy: str, ours: list[str], base: list[str], theirs: list[str
         if rest and out and out[-1][0].strip() and rest[0][0].startswith("#"):
             out.append(("", ("sep",)))
         out += rest
-        # ⛔ R2-F1: and whatever the placement, every line must sit under the SAME section heading in the result
-        # as in the side it came from. A placement that cannot keep that is refused (the PR is ejected); a union
-        # never writes a tree in which a member's line moved to another section.
-        moved = _moved(out, to, tt)
-        if moved:
-            raise Refuse(f"the union would move {moved[:60]!r} under another section heading")
+        # ⟳ batch-ci r3 → Phase 6: whether every line kept its section is NOT judged here, per hunk (r2's `_moved`
+        # saw one hunk, and git can misplace a line with no conflict at all: R3-F1). `postcondition` judges the
+        # whole file, on every merge step, and a violation ejects the member.
         return [x for x, _ in out]
     raise Refuse(f"unknown policy {policy!r}")
 
@@ -364,26 +367,6 @@ def _tagged(side: list[str], base: list[str], tag: str) -> list[tuple]:
         else:
             out.append((x, (tag, i)))
     return out
-
-
-def _sections(tagged: list[tuple]) -> dict:
-    """{identity: the identity of the section heading it sits under, None for the one open before the hunk}."""
-    cur, out = None, {}
-    for x, ident in tagged:
-        if SECTION.match(x):
-            cur = ident
-        out[ident] = cur
-    return out
-
-
-def _moved(out: list[tuple], *sides: list[tuple]) -> list[str]:
-    """The non-blank lines of `out` that sit under another section than in a side they came from. PURE."""
-    got = _sections(out)
-    bad = []
-    for side in sides:
-        want = _sections(side)
-        bad += [x for x, ident in side if x.strip() and ident in got and got[ident] != want[ident]]
-    return bad
 
 
 def _blocks(lines: list, key=lambda x: x) -> list[list]:
@@ -418,6 +401,119 @@ def resolve_text(path: str, text: str) -> str:
     for s in segs:
         out += s[1] if s[0] == "ok" else resolve_hunk(policy, s[1], s[2], s[3])
     return "\n".join(out)
+
+
+def _nonblank(text: str) -> list[str]:
+    return [x for x in text.split("\n") if x.strip()]
+
+
+def _match(a: list[str], b: list[str]) -> dict[int, int]:
+    """The monotone partial map a-index -> b-index. The algorithm is part of the rule, so verdicts are exact."""
+    m: dict[int, int] = {}
+    for blk in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for k in range(blk.size):
+            m[blk.a + k] = blk.b + k
+    return m
+
+
+def _homes(lines: list[str], ident: list) -> list:
+    """home[k] = the IDENTITY of the nearest heading at or before line k, None before the first. PURE."""
+    cur, out = None, []
+    for k, x in enumerate(lines):
+        if SECTION.match(x):
+            cur = ident[k]
+        out.append(cur)
+    return out
+
+
+def postcondition(base: str, ours: str, theirs: str, result: str, policy: str) -> list[str]:
+    """Is `result` a valid union of `ours` and `theirs` over `base`? The violations, each led by its clause id;
+    [] = it holds. PURE. Specified in docs/reviews/architecture-review-2026-11-07-batch-ci-docs-union.md §4.
+
+    ⟳ batch-ci r3 → Phase 6 (thrashing r1-r3 in the union): a placement decided per conflict hunk and validated per
+    conflict hunk (r2's `_moved`) cannot see a line git misplaced with no conflict (R3-F1, and its clean variant), and
+    each round's patch to it drew the next finding. This checks the OUTPUT against definitions independent of how it
+    was produced, so a resolver defect can only cost an EJECTION, never a wrong tree.
+
+    Blank lines are outside every clause (§6 bound 1). Each side's lines get an identity from `_match` against the
+    base: ("b", i) for base line i it kept, (side, j) for a line it added. The result is attributed to ours first;
+    its remaining lines must be exactly theirs' additions, in theirs' order.
+      P1  theirs' additions land exactly once, in theirs' order, and nothing else lands
+      P2  every line ours added lands
+      P3  a base line lands iff BOTH sides kept it (R3-F2: theirs replaced it, so it must be gone)
+      P4  every line sits under the very heading INSTANCE it sits under in the side it came from; a base line one
+          side re-sectioned (a heading inserted above it) follows that side, and one both re-sectioned is refused
+          (R1-F2, R2-F1, R3-F1)
+      P6  `rows` only: no backlog row number twice, over the WHOLE result
+      P7  no base line changed on BOTH sides (a union cannot decide it)
+    ⚠ Bound (§6): an identical addition on both sides fails P1, so it EJECTS; a fixed alignment that picks a poor
+    match among duplicate texts also ejects — the cost of the rule's blind spots is an ejection, never a pass.
+    """
+    full_r = _nonblank(result)
+    B, O, T, R = _nonblank(base), _nonblank(ours), _nonblank(theirs), full_r
+    # THE PREFIX CUT, for speed (the dashboard is ~19,000 lines): drop the prefix all four share, up to but not
+    # past its last heading, which stays as the shared context. Every dropped line is a base line both sides kept,
+    # present, under the same heading — so no clause can be decided by it.
+    n = 0
+    while n < min(len(B), len(O), len(T), len(R)) and B[n] == O[n] == T[n] == R[n]:
+        n += 1
+    cut = max((k for k in range(n) if SECTION.match(B[k])), default=0)
+    B, O, T, R = B[cut:], O[cut:], T[cut:], R[cut:]
+    bad: list[str] = []
+    mo, mt = _match(O, B), _match(T, B)
+    oid = [("b", mo[j]) if j in mo else ("o", j) for j in range(len(O))]
+    tid = [("b", mt[j]) if j in mt else ("t", j) for j in range(len(T))]
+    kept_o, kept_t = set(mo.values()), set(mt.values())
+    home_b = dict(zip([("b", i) for i in range(len(B))], _homes(B, [("b", i) for i in range(len(B))])))
+    home_o, home_t = dict(zip(oid, _homes(O, oid))), dict(zip(tid, _homes(T, tid)))
+    # The attribution of R: to ours first; what is left, in order, to theirs' additions.
+    rid: list = [None] * len(R)
+    for r, j in _match(R, O).items():
+        rid[r] = oid[j]
+    rest = [r for r in range(len(R)) if rid[r] is None]
+    tadd = [j for j in range(len(T)) if tid[j][0] == "t"]
+    want, got = [T[j] for j in tadd], [R[r] for r in rest]
+    if want != got:                                                     # P1
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, want, got, autojunk=False).get_opcodes():
+            if tag in ("delete", "replace"):
+                bad += [f"P1 theirs' added line missing or out of order: {x[:60]!r}" for x in want[i1:i2]]
+            if tag in ("insert", "replace"):
+                bad += [f"P1 a result line from no side (duplicated, invented, deleted or moved): {x[:60]!r}"
+                        for x in got[j1:j2]]
+    for k, j in _match(got, want).items():
+        rid[rest[k]] = tid[tadd[j]]
+    present = {x for x in rid if x is not None}
+    for j in range(len(O)):                                             # P2
+        if oid[j][0] == "o" and oid[j] not in present:
+            bad.append(f"P2 ours' added line missing: {O[j][:60]!r}")
+    for i in range(len(B)):                                             # P3
+        both = i in kept_o and i in kept_t
+        if both and ("b", i) not in present:
+            bad.append(f"P3 a base line both sides kept is missing: {B[i][:60]!r}")
+        if not both and ("b", i) in present:
+            bad.append(f"P3 a base line {'theirs' if i in kept_o else 'ours'} deleted or replaced survives: "
+                       f"{B[i][:60]!r}")
+    for r, (ident, h) in enumerate(zip(rid, _homes(R, rid))):           # P4
+        if ident is None:
+            continue
+        if ident[0] == "b":
+            h0 = home_b[ident]
+            ho, ht = home_o.get(ident, h0), home_t.get(ident, h0)
+            if ho != h0 and ht != h0:
+                bad.append(f"P4 both sides re-sectioned a base line: {R[r][:60]!r}")
+                continue
+            expect = ho if ho != h0 else ht
+        else:
+            expect = (home_o if ident[0] == "o" else home_t)[ident]
+        if h != expect:
+            bad.append(f"P4 moved to another section: {R[r][:60]!r}")
+    if policy == "rows":                                                # P6
+        nums = collections.Counter(m.group(1) for m in map(ROW.match, full_r) if m)
+        bad += [f"P6 backlog row {k} appears {v} times" for k, v in sorted(nums.items()) if v > 1]
+    for i in range(len(B)):                                             # P7
+        if i not in kept_o and i not in kept_t:
+            bad.append(f"P7 a base line changed on both sides: {B[i][:60]!r}")
+    return bad
 
 
 def merge_message(n: int, sha: str) -> str:
@@ -654,12 +750,14 @@ def merge_into(run, wt, sha: str, clean_only: bool = False) -> "str | None":
     one in an append-only file (R2-F3: a member that must never be refreshed)."""
     r = run(["git", "-c", "merge.conflictStyle=diff3", "-c", "rerere.enabled=false",
              "merge", "--no-ff", "--no-commit", sha], wt)
-    if r.returncode == 0:
-        return None
 
     def abort(why):
         run(["git", "merge", "--abort"], wt)
         return why
+
+    # ⛔ batch-ci r3 (R3-F1-CLEAN): a CLEAN merge is checked too — git itself can misplace a line with no conflict.
+    if r.returncode == 0:
+        return _checked(run, wt, sha, abort)
 
     unmerged = [f for f in _git(run, wt, "diff", "--name-only", "--diff-filter=U", "-z").split("\0") if f]
     if not unmerged:
@@ -679,6 +777,48 @@ def merge_into(run, wt, sha: str, clean_only: bool = False) -> "str | None":
             return abort(f"{f}: {exc}")
         (Path(wt) / f).write_text(new, encoding="utf-8")
         _git(run, wt, "add", "--", f)
+    return _checked(run, wt, sha, abort)
+
+
+def _blob(run, wt, rev: str, f: str) -> str:
+    """`f` at `rev`, or "" where `rev` has no `f`. A git failure is CANNOT RUN, never read as an empty file."""
+    if not _git(run, wt, "ls-tree", rev, "--", f).strip():
+        return ""
+    return _git(run, wt, "show", f"{rev}:{f}")
+
+
+def _checked(run, wt, sha: str, abort) -> "str | None":
+    """The whole-file `postcondition` over every union file BOTH sides changed, on the merge `merge_into` is about to
+    accept (clean or resolved). None, or why — and then the merge is ABORTED, so the member is ejected (§4.1)."""
+    try:
+        why = _union_violation(run, wt, sha)
+    except CannotRun:
+        abort(None)
+        raise
+    return abort(why) if why else None
+
+
+def _union_violation(run, wt, sha: str) -> "str | None":
+    bases = _git(run, wt, "merge-base", "--all", "HEAD", sha).split()
+    sides = {f: (_blob(run, wt, "HEAD", f), _blob(run, wt, sha, f)) for f in sorted(UNION_FILES)}
+    if len(bases) != 1:
+        # A virtual (recursive) base cannot be read back with `git show`, so a union file changed on both sides
+        # relative to any of them is refused rather than checked against a guess.
+        for f, (o, t) in sides.items():
+            for mb in bases:
+                b = _blob(run, wt, mb, f)
+                if b != o and b != t:
+                    return f"{f}: several merge bases ({len(bases)}), and it changed on both sides"
+        return "no merge base" if not bases else None
+    for f, (o, t) in sides.items():
+        b = _blob(run, wt, bases[0], f)
+        if o == b or t == b:                        # git took one side whole: nothing was merged
+            continue
+        p = Path(wt) / f
+        res = p.read_text(encoding="utf-8") if p.exists() else ""
+        bad = postcondition(b, o, t, res, UNION_FILES[f])
+        if bad:
+            return f"{f}: {bad[0]}"
     return None
 
 
@@ -743,10 +883,12 @@ def plan(run, root, exclude: set[int], push: bool, now: dt.datetime, out) -> int
                for p in ready}
     bound = {n: _answer_bound(run, root, base, h) for n, h in fetched.items()}
     ready = sorted(ready, key=lambda p: (not bound[p["number"]], p["number"]))
-    wt = _worktree(run, root, "-b", branch, base)
     members, ejected, held = [], [], []
-    done = False
+    done, wt = False, None
     try:
+        # ⟳ batch-ci r3 (R3-F3): created INSIDE the clean-up, because git can create the branch and then fail the
+        # checkout. The branch did not exist above (refused if it did), so any branch of that name is this run's.
+        wt = _worktree(run, root, "-b", branch, base)
         for p in ready:
             n, head = p["number"], p["headRefOid"]
             got = fetched[n]
@@ -769,7 +911,8 @@ def plan(run, root, exclude: set[int], push: bool, now: dt.datetime, out) -> int
             members.append((n, head))
         done = True
     finally:
-        _drop_worktree(run, root, wt)
+        if wt is not None:
+            _drop_worktree(run, root, wt)
         if not done:                                # R2-F5: a run that stopped part-way leaves no branch behind,
             run(["git", "branch", "-D", branch], root)  # so a re-run in the same minute is not refused
     for n, why in held:
@@ -1245,14 +1388,103 @@ def _self_test_body() -> int:
     case("R2-F1: ...and the mirror (ours headless, theirs opens a section) keeps both where they were added",
          guarded(lambda: resolve_hunk("blocks", ["- fix · PR 600"], [], ["", "## GOAL b", "- fix · PR 601"])),
          ["- fix · PR 600", "", "## GOAL b", "- fix · PR 601"])
-    case("⛔ R2-F1: a union that cannot keep every line under its own section heading is REFUSED, never written",
-         "another section heading" in str(refusal(lambda: resolve_hunk("blocks", ["x", "## A"], ["## A", "x"],
-                                                                       ["## A", "x", "- t"]))), True)
     case("records: the same record added on both sides lands once, a different one is kept",
          guarded(lambda: resolve_hunk("records", ["{\"d\":1}"], [], ["{\"d\":1}", "{\"d\":2}"])),
          ["{\"d\":1}", "{\"d\":2}"])
     case("records: a line present at the merge base and deleted on one side is refused",
          refused(lambda: resolve_hunk("records", ["o"], ["a"], ["a", "t"])), True)
+    # ── the whole-file postcondition (batch-ci r3 → Phase 6, docs/reviews/architecture-review-2026-11-07-batch-ci-
+    # docs-union.md §4/§5): the union's OUTPUT checked against definitions that do not depend on how it was made ──
+    def pc(b, o, t, r, policy="blocks"):
+        return guarded(lambda: postcondition(b, o, t, r, policy))
+
+    def clauses(got):                               # the clause ids a verdict names, or the crash as is
+        return sorted({v.split(" ", 1)[0] for v in got}) if isinstance(got, list) else got
+
+    def named(got, clause, text):                   # some violation of `clause` names `text`
+        return isinstance(got, list) and any(v.startswith(clause + " ") and text in v for v in got)
+
+    _f2b = "# T\n\n## GOAL product\n- fix · PR #1 · original\n"
+    _f2o = _f2b + "- fix · PR #2 · A addition\n"
+    _f2t = "# T\n\n## GOAL product\n- fix · PR #1 · replaced by B\n"
+    _f2 = pc(_f2b, _f2o, _f2t, _f2o + "- fix · PR #1 · replaced by B\n")
+    case("⛔ PC1 R3-F2: theirs REPLACED a base line and the union kept it too -> P3, naming the line",
+         (clauses(_f2), named(_f2, "P3", "original")), (["P3"], True))
+    _f1b = "# T\n\n## GOAL product\n> req\n- fix · PR #1 · existing\n"
+    _f1o = _f1b + "- fix · PR #2 · A product thread\n"
+    _f1t = ("# T\n\n## GOAL product\n> req\n\n## GOAL billing\n> breq\n- fix · PR #1 · existing\n"
+            "- fix · PR #3 · B billing thread\n")
+    _f1r = ("# T\n\n## GOAL product\n> req\n\n## GOAL billing\n> breq\n- fix · PR #1 · existing\n"
+            "- fix · PR #2 · A product thread\n- fix · PR #3 · B billing thread\n")
+    _f1 = pc(_f1b, _f1o, _f1t, _f1r)
+    case("⛔ PC2 R3-F1: ours' product thread landed under theirs' NEW billing heading -> P4, naming it",
+         (clauses(_f1), named(_f1, "P4", "A product thread")), (["P4"], True))
+    _r21b = "## GOAL dev-speed\n- fix · one\n## GOAL product\n- fix · PR #392 · held\n"
+    _r21o = _r21b + "\n## GOAL billing\n> new goal\n- fix · PR #600 · billing thing\n"
+    _r21t = _r21b + "- fix · PR #601 · a product thread\n"
+    _r21 = pc(_r21b, _r21o, _r21t, _r21o + "- fix · PR #601 · a product thread\n")
+    case("⛔ PC3 R2-F1: the r1-era output (theirs' product thread after ours' new billing goal) -> P4",
+         (clauses(_r21), named(_r21, "P4", "a product thread")), (["P4"], True))
+    _ent = lambda w: f"\n## 2026-11-06\nSummary {w}.\nResult: passed\n<!--tech-->\ntech {w}\n"
+    _fused = pc("# E\n", "# E\n" + _ent("A"), "# E\n" + _ent("B"),
+                "# E\n" + _ent("A") + "Summary B.\ntech B\n")
+    case("⛔ PC4 R1-F2: the fused output (theirs' same-date heading and marker lost) -> P1 and P4",
+         clauses(_fused), ["P1", "P4"])
+    case("PC5: the CORRECT outputs of PC1, PC3 and PC4 hold ([])",
+         [pc(_f2b, _f2o, _f2t, "# T\n\n## GOAL product\n- fix · PR #1 · replaced by B\n- fix · PR #2 · A addition\n"),
+          pc(_r21b, _r21o, _r21t, _r21t + "\n## GOAL billing\n> new goal\n- fix · PR #600 · billing thing\n"),
+          pc("# E\n", "# E\n" + _ent("A"), "# E\n" + _ent("B"), "# E\n" + _ent("A") + _ent("B"))],
+         [[], [], []])
+    # PC2's shape has NO valid union: ours orders `existing` before its new thread, and theirs moves `existing` under
+    # a heading it inserted after the product section's head, so the thread cannot be both after `existing` and
+    # under product. It is a real conflict, and it ejects — whatever the resolver writes.
+    _tail = ["## GOAL billing", "> breq", "- fix · PR #1 · existing", "- fix · PR #3 · B billing thread",
+             "- fix · PR #2 · A product thread"]
+    case("PC5b: PC2's shape has NO valid union — every one of the 120 arrangements of its tail is a violation",
+         [p_ for p_ in itertools.permutations(_tail)
+          if pc(_f1b, _f1o, _f1t, "# T\n\n## GOAL product\n> req\n" + "\n".join(p_) + "\n") == []], [])
+    _ab = "# T\n\n## GOAL dev\n- fix · PR #1 · d\n\n## GOAL product\n- fix · PR #9 · p\n"
+    case("PC6: a new goal opened directly ABOVE an existing goal moves no base line, and holds",
+         pc(_ab, _ab + "- fix · PR #2 · A product thread\n",
+            _ab.replace("## GOAL product", "## GOAL billing\n- fix · PR #3 · B billing\n\n## GOAL product")
+            + "- fix · PR #4 · B product thread\n",
+            _ab.replace("## GOAL product", "## GOAL billing\n- fix · PR #3 · B billing\n\n## GOAL product")
+            + "- fix · PR #2 · A product thread\n- fix · PR #4 · B product thread\n"), [])
+    _r5, _r1, _r9 = "| 5 | five |", "| 1 | one |", "| 9 | nine |"
+    _ro = pc(f"{_r5}\n{_r1}\n", f"{_r5} ✅\n{_r1}\n", f"{_r5}\n{_r1}\n{_r9}\n", f"{_r1}\n{_r5} ✅\n{_r9}\n", "rows")
+    case("⛔ PC7 the rows RE-SORT (§6 bound 4): base 5, 1 re-emitted as 1, 5 is a violation, so it EJECTS",
+         clauses(_ro), ["P1", "P2"])
+    _ib = "## Items\n| 1 | a |\n| 2 | b |\n"
+    case("PC8: two members each file a DIFFERENT row 3 and both land -> P6",
+         clauses(guarded(lambda: postcondition(_ib, _ib + "| 3 | ours |\n", _ib + "| 3 | theirs |\n",
+                                               _ib + "| 3 | ours |\n| 3 | theirs |\n", "rows"))), ["P6"])
+    case("PC9: one row edited differently on both sides, both versions landed -> P6 and P7",
+         clauses(pc("## Items\n| 3 | x |\n", "## Items\n| 3 | a |\n", "## Items\n| 3 | b |\n",
+                    "## Items\n| 3 | a |\n| 3 | b |\n", "rows")), ["P6", "P7"])
+    _gb = "## G\n- a\n"
+    case("PC10 (§6 bound 3): the SAME line added on both sides and landed once -> P1 (an identical addition ejects)",
+         clauses(pc(_gb, _gb + "- b\n", _gb + "- b\n", _gb + "- b\n")), ["P1"])
+    case("PC11: theirs' two additions landed in REVERSE order -> P1",
+         clauses(guarded(lambda: postcondition(_gb, _gb + "- o\n", _gb + "- t1\n- t2\n", _gb + "- o\n- t2\n- t1\n",
+                                               "blocks"))), ["P1"])
+    _gb2 = "## G\n- a\n- b\n"
+    case("PC12: a base line BOTH kept is missing -> P3; an added line of ours is missing -> P2",
+         [clauses(pc(_gb2, _gb2 + "- o\n", _gb2 + "- t\n", "## G\n- a\n- o\n- t\n")),
+          clauses(pc(_gb2, _gb2 + "- o\n", _gb2 + "- t\n", _gb2 + "- t\n"))], [["P3"], ["P2"]])
+    _mv = "## A\n- x\n- y\n## C\n- z\n"
+    case("PC13: a base line re-sectioned by ONE side (a heading inserted above it), the result honouring it, holds",
+         pc(_mv, _mv + "- o\n", "## A\n- x\n## B\n- y\n## C\n- z\n", "## A\n- x\n## B\n- y\n## C\n- z\n- o\n"), [])
+    _pad = "# T\n" + "".join(f"- filler {k}\n" for k in range(20000))
+    _cut = lambda s: _pad + s[len("# T\n"):]
+    _t0 = dt.datetime.now()
+    _big = pc(_cut(_f1b), _cut(_f1o), _cut(_f1t), _cut(_f1r))
+    case("PC14: the prefix cut — 20,000 shared leading lines plus PC2's tail give PC2's verdict, fast",
+         (clauses(_big), named(_big, "P4", "A product thread"), (dt.datetime.now() - _t0).total_seconds() < 5),
+         (["P4"], True, True))
+    _rb = "# B\n\n## Items\n| 1 | a |\n\n## Found later\n| 2 | b |\n"     # row 1 sits ABOVE the cut
+    case("PC6b: P6 reads the WHOLE result: a row number reused from the shared prefix is still a duplicate",
+         clauses(pc(_rb, _rb + "| 3 | ours |\n", _rb + "| 1 | again |\n", _rb + "| 3 | ours |\n| 1 | again |\n",
+                    "rows")), ["P6"])
     case("the policies: rows for the backlog, blocks for the entries and goal threads, records for the decision log",
          sorted(UNION_FILES.items()),
          [("docs/backlog.md", "rows"), ("docs/dashboard-entries.md", "blocks"), ("docs/goal-threads.md", "blocks"),
@@ -1624,6 +1856,11 @@ def _e2e_body(case, td: Path) -> None:
             return gh(cmd)
         if cmd[0] == "python3" and cmd[1].endswith(MERGE_READY):
             return gh.merge_ready(cmd, cwd)
+        if hooks.get("wt_half") and cmd[:3] == ["git", "worktree", "add"] and "-b" in cmd:
+            # R3-F3: git CREATES the branch and then fails the checkout (Codex: a failing required smudge filter)
+            b_ = cmd[cmd.index("-b") + 1]
+            subprocess.run(["git", "branch", b_, cmd[-1]], capture_output=True, cwd=str(cwd or root))
+            return subprocess.CompletedProcess(cmd, 128, "", "fatal: smudge filter failed")
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd or root))
         if hooks.get("bad_refresh") and cmd[:2] == ["git", "write-tree"] and r.returncode == 0:
             r = subprocess.CompletedProcess(cmd, 0, _plus_file(cwd, r.stdout.strip(), "bogus.txt") + "\n", "")
@@ -1649,6 +1886,13 @@ def _e2e_body(case, td: Path) -> None:
     gh.ready_calls.clear()
     case("⛔ R2-F5: a plan that stops part-way (CANNOT RUN, rc 2) deletes its local batch branch, so a re-run in the "
          "same minute is not refused", (rc, _fx(root, "branch", "--list", "batch/20261106-1818")), (2, ""))
+    hooks["wt_half"] = True
+    rc = go("plan", at=now - dt.timedelta(minutes=3))
+    hooks["wt_half"] = False
+    case("⛔ R3-F3: a worktree creation that made the branch and then FAILED (CANNOT RUN, rc 2) deletes that branch "
+         "too, so a re-run in the same minute is not refused",
+         (rc, _fx(root, "branch", "--list", "batch/20261106-1817")), (2, ""))
+    gh.ready_calls.clear()
     _fx(root, "branch", "batch/20261106-1819", "HEAD")
     rc = go("plan", "--push", at=now - dt.timedelta(minutes=1))
     case("R1-F7: plan refuses a batch name that already exists here (rc 2), naming why",
@@ -2008,11 +2252,31 @@ def _e2e_union(case, td: Path) -> None:
     def entry(w, date="2026-11-06"):
         return f"\n## {date}\nSummary {w}.\nResult: passed\n<!--tech-->\ntech {w}\n"
 
+    # A spy on the postcondition: what `merge_into` asked it, and what it answered (restored by the caller's finally).
+    calls: list = []
+    real_pc = globals().get("postcondition")
+
+    def spy(*a):
+        got = real_pc(*a)
+        calls.append((a[4], got))
+        return got
+    globals()["postcondition"] = spy
+    try:
+        _e2e_union_cases(case, repo, run, merged, entry, calls)
+    finally:
+        globals()["postcondition"] = real_pc
+
+
+def _e2e_union_cases(case, repo: Path, run, merged, entry, calls: list) -> None:
     e = "docs/dashboard-entries.md"
+    calls.clear()
     case("⛔ C4/R1-F2 through real git: two SAME-DAY dashboard entries both land WHOLE — heading, marker, shared line",
          merged(e, "# E\n", "# E\n" + entry("A"), "# E\n" + entry("B")), "# E\n" + entry("A") + entry("B"))
-    case("...through real git: the same entry appended by both lands once",
-         merged(e, "# F\n", "# F\n" + entry("A"), "# F\n" + entry("A")), "# F\n" + entry("A"))
+    case("PC18: ...and the postcondition was asked about that conflicted merge, once, and HELD",
+         calls, [("blocks", [])])
+    case("PC10 through real git (§6 bound 3): the same entry appended by both is EJECTED, by P1",
+         merged(e, "# F\n", "# F\n" + entry("A"), "# F\n" + entry("A")).startswith(
+             "REFUSED: docs/dashboard-entries.md: P1"), True)
     case("R2-F3 through real git: clean_only refuses even an append-only conflict the union would resolve",
          merged(e, "# G\n", "# G\n" + entry("A"), "# G\n" + entry("B"), clean_only=True),
          "REFUSED: it conflicts in docs/dashboard-entries.md")
@@ -2033,12 +2297,82 @@ def _e2e_union(case, td: Path) -> None:
          merged(e, eb, eb + entry("B", "2026-11-07"), eb + "addendum A\n"),
          eb + "addendum A\n" + entry("B", "2026-11-07"))
     d = "docs/reviews/decision-scheme/decision-log.jsonl"
-    case("decision log through real git: one record per line, a record both sides added lands once",
-         merged(d, '{"a":0}\n', '{"a":0}\n{"a":1}\n{"a":2}\n', '{"a":0}\n{"a":1}\n{"a":3}\n'),
+    case("decision log through real git: one record per line, each side's records land",
+         merged(d, '{"a":0}\n', '{"a":0}\n{"a":1}\n{"a":2}\n', '{"a":0}\n{"a":3}\n'),
          '{"a":0}\n{"a":1}\n{"a":2}\n{"a":3}\n')
+    case("decision log through real git (§6 bound 3): a record BOTH sides added is EJECTED by P1, never deduped",
+         merged(d, '{"a":0}\n', '{"a":0}\n{"a":1}\n{"a":2}\n', '{"a":0}\n{"a":1}\n{"a":3}\n').startswith(
+             f"REFUSED: {d}: P1"), True)
     case("R1-F7: an append-only file DELETED on one side and appended on the other is refused, for that reason",
          merged("docs/backlog.md", "| 1 | one |\n", None, "| 1 | one |\n| 2 | two |\n"),
          "REFUSED: docs/backlog.md was deleted on one side")
+
+    def clean_after():
+        return _fx(repo, "status", "--porcelain", "--untracked-files=no")
+
+    cb = ("# T\n\n## GOAL product\n> req\n- fix · PR #1 · one\n- fix · PR #5 · two\n- fix · PR #6 · three\n"
+          "- fix · PR #7 · four\n")
+    ct = cb.replace("- fix · PR #5", "\n## GOAL billing\n> breq\n- fix · PR #5")
+    calls.clear()
+    got = merged(g, cb, cb + "- fix · PR #2 · A product thread\n", ct)
+    case("⛔ PC15 R3-F1-CLEAN: git merges a mid-section heading with NO conflict, misplacing ours' thread — the "
+         "postcondition runs on the CLEAN path and ejects it (P4), and the merge is aborted",
+         (got.startswith("REFUSED: docs/goal-threads.md: P4"), "A product thread" in got, clean_after(),
+          [c for c, _ in calls]), (True, True, "", ["blocks"]))
+    f1b = "# T\n\n## GOAL product\n> req\n- fix · PR #1 · existing\n"
+    got = merged(g, f1b, f1b + "- fix · PR #2 · A product thread\n",
+                 "# T\n\n## GOAL product\n> req\n\n## GOAL billing\n> breq\n- fix · PR #1 · existing\n"
+                 "- fix · PR #3 · B billing thread\n")
+    case("⛔ PC16 R3-F1 through real git (one conflict hunk; the heading merged cleanly) -> ejected, P4",
+         (got.startswith("REFUSED: docs/goal-threads.md: P4"), clean_after()), (True, ""))
+    f2b = "# T\n\n## GOAL product\n- fix · PR #1 · original\n"
+    got = merged(g, f2b, f2b + "- fix · PR #2 · A addition\n", "# T\n\n## GOAL product\n- fix · PR #1 · replaced by B\n")
+    case("⛔ PC17 R3-F2 through real git: theirs' replacement of a base line is not undone -> ejected, P3",
+         (got.startswith("REFUSED: docs/goal-threads.md: P3"), "original" in got, clean_after()), (True, True, ""))
+
+    # PC19: a criss-cross — two merge bases. A virtual base cannot be read back with `git show`, so a union file
+    # changed on both sides is refused rather than checked against a guess.
+    _fx(repo, "checkout", "-q", "-B", "master")
+    (repo / g).write_text("## GOAL x\n- fix · base\n")
+    (repo / "x.txt").write_text("x\n")
+    (repo / "y.txt").write_text("y\n")
+    _fx(repo, "add", "-A")
+    _fx(repo, "commit", "-q", "-m", "cc base")
+    for side, other in (("cx-o", "x.txt"), ("cx-t", "y.txt")):
+        _fx(repo, "checkout", "-q", "-B", side, "master")
+        (repo / other).write_text(side + "\n")
+        _fx(repo, "commit", "-q", "-am", side)
+    o1, t1 = _fx(repo, "rev-parse", "cx-o"), _fx(repo, "rev-parse", "cx-t")
+    _fx(repo, "checkout", "-q", "cx-o")
+    _fx(repo, "merge", "-q", "--no-edit", t1)
+    _fx(repo, "checkout", "-q", "cx-t")
+    _fx(repo, "merge", "-q", "--no-edit", o1)
+    for side in ("cx-o", "cx-t"):
+        _fx(repo, "checkout", "-q", side)
+        (repo / g).write_text((repo / g).read_text() + f"- fix · {side}\n")
+        _fx(repo, "commit", "-q", "-am", side + " thread")
+    _fx(repo, "checkout", "-q", "cx-o")
+    calls.clear()
+    got = str(merge_into(run, repo, "cx-t"))
+    case("⛔ PC19: SEVERAL merge bases with a union file changed on both sides -> refused, naming why; aborted",
+         (len(_fx(repo, "merge-base", "--all", "cx-o", "cx-t").split()), "several merge bases" in got,
+          "docs/goal-threads.md" in got, clean_after()), (2, True, True, ""))
+    one = "## GOAL one\n- fix · one\n"
+    _fx(repo, "checkout", "-q", "-B", "master")
+    (repo / g).write_text(one)
+    _fx(repo, "commit", "-q", "-am", "one base")
+    _fx(repo, "checkout", "-q", "-B", "one-o", "master")
+    (repo / g).write_text(one + "- fix · two\n")
+    _fx(repo, "commit", "-q", "-am", "one-o")
+    _fx(repo, "checkout", "-q", "-B", "one-t", "master")
+    (repo / "y.txt").write_text("changed elsewhere\n")
+    _fx(repo, "commit", "-q", "-am", "one-t")
+    _fx(repo, "checkout", "-q", "one-o")
+    calls.clear()
+    got = merge_into(run, repo, "one-t")
+    case("PC20: a union file changed on ONE side only is git's whole-side take: merged, and NOT checked",
+         (got, (repo / g).read_text(), calls), (None, one + "- fix · two\n", []))
+    _fx(repo, "commit", "-q", "-m", "one merged")
 
 
 if __name__ == "__main__":

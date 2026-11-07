@@ -323,6 +323,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # closure they belonged to (deleted, not renamed: R2-F2 attributes through `check-plan-code.select_manifests`);
     # `answer_records`, `attribute.reach`, `first_red`, `merge_into.clean_only` and `reached` (10) join. The
     # `merge_into.sha`/`.wt` exemptions are deleted: the R2-F3 e2e merges real PR heads in a second worktree.
+    # ⟳ batch-ci r3 fold: re-derived — 47 -> 52 keys, none lost. `postcondition.*` (5) joins: the whole-file check
+    # that replaced the hunk-level `_moved` (private, so never a key). Its two direct call sites vary all five.
     "batch-ci.py": ("answer_records.texts", "attribute.diffs", "attribute.found", "attribute.reach",
                     "batch_name.now", "bisection_order.members", "classify.jobs", "classify.latest",
                     "failures.entries", "failures.log", "first_red.latest", "first_red.runs", "latest_run.runs",
@@ -330,7 +332,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                     "members_of.run", "members_of.tip", "merge_into.clean_only", "merge_into.run", "merge_into.sha",
                     "merge_into.wt", "merge_message.n", "merge_message.sha", "merge_ready_admits.conflict_ok",
                     "merge_ready_admits.rc", "merge_ready_admits.text", "parse_conflicts.text",
-                    "parse_member.parents", "parse_member.subject", "pr_ci_green.rollup", "reached.diffs",
+                    "parse_member.parents", "parse_member.subject", "postcondition.base", "postcondition.ours",
+                    "postcondition.policy", "postcondition.result", "postcondition.theirs", "pr_ci_green.rollup", "reached.diffs",
                     "reached.harness", "reached.modules", "reached.select", "reached.sources", "resolve_hunk.base",
                     "resolve_hunk.ours", "resolve_hunk.policy", "resolve_hunk.theirs", "resolve_text.path",
                     "resolve_text.text", "select.exclude", "select.prs"),

@@ -1501,7 +1501,13 @@ EXPECTED_MUTATIONS = {
     # moved four anchors; the call site's moved), and 19 added: the union keeps each line in its section (R2-F1, 4),
     # the harness's reach and an unrunnable selector (R2-F2, 3), re-run a red that names nothing (R2-F4, 3),
     # answer-bound members never refreshed (R2-F3, 6), and the UNKNOWN re-read and the plan clean-up (R2-F5, 3).
-    "scripts/batch-ci.py": 83,
+    # ⟳ 83 -> 95, batch-ci r3 fold (the Phase 6 redesign of the docs union): 2 RETIRE with their subject (`_moved`,
+    # the hunk-level section check, deleted), and 14 added: the whole-file postcondition's call site on the clean
+    # path and its verdict (2), each clause P1, P2, P3, P4, P6 and P7 deleted (6), P4's re-sectioned base line (1),
+    # P6 over the whole result (1), the prefix cut applied to the result (1), the one-side skip (1), several merge
+    # bases (1), and the worktree created inside plan's clean-up (R3-F3, 1). Not added: the review's "cut = n",
+    # which is EQUIVALENT — dropping the shared heading relabels its section to None in all four lists alike.
+    "scripts/batch-ci.py": 95,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
