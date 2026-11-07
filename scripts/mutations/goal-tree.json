@@ -4110,5 +4110,122 @@
     "expect": [
       "⛔ a current agenda with two steps of one n is MALFORMED, so two identical snapshots report no step move (backlog #504)"
     ]
+  },
+  {
+    "name": "backlog #496: clause 1 never reads the row's own words",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        it[\"flag\"] = settled_in_prose(r[\"status\"])   #",
+        "        it[\"flag\"] = None   #"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #496 FAILS-IF: on the 2026-11-03 corpus backlog #306 is flagged as settled; backlog #384 (a head rewritten, no decision word) is NOT — that class moved to the PR-time check, a separate backlog row"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 reads the WHOLE status, before the marker too",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    tail = status[status.rfind(NEEDS_OWNER):]\n    m = next(",
+        "    tail = status\n    m = next("
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: a DECIDED BEFORE the last marker is an older question, never this one"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 matches any case of 'decided'",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_WORDS = re.compile(r\"\\bDECIDED",
+        "SETTLED_WORDS = re.compile(r\"(?i)\\bDECIDED"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: a lower-case 'decided' is prose about a future call (backlog #384's own tail)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 drops `answered by the owner`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "|\\banswered by the owner\\b\")",
+        "\")"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: `answered by the owner` after the marker flags too"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 ignores a negation before the word (r1 Codex R4)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    m = next((m for m in SETTLED_WORDS.finditer(tail) if not NEGATED.search(tail[:m.start()])), None)",
+        "    m = SETTLED_WORDS.search(tail)"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: `not DECIDED` after the marker does not flag (r1 Codex R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1's negation drops `not yet`",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "NEGATED = re.compile(r\"\\b(?:not|never)(?:\\s+yet)?\\s*$\"",
+        "NEGATED = re.compile(r\"\\b(?:not|never)\\s*$\""
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #496 clause 1: `not yet answered by the owner` does not flag (r1 Codex R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1's negation reads a `not` anywhere before the word",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(?:\\s+yet)?\\s*$\", re.I)",
+        "(?:\\s+yet)?\", re.I)"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: a `not` FAR before the word does not negate it (adjacent to R4)"
+    ]
+  },
+  {
+    "name": "backlog #496: clause 1 gives up at the first, negated, word",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "SETTLED_WORDS.finditer(tail) if not",
+        "list(SETTLED_WORDS.finditer(tail))[:1] if not"
+      ]
+    ],
+    "expect": [
+      "backlog #496 clause 1: a negated word does not hide a LATER un-negated one"
+    ]
+  },
+  {
+    "name": "backlog #496: a cross-reference overwrites clause 1's own words (r1 Claude F6)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        " - {r[\"num\"]}) if it[\"flag\"] is None else []:",
+        " - {r[\"num\"]}):"
+      ]
+    ],
+    "expect": [
+      "backlog #496: clause 1 wins over a cross-reference to a decided row (r1 Claude F6)"
+    ]
   }
 ]
