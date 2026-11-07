@@ -18923,12 +18923,14 @@ The usage warning keeps showing today's pace line after the meter log grows past
 `scripts/check-usage-pace.py`: `_read_tail(path, limit)` opens a regular file non-blocking like `_read_now`. When the file is over `limit`, it seeks to `size - limit` and reads from one byte earlier, then drops everything through the first newline. A partial first line is never parsed, and a window that starts exactly on a line keeps that line whole. It returns `(text, why, cut)`. `read_meter` runs it under the shared deadline thread (`_bounded`, now also behind `read_regular`). `pace_line(..., cut=True)` rests on a stated writer contract (PR #531 r3 fold, after a Phase 6 review of three rounds of fix-induced findings): the statusline stamps each row as it appends it, with at most `METER_SKEW_S` = 1 h of skew. The cut part answers only when its oldest row is more than 1 h older than the midnight row (or, with none, than the window's earliest stamp); otherwise `(None, TAIL_TOO_SHORT)`. A part holding a row stamped more than 1 h before an earlier row is `TAIL_CONTRACT_BROKEN`, naming the two rows. The stated bound: a row appended more than an hour late, before the part read, cannot be seen. `main()` passes `meter_cut` through `evaluate`. 361 cases (+14): the falsifier (a log over 4 MiB through `main()`), exactly at the bound, one byte over, an aligned cut, a mid-line fragment that would parse as a wrong 10% start, a midnight row before the window, a window that began after midnight, and a FIFO meter log. 9 new mutations and 7 re-bound to the new signatures; pin 155 → 164. The r1–r3 folds and the redesign bring the suite to 392 cases (a seeded soundness sweep over in-contract logs, with an out-of-contract control) and the pin to 174.
 
 ## 2026-11-07
-Two new backlog items explain two red marks on the main branch today that were not real test failures. In both, a test
-job ran out of time on a slow machine, and the result looked exactly like a test that had missed a bug. One was a whole
-group of tests hitting its 30-minute limit; the other was a single check hitting its 2-minute limit. Nothing is broken, but the
-first one will now happen on most merges, and until these are fixed a red on the main branch needs a person to read it before believing it.
+Two red marks on the main branch today were not real test failures: test jobs ran out of time, and the result looks
+exactly like a test that missed a bug. One is a check that sometimes needs more than its 2-minute limit (new backlog item
+558). The other is bigger: the full test run has grown past its 30-minute limit per group, and a re-run failed the same
+way, so most merges will now show red until it is fixed. That one reopens an older item (231) whose own reopening
+condition was written into the CI file and has now been met.
 <!--tech-->
-Backlog 557: shards 3, 12, 14 of push run 42387350733 (`fcf00068`) cancelled at `timeout-minutes: 30`; the completion
-job reports 'failure'. Backlog 558: `SUITE_TIMEOUT = 120` in `scripts/check-plan-code.py` is flat across suites;
-`check-fixture-variation.py --self-test` exceeded it on shard 16 of the `1d5fd219` push run. 558 is intermittent (the schedule run on `1d5fd219`
-was green); 557 is not — a re-run cancelled shard 3 again at 30 min, and the push budget is 30 against the schedule's 60.
+Backlog 231 REOPENED: push run 42387350733 (`fcf00068`) shards 3/12/14 cancelled at `timeout-minutes: 30`; re-run
+cancelled shard 3 again at 30m14s (re-control 57/70), shard 12 at 29m41s. `ci.yml`'s "REOPEN #231 if any shard exceeds
+1,500s" fired. Backlog 558: `SUITE_TIMEOUT = 120` in `scripts/check-plan-code.py` is flat across suites;
+`check-fixture-variation.py --self-test` exceeded it on shard 16 of the `1d5fd219` push run (the schedule run on the
+same commit was green).
