@@ -18,7 +18,7 @@ Owner 2026-11-01 14:26: "Try to have some rainy day room to finish your current 
 
 **⟳ 2026-11-01 15:38, the owner: FRONT-LOAD it a little.** "As we implement remaining high impact token management items, growth rate of usage will be slower, so I think it would be better to be a little aggresive earlier than later days to reset." Rule now, from START-OF-DAY values (first meter-log row after local midnight; never re-derive from the current meter, which drifts): today's line = start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at 97; the last day before the reset = 97. Spend the extra on token items first, since they are what makes later days cheaper. Risk: if the burn does not drop, later days get ~8/day instead of ~9.4 (11-01 numbers); still never past the 3-pt reserve.
 
-**⟳ 2026-11-05 08:47, the owner (backlog #510): the PACE LINE is a guide; the HARD STOP is separate.** The stop is 100% − 5% × the days left after today, capped at 97% — except on the last day, when the cap rises linearly to 99% at 1 h before the reset (only on a fresh meter reading; a stale one is CANNOT RUN). Measured burn ~11%/day, so a flat 97% idled the last afternoon.
+**⟳ 2026-11-05 08:47, the owner (backlog #510): the PACE LINE is a guide; the HARD STOP is separate.** The stop's rule is stated once, in the docstring of `scripts/check-usage-pace.py` (a stale meter reading is CANNOT RUN). Measured burn ~11%/day, so a flat 97% idled the last afternoon.
 
 **How to apply:** on 11-01 #450 was started at 55% by its first stage only — wrong shape; size the whole item. Related: [[route-agents-by-task-model]], [[usage-is-cache-rewrites-of-parked-agents]].
 
