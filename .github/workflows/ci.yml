@@ -15,7 +15,11 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    # backlog #534: `batch/**` is a BATCH — origin/master plus every ready PR head, assembled by
+    # `scripts/batch-ci.py`. Its push runs the FULL sweep (`check-plan-code.select_manifests` sweeps the whole
+    # manifest on any event but a pull request) plus the ordinary suite, ONCE for many PRs, before they merge.
+    # Its shards fail fast (see `mutation-sweep`) and its red never files a `sweep-red` issue (see the alert).
+    branches: [master, 'batch/**']
   # backlog #330: THE FULL SWEEP'S BACKSTOP. A pull request runs only the manifests its diff selects,
   # and a text-bound defect in an UNSELECTED manifest (backlog #109's orphaned anchor) is seen only by
   # running the whole manifest — which every master push does, and this does daily even when nothing
@@ -26,6 +30,8 @@ on:
 # A new push to the same PR cancels the previous run. ⛔ A PUSH TO MASTER IS NEVER CANCELLED
 # (backlog #405 r1): cancelling it let a later docs-only merge (whose own sweep is skipped) erase an
 # earlier scripts merge's `verify` and full sweep with no signal, leaving that merge unmeasured.
+# backlog #534: a `batch/**` push is a push too, so it is never cancelled either — and each batch has its own
+# branch name, so its group holds only its own run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -1051,7 +1057,11 @@ jobs:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
       # cancelling them turns one finding into an unknown — the reader needs every survivor
       # from the first run, not whichever one happened to fail first.
-      fail-fast: false
+      # ⟳ backlog #534: EXCEPT on a `batch/**` push. A batch needs a VERDICT and one culprit, not the
+      # inventory: `batch-ci.py status` ejects the PR that owns the first red manifest (or bisects), and the
+      # re-assembled batch sweeps everything again, so the shards the first red cancels are re-run anyway.
+      # The reason above still holds for a pull request, master and the schedule, which keep `false`.
+      fail-fast: ${{ startsWith(github.ref, 'refs/heads/batch/') }}
       matrix:
         # ⛔ ONLY THE LENGTH OF THIS LIST MATTERS. The step below takes I from
         # `strategy.job-index` and N from `strategy.job-total`, so the shards are 1..job-total
@@ -1326,8 +1336,10 @@ jobs:
       # Pull requests never reach this step: their red is on the PR itself.
       # ⚠ `!cancelled()`: a run a person cancelled neither alerts nor comments (backlog #482, r1 C6).
       # The aggregate step above fails exactly when SWEEP is not `success`, so SWEEP decides here.
+      # backlog #534: a `batch/**` push never alerts either. Its red is a batch verdict, read and acted on by
+      # `batch-ci.py status` (eject or bisect); nothing it measured has merged, so master is not red.
       - name: The FULL sweep on master opens or comments on the sweep-red issue, and never closes one
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/batch/') }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

@@ -3935,6 +3935,8 @@ def _self_test_body() -> int:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/backfill-work-lines.py",
+                                      # backlog #534: the batch full sweep, with its manifest.
+                                      "scripts/batch-ci.py",
                                       "scripts/begin-plan.py",
                                       # ⟳ PR #440 r2: the bounded reader, a LIBRARY, added with its manifest.
                                       "scripts/bounded_read.py",

@@ -1485,6 +1485,29 @@ EXPECTED_MUTATIONS = {
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
     # only the first issue, or is handled as red; the marker dropped; a second red opens another issue; gh swallowed.
     "scripts/sweep-red-alert.py": 6,
+    # backlog #534 (2026-11-06): the batch full sweep — assemble, judge, land — pinned in the commit that creates it.
+    # The branch name (1), readiness (6), the union resolver (7), membership (1), attribution and bisection (5),
+    # assembly (1), landing (6), the batch/* refusal (1). Not mutated, on purpose: `merge_into`'s outside-UNION_FILES check, which
+    # `resolve_text` backs up (a mutation there is masked by design), and `_refresh`'s own tree check, which the
+    # per-step tree assertion after each merge backs up.
+    # ⟳ 28 -> 68, batch-ci r1 fold, none retired (6 re-bound: four anchors and three expects moved with the code).
+    # The 11 survivors R1-F7 named (11); check-merge-ready admission and its re-ask in land (R1-F1, 8); the base
+    # re-read (C2, 2); master unmoved and the predicted squash (C1/R1-F3, 2); the latest run and what is a verdict
+    # (C3/R1-F4, 5); Schema gates required and the coverage line (R1-F6, 2); whole-block union and its policies
+    # (C4/R1-F2, 5); the import closure and its call site (C5/R1-F5, 5). `_refresh`'s pre-push tree check is mutated
+    # (Codex r1). Not mutated: `_run`'s timeout, which only a real hung subprocess exercises.
+    # ⟳ 68 -> 83, batch-ci r2 fold: 4 RETIRE with their subject (the home-grown import closure's regexes, harness
+    # and transitivity — attribution now uses `check-plan-code.select_manifests`), 5 re-bound (the union rewrite
+    # moved four anchors; the call site's moved), and 19 added: the union keeps each line in its section (R2-F1, 4),
+    # the harness's reach and an unrunnable selector (R2-F2, 3), re-run a red that names nothing (R2-F4, 3),
+    # answer-bound members never refreshed (R2-F3, 6), and the UNKNOWN re-read and the plan clean-up (R2-F5, 3).
+    # ⟳ 83 -> 95, batch-ci r3 fold (the Phase 6 redesign of the docs union): 2 RETIRE with their subject (`_moved`,
+    # the hunk-level section check, deleted), and 14 added: the whole-file postcondition's call site on the clean
+    # path and its verdict (2), each clause P1, P2, P3, P4, P6 and P7 deleted (6), P4's re-sectioned base line (1),
+    # P6 over the whole result (1), the prefix cut applied to the result (1), the one-side skip (1), several merge
+    # bases (1), and the worktree created inside plan's clean-up (R3-F3, 1). Not added: the review's "cut = n",
+    # which is EQUIVALENT — dropping the shared heading relabels its section to None in all four lists alike.
+    "scripts/batch-ci.py": 95,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
@@ -1677,7 +1700,13 @@ EXPECTED_MUTATIONS = {
     # base's 97 — #508 to 143 (+46, none retired) and #533/#536 to 102 (+5, none retired) — over disjoint
     # entries, so the merged manifest holds 97 + 46 + 5 = 148 (per-entry 3-way merge: 0 missing, 0 extra,
     # 0 duplicate names).
-    "scripts/check-merge-ready.py": 148,
+    # ⟳ 2026-11-06, backlog #534: 102 -> 106, none retired. The advisory batch line: a green master run read as a
+    # batch (1), a red batch read as green (1), the line moving the verdict (1), a diverged batch read as containing (1).
+    # ⟳ 2026-11-06, batch-ci r1 fold (R1-F8): 106 -> 110, none retired. The advisory line's bounds: uncapped compares
+    # (1), the run list's timeout (1), a compare's timeout (1), a refused compare read as "does not contain" (1).
+    # ⟳ 2026-11-06, MERGE of origin/master (#508, PR #522) into batch-ci (#534): the merge-base pins 102; #508 moved it
+    # to 148 (+46) and batch-ci to 110 (+8), over disjoint entries, so the merged manifest holds 102 + 46 + 8 = 156.
+    "scripts/check-merge-ready.py": 156,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

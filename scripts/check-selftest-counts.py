@@ -136,6 +136,8 @@ POPULATION: frozenset[str] = frozenset({
     "compaction-state.py",
     # ⟳ 2026-11-04 (PR #496 r2 X1): the sweep-red alert helper, pinned in the commit that creates it.
     "sweep-red-alert.py",
+    # ⟳ 2026-11-06 (backlog #534): the batch full sweep, pinned in the commit that creates it.
+    "batch-ci.py",
     # ⟳ 2026-10-30 (backlog #410): pinned in the commit that creates it.
     "check-stalled-work.py",
     # ⟳ 2026-11-01 (backlog #440): pinned in the commit that creates it.
