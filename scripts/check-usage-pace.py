@@ -147,7 +147,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 379 cases
+    python3 scripts/check-usage-pace.py --self-test  # 392 cases
 """
 from __future__ import annotations
 
@@ -192,10 +192,16 @@ METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
 # backlog #501: the bound is on the TAIL read, never the file — the log grows ~100 rows a day, and a whole-file bound
 # refused every read after ~9 months. Today's start% needs only the newest row at or before local midnight.
 METER_MAX_BYTES = 4 * 1024 * 1024
-TAIL_MISSES_MIDNIGHT = ("the meter log is over its read bound and the part read begins after local midnight, so today's "
-                        "start% is outside it")
-TAIL_OUT_OF_ORDER = ("the meter log is over its read bound and the part read holds rows out of time order (or a weekly "
-                     "reset that goes back), so it cannot prove that today's start% is not among the rows before it")
+# PR #531 r3 fold (Phase 6, docs/reviews/architecture-review-2026-11-07-meter-log-tail-proof.md): the writer contract.
+# W1: the statusline stamps `at` with `$(date +%s)` in the same command as its `>>` append, so a row appended after
+# another is stamped no more than METER_SKEW_S before it. An hour covers concurrent sessions and clock steps (seconds)
+# with three orders of magnitude to spare. Not HORIZON_SLACK_S: that one means reset rounding, and one constant
+# means one thing.
+METER_SKEW_S = 3600
+TAIL_TOO_SHORT = ("the meter log is over its read bound and the part read does not reach back far enough to prove "
+                  "today's start%")
+TAIL_CONTRACT_BROKEN = ("the meter log is over its read bound and the part read holds a row stamped more than an hour "
+                        "before an earlier row, so the log's rows are not stamped as they are appended")
 FIVE_HOUR_WARN_AT = 90.0
 MAX_AGE_S = 15 * 60
 # The statusline and this hook read the same clock, so a cache from the future is a broken writer, not skew.
@@ -314,35 +320,30 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
     reason when it failed (r1 C5). No I/O.
 
     `cut` (backlog #501) says `text` is only the TAIL of a log over its bound. Then the newest row at or before
-    midnight may lie before the part read, and a row after midnight would be a WRONG start, so the part must reach
-    back past midnight: it holds this window's row at or before midnight, or a row of an EARLIER window that comes
-    BEFORE this window's first row in the file (under append order this window's first row then follows it, so it is
-    in the part too — PR #531 r1 F3: the old `at <= midnight` clause refused a reset between midnight and the first
-    row read; PR #531 r2 F2: an earlier window's row AFTER this window's first row proves nothing, and counting it
-    gave 94 where the whole log gives 92.5). Otherwise (None, TAIL_MISSES_MIDNIGHT) — never a later row.
-
-    That proof rests on the statusline APPENDING rows in time order, so a cut part is CHECKED for it (PR #531 r1 C1:
-    a 10% row stamped before midnight but appended after a later row gave 55 where the whole log gives 92.5, with no
-    refusal). Only rows stamped at or after the HORIZON, `resets` − 2 weeks, are checked: this window and the one
-    before it, the only rows that can bear on today's start (PR #531 r2 F1: checking every row of a part that spans
-    ~280 days at the bound let ONE inverted pair, which two sessions appending without a lock can write, refuse the
-    line for ~280 days). Among those rows, when a later line has an EARLIER `at` (equal times are in order) or a
-    SMALLER `resets_at` (r2 F2), the part is refused: (None, TAIL_OUT_OF_ORDER). Uncut, the whole log is seen, so the
-    newest row at or before midnight is taken whatever the order. ⚠ BLIND SPOTS, exactly: disorder that CROSSES THE
-    WINDOW EDGE cannot be seen — a row before the part read that is newer than a row inside it, with the part itself
-    in order; nothing can be proved about rows that were not read. And disorder across the HORIZON is not checked —
-    a row stamped before it, appended after a row inside it; such a row is never this window's, and it proves a cut
-    only from before this window's first row. MEASURED in order: the real log, 605 rows from 11-01 02:13 to
-    11-07 03:03, 0 inversions and 0 decreases of `resets_at` (PR #531 r2, Claude half). Every row of the part is
-    walked, oldest first (PR #531 r1 F5, declined, and still declined at r2: a newest-first walk that stops at the
-    horizon is not the same rule — it would miss a horizon row filed before a late-appended older row, which this
-    walk still reads; 0.21 s at the bound)."""
+    midnight may lie before the part read, so a cut answer needs a proof about rows that were NOT read. It rests on
+    the WRITER CONTRACT (PR #531 r3 fold, the Phase 6 review in
+    docs/reviews/architecture-review-2026-11-07-meter-log-tail-proof.md, after r1–r3 thrashed on order-based proofs):
+    W1, the statusline stamps `at` as it appends, so a row appended after another is stamped no more than
+    METER_SKEW_S (1 h) before it; W2, a reading is stamped no earlier than its window's start − HORIZON_SLACK_S.
+    The rule: `min_at` is the oldest `at` in the part; `needed` is the midnight row's `at`, or, with none, the
+    window's earliest stamp `resets` − 7 d − HORIZON_SLACK_S. The part answers only when `min_at` < `needed` −
+    METER_SKEW_S (strict), else (None, TAIL_TOO_SHORT) — never a later row. The proof: every unseen row precedes
+    every seen row in the file, so by W1 it is stamped at most `min_at` + METER_SKEW_S, which is BEFORE `needed`.
+    With a midnight row, no unseen row is newer than it (ties cannot reach it either); without one, by W2 no unseen
+    row is this window's. The order of SEEN rows never matters, since the selection does not read file order.
+    W1 is CHECKED inside the part (the canary): a row stamped more than METER_SKEW_S before ANY earlier row in the
+    part (a running maximum, not the row above) is (None, TAIL_CONTRACT_BROKEN + the two rows), since the proof's
+    premise is then false (PR #531 r1 C1's literal rows are refused here, 3,660 s late). It covers rows of every
+    window, rows with an out-of-range reading and rows stamped after `now`. Uncut, the whole log is seen and neither
+    the canary nor the witness applies, so the whole-log answer is unchanged. ⚠ BOUND, exactly: a row appended more
+    than an hour late, with the lateness lying entirely before the part read, is outside the contract and cannot be
+    seen by any rule that reads only the part (PR #531 r3 F1's rows; the self-test pins it). Every row of the part
+    is walked, oldest first (PR #531 r1 F5, still declined: `min_at` and the canary need every row; 0.21 s at the
+    bound)."""
     if text is None:
         return None, f"the meter log is unreadable: {why}" if why else "the meter log is missing or unreadable"
     midnight = local_midnight(now)
-    horizon = resets - 2 * SEVEN_DAY_S  # this window and the one before it: older rows cannot place today's start
-    before = after = prev_at = prev_r = None
-    earlier_window = this_window_seen = out_of_order = False
+    before = after = min_at = max_at = breach = None
     for line in text.splitlines():
         if '"seven_day"' not in line:  # every row carries it; a C-speed skip of blank and garbage lines (r3 C1)
             continue
@@ -352,28 +353,24 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
             at, p, r = row["at"], w["used_percentage"], w["resets_at"]
         except (ValueError, KeyError, TypeError):
             continue
-        if is_number(at) and at >= horizon:
-            if prev_at is not None and at < prev_at:
-                out_of_order = True
-            prev_at = at
-            if is_number(r):
-                if prev_r is not None and r < prev_r:
-                    out_of_order = True
-                prev_r = r
-        if is_number(r) and r < resets and not this_window_seen:
-            earlier_window = True
-        if is_number(r) and r == resets:
-            this_window_seen = True
+        if is_number(at):
+            if breach is None and max_at is not None and at < max_at - METER_SKEW_S:
+                breach = (at, max_at)
+            max_at = at if max_at is None else max(max_at, at)
+            min_at = at if min_at is None else min(min_at, at)
         if not (is_number(at) and is_number(p) and is_number(r)) or not 0 <= p <= 100 or r != resets or at > now:
             continue
         if at <= midnight and (before is None or at >= before[0]):
             before = (at, p)
         elif at > midnight and (after is None or at < after[0]):
             after = (at, p)
-    if cut and out_of_order:
-        return None, TAIL_OUT_OF_ORDER
-    if cut and before is None and not earlier_window:
-        return None, TAIL_MISSES_MIDNIGHT
+    if cut and breach:
+        late, above = breach
+        return None, f"{TAIL_CONTRACT_BROKEN}: a row stamped {safe_time(late)} follows one stamped {safe_time(above)}"
+    if cut:
+        needed = before[0] if before else resets - SEVEN_DAY_S - HORIZON_SLACK_S
+        if min_at is None or not min_at < needed - METER_SKEW_S:
+            return None, TAIL_TOO_SHORT
     start = before or after
     if start is None:
         return None, "the meter log has no reading of this week's window"
@@ -1245,6 +1242,14 @@ def _self_test_body() -> int:
         # first line, and says the read was CUT; `pace_line(..., cut=True)` refuses when the part read cannot reach
         # back to local midnight, rather than taking a later row as today's start.
         WR, LAST_WR = WEEK_RESET, WEEK_RESET - 7 * 86400
+        # ⟳ PR #531 r3 fold (Phase 6): a cut part answers only when its OLDEST row is more than METER_SKEW_S older than
+        # the time it must reach back to. Every real part at the bound spans ~280 days, so a fixture whose subject is
+        # not that proof carries this OLD row at its front — without it the part is too short in time to prove anything.
+        OLD = meter((NOW - 280 * 86400, 40, WR - 40 * 7 * 86400))
+
+        def brk(v: tuple) -> tuple:
+            """A refusal for a broken contract names the two rows after the reason; the cases compare the reason."""
+            return (v[0], TAIL_CONTRACT_BROKEN) if isinstance(v[1], str) and v[1].startswith(TAIL_CONTRACT_BROKEN) else v
         with tempfile.TemporaryDirectory() as td:
             def put(name: str, content: str) -> str:
                 p = os.path.join(td, name)
@@ -1279,13 +1284,15 @@ def _self_test_body() -> int:
 
             # A tail that starts MID-LINE, where the fragment parses as a row with a WRONG start (10%, newer than the
             # real midnight row): dropped, so the line is the real row's 92.5, not 10 + 1.5 × 90 ÷ 3 = 55.
+            # ⟳ r3 fold: OLD at the front of the part, so the part reaches back in time (a parsed fragment now also
+            # breaks the contract, since OLD follows it 280 days earlier — either way it is not 92.5).
             frag = json.dumps({"at": NOW - 60, "rate_limits": {"seven_day": {"used_percentage": 10, "resets_at": WR}}})
             pad = "x" * 40 + " "
-            mid = put("mid.jsonl", pad + frag + "\n" + m85)
+            mid = put("mid.jsonl", pad + frag + "\n" + OLD + m85)
             cut_at = len(pad)          # the window begins just after the pad's space; the byte before it is that space
             t_mid = _read_tail(mid, size(mid) - cut_at)
             check("⭐ #501: a tail that starts MID-LINE drops the partial line — neither parsed nor refused",
-                  (t_mid, pace_line(t_mid[0], NOW + 600, WR, cut=t_mid[2])), ((m85, "", True), (92.5, "")))
+                  (t_mid, pace_line(t_mid[0], NOW + 600, WR, cut=t_mid[2])), ((OLD + m85, "", True), (92.5, "")))
             check("#501: the whole mid-line file, read uncut, skips that line as garbage (the control)",
                   pace_line(_read_tail(mid, size(mid))[0], NOW + 600, WR), (92.5, ""))
 
@@ -1297,19 +1304,21 @@ def _self_test_body() -> int:
             check("⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
                   (t_late[2], pace_line(t_late[0], NOW + 600, WR, cut=t_late[2]),
                    pace_line(t_late[0], NOW + 600, WR, cut=False)),
-                  (True, (None, TAIL_MISSES_MIDNIGHT), (94.0, "")))
+                  (True, (None, TAIL_TOO_SHORT), (94.0, "")))
             check("#501: a cut that drops the midnight row's partial line is refused the same way",
-                  pace_line(_read_tail(exact, size(exact) - 1)[0], NOW + 600, WR, cut=True), (None, TAIL_MISSES_MIDNIGHT))
-            # A window that began AFTER midnight: the cut part holds last week's pre-midnight row, so it reaches back
-            # past midnight and this window's first row is the start — 3 + 1.5 × 97 ÷ 3 = 51.5.
-            fresh = meter((NOW - 2 * 86400, 70, LAST_WR), (NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))
+                  pace_line(_read_tail(exact, size(exact) - 1)[0], NOW + 600, WR, cut=True), (None, TAIL_TOO_SHORT))
+            # A window that began AFTER midnight: the cut part holds last week's pre-midnight row, and this window's
+            # first row is the start — 3 + 1.5 × 97 ÷ 3 = 51.5. ⟳ r3 fold: the part reaches back in time through OLD at
+            # its front (more than METER_SKEW_S before this window's earliest possible row); last week's row alone is not
+            # a proof any more.
+            fresh = meter((NOW - 2 * 86400, 70, LAST_WR)) + OLD + meter((NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))
             fresh_p = put("fresh.jsonl", fresh)
-            t_fresh = _read_tail(fresh_p, len(meter((NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))))
+            t_fresh = _read_tail(fresh_p, len(OLD + meter((NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))))
             check("#501: a cut part that reaches back past midnight through LAST week's row still yields the line",
                   (t_fresh[2], pace_line(t_fresh[0], NOW + 600, WR, cut=True)), (True, (51.5, "")))
             t_fresh2 = _read_tail(fresh_p, len(meter((NOW + 60, 3, WR))))
             check("#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
-                  pace_line(t_fresh2[0], NOW + 600, WR, cut=t_fresh2[2]), (None, TAIL_MISSES_MIDNIGHT))
+                  pace_line(t_fresh2[0], NOW + 600, WR, cut=t_fresh2[2]), (None, TAIL_TOO_SHORT))
 
             late_big = put("late_big.jsonl", m85 + meter(*[(NOW + 60, 88, WR)] * (METER_MAX_BYTES // 80 + 1)))
             out_late = io.StringIO()
@@ -1318,7 +1327,7 @@ def _self_test_body() -> int:
                                 "--now", str(NOW + 3600)], env={}, payload="")
             check("⭐ #501: main() over the bound with the midnight row outside the tail says WHY, as NOT RUN, and the "
                   "stop is unchanged",
-                  (rc_late, f"Today's pace line cannot be read ({TAIL_MISSES_MIDNIGHT}): treat it as NOT RUN."
+                  (rc_late, f"Today's pace line cannot be read ({TAIL_TOO_SHORT}): treat it as NOT RUN."
                    in out_late.getvalue(), "pace line is" in out_late.getvalue()), (RC[WARN], True, False))
             check("#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache",
                   read_meter(os.path.join(td, "nope.jsonl")), (None, "", False))
@@ -1345,16 +1354,21 @@ def _self_test_body() -> int:
             c1_tail = meter((NOW + 60, 88, WR), (NOW - 3600, 10, WR), (NOW + 120, 89, WR))
             c1 = meter((NOW - 1, 85, WR)) + c1_tail
             t_c1 = _read_tail(put("c1.jsonl", c1), len(c1_tail))
+            # ⟳ r3 fold: the 10% row is stamped 3,660 s before the row above it — more than METER_SKEW_S — so the canary
+            # refuses it: the contract is broken inside the part.
             check("⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
-                  (t_c1[2], pace_line(t_c1[0], NOW + 600, WR, cut=t_c1[2])), (True, (None, TAIL_OUT_OF_ORDER)))
+                  (t_c1[2], brk(pace_line(t_c1[0], NOW + 600, WR, cut=t_c1[2]))), (True, (None, TAIL_CONTRACT_BROKEN)))
             check("#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)",
                   pace_line(c1, NOW + 600, WR), (92.5, ""))
+            # ⟳ r3 fold: OLD at the front (the part must reach back in time); the subject is still that equal times break
+            # nothing.
             check("#501 r1 C1: two rows with the SAME time are not out of order — a cut part holding them still answers",
-                  pace_line(meter((NOW - 3600, 85, WR), (NOW - 3600, 85, WR), (NOW + 60, 88, WR)), NOW + 600, WR, cut=True),
-                  (92.5, ""))
+                  pace_line(OLD + meter((NOW - 3600, 85, WR), (NOW - 3600, 85, WR), (NOW + 60, 88, WR)), NOW + 600, WR,
+                            cut=True), (92.5, ""))
+            # ⟳ r3 fold: 3,600 s of disorder is inside the contract now, so the second row moved to 3,601 s earlier.
             check("#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
-                  pace_line(meter((NOW - 3600, 98, LAST_WR), (NOW - 7200, 97, LAST_WR), (NOW + 60, 3, WR)), NOW + 600, WR,
-                            cut=True), (None, TAIL_OUT_OF_ORDER))
+                  brk(pace_line(meter((NOW - 3600, 98, LAST_WR), (NOW - 7201, 97, LAST_WR), (NOW + 60, 3, WR)), NOW + 600,
+                                WR, cut=True)), (None, TAIL_CONTRACT_BROKEN))
 
             # r1 F3 (Claude): the week reset falls between local midnight and the first row read. The part holds the
             # LAST window's rows written after midnight, then this window's; under append order an earlier window's row
@@ -1363,8 +1377,10 @@ def _self_test_body() -> int:
             f3_tail = meter((NOW + 60, 99, OLD_AFTER), (NOW + 120, 2, WR), (NOW + 180, 3, WR))
             f3 = meter((NOW - 3600, 97, OLD_AFTER)) + f3_tail
             t_f3 = _read_tail(put("f3.jsonl", f3), len(f3_tail))
-            check("⭐ #501 r1 F3: a reset between midnight and the first row read is answered from this window's first row "
-                  "(51), not refused", (t_f3[2], pace_line(t_f3[0], NOW + 10 * 3600, WR, cut=t_f3[2])), (True, (51.0, "")))
+            # ⟳ r3 fold: this 3-row part spans 2 minutes, so it cannot prove that no row of this window lies before it —
+            # refused. The same reset AT SCALE (OLD in front) answers: the r3 fold's case 11, below.
+            check("#501 r1 F3: a reset between midnight and the first row read, in a 3-row part, is refused as too short",
+                  (t_f3[2], pace_line(t_f3[0], NOW + 10 * 3600, WR, cut=t_f3[2])), (True, (None, TAIL_TOO_SHORT)))
 
             # r1 F1/F2 (Claude): `read_meter`'s limit and deadline, `evaluate`'s meter_cut, and the failure arity.
             check("#501 r1 F1: read_meter(limit=…) under the file's size reads the TAIL and says it was cut",
@@ -1373,7 +1389,7 @@ def _self_test_body() -> int:
             ev_cut = evaluate(cache(85), NOW + 600, meter=t_late[0], meter_cut=True)
             ev_whole = evaluate(cache(85), NOW + 600, meter=t_late[0], meter_cut=False)
             check("⭐ #501 r1 F1: evaluate(meter_cut=True) says the line is NOT RUN and why; the same text uncut gives 94",
-                  (ev_cut[0], f"Today's pace line cannot be read ({TAIL_MISSES_MIDNIGHT}): treat it as NOT RUN." in ev_cut[1],
+                  (ev_cut[0], f"Today's pace line cannot be read ({TAIL_TOO_SHORT}): treat it as NOT RUN." in ev_cut[1],
                    ev_whole[0], "Today's pace line is 94% — a guide" in ev_whole[1]), (WARN, True, WARN, True))
             real_tail = _read_tail
 
@@ -1416,7 +1432,7 @@ def _self_test_body() -> int:
             got_wide = [_read_tail(wide_p, size(wide_p) - (euro + k)) for k in (1, 2)]
             check("⭐ #501 r1 F4: a cut one and two bytes INSIDE a 3-byte character drops that line whole — no U+FFFD",
                   got_wide, [(m85, "", True)] * 2)
-            bad_tail = m85.encode() + b"\xff" + meter((NOW - 60, 10, WR)).encode()
+            bad_tail = (OLD + m85).encode() + b"\xff" + meter((NOW - 60, 10, WR)).encode()  # ⟳ r3 fold: OLD in front
             bad_p = os.path.join(td, "bad.jsonl")
             with open(bad_p, "wb") as f:
                 f.write(meter((NOW - 2 * 86400, 40, LAST_WR)).encode() + bad_tail)
@@ -1426,40 +1442,154 @@ def _self_test_body() -> int:
 
             # ── PR #531 r2 fold ────────────────────────────────────────────────────────────────────
             # r2 F1 (Claude): the order check covered every row of the part — ~280 days at the bound — so ONE inverted
-            # pair (two sessions' statuslines appending without a lock) refused the line until it left the tail. Only
-            # rows at or after the HORIZON, resets − 2 weeks (this window and the one before), can bear on today's start.
+            # pair (two sessions' statuslines appending without a lock) refused the line until it left the tail.
+            # ⟳ r3 fold: the horizon is gone; a 1 s inversion is inside the writer contract anywhere in the part.
             HZ, OLD_R = WR - 2 * 7 * 86400, WR - 29 * 7 * 86400
             f1_tail = meter((NOW - 200 * 86400 + 1, 40, OLD_R), (NOW - 200 * 86400, 40, OLD_R),
                             (NOW - 3600, 85, WR), (NOW + 60, 88, WR))
             t_f1 = _read_tail(put("r2f1.jsonl", meter((NOW - 201 * 86400, 39, OLD_R)) + f1_tail), len(f1_tail))
             check("⭐ #501 r2 F1: a 1 s inversion 200 days back, in a CUT part, does not refuse — the line still reads 92.5",
                   (t_f1[2], pace_line(t_f1[0], NOW + 600, WR, cut=t_f1[2])), (True, (92.5, "")))
-            check("#501 r2 F1: an inversion INSIDE the horizon (10 days back, last week's window) still refuses a cut part",
-                  pace_line(meter((NOW - 10 * 86400 + 1, 40, LAST_WR), (NOW - 10 * 86400, 40, LAST_WR),
-                                  (NOW - 3600, 85, WR)), NOW + 600, WR, cut=True), (None, TAIL_OUT_OF_ORDER))
-            check("#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second "
-                  "before it is not (92.5)",
-                  (pace_line(meter((HZ + 1, 50, HZ), (HZ, 50, HZ), (NOW - 3600, 85, WR)), NOW + 600, WR, cut=True),
-                   pace_line(meter((HZ, 50, HZ), (HZ - 1, 50, HZ), (NOW - 3600, 85, WR)), NOW + 600, WR, cut=True)),
-                  ((None, TAIL_OUT_OF_ORDER), (92.5, "")))
 
-            # r2 F2 (Claude): r1 F3 let an earlier window's row ANYWHERE prove the cut, but that proof needs `resets_at`
-            # non-decreasing in file order. A row after midnight carrying an older `resets_at` (a stale statusline after
-            # the reset, or jitter) gave 88 + 1.5 × 12 ÷ 3 = 94 where the whole log gives 92.5 — a silent WRONG start.
+            # r2 F2 (Claude): a row after midnight carrying an older `resets_at` (a stale statusline after the reset, or
+            # jitter) gave 88 + 1.5 × 12 ÷ 3 = 94 where the whole log gives 92.5 — a silent WRONG start. ⟳ r3 fold: the
+            # rows are kept; each part holds only rows after midnight, so it cannot reach back in time — TAIL_TOO_SHORT.
             def f2(stale: tuple) -> tuple[float | None, str]:
                 tail = meter(*stale)
                 t = _read_tail(put("r2f2.jsonl", meter((NOW - 3600, 85, WR)) + tail), len(tail))
-                return pace_line(t[0], NOW + 10 * 3600, WR, cut=t[2])
+                return brk(pace_line(t[0], NOW + 10 * 3600, WR, cut=t[2]))
             check("⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 94 — "
                   "a stale row between, a stale row last, and R−1 jitter",
                   [f2(((NOW + 60, 88, WR), (NOW + 120, 30, LAST_WR), (NOW + 180, 89, WR))),
                    f2(((NOW + 60, 88, WR), (NOW + 180, 89, WR), (NOW + 240, 30, LAST_WR))),
                    f2(((NOW + 60, 88, WR), (NOW + 120, 88, WR - 1), (NOW + 180, 89, WR)))],
-                  [(None, TAIL_OUT_OF_ORDER)] * 3)
+                  [(None, TAIL_TOO_SHORT)] * 3)
+            # ⟳ r3 fold: the row stamped before HZ is appended after a row of today, ~14 days later — a breach of the
+            # writer contract inside the part, so the canary refuses it (the review doc's §6 expected TAIL_TOO_SHORT; the
+            # canary runs first, and this row breaks the contract by ~14 days).
             check("⭐ #501 r2 F2: an earlier window's row proves the cut only when it PRECEDES this window's first row in "
                   "the file — one after it, stamped outside the horizon, is refused, never the wrong 94",
                   f2(((NOW + 60, 88, WR), (HZ - 60, 30, WR - 3 * 7 * 86400), (NOW + 180, 89, WR))),
-                  (None, TAIL_MISSES_MIDNIGHT))
+                  (None, TAIL_CONTRACT_BROKEN))
+
+            # ── PR #531 r3 fold: the Phase 6 redesign (docs/reviews/architecture-review-2026-11-07-meter-log-tail-proof.md)
+            # The proof is TIME-based over the writer contract: W1, a row appended after another is stamped no more than
+            # S = METER_SKEW_S before it; W2, a reading is stamped no earlier than its window's start − HORIZON_SLACK_S.
+            # A cut part answers only when its oldest row is more than S older than the time it must reach back to, and a
+            # part that itself breaks W1 by more than S is refused. Each case below is the review's §6 numbering.
+            S, N10 = METER_SKEW_S, NOW + 10 * 3600
+
+            def whole_and_cut(unseen: tuple, seen: tuple, now: float, resets: float = WR) -> tuple:
+                return pace_line(meter(*unseen) + meter(*seen), now, resets), brk(pace_line(meter(*seen), now, resets,
+                                                                                           cut=True))
+            # 1. R3-F1, Codex's exact rows. Its two old rows are appended AFTER a row of today, but stamped 11 and 14 days
+            # earlier: a breach of W1 that lies entirely across the cut, so no rule that reads only the part can see it.
+            check("⭐ #501 r3 BOUND (R3-F1's exact rows): a W1 breach ACROSS the cut, rows appended 11 days late, is "
+                  "OUTSIDE the contract and answers the wrong 94 — a change that detects it must update the bound sentence",
+                  whole_and_cut([(NOW - 3600, 85, WR)], [(HZ + 1, 30, LAST_WR), (HZ - 1, 20, WR - 14 * 86400),
+                                                        (NOW + 60, 88, WR), (NOW + 180, 89, WR)], N10),
+                  ((92.5, ""), (94.0, "")))
+            # 2. The same, in contract: the two old rows restamped within S of the unseen row.
+            check("⭐ #501 r3: R3-F1 IN contract (the old rows within S of the unseen one) is refused as too short",
+                  whole_and_cut([(NOW - 3600, 85, WR)], [(NOW - 5400, 30, LAST_WR), (NOW - 5760, 20, WR - 14 * 86400),
+                                                        (NOW + 60, 88, WR), (NOW + 180, 89, WR)], N10),
+                  ((92.5, ""), (None, TAIL_TOO_SHORT)))
+            # 3. C1 in contract: a 30-minute disorder, which the order proof answered 55 from.
+            check("⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 55",
+                  whole_and_cut([(NOW - 1, 85, WR)], [(NOW - 1800, 10, WR), (NOW + 60, 88, WR)], NOW + 600),
+                  ((92.5, ""), (None, TAIL_TOO_SHORT)))
+            # 4. The counterexample to "the start row sits S before midnight" (option (a) as briefed), in contract.
+            check("⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 75",
+                  whole_and_cut([(NOW - 7200, 50, WR), (NOW - 5400, 85, WR)], [(NOW - 7200, 50, WR), (NOW + 60, 88, WR)],
+                                NOW + 600), ((92.5, ""), (None, TAIL_TOO_SHORT)))
+            # 5. A stale session's old-window reading as the part's FIRST row, in strict time order.
+            check("⭐ #501 r3: a stale old-window row FIRST in a part, in strict time order, is refused, never the wrong 85",
+                  whole_and_cut([(NOW - 1800, 75, WR)], [(NOW + 1440, 97, LAST_WR), (NOW + 3000, 70, WR),
+                                                        (NOW + 3300, 78, WR)], NOW + 3 * 3600),
+                  ((87.5, ""), (None, TAIL_TOO_SHORT)))
+            # 6. A stale old-window row after the reset, at scale: the order proof refused it for up to two weeks.
+            check("⭐ #501 r3: a stale old-window row after the reset, at scale, still answers 92.5",
+                  pace_line(OLD + meter((NOW - 3600, 85, WR), (NOW + 60, 88, WR), (NOW + 120, 97, LAST_WR),
+                                        (NOW + 180, 89, WR)), N10, WR, cut=True), (92.5, ""))
+            # 7. A 1 s inversion inside two weeks, at scale (two sessions appending without a lock).
+            check("⭐ #501 r3: a 1 s inversion of today's rows, at scale, still answers 92.5",
+                  pace_line(OLD + meter((NOW - 3600, 85, WR), (NOW + 61, 88, WR), (NOW + 60, 88, WR)), NOW + 600, WR,
+                            cut=True), (92.5, ""))
+            # 8. The witness's boundaries, both branches. Strict: the oldest row must be MORE than S before `needed`.
+            B0, W0 = NOW - 3600, WR - SEVEN_DAY_S - HORIZON_SLACK_S
+            check("⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+                  [brk(pace_line(meter((B0 - S - k, 40, LAST_WR), (B0, 85, WR)), NOW + 600, WR, cut=True)) for k in (0, 1)],
+                  [(None, TAIL_TOO_SHORT), (92.5, "")])
+            check("⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp "
+                  "(start − 1 h) is refused; 1 s more answers 94",
+                  [brk(pace_line(meter((W0 - S - k, 40, LAST_WR), (NOW + 60, 88, WR)), N10, WR, cut=True)) for k in (0, 1)],
+                  [(None, TAIL_TOO_SHORT), (94.0, "")])
+            # 9. The canary's boundaries, on rows of an EARLIER window, so the selection is not involved.
+            A9 = NOW - 86400
+
+            def c9(*mid: float) -> tuple:
+                return brk(pace_line(OLD + meter(*[(a, 40, LAST_WR) for a in mid], (NOW - 3600, 85, WR),
+                                                 (NOW + 60, 88, WR)), NOW + 600, WR, cut=True))
+            check("⭐ #501 r3: the canary — a row exactly S before the row above it answers; S + 1 s is a broken contract",
+                  (c9(A9, A9 - S), c9(A9, A9 - S - 1)), ((92.5, ""), (None, TAIL_CONTRACT_BROKEN)))
+            check("⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s "
+                  "before its predecessor, is a broken contract",
+                  c9(A9, A9 - 3000, A9 - S - 1), (None, TAIL_CONTRACT_BROKEN))
+            got_msg = pace_line(meter((NOW + 60, 88, WR), (NOW - 3600, 10, WR)), NOW + 600, WR, cut=True)[1]
+            check("#501 r3: a broken contract names the two rows, so the late row can be found and deleted",
+                  (got_msg.startswith(TAIL_CONTRACT_BROKEN), safe_time(NOW - 3600) in got_msg, safe_time(NOW + 60) in got_msg),
+                  (True, True, True))
+            # 10. Reset day at scale: the window began at 02:00, after midnight; the order-free proof still answers.
+            RD = NOW + 2 * 3600
+            WR2 = RD + SEVEN_DAY_S
+            check("⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (21.96)",
+                  pace_line(OLD + meter((NOW - 3600, 99, RD), (RD + 60, 1, WR2), (RD + 600, 2, WR2)), N10, WR2, cut=True),
+                  (1 + LINE_FRONT_LOAD * 99 / ((WR2 - NOW) / 86400), ""))
+            # 11. R1-F3 at scale: the reset between midnight and the first row read.
+            OA = NOW + 100
+            check("⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 22.99",
+                  pace_line(OLD + meter((NOW - 3600, 97, OA), (NOW + 60, 99, OA), (NOW + 120, 2, OA + SEVEN_DAY_S),
+                                        (NOW + 180, 3, OA + SEVEN_DAY_S)), N10, OA + SEVEN_DAY_S, cut=True),
+                  (2 + LINE_FRONT_LOAD * 98 / ((OA + SEVEN_DAY_S - NOW) / 86400), ""))
+
+            # 12. The soundness sweep: seeded random logs that keep the contract (disorder up to S, 5 % stale old-window
+            # readings, resets from 2 h to 6 d after midnight), cut at every line. A cut answer that differs from the
+            # whole log's is WRONG. The CONTROL breaks W1 (disorder up to a day) and must find one, so the sweep can fail.
+            import random
+
+            def sweep(skew_gen: float, worlds: int = 60) -> tuple[int, int]:
+                rng = random.Random(7)
+                wrong = total = 0
+                for _ in range(worlds):
+                    resets = NOW + rng.choice([2 * 3600, 86400, 3 * 86400, 6 * 86400])
+                    now = NOW + rng.uniform(600, 20 * 3600)
+                    span = rng.uniform(2 * 3600, 9 * 86400)
+                    gap = span / rng.randint(10, 80)
+                    t = hi = now - span
+                    rows = []
+                    while t < now:
+                        t += rng.expovariate(1 / gap)
+                        hi = max(hi, t)
+                        at = round(hi - (rng.uniform(0, skew_gen) if rng.random() < 0.3 else 0))
+                        r = resets if at >= resets - SEVEN_DAY_S else resets - SEVEN_DAY_S
+                        if rng.random() < 0.05:
+                            r = resets - SEVEN_DAY_S  # a stale session's old-window reading
+                        if at <= now:
+                            rows.append((at, rng.randint(0, 100), r))
+                    text = meter(*rows)
+                    whole = pace_line(text, now, resets)
+                    if whole[0] is None:
+                        continue
+                    lines = text.splitlines(keepends=True)
+                    for k in range(1, len(lines)):
+                        v = pace_line("".join(lines[k:]), now, resets, cut=True)
+                        total += 1
+                        wrong += v[0] is not None and abs(v[0] - whole[0]) >= 1e-9
+                return wrong, total
+            in_contract, control = sweep(S), sweep(86400)
+            check("⭐ #501 r3 SWEEP: no in-contract cut answer differs from the whole log; the out-of-contract CONTROL "
+                  "finds at least one (wrong in contract, cuts > 1000, control can fail)",
+                  (in_contract[0], in_contract[1] > 1000, control[0] >= 1), (0, True, True))
 
         # ── the weekly boundaries ──────────────────────────────────────────────────────────────────
         check("weekly 0 is OK", kind(cache(0)), OK)

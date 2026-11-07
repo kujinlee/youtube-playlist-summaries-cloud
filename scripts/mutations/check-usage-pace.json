@@ -2087,18 +2087,20 @@
     ]
   },
   {
-    "name": "backlog #501: a cut read is never refused when it misses midnight (falls back to a later row)",
+    "name": "backlog #501 → PR #531 r3: the witness is removed, so a cut part too short in time answers from a later row",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if cut and before is None and not earlier_window:\n",
-        "    if False:\n"
+        "        if min_at is None or not min_at < needed - METER_SKEW_S:\n",
+        "        if False:\n"
       ]
     ],
     "expect": [
       "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
       "#501: a cut that drops the midnight row's partial line is refused the same way",
-      "#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it"
+      "#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
+      "⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 55",
+      "⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 75"
     ]
   },
   {
@@ -2112,20 +2114,6 @@
     ],
     "expect": [
       "⭐ #501: a log EXACTLY at the bound is read whole and NOT cut — its first line is kept"
-    ]
-  },
-  {
-    "name": "backlog #501: an earlier window's row no longer proves the cut reaches midnight",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "            earlier_window = True\n",
-        "            earlier_window = False\n"
-      ]
-    ],
-    "expect": [
-      "#501: a cut part that reaches back past midnight through LAST week's row still yields the line",
-      "⭐ #501 r1 F3: a reset between midnight and the first row read is answered from this window's first row (51), not refused"
     ]
   },
   {
@@ -2168,73 +2156,6 @@
     ]
   },
   {
-    "name": "PR #531 r1 C1: a cut part out of time order is not refused (a wrong start, silently)",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "    if cut and out_of_order:\n        return None, TAIL_OUT_OF_ORDER\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
-      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order"
-    ]
-  },
-  {
-    "name": "PR #531 r1 C1: rows with the SAME time count as out of order",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "            if prev_at is not None and at < prev_at:\n",
-        "            if prev_at is not None and at <= prev_at:\n"
-      ]
-    ],
-    "expect": [
-      "#501 r1 C1: two rows with the SAME time are not out of order — a cut part holding them still answers"
-    ]
-  },
-  {
-    "name": "PR #531 r1 C1: the order check never advances, so it sees no pair",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "            prev_at = at\n",
-        "            prev_at = prev_at\n"
-      ]
-    ],
-    "expect": [
-      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
-      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order"
-    ]
-  },
-  {
-    "name": "PR #531 r1 C1: a WHOLE log out of order is refused too (it can see every row)",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "    if cut and out_of_order:\n",
-        "    if out_of_order:\n"
-      ]
-    ],
-    "expect": [
-      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
-    ]
-  },
-  {
-    "name": "PR #531 r1 F3: an earlier window's row proves the cut only when it is at or before midnight",
-    "file": "scripts/check-usage-pace.py",
-    "edits": [
-      [
-        "        if is_number(r) and r < resets and not this_window_seen:\n",
-        "        if is_number(r) and is_number(at) and at <= midnight and r < resets and not this_window_seen:\n"
-      ]
-    ],
-    "expect": [
-      "⭐ #501 r1 F3: a reset between midnight and the first row read is answered from this window's first row (51), not refused"
-    ]
-  },
-  {
     "name": "PR #531 r1 F2: read_meter's failure is a 2-tuple, so main's unpack crashes and the stop is lost",
     "file": "scripts/check-usage-pace.py",
     "edits": [
@@ -2264,96 +2185,129 @@
     ]
   },
   {
-    "name": "PR #531 r2 F1: the order check covers every row of the part again (one old inversion refuses for ~280 days)",
+    "name": "PR #531 r3: the canary is removed, so a part that breaks the writer contract answers",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        if is_number(at) and at >= horizon:\n",
-        "        if is_number(at):\n"
+        "    if cut and breach:\n        late, above = breach\n",
+        "    if False:\n        late, above = breach\n"
       ]
     ],
     "expect": [
-      "⭐ #501 r2 F1: a 1 s inversion 200 days back, in a CUT part, does not refuse — the line still reads 92.5",
-      "#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second before it is not (92.5)"
+      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
+      "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
+      "⭐ #501 r3: the canary — a row exactly S before the row above it answers; S + 1 s is a broken contract",
+      "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract",
+      "#501 r3: a broken contract names the two rows, so the late row can be found and deleted"
     ]
   },
   {
-    "name": "PR #531 r2 F1: a row stamped exactly AT the horizon is not checked",
+    "name": "PR #531 r3: the witness admits a part whose oldest row is EXACTLY S before what it must reach (<= for <)",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "at >= horizon",
-        "at > horizon"
+        "not min_at < needed - METER_SKEW_S",
+        "not min_at <= needed - METER_SKEW_S"
       ]
     ],
     "expect": [
-      "#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second before it is not (92.5)"
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
     ]
   },
   {
-    "name": "PR #531 r2 F1: the horizon narrowed to this window only, so last week's disorder is missed",
+    "name": "PR #531 r3: the witness drops the skew, so an unseen row within S of the oldest one can be the start",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    horizon = resets - 2 * SEVEN_DAY_S",
-        "    horizon = resets - SEVEN_DAY_S"
+        "< needed - METER_SKEW_S:",
+        "< needed:"
       ]
     ],
     "expect": [
-      "#501 r2 F1: an inversion INSIDE the horizon (10 days back, last week's window) still refuses a cut part",
-      "#501 r2 F1: the horizon's boundary — a later row stamped AT it is checked (refused); one a second before it is not (92.5)"
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
     ]
   },
   {
-    "name": "PR #531 r2 F2: a resets_at that goes back in file order is not refused",
+    "name": "PR #531 r3: with a midnight row, the witness reaches back to the window's start instead of to that row",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "                if prev_r is not None and r < prev_r:\n",
-        "                if False:\n"
+        "needed = before[0] if before else",
+        "needed = resets - SEVEN_DAY_S - HORIZON_SLACK_S if before else"
       ]
     ],
     "expect": [
-      "⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 94 — a stale row between, a stale row last, and R−1 jitter"
+      "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
+      "⭐ #501 r3 SWEEP: no in-contract cut answer differs from the whole log; the out-of-contract CONTROL finds at least one (wrong in contract, cuts > 1000, control can fail)"
     ]
   },
   {
-    "name": "PR #531 r2 F2: the resets_at order check never advances, so it sees no pair",
+    "name": "PR #531 r3: the window's earliest stamp loses HORIZON_SLACK_S (W2's reset rounding)",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "                prev_r = r\n",
-        "                prev_r = prev_r\n"
+        "else resets - SEVEN_DAY_S - HORIZON_SLACK_S\n",
+        "else resets - SEVEN_DAY_S\n"
       ]
     ],
     "expect": [
-      "⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 94 — a stale row between, a stale row last, and R−1 jitter"
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
     ]
   },
   {
-    "name": "PR #531 r2 F2: an earlier window's row AFTER this window's first row still proves the cut (the wrong 94)",
+    "name": "PR #531 r3: the canary compares with the row above, not the running maximum",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "r < resets and not this_window_seen",
-        "r < resets"
+        "max_at = at if max_at is None else max(max_at, at)",
+        "max_at = at"
       ]
     ],
     "expect": [
-      "⭐ #501 r2 F2: an earlier window's row proves the cut only when it PRECEDES this window's first row in the file — one after it, stamped outside the horizon, is refused, never the wrong 94"
+      "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract"
     ]
   },
   {
-    "name": "PR #531 r2 F2: this window's first row is never marked as seen",
+    "name": "PR #531 r3: the oldest row is taken over THIS window's rows only",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "            this_window_seen = True\n",
-        "            this_window_seen = False\n"
+        "min_at = at if min_at is None else min(min_at, at)",
+        "min_at = min_at if r != resets else (at if min_at is None else min(min_at, at))"
       ]
     ],
     "expect": [
-      "⭐ #501 r2 F2: an earlier window's row proves the cut only when it PRECEDES this window's first row in the file — one after it, stamped outside the horizon, is refused, never the wrong 94"
+      "⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (21.96)",
+      "⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 22.99"
+    ]
+  },
+  {
+    "name": "PR #531 r3: a WHOLE log that breaks the contract is refused too (it can see every row)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut and breach:\n",
+        "    if breach:\n"
+      ]
+    ],
+    "expect": [
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
+    ]
+  },
+  {
+    "name": "PR #531 r3: the witness applies to a WHOLE log too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if cut:\n        needed",
+        "    if True:\n        needed"
+      ]
+    ],
+    "expect": [
+      "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
     ]
   }
 ]
