@@ -1754,7 +1754,10 @@ EXPECTED_MUTATIONS = {
     # (1), the run list's timeout (1), a compare's timeout (1), a refused compare read as "does not contain" (1).
     # ⟳ 2026-11-06, MERGE of origin/master (#508, PR #522) into batch-ci (#534): the merge-base pins 102; #508 moved it
     # to 148 (+46) and batch-ci to 110 (+8), over disjoint entries, so the merged manifest holds 102 + 46 + 8 = 156.
-    "scripts/check-merge-ready.py": 156,
+    # ⟳ 2026-11-08, backlog #538: 156 -> 162, none retired. The held side is HEAD's, materialised: the working-tree
+    # harness read again (1), the isolation dropped at the call (1), its sys.path half (1) and its hidden-module half
+    # (1), a failing `git archive` read as an archive (1), an archive that does not unpack passed over (1).
+    "scripts/check-merge-ready.py": 162,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 348 cases
+    python3 scripts/check-merge-ready.py --self-test # 354 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -47,16 +47,21 @@ readiness checker that shrugs is worse than none, because its silence reads as a
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import importlib.util
+import io
 import json
 import os
 import posixpath
 import re
 import shutil
 import subprocess
+import sysconfig
+import tarfile
 import tempfile
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1331,13 +1336,83 @@ def pins_at(run, rev: str) -> dict:
                   error=lambda d: PinsUnreadable(f"{rev}: {home}: {d}"))
 
 
-def held_pins() -> dict:
-    """The pins the head harness HOLDS after import: `EXPECTED_MUTATIONS` of the module `_pins_reader` already
-    loaded for `pin_display`, as an exact, non-empty `{str: int}` (`_exact_pins`). Anything else is
-    `PinsUnreadable`."""
-    reader = _pins_reader(PINS_READER)
-    return _cross(lambda: reader.EXPECTED_MUTATIONS, reduce=_exact_pins,
-                  error=lambda d: PinsUnreadable(f"HEAD: {PINS_SCRIPT}'s EXPECTED_MUTATIONS: {d}"))
+# ⟳ backlog #538: the held side is HEAD's, from the SAME commit as the display. It imported the WORKING-TREE
+# harness (`PINS_READER`) instead, and nothing checked that the working tree was HEAD: a head harness redirected
+# to a lowered pins file, with an uncommitted older harness left in `scripts/`, held what the display showed and
+# read READY (measured, PR #526 r5 R5-F1). Now `held_pins` imports the harness from HEAD's `scripts/`,
+# materialised by `git archive`, so a dirty, stale or untracked file in the working tree cannot stand in for it.
+# The import is ISOLATED: for its duration `sys.path` holds only the interpreter's own library directories and
+# every module from outside them is hidden from `sys.modules`, so the head harness's own sibling imports
+# (`coverage_verdict`, R3's `_redir`) resolve inside the materialised tree, never to a copy the working-tree
+# reader already loaded. ⚠ BOUND, stated: (a) a head harness that names a pins file OUTSIDE `scripts/` finds
+# nothing in the materialised tree, so `read_pins` holds {} and `_exact_pins` refuses it: CANNOT RUN, never a
+# pass; one that names an ABSOLUTE path reads that path as it stands. (b) The working-tree reader is still
+# imported, for `pin_display`, before this runs; a working tree whose code patches the standard library is the
+# trust this script extends to its own source, which lives in the same `scripts/`.
+HEAD_ARCHIVE = ["git", "archive", "--format=tar", "HEAD", "--", "scripts"]
+
+
+def _lib_roots() -> tuple:
+    """The interpreter's own library directories: what an isolated import may still load from."""
+    paths = sysconfig.get_paths()
+    return tuple(sorted({os.path.realpath(p) for p in (
+        sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix,
+        *(paths.get(k) for k in ("stdlib", "platstdlib", "purelib", "platlib"))) if p}))
+
+
+def _in_lib(path, roots) -> bool:
+    if type(path) is not str:
+        return False
+    real = os.path.realpath(path)
+    return any(real == r or real.startswith(r + os.sep) for r in roots)
+
+
+@contextlib.contextmanager
+def _isolated_import():
+    """For the block: `sys.path` is the library directories only, and every module loaded from elsewhere (or
+    that is not an exact module) is hidden. Both are restored after, and what the block loaded from outside
+    the library directories is dropped again."""
+    roots = _lib_roots()
+    def own(name, mod):
+        if name == "__main__":
+            return True
+        if type(mod) is not types.ModuleType:
+            return False
+        d = mod.__dict__
+        f = d.get("__file__")
+        return _in_lib(f, roots) if f is not None else "__path__" not in d
+    saved_mods, saved_path = dict(sys.modules), list(sys.path)
+    for name in [n for n, m in saved_mods.items() if not own(n, m)]:
+        del sys.modules[name]
+    sys.path[:] = [p for p in saved_path if _in_lib(p, roots)]
+    try:
+        yield
+    finally:
+        for name in [n for n, m in list(sys.modules.items()) if n not in saved_mods and not own(n, m)]:
+            del sys.modules[name]
+        sys.modules.update(saved_mods)
+        sys.path[:] = saved_path
+
+
+def held_pins(run) -> dict:
+    """The pins HEAD's harness HOLDS after import: `EXPECTED_MUTATIONS` of `PINS_SCRIPT` imported from HEAD's
+    `scripts/`, materialised by `git archive` (backlog #538), as an exact, non-empty `{str: int}`
+    (`_exact_pins`). A failed archive, an archive that will not unpack, a harness that will not import, and
+    anything else is `PinsUnreadable`."""
+    got = run(HEAD_ARCHIVE, text=False)
+    if got.returncode != 0:
+        raise PinsUnreadable(f"HEAD: `git archive` exited {got.returncode}")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(got.stdout), mode="r:") as tar:
+                tar.extractall(tmp, filter="data")
+        except Exception as exc:
+            raise PinsUnreadable(f"HEAD: `git archive` did not unpack ({_describe(exc)})") from None
+        with _isolated_import():
+            head = _import_sibling(Path(tmp) / PINS_SCRIPT, "_cpc_head_for_merge_ready",
+                                  lambda m: PinsUnreadable(f"HEAD: {m}"))
+            return _cross(lambda: head.EXPECTED_MUTATIONS, reduce=_exact_pins,
+                          error=lambda d: PinsUnreadable(f"HEAD: {PINS_SCRIPT}'s EXPECTED_MUTATIONS: {d}"))
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
@@ -1353,8 +1428,8 @@ def pin_pair(run, base: str) -> "tuple[dict, dict]":
     # the harness enforces whatever ITS module holds. A head that points the harness at another pins file
     # with a lowered pin, leaving the display stale, was READY. The old check proved the harness's SPELLING
     # ("binds `PINS_FILE` once, to this literal"), and Python binds a global in a dozen spellings. This
-    # compares the VALUE: the dict the head harness holds after the import `pins_at` already made (the
-    # working tree is the PR head: `main()` refuses any other HEAD), against the display, on BOTH sides'
+    # compares the VALUE: the dict HEAD's harness holds after import (⟳ backlog #538: imported from HEAD's own
+    # `scripts/`, never the working tree, which nothing checks is clean), against the display, on BOTH sides'
     # keys. A head with no pins at all ({}) has no harness to compare, and every pin it drops is HELD.
     # ⚠ BOUND, stated (backlog #535's class, which master also has as its E2): harness code that acts
     # differently when IMPORTED than when RUN is not seen here. (R8) a write to `EXPECTED_MUTATIONS` inside
@@ -1363,7 +1438,7 @@ def pin_pair(run, base: str) -> "tuple[dict, dict]":
     # edits `check-plan-code.py`, the sweep harness, so the PR sweeps FULL and the edit is in the reviewed
     # diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
     if new:
-        held = held_pins()
+        held = held_pins(run)
         differ = sorted(k for k in held.keys() | new.keys() if held.get(k) != new.get(k))
         if differ:
             raise PinsUnreadable(f"HEAD: {PINS_SCRIPT} holds pins that differ from the display this script reads, "
@@ -2641,6 +2716,16 @@ def _self_test_body() -> int:
     _here = Path(__file__).resolve().parent
     _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _real_pins = (_here.parent / PINS_FILE).read_text(encoding="utf-8")     # backlog #533
+    _real_cv = (_here / "coverage_verdict.py").read_text(encoding="utf-8")  # the harness's one sibling import
+    def _tar_head():
+        """⟳ backlog #538: `git archive HEAD -- scripts`, answered from the tree `PINS_READER` is in. The fakes
+        model the working tree AS the PR head, so HEAD's `scripts/` is that tree's; the cases where the two
+        DIFFER run real git further down."""
+        import io as _bio                   # `io` is a later local of this function, so not the module's
+        buf = _bio.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            tar.add(Path(PINS_READER).parent, arcname="scripts")
+        return buf.getvalue()
     _tree_root, _trees = Path(tempfile.mkdtemp()), {}
     def _tree(display, harness=None, extra=()):
         """The head harness's path in a working tree holding `display` as its pins file (None = no file)."""
@@ -2649,6 +2734,7 @@ def _self_test_body() -> int:
             d = _tree_root / str(len(_trees))
             (d / "scripts" / "mutations").mkdir(parents=True)
             (d / PINS_SCRIPT).write_text(_real_src if harness is None else harness, encoding="utf-8")
+            (d / "scripts" / "coverage_verdict.py").write_text(_real_cv, encoding="utf-8")   # backlog #538
             for rel, text in ((PINS_FILE, display), *extra):
                 if text is not None:
                     (d / rel).write_text(text, encoding="utf-8")
@@ -2674,6 +2760,8 @@ def _self_test_body() -> int:
             if cmd[:2] == ["git", "show"]:
                 rev, path = cmd[2].split(":", 1)
                 return subprocess.CompletedProcess(cmd, 0, trees[rev][path], "")
+            if cmd == HEAD_ARCHIVE:
+                return subprocess.CompletedProcess(cmd, 0, _tar_head(), b"")
             return subprocess.CompletedProcess(cmd, 128, "", f"unexpected {cmd}")
         return run
     PCP = PINS_FILE                                  # backlog #533: where the display lives now
@@ -2760,6 +2848,22 @@ def _self_test_body() -> int:
           [(lambda r: r.startswith("CANNOT RUN") and f"`git {w}" in r and "exited 128" in r)(
                str(_err(lambda c, w=w: 128 if c[1] == w else 0)))
            for w in ("merge-base", "ls-tree", "show")], [True, True, True])
+    # ⟳ backlog #538: the held side's own reads. A failing `git archive` is named as such, and an archive that does
+    # not unpack is named as such, so neither is answered only by a later import failure.
+    check("⛔ backlog #538: a failing `git archive` of HEAD's scripts/ is CANNOT RUN, named for the archive",
+          (lambda r: (r.startswith("CANNOT RUN: HEAD:"), "`git archive` exited 128" in r))(
+              str(_err(lambda c: 128 if c[1] == "archive" else 0))), (True, True))
+    def _junk(cmd, **kw):
+        if cmd == HEAD_ARCHIVE:
+            return subprocess.CompletedProcess(cmd, 0, b"not a tar archive" * 64, b"")
+        return _prun({"base": {PCP: _syn()}, "HEAD": {PCP: _syn()}})(cmd, **kw)
+    try:
+        with _reading(_tree(_syn())):
+            _jr = str(pin_pair(_junk, "m"))
+    except PinsUnreadable as exc:
+        _jr = f"CANNOT RUN: {exc}"
+    check("⛔ backlog #538: ...and so is an archive that does not unpack, named for the archive",
+          (_jr.startswith("CANNOT RUN: HEAD:"), "`git archive` did not unpack" in _jr), (True, True))
     # THE REAL `check-plan-code.py`: the synthetic texts above prove the rule; only the real one
     # proves its display is what `pin_display` reads.
     _k = "scripts/check-vocabulary-collisions.py"
@@ -2875,6 +2979,8 @@ def _self_test_body() -> int:
         _pgrun(["git", "branch", "rootbr"], text=True)
         (_pg / PCP).parent.mkdir(parents=True)
         (_pg / PCP).write_text(_syn())
+        (_pg / PINS_SCRIPT).write_text(_real_src)       # backlog #538: the held side is HEAD's own harness
+        (_pg / "scripts" / "coverage_verdict.py").write_text(_real_cv)
         _pgrun(["git", "add", "-A"], text=True)
         _pgrun(["git", "commit", "-qm", "base"], text=True)
         _pgrun(["git", "branch", "basebr"], text=True)
@@ -2888,6 +2994,84 @@ def _self_test_body() -> int:
         shutil.rmtree(_pg, ignore_errors=True)
     check("⭐ real git: a pin lowered in the display is HELD, and a base with no scripts/ pins {}",
           _pgr, (["loosens a gate: the mutation pin for scripts/b.py drops 3 -> 2"], {}))
+    # ⛔ backlog #538, the row's three steps in a REAL repository, so `git archive` and the working tree are both
+    # real: (1) commit a head whose harness redirects to a pins file lowering one pin; (2) dirty the working tree
+    # with the previous harness (or, by R3, a previous `_redir.py`, or an untracked one HEAD lacks); (3) the held
+    # side must still be HEAD's, so the redirect is CANNOT RUN. Each has a CLEAN-TREE CONTROL in the same case, so
+    # the dirty answer cannot pass vacuously; and an HONEST head under a dirty LOWERING harness is read as HEAD
+    # holds it (READY, nothing held), so the fix is "held is HEAD's", not "a dirty tree is refused".
+    # `PINS_READER` is the repository's own working-tree harness, as `main()` has it, and `_pins_reader` is
+    # cleared before each read: it is cached by PATH, and both reads share one.
+    def _dirty_case(head_files, dirt, untrack=()):
+        """(clean answer, dirty answer) of `pin_pair` at a head committing `head_files` over the real base."""
+        g = Path(tempfile.mkdtemp())
+        def grun(cmd, **kw):
+            if cmd[0] == "git":
+                cmd = ["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]]
+                kw["cwd"] = g
+                kw.setdefault("env", fixture_git.env(HOME=str(g)))
+            kw.setdefault("text", True)
+            return subprocess.run(cmd, capture_output=True, **kw)
+        def put(files):
+            for rel, text in files:
+                (g / rel).parent.mkdir(parents=True, exist_ok=True)
+                (g / rel).write_text(text, encoding="utf-8")
+        def ask():
+            # Each read as a FRESH process has it: the reader's sibling imports (R3's `_redir`) and the path it
+            # inserts are dropped after, or the dirty read reuses the clean read's modules and passes vacuously.
+            _pins_reader.cache_clear()
+            mods, path = dict(sys.modules), list(sys.path)
+            sys.modules.pop("_redir", None)         # the R3 cases above left THEIR `_redir` loaded (measured)
+            try:
+                with _reading(g / PINS_SCRIPT):
+                    r = pin_pair(grun, "basebr")
+                return pin_falls(*r)
+            except PinsUnreadable as exc:
+                return f"CANNOT RUN: {exc}"
+            finally:
+                for n in [n for n in sys.modules if n not in mods]:
+                    del sys.modules[n]
+                sys.modules.update(mods)
+                sys.path[:] = path
+        try:
+            grun(["git", "init", "-q"])
+            put(((PCP, _real_pins), (PINS_SCRIPT, _real_src), ("scripts/coverage_verdict.py", _real_cv)))
+            grun(["git", "add", "-A"]); grun(["git", "commit", "-qm", "base"]); grun(["git", "branch", "basebr"])
+            put(head_files)
+            grun(["git", "add", "-A"]); grun(["git", "commit", "-qm", "head"])
+            for rel in untrack:
+                grun(["git", "rm", "-q", "--cached", rel]); grun(["git", "commit", "-qm", f"untrack {rel}"])
+            clean = ask()
+            put(dirt)
+            return clean, ask()
+        except Exception as exc:
+            return f"{exc.__class__.__name__}: {exc}", None
+        finally:
+            _pins_reader.cache_clear()
+            shutil.rmtree(g, ignore_errors=True)
+    _held_v2 = f"{_k1} (held {_k1v - 1}, displayed {_k1v})"
+    def _says(r, what=_held_v2):
+        return (str(r).startswith(_refused), what in str(r))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R1 a plain rebinding"] or ""), (_v2, _v2pins)),
+                         ((PINS_SCRIPT, _real_src),))
+    check("⛔ backlog #538: a head harness redirected to a lowered pins file is CANNOT RUN on a clean tree (the "
+          "control) AND with the previous harness left uncommitted in the working tree",
+          (_says(_c), _says(_d)), ((True, True), (True, True)))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R3 an imported PINS_FILE"] or ""), (_v2, _v2pins), *_redir),
+                         (("scripts/_redir.py", f"PINS_FILE = '{PINS_FILE}'\n"),))
+    check("⛔ backlog #538: ...and by R3, with the redirecting `_redir.py` reverted in the working tree, the head "
+          "harness's sibling import is HEAD's, never the module the working-tree reader already loaded",
+          (_says(_c), _says(_d)), ((True, True), (True, True)))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R3 an imported PINS_FILE"] or ""), (_v2, _v2pins), *_redir),
+                         (("scripts/_redir.py", f"PINS_FILE = '{PINS_FILE}'\n"),), untrack=("scripts/_redir.py",))
+    check("⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though "
+          "an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
+          (str(_c).startswith("CANNOT RUN: HEAD:"), str(_d).startswith("CANNOT RUN: HEAD:"),
+           "could not be imported" in str(_d)), (True, True, True))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _real_src),),
+                         ((PINS_SCRIPT, _routes["R1 a plain rebinding"] or ""), (_v2, _v2pins)))
+    check("backlog #538: ...while an HONEST head with a LOWERING redirect left uncommitted is read as HEAD holds it: "
+          "nothing held, clean or dirty (the adjacent negative)", (_c, _d), ([], []))
     for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
         r = H([mig], at="abc")
         check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)
@@ -2948,6 +3132,8 @@ def _self_test_body() -> int:
                 return cp(f"{PCP}\n")
             if cmd[:2] == ["git", "show"]:
                 return cp(_syn() if cmd[2].startswith("mb:") else (pins_head or _syn()))
+            if cmd == HEAD_ARCHIVE:                         # backlog #538: HEAD's scripts/
+                return cp(_tar_head())
             if cmd[:2] == ["git", "ls-tree"]:
                 return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:

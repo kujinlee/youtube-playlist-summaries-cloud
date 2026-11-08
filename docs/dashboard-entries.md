@@ -19219,3 +19219,20 @@ failed-step case did `o[1].split` on an `("ok", (tree, sha))` result (mutants 2-
 `outcome()` maps a non-`CannotRun` raise to `("CRASHED", …)`; the first `fresh()` block's crash feeds its cases;
 `str(o[1])` in the step case. No `expect` retargeted: once reached, each named case goes red. regen-pages 106 -> 107
 cases (the guard read through check-plan-code's own `parse_fail_names`), 58 -> 60 mutations.
+
+## 2026-11-08
+The merge check compares two copies of the mutation-test settings: the one the pull request shows, and the one its test
+tool actually uses. It read the first from the committed pull request but the second from whatever files happened to be on
+disk, so an old uncommitted copy could hide a lowered setting and let the pull request read as ready. Both now come from the
+committed pull request, and a test reproduces the old mistake step by step.
+<!--tech-->
+Backlog #538 (filed from PR #526 r5 R5-F1). `scripts/check-merge-ready.py`: `held_pins(run)` runs
+`git archive --format=tar HEAD -- scripts` (`HEAD_ARCHIVE`), unpacks it (`filter="data"`) into a temporary directory and
+imports `PINS_SCRIPT` from there under `_isolated_import` (`sys.path` = the interpreter's library directories; every
+non-library module hidden for the import, restored after), instead of `_pins_reader(PINS_READER)` from the working tree. A
+failed archive, an archive that does not unpack, and a harness that will not import are `PinsUnreadable` (CANNOT RUN). New
+cases: the row's three steps in a real repository (clean-tree control + dirty previous harness; R3 with a reverted
+`_redir.py`; an untracked module HEAD lacks), an honest head under a dirty lowering harness (READY, nothing held), a failing
+archive, a junk archive. check-merge-ready 348 -> 354 cases, 156 -> 162 mutations (each hand-checked in a `stage_tree` copy:
+rc 1, `parse_fail_names` equal to its `expect`). Bound: a head harness naming a pins file outside `scripts/` is CANNOT RUN; an
+absolute path is read as it stands.

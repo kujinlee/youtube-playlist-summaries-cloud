@@ -1932,5 +1932,88 @@
   "expect": [
    "R1-F8: a compare GitHub refused is `advisory: not checked`, never read as `does not contain`"
   ]
+ },
+ {
+  "name": "backlog #538: the held side imports the WORKING-TREE harness again, so a stale harness left uncommitted reads a pin-lowering redirect as READY",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            head = _import_sibling(Path(tmp) / PINS_SCRIPT, \"_cpc_head_for_merge_ready\",\n                                  lambda m: PinsUnreadable(f\"HEAD: {m}\"))\n",
+    "            head = _pins_reader(PINS_READER)\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: a head harness redirected to a lowered pins file is CANNOT RUN on a clean tree (the control) AND with the previous harness left uncommitted in the working tree",
+   "⛔ backlog #538: ...and by R3, with the redirecting `_redir.py` reverted in the working tree, the head harness's sibling import is HEAD's, never the module the working-tree reader already loaded",
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
+   "backlog #538: ...while an HONEST head with a LOWERING redirect left uncommitted is read as HEAD holds it: nothing held, clean or dirty (the adjacent negative)"
+  ]
+ },
+ {
+  "name": "backlog #538: the head harness is imported WITHOUT isolation, so its sibling import reuses the module the working-tree reader loaded",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        with _isolated_import():\n            head = ",
+    "        with contextlib.nullcontext():\n            head = "
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: ...and by R3, with the redirecting `_redir.py` reverted in the working tree, the head harness's sibling import is HEAD's, never the module the working-tree reader already loaded",
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)"
+  ]
+ },
+ {
+  "name": "backlog #538: a failing `git archive` is not refused for itself, so its output is read as an archive",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if got.returncode != 0:\n        raise PinsUnreadable(f\"HEAD: `git archive` exited",
+    "    if False:\n        raise PinsUnreadable(f\"HEAD: `git archive` exited"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: a failing `git archive` of HEAD's scripts/ is CANNOT RUN, named for the archive"
+  ]
+ },
+ {
+  "name": "backlog #538: an archive that does not unpack is passed over, and answered only by a later import failure",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PinsUnreadable(f\"HEAD: `git archive` did not unpack ({_describe(exc)})\") from None\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: ...and so is an archive that does not unpack, named for the archive"
+  ]
+ },
+ {
+  "name": "backlog #538: the isolated import keeps the working tree on sys.path, so a module HEAD lacks is found as an untracked file",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    sys.path[:] = [p for p in saved_path if _in_lib(p, roots)]\n",
+    "    pass\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)"
+  ]
+ },
+ {
+  "name": "backlog #538: the isolated import hides no loaded module, so the head harness's sibling import reuses the working tree's",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for name in [n for n, m in saved_mods.items() if not own(n, m)]:\n",
+    "    for name in []:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: ...and by R3, with the redirecting `_redir.py` reverted in the working tree, the head harness's sibling import is HEAD's, never the module the working-tree reader already loaded",
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)"
+  ]
  }
 ]
