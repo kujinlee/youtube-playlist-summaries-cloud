@@ -18962,6 +18962,26 @@ the manifests at `c3d85c6d`, 4,093/4,093 matched): `scripts/gen-backlog-page.py`
 its own process, so a mutated `layout_body` is what fills the cache. Files backlog 559 and 560.
 
 ## 2026-11-07
+Our own self-tests stop leaving temporary folders behind. The shared temp folder had built up about 117,000 of them,
+which slows any command that has to look through it. Now each test run gets its own temporary folder that is deleted when
+the run ends, even when a test fails. One run of every self-test used to leave 124 folders behind; it now leaves none.
+The folders already there were not deleted, because other tools share that place; the backlog item gives a command a
+person can run to clear the old ones.
+<!--tech-->
+Backlog #512. `scripts/fixture_git.py` `isolated()` (which every dispatched `--self-test` enters, backlog #382) now
+makes a `fixture-tmp-*` directory, points `TMPDIR` and `tempfile.tempdir` at it for the block (the second because Python
+caches the directory), puts the fresh `HOME` inside it, and `rmtree`s it on every exit; both are restored exactly (an
+unset `TMPDIR` and a `None` cache included) in the OUTERMOST `finally`, so a refused block restores too (r1 fold). MEASURED (each of the
+95 `--self-test`s run with `TMPDIR` set to its own empty directory, 6 at a time): `origin/master` `f7ff7eb0` left 124
+entries (check-fixture-git-isolation 64, check-compaction-boundary 23 `cb-*`, check-function-revokes 14,
+check-test-counts 7, gates-for-pr 6 `gates-for-pr-logs-*`, recall-llm 3, check-selection-card 2, five others 1 each,
+check-agent-large-read 1 `large-read-*`); this branch left 0. fixture_git 43 -> 60 cases (a mkdtemp, a child `mktemp`
+and a child `mkdtemp` land inside; a nested block; the caller's directory holds exactly what it held after a normal, a
+raising and a refused block; from `TMPDIR` unset and set with a `None` cache, and from a cache naming another directory,
+each path restores both exactly); mutations 13 -> 23 (anchors re-bound to the new text). `large-read-state-*` (29,617
+entries) has no producer in any commit (`git log --all -G`); the newest is 11-05 03:45.
+
+## 2026-11-07
 The pages you read (goal tree, dashboard, backlog, features, goals) were built from whatever copy of the code the last
 command ran in. That copy was often out of date or on an unmerged branch. At 20:26 every page named an unmerged branch
 with uncommitted changes, and the main copy was 18 merges behind. Now every page is built from the latest main branch,

@@ -88,7 +88,7 @@
     "file": "scripts/fixture_git.py",
     "edits": [
       [
-        "        _replace_environ(inner)\n",
+        "            _replace_environ(inner)\n",
         ""
       ]
     ],
@@ -114,8 +114,8 @@
     "file": "scripts/fixture_git.py",
     "edits": [
       [
-        "        finally:\n            _replace_environ(saved)\n",
-        "        finally:\n            pass\n"
+        "        tempfile.tempdir = saved_tempdir\n        _replace_environ(saved)\n",
+        "        tempfile.tempdir = saved_tempdir\n"
       ]
     ],
     "expect": [
@@ -127,8 +127,8 @@
     "file": "scripts/fixture_git.py",
     "edits": [
       [
-        "        try:\n            yield inner\n        finally:\n            _replace_environ(saved)\n",
-        "        yield inner\n        _replace_environ(saved)\n"
+        "            yield inner\n        finally:\n            shutil.rmtree(scratch, ignore_errors=True)\n    finally:\n        tempfile.tempdir = saved_tempdir\n        _replace_environ(saved)\n",
+        "            yield inner\n            tempfile.tempdir = saved_tempdir\n            _replace_environ(saved)\n        finally:\n            shutil.rmtree(scratch, ignore_errors=True)\n    finally:\n        pass\n"
       ]
     ],
     "expect": [
@@ -140,8 +140,8 @@
     "file": "scripts/fixture_git.py",
     "edits": [
       [
-        "    home = None if \"HOME\" in extra else tempfile.mkdtemp(prefix=\"fixture-home-\")",
-        "    home = None"
+        "        home = None if \"HOME\" in extra else tempfile.mkdtemp(prefix=\"fixture-home-\", dir=scratch)",
+        "        home = None"
       ]
     ],
     "expect": [
@@ -172,6 +172,141 @@
     ],
     "expect": [
       "...and the mutation harness's run marker kept (PLAN_CODE_MUTATION_RUN, backlog #407)"
+    ]
+  },
+  {
+    "name": "the block's TMPDIR is the caller's (backlog #512)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        ", \"TMPDIR\": scratch}",
+        "}"
+      ]
+    ],
+    "expect": [
+      "⭐ inside isolated(), TMPDIR is a fresh directory directly under the caller's"
+    ]
+  },
+  {
+    "name": "this process's tempfile is not redirected, only the children (backlog #512)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "            tempfile.tempdir = scratch\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and this process's tempfile uses it too (Python caches the directory)"
+    ]
+  },
+  {
+    "name": "this process's tempfile is not given back on leaving (backlog #512)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        tempfile.tempdir = saved_tempdir\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and this process's tempfile names the caller's directory again"
+    ]
+  },
+  {
+    "name": "the block's temp directory is never removed (backlog #512)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        shutil.rmtree(scratch, ignore_errors=True)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a suite leaks: after isolated() the caller's temp directory holds exactly what it held"
+    ]
+  },
+  {
+    "name": "the block's temp directory is removed only on a normal exit (backlog #512)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "            yield inner\n",
+        "            yield inner\n            shutil.rmtree(scratch, ignore_errors=True)\n"
+      ],
+      [
+        "        finally:\n            shutil.rmtree(scratch, ignore_errors=True)",
+        "        finally:\n            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a block that RAISES leaves nothing behind either"
+    ]
+  },
+  {
+    "name": "the fresh HOME is made beside the block's temp directory, not inside it (backlog #512)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "tempfile.mkdtemp(prefix=\"fixture-home-\", dir=scratch)",
+        "tempfile.mkdtemp(prefix=\"fixture-home-\")"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF a suite leaks: after isolated() the caller's temp directory holds exactly what it held"
+    ]
+  },
+  {
+    "name": "the restore sits in the inner finally, so a refused block keeps the cache mkdtemp filled (r1 Codex R1-F1)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "            yield inner\n        finally:\n            shutil.rmtree(scratch, ignore_errors=True)\n    finally:\n        tempfile.tempdir = saved_tempdir\n        _replace_environ(saved)",
+        "            try:\n                yield inner\n            finally:\n                tempfile.tempdir = saved_tempdir\n                _replace_environ(saved)\n        finally:\n            shutil.rmtree(scratch, ignore_errors=True)\n    finally:\n        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ from TMPDIR unset and a None cache, a refused block restores both exactly",
+      "⭐ from TMPDIR set and a None cache, a refused block restores both exactly"
+    ]
+  },
+  {
+    "name": "the cache is reset to None on leaving, not to its saved value (r1 Claude R1-F1)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        tempfile.tempdir = saved_tempdir\n        _replace_environ",
+        "        tempfile.tempdir = None\n        _replace_environ"
+      ]
+    ],
+    "expect": [
+      "⭐ a cache naming a directory other than TMPDIR is given back as that directory, not reset"
+    ]
+  },
+  {
+    "name": "only TMPDIR is saved: the cache is restored from the caller's TMPDIR (r1)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "tempfile.tempdir = saved_tempdir\n",
+        "tempfile.tempdir = saved.get(\"TMPDIR\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ from TMPDIR set and a None cache, a normal block restores both exactly"
+    ]
+  },
+  {
+    "name": "os.environ is restored by update, so an unset TMPDIR comes back set to the scratch (r1)",
+    "file": "scripts/fixture_git.py",
+    "edits": [
+      [
+        "        _replace_environ(saved)\n",
+        "        os.environ.update(saved)\n"
+      ]
+    ],
+    "expect": [
+      "⭐ from TMPDIR unset and a None cache, a normal block restores both exactly"
     ]
   }
 ]
