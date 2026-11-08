@@ -443,6 +443,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "uncovered.sources",
     ),
     # backlog #361 (2026-10-28): pinned in the commit that creates it; re-pinned at the PR #425 r2 REDESIGN the r3 SPLIT (`mentioned` deleted) and the r4 DEFER (`audit`, `explicit_names`, `bound_keys` deleted).
+    # backlog #428 (2026-11-08): the push gate's detection, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source: `segments.cmd`, varied by 26 direct call sites.
+    "push-command.py": ("segments.cmd",),
     "compaction-state.py": (
         "main.argv",
         "main.aux_timeout",

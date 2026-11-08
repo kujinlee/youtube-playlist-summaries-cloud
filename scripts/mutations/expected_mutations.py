@@ -2020,4 +2020,10 @@ EXPECTED_MUTATIONS = {
     # of work. Recorded rather than papered over: shipping a manifest whose suite cannot
     # execute would report coverage that does not exist, which is the exact failure this
     # harness was built to prevent.
+    # ⟳ 2026-11-08 (backlog #428): the push gate's DETECTION, moved out of the shell hook so it can be
+    # mutated. EIGHTEEN on arrival: the quote/backslash normalisation (3), the strict and fail-closed
+    # layers (3), the word boundaries of `git` and `push` (5), the segment's stop at a separator and a
+    # line end (2), the three `GITOPTS` branches (3), and the CLI contract the hook reads (2). Each was
+    # hand-checked in a `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case once.
+    "scripts/push-command.py": 18,
 }

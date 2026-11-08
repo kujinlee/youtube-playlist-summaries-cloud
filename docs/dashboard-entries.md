@@ -19219,3 +19219,23 @@ failed-step case did `o[1].split` on an `("ok", (tree, sha))` result (mutants 2-
 `outcome()` maps a non-`CannotRun` raise to `("CRASHED", …)`; the first `fresh()` block's crash feeds its cases;
 `str(o[1])` in the step case. No `expect` retargeted: once reached, each named case goes red. regen-pages 106 -> 107
 cases (the guard read through check-plan-code's own `parse_fail_names`), 58 -> 60 mutations.
+
+## 2026-11-08
+The safety check that stops a push to master no longer misses a push written with quotes around the word "push", or one
+that runs git by its full path. It now reads the command with quotes removed, and when the words "git" and "push" both
+appear in a form it does not recognise, it checks the command anyway. The cost, stated plainly: an ordinary command that
+mentions both words, such as searching the log for "push", is now refused when run from a copy that is on master, and
+a quoted sentence reading "git push origin master" is refused anywhere. On a feature branch the ordinary commands still
+run. Those refusals are the deliberate price of not letting a real push through.
+<!--tech-->
+Backlog #428. Detection moved out of `.claude/hooks/block-default-branch-push.sh` into `scripts/push-command.py`
+(`segments`: mode `none`/`strict`/`loose`, then one `push <args>` line per segment) so the mutation harness can reach it.
+Normalise (delete `"`, `'`, `\`, rule 3's form) → STRICT (`git [GITOPTS] push`) → LOOSE fail-closed (words `git` and
+`push` both present). Segments = every word `push` to the next `;`/`&`/`|`/line end, in both modes; the mode only adds a
+"read by the fail-closed rule" note to the refusal. A detector that cannot run REFUSES (NOT CHECKED). Bound (MEASURED by
+the suite over a fixture clone): `git log --grep push` and `echo "git push later"` are allowed on a feature branch and
+refused on the default branch. Red-before MEASURED: 9 of the new hook cases fail against origin/master's hook
+(`git -c x=y push origin master` was already refused there). push-command 39 cases (new, CI step added, pinned in
+`check-selftest-counts`, `check-fixture-variation` and check-plan-code's shipping-manifest case); hook self-test
+26 -> 33; 18 mutations (new pin), each hand-checked in a `stage_tree` copy. Cost MEASURED on a loaded machine (3 runs of
+20 calls): the hook went from 163-244 to 398-570 ms per call that contains `push`, the Python start-up of the detector.

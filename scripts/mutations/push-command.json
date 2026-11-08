@@ -1,0 +1,209 @@
+[
+ {
+  "name": "normalize stops deleting anything, so a quoted push is read from the raw text again (the backlog #428 defect)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    return cmd.translate({ord('\"'): None, ord(\"'\"): None, ord(\"\\\\\"): None})",
+    "    return cmd"
+   ]
+  ],
+  "expect": "⭐ a DOUBLE-QUOTED push is strict once quotes are deleted"
+ },
+ {
+  "name": "normalize keeps single quotes",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "ord('\"'): None, ord(\"'\"): None, ",
+    "ord('\"'): None, "
+   ]
+  ],
+  "expect": "⭐ a SINGLE-QUOTED push is strict too"
+ },
+ {
+  "name": "normalize keeps backslashes",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    ", ord(\"\\\\\"): None})",
+    "})"
+   ]
+  ],
+  "expect": "a backslash does not hide push"
+ },
+ {
+  "name": "the STRICT layer is deleted, so every push reads as loose",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if STRICT.search(norm):\n        return \"strict\", segs\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ -c x=y before push is strict",
+   "hook: a STRICT refusal does not claim the fail-closed rule"
+  ]
+ },
+ {
+  "name": "the FAIL-CLOSED layer is deleted, so an unrecognised push form is not a push",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if GIT_WORD.search(norm) and segs:\n        return \"loose\", segs\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ a PATH to git is LOOSE — strict wants a separator before git",
+   "hook: /usr/bin/git push origin master is refused"
+  ]
+ },
+ {
+  "name": "the fail-closed layer no longer needs the word git",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if GIT_WORD.search(norm) and segs:",
+    "    if segs:"
+   ]
+  ],
+  "expect": "push without the word git is none"
+ },
+ {
+  "name": "the word git may follow a dot, so `.git` reads as git",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "GIT_WORD = re.compile(r\"(?<![\\w.-])git",
+    "GIT_WORD = re.compile(r\"(?<![\\w-])git"
+   ]
+  ],
+  "expect": "`.git` is not the word git"
+ },
+ {
+  "name": "the word git may follow a letter, so `legit` reads as git",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(?<![\\w.-])git(?![\\w.-])\")",
+    "(?<![.-])git(?![\\w.-])\")"
+   ]
+  ],
+  "expect": "`legit` is not the word git"
+ },
+ {
+  "name": "the word push may be followed by a hyphen, so a branch named push-… is a segment",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "push(?![\\w./-])(",
+    "push(?![\\w./])("
+   ]
+  ],
+  "expect": "a branch NAMED push-… is not a segment"
+ },
+ {
+  "name": "the word push may follow a hyphen, so a branch named …-push is a segment",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "PUSH_SEG = re.compile(r\"(?<![\\w./-])push",
+    "PUSH_SEG = re.compile(r\"(?<![\\w./])push"
+   ]
+  ],
+  "expect": "a hyphenated word ending -push is not a segment"
+ },
+ {
+  "name": "the word push may follow a slash, so a ref ending /push is a segment",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(?<![\\w./-])push(?!",
+    "(?<![\\w.-])push(?!"
+   ]
+  ],
+  "expect": "a path ending /push is not a segment"
+ },
+ {
+  "name": "a segment runs past a command separator",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "([ \\t]+[^;&|\\n]*)?\")",
+    "([ \\t]+[^\\n]*)?\")"
+   ]
+  ],
+  "expect": "a segment stops at a separator"
+ },
+ {
+  "name": "a segment runs past a line end, so the next line's words are refspecs",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "+[^;&|\\n]*)",
+    "+[^;&|]*)"
+   ]
+  ],
+  "expect": "a segment stops at a line end"
+ },
+ {
+  "name": "GITOPTS forgets -c takes a separate value",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(?:-c|-C|--config-env",
+    "(?:-C|--config-env"
+   ]
+  ],
+  "expect": "⭐ -c x=y before push is strict"
+ },
+ {
+  "name": "GITOPTS forgets -C takes a separate value",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "|-C|--config-env",
+    "|--config-env"
+   ]
+  ],
+  "expect": "-C dir before push is strict"
+ },
+ {
+  "name": "GITOPTS forgets a bare -flag",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "           r\"|-\\S+[ \\t]+)*\")",
+    "           r\")*\")"
+   ]
+  ],
+  "expect": "a bare flag before push is strict"
+ },
+ {
+  "name": "the CLI always reports strict, so a loose refusal never says why",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    print(mode)\n",
+    "    print(\"strict\" if mode != \"none\" else mode)\n"
+   ]
+  ],
+  "expect": [
+   "segments prints the mode, then one line per segment",
+   "hook: a LOOSE refusal says it was read by the fail-closed rule"
+  ]
+ },
+ {
+  "name": "a segment loses its leading word, so a bare `git push` is an EMPTY line the hook skips",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    segs = [(\"push \" + (m.group(1) or \"\").strip()).rstrip() for m in PUSH_SEG.finditer(norm)]",
+    "    segs = [(m.group(1) or \"\").strip() for m in PUSH_SEG.finditer(norm)]"
+   ]
+  ],
+  "expect": "⚠ hook: the BOUND — `git log --grep push` is REFUSED on the default branch"
+ }
+]

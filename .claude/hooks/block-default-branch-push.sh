@@ -115,15 +115,34 @@ if [ "${1:-}" = "--self-test" ]; then
   probe "...and a quoted NAME"                            "\"ALLOW_PLAN_LEAK\"=1 git push origin feat/x" deny
   probe "ALLOW_PLAN_LEAK in ANY form is denied — even =0" "ALLOW_PLAN_LEAK=0 git push origin feat/x" deny
   probe "an unbalanced quote no longer denies a normal push" "git push origin \"feat/x" allow
+  # ── backlog #428: detection reads the QUOTE-STRIPPED form, and FAILS CLOSED ──
+  # Rule 1 depends on the CURRENT branch, so these run in a fixture clone whose default branch is
+  # master, checked out on a feature branch — not in whatever checkout runs this self-test.
+  fx="$(mktemp -d)" || { echo "  FAIL  could not make a fixture directory — NOT RUN"; exit 1; }
+  trap 'rm -rf "$fx"' EXIT
+  fxgit() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+              git "$@" >/dev/null 2>&1; }
+  { fxgit init -q -b master "$fx/seed" \
+    && fxgit -C "$fx/seed" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m seed \
+    && fxgit clone -q "$fx/seed" "$fx/work" && fxgit -C "$fx/work" checkout -q -b feat/x; } \
+    || { echo "  FAIL  could not build the fixture clone — NOT RUN"; exit 1; }
+  self="$(cd "$(dirname "$self")" && pwd)/$(basename "$self")"
+  here="$PWD"; cd "$fx/work" || exit 1
+  probe "⭐ git \"push\" origin master is refused (backlog #428)"    "git \"push\" origin master"          deny
+  probe "⭐ git -c x=y push origin master is refused"                "git -c x=y push origin master"       deny
+  probe "⭐ git 'push' origin HEAD:master is refused"                "git 'push' origin HEAD:master"       deny
+  probe "a PATH to git is refused (the fail-closed rule)"            "/usr/bin/git push origin master"     deny
+  probe "a feature-branch push is allowed in the fixture"            "git push origin feat/x"              allow
+  # ⚠ THE BOUND: both controls are ALLOWED here only because the fixture is on a FEATURE branch. On the
+  # default branch the fail-closed rule REFUSES them (a segment with < 2 plain arguments pushes the
+  # current branch) — measured by `scripts/push-command.py --self-test`, which builds both worlds.
+  probe "control: git log --grep push is allowed on a feature branch" "git log --grep push"               allow
+  probe "control: echo \"git push later\" is allowed on a feature branch" "echo \"git push later\""     allow
+  cd "$here" || exit 1
 
   printf '\nself-test: %s/%s passed\n' "$pass" "$((pass+fail))"
   [ "$fail" -eq 0 ] && exit 0 || exit 1
 fi
-
-# A `git` invocation's global options before the subcommand: any `-flag`, and the ones that take a SEPARATE
-# value (`-c k=v`, `-C dir`, `--config-env k=v`, …). ⟳ 2026-10-29 (backlog #393): the pattern was `-flag`
-# only, so `git -c core.hooksPath=/dev/null push` was not seen as a push at all.
-GITOPTS='((-c|-C|--config-env|--git-dir|--work-tree|--namespace|--exec-path)[[:space:]]+[^[:space:]]+[[:space:]]+|-[^[:space:]]+[[:space:]]+)*'
 
 payload="$(cat)"
 cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")"
@@ -141,19 +160,42 @@ deny() {
   exit 0
 }
 
-# Not a push at all (the `if` filter should prevent this, but be defensive).
-printf '%s' "$cmd" | grep -Eq "(^|[;&|[:space:]])git[[:space:]]+${GITOPTS}push([[:space:]]|\$)" || allow
+# ── IS THIS A PUSH? — `scripts/push-command.py`, FAIL CLOSED (backlog #428) ─────────────────────────
+# ⟳ 2026-11-08: this was a `grep` over the RAW command, so `git "push" origin master` was not a push and
+# every rule below was skipped. The detector deletes quotes and backslashes first (rule 3's form) and,
+# when the words `git` and `push` both appear but no `git … push` invocation is recognised, reads the
+# command as a push ANYWAY (mode `loose`). Its output: the mode, then one `push <args>` line per push
+# word, up to the next `;`, `&`, `|` or line end. The rules below read ONLY those lines.
+# ⚠ THE BOUND: a harmless command naming both words can be refused — `git log --grep push` on the
+# default branch, or `git push origin master` inside a quoted string on any branch. The detector's
+# docstring states it, and its `--self-test` measures it over a fixture repository.
+# ⛔ The detector not running is a REFUSAL, never a pass: a push gate that cannot tell is not a gate.
+detector="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/scripts/push-command.py"
+detected="$(printf '%s' "$cmd" | python3 "$detector" segments 2>/dev/null)"
+detect_rc=$?
+mode="$(printf '%s\n' "$detected" | head -1)"
+case "$detect_rc:$mode" in
+  0:none) allow ;;
+  0:strict) loose_note="" ;;
+  0:loose) loose_note="
+
+(Read as a push by the fail-closed rule, backlog #428: the words \`git\` and \`push\` both appear, but no
+\`git … push\` invocation was recognised. If this command does not push, reword it or put the text in a file.)" ;;
+  *) deny "Blocked: the push gate could not tell whether this command pushes — NOT CHECKED.
+\`scripts/push-command.py segments\` (beside this hook's checkout) exited ${detect_rc} with mode '${mode}'.
+A gate that cannot run refuses; it never passes. Fix the detector, then re-run." ;;
+esac
+# One `push <args>` line per segment; rule 1 strips the leading word.
+push_segs="$(printf '%s\n' "$detected" | tail -n +2)"
 
 # ── RULE 2: never-routine push forms, checked BEFORE the branch rule ────────────────
 # Ordering matters: `git push --force origin master` is dangerous for BOTH reasons, and
 # the force message is the more useful one to show — it names the irreversible part.
 if ! printf '%s' "$cmd" | grep -q 'ALLOW_DANGEROUS_PUSH=1'; then
-  # ⚠ ISOLATE THE PUSH INVOCATION FIRST, exactly as the branch rule does below and for
-  # the same measured reason: a commit message or a quoted string elsewhere in a
-  # multi-line command must not be read as a push flag. `grep -o` is per-line and
-  # `[^;&|]*` stops at a command separator.
-  push_only="$(printf '%s' "$cmd" \
-    | grep -oE "git[[:space:]]+${GITOPTS}push([[:space:]]+[^;&|]*)?" || true)"
+  # ⚠ ONLY THE PUSH SEGMENTS, exactly as the branch rule does below and for the same
+  # measured reason: a commit message or a quoted string elsewhere in a multi-line command
+  # must not be read as a push flag. Each segment stops at a line end or a command separator.
+  push_only="$push_segs"
 
   # ⚠ `--force-with-lease` CONTAINS `--force`, so a substring test would deny the safe
   # form while claiming to allow it. Match the flag as a whole word: end-of-string, or
@@ -171,7 +213,7 @@ Instead:
 
 That form is allowed by this hook and needs no flag.
 
-Deliberate exception: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
+Deliberate exception: re-run prefixed with ALLOW_DANGEROUS_PUSH=1${loose_note}"
   fi
 
   # ── RULE 3 (backlog #393): the plan-leak gate's two off-switches ──────────────────────────────────
@@ -194,13 +236,13 @@ Deliberate exception: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
     deny "Blocked: this push command mentions \`core.hooksPath\`, which can switch off git's pre-push hooks —
 including the plan-leak gate (.githooks/pre-push, backlog #393), which refuses pushes that quote a private plan.
 
-Push without it. If the owner means it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
+Push without it. If the owner means it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1${loose_note}"
   fi
   if printf '%s' "$norm" | grep -q 'allow_plan_leak'; then
     deny "Blocked: this push command mentions ALLOW_PLAN_LEAK, the plan-leak gate's escape (backlog #393).
 Skipping that gate is the owner's call, not an agent's: reword the commits it named instead.
 
-If the owner has judged the hit a coincidence: re-run prefixed with ALLOW_DANGEROUS_PUSH=1 as well"
+If the owner has judged the hit a coincidence: re-run prefixed with ALLOW_DANGEROUS_PUSH=1 as well${loose_note}"
   fi
 
   if printf '%s' "$push_only" | grep -qE '(^|[[:space:]])--no-verify([[:space:]=]|$)'; then
@@ -210,7 +252,7 @@ That includes any local pre-push hook — so it is also the flag that would step
 deliberate, temporary block someone put in place.
 
 If a check is wrong, fix the check or say why in the PR. If you genuinely mean to
-skip it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1"
+skip it: re-run prefixed with ALLOW_DANGEROUS_PUSH=1${loose_note}"
   fi
 fi
 
@@ -241,16 +283,15 @@ current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 # into the refspec list. A commit message containing the word "master" was then
 # read as a refspec, and the hook blocked a legitimate feature-branch push.
 #
-# `grep -o` is per-line and `[^;&|]*` stops at a command separator, so only the
-# real push invocation and its own arguments are ever inspected.
-push_cmds="$(printf '%s' "$cmd" \
-  | grep -oE "git[[:space:]]+${GITOPTS}push([[:space:]]+[^;&|]*)?" || true)"
+# The detector's segments stop at a line end and at a command separator, so only
+# each push word and its own arguments are ever inspected.
+push_cmds="$push_segs"
 [ -n "$push_cmds" ] || allow
 
 targets_default=0
 while IFS= read -r one; do
   [ -n "$one" ] || continue
-  args="$(printf '%s' "$one" | sed -E "s/^git[[:space:]]+${GITOPTS}push[[:space:]]*//")"
+  args="$(printf '%s' "$one" | sed -E 's/^push[[:space:]]*//')"
   toks="$(printf '%s' "$args" | tr ' \t' '\n\n' | grep -v '^-' | grep -v '^$' || true)"
   n="$(printf '%s\n' "$toks" | grep -c . || true)"
   if [ "$n" -ge 2 ]; then
@@ -284,4 +325,4 @@ Instead:
 
 Merge only on scripts/check-merge-ready.py READY; a HOLD goes to the owner.
 
-Deliberate exception: re-run prefixed with ALLOW_DEFAULT_BRANCH_PUSH=1"
+Deliberate exception: re-run prefixed with ALLOW_DEFAULT_BRANCH_PUSH=1${loose_note}"
