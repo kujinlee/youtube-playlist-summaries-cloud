@@ -19002,3 +19002,19 @@ mutations 327 → 333. MEASURED (no `__pycache__`, interleaved, 3 runs, load 21 
 round-1 head 2.55 / 1.95 / 1.79 s, this fold 2.27 / 2.25 / 1.81 s; keying on every `scripts/*.py` instead: 5.35 / 4.51 /
 5.60 s. With a warm `__pycache__` this fold is slower than master locally (2.28-3.65 s vs 2.39-2.98 s), the price of
 never reading bytecode.
+
+## 2026-11-08
+The goal-tree check's helper cache had two rare ways to go wrong, both added by this morning's fix: a helper that
+loads another helper while it starts up, or two helpers loading at the same moment in two threads, could leave a
+changed file out of what the cache checks, and the second case also left a Python setting changed afterwards. Now only
+one helper loads at a time, each load keeps its own list of files it read, and the setting is put back once, by the
+outermost load. No current caller did either; the cases build both on purpose. The speed-up is kept.
+<!--tech-->
+Backlog #406 and backlog #231, PR #537 round 2's fold (Codex R2-F1, R2-F2, both fix-induced). `scripts/goal-tree.py`:
+`_SIBLING_LOCK` (a `threading.RLock`) is held for the whole of `_sibling`; `_SIBLING_READS` is replaced by
+`_SIBLING_STACK`, one read-list per import in progress, and `_note_open` appends each opened path to every list on it;
+`_sibling_import` saves and restores `dont_write_bytecode` / `pycache_prefix` only at stack depth 0 → 1 → 0, in
+`finally`. Cases 434 → 437 (a re-entrant import whose outer read changes later; an inner import that reads a file and
+FAILS, caught by the outer; two threads overlapped by `threading.Event`s). Mutations 333 → 337; one anchor re-bound to
+the new indentation. MEASURED (no `__pycache__`, `PYTHONDONTWRITEBYTECODE=1`, interleaved, load 5.8 → 6.7): round-1
+fold 3.11 / 1.81 / 2.07 s, this fold 2.49 / 2.06 / 2.43 s; about 0.2 s of it is the thread case's bounded wait.

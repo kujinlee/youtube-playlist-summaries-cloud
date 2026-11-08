@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 434 cases
+    python3 scripts/goal-tree.py --self-test                 # 437 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -98,8 +98,10 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
+import threading
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
@@ -195,26 +197,37 @@ def _sibling(name: str):
     from `sys.modules` either way (as the uncached import did). A path opened RELATIVE is re-read relative to the
     working directory of the lookup, and a dependency rewritten DURING the import can be keyed on its new bytes. A
     shared module is safe because nothing here writes a sibling's attributes; a caller that patches one must call
-    `_SIBLING_MEMO.clear()` after."""
+    `_SIBLING_MEMO.clear()` after.
+
+    ⛔ OVERLAP CANNOT CORRUPT IT (r2 Codex F1, F2): one re-entrant lock is held for the whole lookup, import and
+    record, so two threads' imports SERIALISE and a sibling that calls `_sibling` during its own import re-enters.
+    Each import in progress has its OWN read-list on `_SIBLING_STACK`, and a read is noted in every list on it,
+    since an outer import depends on what its inner imports read — and an inner import that FAILS builds no key of
+    its own, so the outer list is then the only record of it. A thread that is not importing but opens a file
+    meanwhile is noted too: an extra key entry, which can only cause a miss."""
     path = str(SCRIPTS / f"{name}.py")
-    hit = _SIBLING_MEMO.get(path)
-    if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):
-        return hit[1]
-    reads, mod = _sibling_import(name, path)
-    _SIBLING_MEMO[path] = (reads, mod)
-    return mod
+    with _SIBLING_LOCK:
+        hit = _SIBLING_MEMO.get(path)
+        if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):
+            return hit[1]
+        reads, mod = _sibling_import(name, path)
+        _SIBLING_MEMO[path] = (reads, mod)
+        return mod
 
 
 # backlog #406: path -> (((file, its bytes as the import read them), ...), module). The sibling itself is first.
 _SIBLING_MEMO: dict = {}
-_SIBLING_READS: "list | None" = None     # set only while a sibling is being imported
+_SIBLING_LOCK = threading.RLock()        # r2 Codex F2: held for a whole lookup; re-entrant for r2 Codex F1
+_SIBLING_STACK: list = []                # one read-list per import in progress, outermost first; empty when idle
 
 
 def _note_open(event: str, args: tuple) -> None:
-    """Audit hook: while a sibling imports, note each path it opens. Kept to a test and an append — it must not
-    raise, since an audit hook's exception aborts the operation that raised the event."""
-    if _SIBLING_READS is not None and event == "open" and args and isinstance(args[0], (str, bytes, os.PathLike)):
-        _SIBLING_READS.append(args[0])
+    """Audit hook: while a sibling imports, note each path it opens in EVERY import in progress (r2 Codex F1). Kept
+    to a test and appends — it must not raise, since an audit hook's exception aborts the operation that raised
+    the event."""
+    if _SIBLING_STACK and event == "open" and args and isinstance(args[0], (str, bytes, os.PathLike)):
+        for opened in _SIBLING_STACK:
+            opened.append(args[0])
 
 
 sys.addaudithook(_note_open)
@@ -235,21 +248,26 @@ def _sibling_import(name: str, path: str):
     ⛔ NO BYTECODE (r1 Claude F2): `.pyc` freshness is the source's mtime in SECONDS plus its size, so a same-size
     rewrite in the same second (or with the mtime put back) is served the old code. While the sibling imports,
     `pycache_prefix` is an empty directory and writing is off, so the sibling and every module it loads by path
-    are compiled from source."""
-    global _SIBLING_READS
+    are compiled from source. Only the OUTERMOST import (stack depth 0 -> 1 -> 0) saves and restores the two
+    settings, so an inner one never saves the outer's temporary values as if they were the originals (r2 Codex F2).
+    Called with `_SIBLING_LOCK` held."""
     reads, seen = [(path, pathlib.Path(path).read_bytes())], {path}
     spec = importlib.util.spec_from_file_location("_" + name.replace("-", "_"), path)
     mod = importlib.util.module_from_spec(spec)
     opened: list = []
-    saved = sys.dont_write_bytecode, sys.pycache_prefix
-    with tempfile.TemporaryDirectory() as nowhere:
+    outermost = not _SIBLING_STACK
+    if outermost:
+        saved = sys.dont_write_bytecode, sys.pycache_prefix
+        nowhere = tempfile.mkdtemp()
         sys.dont_write_bytecode, sys.pycache_prefix = True, nowhere
-        _SIBLING_READS = opened
-        try:
-            spec.loader.exec_module(mod)
-        finally:
-            _SIBLING_READS = None
+    _SIBLING_STACK.append(opened)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        _SIBLING_STACK.pop()
+        if outermost:
             sys.dont_write_bytecode, sys.pycache_prefix = saved
+            shutil.rmtree(nowhere, ignore_errors=True)
     for p in map(os.fsdecode, opened):
         if p not in seen:
             seen.add(p)
@@ -2462,6 +2480,76 @@ def _self_test_body() -> int:
          (1, 2))
     case("backlog #406: ...and SCRIPTS is restored, so the real siblings are read again",
          _sibling("gen-work-lines").__name__, "_gen_work_lines")
+    # ── r2 Codex F1, F2: a re-entrant import, and two overlapping in two threads ───────────────────
+    # The siblings reach `_sibling` and the events through a module served from `sys.modules` (no file opened).
+    import types
+    _probe = types.SimpleNamespace(sibling=_sibling, ev={k: threading.Event() for k in ("t1_in", "t2_in", "t1_done")},
+                                   saw=[], errors=[])
+    _orig_bytecode = (sys.dont_write_bytecode, sys.pycache_prefix)
+    with tempfile.TemporaryDirectory() as _rtd:
+        _rd = pathlib.Path(_rtd)
+        _data = "int(pathlib.Path(__file__).with_name('{}').read_text())"
+        # F1: A imports B, THEN reads its own data file.
+        (_rd / "sib-ra.py").write_text("import _gt_probe as g, pathlib\nB = g.sibling('sib-rb').V\n"
+                                       f"V = (B, {_data.format('ra.txt')})\n", encoding="utf-8")
+        (_rd / "sib-rb.py").write_text("V = 1\n", encoding="utf-8")
+        (_rd / "ra.txt").write_text("1", encoding="utf-8")
+        # The inner import's read: A imports B, only B reads the data file, and B FAILS on it, which A catches. A
+        # failed import builds no key, so the outer list is the only record of B's read (a successful B's key is
+        # built by reading its files again with A on the stack, which A would record either way).
+        (_rd / "sib-oa.py").write_text("import _gt_probe as g\ntry:\n    V = g.sibling('sib-ob').V\n"
+                                       "except ValueError:\n    V = 'inner failed'\n", encoding="utf-8")
+        (_rd / "sib-ob.py").write_text(f"import pathlib\nV = {_data.format('ob.txt')}\n"
+                                       "if V == 1:\n    raise ValueError('not yet')\n", encoding="utf-8")
+        (_rd / "ob.txt").write_text("1", encoding="utf-8")
+        # F2: T1 enters and waits (bounded) for T2 to enter; T2 waits for T1 to finish, then reads its data file.
+        # Without the lock T2 enters at once and T1 finishes inside T2's import — Codex's interleaving, by events.
+        # With it T2 cannot enter, so T1's bounded wait is what times out: `saw` records whether T2 got in.
+        (_rd / "sib-t1.py").write_text("import _gt_probe as g\ng.ev['t1_in'].set()\n"
+                                       "g.saw.append(g.ev['t2_in'].wait(0.2))\nV = 1\n", encoding="utf-8")
+        (_rd / "sib-t2.py").write_text("import _gt_probe as g, pathlib\ng.ev['t2_in'].set()\n"
+                                       f"g.ev['t1_done'].wait(10)\nV = {_data.format('t2.txt')}\n",
+                                       encoding="utf-8")
+        (_rd / "t2.txt").write_text("1", encoding="utf-8")
+        sys.modules["_gt_probe"] = _probe
+        globals()["SCRIPTS"] = _rd
+        try:
+            _ra1 = _sibling("sib-ra").V
+            (_rd / "ra.txt").write_text("2", encoding="utf-8")
+            _ra2 = _sibling("sib-ra").V
+            _oa1 = _sibling("sib-oa").V
+            (_rd / "ob.txt").write_text("2", encoding="utf-8")
+            _oa2 = _sibling("sib-oa").V
+
+            def _run(name, done=None):
+                try:
+                    _sibling(name)
+                except BaseException as e:      # a thread's exception is otherwise only printed
+                    _probe.errors.append(repr(e))
+                finally:
+                    if done is not None:
+                        done.set()
+            _t1 = threading.Thread(target=_run, args=("sib-t1", _probe.ev["t1_done"]))
+            _t2 = threading.Thread(target=_run, args=("sib-t2",))
+            _t1.start()
+            _t1_entered = _probe.ev["t1_in"].wait(10)
+            _t2.start()
+            _t1.join(20)
+            _t2.join(20)
+            _after_threads = (sys.dont_write_bytecode, sys.pycache_prefix)
+            (_rd / "t2.txt").write_text("2", encoding="utf-8")
+            _t2v = _sibling("sib-t2").V
+        finally:
+            globals()["SCRIPTS"] = _real_scripts
+            sys.modules.pop("_gt_probe", None)
+    case("backlog #406 r2 Codex F1: a RE-ENTRANT import (A calls _sibling(B) during its own) keeps A's LATER reads "
+         "in A's key, so a change to them is a miss", (_ra1, _ra2), ((1, 1), (1, 2)))
+    case("backlog #406 r2 Codex F1: a file only the INNER import read is in the OUTER key too — even when the inner "
+         "import FAILED and the outer caught it — so its change is a miss", (_oa1, _oa2), ("inner failed", 2))
+    case("backlog #406 r2 Codex F2: two threads' imports SERIALISE — the second never enters while the first runs, "
+         "its later read stays in its key, and the bytecode settings are the originals after both",
+         (_t1_entered, _probe.saw, _probe.errors, _after_threads == _orig_bytecode, _t2v),
+         (True, [False], [], True, 2))
 
     goals = parse_threads(good)
 

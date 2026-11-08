@@ -353,7 +353,7 @@ EXPECTED_MUTATIONS = {
     # never consulted; a hit that checks nothing). Six new: the hit skips the sibling's own bytes, never keys the files its
     # import loaded, the audit hook not installed, the hook blind to `open`, the real pycache_prefix kept (a stale
     # .pyc), and the memo keyed on the name instead of the path.
-    "scripts/goal-tree.py": 333,
+    "scripts/goal-tree.py": 337,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

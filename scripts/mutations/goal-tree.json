@@ -4233,8 +4233,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):\n        return hit[1]",
-        "    if False and hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):\n        return hit[1]"
+        "        if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):\n            return hit[1]",
+        "        if False and hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):\n            return hit[1]"
       ]
     ],
     "expect": [
@@ -4335,6 +4335,58 @@
     ],
     "expect": [
       "backlog #406: one name in two directories is two imports — the memo is keyed on the PATH"
+    ]
+  },
+  {
+    "name": "backlog #406 r2 Codex F1: an inner import's exit CLEARS every read-list, so the outer import's later reads are not in its key",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        _SIBLING_STACK.pop()\n",
+        "        del _SIBLING_STACK[:]\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406 r2 Codex F1: a RE-ENTRANT import (A calls _sibling(B) during its own) keeps A's LATER reads in A's key, so a change to them is a miss"
+    ]
+  },
+  {
+    "name": "backlog #406 r2 Codex F1: a read is noted only in the INNERMOST import, so the outer key misses what its inner import read",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "for opened in _SIBLING_STACK:",
+        "for opened in _SIBLING_STACK[-1:]:"
+      ]
+    ],
+    "expect": [
+      "backlog #406 r2 Codex F1: a file only the INNER import read is in the OUTER key too — even when the inner import FAILED and the outer caught it — so its change is a miss"
+    ]
+  },
+  {
+    "name": "backlog #406 r2 Codex F2: no lock, so two threads' imports overlap and one pops the other's read-list",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    with _SIBLING_LOCK:\n",
+        "    if True:\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406 r2 Codex F2: two threads' imports SERIALISE — the second never enters while the first runs, its later read stays in its key, and the bytecode settings are the originals after both"
+    ]
+  },
+  {
+    "name": "backlog #406 r2 Codex F2: the outermost import never restores the bytecode settings, so a deleted temporary pycache_prefix is left set",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            sys.dont_write_bytecode, sys.pycache_prefix = saved\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406 r2 Codex F2: two threads' imports SERIALISE — the second never enters while the first runs, its later read stays in its key, and the bytecode settings are the originals after both"
     ]
   }
 ]
