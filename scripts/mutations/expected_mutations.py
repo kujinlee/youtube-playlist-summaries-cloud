@@ -1302,7 +1302,9 @@ EXPECTED_MUTATIONS = {
     # 60 s rebuild bound, and the timeout reply naming the bound it actually waited.
     # ⟳ same day, review round 2's fold: 64 -> 65 — the rebuild gets only what is LEFT of the click's bound (X2).
     # ⟳ backlog #408: 68 -> 69 — a Refresh press routes through regen-pages.py `--page <key>`, each key as itself.
-    "scripts/explainer-serve.py": 69,
+    # ⟳ its review round 1 (Codex X3): 69 -> 72 — the runner in a process group of its own, SIGTERM before
+    # SIGKILL on a Refresh timeout, and the press wired through `run_in_group`.
+    "scripts/explainer-serve.py": 72,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1803,7 +1805,14 @@ EXPECTED_MUTATIONS = {
     # three own-worktree guards (the one between `checkout --force` and the main checkout's edits), the
     # read-back, the lock, the GIT_* scrub, the generator's script path and cwd, the hook/command exit
     # split on CANNOT RUN, and `--page`'s output, exit code, key check and provenance line.
-    "scripts/regen-pages.py": 31,
+    # ⟳ review round 1's fold: 31 -> 45. The reuse design is GONE (its `checkout --force` + `clean -fd` destroyed
+    # work in four reproduced ways), so its three own-worktree guards and the in-place move were retargeted
+    # onto what replaced them — the read-back's git-dir check (main's own, another repository's) and the add's
+    # refusal of an existing path (no `--force`) — and 14 are new: the removal (entry, directory, the call), the
+    # literal-path match that a swapped-in symlink cannot redirect, the temp root, the process group, its
+    # ending, the inherited lock, the stop signal and the live registry, the lock-file hint, `--after-edit`,
+    # and the suite's refusal of this repository (safe to mutate now: its cases hand `fresh` a decoy git).
+    "scripts/regen-pages.py": 45,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than

@@ -86,7 +86,7 @@ answer to "did that work", and there is nothing to check by hand afterwards.
 > the reader simply has no way to ask anything back.
 
 A `PostToolUse` hook (`.claude/hooks/regen-dashboard.sh`) runs this for you whenever the store is
-written, and prints `↻ dashboard regenerated`. Run the command yourself when the page needs
+written, and prints `↻ dashboard: pages show origin/master <sha>; this edit appears after it merges`. Run the command yourself when the page needs
 rebuilding for any other reason — a new commit, a PR opening or closing — since those change the
 page without touching the store.
 

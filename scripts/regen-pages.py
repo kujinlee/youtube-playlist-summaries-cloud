@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 66 cases
+    python3 scripts/regen-pages.py --self-test             # 85 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -40,16 +40,36 @@ louder than a short sha. The main checkout also holds UNCOMMITTED owner and agen
 NEVER pull, reset or check out there. Instead, under a lock (`LOCK_REL`):
   1. `git fetch origin master` in the main checkout — refs and objects only; its HEAD, index and files
      are never touched;
-  2. `origin/master` is materialised in a GENERATOR-OWNED, git-ignored linked worktree, `TREE_REL` under
-     the main checkout: created with `git worktree add --detach` the first time, moved with
-     `git checkout --detach --force` + `git clean -fd` after that. ⛔ Those two mutate ONLY after the path
-     is proven to be its OWN linked worktree (a `.git` FILE, its own top level, this repository's common
-     dir) — run in a plain directory, git would walk up to the main checkout and discard its edits;
-  3. the tree is READ BACK (its HEAD is that sha, its status clean), and only then does each generator
-     run as `<tree>/scripts/<generator>.py` with `cwd=<tree>`, so the generator's CODE is master's too.
+  2. `origin/master` is materialised in a NEW tree, in a private directory this run creates with
+     `tempfile.mkdtemp` (mode 0700, `PRIVATE_PREFIX`): `git worktree add --detach <dir>/tree <sha>`, with no
+     `--force`, so git refuses any path that already exists. The generators need a real `.git`: they run
+     `git log` / `git rev-parse HEAD` in their own root, and the goal tree finds the main checkout's live
+     state through `--git-common-dir`, so a `git archive` copy would not do;
+  3. the tree is READ BACK (its top level is itself, its git dir an entry under `<common>/worktrees/`, its
+     HEAD that sha, its status clean), and only then does each generator run as
+     `<tree>/scripts/<generator>.py` with `cwd=<tree>`, so the generator's CODE is master's too;
+  4. afterwards the tree is REMOVED: this run's admin entry (the one whose `gitdir` names this run's own
+     tree path) and its private directory, by `shutil.rmtree`, which follows no symlink.
+⛔ NO VERB THAT REWRITES A CHECKOUT IS EVER RUN — no `checkout`, `clean`, `reset`, `worktree prune` or
+`worktree remove`. Review round 1 reproduced data loss in the reuse design this replaces: a forged `.git`,
+a real worktree at the fixed path, or a symlink swapped in after the ownership proof made its
+`checkout --force` + `clean -fd` rewrite the main checkout's or another worktree's index, HEAD, edits and
+untracked files. A tree that is created fresh and only ever deleted has nothing to prove ownership OF.
+⚠ A CRASHED RUN (SIGKILL, power loss) leaves its private directory and its admin entry behind. They are
+left, not swept: the directory is in the temp root, and `git worktree list` shows the entry as prunable.
+Nothing here prunes, because `prune` is repository-wide and deletes the admin data of ANY worktree whose
+directory is missing at that moment (review r1 C4). MEASURED 2026-11-07, a scratch clone of this
+repository, 3 runs: fetch + add + read-back 1.6-2.3 s, removal 0.8-1.3 s, total 2.4-3.5 s, against
+0.65-0.83 s warm (4.45 s cold) for the reuse design.
+⛔ GENERATORS RUN IN PROCESS GROUPS OF THEIR OWN (review r1 X3). A timeout, a normal exit that left a child
+running, or a stop signal to the runner (`_on_signal`) ends the WHOLE group before the tree is removed;
+and the lock's descriptor is inherited by every generator, so a runner SIGKILLed mid-build cannot release
+the lock while its generator still runs.
 Output still goes to `~/explainers/` (each generator's own default). Live state is NOT in git and is not
 read from the tree: the in-flight ledger, the goal-tree log and the plans are found through
-`session-state.main_checkout`, which names the main checkout from the tree as from anywhere else. Every
+`session-state.main_checkout`, which names the main checkout from the tree as from anywhere else.
+THE EDIT HOOKS (`--page <key> --after-edit`) therefore show master too, never the edit that fired them, and
+say so: `pages show origin/master <sha>; this edit appears after it merges` (review r1 C2). Every
 page's chrome bar already carries `page_chrome.provenance` (`<when> · <sha>`), which now names master's
 commit; this runner's report and `--page` add `built from origin/master <sha>`.
 ⛔ CANNOT RUN IS LOUD AND NEVER FALLS BACK: when the fetch, the worktree, the read-back or the lock fails,
@@ -69,8 +89,12 @@ import json
 import os
 import pathlib
 import re
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
@@ -78,9 +102,12 @@ ROOT = SCRIPTS.parent
 TIMEOUT = 120          # seconds, per generator; the slowest measured 2026-10-28 was gen-backlog-page, 17s
 THREADS_REL = "docs/goal-threads.md"
 REMOTE, BRANCH = "origin", "master"
-TREE_REL = ".claude/regen-tree"      # generator-owned, git-ignored, under the MAIN checkout (backlog #408)
-LOCK_REL = ".claude/regen-tree.lock"
+PRIVATE_PREFIX = "regen-pages-"     # each run's private temp directory (backlog #408); its tree is `<dir>/tree`
+LOCK_REL = ".claude/regen-pages.lock"   # git-ignored, in the MAIN checkout
 GIT_TIMEOUT = 120      # seconds, per git call; a fetch on a slow link is the long one
+GIT_GRACE = 5          # seconds a timed-out git call gets after SIGTERM to remove its own lock files
+GROUP_GRACE = 5        # seconds a generator's process group gets after SIGTERM, before SIGKILL
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
 LOCK_WAIT = 150        # seconds a second rebuild waits for the first before saying CANNOT RUN
 SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 _IN_SUITE = False      # set by `_self_test`; see `fresh`
@@ -96,25 +123,53 @@ REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GI
 
 def _env() -> dict[str, str]:
     """The environment for git and the generators, minus every inherited variable that changes WHICH
-    repository or tree git acts on: a hook context can set `GIT_DIR`, which `cwd` does NOT override, and a
-    `checkout --force` would then land on it. Config variables (the suite's isolation) pass through."""
+    repository or tree git acts on: a hook context can set `GIT_DIR`, which `cwd` does NOT override, so the
+    `worktree add` and the generators' own git calls would act on it. Config variables pass through."""
     return {k: v for k, v in os.environ.items() if k not in REPO_VARS}
 
 
 def _git(args: list[str], cwd: pathlib.Path, timeout: float = GIT_TIMEOUT) -> tuple[int, str]:
-    """One git call. (rc, stdout) on success, (rc, the error text) on failure; 124 on a timeout."""
+    """One git call. (rc, stdout) on success, (rc, the error text) on failure; 124 on a timeout.
+    ⚠ A timeout sends SIGTERM first and SIGKILL only GIT_GRACE s later, so git can remove its own `*.lock`
+    files on the way out (review r1 C5): a SIGKILLed git leaves them, and every later run fails on them."""
     try:
-        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL, env=_env(), errors="replace")
-    except subprocess.TimeoutExpired:
-        return 124, f"timed out after {timeout:.0f}s"
+        p = subprocess.Popen(["git", *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             stdin=subprocess.DEVNULL, text=True, env=_env(), errors="replace")
     except OSError as exc:
         return 127, f"{type(exc).__name__}: {exc}"
-    return r.returncode, ((r.stdout if r.returncode == 0 else (r.stderr or r.stdout)) or "").strip()
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.terminate()
+        try:
+            p.communicate(timeout=GIT_GRACE)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.communicate()
+        return 124, f"timed out after {timeout:.0f}s"
+    except BaseException:
+        p.kill()
+        p.communicate()
+        raise
+    rc = p.returncode
+    return rc, ((out if rc == 0 else (err or out)) or "").strip()
 
 
 def _brief(text: str) -> str:
     return " ".join(str(text).split())[:160]
+
+
+LOCK_FILE = re.compile(r"Unable to create '([^']+\.lock)': File exists")
+
+
+def lock_hint(text: str) -> str:
+    """PURE. When git refused because a `*.lock` file exists, the FULL path and the command that clears it —
+    never truncated, because the path is the only actionable part (review r1 C5). '' otherwise."""
+    m = LOCK_FILE.search(str(text or ""))
+    if not m:
+        return ""
+    return (f". A git process that was killed left the lock file {m.group(1)} behind; if no git command is "
+            f"running in that repository, remove it: rm '{m.group(1)}'")
 
 
 def main_of(repo: pathlib.Path, git=_git) -> tuple[pathlib.Path, pathlib.Path]:
@@ -127,60 +182,103 @@ def main_of(repo: pathlib.Path, git=_git) -> tuple[pathlib.Path, pathlib.Path]:
     return pathlib.Path(common).parent, pathlib.Path(common)
 
 
-def _own_worktree(tree: pathlib.Path, common: pathlib.Path, git) -> str | None:
-    """None when `tree` is provably its OWN linked worktree of this repository, else why not. ⛔ This is
-    the guard between `checkout --force` / `clean` and the main checkout's uncommitted edits: in a
-    directory with no `.git`, git walks UP and acts on the main checkout instead."""
-    if tree.is_symlink() or not (tree / ".git").is_file():
-        return "it is not a linked worktree (no .git FILE in it)"
-    rc, top = git(["rev-parse", "--show-toplevel"], tree)
-    if rc != 0 or os.path.realpath(top) != os.path.realpath(tree):
-        return f"git reads its top level as {_brief(top)!r} (exit {rc}), not the tree itself"
-    rc, tc = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], tree)
-    if rc != 0 or os.path.realpath(tc) != os.path.realpath(common):
-        return f"it belongs to another repository ({_brief(tc)!r}, exit {rc})"
-    return None
-
-
-def materialise(main: pathlib.Path, common: pathlib.Path, git=_git) -> tuple[pathlib.Path, str]:
-    """Fetch, and put `origin/master` in the generator-owned tree. (tree, sha), or CannotRun naming the
-    step. ⛔ The only commands run IN the main checkout are `fetch`, `rev-parse` and `worktree`."""
-    tree = main / TREE_REL
+def fetch_master(main: pathlib.Path, git=_git) -> str:
+    """`git fetch origin master` in the main checkout — refs and objects only — and the sha it resolves to."""
     rc, out = git(["fetch", "--quiet", REMOTE, BRANCH], main)
     if rc != 0:
-        raise CannotRun(f"`git fetch {REMOTE} {BRANCH}` failed (exit {rc}: {_brief(out)})")
+        raise CannotRun(f"`git fetch {REMOTE} {BRANCH}` failed (exit {rc}: {_brief(out)}){lock_hint(out)}")
     rc, sha = git(["rev-parse", "--verify", "--quiet", f"refs/remotes/{REMOTE}/{BRANCH}^{{commit}}"], main)
     if rc != 0 or not SHA.fullmatch(sha):
         raise CannotRun(f"{REMOTE}/{BRANCH} does not resolve to a commit after the fetch "
                         f"(exit {rc}: {_brief(sha)!r})")
-    if os.path.lexists(tree):
-        why = _own_worktree(tree, common, git)
-        if why:
-            raise CannotRun(f"{tree} exists but {why} — refusing to touch it; remove it by hand")
-        steps = [(["checkout", "--quiet", "--detach", "--force", sha], tree), (["clean", "-fdq"], tree)]
-    else:
-        git(["worktree", "prune"], main)          # a deleted tree still registered; the add says what failed
-        steps = [(["worktree", "add", "--quiet", "--detach", "--force", str(tree), sha], main)]
-    for args, cwd in steps:
-        rc, out = git(args, cwd)
-        if rc != 0:
-            raise CannotRun(f"`git {' '.join(args[:2])}` for {tree} failed (exit {rc}: {_brief(out)})")
-    why = _own_worktree(tree, common, git)
-    if why:
-        raise CannotRun(f"after materialising, {tree}: {why}")
+    return sha
+
+
+def read_back(tree: pathlib.Path, common: pathlib.Path, sha: str, git=_git) -> str | None:
+    """None when `tree` is a linked worktree of THIS repository, at `sha`, clean; else what is wrong. A tree
+    that git resolves to anything else — its top level elsewhere (git walked up), its git dir not an entry
+    under `<common>/worktrees/` — is never built from."""
+    rc, top = git(["rev-parse", "--show-toplevel"], tree)
+    if rc != 0 or os.path.realpath(top) != os.path.realpath(tree):
+        return f"reads its top level as {_brief(top)!r} (exit {rc}), not the tree itself"
+    rc, gd = git(["rev-parse", "--absolute-git-dir"], tree)
+    if rc != 0 or os.path.dirname(os.path.realpath(gd)) != os.path.realpath(common / "worktrees"):
+        return f"is no linked worktree of this repository (its git dir is {_brief(gd)!r}, exit {rc})"
     rc, head = git(["rev-parse", "HEAD"], tree)
     if rc != 0 or head != sha:
-        raise CannotRun(f"{tree} reads back HEAD {_brief(head)!r} (exit {rc}), not {REMOTE}/{BRANCH} {sha}")
+        return f"reads back HEAD {_brief(head)!r} (exit {rc}), not {REMOTE}/{BRANCH} {sha}"
     rc, dirty = git(["status", "--porcelain"], tree)
     if rc != 0 or dirty:
-        raise CannotRun(f"{tree} is not clean after the checkout (exit {rc}: {_brief(dirty)})")
-    return tree, sha
+        return f"is not clean after the add (exit {rc}: {_brief(dirty)})"
+    return None
+
+
+def add_tree(main: pathlib.Path, common: pathlib.Path, sha: str, tree: pathlib.Path, git=_git) -> None:
+    """`git worktree add --detach <tree> <sha>` at a path that did not exist, then the read-back. NO `--force`:
+    git refuses a path that exists, so the add can only ever create. CannotRun naming the step."""
+    rc, out = git(["worktree", "add", "--quiet", "--detach", str(tree), sha], main)
+    if rc != 0:
+        raise CannotRun(f"`git worktree add` of {tree} failed (exit {rc}: {_brief(out)}){lock_hint(out)}")
+    why = read_back(tree, common, sha, git)
+    if why:
+        raise CannotRun(f"{tree} {why}")
+
+
+def own_entries(common: pathlib.Path, tree: pathlib.Path) -> list[pathlib.Path]:
+    """The admin entries under `<common>/worktrees/` whose `gitdir` file names THIS RUN's tree, compared as the
+    literal path — never through `realpath`, which would follow a symlink swapped in at `tree` to somebody
+    else's worktree. `tree` lies in a fresh `mkdtemp` directory, so no other run and no person can have
+    registered it. The only admin data `discard` may delete."""
+    want = os.path.join(str(tree), ".git")
+    try:
+        entries = sorted((common / "worktrees").iterdir())
+    except OSError:
+        return []
+    out = []
+    for e in entries:
+        if e.is_symlink() or not e.is_dir():
+            continue
+        try:
+            named = (e / "gitdir").read_text(errors="replace").strip()
+        except OSError:
+            continue
+        if os.path.normpath(named) == want:
+            out.append(e)
+    return out
+
+
+def discard(private: pathlib.Path, tree: pathlib.Path, common: pathlib.Path) -> list[str]:
+    """Remove what THIS RUN made — its admin entry and its private directory — and nothing else. -> a note
+    for anything left behind. ⛔ No git verb runs here. `git worktree remove --force <tree>` resolves the path
+    it is given, and MEASURED 2026-11-07: with `<tree>` swapped for a symlink to another linked worktree, it
+    deleted THAT worktree, uncommitted edits included. `shutil.rmtree` refuses a symlink at the top and never
+    follows one inside, so a swapped tree loses only the link."""
+    notes = []
+    for e in own_entries(common, tree):
+        try:
+            shutil.rmtree(e)
+        except OSError as exc:
+            notes.append(f"could not remove this run's worktree entry {e} ({exc}); git lists it as prunable")
+    try:
+        shutil.rmtree(private)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        notes.append(f"could not remove this run's private tree {private} ({exc})")
+    return notes
+
+
+# The lock's file descriptors, while held: every generator inherits them (`pass_fds`), so the lock is held
+# until the LAST process holding one exits — a runner SIGKILLed mid-build cannot release it under a generator
+# that is still running (review r1 X3). `flock` belongs to the open file, not to the process.
+_HELD_FDS: list[int] = []
 
 
 @contextlib.contextmanager
 def tree_lock(main: pathlib.Path, wait: float = LOCK_WAIT):
-    """Hold `LOCK_REL` for the materialise AND the generators: a second rebuild moving the tree under a
-    running generator would hand it half of two commits. CannotRun when it is not free within `wait` s."""
+    """Hold `LOCK_REL` for the fetch, the tree AND the generators: two rebuilds at once would race on the
+    fetch's ref lock and write the same pages. CannotRun when it is not free within `wait` s. ⛔ Released by
+    CLOSING, never `LOCK_UN`: an unlock would release it for a generator that inherited it, too."""
     path = main / LOCK_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as fh:
@@ -191,30 +289,57 @@ def tree_lock(main: pathlib.Path, wait: float = LOCK_WAIT):
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise CannotRun(f"another page rebuild held {path} for {wait:.0f}s") from None
+                    raise CannotRun(f"another page rebuild, or a generator a killed rebuild left running, held "
+                                    f"{path} for {wait:.0f}s (`lsof {path}` names it)") from None
                 time.sleep(0.2)
+        _HELD_FDS.append(fh.fileno())
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            _HELD_FDS.remove(fh.fileno())
+
+
+def _is_this_repository(repo: pathlib.Path) -> bool:
+    """Is `repo` ANY checkout of the repository this file lives in — keyed on the common git dir, so the
+    main checkout and every linked worktree count, not only ROOT's own path (review r1 C6). Where ROOT is in
+    no repository (the mutation harness runs a staged copy), there is nothing to protect: False."""
+    if os.path.realpath(repo) == os.path.realpath(ROOT):
+        return True
+    rc, here = _git(["rev-parse", "--path-format=absolute", "--git-common-dir"], ROOT, 10)
+    if rc != 0:
+        return False
+    rc, there = _git(["rev-parse", "--path-format=absolute", "--git-common-dir"], repo, 10)
+    return rc == 0 and os.path.realpath(there) == os.path.realpath(here)
 
 
 @contextlib.contextmanager
-def fresh(repo: pathlib.Path = ROOT, git=_git, wait: float = LOCK_WAIT):
-    """The ONE way a page is built: (tree, sha) of a fresh `origin/master`, locked for the block.
-    ⛔ Refused inside the suite for THIS repository: measured while building this, one case that reached the
-    default `tree_for` fetched and added `.claude/regen-tree` in the real main checkout. Not mutated, on
-    purpose — a mutant that removed this guard would do exactly that to the real checkout."""
-    if _IN_SUITE and os.path.realpath(repo) == os.path.realpath(ROOT):
-        raise CannotRun("the self-test never materialises the real repository")
+def fresh(repo: pathlib.Path = ROOT, git=_git, wait: float = LOCK_WAIT, scratch: str | None = None):
+    """The ONE way a page is built: (tree, sha) of a fresh `origin/master`, in a NEW private tree, locked for
+    the block and REMOVED after it (backlog #408). `scratch` is the temp root (default: the system's).
+    ⛔ Refused inside the suite for ANY checkout of this repository: measured while building this, one case
+    that reached the default `tree_for` fetched into the real main checkout. The cases that test this refusal
+    hand `fresh` a DECOY git that names a scratch repository and refuses the rest, so a mutant without the
+    guard reaches nothing real, and the refusal is told apart by its message (review r1 C6). The check
+    against the REAL main checkout runs only where the suite runs inside the repository (CI, a local
+    `--self-test`); the mutation harness stages a copy in no repository, and says NOT RUN for it."""
+    if _IN_SUITE and _is_this_repository(repo):
+        raise CannotRun("the self-test never materialises the real repository, or any checkout of it")
     main, common = main_of(repo, git)
     with tree_lock(main, wait):
-        yield materialise(main, common, git)
+        sha = fetch_master(main, git)
+        private = pathlib.Path(os.path.realpath(tempfile.mkdtemp(prefix=PRIVATE_PREFIX, dir=scratch)))
+        tree = private / "tree"
+        try:
+            add_tree(main, common, sha, tree, git)
+            yield tree, sha
+        finally:
+            for note in discard(private, tree, common):
+                print(f"⚠  {note}")
 
 
-def _fresh_once(repo: pathlib.Path) -> tuple[pathlib.Path, str]:
+def _fresh_once(repo: pathlib.Path, **kw) -> tuple[pathlib.Path, str]:
     """`fresh` entered and left: the (tree, sha) it produced. For the suite's real-git cases."""
-    with fresh(repo) as got:
+    with fresh(repo, **kw) as got:
         return got
 
 
@@ -268,14 +393,93 @@ def pages_for(payload: object, pages: dict[str, str]) -> list[str]:
     return []
 
 
-def launch(script: str, timeout: float, tree: pathlib.Path) -> tuple[int, str]:
-    """Run one generator OUT OF THE FRESH TREE. (rc, its stdout then stderr); 124 when it timed out."""
+# Every generator's process group while it runs, so a runner told to stop can stop them first (`_on_signal`).
+_LIVE: dict[int, subprocess.Popen] = {}
+_LIVE_GUARD = threading.Lock()
+
+
+def group_alive(pgid: int) -> bool:
+    """Is any process still in group `pgid`? A zombie counts until it is reaped."""
     try:
-        r = subprocess.run([sys.executable, str(tree / "scripts" / script)], cwd=tree, capture_output=True,
-                           text=True, timeout=timeout, stdin=subprocess.DEVNULL, env=_env(), errors="replace")
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def end_group(p: subprocess.Popen, grace: float = GROUP_GRACE) -> bool:
+    """Stop and reap EVERY process in `p`'s group (review r1 X3): nothing when it is already empty, else
+    SIGTERM, then SIGKILL after `grace` s. -> True when the group is gone. ⚠ A process that left the group
+    (`setsid`) is not reached, and is named in the result's text as having SURVIVED."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        p.poll()                                   # reap the generator itself: its zombie keeps the group alive
+        if not group_alive(p.pid):
+            return True
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(p.pid, sig)
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline:
+            p.poll()
+            if not group_alive(p.pid):
+                return True
+            time.sleep(0.02)
+    p.poll()
+    return not group_alive(p.pid)
+
+
+def launch(script: str, timeout: float, tree: pathlib.Path) -> tuple[int, str]:
+    """Run one generator OUT OF THE FRESH TREE, in a process group of its own. (rc, its stdout then stderr);
+    124 when it timed out. Returns only once its WHOLE group is gone — on a timeout, and also after a normal
+    exit that left a child running — because the tree is removed, and the lock released, right after."""
+    p = subprocess.Popen([sys.executable, str(tree / "scripts" / script)], cwd=tree, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True, env=_env(),
+                         errors="replace", start_new_session=True, pass_fds=tuple(_HELD_FDS))
+    with _LIVE_GUARD:
+        _LIVE[p.pid] = p
+    # ⚠ The pipes are drained by threads and the GENERATOR is waited on, not its pipes' EOF: a child it left
+    # running holds them open, and `communicate` would wait out the whole timeout for it.
+    got: dict[str, str] = {}
+    readers = [threading.Thread(target=lambda k=k, f=f: got.__setitem__(k, f.read()), daemon=True)
+               for k, f in (("out", p.stdout), ("err", p.stderr))]
+    for r in readers:
+        r.start()
+    timed_out = False
+    try:
+        p.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 124, f"timed out after {timeout:.0f}s"
-    return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
+        timed_out = True
+    finally:
+        gone = end_group(p)
+        with _LIVE_GUARD:
+            _LIVE.pop(p.pid, None)
+    for r in readers:
+        r.join(timeout=GROUP_GRACE)                # a process that escaped the group may hold a pipe: stop waiting
+    out, err = got.get("out", ""), got.get("err", "")
+    survived = "" if gone else " ⚠ a process in its group SURVIVED SIGKILL and may still use the tree"
+    if timed_out:
+        return 124, f"timed out after {timeout:.0f}s{survived}"
+    return p.returncode, ((out or "") + (err or "")).strip() + survived
+
+
+def _on_signal(signum, _frame):
+    """A runner told to stop — the Refresh timeout's SIGTERM, a hook killed, ^C — KILLS its generators'
+    groups first and only then unwinds, so its tree is removed and its lock released once nothing runs in
+    that tree (review r1 X3). One-shot: a second signal cannot interrupt the clean-up it started."""
+    for s in STOP_SIGNALS:
+        signal.signal(s, signal.SIG_IGN)
+    with _LIVE_GUARD:
+        groups = list(_LIVE)
+    for pgid in groups:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pgid, signal.SIGKILL)
+    raise SystemExit(128 + signum)
+
+
+def install_signal_handlers() -> None:
+    for s in STOP_SIGNALS:
+        signal.signal(s, _on_signal)
 
 
 def regen(names: list[str], pages: dict[str, str], run=launch, timeout: float = TIMEOUT,
@@ -312,6 +516,12 @@ def report(results: list[dict], wall: float, sha: str = "") -> list[str]:
     return out
 
 
+def after_edit_line(page: str, sha: str) -> str:
+    """PURE. What an EDIT hook prints after `--page` rebuilt its page (review r1 C2): the page shows master,
+    not the edit that fired the hook — said in the success line itself, never implied by "regenerated"."""
+    return f"↻ {page}: pages show {REMOTE}/{BRANCH} {sha[:12]}; this edit appears after it merges"
+
+
 def cannot_run_line(exc: Exception) -> str:
     """PURE. What every caller prints when the fresh tree could not be produced — never a fallback."""
     return (f"⚠  CANNOT RUN — pages NOT rebuilt: {exc}. Nothing was built from any other tree, so every "
@@ -323,6 +533,8 @@ def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, t
     ap.add_argument("--hook", action="store_true", help="read a PostToolUse payload on stdin")
     ap.add_argument("--all", action="store_true", help="rebuild every page now")
     ap.add_argument("--page", metavar="NAME", help="rebuild ONE page and print its generator's output")
+    ap.add_argument("--after-edit", action="store_true",
+                    help="with --page: say the page shows origin/master, not the edit (the edit hooks)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
     if a.self_test:
@@ -355,7 +567,8 @@ def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, t
         if a.page is not None:
             if results[0]["tail"]:
                 print(results[0]["tail"])
-            print(f"↻ {a.page} {built_from(sha)}" if results[0]["rc"] == 0 else
+            print((after_edit_line(a.page, sha) if a.after_edit else f"↻ {a.page} {built_from(sha)}")
+                  if results[0]["rc"] == 0 else
                   f"⚠  {a.page} NOT rebuilt (exit {results[0]['rc']}) from {REMOTE}/{BRANCH} {sha[:12]}")
             return results[0]["rc"]
         print("\n".join(report(results, time.monotonic() - t0, sha)))
@@ -525,37 +738,46 @@ def _self_test_body() -> int:
          {"goal-tree", "dashboard", "backlog-table", "features", "goals"} <= set(regenerable()), True)
 
     # ── backlog #408: every page is built from a FRESH origin/master, never this checkout ──────────────
-    import tempfile
     tmp = pathlib.Path(os.path.realpath(tempfile.mkdtemp(prefix="regen-fresh-")))
     main_dir = tmp / "main"
-    (main_dir / ".git").mkdir(parents=True)
+    (main_dir / ".git" / "worktrees").mkdir(parents=True)
     common = main_dir / ".git"
-    tree = main_dir / TREE_REL
-    SAFE_IN_MAIN = {"fetch", "rev-parse", "worktree"}
+    scr = tmp / "scratch"
+    scr.mkdir()
+    REWRITERS = {"checkout", "clean", "reset", "prune", "remove", "restore", "switch", "stash"}
+    all_verbs: set[str] = set()
     in_main: set[str] = set()
 
-    def fake_git(*, fetch_rc=0, sha=_SHA, head=None, dirty="", top=None, tree_common=None, m=None):
+    def fake_git(*, fetch_rc=0, fetch_err="fatal: unable to access origin", sha=_SHA, head=None, dirty="",
+                 top=None, gitdir=None, m=None):
         calls = []
         m = m or main_dir
-        common, tree = m / ".git", m / TREE_REL
+        cm = m / ".git"
 
         def g(args, cwd, timeout=0):
             cwd = pathlib.Path(cwd)
             calls.append((tuple(args), cwd))
+            all_verbs.update(a for a in args if not a.startswith("-"))
             if cwd == m:
                 in_main.add(args[0])
             if args[0] == "fetch":
-                return fetch_rc, "" if fetch_rc == 0 else "fatal: unable to access origin"
+                return fetch_rc, "" if fetch_rc == 0 else fetch_err
             if args[:2] == ["rev-parse", "--verify"]:
                 return (0, sha) if sha else (1, "")
             if "--git-common-dir" in args:
-                return 0, str(common if cwd == m else (tree_common or common))
+                return 0, str(cm)
+            if args[:2] == ["worktree", "add"]:
+                t = pathlib.Path(args[-2])
+                t.mkdir(parents=True)
+                adm = cm / "worktrees" / t.parent.name
+                adm.mkdir(parents=True)
+                (adm / "gitdir").write_text(f"{t}/.git\n")
+                (t / ".git").write_text(f"gitdir: {adm}\n")
+                return 0, ""
             if "--show-toplevel" in args:
                 return 0, str(top or cwd)
-            if args[:2] == ["worktree", "add"]:
-                tree.mkdir(parents=True, exist_ok=True)
-                (tree / ".git").write_text(f"gitdir: {common}/worktrees/regen-tree\n")
-                return 0, ""
+            if "--absolute-git-dir" in args:
+                return 0, str(gitdir or cm / "worktrees" / cwd.parent.name)
             if args[:2] == ["rev-parse", "HEAD"]:
                 return 0, head or sha
             if args[0] == "status":
@@ -573,65 +795,94 @@ def _self_test_body() -> int:
     def verbs(g):
         return [" ".join(a[:2]) for a, _ in g.calls]
 
-    def reset_tree():
-        import shutil
-        shutil.rmtree(tree, ignore_errors=True)
+    def left_in(d):
+        return sorted(p.name for p in d.iterdir())
 
-    reset_tree()
+    def run_fake(g, m=None, **kw):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return outcome(lambda: _fresh_once(m or main_dir, git=g, scratch=str(scr), **kw))
+
     g0 = fake_git()
-    got = outcome(lambda: materialise(main_dir, common, g0))
-    case("⭐ backlog #408: no tree yet — fetch, then `worktree add --detach` of origin/master's sha",
-         (got, [a for a, c in g0.calls if a[:2] == ("worktree", "add")]),
-         (("ok", (tree, _SHA)), [("worktree", "add", "--quiet", "--detach", "--force", str(tree), _SHA)]))
-    case("...and the fetch comes FIRST, before anything resolves origin/master",
-         verbs(g0)[:2], ["fetch --quiet", "rev-parse --verify"])
+    seen_in_block: list = []
+    with contextlib.redirect_stdout(io.StringIO()):
+        with fresh(main_dir, git=g0, scratch=str(scr)) as (t0_tree, t0_sha):
+            seen_in_block = [t0_tree.is_dir(), oct(t0_tree.parent.stat().st_mode & 0o777),
+                             t0_tree.parent.parent == scr, t0_tree.parent.name.startswith(PRIVATE_PREFIX),
+                             left_in(common / "worktrees")]
+    add = [a for a, c in g0.calls if a[:2] == ("worktree", "add")]
+    case("⭐ backlog #408: every run adds a NEW tree, `worktree add --detach <private>/tree <sha>`, NO --force",
+         (t0_sha, add), (_SHA, [("worktree", "add", "--quiet", "--detach", str(t0_tree), _SHA)]))
+    case("⭐ ...in a private directory of its own: mode 0700, in the temp root, named by PRIVATE_PREFIX",
+         seen_in_block[:4], [True, "0o700", True, True])
+    case("...and the fetch comes FIRST after naming the repository, before anything resolves origin/master",
+         verbs(g0)[1:3], ["fetch --quiet", "rev-parse --verify"])
+    case("⛔ after the block the tree is GONE: its private directory and its admin entry, nothing left over",
+         (seen_in_block[4], left_in(scr), left_in(common / "worktrees")), ([t0_tree.parent.name], [], []))
     g1 = fake_git()
-    case("an existing own tree is MOVED in place: checkout --detach --force <sha>, then clean, both IN the tree",
-         (outcome(lambda: materialise(main_dir, common, g1))[0],
-          [(a, c) for a, c in g1.calls if a[0] in ("checkout", "clean")]),
-         ("ok", [(("checkout", "--quiet", "--detach", "--force", _SHA), tree), (("clean", "-fdq"), tree)]))
+    case("⭐ two runs never share a tree: each gets a path no earlier run used",
+         run_fake(g1)[1][0] != t0_tree and run_fake(fake_git())[1][0] != t0_tree, True)
     g2 = fake_git(fetch_rc=128)
-    got = outcome(lambda: materialise(main_dir, common, g2))
+    got = run_fake(g2)
     case("⛔ a failed fetch is CANNOT RUN, and nothing after it runs (no stale-tree fallback)",
-         (got[0], "git fetch origin master" in got[1], verbs(g2)), ("CANNOT RUN", True, ["fetch --quiet"]))
+         (got[0], "git fetch origin master" in got[1], verbs(g2)[-1], left_in(scr)),
+         ("CANNOT RUN", True, "fetch --quiet", []))
+    _lock = "/a/very/long/path/that/is/well/past/one/hundred/and/sixty/characters/" * 3 + ".git/refs/remotes/origin/master.lock"
+    got = run_fake(fake_git(fetch_rc=128, fetch_err=f"error: cannot lock ref: Unable to create '{_lock}': File exists."))
+    case("⭐ review r1 C5: a lock left by a killed git is named IN FULL, with the rm that clears it",
+         (got[0], f"rm '{_lock}'" in got[1]), ("CANNOT RUN", True))
+    case("...lock_hint says nothing when git did not refuse on a lock file",
+         (lock_hint("fatal: unable to access origin"), lock_hint("")), ("", ""))
     g3 = fake_git(sha="")
-    case("⛔ origin/master that does not resolve is CANNOT RUN, before any tree is touched",
-         (outcome(lambda: materialise(main_dir, common, g3))[0],
-          [v for v in verbs(g3) if v.split()[0] in ("worktree", "checkout", "clean")]), ("CANNOT RUN", []))
-    (tree / ".git").unlink()
-    g4 = fake_git()
-    got = outcome(lambda: materialise(main_dir, common, g4))
-    case("⛔⛔ a tree path that is a PLAIN directory is refused, and NO checkout or clean runs at all",
-         (got[0], "no .git FILE" in got[1], [v for v in verbs(g4) if v.split()[0] in ("checkout", "clean")]),
-         ("CANNOT RUN", True, []))
-    (tree / ".git").write_text("gitdir: x\n")
+    case("⛔ origin/master that does not resolve is CANNOT RUN, before any tree is added",
+         (run_fake(g3)[0], [v for v in verbs(g3) if v.startswith("worktree")]), ("CANNOT RUN", []))
     g5 = fake_git(top=main_dir)
-    case("⛔⛔ a tree whose top level git reads as the MAIN checkout is refused before checkout --force",
-         (outcome(lambda: materialise(main_dir, common, g5))[0],
-          [v for v in verbs(g5) if v.split()[0] in ("checkout", "clean")]), ("CANNOT RUN", []))
-    g6 = fake_git(tree_common=tmp / "other" / ".git")
-    case("⛔ a tree that belongs to ANOTHER repository is refused",
-         outcome(lambda: materialise(main_dir, common, g6))[0], "CANNOT RUN")
+    got = run_fake(g5)
+    case("⛔⛔ a tree whose top level git reads as the MAIN checkout is refused, and removed",
+         (got[0], "top level" in got[1], left_in(scr), left_in(common / "worktrees")), ("CANNOT RUN", True, [], []))
+    g6 = fake_git(gitdir=common)
+    got = run_fake(g6)
+    case("⛔⛔ a tree whose git dir is the main checkout's own (git walked up) is refused",
+         (got[0], "no linked worktree" in got[1]), ("CANNOT RUN", True))
+    got = run_fake(fake_git(gitdir=tmp / "other" / ".git" / "worktrees" / "x"))
+    case("⛔ a tree whose git dir belongs to ANOTHER repository is refused",
+         (got[0], "no linked worktree" in got[1]), ("CANNOT RUN", True))
     g7 = fake_git(head="cd" * 20)
-    got = outcome(lambda: materialise(main_dir, common, g7))
+    got = run_fake(g7)
     case("⛔ a tree that reads back a different HEAD is CANNOT RUN — never built from",
          (got[0], "reads back HEAD" in got[1]), ("CANNOT RUN", True))
     g8 = fake_git(dirty=" M docs/backlog.md")
-    got = outcome(lambda: materialise(main_dir, common, g8))
-    case("⛔ a tree that is not clean after the checkout is CANNOT RUN",
-         (got[0], "not clean" in got[1]), ("CANNOT RUN", True))
+    got = run_fake(g8)
+    case("⛔ a tree that is not clean after the add is CANNOT RUN, and is removed",
+         (got[0], "not clean" in got[1], left_in(scr)), ("CANNOT RUN", True, []))
+    # Another run's leftover (a crash) and a hand-made entry: discard must touch NEITHER.
+    (common / "worktrees" / "crashed").mkdir()
+    (common / "worktrees" / "crashed" / "gitdir").write_text(f"{scr}/{PRIVATE_PREFIX}old/tree/.git\n")
+    (common / "worktrees" / "someones").mkdir()
+    (common / "worktrees" / "someones" / "gitdir").write_text(f"{tmp}/someones/.git\n")
+    run_fake(fake_git())
+    case("⛔ discard deletes ONLY this run's admin entry: a crashed run's and another worktree's are untouched",
+         left_in(common / "worktrees"), ["crashed", "someones"])
+    _t = scr / f"{PRIVATE_PREFIX}x" / "tree"
+    (common / "worktrees" / "spoof").mkdir()
+    (common / "worktrees" / "spoof" / "gitdir").write_text(f"{_t}/../tree/.git\n")
+    case("own_entries matches this run's tree as a literal path — a normalised alias still counts, a prefix never",
+         ([e.name for e in own_entries(common, _t)], [e.name for e in own_entries(common, _t.parent)]),
+         (["spoof"], []))
+    shutil.rmtree(common / "worktrees" / "spoof")
     main2 = tmp / "second"
-    (main2 / ".git").mkdir(parents=True)
+    (main2 / ".git" / "worktrees").mkdir(parents=True)
     g9 = fake_git(m=main2)
-    case("the tree is placed under the main checkout it is GIVEN, and its common dir is the one checked",
-         (outcome(lambda: materialise(main2, main2 / ".git", g9)),
-          outcome(lambda: materialise(main2, common, fake_git(m=main2)))[0]),
-         (("ok", (main2 / TREE_REL, _SHA)), "CANNOT RUN"))
-    case("⛔⛔ across every scenario above, the ONLY git verbs run in the main checkout are fetch, rev-parse, worktree",
-         sorted(in_main), sorted(SAFE_IN_MAIN))
+    got = run_fake(g9, m=main2)
+    case("the fetch and the add run in the main checkout of the repository GIVEN, and its common dir is checked",
+         (got[0], {c for a, c in g9.calls if a[0] in ("fetch", "worktree")},
+          run_fake(fake_git(m=main2, gitdir=common / "worktrees" / "x"), m=main2)[0]),
+         ("ok", {main2}, "CANNOT RUN"))
+    case("⛔⛔ across every scenario above, NO git verb that rewrites a checkout runs: no checkout, clean, reset, "
+         "prune or remove",
+         (sorted(all_verbs & REWRITERS), sorted(in_main)), ([], ["fetch", "rev-parse", "worktree"]))
     case("main_of names the main checkout from the common dir; a relative answer is CANNOT RUN",
-         [outcome(lambda: main_of(tree, lambda a, c, t=0: (0, str(common)))),
-          outcome(lambda: main_of(tree, lambda a, c, t=0: (0, "rel/.git")))[0]],
+         [outcome(lambda: main_of(main_dir, lambda a, c, t=0: (0, str(common)))),
+          outcome(lambda: main_of(main_dir, lambda a, c, t=0: (0, "rel/.git")))[0]],
          [("ok", (main_dir, common)), "CANNOT RUN"])
     _saved = dict(os.environ)
     os.environ.update(GIT_DIR="/elsewhere/.git", GIT_WORK_TREE="/elsewhere", GIT_CONFIG_NOSYSTEM="1")
@@ -643,13 +894,13 @@ def _self_test_body() -> int:
     case("an inherited GIT_DIR / GIT_WORK_TREE is DROPPED for git and the generators; config vars pass",
          ("GIT_DIR" in _e, "GIT_WORK_TREE" in _e, _e.get("GIT_CONFIG_NOSYSTEM")), (False, False, "1"))
 
-    def try_lock(wait):
-        with tree_lock(main_dir, wait=wait):
+    def try_lock(wait, m=main_dir):
+        with tree_lock(m, wait=wait):
             return "entered"
     with tree_lock(main_dir, wait=5):
         got = outcome(lambda: try_lock(0.3))
-    case("⛔ a second rebuild while the first holds the lock waits, then says CANNOT RUN",
-         (got[0], "held" in str(got[1])), ("CANNOT RUN", True))
+    case("⛔ a second rebuild while the first holds the lock waits, then says CANNOT RUN, naming `lsof`",
+         (got[0], "held" in str(got[1]), f"lsof {main_dir / LOCK_REL}" in str(got[1])), ("CANNOT RUN", True, True))
     case("...and the lock is free again once the first is done", outcome(lambda: try_lock(0.3)), ("ok", "entered"))
     with tree_lock(main_dir, wait=5):
         with tree_lock(main2, wait=0.3):
@@ -670,6 +921,36 @@ def _self_test_body() -> int:
     (tmp / "gt2" / "scripts" / "slow.py").write_text("import time\ntime.sleep(30)\n")
     case("launch kills a generator at ITS timeout and says so (124)",
          launch("slow.py", 0.5, tmp / "gt2"), (124, "timed out after 0s"))
+    # ⛔ review r1 X3: a generator that EXITS but leaves a child running in its group — the tree is removed right
+    # after launch returns, so the child must be gone by then too.
+    (tmp / "gt2" / "scripts" / "leaves.py").write_text(
+        "import pathlib, subprocess, sys, time\n"
+        "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], stdout=subprocess.DEVNULL,\n"
+        "                     stderr=subprocess.DEVNULL)\n"
+        "pathlib.Path('child.pid').write_text(str(p.pid))\n")
+    # The child's pid goes to a FILE, not stdout: a child that kept the pipe open would leave the output empty,
+    # and an empty output must not read as "gone".
+    rc_lv, _ = launch("leaves.py", 30, tmp / "gt2")
+    _pid = int((tmp / "gt2" / "child.pid").read_text())
+    try:
+        os.kill(_pid, 0)
+        _child = "still running"
+        os.kill(_pid, signal.SIGKILL)
+    except ProcessLookupError:
+        _child = "gone"
+    case("⛔ review r1 X3: a generator that exits leaving a child behind — launch ends the child before it returns",
+         (rc_lv, _child), (0, "gone"))
+    (tmp / "gt2" / "scripts" / "fds.py").write_text(
+        "import os, sys\nfor fd in map(int, sys.argv[1:] or os.environ['FDS'].split()):\n"
+        "    os.fstat(fd)\nprint('held')\n")
+    with tree_lock(main_dir, wait=5):
+        os.environ["FDS"] = " ".join(map(str, _HELD_FDS))
+        try:
+            rc_fd, out_fd = launch("fds.py", 30, tmp / "gt2")
+        finally:
+            os.environ.pop("FDS", None)
+    case("⛔ review r1 X3: every generator INHERITS the lock's descriptor, so the lock outlives a killed runner",
+         (rc_fd, out_fd), (0, "held"))
 
     @contextlib.contextmanager
     def no_tree():
@@ -695,6 +976,10 @@ def _self_test_body() -> int:
          (rc_p, said_p.splitlines()),
          (0, ["⚠  WITHOUT the Ask tray", "   missing token: x", "wrote /x",
               f"↻ goals built from origin/master {_SHA[:12]}"]))
+    rc_ae, said_ae = drive(["--page", "goals", "--after-edit"], "", run=rec)
+    case("⭐ review r1 C2: --page --after-edit SAYS the page shows origin/master and the edit appears after it merges",
+         (rc_ae, said_ae.splitlines()[-1]),
+         (0, f"↻ goals: pages show origin/master {_SHA[:12]}; this edit appears after it merges"))
     rc_pf, said_pf = drive(["--page", "dashboard"], "")
     case("--page returns a failed generator's exit code and says NOT rebuilt",
          (rc_pf, said_pf.splitlines()[-1].startswith("⚠  dashboard NOT rebuilt (exit 1)")), (1, True))
@@ -702,47 +987,239 @@ def _self_test_body() -> int:
     case("--page refuses a name that is not a page KEY, naming the legal set",
          (rc_u, "goal-tree" in said_u), (2, True))
 
-    case("⛔ the suite refuses to materialise THIS repository, whatever a case passes for tree_for",
-         (outcome(lambda: _fresh_once(ROOT))[0], drive(["--all"], "", run=rec, tree_for=fresh)[0]), ("CANNOT RUN", 2))
+    # ⚠ A DECOY git: it names a scratch repository and refuses everything else, so even with the guard removed
+    # (the mutation below) nothing reaches the real repository — the refusal is told apart by its MESSAGE.
+    (tmp / "decoy" / ".git").mkdir(parents=True)
 
-    # ⭐ THE REAL THING, against real git: a bare origin, a main clone with an UNCOMMITTED edit, master
-    # moving on twice. The tree follows origin/master; the main checkout's HEAD and edit are untouched.
+    def decoy(args, cwd, timeout=0):
+        return (0, str(tmp / "decoy" / ".git")) if "--git-common-dir" in args else (1, "decoy: refused")
+    _refusal = "never materialises the real repository"
+    _root_got = outcome(lambda: _fresh_once(ROOT, git=decoy))
+    case("⛔ the suite refuses to materialise THIS repository, whatever a case passes for tree_for",
+         (_root_got[0], _refusal in _root_got[1],
+          drive(["--all"], "", run=rec, tree_for=lambda: fresh(ROOT, git=decoy))[0]), ("CANNOT RUN", True, 2))
+    _here = _git(["rev-parse", "--path-format=absolute", "--git-common-dir"], ROOT, 10)
+    if _here[0] == 0:
+        _main_ckout = pathlib.Path(_here[1]).parent
+        _mc_got = outcome(lambda: _fresh_once(_main_ckout, git=decoy))
+        case("⛔ review r1 C6: ...and refuses the REAL main checkout too, found through the common dir, "
+             "when this suite runs from a linked worktree",
+             (_is_this_repository(_main_ckout), _mc_got[0], _refusal in _mc_got[1]), (True, "CANNOT RUN", True))
+    else:
+        print("  NOT RUN (this tree is in no repository): the real-main-checkout refusal case")
+
+    # ⭐ THE REAL THING, against real git: a bare origin; a main clone on a BRANCH with an unstaged edit, a staged
+    # new file and an untracked file; ANOTHER linked worktree with the same; master moving on. Every case below
+    # ends by checking that neither checkout's HEAD, index, edits or untracked files moved (review r1 X1/X2,
+    # C1/C3: each of these attacks reproduced data loss against the reuse design).
     def sh(*a, cwd=tmp):
         r = subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=master",
                             *a], cwd=cwd, capture_output=True, text=True, env=_env())
         return r.stdout.strip() if r.returncode == 0 else f"ERR {r.returncode}: {r.stderr.strip()}"
+
+    def push(seed, name, text, msg):
+        (seed / name).parent.mkdir(parents=True, exist_ok=True)
+        (seed / name).write_text(text)
+        sh("add", name, cwd=seed); sh("commit", "-qm", msg, cwd=seed); sh("push", "-q", "origin", "HEAD:master", cwd=seed)
+        return sh("rev-parse", "HEAD", cwd=seed)
+
+    def snap(d):
+        """Everything a destructive git verb could change in checkout `d`: HEAD (symbolic and sha), the index,
+        the status, both diffs, and the bytes of every file outside `.git`."""
+        files = {str(p.relative_to(d)): p.read_bytes() for p in sorted(d.rglob("*"))
+                 if p.is_file() and not {".git", ".claude"} & set(p.relative_to(d).parts)}
+        return (sh("symbolic-ref", "-q", "HEAD", cwd=d), sh("rev-parse", "HEAD", cwd=d), sh("ls-files", "-s", cwd=d),
+                sh("status", "--porcelain", "-uall", cwd=d), sh("diff", cwd=d), sh("diff", "--cached", cwd=d), files)
+
     sh("init", "--bare", "-q", "origin.git")
     sh("clone", "-q", "origin.git", "seed")
-    seed, real_main = tmp / "seed", tmp / "realmain"
-    (seed / "page.txt").write_text("v1\n")
-    sh("add", "page.txt", cwd=seed); sh("commit", "-qm", "v1", cwd=seed); sh("push", "-q", "origin", "HEAD:master", cwd=seed)
+    seed, real_main, other = tmp / "seed", tmp / "realmain", tmp / "other"
+    push(seed, "page.txt", "v1\n", "v1")
     sh("clone", "-q", "origin.git", "realmain")
-    (real_main / ".gitignore").write_text(".claude/\n")
+    (real_main / ".git" / "info" / "exclude").write_text(".claude/\n")
+    sh("checkout", "-qb", "feature", cwd=real_main)
     (real_main / "page.txt").write_text("v1 + an UNCOMMITTED owner edit\n")
-    main_head = sh("rev-parse", "HEAD", cwd=real_main)
-    (seed / "page.txt").write_text("v2\n")
-    sh("commit", "-qam", "v2", cwd=seed); sh("push", "-q", "origin", "HEAD:master", cwd=seed)
-    v2 = sh("rev-parse", "HEAD", cwd=seed)
-    r1 = outcome(lambda: _fresh_once(real_main))
-    rt = real_main / TREE_REL
-    case("⭐⭐ REAL git: the tree is origin/master AFTER a fetch, though the main checkout never moved",
-         (r1, (rt / "page.txt").read_text() if rt.is_dir() else "no tree"), (("ok", (rt, v2)), "v2\n"))
-    (seed / "page.txt").write_text("v3\n")
-    sh("commit", "-qam", "v3", cwd=seed); sh("push", "-q", "origin", "HEAD:master", cwd=seed)
-    v3 = sh("rev-parse", "HEAD", cwd=seed)
-    (rt / "page.txt").write_text("a generator scribbled here\n")
-    r2 = outcome(lambda: _fresh_once(real_main))
-    case("⭐⭐ REAL git: the next rebuild MOVES the same tree to the new master, discarding scribbles in it",
-         (r2, (rt / "page.txt").read_text()), (("ok", (rt, v3)), "v3\n"))
-    case("⛔⛔ REAL git: the main checkout's HEAD and its uncommitted edit are exactly as they were",
-         (sh("rev-parse", "HEAD", cwd=real_main) == main_head, (real_main / "page.txt").read_text(),
-          sh("status", "--porcelain", "--untracked-files=no", cwd=real_main)),
-         (True, "v1 + an UNCOMMITTED owner edit\n", "M page.txt"))
+    (real_main / "staged.txt").write_text("staged, never committed\n")
+    sh("add", "staged.txt", cwd=real_main)
+    (real_main / "untracked.txt").write_text("untracked\n")
+    sh("worktree", "add", "-q", "-b", "wip", str(other), cwd=real_main)
+    (other / "page.txt").write_text("another worktree's edit\n")
+    (other / "wip.txt").write_text("staged in the other worktree\n")
+    sh("add", "wip.txt", cwd=other)
+    (other / "loose.txt").write_text("untracked in the other worktree\n")
+    v2 = push(seed, "page.txt", "v2\n", "v2")
+    before = (snap(real_main), snap(other), sh("worktree", "list", "--porcelain", cwd=real_main))
+
+    def untouched():
+        return (snap(real_main), snap(other), sh("worktree", "list", "--porcelain", cwd=real_main)) == before
+
+    rscr = tmp / "rscratch"
+    rscr.mkdir()
+    with fresh(real_main, wait=5, scratch=str(rscr)) as (rt, r_sha):
+        inside = (r_sha, (rt / "page.txt").read_text(), rt.parent.parent == rscr,
+                  sh("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=rt))
+    case("⭐⭐ REAL git: the tree is origin/master AFTER a fetch, a linked worktree of the repository, in the "
+         "private temp dir — though the main checkout never moved",
+         inside, (v2, "v2\n", True, str(real_main / ".git")))
+    case("⭐⭐ REAL git: after the block the tree is GONE — no private dir, `git worktree list` exactly as before, "
+         "and both checkouts untouched",
+         (rt.exists(), left_in(rscr), untouched()), (False, [], True))
+    v3 = push(seed, "page.txt", "v3\n", "v3")
+    with fresh(real_main, wait=5, scratch=str(rscr)) as (rt3, r3_sha):
+        inside3 = (r3_sha, (rt3 / "page.txt").read_text(), rt3 != rt)
+    case("⭐ REAL git: the next run is a NEW tree at the new master, never the old one moved",
+         (inside3, untouched()), ((v3, "v3\n", True), True))
+
+    # The old fixed path, `.claude/regen-tree`, in each state that made the reuse design destroy work.
+    old = real_main / ".claude" / "regen-tree"
+
+    def at_old_path(make):
+        shutil.rmtree(real_main / ".claude", ignore_errors=True)
+        make()
+        got = outcome(lambda: _fresh_once(real_main, wait=5, scratch=str(rscr)))
+        return got[0], untouched(), left_in(rscr)
+
+    def forged(target):
+        def make():
+            old.mkdir(parents=True)
+            (old / ".git").write_text(f"gitdir: {target}\n")
+            (old / "page.txt").write_text("forged tree's file\n")
+        return make
+    case("⛔⛔ review r1 X1/C1: a FORGED .git at the old path pointing at the MAIN checkout's git dir — the run "
+         "succeeds and NOTHING in either checkout moves",
+         at_old_path(forged(real_main / ".git")) + ((old / "page.txt").read_text(),),
+         ("ok", True, [], "forged tree's file\n"))
+    case("⛔⛔ review r1 X1/C1: a forged .git pointing at ANOTHER worktree's admin dir — nothing moves",
+         at_old_path(forged(real_main / ".git" / "worktrees" / "other")), ("ok", True, []))
+
+    def symlink_to_main():
+        old.parent.mkdir(parents=True)
+        old.symlink_to(real_main)
+    case("⛔⛔ a symlink at the old path to the main checkout — nothing moves", at_old_path(symlink_to_main),
+         ("ok", True, []))
+    shutil.rmtree(real_main / ".claude", ignore_errors=True)
+    sh("worktree", "add", "-q", "-b", "atpath", str(old), cwd=real_main)
+    (old / "page.txt").write_text("a REAL worktree's uncommitted edit\n")
+    (old / "new.txt").write_text("its untracked file\n")
+    before = (snap(real_main), snap(other), sh("worktree", "list", "--porcelain", cwd=real_main))
+    old_snap = snap(old)
+    got = outcome(lambda: _fresh_once(real_main, wait=5, scratch=str(rscr)))
+    case("⛔⛔ review r1 C1 (3): a REAL worktree on a branch at the old path, with uncommitted work — its edit and "
+         "untracked file survive, and so do both other checkouts",
+         (got[0], snap(old) == old_snap, untouched(), left_in(rscr)), ("ok", True, True, []))
+
+    # ⛔⛔ review r1 X2/C3, THE SWAP: the tree is replaced by a symlink to someone else's checkout after the
+    # read-back. Nothing destructive runs any more, and the removal follows no symlink.
+    for name, target in (("ANOTHER linked worktree", other), ("the MAIN checkout", real_main)):
+        with contextlib.redirect_stdout(io.StringIO()):
+            with fresh(real_main, wait=5, scratch=str(rscr)) as (st, _s):
+                st.rename(st.parent / "aside")
+                st.symlink_to(target)
+        case(f"⛔⛔ review r1 X2/C3: the tree swapped for a symlink to {name} before removal — that checkout is "
+             f"untouched, and this run's own entry and directory are still removed",
+             (target.is_dir(), untouched(), left_in(rscr), own_entries(real_main / ".git", st)),
+             (True, True, [], []))
+
     sh("worktree", "add", "-q", "--detach", str(tmp / "linked"), cwd=real_main)
-    with fresh(tmp / "linked", wait=2) as r_l:
-        pass
-    case("⭐ REAL git: run from a LINKED worktree, the tree is still the MAIN checkout's, at origin/master",
-         (r_l, outcome(lambda: main_of(tmp / "linked"))), ((rt, v3), ("ok", (real_main, real_main / ".git"))))
+    before = (snap(real_main), snap(other), sh("worktree", "list", "--porcelain", cwd=real_main))
+    with fresh(tmp / "linked", wait=5, scratch=str(rscr)) as (r_l, r_l_sha):
+        r_l_common = sh("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=r_l)
+    case("⭐ REAL git: run from a LINKED worktree, the tree is still the MAIN checkout's repository, at origin/master",
+         (r_l_sha, r_l_common, outcome(lambda: main_of(tmp / "linked"))),
+         (v3, str(real_main / ".git"), ("ok", (real_main, real_main / ".git"))))
+
+    # ⛔⛔ review r1 X3, A GENERATOR THAT OUTLIVES ITS BOUND: it starts a child in its own group, which writes a
+    # marker 1.5 s later, and sleeps. Timed out at 0.8 s, the WHOLE group must be gone before launch returns.
+    _slow = ("import os, subprocess, sys, time\nd = os.environ['REGEN_TEST_DIR']\n"
+             "open(os.path.join(d, 'gen.pid'), 'w').write(str(os.getpid()))\n"
+             "subprocess.Popen([sys.executable, '-c', 'import sys, time; time.sleep(1.5); "
+             "open(sys.argv[1], \"w\").write(\"late\")', os.path.join(d, 'late')])\n"
+             "open(os.path.join(d, 'started'), 'w').write('1')\ntime.sleep(30)\n")
+    v4 = push(seed, "scripts/slow.py", _slow, "a slow generator")
+    marks = tmp / "marks"
+    marks.mkdir()
+    os.environ["REGEN_TEST_DIR"] = str(marks)
+    before = (snap(real_main), snap(other), sh("worktree", "list", "--porcelain", cwd=real_main))
+    t_slow = time.monotonic()
+    with fresh(real_main, wait=5, scratch=str(rscr)) as (srt, s_sha):
+        slow_res = regen(["slow"], {"slow": "slow.py"}, timeout=0.8, tree=srt)
+    t_slow = time.monotonic() - t_slow
+    time.sleep(1.2)
+    case("⛔⛔ review r1 X3: a timed-out generator's WHOLE process group is ended — its child never writes its "
+         "marker — and the tree is removed only after",
+         (s_sha, slow_res[0]["rc"], (marks / "started").exists(), (marks / "late").exists(), left_in(rscr),
+          untouched(), t_slow < 8), (v4, 124, True, False, [], True, True))
+
+    # ⛔⛔ review r1 X3, the runner STOPPED from outside (the Refresh timeout's SIGTERM): a real child process
+    # runs this file's own `fresh` + `regen`, its generator is the slow one, and it is signalled mid-build.
+    _driver = tmp / "driver.py"
+    _driver.write_text(
+        "import importlib.util, pathlib, sys\n"
+        "spec = importlib.util.spec_from_file_location('rp', sys.argv[1]); rp = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(rp); rp.install_signal_handlers()\n"
+        "with rp.fresh(pathlib.Path(sys.argv[2]), wait=5, scratch=sys.argv[3]) as (t, s):\n"
+        "    rp.regen(['slow'], {'slow': 'slow.py'}, timeout=60, tree=t)\n")
+
+    def start_driver():
+        for f in marks.iterdir():
+            f.unlink()
+        p = subprocess.Popen([sys.executable, str(_driver), str(pathlib.Path(__file__).resolve()), str(real_main),
+                              str(rscr)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=_env())
+        deadline = time.monotonic() + 30
+        while not (marks / "started").exists() and time.monotonic() < deadline and p.poll() is None:
+            time.sleep(0.05)
+        return p, int((marks / "gen.pid").read_text()) if (marks / "gen.pid").exists() else None
+
+    def stop(p):
+        """The driver's exit code, or 'hung' (then killed) — a mutant that keeps it alive is a red case, never a
+        suite that dies on an uncaught TimeoutExpired."""
+        try:
+            return p.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            return "hung"
+
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    drv, gen_pid = start_driver()
+    drv.send_signal(signal.SIGTERM)
+    drv_rc = stop(drv)
+    gen_after = alive(gen_pid) if gen_pid else "no generator started"
+    if gen_pid and gen_after:                        # a mutant left it running: end it, so nothing leaks
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(gen_pid, signal.SIGKILL)
+    time.sleep(1.7)
+    case("⛔⛔ review r1 X3: a runner sent SIGTERM mid-build KILLS its generator's group first, then removes its tree "
+         "and frees the lock",
+         (drv_rc, gen_after, (marks / "late").exists(), left_in(rscr), outcome(lambda: try_lock(0.3, real_main)),
+          untouched()),
+         (128 + signal.SIGTERM, False, False, [], ("ok", "entered"), True))
+    drv, gen_pid = start_driver()
+    drv.kill()
+    stop(drv)
+    held = outcome(lambda: try_lock(0.3, real_main))[0]
+    gen_lived = alive(gen_pid) if gen_pid else "no generator started"
+    if gen_pid:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(gen_pid, signal.SIGKILL)
+        _dl = time.monotonic() + 10
+        while alive(gen_pid) and time.monotonic() < _dl:
+            time.sleep(0.05)
+    case("⛔⛔ review r1 X3: a runner SIGKILLed mid-build cannot release the lock while its generator runs — the "
+         "generator inherited it — and it is free once that generator is gone",
+         (gen_lived, held, outcome(lambda: try_lock(0.3, real_main))), (True, "CANNOT RUN", ("ok", "entered")))
+    for leftover in rscr.iterdir():                  # the SIGKILLed run's own crash leftovers, by construction
+        for e in own_entries(real_main / ".git", leftover / "tree"):
+            shutil.rmtree(e)
+        shutil.rmtree(leftover)
+    os.environ.pop("REGEN_TEST_DIR", None)
+
     busy_calls: list = []
 
     def only_names_main(args, cwd, timeout=GIT_TIMEOUT):
@@ -753,10 +1230,9 @@ def _self_test_body() -> int:
     case("⛔ REAL lock: fresh() waits for a running rebuild's lock and says CANNOT RUN; only main_of ran git",
          (r_busy[0], "held" in str(r_busy[1]), busy_calls), ("CANNOT RUN", True, [["rev-parse", "--path-format=absolute"]]))
     sh("remote", "set-url", "origin", str(tmp / "gone.git"), cwd=real_main)
-    r3 = outcome(lambda: _fresh_once(real_main))
-    case("⛔ REAL git: an unreachable origin is CANNOT RUN, not a build from the tree already there",
-         (r3[0], "git fetch" in r3[1]), ("CANNOT RUN", True))
-    import shutil
+    r3 = outcome(lambda: _fresh_once(real_main, wait=5, scratch=str(rscr)))
+    case("⛔ REAL git: an unreachable origin is CANNOT RUN — no tree is added, nothing is built from an old one",
+         (r3[0], "git fetch" in r3[1], left_in(rscr)), ("CANNOT RUN", True, []))
     shutil.rmtree(tmp, ignore_errors=True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
@@ -764,4 +1240,5 @@ def _self_test_body() -> int:
 
 
 if __name__ == "__main__":
+    install_signal_handlers()
     sys.exit(main())

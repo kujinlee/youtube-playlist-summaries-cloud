@@ -12,7 +12,7 @@ inventory (backlog #384) measured three answers to "what needs me?": the dashboa
 **Why:** the owner skims the closing table; a false "nothing needs you" hides real asks — and stale ones
 that nobody has triaged look identical to live ones.
 
-**How to apply:** before writing "nothing needs you", regenerate `/dashboard` (`python3 scripts/gen-dashboard.py`)
+**How to apply:** before writing "nothing needs you", regenerate `/dashboard` (`python3 scripts/regen-pages.py --page dashboard`)
 and read its *What needs you* count; say "N open asks on the dashboard (M unreadable), none new from this
 work" instead of "nothing", until #384 gives one definition of "needs you". Related: [[a-check-result-is-not-the-claim]],
 [[how-to-shape-a-message-to-me]].
