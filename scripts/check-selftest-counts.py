@@ -558,9 +558,10 @@ def audit(root: Path, pinned: frozenset[str], count_drift, child_env,
 
     ⛔ EVERY SUITE GETS ITS OWN HOME. Serially, one shared temp HOME was harmless — one suite at a
     time. Concurrently, two suites writing the same `~/…` path would collide, which is the
-    shared-directory shape backlog #388's flake had. TMPDIR is deliberately NOT redirected: every
-    suite takes a unique `mkdtemp` name in it, and `check-run-hook.world_base` chooses its worlds by
-    the properties of the real TMPDIR's ancestors (backlog #388), which a nested one would change."""
+    shared-directory shape backlog #388's flake had. This parent does not redirect TMPDIR itself:
+    each suite's `fixture_git.isolated()` nests its own `fixture-tmp-*` scratch directory under it and
+    removes it on exit (backlog #512), so two concurrent suites never share one. That keeps
+    `check-run-hook.world_base`'s ancestors (backlog #388) the same, plus one sparse directory."""
     problems: list[str] = []
     cannot: list[str] = []
 

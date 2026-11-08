@@ -1616,7 +1616,10 @@ EXPECTED_MUTATIONS = {
     # r3 fold (SPLIT): 48 -> 55, the -I -S audit child and rule 5's static direct-launcher half.
     "scripts/check-fixture-git-isolation.py": 55,
     # ⟳ 2026-10-30, backlog #407: 12 -> 13, the mutation harness's run marker passed through isolated().
-    "scripts/fixture_git.py": 13,
+    # ⟳ 2026-11-07, backlog #512: 13 -> 19, the block's own temp directory (TMPDIR, tempfile.tempdir set and given
+    # back, removed on every exit, the fresh HOME inside it). r1 fold: 19 -> 23, the restore of TMPDIR and the
+    # cache EXACTLY, from an unset TMPDIR and a None cache, on a refused block too (Codex R1-F1, Claude R1-F1).
+    "scripts/fixture_git.py": 23,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
     # comment/code bucket, the SQL string blanker, block-comment NESTING, the SQL line-comment
