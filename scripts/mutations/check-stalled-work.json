@@ -1167,8 +1167,12 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "            return True\n        return False if total",
-        "            return False\n        return True if total"
+        "            return True\n        # r3 Claude R3-F1:",
+        "            return False\n        # r3 Claude R3-F1:"
+      ],
+      [
+        "        return False if total == len(nodes) else None",
+        "        return True if total == len(nodes) else None"
       ]
     ],
     "expect": [
@@ -1254,29 +1258,151 @@
     ]
   },
   {
-    "name": "545: the head-run test is dropped: a held PR whose head already ran nags on every prompt",
+    "name": "545: the head-run test is dropped: a held PR, or an UNKNOWN one, whose head already ran gets a line on every prompt",
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "pr.get(\"conflicting\") and pr.get(\"headRun\") is not True:",
-        "pr.get(\"conflicting\"):"
+        "or pr.get(\"mergeUnknown\")) and pr.get(\"headRun\") is not True:",
+        "or pr.get(\"mergeUnknown\")):"
       ]
     ],
     "expect": [
-      "545: a CONFLICTING PR whose head HAS a run (an owner-held PR) is NOT reported"
+      "545: a CONFLICTING PR whose head HAS a run (an owner-held PR) is NOT reported",
+      "545 r1: ...but one whose head HAS a run is NOT reported"
     ]
   },
   {
-    "name": "545: an UNKNOWN head run is assumed to have CI",
+    "name": "545 P6: the dated OK point drops the UNMEASURED line, so an UNKNOWN or unseen PR is plain OK",
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if pr.get(\"conflicting\") and pr.get(\"headRun\") is not True:\n        return Item(\"DIRTY-UNSEEN\"",
-        "    if False:\n        return Item(\"DIRTY-UNSEEN\""
+        "return unmeasured or Item(\"OK\", \"pr\", age, text, \"nothing to do\")",
+        "return Item(\"OK\", \"pr\", age, text, \"nothing to do\")"
       ]
     ],
     "expect": [
-      "545: a conflict whose head run is UNKNOWN is reported, never assumed to have CI"
+      "545 r1: an UNKNOWN-mergeability PR with no run on its head is an UNMEASURED note, aged in its text"
+    ]
+  },
+  {
+    "name": "545 P6: the undated OK point drops the UNMEASURED line",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "return unmeasured or Item(\"OK\", \"pr\", 0, text, \"nothing to do\")",
+        "return Item(\"OK\", \"pr\", 0, text, \"nothing to do\")"
+      ]
+    ],
+    "expect": [
+      "545 P6: an UNDATED non-draft UNKNOWN head is UNMEASURED, not OK"
+    ]
+  },
+  {
+    "name": "545 P6: the UNKNOWN arm is dropped, so an uncomputed mergeability is silent even in the CLI (r1 Claude R1-F2 again)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if (pr.get(\"conflicting\") or pr.get(\"mergeUnknown\")) and",
+        "if pr.get(\"conflicting\") and"
+      ]
+    ],
+    "expect": [
+      "545 r1: an UNKNOWN-mergeability PR with no run on its head is an UNMEASURED note, aged in its text"
+    ]
+  },
+  {
+    "name": "545 P6: an UNMEASURED line hides a STALE draft",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if draft and age > draft_limit_s:\n        return Item(\"STALLED-DRAFT\"",
+        "    if draft and age > draft_limit_s and unmeasured is None:\n        return Item(\"STALLED-DRAFT\""
+      ]
+    ],
+    "expect": [
+      "545 P6: a STALE draft that is UNMEASURED is STALLED-DRAFT, and an UNDATED one is UNKNOWN-DRAFT"
+    ]
+  },
+  {
+    "name": "545 P6: an UNMEASURED line hides an UNDATED draft",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if draft:\n            return Item(\"UNKNOWN-DRAFT\"",
+        "        if draft and unmeasured is None:\n            return Item(\"UNKNOWN-DRAFT\""
+      ]
+    ],
+    "expect": [
+      "545 P6: a STALE draft that is UNMEASURED is STALLED-DRAFT, and an UNDATED one is UNKNOWN-DRAFT"
+    ]
+  },
+  {
+    "name": "545 P6: UNMEASURED becomes a stalled state, so an unmeasured PR exits rc 1",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"DIRTY-NO-CI\", \"UNPROCESSED\")",
+        "\"DIRTY-NO-CI\", \"UNMEASURED\", \"UNPROCESSED\")"
+      ]
+    ],
+    "expect": [
+      "545 P6: UNMEASURED is neither a stalled state nor in a hook tier; DIRTY-NO-CI is the only PR state in either",
+      "545 P6: collect: UNKNOWN and truncated PRs are UNMEASURED CLI lines, never in the hook block; alone they are rc 0 and no block"
+    ]
+  },
+  {
+    "name": "545 P6: UNMEASURED enters the hook's first tier, so it shares the block with the DIRTY line",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",),",
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\", \"UNMEASURED\"),"
+      ]
+    ],
+    "expect": [
+      "545 P6: UNMEASURED is neither a stalled state nor in a hook tier; DIRTY-NO-CI is the only PR state in either",
+      "545 P6: collect: UNKNOWN and truncated PRs are UNMEASURED CLI lines, never in the hook block; alone they are rc 0 and no block"
+    ]
+  },
+  {
+    "name": "545 r3: a malformed suite node counts toward a measured none again (Claude R3-F1)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if not all(suite_node_ok(n) for n in nodes):\n            return None",
+        "        if False:\n            return None"
+      ]
+    ],
+    "expect": [
+      "545 r3: head_has_run: a suite node with no workflowRun key, an empty run, a null or misspelt event is unknown; a null run and a push run are a measured none",
+      "545 r3: ...and through own_prs a CONFLICTING head with such a page is UNMEASURED, never DIRTY-NO-CI"
+    ]
+  },
+  {
+    "name": "545 r3: a suite node with NO workflowRun key reads as a null run",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if not isinstance(n, dict) or \"workflowRun\" not in n:",
+        "    if not isinstance(n, dict):"
+      ]
+    ],
+    "expect": [
+      "545 r3: head_has_run: a suite node with no workflowRun key, an empty run, a null or misspelt event is unknown; a null run and a push run are a measured none",
+      "545 r3: ...and through own_prs a CONFLICTING head with such a page is UNMEASURED, never DIRTY-NO-CI"
+    ]
+  },
+  {
+    "name": "545 r3: a workflow run with no string event reads as a well-formed run",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "(isinstance(run, dict) and isinstance(run.get(\"event\"), str))",
+        "(isinstance(run, dict))"
+      ]
+    ],
+    "expect": [
+      "545 r3: head_has_run: a suite node with no workflowRun key, an empty run, a null or misspelt event is unknown; a null run and a push run are a measured none"
     ]
   },
   {
@@ -1310,12 +1436,12 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "DIRTY, whether PR CI ran on its head was NOT MEASURED, \"",
-        "DIRTY, no CI run on its head, \""
+        "\"DIRTY, whether PR CI ran on its head was NOT MEASURED\" if",
+        "\"DIRTY, no CI run on its head\" if"
       ]
     ],
     "expect": [
-      "545: a conflict whose head run is UNKNOWN is reported, never assumed to have CI"
+      "545: a conflict whose head run is UNKNOWN is an UNMEASURED line saying so, never assumed to have CI"
     ]
   },
   {
@@ -1323,8 +1449,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"DIRTY-UNSEEN\"",
-        "\"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\""
+        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"UNPROCESSED\")",
+        "\"UNKNOWN-DRAFT\", \"UNPROCESSED\")"
       ]
     ],
     "expect": [
@@ -1432,7 +1558,7 @@
       ]
     ],
     "expect": [
-      "545 r1: a head with no checkSuites key is 'no CI run seen', not 'no CI run on its head'"
+      "545 r1: a head with no checkSuites key is 'NOT MEASURED', not 'no CI run on its head'"
     ]
   },
   {
@@ -1440,8 +1566,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\"),",
-        "HOOK_TIERS = ((\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\", \"DIRTY-NO-CI\"),"
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\"),",
+        "HOOK_TIERS = ((\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\"),"
       ]
     ],
     "expect": [
@@ -1459,45 +1585,6 @@
     ],
     "expect": [
       "545 r1: own_prs reads UNKNOWN as mergeability-unknown, and CONFLICTING as not"
-    ]
-  },
-  {
-    "name": "545 r1: the UNKNOWN-MERGE note is never emitted",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "    if pr.get(\"mergeUnknown\") and",
-        "    if False and"
-      ]
-    ],
-    "expect": [
-      "545 r1: an UNKNOWN-mergeability PR with no run on its head is an UNKNOWN-MERGE note, aged in its text"
-    ]
-  },
-  {
-    "name": "545 r1: the UNKNOWN note drops its head-run test, so a PR with CI nags",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "pr.get(\"mergeUnknown\") and pr.get(\"headRun\") is not True:",
-        "pr.get(\"mergeUnknown\"):"
-      ]
-    ],
-    "expect": [
-      "545 r1: ...but one whose head HAS a run is NOT reported"
-    ]
-  },
-  {
-    "name": "545 r1: UNKNOWN-MERGE is not a stalled state, so the check exits clear and the hook says nothing",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "\"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\",\n                  \"UNPROCESSED\")",
-        "\"DIRTY-UNSEEN\",\n                  \"UNPROCESSED\")"
-      ]
-    ],
-    "expect": [
-      "545 r1: UNKNOWN-MERGE is a stalled state, in the hook's tiers"
     ]
   },
   {
@@ -1523,7 +1610,7 @@
       ]
     ],
     "expect": [
-      "545 r1: collect over an UNKNOWN no-run PR and a CLEAN one: the hook block carries ONLY the UNKNOWN one"
+      "545 P6: collect: UNKNOWN and truncated PRs are UNMEASURED CLI lines, never in the hook block; alone they are rc 0 and no block"
     ]
   },
   {
@@ -1601,33 +1688,7 @@
       ]
     ],
     "expect": [
-      "545 r2: a CONFLICTING head whose suites were TRUNCATED is DIRTY-UNSEEN, with no no-CI claim or forced merge"
-    ]
-  },
-  {
-    "name": "545 r2: DIRTY-UNSEEN is not a stalled state, so a conflict with unmeasured CI exits clear",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "\"DIRTY-NO-CI\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\",",
-        "\"DIRTY-NO-CI\", \"UNKNOWN-MERGE\","
-      ]
-    ],
-    "expect": [
-      "545 r2: DIRTY-UNSEEN is a stalled state in the hook's SECOND tier, not DIRTY-NO-CI's first"
-    ]
-  },
-  {
-    "name": "545 r2: DIRTY-UNSEEN leaves the hook's tiers, so the hook never carries it",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "\"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\"),",
-        "\"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\"),"
-      ]
-    ],
-    "expect": [
-      "545 r2: DIRTY-UNSEEN is a stalled state in the hook's SECOND tier, not DIRTY-NO-CI's first"
+      "545 r2: a CONFLICTING head whose suites were TRUNCATED is UNMEASURED, with no no-CI claim or forced merge"
     ]
   },
   {
@@ -1654,60 +1715,6 @@
     ],
     "expect": [
       "545 r2: head_has_run: nodes that are not a list, or a boolean totalCount, are unknown"
-    ]
-  },
-  {
-    "name": "545 r2: the merge grace is gone, so a fresh UNKNOWN head is a hook item the instant it is pushed (Codex R2-F2)",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "if commit_ts is not None and age <= MERGE_GRACE_S:",
-        "if False:"
-      ]
-    ],
-    "expect": [
-      "545 r2: an UNKNOWN head 60 s old is MERGE-PENDING, neither stalled nor in a hook tier; one past the grace, or with no head date, is UNKNOWN-MERGE",
-      "545 r2: ...the grace includes its last second",
-      "545 r2: collect over an UNKNOWN head inside the grace: rc 0, its CLI line shown, no hook block"
-    ]
-  },
-  {
-    "name": "545 r2: a head with NO date is given the grace, an unmeasured age read as young",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "if commit_ts is not None and age",
-        "if age"
-      ]
-    ],
-    "expect": [
-      "545 r2: an UNKNOWN head 60 s old is MERGE-PENDING, neither stalled nor in a hook tier; one past the grace, or with no head date, is UNKNOWN-MERGE"
-    ]
-  },
-  {
-    "name": "545 r2: the grace drops its last second",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "and age <= MERGE_GRACE_S:",
-        "and age < MERGE_GRACE_S:"
-      ]
-    ],
-    "expect": [
-      "545 r2: ...the grace includes its last second"
-    ]
-  },
-  {
-    "name": "545 r2: the grace is widened past what was measured",
-    "file": "scripts/check-stalled-work.py",
-    "edits": [
-      [
-        "MERGE_GRACE_S = 5 * 60",
-        "MERGE_GRACE_S = 30 * 60"
-      ]
-    ],
-    "expect": [
-      "545 r2: the merge grace is 5 min, derived from the measured 111 s maximum"
     ]
   },
   {

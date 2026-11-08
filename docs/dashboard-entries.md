@@ -18997,6 +18997,10 @@ checks), it no longer says "no tests will run, merge now"; it says the conflict 
 measured. A PR pushed a moment ago is given five minutes before GitHub's still-working state counts as stuck (GitHub
 measured at under two minutes on 132 recent pushes). A PR whose target branch arrives blank now makes the check
 report that it could not run, instead of quietly skipping that PR.
+Review round 3 and a design review: each earlier fix had added a new kind of warning for cases where the tool could
+not see enough, and each next review found a flaw in the newest one. None of those warnings had ever fired on a real
+pull request. So they are gone. The note now warns about one thing only: a conflict where the tool saw for certain
+that no tests ran. Anything it could not see shows up only in the full report, and the next message checks again.
 <!--tech-->
 `scripts/check-stalled-work.py`: `GH_QUERY` adds `mergeable` and the head commit's `statusCheckRollup{state}`;
 `pr_node_problem` refuses a node with no string `mergeable` (CANNOT RUN); `head_has_run(row, oid)` -> True/False, or None when
@@ -19020,3 +19024,9 @@ conditional action (R2-F1; `checkSuites` filters only by `appId`/`checkName`, in
 undated head gets no grace (R2-F2; MEASURED: first `pull_request` run 2-111 s after the head's first suite).
 `BASE_REF_RE` refuses an empty or malformed `baseRefName`, CANNOT RUN (R2-F3). Class audit: `head_has_run` reads a
 non-list `nodes` or a boolean `totalCount` as unknown. 217 -> 225 cases; 122 -> 133 mutations, 12 anchors re-bound.
+r3 + Phase 6 fold (`docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md`, THRASHING: R3-F2..F4 caused by
+r2): DIRTY-UNSEEN, UNKNOWN-MERGE, MERGE-PENDING and `MERGE_GRACE_S` deleted; `pr_item`'s one unmeasured line is
+`UNMEASURED` (not in `STALLED_STATES` or `HOOK_TIERS`, replaces only OK, never a stalled draft). `suite_node_ok`: a
+measured none needs every node a dict with a `workflowRun` key, null or a string `event` (R3-F1). MEASURED: 0 of 187
+heads truncated or malformed; 0 UNKNOWN reads on an open no-run PR in the transcripts. 225 -> 225 cases; 133 -> 133
+mutations (10 retired with deleted code, 10 new, 5 re-bound; one expect stale since r2 corrected).
