@@ -829,7 +829,14 @@ EXPECTED_MUTATIONS = {
     # nineteen for the per-target suite limit (`suite_limit`'s three arms and two pins, `run_suite_parts`'
     # two, the message, and every hand-off from the control to the mutant and re-control runs). Eight
     # existing entries were re-bound to the threaded `limit=` text, none retired.
-    "scripts/check-plan-code.py": 254,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-08 suite-cost-b r1 fold (backlog #558): 254 -> 280 — twenty-five for the shard's time budget
+    # (`sweep_budget`'s reading of ci.yml, its headroom pin, `run_suite_parts`' cap, and every stop and its
+    # last line in `run_mutations`, `mutate_delivered` and `main`) and one for r1 F2 (the seeded, tree-less
+    # call forwards its limits). Three entries were RETARGETED for r1 F3 — the re-control is flat again, so
+    # the two that dropped `control_parts`' limit (now removed) and the one that dropped the re-control's
+    # became "the control/re-control runs under the CEILING / the mutant's limit" — and seven re-bound to
+    # moved text. None retired.
+    "scripts/check-plan-code.py": 280,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.

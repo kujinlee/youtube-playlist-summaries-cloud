@@ -1052,6 +1052,11 @@ jobs:
     # (shard) and shared by its controls and mutants. Measured on a Mac, a 30-mutant slice: 32.5 s unseeded,
     # 57.6 s seeded (the per-mutant copies it replaced took 201-414 s). Not measured on this runner; the
     # first nightly is the measurement, and a timeout still files `sweep-red`.
+    # ⛔ PR #538 r1 fold (backlog #558): THE HARNESS READS THIS LINE. `check-plan-code.sweep_budget` takes the run's
+    # cumulative time budget from it (less SWEEP_HEADROOM, 120 s), so a shard whose hung mutants would outlast the
+    # job STOPS and prints what it lost instead of being killed. Keep a bare integer or this `event_name == 'E' &&
+    # A || B` shape: any other is CANNOT RUN in every shard, and the harness's self-test (which reads this file)
+    # goes red first, in the PR that changes it.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
