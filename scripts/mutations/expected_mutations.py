@@ -1829,7 +1829,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ review round 3's fold: 53 -> 58, none retired (three anchors rebound onto the exact-path read-back and the
     # widened `_env`): the `lstat` before the in-clone verbs and the exact path compare (R3-F1), the inherited
     # REGEN_MAIN_CHECKOUT stripped (R3-F2), and `_git`'s stop-signal SIGTERM grace and bounded drain (R3-F3).
-    "scripts/regen-pages.py": 58,
+    # ⟳ PR #536's CI sweep: 58 -> 60, none retired — four kills went red with no `[FAIL]` name because the suite
+    # RAISED between cases; the crash guard that now names such a red has two: its `[FAIL]` print, and its
+    # catching a non-zero sys.exit.
+    "scripts/regen-pages.py": 60,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than

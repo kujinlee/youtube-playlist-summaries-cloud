@@ -761,5 +761,31 @@
     "expect": [
       "⛔ review r3 R3-F3: ...and a git that IGNORES SIGTERM is SIGKILLed, then its pipes — still held by a child of git — are drained for a BOUNDED time, not until that child exits"
     ]
+  },
+  {
+    "name": "PR #536 CI sweep: an exception escaping the suite body prints no `[FAIL]` line, so its red has no name",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        print(f\"  [FAIL] {CRASH_CASE}",
+        "        print(f\"  CRASHED {CRASH_CASE}"
+      ]
+    ],
+    "expect": [
+      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched"
+    ]
+  },
+  {
+    "name": "PR #536 CI sweep: a non-zero sys.exit escaping the suite body is not caught, so it exits red with no name",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    except (Exception, SystemExit) as exc:\n        if isinstance(exc, SystemExit)",
+        "    except Exception as exc:\n        if isinstance(exc, SystemExit)"
+      ]
+    ],
+    "expect": [
+      "⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched"
+    ]
   }
 ]

@@ -19040,3 +19040,17 @@ GitHub). R3-F3 — `_git`'s stop-signal arm and its timeout arm share `_stop_git
 bounded by `GIT_DRAIN` 2 s, pipes closed. Defence-against-tampering wording removed from the docstrings and comments;
 swap cases kept as pinned behaviour. regen-pages 101 -> 106 cases, 53 -> 58 mutations (three anchors rebound);
 session-state 131 -> 132 cases, 111 -> 114 mutations.
+
+## 2026-11-08
+The automatic test that deliberately breaks the fresh-pages code, to prove the tests notice, found four breaks that the
+tests did notice but could not say which test caught them: the test run crashed part-way and printed only an error. The
+test run now reports any crash as a named failed test, and the four breaks are each caught by the test written for them.
+<!--tech-->
+Backlog #408, PR #536, CI mutation sweep (shards 3, 5, 13, 19). Cause: `_self_test_body` RAISED between cases — the
+failed-step case did `o[1].split` on an `("ok", (tree, sha))` result (mutants 2-4; 3 and 4 never reached the real-git
+`⭐⭐` case their `expect` names, so it "matched 0 red cases"), and the first `with fresh(...)` block raised out of
+`Private` (mutant 1). Fix in `scripts/regen-pages.py`: `_crash_guarded` wraps the body and prints
+`[FAIL] CRASH_CASE` with the last completed case and the traceback for any escaping exception or non-zero `sys.exit`;
+`outcome()` maps a non-`CannotRun` raise to `("CRASHED", …)`; the first `fresh()` block's crash feeds its cases;
+`str(o[1])` in the step case. No `expect` retargeted: once reached, each named case goes red. regen-pages 106 -> 107
+cases (the guard read through check-plan-code's own `parse_fail_names`), 58 -> 60 mutations.

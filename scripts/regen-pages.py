@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 106 cases
+    python3 scripts/regen-pages.py --self-test             # 107 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -689,6 +689,30 @@ def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, t
     return 0
 
 
+# ⛔ EVERY RED HAS A NAME (backlog #408, CI sweep of PR #536). The mutation harness attributes a kill only
+# through a `[FAIL] <case>` line. Four mutants made this suite RAISE between two cases — a traceback and
+# exit 1, so "caught", yet no case name, so NOTHING COULD SEE THE KILL. Whatever escapes the body is now
+# printed as this one named case, with the last case that completed, so the red is readable and locatable.
+CRASH_CASE = "⛔ the suite CRASHED: an exception escaped every case"
+_LAST_CASE: list[str] = []
+
+
+def _crash_guarded(body) -> int:
+    """Run a suite body; anything it raises (SystemExit included, KeyboardInterrupt not) is a `[FAIL]` of
+    CRASH_CASE naming the last completed case and the traceback, and exit 1 — never a bare traceback."""
+    import traceback
+    start = len(_LAST_CASE)
+    try:
+        return body()
+    except (Exception, SystemExit) as exc:
+        if isinstance(exc, SystemExit) and exc.code in (0, None):
+            raise
+        after = _LAST_CASE[-1] if len(_LAST_CASE) > start else "(none: it raised before the first case)"
+        print(f"  [FAIL] {CRASH_CASE}\n    after case: {after}\n"
+              + "".join("    " + l for l in traceback.format_exc().splitlines(True)))
+        return 1
+
+
 def _self_test() -> int:
     """No generator runs: every launch is a fake. Wrapped per backlog #382's canonical entry."""
     import fixture_git
@@ -697,6 +721,12 @@ def _self_test() -> int:
 
 
 def _self_test_body() -> int:
+    """The cases, under the crash guard: a red that escapes every case still has a `[FAIL]` name. ⚠ A CALL
+    in a lambda, not the bare name: check-fixture-variation follows the suite only through calls."""
+    return _crash_guarded(lambda: _self_test_cases())
+
+
+def _self_test_cases() -> int:
     globals()["_IN_SUITE"] = True                     # `fresh` refuses the real repository from here on
     import contextlib
     import io
@@ -705,12 +735,47 @@ def _self_test_body() -> int:
     def case(name, got, want):
         nonlocal cases, failures
         cases += 1
+        _LAST_CASE.append(name)
         if got != want:
             failures += 1
             print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
 
     table = {"dashboard": "gen-dashboard.py", "goal-tree": "goal-tree.py", "goals": "gen-goals-page.py"}
     _SHA = "ab" * 20
+
+    # ⭐ CRASH_CASE, read the way the HARNESS reads it: through check-plan-code's own `parse_fail_names`, the
+    # consumer half of the `[FAIL] <case>` contract — never a second copy of it here.
+    _cpc_path = SCRIPTS / "check-plan-code.py"
+    if _cpc_path.is_file():
+        _cpc_spec = importlib.util.spec_from_file_location("_check_plan_code_for_regen", _cpc_path)
+        _cpc = importlib.util.module_from_spec(_cpc_spec)
+        sys.modules[_cpc_spec.name] = _cpc            # its dataclasses resolve their module through sys.modules
+        _cpc_spec.loader.exec_module(_cpc)
+        _mark = len(_LAST_CASE)
+
+        def _raises(exc):
+            def body():
+                _LAST_CASE.append("the case before the crash")
+                raise exc
+            buf = io.StringIO()
+            try:                                      # an escape through the guard is THIS case's red, by name
+                with contextlib.redirect_stdout(buf):
+                    rc = _crash_guarded(body)
+            except BaseException as escaped:           # noqa: BLE001 — the guard's own leak is what is measured
+                rc = f"ESCAPED the guard: {type(escaped).__name__}"
+            del _LAST_CASE[_mark:]
+            out = buf.getvalue()
+            return rc, _cpc.parse_fail_names(out), "after case: the case before the crash" in out
+
+        _ok_buf = io.StringIO()
+        with contextlib.redirect_stdout(_ok_buf):
+            _ok_rc = _crash_guarded(lambda: 0)
+        case("⭐ every red has a name: an exception, or a non-zero sys.exit, escaping the suite body is a `[FAIL]` of "
+             "CRASH_CASE that the harness's parse_fail_names reads, naming the last case; a clean body is untouched",
+             [_raises(RuntimeError("boom")), _raises(SystemExit(3)), (_ok_rc, _ok_buf.getvalue())],
+             [(1, [CRASH_CASE], True), (1, [CRASH_CASE], True), (0, "")])
+    else:
+        print("  NOT RUN (no scripts/check-plan-code.py in this tree): the crash-guard case")
 
     def bash(cmd):
         return {"tool_input": {"command": cmd}}
@@ -900,10 +965,14 @@ def _self_test_body() -> int:
         return g
 
     def outcome(fn):
+        """("ok", value), ("CANNOT RUN", why) — or ("CRASHED", what) for anything else, so a mutant that makes
+        the code under test RAISE reddens the case reading it, readably, instead of killing the suite."""
         try:
             return ("ok", fn())
         except CannotRun as exc:
             return ("CANNOT RUN", str(exc))
+        except Exception as exc:
+            return ("CRASHED", f"{type(exc).__name__}: {exc}")
 
     def verbs(g):
         return [" ".join(a[:2]) for a, _ in g.calls]
@@ -924,11 +993,18 @@ def _self_test_body() -> int:
 
     g0 = fake_git()
     seen_in_block: list = []
-    with contextlib.redirect_stdout(io.StringIO()):
-        with fresh(main_dir, git=g0, scratch=str(scr)) as (t0_tree, t0_sha):
-            seen_in_block = [t0_tree.is_dir(), oct(t0_tree.parent.stat().st_mode & 0o777),
-                             t0_tree.parent.parent == scr, t0_tree.parent.name.startswith(PRIVATE_PREFIX),
-                             left_in(common / "worktrees"), _TREE_MAIN.get(str(t0_tree))]
+    t0_sha = None
+    # A block that RAISES (a mutant that makes the private dir where it cannot be made) reddens the cases
+    # below by name, through `seen_in_block` and `t0_tree`, rather than escaping them (CRASH_CASE).
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            with fresh(main_dir, git=g0, scratch=str(scr)) as (t0_tree, t0_sha):
+                seen_in_block = [t0_tree.is_dir(), oct(t0_tree.parent.stat().st_mode & 0o777),
+                                 t0_tree.parent.parent == scr, t0_tree.parent.name.startswith(PRIVATE_PREFIX),
+                                 left_in(common / "worktrees"), _TREE_MAIN.get(str(t0_tree))]
+    except Exception as exc:
+        seen_in_block = [f"CRASHED: {type(exc).__name__}: {exc}"] * 6
+        t0_tree = scr / "CRASHED-no-private-dir" / "tree"     # a path no run makes, so the cases still compute
     clone = [(a, c) for a, c in g0.calls if a[0] == "clone"]
     case("⭐ review r2: every run CLONES — `clone --shared --no-checkout --quiet <main checkout> <private>/tree`, "
          "run from the private dir",
@@ -978,7 +1054,7 @@ def _self_test_body() -> int:
     _steps = [run_fake(fake_git(step_rc={v: 1})) for v in ("checkout", "update-ref", "remote")]
     case("⛔ review r2: a failed checkout, origin/master update or URL update inside the clone is CANNOT RUN, "
          "naming the step, and nothing is left",
-         [(o[0], o[1].split(" failed")[0]) for o in _steps] + [left_in(scr)],
+         [(o[0], str(o[1]).split(" failed")[0]) for o in _steps] + [left_in(scr)],
          [("CANNOT RUN", "the clone's checkout of " + _SHA[:12]), ("CANNOT RUN", "the clone's setting origin/master"),
           ("CANNOT RUN", "the clone's setting origin's URL"), []])
     g5 = fake_git(top=main_dir)
