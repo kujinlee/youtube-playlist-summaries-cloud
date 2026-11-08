@@ -18947,6 +18947,21 @@ run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41
 from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
 
 ## 2026-11-07
+The full mutation test run (the job that checks the tests would catch a planted bug) is cheaper again, without
+dropping a single check. One page generator's tests were a fifth of the whole run, because they rebuilt the full
+backlog page about a dozen times and redid the same layout work each time. They now remember work they have already
+done inside a run, and take about 27 seconds instead of about 73. Two new backlog items record the owner's
+questions: what each planted-bug check actually catches compared with what it costs (559), and reusing a check's
+result across runs when nothing it read has changed (560).
+<!--tech-->
+Backlog 231. Measured from CI run 42432742676 (24 shards, all green; progress lines mapped through `shard_slice` over
+the manifests at `c3d85c6d`, 4,093/4,093 matched): `scripts/gen-backlog-page.py` was 4,098 s of 20,076 s mutant work
+(20.4%; 77 entries, mean 53.2 s). Cut: `layout_body` (documented PURE) is `functools.lru_cache`d, and the suite's
+`_drifted` page builds are memoised like `_built` (7 calls, 2 inputs). Local suite 71.1 / 77.8 / 70.9 s before,
+30.6 / 25.5 / 25.3 s after; 247/247 cases, 77 entries all still killed; no entry, case or pin changed. Each mutant is
+its own process, so a mutated `layout_body` is what fills the cache. Files backlog 559 and 560.
+
+## 2026-11-07
 Our own self-tests stop leaving temporary folders behind. The shared temp folder had built up about 117,000 of them,
 which slows any command that has to look through it. Now each test run gets its own temporary folder that is deleted when
 the run ends, even when a test fails. One run of every self-test used to leave 124 folders behind; it now leaves none.
