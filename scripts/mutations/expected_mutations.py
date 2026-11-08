@@ -347,7 +347,20 @@ EXPECTED_MUTATIONS = {
     # (clause 1 only: own words, after the marker, upper case, both phrases, negation x3, `not yet`, over a
     # cross-reference). The r1-r3 history reader (clause 2) was built, measured, and REMOVED in the r4 fold
     # (Phase 6 review): its 25 entries went with it, so this branch adds 9 net.
-    "scripts/goal-tree.py": 325,
+    # ⟳ 2026-11-07, backlog #406 (suite cost): 325 -> 327 — the sibling import loses its memo, and its key loses the
+    # file stamp (a rewritten sibling served stale).
+    # ⟳ 2026-11-08, PR #537 round 1's fold: 327 -> 333, none retired; the two above RE-BOUND to the new key (the memo
+    # never consulted; a hit that checks nothing). Six new: the hit skips the sibling's own bytes, never keys the files its
+    # import loaded, the audit hook not installed, the hook blind to `open`, the real pycache_prefix kept (a stale
+    # .pyc), and the memo keyed on the name instead of the path.
+    # ⟳ 2026-11-08, PR #537 round 3 fold (Phase 6, architecture-review-2026-11-08-goal-tree-sibling-cache): 337 -> 336.
+    # The cache was REDESIGNED: it lives only inside `_sibling_sweep()` (the self-test), so the audit hook, the
+    # read-list stack, the lock and the bytecode-settings swap are gone, and so are their 12 mutations. Eleven replace
+    # them, each on the new code: the memo never consulted / never stored; ON by default; keyed on the name; the
+    # sibling read through its .pyc; compiled under goal-tree's `from __future__` flags; the sweep restore out of
+    # finally / never run; a nested sweep with its own memo; the outside probe taken inside the sweep; the body run
+    # outside any sweep. Above master's 325 by eleven.
+    "scripts/goal-tree.py": 336,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
@@ -1863,7 +1876,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-31, PR #443 round 7's fold: 197 -> 201, declared sum 2808 -> 2812 (read with `ast`).
     # Four entries, no retargets — the call site's deadline (passed huge; reverted to an undeadlined
     # assess), the alarm escaping the disarm, and the handler never restored.
-    "scripts/check-main-drivable.py": 201,
+    # ⟳ 2026-11-07, backlog #231 (suite cost): 201 -> 208. Seven entries, no retargets — each of the
+    # five newly memoised tree helpers loses its memo, `classify` loses its memo, and the named
+    # real-guard cases classify under a path the live reconcile does not use.
+    "scripts/check-main-drivable.py": 208,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
@@ -1940,7 +1956,8 @@ EXPECTED_MUTATIONS = {
     # order (7). 1 re-bound (the witness removed, was "a cut read is never refused when it misses midnight"). 9 new:
     # the canary removed, the witness's strict < and its skew, `before[0]` and the window bound's slack, the running
     # maximum, `min_at` over every window, a whole log refused for a breach, and the witness applied to a whole log.
-    "scripts/check-usage-pace.py": 174,
+    # ⟳ 2026-11-07, backlog #231 (suite cost): 174 -> 175, none retired, none re-bound. `meter_row` loses its memo.
+    "scripts/check-usage-pace.py": 175,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
