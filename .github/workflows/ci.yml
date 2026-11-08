@@ -420,6 +420,10 @@ jobs:
       # `.claude/hooks/block-default-branch-push.sh` over a fixture clone on a feature branch and on master.
       - name: push-command self-test
         run: python3 scripts/push-command.py --self-test
+      # PR #542 round 1 (C-F7): the hook's OWN suite ran nowhere, so rules 2 and 3 (force, `+refspec`,
+      # --no-verify, hooksPath, ALLOW_PLAN_LEAK) and the input/jq refusals could regress with CI green.
+      - name: block-default-branch-push hook self-test
+        run: bash .claude/hooks/block-default-branch-push.sh --self-test
       # backlog #440: the PreCompact boundary hook (defer an auto compaction mid-work, up to 1.5 x W).
       - name: check-compaction-boundary self-test
         run: python3 scripts/check-compaction-boundary.py --self-test

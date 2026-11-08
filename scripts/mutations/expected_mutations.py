@@ -2025,5 +2025,12 @@ EXPECTED_MUTATIONS = {
     # layers (3), the word boundaries of `git` and `push` (5), the segment's stop at a separator and a
     # line end (2), the three `GITOPTS` branches (3), and the CLI contract the hook reads (2). Each was
     # hand-checked in a `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case once.
-    "scripts/push-command.py": 18,
+    # ⟳ 2026-11-08, PR #542 round 1 fold: 18 -> 32. FOURTEEN new — the line continuation (C-F1, 1); the
+    # non-push exemption (C-F2: stash, commit, never consulted, a later git word, a bare `git` word, 5); strict
+    # mode's segment set (C-F2: bare chunks dropped, git chunks kept, 2); redirections (glued, fd digits,
+    # separate target, 3); the deadline (X-F1: not armed, SIGALRM ignored, 2); `-c` skipping its value (1).
+    # The 18 existing entries were REBOUND to the rewritten code, intent and name unchanged (the regex
+    # `GITOPTS` became the token scan `_reach`). Each of the 32 hand-checked in a `stage_tree` copy: rc 1,
+    # and `parse_fail_names` names every expected case exactly once.
+    "scripts/push-command.py": 32,
 }

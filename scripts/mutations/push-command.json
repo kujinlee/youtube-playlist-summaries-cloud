@@ -37,7 +37,7 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if STRICT.search(norm):\n        return \"strict\", segs\n",
+    "        if strict:\n            found += [(_segment(chunk, spans[i].start()), \"strict\") for i in strict]\n            continue\n",
     ""
    ]
   ],
@@ -51,7 +51,7 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if GIT_WORD.search(norm) and segs:\n        return \"loose\", segs\n",
+    "    if GIT_WORD.search(norm) and found:\n        return \"loose\", [s for s, _ in found]\n",
     ""
    ]
   ],
@@ -65,8 +65,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if GIT_WORD.search(norm) and segs:",
-    "    if segs:"
+    "    if GIT_WORD.search(norm) and found:",
+    "    if found:"
    ]
   ],
   "expect": "push without the word git is none"
@@ -98,8 +98,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "push(?![\\w./-])(",
-    "push(?![\\w./])("
+    "push(?![\\w./-])\")",
+    "push(?![\\w./])\")"
    ]
   ],
   "expect": "a branch NAMED push-… is not a segment"
@@ -109,8 +109,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "PUSH_SEG = re.compile(r\"(?<![\\w./-])push",
-    "PUSH_SEG = re.compile(r\"(?<![\\w./])push"
+    "PUSH_WORD = re.compile(r\"(?<![\\w./-])push",
+    "PUSH_WORD = re.compile(r\"(?<![\\w./])push"
    ]
   ],
   "expect": "a hyphenated word ending -push is not a segment"
@@ -131,8 +131,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "([ \\t]+[^;&|\\n]*)?\")",
-    "([ \\t]+[^\\n]*)?\")"
+    "CHUNK_SEP = re.compile(r\"[;&|",
+    "CHUNK_SEP = re.compile(r\"["
    ]
   ],
   "expect": "a segment stops at a separator"
@@ -142,8 +142,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "+[^;&|\\n]*)",
-    "+[^;&|]*)"
+    "|\\n]\")",
+    "|]\")"
    ]
   ],
   "expect": "a segment stops at a line end"
@@ -153,8 +153,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "(?:-c|-C|--config-env",
-    "(?:-C|--config-env"
+    "VALUE_OPTS = frozenset({\"-c\", \"-C\",",
+    "VALUE_OPTS = frozenset({\"-C\","
    ]
   ],
   "expect": "⭐ -c x=y before push is strict"
@@ -164,8 +164,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "|-C|--config-env",
-    "|--config-env"
+    "{\"-c\", \"-C\", \"--config-env\",",
+    "{\"-c\", \"--config-env\","
    ]
   ],
   "expect": "-C dir before push is strict"
@@ -175,8 +175,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "           r\"|-\\S+[ \\t]+)*\")",
-    "           r\")*\")"
+    "        elif t.startswith(\"-\") and len(t) > 1:\n            reach[i] = reach[i + 1]\n",
+    ""
    ]
   ],
   "expect": "a bare flag before push is strict"
@@ -200,10 +200,182 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    segs = [(\"push \" + (m.group(1) or \"\").strip()).rstrip() for m in PUSH_SEG.finditer(norm)]",
-    "    segs = [(m.group(1) or \"\").strip() for m in PUSH_SEG.finditer(norm)]"
+    "    return (\"push \" + _drop_redirections(chunk[at + 4:])).rstrip()",
+    "    return _drop_redirections(chunk[at + 4:]).rstrip()"
    ]
   ],
   "expect": "⚠ hook: the BOUND — `git log --grep push` is REFUSED on the default branch"
+ },
+ {
+  "name": "C-F1: a backslash-newline is not joined, so the refspec on the next line is never read",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    cmd = cmd.replace(\"\\\\\\n\", \" \")\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ C-F1: a backslash-newline joins the refspec onto the push line",
+   "hook: C-F1 — a line continuation before master is refused"
+  ]
+ },
+ {
+  "name": "C-F2: `git stash` is no longer a non-push subcommand",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "{\"commit\", \"stash\"}",
+    "{\"commit\"}"
+   ]
+  ],
+  "expect": [
+   "C-F2: `git stash push -m wip` is never a push",
+   "hook: C-F2 — `git stash push -m wip` is allowed on the default branch"
+  ]
+ },
+ {
+  "name": "C-F2: `git commit` is no longer a non-push subcommand",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "NON_PUSH_SUBCOMMANDS = frozenset({\"commit\", ",
+    "NON_PUSH_SUBCOMMANDS = frozenset({"
+   ]
+  ],
+  "expect": [
+   "⭐ C-F2: a commit message naming push and master is not a segment beside a real push",
+   "hook: C-F2 — a commit message naming push and master, then a feature push, is allowed"
+  ]
+ },
+ {
+  "name": "C-F2: the non-push exemption is never consulted",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if _not_a_push(toks):\n            continue\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "C-F2: `git stash push` is never a push",
+   "C-F2: `git stash push -m wip` is never a push"
+  ]
+ },
+ {
+  "name": "C-F2: a git word after `git commit` no longer voids the exemption",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    return not any(GIT_WORD.search(t) for t in toks[s + 1:])",
+    "    return True"
+   ]
+  ],
+  "expect": "C-F2: a git word AFTER `git commit` voids the exemption"
+ },
+ {
+  "name": "C-F2: the exemption accepts any token holding the git word, `$(git` included",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if g is None or toks[g] != \"git\":",
+    "    if g is None:"
+   ]
+  ],
+  "expect": "C-F2: the exemption wants a bare `git` word, not `$(git`"
+ },
+ {
+  "name": "C-F2: strict mode reads push words in chunks with no git word again",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "k != \"bare\"]",
+    "k != \"none\"]"
+   ]
+  ],
+  "expect": [
+   "C-F2: a push word in a chunk with no git word is text once a real push is recognised",
+   "hook: C-F2 — a feature push, then `--title \"Do not push to master\"`, is allowed"
+  ]
+ },
+ {
+  "name": "C-F2: strict mode drops a loose push beside it, so `/usr/bin/git push origin master` escapes",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "[s for s, k in found if k != ",
+    "[s for s, k in found if k == \"strict\" and k != "
+   ]
+  ],
+  "expect": "every push in a compound command is a segment"
+ },
+ {
+  "name": "a glued redirection drops the refspec it is glued to",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if head and not head.isdigit():\n            out.append(head)\n",
+    ""
+   ]
+  ],
+  "expect": "a glued redirection leaves the refspec"
+ },
+ {
+  "name": "a file-descriptor number before a redirection is read as a refspec",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if head and not head.isdigit():",
+    "        if head:"
+   ]
+  ],
+  "expect": "`2>` before `&1` is not a refspec"
+ },
+ {
+  "name": "a separate redirection keeps its target as a refspec",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            skip_target = True\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "a separate redirection drops its target"
+ },
+ {
+  "name": "X-F1: `segments` arms no deadline, so a stall never ends",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    _arm_deadline()\n",
+    ""
+   ]
+  ],
+  "expect": "⭐ X-F1: a stalled `segments` run is ended by its own deadline (SIGALRM)"
+ },
+ {
+  "name": "X-F1: the deadline's SIGALRM is ignored instead of ending the run",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "signal.signal(signal.SIGALRM, signal.SIG_DFL)",
+    "signal.signal(signal.SIGALRM, signal.SIG_IGN)"
+   ]
+  ],
+  "expect": "⭐ X-F1: a stalled `segments` run is ended by its own deadline (SIGALRM)"
+ },
+ {
+  "name": "a separate-value option skips only itself, so `-c push` reads as the subcommand",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            reach[i] = reach[i + 2]",
+    "            reach[i] = reach[i + 1]"
+   ]
+  ],
+  "expect": [
+   "`-c` takes its value even when the value is `push`",
+   "⭐ -c x=y before push is strict"
+  ]
  }
 ]

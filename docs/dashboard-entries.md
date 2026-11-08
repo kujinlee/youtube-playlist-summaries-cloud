@@ -19225,8 +19225,11 @@ The safety check that stops a push to master no longer misses a push written wit
 that runs git by its full path. It now reads the command with quotes removed, and when the words "git" and "push" both
 appear in a form it does not recognise, it checks the command anyway. The cost, stated plainly: an ordinary command that
 mentions both words, such as searching the log for "push", is now refused when run from a copy that is on master, and
-a quoted sentence reading "git push origin master" is refused anywhere. On a feature branch the ordinary commands still
-run. Those refusals are the deliberate price of not letting a real push through.
+a quoted sentence reading "git push origin master" is refused anywhere, as is a search of the log for "push to master"
+and a push wrapped in brackets. A commit message or a pull-request title that mentions "push" and "master" next to a
+real push is allowed, and so is git's own "stash push". Those refusals are the deliberate price of not letting a real
+push through. The first review also found it could freeze on one long command, and that a push continued onto a second
+line, "push HEAD" from master, or a "+master" slipped past it; all four are now refused.
 <!--tech-->
 Backlog #428. Detection moved out of `.claude/hooks/block-default-branch-push.sh` into `scripts/push-command.py`
 (`segments`: mode `none`/`strict`/`loose`, then one `push <args>` line per segment) so the mutation harness can reach it.
@@ -19239,3 +19242,16 @@ refused on the default branch. Red-before MEASURED: 9 of the new hook cases fail
 `check-selftest-counts`, `check-fixture-variation` and check-plan-code's shipping-manifest case); hook self-test
 26 -> 33; 18 mutations (new pin), each hand-checked in a `stage_tree` copy. Cost MEASURED on a loaded machine (3 runs of
 20 calls): the hook went from 163-244 to 398-570 ms per call that contains `push`, the Python start-up of the detector.
+⟳ PR #542 round 1 fold (both halves NOT CONVERGED, 12 findings: 11 fixed, X-F2's rest and C-F6 filed as backlog #574).
+X-F1: the nested-repetition `GITOPTS` regex became a right-to-left token scan (`_reach`), O(N) per chunk, and
+`segments` arms a 3 s SIGALRM with the DEFAULT action; the hook names exit 142 as a deadline refusal. Codex's input
+(`-c ` ×60) MEASURED: the old detector timed out at 10 s, the new one answered in 0.15 s. C-F1: `\`+newline -> space
+before the deletion. C-F2: per chunk; strict mode reads strict pushes plus push words in chunks holding a git word;
+`git commit`/`git stash` chunks with no later git word are not pushes. Redirections removed from segments. C-F3 MEASURED
+(Claude Code 2.1.316, marker hooks in a `claude -p` scratch repo): `Bash(*push*)` fired for `echo git p"u"sh …`,
+`echo git pu\sh …`, `echo pu""sh`; not widened. C-F4/X-F2: `HEAD`/`@` -> current branch, `+` stripped for rule 1 and
+refused as force by rule 2. X-F3/C-F5: a push token with `(`, `)`, backtick, `$(`, `<`, `>` refused. X-F4/C-F7: invalid
+JSON, non-string command, missing `jq` refuse (NOT CHECKED); hook `--self-test` is a CI step. C-F8: `json`, `subprocess`,
+`tempfile`, `pathlib` load only in the self-test. Bound restated in the docstring and the hook comment, each case
+measured. push-command 39 -> 64 cases; hook self-test 33 -> 53; mutations 18 -> 32 (18 rebound, 14 new), each
+hand-checked in a `stage_tree` copy; hook-side fixes each reverted by hand and their cases went red.
