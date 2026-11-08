@@ -18945,3 +18945,19 @@ lasting fix is making the slowest checks cheaper, which stays open.
 `.github/workflows/ci.yml` `mutation-sweep` matrix 18 -> 24 (backlog #231's "any shard exceeds 1,500s" trigger fired: push
 run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41s). Predicted slowest shard ~1,545s (floor ~520s
 from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
+
+## 2026-11-08
+One check in the full test run could be marked as broken only because it was slow. It had a fixed 2-minute limit, and one
+deliberately broken copy of another check takes 6 to 11 times longer than the normal copy, so it sometimes ran out of time.
+Now each check's limit is based on how long that check took moments earlier: 20 times its normal time, at least 2 minutes and
+at most 10. A check that really hangs still fails. The harness's own self-check also uses about 10% less CPU per run, though
+the run's wall time did not change measurably on this machine. The full test run is still near its time limit (backlog 231
+stays open).
+<!--tech-->
+`scripts/check-plan-code.py`: `suite_limit(control_seconds)` = min(`SUITE_TIMEOUT_CEILING` 600, max(`SUITE_TIMEOUT` 120,
+`SUITE_TIMEOUT_FACTOR` 20 x the control's per-suite seconds)); None (a control) = 120. `mutate_delivered` records `limits[name]`
+from each green control (divided by the seed count) and threads it through `run_mutations`, `seed_runs`, `run_suite(_parts)` and
+the re-control's `control_parts`. A timeout is still rc 2 CANNOT RUN (backlog #558). `_walks_dir` indexes lister calls and flows
+by enclosing scope in one walk (backlog #231): identical answers on all 99 `scripts/*.py`, 22-53% less CPU. Self-test 373 -> 389
+cases; manifest 228 -> 254 entries (26 added, none retired). Filed backlog #564 (the fixture-variation mutant whose cost grows
+with the repository) and backlog #565 (the self-test's full `docs/` stage copy).

@@ -824,7 +824,12 @@ EXPECTED_MUTATIONS = {
     # The r4 M1 control entry was re-bound.
     # ⟳ 2026-11-06, merging PR #523 (backlog #506) into backlog #533: 182 + 46 = 228. The two lines above are
     # each PR measured from the common 178; the merged manifest holds both sets (4 + 46 added, none retired).
-    "scripts/check-plan-code.py": 228,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-07 backlog #231 + #558: 228 -> 254 — seven for `_walks_dir`'s scope index (class body, def
+    # scopes, module seed, sibling isolation, the fixpoint, the `ls-files` prefilter, a carried name) and
+    # nineteen for the per-target suite limit (`suite_limit`'s three arms and two pins, `run_suite_parts`'
+    # two, the message, and every hand-off from the control to the mutant and re-control runs). Eight
+    # existing entries were re-bound to the threaded `limit=` text, none retired.
+    "scripts/check-plan-code.py": 254,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.

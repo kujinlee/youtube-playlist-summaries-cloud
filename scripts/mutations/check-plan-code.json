@@ -139,8 +139,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "timeout=SUITE_TIMEOUT,\n                           env=mutation_env(d, seed))",
-        "timeout=SUITE_TIMEOUT)"
+        "timeout=limit,\n                           env=mutation_env(d, seed))",
+        "timeout=limit)"
       ]
     ],
     "expect": "a spawned suite resolves Path.home() into the run's own tree"
@@ -2280,8 +2280,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    pairs = [(n.target, n.iter)]",
-        "                    pairs = []"
+        "            pairs = [(n.target, n.iter)]",
+        "            pairs = []"
       ]
     ],
     "expect": [
@@ -2346,8 +2346,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "rc, out, err = run_suite_parts(d, name, seed)",
-        "rc, out, err = run_suite_parts(d, name)"
+        "rc, out, err = run_suite_parts(d, name, seed, limit=limit)",
+        "rc, out, err = run_suite_parts(d, name, limit=limit)"
       ]
     ],
     "expect": [
@@ -2438,8 +2438,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    for seed, rc, so, se in seed_runs(d, name, seeds, trees):",
-        "    for seed, rc, so, se in seed_runs(d, name, seeds, trees)[:1]:"
+        "    for seed, rc, so, se in seed_runs(d, name, seeds, trees, limit=limit):",
+        "    for seed, rc, so, se in seed_runs(d, name, seeds, trees, limit=limit)[:1]:"
       ]
     ],
     "expect": [
@@ -2647,8 +2647,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "run_suite_parts(trees[seed], name, seed)) for seed in seeds]",
-        "run_suite_parts(d, name, seed)) for seed in seeds]"
+        "run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]",
+        "run_suite_parts(d, name, seed, limit=limit)) for seed in seeds]"
       ]
     ],
     "expect": [
@@ -2673,8 +2673,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]\n",
-        "    with contextlib.ExitStack() as fresh:\n        trees = seed_trees(d, seeds, fresh)\n        return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]\n"
+        "    return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]\n",
+        "    with contextlib.ExitStack() as fresh:\n        trees = seed_trees(d, seeds, fresh)\n        return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]\n"
       ]
     ],
     "expect": [
@@ -2686,8 +2686,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "seed_runs(d, fname, seeds, here)]",
-        "seed_runs(d, fname, seeds)]"
+        "seed_runs(d, fname, seeds, here, limit=limit)]",
+        "seed_runs(d, fname, seeds, limit=limit)]"
       ]
     ],
     "expect": [
@@ -2738,8 +2738,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "control_parts(d, name, seeds, trees)\n            out = merged_output",
-        "control_parts(d, name, seeds)\n            out = merged_output"
+        "control_parts(d, name, seeds, trees, limit=limits.get(name))\n            out = merged_output",
+        "control_parts(d, name, seeds, limit=limits.get(name))\n            out = merged_output"
       ]
     ],
     "expect": [
@@ -2853,6 +2853,347 @@
       "⛔ backlog #533: a MISSING pins file is {} WITH the reason",
       "⛔ sweep-pin-select r1 F2: an unreadable pins file is REPORTED by its consumer with read_pins's reason, never an agreement with {}",
       "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}"
+    ]
+  },
+  {
+    "name": "backlog #231: a lister in a class body is filed under the module's top level, so a class attribute reads as a walk",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not isinstance(stmt, defs + (ast.ClassDef,)):\n            out.append(TOP)",
+        "        if True:\n            out.append(TOP)"
+      ]
+    ],
+    "expect": [
+      "...and a lister in a CLASS BODY, outside any def, is in no scope — it is not a walk"
+    ]
+  },
+  {
+    "name": "backlog #231: a node is filed under no function scope, so every lister inside a def is lost",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if isinstance(up, defs):\n                out.append(id(up))",
+        "            if False:\n                out.append(id(up))"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a module-level name carries the directory into a function's lister"
+    ]
+  },
+  {
+    "name": "backlog #231: the module's taint is not seeded into a function's scope",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    module = taint(flows.get(TOP, []), set())",
+        "    module = set()"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a module-level name carries the directory into a function's lister"
+    ]
+  },
+  {
+    "name": "backlog #231: a scope is tainted from EVERY scope's flows, so a sibling function's assignment leaks in",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        tainted = taint(flows.get(key, []), module)",
+        "        tainted = taint([f for v in flows.values() for f in v], module)"
+      ]
+    ],
+    "expect": [
+      "...nor is a name assigned in a SIBLING function, which the lister's scope cannot see"
+    ]
+  },
+  {
+    "name": "backlog #231: the taint stops after one pass in source order, so a later assignment never reaches an earlier reader",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    out |= names\n                    grew = True",
+        "                    out |= names\n                    grew = False"
+      ]
+    ],
+    "expect": [
+      "...and a name assigned from one assigned LATER in the scope is still tainted — a fixpoint, not one pass in source order"
+    ]
+  },
+  {
+    "name": "backlog #231: the tree-wide `ls-files` prefilter always says no, so a `git ls-files` call is never a lister",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    any_ls = any(isinstance(m, ast.Constant) and m.value == \"ls-files\" for m in every)",
+        "    any_ls = False"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a call carrying `ls-files` is a lister, whatever it is called"
+    ]
+  },
+  {
+    "name": "backlog #231: a carried NAME no longer counts, only a constant naming the directory",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return const or not names.isdisjoint(tainted)",
+        "        return const"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a module-level name carries the directory into a function's lister"
+    ]
+  },
+  {
+    "name": "backlog #558: an untimed suite gets NO limit, so a hung control never times out",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if control_seconds is None:\n        return SUITE_TIMEOUT",
+        "    if control_seconds is None:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: an untimed suite (a control) gets the flat SUITE_TIMEOUT"
+    ]
+  },
+  {
+    "name": "backlog #558: the floor is dropped, so a fast control's mutants time out in seconds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return min(SUITE_TIMEOUT_CEILING, max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR * control_seconds))",
+        "return min(SUITE_TIMEOUT_CEILING, SUITE_TIMEOUT_FACTOR * control_seconds)"
+      ]
+    ],
+    "expect": [
+      "...a fast control is FLOORED at SUITE_TIMEOUT, never below it"
+    ]
+  },
+  {
+    "name": "backlog #558: the ceiling is dropped, so a slow target's real hang holds the shard without bound",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return min(SUITE_TIMEOUT_CEILING, max(",
+        "    return min(float(\"inf\"), max("
+      ]
+    ],
+    "expect": [
+      "...and a very slow one is CAPPED, so a real infinite loop still times out"
+    ]
+  },
+  {
+    "name": "backlog #558: the factor is 1, which is the flat limit that went red again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT_FACTOR = 20",
+        "SUITE_TIMEOUT_FACTOR = 1"
+      ]
+    ],
+    "expect": [
+      "the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded ceiling lets a real hang hold a shard"
+    ]
+  },
+  {
+    "name": "backlog #558: the ceiling drifts to unbounded with nothing to catch it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT_CEILING = 600",
+        "SUITE_TIMEOUT_CEILING = 100000"
+      ]
+    ],
+    "expect": [
+      "the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded ceiling lets a real hang hold a shard"
+    ]
+  },
+  {
+    "name": "backlog #558: run_suite_parts ignores the limit it is given",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    limit = SUITE_TIMEOUT if limit is None else limit",
+        "    limit = SUITE_TIMEOUT"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat SUITE_TIMEOUT when given none — never no timeout at all"
+    ]
+  },
+  {
+    "name": "backlog #558: run_suite_parts given no limit runs the child with NO timeout",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT if limit is None else limit",
+        "None if limit is None else limit"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat SUITE_TIMEOUT when given none — never no timeout at all"
+    ]
+  },
+  {
+    "name": "backlog #558: the timeout message names the flat constant, not the limit the suite ran under",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"{limit:.1f}s. NOT CHECKED.\")",
+        "f\"{SUITE_TIMEOUT}s. NOT CHECKED.\")"
+      ]
+    ],
+    "expect": [
+      "...and a suite over that limit is still rc 2, CANNOT RUN, naming the limit it ran under"
+    ]
+  },
+  {
+    "name": "backlog #558: run_suite drops the limit on its way to run_suite_parts",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seed, limit=limit)\n    return rc, merged_output(out, err)",
+        "seed)\n    return rc, merged_output(out, err)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+      "⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and seed_runs (every seed) under the limit they are given"
+    ]
+  },
+  {
+    "name": "backlog #558: seed_runs drops the limit, so every seeded mutant runs under the flat 120 s",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "name, seed, limit=limit)) for seed in seeds]",
+        "name, seed)) for seed in seeds]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+      "⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and seed_runs (every seed) under the limit they are given"
+    ]
+  },
+  {
+    "name": "backlog #558: an unseeded control_parts drops the limit, so the re-control runs under the flat 120 s",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return run_suite_parts(d, name, limit=limit)\n    rc, so, se = 0, \"\", \"\"",
+        "        return run_suite_parts(d, name)\n    rc, so, se = 0, \"\", \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: a seeded control_parts drops the limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seed_runs(d, name, seeds, trees, limit=limit):",
+        "seed_runs(d, name, seeds, trees):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: the re-control is not given its target's limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "control_parts(d, name, seeds, trees, limit=limits.get(name))",
+        "control_parts(d, name, seeds, trees)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: no target's limit is derived from its control",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            limits[name] = suite_limit(control_seconds[name] / max(1, len(seeds or ())))",
+        "            limits[name] = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: the control's time is not divided by its seed count, so two seeds double every limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "control_seconds[name] / max(1, len(seeds or ()))",
+        "control_seconds[name]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: mutate_delivered never hands the limits to run_mutations",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "set(targets), limits=limits,",
+        "set(targets), limits=None,"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: run_mutations looks up no limit for the mutated target",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        limit = (limits or {}).get(fname)",
+        "        limit = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+      "⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and seed_runs (every seed) under the limit they are given"
+    ]
+  },
+  {
+    "name": "backlog #558: a seeded mutant run drops its limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "here, limit=limit)]",
+        "here)]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: an unseeded mutant run drops its limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "run_suite(d, fname, limit=limit), None",
+        "run_suite(d, fname), None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control runs under the flat limit, and the mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
     ]
   }
 ]

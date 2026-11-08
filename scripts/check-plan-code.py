@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 373 cases
+    python3 scripts/check-plan-code.py --self-test          # 389 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -108,6 +108,20 @@ from coverage_verdict import (  # noqa: E402
 # `run_suite`, the timeout path could only be reached by waiting two minutes, so no
 # case reached it and "a hung suite is recorded as caught" survived. Round 5, M2.
 SUITE_TIMEOUT = 120
+# ⛔ backlog #558: ONE flat limit gave a FALSE red. MEASURED on master's push run 42377549561 (`1d5fd219`),
+# shard 16: `check-fixture-variation.py`'s control took 15.8 s, and its mutant "deadness is judged over
+# every file…" did not finish in 120 s — while its neighbours on the same runner took ~14.5 s each. The
+# schedule run on the same commit took 125.3 s for that mutant over TWO seeds against a 21.7 s control
+# (5.8x per seed), and locally it took 248 s of CPU against the control's 23 s (10.7x). So the cause is
+# chiefly the MUTANT'S OWN WORK (it analyses every file instead of one), which grows with the population,
+# with runner variance on top — not a slow runner alone. A mutation run's limit is therefore derived
+# from its target's own CONTROL, timed on the same runner minutes earlier (`suite_limit`):
+#   max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR x the control's per-suite seconds), never above the CEILING.
+# FACTOR 20 is ~1.9x the largest ratio measured (10.7x). The CEILING bounds a REAL hang: an infinite loop
+# still times out — after at most 600 s instead of 120 — and a timeout is still rc 2, CANNOT RUN, never
+# a pass. A control has no measurement yet, so it keeps the flat SUITE_TIMEOUT.
+SUITE_TIMEOUT_FACTOR = 20
+SUITE_TIMEOUT_CEILING = 600
 
 # ⛔ THE LOCAL SWEEP BUDGET — the owner's rule, made mechanical 2026-10-25: a FULL sweep belongs to
 # the pull request's CI shards; a local run is a PARTIAL diagnostic. The rule was written (velocity
@@ -370,7 +384,8 @@ def seed_revert(trees: dict, d: pathlib.Path, fname: str, text: str) -> "str | N
     return None
 
 
-def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> list:
+def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None,
+              limit: "float | None" = None) -> list:
     """`[(seed, rc, stdout, stderr), ...]`: `name`'s suite under each seed, each in ITS OWN tree (`seed_trees`).
 
     `trees` are the run's trees; without them this call makes its own, used once and deleted.
@@ -379,23 +394,24 @@ def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) ->
     """
     if trees is None:
         with contextlib.ExitStack() as cleanup:
-            return seed_runs(d, name, seeds, seed_trees(d, seeds, cleanup))
+            return seed_runs(d, name, seeds, seed_trees(d, seeds, cleanup), limit=limit)
     cannot = [(seed, 2, "", trees[seed]) for seed in seeds if isinstance(trees[seed], str)]
     if cannot:
         return cannot
-    return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]
+    return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]
 
 
-def control_parts(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> tuple[int, str, str]:
+def control_parts(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None,
+                  limit: "float | None" = None) -> tuple[int, str, str]:
     """A CONTROL run under EVERY seed (backlog #506): the first one that is not green, else the last green one.
 
     ⛔ THIS IS WHAT STOPS A RED CONTROL FROM FORGING A KILL. A suite red under seed B WITHOUT any mutation
     reddens every mutant under B, so a mutant killed only by luck under seed A would read killed under both.
     """
     if not seeds:
-        return run_suite_parts(d, name)
+        return run_suite_parts(d, name, limit=limit)
     rc, so, se = 0, "", ""
-    for seed, rc, so, se in seed_runs(d, name, seeds, trees):
+    for seed, rc, so, se in seed_runs(d, name, seeds, trees, limit=limit):
         if not control_is_green(rc, merged_output(so, se)):
             return rc, so, f"[under PYTHONHASHSEED={seed}] {se}"
     return rc, so, se
@@ -583,46 +599,94 @@ def _walks_dir(src: str, d: str) -> bool:
     def names_d(v) -> bool:
         return isinstance(v, str) and (v.rstrip("/") == d or (
             v.startswith(d + "/") and any(c in v.split("/")[depth] for c in "*?[")))
+    # backlog #231 COST (2026-11-07): this function was the largest single cost of `--self-test`
+    # (MEASURED: 6.1 s of CPU after the parse, over the real `scripts/`), because every function
+    # scope was re-walked and tainted whether or not it held a lister call, and `carries` re-walked
+    # every value on every fixpoint pass. Now ONE walk records each node's parent, the lister calls
+    # and the assignment-like FLOWS; each flow and each lister is filed under the scopes that enclose
+    # it, and only a scope holding a lister is tainted — one without cannot return True. `facts`
+    # and `parent` are keyed by `id` of nodes `tree` keeps alive until this call returns, so neither
+    # can outlive or cross a parse. The answer is unchanged: a scope's members are what `ast.walk`
+    # of it reached before (every def above a node, plus the module's top level when the node's
+    # top-level statement is not a def or class — a class body outside a def is in NO scope), and
+    # the taint is the least fixpoint of a monotone rule, so evaluation order cannot move it.
+    facts: dict = {}
+    def fact(expr) -> tuple:
+        got = facts.get(id(expr))
+        if got is None:
+            subs = list(ast.walk(expr))
+            got = facts[id(expr)] = (
+                any(isinstance(n, ast.Constant) and names_d(n.value) for n in subs),
+                frozenset(n.id for n in subs if isinstance(n, ast.Name)))
+        return got
     def carries(expr, tainted) -> bool:
-        return any((isinstance(n, ast.Constant) and names_d(n.value))
-                   or (isinstance(n, ast.Name) and n.id in tainted) for n in ast.walk(expr))
-    def taint(nodes, seed) -> set:
+        const, names = fact(expr)
+        return const or not names.isdisjoint(tainted)
+    def taint(flows, seed) -> set:
         out, grew = set(seed), True
         while grew:
             grew = False
-            for n in nodes:
-                if isinstance(n, ast.Assign):
-                    pairs = [(t, n.value) for t in n.targets]
-                elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
-                    pairs = [(n.target, n.value)]
-                elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
-                    pairs = [(n.target, n.iter)]
-                elif isinstance(n, ast.withitem) and n.optional_vars is not None:
-                    pairs = [(n.optional_vars, n.context_expr)]
-                else:
-                    continue
-                for tg, val in pairs:
-                    if carries(val, out):
-                        new = {m.id for m in ast.walk(tg) if isinstance(m, ast.Name)} - out
-                        grew |= bool(new)
-                        out |= new
+            for names, val in flows:
+                if not names <= out and carries(val, out):
+                    out |= names
+                    grew = True
         return out
     defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
-    top = [n for st in tree.body if not isinstance(st, defs + (ast.ClassDef,)) for n in ast.walk(st)]
-    module = taint(top, set())
-    for nodes in [top] + [list(ast.walk(f)) for f in ast.walk(tree) if isinstance(f, defs)]:
-        tainted = taint(nodes, module)
-        for n in nodes:
-            if not isinstance(n, ast.Call):
-                continue
+    TOP = None                        # the module's top level, as a scope key
+    parent: dict = {}
+    every, i = [tree], 0
+    while i < len(every):             # `ast.walk`'s traversal, recording each child's parent
+        for ch in ast.iter_child_nodes(every[i]):
+            parent[id(ch)] = every[i]
+            every.append(ch)
+        i += 1
+    def scopes_of(n) -> list:
+        """The keys of the scopes whose `ast.walk` reaches `n`."""
+        out, stmt, up = [], n, parent.get(id(n))
+        if up is None:
+            return out                # `tree` itself
+        while up is not tree:
+            if isinstance(up, defs):
+                out.append(id(up))
+            stmt, up = up, parent[id(up)]
+        if not isinstance(stmt, defs + (ast.ClassDef,)):
+            out.append(TOP)
+        return out
+    # A call carries `ls-files` only if the tree does, so its arguments are walked only then.
+    any_ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for m in every)
+    flows: dict = {}                  # scope key -> [(names a flow assigns, the value it reads)]
+    listers: dict = {}                # scope key -> [the expressions a lister call is applied to]
+    for n in every:
+        if isinstance(n, ast.Assign):
+            pairs = [(t, n.value) for t in n.targets]
+        elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
+            pairs = [(n.target, n.value)]
+        elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
+            pairs = [(n.target, n.iter)]
+        elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+            pairs = [(n.optional_vars, n.context_expr)]
+        elif isinstance(n, ast.Call):
             args = list(n.args) + [k.value for k in n.keywords]
             name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", None)
-            ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for a in args for m in ast.walk(a))
+            ls = any_ls and any(isinstance(m, ast.Constant) and m.value == "ls-files"
+                                for a in args for m in ast.walk(a))
             if not (name in WALK_CALLS or ls):
                 continue
             subject = args + ([n.func.value] if isinstance(n.func, ast.Attribute) else [])
-            if any(carries(x, tainted) for x in subject):
-                return True
+            for key in scopes_of(n):
+                listers.setdefault(key, []).append(subject)
+            continue
+        else:
+            continue
+        for key in scopes_of(n):
+            flows.setdefault(key, []).extend((fact(tg)[1], val) for tg, val in pairs)
+    if not listers:
+        return False
+    module = taint(flows.get(TOP, []), set())
+    for key, subjects in listers.items():
+        tainted = taint(flows.get(key, []), module)
+        if any(carries(x, tainted) for subject in subjects for x in subject):
+            return True
     return False
 
 
@@ -1144,25 +1208,39 @@ def merged_output(stdout: str, stderr: str) -> str:
     return (stderr + stdout).strip()
 
 
-def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None) -> tuple[int, str, str]:
+def suite_limit(control_seconds: "float | None") -> float:
+    """PURE. The seconds one suite run may take (backlog #558): the flat `SUITE_TIMEOUT` when its
+    control has not been timed (`None` — a control run itself), else `SUITE_TIMEOUT_FACTOR` x the
+    control's PER-SUITE seconds, floored at `SUITE_TIMEOUT` and capped at `SUITE_TIMEOUT_CEILING`.
+    Always FINITE, so a real hang still times out. The constants' block says why these values."""
+    if control_seconds is None:
+        return SUITE_TIMEOUT
+    return min(SUITE_TIMEOUT_CEILING, max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR * control_seconds))
+
+
+def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None,
+                    limit: "float | None" = None) -> tuple[int, str, str]:
     """`(rc, stdout, stderr)` — the RAW halves, for the one caller that must budget them.
 
-    The only producer. `run_suite` is the merged view every other consumer wants.
+    The only producer. `run_suite` is the merged view every other consumer wants. `limit` is
+    `suite_limit`'s answer for this target; None is the flat `SUITE_TIMEOUT`.
     """
+    limit = SUITE_TIMEOUT if limit is None else limit
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
     try:
         r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
-                           capture_output=True, text=True, timeout=SUITE_TIMEOUT,
+                           capture_output=True, text=True, timeout=limit,
                            env=mutation_env(d, seed))
     except subprocess.TimeoutExpired:
         return 2, "", (f"CANNOT RUN — {name} --self-test did not finish in "
-                       f"{SUITE_TIMEOUT}s. NOT CHECKED.")
+                       f"{limit:.1f}s. NOT CHECKED.")
     return r.returncode, r.stdout, r.stderr
 
 
-def run_suite(d: pathlib.Path, name: str, seed: "int | None" = None) -> tuple[int, str]:
-    rc, out, err = run_suite_parts(d, name, seed)
+def run_suite(d: pathlib.Path, name: str, seed: "int | None" = None,
+              limit: "float | None" = None) -> tuple[int, str]:
+    rc, out, err = run_suite_parts(d, name, seed, limit=limit)
     return rc, merged_output(out, err)
 
 
@@ -1861,6 +1939,10 @@ def mutate_delivered(root: pathlib.Path,
         trees = seed_trees(d, seeds, cleanup) if seeds else None
         report = []
         control_seconds: dict = {}
+        # backlog #558: each GREEN target's limit for its mutant runs and its re-control, from its own
+        # control. Local to this run, so a later run (or another fixture's same-named target) never
+        # inherits it.
+        limits: dict = {}
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
         # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
@@ -1887,6 +1969,8 @@ def mutate_delivered(root: pathlib.Path,
                               f"CHECKED.\n    {diagnostic_tail(so, se)}")
                 control_seconds.pop(name, None)     # r2 L: a FAILED control prices nothing
                 continue
+            # PER SUITE: under N seeds the control ran the suite N times (`control_parts`).
+            limits[name] = suite_limit(control_seconds[name] / max(1, len(seeds or ())))
             # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN — after this control proved GREEN (r1 L2:
             # a slow FAILING control read as "REFUSED LOCALLY"). The estimate only grows, so the
             # targets timed so far bound it — refusing here costs one suite, not all.
@@ -1897,7 +1981,7 @@ def mutate_delivered(root: pathlib.Path,
                 return False, report + [why], NotMeasured.from_counts([], None, ev_files)
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
-        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
+        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets), limits=limits,
                                                           progress=progress, seeds=seeds, trees=trees)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
@@ -1920,7 +2004,7 @@ def mutate_delivered(root: pathlib.Path,
         for position, name in enumerate(targets, 1):
             if progress is not None:
                 progress(position, len(targets), f"re-control {name}")
-            rc, so, se = control_parts(d, name, seeds, trees)
+            rc, so, se = control_parts(d, name, seeds, trees, limit=limits.get(name))
             out = merged_output(so, se)
             if not control_is_green(rc, out):
                 ok = False
@@ -1949,7 +2033,8 @@ def mutate_delivered(root: pathlib.Path,
 
 
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
-                  progress=None, seeds=None, trees=None) -> tuple[bool, list[str], list[dict], list[str]]:
+                  progress=None, seeds=None, trees=None,
+                  limits: "dict | None" = None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -2008,12 +2093,14 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             continue
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
+        limit = (limits or {}).get(fname)   # backlog #558: this target's, from its own control
         if seeds:
             here = seed_apply(trees, d, fname, src)
-            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se in seed_runs(d, fname, seeds, here)],
+            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se
+                                         in seed_runs(d, fname, seeds, here, limit=limit)],
                                         wants=mut.get("expect"))
         else:
-            (rc, out), odd = run_suite(d, fname), None
+            (rc, out), odd = run_suite(d, fname, limit=limit), None
         (d / fname).write_text(orig)
         stuck = seed_revert(trees, d, fname, orig) if seeds else None
         if stuck:
@@ -2436,6 +2523,44 @@ def _self_test_body() -> int:
     case("...and a MISSING `measured` key is refused too",
          _constructs([{"name": "m", "caught": True}], 1, True), False)
 
+    # ⛔ ABOVE the hung-suite case, and its no-limit call does not time out: a mutant that drops the
+    # flat default reaches `{limit:.1f}` with None there and crashes the suite, so this case must have
+    # printed its `[FAIL]` first (MEASURED 2026-11-08: placed after it, that mutant crashed unattributed).
+    import subprocess as _sp
+    _real = _sp.run
+    # ⛔ backlog #558: a mutant's limit is derived from its target's CONTROL, never unbounded.
+    case("⭐ backlog #558: an untimed suite (a control) gets the flat SUITE_TIMEOUT",
+         suite_limit(None), SUITE_TIMEOUT)
+    case("...a fast control is FLOORED at SUITE_TIMEOUT, never below it",
+         suite_limit(0.5), SUITE_TIMEOUT)
+    case("...a slow control's mutants get SUITE_TIMEOUT_FACTOR x its time — the 15.8 s that went "
+         "red on master's shard 16 now allows 316 s",
+         suite_limit(15.8), 15.8 * SUITE_TIMEOUT_FACTOR)
+    case("...and a very slow one is CAPPED, so a real infinite loop still times out",
+         suite_limit(10_000.0), SUITE_TIMEOUT_CEILING)
+    case("the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded "
+         "ceiling lets a real hang hold a shard",
+         (SUITE_TIMEOUT_FACTOR, SUITE_TIMEOUT_CEILING), (20, 600))
+    _seen_t: list = []
+
+    def _timeout_seen(*a, **k):
+        _seen_t.append(k.get("timeout"))
+        if len(_seen_t) == 1:         # the given-limit call hangs; the no-limit call completes, so a
+            raise _sp.TimeoutExpired(cmd="x", timeout=k.get("timeout"))   # None limit is SEEN, not formatted
+        return _sp.CompletedProcess(a[0] if a else [], 0, "", "")
+
+    _sp.run = _timeout_seen
+    try:
+        _rc_l, _so_l, _se_l = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+        run_suite_parts(pathlib.Path("."), "whatever.py")
+    finally:
+        _sp.run = _real
+    case("⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat "
+         "SUITE_TIMEOUT when given none — never no timeout at all",
+         _seen_t, [333.0, SUITE_TIMEOUT])
+    case("...and a suite over that limit is still rc 2, CANNOT RUN, naming the limit it ran under",
+         (_rc_l, "CANNOT RUN" in _se_l and "333.0s" in _se_l and "NOT CHECKED" in _se_l), (2, True))
+
     # A hung suite is a CANNOT RUN (rc 2), not a traceback and not a verdict.
     import subprocess as _sp
     _real = _sp.run
@@ -2724,6 +2849,26 @@ def _self_test_body() -> int:
         _ok, _rep, _evm, _evs = run_mutations(_d, _mut, {"m.py"})
         case("run_mutations catches a real mutation", (_ok, _evs), (True, []))
         case("run_mutations records the caught mutation", len(_evm), 1)
+        # ⛔ backlog #558, DIRECT: each hand-off of a limit is given a value of its OWN, recorded at the
+        # producer (`check-fixture-variation.py` found every direct call passing the default; the
+        # through-`mutate_delivered` case below reaches them only indirectly).
+        _lim_d: list = []
+        _real_parts_d = run_suite_parts
+
+        def _rec_d(_dd, _nn, _ss=None, limit=None):
+            _lim_d.append(limit)
+            return _real_parts_d(_dd, _nn, _ss, limit=limit)
+        globals()["run_suite_parts"] = _rec_d
+        try:
+            _okl, _, _, _ = run_mutations(_d, _mut, {"m.py"}, limits={"m.py": 77.0, "other.py": 5.0})
+            run_suite(_d, "m.py", limit=88.0)
+            with contextlib.ExitStack() as _csl:
+                seed_runs(_d, "m.py", (3, 5), seed_trees(_d, (3, 5), _csl), limit=99.0)
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+        case("⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and "
+             "seed_runs (every seed) under the limit they are given",
+             (_okl, _lim_d), (True, [77.0, 88.0, 99.0, 99.0]))
         # backlog #252: the same rules, applied up front over the delivered text — sequentially, as the run does.
         _src = {"m.py": "def f():\n    return 1\nx = 1\nx = 1\n"}.get
         case("anchor_problems: a binding anchor, and a second edit that binds only AFTER the first, are clean",
@@ -3846,11 +3991,11 @@ def _self_test_body() -> int:
             # control loops moved to `run_suite_parts` to budget the two streams separately.
             # The stub then missed both controls, the call indices shifted by two, and the case
             # went red — correctly. Stub the PRODUCER, which every path still goes through.
-            def _timeout_on_the_mutated_run(_d, _name, _seed=None):
+            def _timeout_on_the_mutated_run(_d, _name, _seed=None, limit=None):
                 _calls.append(_name)
                 if len(_calls) == 2:          # 1 = before-control, 2 = the mutation, 3 = after
                     return 2, "", "CANNOT RUN — stub timeout. NOT CHECKED."
-                return _real_run_suite(_d, _name, _seed)
+                return _real_run_suite(_d, _name, _seed, limit=limit)
             globals()["run_suite_parts"] = _timeout_on_the_mutated_run
             try:
                 _ok8, _rep8, _ev8 = mutate_delivered(_r)
@@ -3861,6 +4006,36 @@ def _self_test_body() -> int:
                  (True, False))
             case("...and it is reported as a cannot-run, not as a catch",
                  any("did NOT COMPLETE" in r for r in _rep8), True)
+        # ⛔ backlog #558, THROUGH `mutate_delivered`: every suite run's limit, recorded at the producer.
+        # The clock is FAKED so the control "takes" 10 s per suite run — deterministic under any load —
+        # and each run is still the real fixture suite. 10 s x the factor (20) is 200 s: above the
+        # floor, below the ceiling, so a dropped hand-off (None -> 120 s) and a per-seed division left out
+        # (20 s -> 400 s under two seeds) each read differently.
+        _real_parts, _real_clock = run_suite_parts, time.monotonic
+        for _seeds558 in (None, (0, 7)):
+            with tempfile.TemporaryDirectory() as _td:
+                _r = pathlib.Path(_td); _mini(_r)
+                _lim558, _skew = [], [0.0]
+
+                def _priced(_d, _name, _seed=None, limit=None):
+                    _lim558.append(limit)
+                    _skew[0] += 10.0
+                    return _real_parts(_d, _name, _seed, limit=limit)
+                globals()["run_suite_parts"] = _priced
+                time.monotonic = lambda: _real_clock() + _skew[0]
+                try:
+                    mutate_delivered(_r, seeds=_seeds558)
+                finally:
+                    globals()["run_suite_parts"] = _real_parts
+                    time.monotonic = _real_clock
+            _n558 = len(_seeds558 or (0,))
+            case(f"⭐ backlog #558: under {_n558} seed(s) the control runs under the flat limit, and the "
+                 f"mutant and the re-control under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+                 # the fixture's REAL run time is on top of the fake 10 s: allow it 8 s per suite (a loaded
+                 # runner), still below the 20 s a dropped seed division gives
+                 [None if x is None else 10.0 * SUITE_TIMEOUT_FACTOR <= x < 18.0 * SUITE_TIMEOUT_FACTOR
+                  for x in _lim558],
+                 [None] * _n558 + [True] * (2 * _n558))
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -5955,6 +6130,29 @@ def _self_test_body() -> int:
     case("...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob "
          "call — and walks another directory, is not a walker of it",
          "scripts/check-q.py" in (_sel(["scripts/check-x.py"], src=_SW) or _SW), False)
+    # backlog #231 COST: `_walks_dir` now files each lister call and each assignment under the
+    # scopes that enclose it, instead of re-walking every scope. These pin the scope rule it must
+    # still reproduce, and that its `lru_cache` answers per (source, directory) — never stale.
+    _gw = _SW["scripts/check-gw.py"]
+    case("⭐ backlog #231: the cached `_walks_dir` answers per INPUT — the same source for another "
+         "directory, then a changed source for the same one, each changes the answer",
+         (_walks_dir(_gw, "scripts"), _walks_dir(_gw, "docs"),
+          _walks_dir(_gw.replace("'scripts/", "'lib/"), "scripts"), _walks_dir(_gw, "scripts")),
+         (True, False, False, True))
+    case("⭐ backlog #231: a module-level name carries the directory into a function's lister",
+         _walks_dir("import os\nR = 'scripts'\ndef f():\n    return os.listdir(R)\n", "scripts"), True)
+    case("...and a lister in a CLASS BODY, outside any def, is in no scope — it is not a walk",
+         _walks_dir("import glob\nclass C:\n    ALL = glob.glob('scripts/*.py')\n", "scripts"), False)
+    case("...nor is a name assigned in a SIBLING function, which the lister's scope cannot see",
+         _walks_dir("import os\ndef g():\n    R = 'scripts'\ndef f():\n    return os.listdir(R)\n",
+                    "scripts"), False)
+    case("...and a name assigned from one assigned LATER in the scope is still tainted — a fixpoint, "
+         "not one pass in source order",
+         _walks_dir("import os\ndef f():\n    c = b\n    b = 'scripts'\n    return os.listdir(c)\n",
+                    "scripts"), True)
+    case("⭐ backlog #231: a call carrying `ls-files` is a lister, whatever it is called",
+         _walks_dir("import subprocess\nsubprocess.run(['git', 'ls-files', 'scripts'])\n", "scripts"),
+         True)
     case("⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/",
          "scripts/check-canonical-source.py" in (_rsel("scripts/check-usage-pace.py") or set()), True)
     # C3: the dependency manifests change staged `node_modules` without any staged path changing.
