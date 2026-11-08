@@ -18945,3 +18945,24 @@ lasting fix is making the slowest checks cheaper, which stays open.
 `.github/workflows/ci.yml` `mutation-sweep` matrix 18 -> 24 (backlog #231's "any shard exceeds 1,500s" trigger fired: push
 run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41s). Predicted slowest shard ~1,545s (floor ~520s
 from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
+
+## 2026-11-07
+The pages you read (goal tree, dashboard, backlog, features, goals) were built from whatever copy of the code the last
+command ran in. That copy was often out of date or on an unmerged branch. At 20:26 every page named an unmerged branch
+with uncommitted changes, and the main copy was 18 merges behind. Now every page is built from the latest main branch,
+fetched fresh each time, in a separate copy the page builder owns. Your own copy, with its unsaved edits, is never
+touched. If the latest main cannot be fetched, nothing is rebuilt and the message says CANNOT RUN instead of quietly
+using an old copy. Each page already shows the commit it was built from, and that is now main's latest. Until the main
+checkout has this change and the page server is restarted, the Refresh button still uses the old path. Also, an entry
+or backlog row on an unmerged branch now appears on the pages only after it merges (backlog item 408).
+<!--tech-->
+Backlog #408, branch `regen-fresh`. `scripts/regen-pages.py`: `fresh()` = `main_of` (`--git-common-dir`) + `tree_lock`
+(`fcntl.flock` on `.claude/regen-tree.lock`, 150 s) + `materialise` (`git fetch --quiet origin master`, `rev-parse
+refs/remotes/origin/master^{commit}`, `worktree add --detach --force` or, after `_own_worktree` proves a `.git` FILE + own
+top level + this repo's common dir, `checkout --detach --force <sha>` + `clean -fdq`, then a read-back of HEAD and clean
+status). `launch` runs `<tree>/scripts/<generator>` with `cwd=<tree>` and `GIT_DIR`-class variables dropped. `CannotRun`:
+`--hook` 0, `--all`/`--page` 2. New `--page <key>` (generator output passed through, its rc). Routed through it: the
+four edit hooks, `explainer-serve.py` POST `/regenerate` (`[python, SCRIPTS/regen-pages.py, --page, <key>]`),
+`scripts/regen-pages.sh`, `.claude/commands/goal-tree.md`, the dashboard skill. MEASURED: the fresh-tree step costs 0.65-0.83 s
+warm (3 runs) and 4.45 s cold. A full `--all` into a temp HOME took 56 s, and every page named `f7ff7eb0` (origin/master);
+goal-tree's gh got a 401 under the temp HOME. Suite 32 -> 65 cases, mutations 10 -> 31 / 31 killed; explainer-serve 68 -> 69.

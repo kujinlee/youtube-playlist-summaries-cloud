@@ -41,7 +41,8 @@ case "$FILE_PATH" in
   *) exit 0 ;;
 esac
 
-OUT=$(python3 "$REPO/scripts/gen-goals-page.py" 2>&1) || {
+# ⛔ backlog #408: built from a FRESH origin/master by regen-pages.py, never from this checkout's tree.
+OUT=$(python3 "$REPO/scripts/regen-pages.py" --page goals 2>&1) || {
   echo "⚠  a goals source changed but the page was NOT regenerated:"
   echo "$OUT" | tail -4
   echo "   The page at http://127.0.0.1:7391/goals is now STALE."

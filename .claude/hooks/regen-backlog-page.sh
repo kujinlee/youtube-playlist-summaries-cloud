@@ -90,7 +90,8 @@ case "$FILE_PATH" in
   *) stale || exit 0 ;;
 esac
 
-OUT=$(python3 "$REPO/scripts/gen-backlog-page.py" 2>&1) || {
+# ⛔ backlog #408: built from a FRESH origin/master by regen-pages.py, never from this checkout's tree.
+OUT=$(python3 "$REPO/scripts/regen-pages.py" --page backlog-table 2>&1) || {
   sources_sig > "$MARK" 2>/dev/null || true
   echo "⚠  a source of the backlog view changed but the view was NOT regenerated:"
   echo "$OUT" | tail -4

@@ -16,14 +16,6 @@ cd "$REPO"
 
 [ -e "$HOME/explainers" ] || { echo "REFUSING: ~/explainers does not exist. Run scripts/bootstrap-explainers.sh first." >&2; exit 2; }
 
-rc=0
-for g in gen-backlog-page gen-goals-page gen-features-page gen-dashboard; do
-  printf '%-20s ' "$g"
-  if python3 "scripts/$g.py" > /tmp/regen-$g.log 2>&1; then
-    echo "ok"
-  else
-    echo "FAILED (see /tmp/regen-$g.log)"
-    rc=1
-  fi
-done
-exit $rc
+# ⛔ backlog #408: ONE runner, which builds every page from a fresh origin/master tree and says CANNOT RUN
+# (exit 2) when it cannot produce one — never this checkout's working tree.
+exec python3 scripts/regen-pages.py --all

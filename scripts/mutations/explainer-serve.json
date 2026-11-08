@@ -290,11 +290,11 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "                r = subprocess.run([sys.executable, str(SCRIPTS / script)],",
-        "                r = subprocess.run([sys.executable, script],"
+        "                r = subprocess.run([sys.executable, str(SCRIPTS / REGEN_RUNNER), \"--page\", want],",
+        "                r = subprocess.run([sys.executable, REGEN_RUNNER, \"--page\", want],"
       ]
     ],
-    "expect": "the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else"
+    "expect": "the argv is exactly [python, SCRIPTS/regen-pages.py, --page, <allow-list key>] — nothing else"
   },
   {
     "name": "a generator that exits NON-ZERO is reported as a successful rebuild",
@@ -750,5 +750,6 @@
   },
   {"name": "the reload poll ignores the Refresh button's claim and blanks its message (backlog #502)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);", "say(serverMsg || staleMsg);"]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
   {"name": "the Refresh claim is ranked BELOW the polls' own messages, so a stale warning replaces it (backlog #502)", "file": "scripts/explainer-serve.py", "edits": [["(s && s.getAttribute('data-refresh')) || staleMsg);", "staleMsg || (s && s.getAttribute('data-refresh')) || '');"]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
-  {"name": "the Refresh claim outranks an unreachable server, so a hung or failed rebuild hides the outage (backlog #502 r1)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && ", "say((s && s.getAttribute('data-refresh')) || serverMsg || (s && "]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]}
+  {"name": "the Refresh claim outranks an unreachable server, so a hung or failed rebuild hides the outage (backlog #502 r1)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && ", "say((s && s.getAttribute('data-refresh')) || serverMsg || (s && "]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
+  {"name": "backlog #408: every Refresh press rebuilds ONE fixed page, whatever key was pressed", "file": "scripts/explainer-serve.py", "edits": [["str(SCRIPTS / REGEN_RUNNER), \"--page\", want],", "str(SCRIPTS / REGEN_RUNNER), \"--page\", sorted(REGENERABLE)[0]],"]], "expect": "backlog #408: every allow-listed page is routed through the runner under its OWN key"}
 ]

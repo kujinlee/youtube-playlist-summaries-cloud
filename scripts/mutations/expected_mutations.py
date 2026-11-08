@@ -1301,7 +1301,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #497 (the owner 2026-11-04 01:07, refresh on a click): 62 -> 64 — the goal tree's own
     # 60 s rebuild bound, and the timeout reply naming the bound it actually waited.
     # ⟳ same day, review round 2's fold: 64 -> 65 — the rebuild gets only what is LEFT of the click's bound (X2).
-    "scripts/explainer-serve.py": 68,
+    # ⟳ backlog #408: 68 -> 69 — a Refresh press routes through regen-pages.py `--page <key>`, each key as itself.
+    "scripts/explainer-serve.py": 69,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1798,7 +1799,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ round-4 (terminal) fold: 9 -> 10 — the registration reader keys on the Bash matcher (W1). The
     # REGISTRATION ITSELF is data in .claude/settings.json, which this harness cannot mutate; its falsifier
     # is the case reading the real file, which goes red if either event loses the runner.
-    "scripts/regen-pages.py": 10,
+    # ⟳ backlog #408: 10 -> 31 — every page is built from a FRESH origin/master tree: the fetch, the ref, the
+    # three own-worktree guards (the one between `checkout --force` and the main checkout's edits), the
+    # read-back, the lock, the GIT_* scrub, the generator's script path and cwd, the hook/command exit
+    # split on CANNOT RUN, and `--page`'s output, exit code, key check and provenance line.
+    "scripts/regen-pages.py": 31,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than

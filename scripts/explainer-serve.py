@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 233 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 234 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -129,6 +129,8 @@ REGEN_TIMEOUTS = {"goal-tree": 60}
 # file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
 REGEN_LOCKS: dict[str, "threading.Lock"] = {}
 REGEN_LOCKS_GUARD = threading.Lock()
+# backlog #408: a Refresh press runs the generator THROUGH this runner (`--page <key>`), never directly.
+REGEN_RUNNER = "regen-pages.py"
 REGENERABLE = {
     "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
@@ -1418,7 +1420,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         ⚠ THE ALLOW-LIST IS THE WHOLE SECURITY ARGUMENT, and it is a dict of literals:
         the caller names a KEY, never a path, an argument or a command. Nothing the
-        caller sends reaches the command line — a request for an unknown page is a 400
+        caller sends reaches the command line but a string PROVEN to be one of those keys
+        (backlog #408: the runner's `--page <key>`) — a request for an unknown page is a 400
         naming the legal set, not an attempt to resolve it. `shell=False` (a list argv)
         and a timeout are the belt to that brace.
 
@@ -1446,7 +1449,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
-                r = subprocess.run([sys.executable, str(SCRIPTS / script)],
+                # ⛔ backlog #408: through the ONE runner, which builds from a fresh origin/master tree
+                # and says CANNOT RUN (exit 2) rather than build from this server's own, possibly stale,
+                # checkout. `want` reaches the argv only once `script` proved it an allow-list KEY (a
+                # list argv, no shell), and the runner checks it against the same table again.
+                r = subprocess.run([sys.executable, str(SCRIPTS / REGEN_RUNNER), "--page", want],
                                    capture_output=True, text=True, timeout=left)
             finally:
                 lock.release()
@@ -3001,7 +3008,7 @@ def _self_test_body() -> int:
         case("POST /regenerate REACHES the allow-list the seven cases above defend",
              lambda: (_drive_regen_route(json.dumps({"page": _page}).encode()),
                       len(_regen_calls) == 1
-                      and _regen_calls[0][0][0][1] == str(SCRIPTS / REGENERABLE[_page]))[1])
+                      and _regen_calls[0][0][0][1:] == [str(SCRIPTS / REGEN_RUNNER), "--page", _page])[1])
 
         # ⛔ r3 MEDIUM 5 — `_send`'s Content-TYPE VALUE was unasserted; only its presence was.
         # `send_header("Content-Type", ctype)` -> a hardcoded `"text/plain"` survived 188/188, i.e.
@@ -3114,10 +3121,16 @@ def _self_test_body() -> int:
                          for k in REGENERABLE))
         # ⛔ WHAT WOULD ACTUALLY HAVE RUN — the claim "nothing the caller sends reaches the command
         # line", asserted against the recorded argv rather than against the reply.
-        case("the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else",
+        case("the argv is exactly [python, SCRIPTS/regen-pages.py, --page, <allow-list key>] — nothing else",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][0][0] == [sys.executable,
-                                                str(SCRIPTS / REGENERABLE[_page])])[1])
+                      _regen_calls[0][0][0] == [sys.executable, str(SCRIPTS / REGEN_RUNNER),
+                                                "--page", _page])[1])
+        # ⛔ backlog #408: EVERY key reaches the runner as itself — a lookup that resolved all of them to
+        # one page, or passed the generator's script name, would rebuild the wrong page or none.
+        case("backlog #408: every allow-listed page is routed through the runner under its OWN key",
+             lambda: [(_drive_regen({"page": k}, _ok_runner), _regen_calls[0][0][0][1:])[1]
+                      for k in sorted(REGENERABLE)]
+                     == [[str(SCRIPTS / REGEN_RUNNER), "--page", k] for k in sorted(REGENERABLE)])
         case("…and it is a LIST argv with no shell — `shell=False` is the belt to that brace",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
                       isinstance(_regen_calls[0][0][0], list)
