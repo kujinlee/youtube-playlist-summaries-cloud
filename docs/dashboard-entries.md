@@ -18935,6 +18935,7 @@ cancelled shard 3 again at 30m14s (re-control 57/70), shard 12 at 29m41s. `ci.ym
 `check-fixture-variation.py --self-test` exceeded it on shard 16 of the `1d5fd219` push run (the schedule run on the
 same commit was green).
 
+## 2026-11-07
 The full test run on the main branch is split across 24 groups again instead of 18, because several groups had grown
 past their 30-minute limit and every merge was showing a red mark that was not a real failure. More groups means each
 finishes inside the limit again, though only just; the cost is that six of them wait in line for a first group to
