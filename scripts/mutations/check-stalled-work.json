@@ -1167,8 +1167,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "            return True\n        return False if suites",
-        "            return False\n        return True if suites"
+        "            return True\n        return False if total",
+        "            return False\n        return True if total"
       ]
     ],
     "expect": [
@@ -1245,8 +1245,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "if pr.get(\"conflicting\") and pr.get(\"headRun\")",
-        "if pr.get(\"headRun\")"
+        "if pr.get(\"conflicting\") and pr.get(\"headRun\") is False:",
+        "if pr.get(\"headRun\") is False:"
       ]
     ],
     "expect": [
@@ -1271,8 +1271,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "is not True:\n        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  #",
-        "is False:\n        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  #"
+        "    if pr.get(\"conflicting\") and pr.get(\"headRun\") is not True:\n        return Item(\"DIRTY-UNSEEN\"",
+        "    if False:\n        return Item(\"DIRTY-UNSEEN\""
       ]
     ],
     "expect": [
@@ -1284,8 +1284,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "    if pr.get(\"conflicting\") and",
-        "    if not draft and pr.get(\"conflicting\") and"
+        "    if pr.get(\"conflicting\") and pr.get(\"headRun\") is False:",
+        "    if not draft and pr.get(\"conflicting\") and pr.get(\"headRun\") is False:"
       ]
     ],
     "expect": [
@@ -1297,8 +1297,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  # r1 Claude R1-F4",
-        "        age = 0  # r1 Claude R1-F4"
+        "    age = 0 if commit_ts is None else max(0, int(now - commit_ts))  # r1 Claude R1-F4",
+        "    age = 0  # r1 Claude R1-F4"
       ]
     ],
     "expect": [
@@ -1310,8 +1310,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"no CI run on its head\" if pr.get(\"headRun\") is False else",
-        "\"no CI run on its head\" if True else"
+        "DIRTY, whether PR CI ran on its head was NOT MEASURED, \"",
+        "DIRTY, no CI run on its head, \""
       ]
     ],
     "expect": [
@@ -1323,8 +1323,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"UNKNOWN-MERGE\"",
-        "\"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\""
+        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"DIRTY-UNSEEN\"",
+        "\"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\""
       ]
     ],
     "expect": [
@@ -1349,8 +1349,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "f\"PR {head}: DIRTY, {seen}, {when}\"",
-        "f\"PR {head}: DIRTY, {seen}\""
+        "f\"PR {head}: DIRTY, no CI run on its head, {when}\"",
+        "f\"PR {head}: DIRTY, no CI run on its head\""
       ]
     ],
     "expect": [
@@ -1362,8 +1362,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "when = \"head commit date unknown\" if commit_ts is None else f\"last commit {fmt_age(age)} ago\"\n        return Item(\"DIRTY-NO-CI\"",
-        "when = \"last commit 0m ago\" if commit_ts is None else f\"last commit {fmt_age(age)} ago\"\n        return Item(\"DIRTY-NO-CI\""
+        "when = \"head commit date unknown\" if commit_ts is None else",
+        "when = \"last commit 0m ago\" if commit_ts is None else"
       ]
     ],
     "expect": [
@@ -1414,7 +1414,7 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "return False if suites[\"totalCount\"] == len(nodes) else None",
+        "return False if total == len(nodes) else None",
         "return False"
       ]
     ],
@@ -1440,8 +1440,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\"),",
-        "HOOK_TIERS = ((\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\", \"DIRTY-NO-CI\"),"
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\"),",
+        "HOOK_TIERS = ((\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\", \"DIRTY-NO-CI\"),"
       ]
     ],
     "expect": [
@@ -1492,8 +1492,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"DIRTY-NO-CI\", \"UNKNOWN-MERGE\", \"UNPROCESSED\")",
-        "\"DIRTY-NO-CI\", \"UNPROCESSED\")"
+        "\"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\",\n                  \"UNPROCESSED\")",
+        "\"DIRTY-UNSEEN\",\n                  \"UNPROCESSED\")"
       ]
     ],
     "expect": [
@@ -1589,6 +1589,151 @@
     ],
     "expect": [
       "545 r1: a DIRTY head committed a day in the FUTURE is aged 0, never negative"
+    ]
+  },
+  {
+    "name": "545 r2: an UNSEEN head run gets the no-CI diagnosis and its forced merge again (Codex R2-F1)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"headRun\") is False:\n        return Item(\"DIRTY-NO-CI\"",
+        "\"headRun\") is not True:\n        return Item(\"DIRTY-NO-CI\""
+      ]
+    ],
+    "expect": [
+      "545 r2: a CONFLICTING head whose suites were TRUNCATED is DIRTY-UNSEEN, with no no-CI claim or forced merge"
+    ]
+  },
+  {
+    "name": "545 r2: DIRTY-UNSEEN is not a stalled state, so a conflict with unmeasured CI exits clear",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"DIRTY-NO-CI\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\",",
+        "\"DIRTY-NO-CI\", \"UNKNOWN-MERGE\","
+      ]
+    ],
+    "expect": [
+      "545 r2: DIRTY-UNSEEN is a stalled state in the hook's SECOND tier, not DIRTY-NO-CI's first"
+    ]
+  },
+  {
+    "name": "545 r2: DIRTY-UNSEEN leaves the hook's tiers, so the hook never carries it",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"UNKNOWN-DRAFT\", \"DIRTY-UNSEEN\", \"UNKNOWN-MERGE\"),",
+        "\"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\"),"
+      ]
+    ],
+    "expect": [
+      "545 r2: DIRTY-UNSEEN is a stalled state in the hook's SECOND tier, not DIRTY-NO-CI's first"
+    ]
+  },
+  {
+    "name": "545 r2: a suite page whose nodes are not a list is read as measured",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if not isinstance(nodes, list) or not isinstance(total, int)",
+        "if not isinstance(total, int)"
+      ]
+    ],
+    "expect": [
+      "545 r2: head_has_run: nodes that are not a list, or a boolean totalCount, are unknown"
+    ]
+  },
+  {
+    "name": "545 r2: a boolean totalCount is read as a count",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "not isinstance(total, int) or isinstance(total, bool):",
+        "not isinstance(total, int):"
+      ]
+    ],
+    "expect": [
+      "545 r2: head_has_run: nodes that are not a list, or a boolean totalCount, are unknown"
+    ]
+  },
+  {
+    "name": "545 r2: the merge grace is gone, so a fresh UNKNOWN head is a hook item the instant it is pushed (Codex R2-F2)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if commit_ts is not None and age <= MERGE_GRACE_S:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "545 r2: an UNKNOWN head 60 s old is MERGE-PENDING, neither stalled nor in a hook tier; one past the grace, or with no head date, is UNKNOWN-MERGE",
+      "545 r2: ...the grace includes its last second",
+      "545 r2: collect over an UNKNOWN head inside the grace: rc 0, its CLI line shown, no hook block"
+    ]
+  },
+  {
+    "name": "545 r2: a head with NO date is given the grace, an unmeasured age read as young",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if commit_ts is not None and age",
+        "if age"
+      ]
+    ],
+    "expect": [
+      "545 r2: an UNKNOWN head 60 s old is MERGE-PENDING, neither stalled nor in a hook tier; one past the grace, or with no head date, is UNKNOWN-MERGE"
+    ]
+  },
+  {
+    "name": "545 r2: the grace drops its last second",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "and age <= MERGE_GRACE_S:",
+        "and age < MERGE_GRACE_S:"
+      ]
+    ],
+    "expect": [
+      "545 r2: ...the grace includes its last second"
+    ]
+  },
+  {
+    "name": "545 r2: the grace is widened past what was measured",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "MERGE_GRACE_S = 5 * 60",
+        "MERGE_GRACE_S = 30 * 60"
+      ]
+    ],
+    "expect": [
+      "545 r2: the merge grace is 5 min, derived from the measured 111 s maximum"
+    ]
+  },
+  {
+    "name": "545 r2: an empty or malformed baseRefName is accepted, and read as not master (Codex R2-F3)",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if not BASE_REF_RE.fullmatch(r[\"baseRefName\"]):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "545 r2: own_prs REFUSES an empty baseRefName, and one with a space; accepts a slash"
+    ]
+  },
+  {
+    "name": "545 r2: the base pattern accepts the empty string",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "r\"[^\\x00-\\x20\\x7f~^:?*\\[\\\\]{1,255}\"",
+        "r\"[^\\x00-\\x20\\x7f~^:?*\\[\\\\]{0,255}\""
+      ]
+    ],
+    "expect": [
+      "545 r2: own_prs REFUSES an empty baseRefName, and one with a space; accepts a slash"
     ]
   }
 ]

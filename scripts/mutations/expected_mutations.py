@@ -1887,7 +1887,11 @@ EXPECTED_MUTATIONS = {
     # the item, its head-run test, its stalled state, pr_fact, items_from: 6), the mergeable enum (1), the master
     # base (test, refusal, query: 3), the future-date floor (1). Nothing retired; 14 existing anchors re-bound to
     # the same edit on the reshaped lines.
-    "scripts/check-stalled-work.py": 122,
+    # ⟳ backlog #545 r2 fold (2026-11-08): 122 -> 133. 11 new: an unseen run is DIRTY-UNSEEN, never the no-CI
+    # diagnosis (the item, its stalled state, its hook tier: 3), a malformed suite page is unmeasured (2), the
+    # UNKNOWN-MERGE grace (gone, given to an undated head, its last second, its width: 4), the base-ref refusal (2).
+    # Nothing retired; 12 existing anchors re-bound to the same edit on the reshaped lines.
+    "scripts/check-stalled-work.py": 133,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the

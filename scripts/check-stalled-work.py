@@ -29,13 +29,14 @@ THE THREE SIGNALS:
       gh's, else the local object store's; never `updatedAt`, which a comment refreshes. A draft
       whose head date neither source has is UNKNOWN-DRAFT, shown, never assumed fresh.
       ⛔ Only THIS repo's PRs (`isCrossRepository` exactly false): the repo is public.
-      DIRTY-NO-CI (backlog #545) when a PR is `mergeable: CONFLICTING` and its head commit has no
-      `statusCheckRollup`: GitHub runs no `pull_request` workflow while a PR conflicts with master,
+      DIRTY-NO-CI (backlog #545) when a master-based PR is `mergeable: CONFLICTING` and its head commit has
+      no check suite whose workflow run is a `pull_request` one: GitHub runs no `pull_request` workflow while a PR conflicts with master,
       and `gh pr checks` says only "no checks reported" (PR #529, 2026-11-06: about 2 h read as
       waiting). Keyed on `mergeable`, which GitHub computes for a draft too (PR #537, a draft, 2026-11-08:
       CONFLICTING, merge state DIRTY, no checks); a draft that conflicts is reported like any PR. A
       conflicting PR whose head HAS a run is not reported: its checks show, and the owner-held PRs
-      (DIRTY for days, their heads already run) do not nag on every prompt.
+      (DIRTY for days, their heads already run) do not nag on every prompt. ⟳ r2: the no-CI diagnosis is
+      only for a MEASURED none; a conflict whose run could not be seen is DIRTY-UNSEEN, which says so.
   (c) REVIEW HALVES — `<subject>-r<N>-claude.md` / `-codex.md` in `--scratch` (top level and one
       directory down, not `wt-*`) and in EVERY worktree's `docs/reviews/{claude,codex}/`, the main
       checkout's included. UNPROCESSED when no worktree, and not origin/master, has
@@ -72,7 +73,7 @@ them old unfolded halves, on EVERY prompt).
       `stalled-work-cache` and filed as its own backlog row.
 
     python3 scripts/check-stalled-work.py --scratch <dir>
-    python3 scripts/check-stalled-work.py --self-test  # 203 cases
+    python3 scripts/check-stalled-work.py --self-test  # 225 cases
 
 EXIT CODES (repo convention): 0 = nothing stalled · 1 = something stalled · 2 = CANNOT RUN (git or
 gh failed, or the deadline passed; never a pass). `--hook` always exits 0 — it is advice, and its
@@ -92,11 +93,15 @@ wrapper files it. A half merged to origin/master without its fold is history, no
 squash merge is not recognised (by design since r2: telling it apart needs a guess). A commit with
 an empty diff has no patch-id, so a tip holding one is never MERGED. Over 100 open PRs is CANNOT RUN
 (no pagination). `mergeable: UNKNOWN` (GitHub has not computed it yet) is not reported as a conflict:
-with no PR CI on the head it is an UNKNOWN-MERGE note, which may show for one prompt right after a push
-(the next prompt reads it again). A conflict that arrives AFTER the head's run is not reported: the run is
+with no PR CI on the head it is an UNKNOWN-MERGE note once the head is over `MERGE_GRACE_S` (5 min) old,
+and inside that a MERGE-PENDING line in the CLI only. The grace counts from the COMMITTED date, so a commit
+pushed long after it was made gets none and may show UNKNOWN-MERGE for a prompt (the next one re-reads it). A conflict that arrives AFTER the head's run is not reported: the run is
 shown, so it does not read as waiting. "A run" is a check suite whose workflowRun event is `pull_request`
 — not a commit status or another app's check; a head with over 20 check suites and none of them that is
-"no CI run seen", reported. A PR whose base is not master is never DIRTY-NO-CI: no `pull_request`
+DIRTY-UNSEEN: the conflict is reported, the absence of CI is not claimed (r2 Codex R2-F1; the GraphQL
+`checkSuites` connection filters only by app id or check name, so no page can put `pull_request` suites first;
+measured 2026-11-08: at most 4 suites on any of 132 recent heads). An empty or malformed `baseRefName` is
+CANNOT RUN, never "not master". A PR whose base is not master is never DIRTY-NO-CI: no `pull_request`
 workflow runs for it at all, so merging master is not its remedy.
 `HOOK_TIMEOUT_S` mirrors `.claude/settings.json`'s timeout for this hook; the suite
 cannot read that file (it is not in the mutation tree), so the mirror is by hand. A draft
@@ -126,7 +131,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CLEAR, STALLED_RC, CANNOT_RUN = 0, 1, 2
-STALLED_STATES = ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "DIRTY-NO-CI", "UNKNOWN-MERGE", "UNPROCESSED")
+STALLED_STATES = ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "DIRTY-NO-CI", "DIRTY-UNSEEN", "UNKNOWN-MERGE",
+                  "UNPROCESSED")
 HALF_RE = re.compile(r"^(?P<subject>.+)-r(?P<n>\d+)-(?P<who>claude|codex)\.md$")
 COORD_RE = re.compile(r"^(?P<subject>.+)-r(?P<n>\d+)-coordinator\.md$")
 MAINLINE = "refs/remotes/origin/master"
@@ -135,6 +141,15 @@ MAINLINE = "refs/remotes/origin/master"
 PR_CI_BASE = "master"
 # GitHub's `MergeableState` enum. Anything else is a reply this script does not understand: CANNOT RUN.
 MERGEABLE_STATES = ("MERGEABLE", "CONFLICTING", "UNKNOWN")
+# r2 Codex R2-F3: a base ref name git could hold — non-empty, no whitespace, control or `git check-ref-format`
+# metacharacter. An empty or malformed one is unmeasured: read as "not master" it SILENCED a conflict.
+BASE_REF_RE = re.compile(r"[^\x00-\x20\x7f~^:?*\[\\]{1,255}")
+# r2 Codex R2-F2: how long after a push an UNKNOWN head is left to GitHub before it is a hook item. MEASURED
+# 2026-11-08, read-only `gh api graphql`, the last 40 PRs: on 132 heads with PR CI, the first `pull_request`
+# workflow run was created 2 s to 111 s (median 4 s) after the head's first check suite — GitHub computes
+# mergeability before it starts that run. 5 min is that maximum with room. Counted from the COMMITTED date,
+# which is never after the push, so the grace can only end EARLY (a commit pushed late gets none), never late.
+MERGE_GRACE_S = 5 * 60
 HOOK_TIMEOUT_S = 30  # .claude/settings.json → UserPromptSubmit → stalled-work.sh → "timeout"
 # ⛔ R2-2 (r2): ONE deadline for the whole measurement, every call given what is LEFT of it. Half the
 # hook's timeout, so the CANNOT RUN is printed with time to spare. Measured 2026-10-30: a real cold
@@ -145,7 +160,7 @@ HOOK_MAX_LINES = 8
 # ⟳ backlog #545 r1 (Claude R1-F1): DIRTY-NO-CI is a tier of its OWN, FIRST. A dirty head is young by nature
 # (it is what was just pushed), so oldest-first inside the STALLED tier made it the first line the cap cut — and it
 # is the one state whose cost grows while someone waits on it.
-HOOK_TIERS = (("DIRTY-NO-CI",), ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "UNKNOWN-MERGE"),
+HOOK_TIERS = (("DIRTY-NO-CI",), ("STALLED", "STALLED-DRAFT", "UNKNOWN-DRAFT", "DIRTY-UNSEEN", "UNKNOWN-MERGE"),
               ("UNPROCESSED",), ("MERGED",))
 HOOK_TIER = {st: i for i, tier in enumerate(HOOK_TIERS) for st in tier}
 # ⛔ THE REPO IS PUBLIC, SO EVERY PRINTED STRING IS UNTRUSTED TEXT (security review; r1 F1-F3).
@@ -411,10 +426,14 @@ def head_has_run(row: dict, oid: str) -> "bool | None":
         if not (oid and commit["oid"] == oid):
             return None
         suites = commit["checkSuites"]
-        nodes = suites["nodes"]
+        nodes, total = suites["nodes"], suites["totalCount"]
+        # r2 class audit: a `nodes` that is not a list, or a `totalCount` that is not an int, is malformed — `""`
+        # with a total of 0 read as a MEASURED none, and `True == 1` as a complete page.
+        if not isinstance(nodes, list) or not isinstance(total, int) or isinstance(total, bool):
+            return None
         if any((n.get("workflowRun") or {}).get("event") == "pull_request" for n in nodes):
             return True
-        return False if suites["totalCount"] == len(nodes) else None
+        return False if total == len(nodes) else None
     except (KeyError, IndexError, TypeError, AttributeError):
         return None
 
@@ -437,6 +456,8 @@ def pr_node_problem(r: object) -> "str | None":
         return f"PR #{r['number']} has a mergeable outside {'/'.join(MERGEABLE_STATES)}"
     if not isinstance(r.get("baseRefName"), str):  # r1 Claude R1-F3: the base decides whether PR CI can run
         return f"PR #{r['number']} has no string baseRefName"
+    if not BASE_REF_RE.fullmatch(r["baseRefName"]):  # r2 Codex R2-F3: "" is unmeasured, never "not master"
+        return f"PR #{r['number']} has an empty or malformed baseRefName"
     return None
 
 
@@ -486,18 +507,28 @@ def pr_item(pr: dict, commit_ts: "int | None", now: float, draft_limit_s: int) -
     # backlog #545: GitHub runs no `pull_request` workflow while a PR conflicts with master, and says
     # nothing — PR #529 read as "waiting" for about 2 h. A conflict whose head HAS a run (from before
     # master moved) is not reported: its checks are visible, and the owner-held PRs stay quiet.
-    if pr.get("conflicting") and pr.get("headRun") is not True:
-        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  # r1 Claude R1-F4: a future date is 0
-        seen = "no CI run on its head" if pr.get("headRun") is False else "no CI run seen for its head"
-        when = "head commit date unknown" if commit_ts is None else f"last commit {fmt_age(age)} ago"
-        return Item("DIRTY-NO-CI", "pr", age, f"PR {head}: DIRTY, {seen}, {when}",
+    age = 0 if commit_ts is None else max(0, int(now - commit_ts))  # r1 Claude R1-F4: a future date is 0
+    when = "head commit date unknown" if commit_ts is None else f"last commit {fmt_age(age)} ago"
+    # ⟳ r2 Codex R2-F1: the no-CI DIAGNOSIS, and its mandatory remedy, only for a MEASURED none (`False`). A run
+    # that was not seen (`None`: truncated suites, a missing key, gh's last commit not the head) is reported as
+    # exactly that — the conflict is measured, the absence of CI is not.
+    if pr.get("conflicting") and pr.get("headRun") is False:
+        return Item("DIRTY-NO-CI", "pr", age, f"PR {head}: DIRTY, no CI run on its head, {when}",
                     "CI will not run until master is merged in — merge origin/master into the branch and push")
+    if pr.get("conflicting") and pr.get("headRun") is not True:
+        return Item("DIRTY-UNSEEN", "pr", age, f"PR {head}: DIRTY, whether PR CI ran on its head was NOT MEASURED, "
+                                               f"{when}",
+                    "open the PR's checks: if no pull_request run is there, merge origin/master in and push")
     # r1 Claude R1-F2: UNKNOWN is GitHub not having COMPUTED mergeability yet (typically just after the base
     # moved). It is not a conflict, but with no PR CI on the head it must not be silent: it is the moment a
     # DIRTY state comes into being. Re-read on the next prompt (no cache).
     if pr.get("mergeUnknown") and pr.get("headRun") is not True:
-        age = 0 if commit_ts is None else max(0, int(now - commit_ts))
-        when = "head commit date unknown" if commit_ts is None else f"last commit {fmt_age(age)} ago"
+        # r2 Codex R2-F2: right after a push this is GitHub still working — shown in the CLI, not a hook item. No
+        # head date is no grace: an unmeasured age is never read as young.
+        if commit_ts is not None and age <= MERGE_GRACE_S:
+            return Item("MERGE-PENDING", "pr", 0, f"PR {head}: GitHub has not computed mergeability yet, {when} "
+                                                  f"(inside the {fmt_age(MERGE_GRACE_S)} grace for CI to start)",
+                        "nothing yet; it is reported if it outlasts the grace")
         return Item("UNKNOWN-MERGE", "pr", 0, f"PR {head}: NOTE — GitHub has not computed mergeability yet, "
                                               f"no PR CI run seen on its head, {when}",
                     "re-read on the next prompt; if it stays, open the PR on GitHub to see whether it conflicts")
@@ -1223,9 +1254,10 @@ def _self_test_body() -> int:
           lambda: pr_item(dict(DP, headRun=True), NOW - 99 * 3600, NOW, 3600).status, "OK")
     check("545: a MERGEABLE PR with no run on its head is NOT reported (CI may simply be queued)",
           lambda: pr_item(dict(DP, conflicting=False), NOW - 60, NOW, 3600).status, "OK")
+    # ⟳ r2 Codex R2-F1: an UNSEEN run is reported as unmeasured — DIRTY-UNSEEN, never the no-CI diagnosis.
     check("545: a conflict whose head run is UNKNOWN is reported, never assumed to have CI",
-          lambda: (lambda i: (i.status, "no CI run seen" in i.text))(pr_item(dict(DP, headRun=None), None, NOW, 3600)),
-          ("DIRTY-NO-CI", True))
+          lambda: (lambda i: (i.status, "NOT MEASURED" in i.text))(pr_item(dict(DP, headRun=None), None, NOW, 3600)),
+          ("DIRTY-UNSEEN", True))
     check("545: a stale DRAFT that is also DIRTY with no run says DIRTY-NO-CI, the cause CI cannot fix itself",
           lambda: pr_item(dict(DP, isDraft=True), NOW - 10 * 3600, NOW, 3600).status, "DIRTY-NO-CI")
     check("545: DIRTY-NO-CI is a stalled state and in the hook's FIRST tier, before unfolded halves",
@@ -1248,8 +1280,9 @@ def _self_test_body() -> int:
           "DIRTY-NO-CI")
     # Claude R1-F5: a reply with no `checkSuites` key is unseen, never a measured absence.
     NO_SUITES = {"commits": {"nodes": [{"commit": {"oid": D, "committedDate": "2026-11-06T10:00:00Z"}}]}}
-    check("545 r1: a head with no checkSuites key is 'no CI run seen', not 'no CI run on its head'",
-          lambda: (lambda p: (p["headRun"], "no CI run seen for its head" in pr_item(p, NOW - 600, NOW, 3600).text))(
+    check("545 r1: a head with no checkSuites key is 'NOT MEASURED', not 'no CI run on its head'",
+          lambda: (lambda p: (p["headRun"], "PR CI ran on its head was NOT MEASURED" in pr_item(p, NOW - 600, NOW,
+                                                                                                 3600).text))(
               own_prs([dict(DIRTY_ROW, **NO_SUITES)])[0]), (None, True))
     # Claude R1-F2: UNKNOWN is not a conflict, but with no PR CI on the head it is a note, never silence.
     check("545 r1: own_prs reads UNKNOWN as mergeability-unknown, and CONFLICTING as not",
@@ -1277,6 +1310,31 @@ def _self_test_body() -> int:
     # Claude R1-F4: a head commit dated in the future (clock skew) is age 0, never negative.
     check("545 r1: a DIRTY head committed a day in the FUTURE is aged 0, never negative",
           lambda: pr_item(DP, NOW + 86400, NOW, 3600).age_s, 0)
+    # ── backlog #545 r2 folds. Codex R2-F1: 21 suites, the 20 returned hold no pull_request run (Codex's repro).
+    TRUNC = {"commits": {"nodes": [{"commit": {"oid": D, "committedDate": "2026-11-06T10:00:00Z", "checkSuites": {
+        "totalCount": 21, "nodes": [{"workflowRun": None}] * 20}}}]}}
+    check("545 r2: a CONFLICTING head whose suites were TRUNCATED is DIRTY-UNSEEN, with no no-CI claim or forced merge",
+          lambda: (lambda i: (i.status, "no CI run on" in i.text, "CI will not run" in i.action))(
+              pr_item(own_prs([dict(DIRTY_ROW, **TRUNC)])[0], NOW - 600, NOW, 3600)), ("DIRTY-UNSEEN", False, False))
+    check("545 r2: DIRTY-UNSEEN is a stalled state in the hook's SECOND tier, not DIRTY-NO-CI's first",
+          lambda: ("DIRTY-UNSEEN" in STALLED_STATES, HOOK_TIER.get("DIRTY-UNSEEN")), (True, 1))
+    # r2 class audit: a malformed suite page is unmeasured, never a measured none.
+    check("545 r2: head_has_run: nodes that are not a list, or a boolean totalCount, are unknown",
+          lambda: [head_has_run({"commits": {"nodes": [{"commit": {"oid": D, "checkSuites": cs}}]}}, D) for cs in (
+              {"totalCount": 0, "nodes": ""}, {"totalCount": True, "nodes": [{"workflowRun": None}]})], [None, None])
+    # Codex R2-F2: an UNKNOWN head inside the grace is shown in the CLI, not a hook item; past it, it is.
+    check("545 r2: the merge grace is 5 min, derived from the measured 111 s maximum", lambda: MERGE_GRACE_S, 300)
+    check("545 r2: an UNKNOWN head 60 s old is MERGE-PENDING, neither stalled nor in a hook tier; one past the grace, "
+          "or with no head date, is UNKNOWN-MERGE",
+          lambda: ((lambda i: (i.status, i.status in STALLED_STATES, i.status in HOOK_TIER))(
+              pr_item(UP, NOW - 60, NOW, 3600)), pr_item(UP, NOW - MERGE_GRACE_S - 1, NOW, 3600).status,
+              pr_item(UP, None, NOW, 3600).status), (("MERGE-PENDING", False, False), "UNKNOWN-MERGE", "UNKNOWN-MERGE"))
+    check("545 r2: ...the grace includes its last second", lambda: pr_item(UP, NOW - MERGE_GRACE_S, NOW, 3600).status,
+          "MERGE-PENDING")
+    # Codex R2-F3: an empty or malformed base is unmeasured — CANNOT RUN, never "not master".
+    check("545 r2: own_prs REFUSES an empty baseRefName, and one with a space; accepts a slash",
+          lambda: (refuses([dict(DIRTY_ROW, baseRefName="")]), refuses([dict(DIRTY_ROW, baseRefName="a b")]),
+                   refuses([dict(DIRTY_ROW, baseRefName="stack/base")])), (True, True, False))
     # Claude R1-F1: the cap must never cut a DIRTY line for an older STALLED one.
     CAPD = ([Item("STALLED", "unpushed", h * 3600, f"tip{h}", "push") for h in range(1, 9)]
             + [pr_item(DP, NOW - 600, NOW, 3600)])
@@ -1656,6 +1714,13 @@ def _self_test_body() -> int:
               lambda: (RUK, [ln.split(" — ")[0] for ln in (hook_block(RUK, LUK) or "").split("\n")
                              if ln.startswith("UNKNOWN-MERGE")]),
               (STALLED_RC, ["UNKNOWN-MERGE pr       PR #540 just-moved: NOTE"]))
+
+        # r2 Codex R2-F2, through collect: an UNKNOWN head pushed 2 min ago is a CLI line, and no hook block at all.
+        FRESH_UNK = _row(541, "just-pushed", "c" * 40, draft=False, date="2027-01-15T07:58:00Z", mergeable="UNKNOWN")
+        RFU, LFU = run(["--repo", str(QUIET)], prs=lambda repo, b=None: [FRESH_UNK, CLEAN_ROW], now=NOW)
+        check("545 r2: collect over an UNKNOWN head inside the grace: rc 0, its CLI line shown, no hook block",
+              lambda: (RFU, [ln.split(":")[0] for ln in LFU if ln.startswith("MERGE-PENDING")], hook_block(RFU, LFU)),
+              (CLEAR, ["MERGE-PENDING pr       PR #541 just-pushed"], None))
 
         def gh_down(repo, b=None):
             raise CannotRun("gh pr list exited 4: no network")

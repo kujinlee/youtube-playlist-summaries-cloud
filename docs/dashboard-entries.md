@@ -18992,6 +18992,11 @@ Review round 1 fold: "a test run" now means a GitHub Actions run started by the 
 another tool posts; the conflict line is always shown first, so a long list cannot push it out; a PR whose mergeability
 GitHub has not worked out yet gets a note instead of silence; and a PR stacked on another branch is no longer told to
 merge the main branch.
+Review round 2 fold: when the tool could not see whether tests ran (for example GitHub listed only part of a PR's
+checks), it no longer says "no tests will run, merge now"; it says the conflict is real and the test status was not
+measured. A PR pushed a moment ago is given five minutes before GitHub's still-working state counts as stuck (GitHub
+measured at under two minutes on 132 recent pushes). A PR whose target branch arrives blank now makes the check
+report that it could not run, instead of quietly skipping that PR.
 <!--tech-->
 `scripts/check-stalled-work.py`: `GH_QUERY` adds `mergeable` and the head commit's `statusCheckRollup{state}`;
 `pr_node_problem` refuses a node with no string `mergeable` (CANNOT RUN); `head_has_run(row, oid)` -> True/False, or None when
@@ -19008,3 +19013,10 @@ heads carry only the `cursor` and `claude` apps' suites); truncated suites or a 
 `DIRTY-NO-CI` is its own first hook tier (R1-F1). `UNKNOWN-MERGE` for `mergeable: UNKNOWN` with no PR run (R1-F2); a
 value outside GitHub's enum is CANNOT RUN. `baseRefName` read; only a master-based PR is reported (R1-F3). A future head
 date ages 0 (R1-F4). 203 -> 217 cases; 106 -> 122 mutations.
+r2 fold (`docs/reviews/coordinator/dirty-no-ci-r2-coordinator.md`, all three fix-induced): `pr_item` gives DIRTY-NO-CI only
+for `headRun is False`; `None` is the new stalled state `DIRTY-UNSEEN` (hook tier 2), worded NOT MEASURED with a
+conditional action (R2-F1; `checkSuites` filters only by `appId`/`checkName`, introspected; MEASURED: max 4 suites on
+132 heads). `MERGE_GRACE_S` = 300: an UNKNOWN head no older than that is `MERGE-PENDING`, not stalled, no tier; an
+undated head gets no grace (R2-F2; MEASURED: first `pull_request` run 2-111 s after the head's first suite).
+`BASE_REF_RE` refuses an empty or malformed `baseRefName`, CANNOT RUN (R2-F3). Class audit: `head_has_run` reads a
+non-list `nodes` or a boolean `totalCount` as unknown. 217 -> 225 cases; 122 -> 133 mutations, 12 anchors re-bound.
