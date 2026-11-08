@@ -1411,5 +1411,70 @@
     "expect": [
       "backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`"
     ]
+  },
+  {
+    "name": "backlog #408: REGEN_MAIN_CHECKOUT is ignored, so a generator in its private clone reads the clone's empty ledger",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    named = os.environ.get(MAIN_CHECKOUT_ENV, \"\")",
+        "    named = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
+    ]
+  },
+  {
+    "name": "backlog #408: the name in REGEN_MAIN_CHECKOUT is trusted as text, so a linked worktree passes for the main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if named and os.path.realpath(Path(common).parent) != os.path.realpath(named):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #408: ...but a name that is a LINKED worktree, or relative, is refused, never trusted as text"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: the same-repository check is skipped, so a REGEN_MAIN_CHECKOUT naming another repository is honoured",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if named and not _same_repository(root, common, run):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F2: a REGEN_MAIN_CHECKOUT naming ANOTHER repository's main checkout is refused, from a clone and from a real checkout alike; and from a non-repository, which no alternates tie to it"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: any alternates file passes, so a clone of one repository honours another repository's main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    return any(os.path.isabs(ln.strip()) and os.path.realpath(ln.strip()) == want for ln in lines)",
+        "    return bool(lines)"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F2: a REGEN_MAIN_CHECKOUT naming ANOTHER repository's main checkout is refused, from a clone and from a real checkout alike; and from a non-repository, which no alternates tie to it"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: a shared common dir is not recognised, so a linked worktree of THIS repository refuses its own main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if os.path.realpath(own) == os.path.realpath(common):\n        return True\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
+    ]
   }
 ]

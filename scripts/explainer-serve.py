@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 233 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 239 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -129,6 +129,70 @@ REGEN_TIMEOUTS = {"goal-tree": 60}
 # file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
 REGEN_LOCKS: dict[str, "threading.Lock"] = {}
 REGEN_LOCKS_GUARD = threading.Lock()
+# backlog #408: a Refresh press runs the generator THROUGH this runner (`--page <key>`), never directly.
+REGEN_RUNNER = "regen-pages.py"
+# Seconds a timed-out runner gets, after SIGTERM, to kill its generators, remove its tree and exit.
+REGEN_GRACE = 15
+# Seconds the pipes are drained after SIGKILL before they are CLOSED (review r2 F4): a descendant that left the
+# group (`setsid`) can hold them open for ever, and EOF is never waited for past this bound.
+REGEN_DRAIN = 2
+
+
+def _signal_group(pgid: int, sig: int) -> None:
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _reap_killed(p: subprocess.Popen) -> None:
+    """After SIGKILL to `p`'s group: drain its pipes for at most REGEN_DRAIN s, then CLOSE them and reap `p`
+    itself, without waiting for EOF from a descendant outside the group (review r2 F4 — an unbounded
+    `communicate()` here waited 3.08 s, and for ever, on one)."""
+    try:
+        p.communicate(timeout=REGEN_DRAIN)
+    except subprocess.TimeoutExpired:
+        for f in (p.stdout, p.stderr):
+            try:
+                f.close()
+            except OSError:
+                pass
+        try:
+            p.wait(timeout=REGEN_DRAIN)
+        except subprocess.TimeoutExpired:
+            pass                                       # SIGKILLed already; nothing more can be sent
+
+
+def run_in_group(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess:
+    """`subprocess.run(argv, capture_output=True, text=True, timeout=timeout)`, with the runner in a process
+    group of its own (backlog #408, review r1 X3). On a timeout the GROUP gets SIGTERM — the runner's handler
+    then kills its generators' groups, removes its tree and closes its lock — and SIGKILL only after
+    REGEN_GRACE s; then the timeout is raised as before. Before this a timeout SIGKILLed the runner alone, so
+    its generator ran on while the lock it was built under was released. ⚠ The 504 therefore comes up to
+    REGEN_GRACE s after the click's bound when the runner is slow to stop, plus at most 2 x REGEN_DRAIN s for
+    a descendant that left the group and holds the pipes (`_reap_killed`). ⚠ BOUND: such a descendant is not
+    killed, only no longer waited for — the same bound `regen-pages.py` states."""
+    p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                         text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _signal_group(p.pid, signal.SIGTERM)
+        try:
+            p.communicate(timeout=REGEN_GRACE)
+        except subprocess.TimeoutExpired:
+            _signal_group(p.pid, signal.SIGKILL)
+            _reap_killed(p)
+        raise
+    except BaseException:
+        _signal_group(p.pid, signal.SIGKILL)
+        _reap_killed(p)
+        raise
+    return subprocess.CompletedProcess(argv, p.returncode, out, err)
+
+
+# What a Refresh press runs the runner with. A module name, so the suite can stand in for it.
+REGEN_EXEC = run_in_group
 REGENERABLE = {
     "dashboard": "gen-dashboard.py",
     "backlog-table": "gen-backlog-page.py",
@@ -1418,7 +1482,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         ⚠ THE ALLOW-LIST IS THE WHOLE SECURITY ARGUMENT, and it is a dict of literals:
         the caller names a KEY, never a path, an argument or a command. Nothing the
-        caller sends reaches the command line — a request for an unknown page is a 400
+        caller sends reaches the command line but a string PROVEN to be one of those keys
+        (backlog #408: the runner's `--page <key>`) — a request for an unknown page is a 400
         naming the legal set, not an attempt to resolve it. `shell=False` (a list argv)
         and a timeout are the belt to that brace.
 
@@ -1446,8 +1511,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise subprocess.TimeoutExpired(cmd=script, timeout=limit)
-                r = subprocess.run([sys.executable, str(SCRIPTS / script)],
-                                   capture_output=True, text=True, timeout=left)
+                # ⛔ backlog #408: through the ONE runner, which builds from a fresh origin/master tree
+                # and says CANNOT RUN (exit 2) rather than build from this server's own, possibly stale,
+                # checkout. `want` reaches the argv only once `script` proved it an allow-list KEY (a
+                # list argv, no shell), and the runner checks it against the same table again.
+                # ⛔ review r1 X3: in a process group of its own, stopped with SIGTERM on a timeout, so the runner
+                # ends its generators before it lets go of the lock — see `run_in_group`.
+                r = REGEN_EXEC([sys.executable, str(SCRIPTS / REGEN_RUNNER), "--page", want], timeout=left)
             finally:
                 lock.release()
         except subprocess.TimeoutExpired:
@@ -2989,19 +3059,19 @@ def _self_test_body() -> int:
         # not at the WIRING.
         def _drive_regen_route(payload_bytes):
             _regen_calls.clear()
-            _real = subprocess.run
+            _real = globals()["REGEN_EXEC"]
             def _spy(*a, **k):
                 _regen_calls.append((a, k))
                 return _ok_runner(*a, **k)
             try:
-                subprocess.run = _spy               # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _spy
                 return _drive_post("/regenerate", payload_bytes)
             finally:
-                subprocess.run = _real              # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _real
         case("POST /regenerate REACHES the allow-list the seven cases above defend",
              lambda: (_drive_regen_route(json.dumps({"page": _page}).encode()),
                       len(_regen_calls) == 1
-                      and _regen_calls[0][0][0][1] == str(SCRIPTS / REGENERABLE[_page]))[1])
+                      and _regen_calls[0][0][0][1:] == [str(SCRIPTS / REGEN_RUNNER), "--page", _page])[1])
 
         # ⛔ r3 MEDIUM 5 — `_send`'s Content-TYPE VALUE was unasserted; only its presence was.
         # `send_header("Content-Type", ctype)` -> a hardcoded `"text/plain"` survived 188/188, i.e.
@@ -3062,15 +3132,15 @@ def _self_test_body() -> int:
             _regen_calls.clear()
             h = object.__new__(Handler)
             h._send = lambda code, body, ctype: got.update(code=code, body=body)
-            _real = subprocess.run
+            _real = globals()["REGEN_EXEC"]
             def _spy(*a, **k):
                 _regen_calls.append((a, k))
                 return runner(*a, **k)
             try:
-                subprocess.run = _spy            # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _spy
                 Handler._regenerate(h, payload)
             finally:
-                subprocess.run = _real           # type: ignore[assignment]
+                globals()["REGEN_EXEC"] = _real
             return got.get("code"), got.get("body", b"")
         def _timeout_runner(*_a, **_k):
             raise subprocess.TimeoutExpired(cmd="x", timeout=REGEN_TIMEOUT)
@@ -3114,10 +3184,16 @@ def _self_test_body() -> int:
                          for k in REGENERABLE))
         # ⛔ WHAT WOULD ACTUALLY HAVE RUN — the claim "nothing the caller sends reaches the command
         # line", asserted against the recorded argv rather than against the reply.
-        case("the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else",
+        case("the argv is exactly [python, SCRIPTS/regen-pages.py, --page, <allow-list key>] — nothing else",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
-                      _regen_calls[0][0][0] == [sys.executable,
-                                                str(SCRIPTS / REGENERABLE[_page])])[1])
+                      _regen_calls[0][0][0] == [sys.executable, str(SCRIPTS / REGEN_RUNNER),
+                                                "--page", _page])[1])
+        # ⛔ backlog #408: EVERY key reaches the runner as itself — a lookup that resolved all of them to
+        # one page, or passed the generator's script name, would rebuild the wrong page or none.
+        case("backlog #408: every allow-listed page is routed through the runner under its OWN key",
+             lambda: [(_drive_regen({"page": k}, _ok_runner), _regen_calls[0][0][0][1:])[1]
+                      for k in sorted(REGENERABLE)]
+                     == [[str(SCRIPTS / REGEN_RUNNER), "--page", k] for k in sorted(REGENERABLE)])
         case("…and it is a LIST argv with no shell — `shell=False` is the belt to that brace",
              lambda: (_drive_regen({"page": _page}, _ok_runner),
                       isinstance(_regen_calls[0][0][0], list)
@@ -3154,15 +3230,15 @@ def _self_test_body() -> int:
                 t0 = time.monotonic()
                 h._send = lambda code, body, ctype: got.append((code, time.monotonic() - t0, body))
                 Handler._regenerate(h, {"page": "goal-tree"})
-            _real, _bound = subprocess.run, REGEN_TIMEOUTS["goal-tree"]
+            _real, _bound = globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"]
             try:
-                subprocess.run, REGEN_TIMEOUTS["goal-tree"] = _sleepy, limit   # type: ignore[assignment]
+                globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"] = _sleepy, limit
                 ts = [threading.Thread(target=_click) for _ in range(2)]
                 ts[0].start(); time.sleep(0.05); ts[1].start()
                 for t in ts:
                     t.join()
             finally:
-                subprocess.run, REGEN_TIMEOUTS["goal-tree"] = _real, _bound    # type: ignore[assignment]
+                globals()["REGEN_EXEC"], REGEN_TIMEOUTS["goal-tree"] = _real, _bound
             return sorted(c for c, _, _ in got), max(e for _, e, _ in got) <= limit + 0.25, got
         case("⛔ review r2 X2: two overlapping Refresh clicks BOTH answer within the bound — the deadline is taken "
              "before the lock, and a click that cannot finish answers with the timeout",
@@ -3186,6 +3262,69 @@ def _self_test_body() -> int:
         # and ratchet entries are different things, and this is a place they legitimately differ.
         case("…including a SIGNAL-killed generator, whose returncode is negative",
              lambda: _drive_regen({"page": _page}, _sig_runner)[0] == 500)
+
+        # ⛔⛔ review r1 X3: a Refresh TIMEOUT must stop the runner's whole group, SIGTERM first. Real children: a
+        # "runner" that records the SIGTERM it gets, and starts a child in its group that writes a marker 1.5 s on.
+        import tempfile as _tf
+        _gd = pathlib.Path(_tf.mkdtemp(prefix="serve-group-"))
+        (_gd / "runner.py").write_text(
+            "import os, signal, subprocess, sys, time\nd = sys.argv[1]\n"
+            "def term(*_):\n    open(os.path.join(d, 'termed'), 'w').write('1')\n    sys.exit(143)\n"
+            "signal.signal(signal.SIGTERM, term)\n"
+            "subprocess.Popen([sys.executable, '-c', 'import sys, time; time.sleep(1.5); "
+            "open(sys.argv[1], \"w\").write(\"late\")', os.path.join(d, 'late')])\n"
+            "open(os.path.join(d, 'started'), 'w').write('1')\ntime.sleep(30)\n")
+
+        def _group_timeout():
+            try:
+                run_in_group([sys.executable, str(_gd / "runner.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            time.sleep(1.2)
+            return raised, (_gd / "started").exists(), (_gd / "termed").exists(), (_gd / "late").exists()
+        _gt = _group_timeout()
+        case("⛔⛔ review r1 X3: a Refresh timeout sends the RUNNER SIGTERM first — so it can stop its generators "
+             "and release its lock — and still raises the timeout",
+             lambda: _gt[:3] == (True, True, True))
+        case("⛔⛔ review r1 X3: ...and the runner's whole process group is gone: its child never writes its marker",
+             lambda: _gt[3] is False)
+        # ⛔⛔ review r2 F4: a runner whose descendant LEFT the group (`setsid`) and holds its pipes. The Refresh
+        # timeout must still come back within its bounds, never when that descendant chooses to exit.
+        (_gd / "escaper.py").write_text(
+            "import os, subprocess, sys, time\nd = sys.argv[1]\n"
+            "q = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'], start_new_session=True)\n"
+            "open(os.path.join(d, 'escaped.pid'), 'w').write(str(q.pid))\ntime.sleep(30)\n")
+
+        def _escaped_timeout():
+            saved = (globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"])
+            globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = 0.3, 0.3
+            t0 = time.monotonic()
+            try:
+                run_in_group([sys.executable, str(_gd / "escaper.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            finally:
+                globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = saved
+            took = time.monotonic() - t0
+            try:
+                os.kill(int((_gd / "escaped.pid").read_text()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+            return raised, (_gd / "escaped.pid").exists(), took < 5
+        _esc = _escaped_timeout()
+        case("⛔⛔ review r2 F4: a Refresh timeout whose runner left a descendant OUTSIDE its group holding the pipes "
+             "still raises within its bounds — the drain is bounded, never a wait for that descendant's EOF",
+             lambda: _esc == (True, True, True))
+        case("review r1 X3: run_in_group returns what subprocess.run would — exit code, stdout, stderr",
+             lambda: (lambda r: (r.returncode, r.stdout, r.stderr))(run_in_group(
+                 [sys.executable, "-c", "import sys; print('o'); print('e', file=sys.stderr); sys.exit(4)"],
+                 timeout=30)) == (4, "o\n", "e\n"))
+        case("review r1 X3: a Refresh press runs the runner through run_in_group, not a bare subprocess.run",
+             lambda: REGEN_EXEC is run_in_group)
+        import shutil as _sh
+        _sh.rmtree(_gd, ignore_errors=True)
 
         # ── r1 MEDIUM 6: `status()` reported success with nothing listening ──────────────────
         # ⛔ `return 0 if running else 1` -> `return 0` passed **149/149**. This is the one command

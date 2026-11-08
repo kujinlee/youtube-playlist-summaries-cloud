@@ -90,17 +90,27 @@ case "$FILE_PATH" in
   *) stale || exit 0 ;;
 esac
 
-OUT=$(python3 "$REPO/scripts/gen-backlog-page.py" 2>&1) || {
+# ⛔ review r1 C2: THE EDIT IS VALIDATED HERE, against THIS checkout's file, and published from master below.
+# The served page is built from origin/master (backlog #408), so it cannot show this edit — but the
+# generator's at-edit warnings (a coverage refusal, an UNREAD row) are about the row just typed, and this
+# hook is their most timely channel. So this checkout's generator runs once more, into a private temp
+# directory that is removed straight after: it publishes nothing.
+VDIR=$(mktemp -d "${TMPDIR:-/tmp}/backlog-validate.XXXXXX") || VDIR=""
+if [ -n "$VDIR" ]; then
+  VAL=$(python3 "$REPO/scripts/gen-backlog-page.py" --out "$VDIR/backlog-table.html" 2>&1)
+  VRC=$?
+  rm -rf "$VDIR"
+else
+  VAL="⚠  could not make a temp directory, so this edit was NOT validated"
+  VRC=1
+fi
+# ⛔ review r2 F5: the validation's verdict is said BEFORE publishing, like its warnings below.
+if [ "$VRC" -ne 0 ]; then
   sources_sig > "$MARK" 2>/dev/null || true
-  echo "⚠  a source of the backlog view changed but the view was NOT regenerated:"
-  echo "$OUT" | tail -4
-  echo "   The page at http://127.0.0.1:7391/backlog-table is now STALE."
+  echo "⚠  your edit of the backlog FAILS the backlog generator — the page will refuse it once it merges:"
+  echo "$VAL" | tail -4
   echo "   If this is a coverage refusal, add the item to GROUPS in scripts/gen-backlog-page.py."
-  exit 0
-}
-
-rm -f "$MARK"
-echo "↻ backlog view regenerated — http://127.0.0.1:7391/backlog-table"
+fi
 
 # ⭐ backlog #110, r1 finding M-1. The generator returns 0 when it reports an UNREAD row — the page
 # WAS written, minus that row — so everything it said went into $OUT and straight onto the floor.
@@ -121,5 +131,27 @@ echo "↻ backlog view regenerated — http://127.0.0.1:7391/backlog-table"
 # not in this file: gen-backlog-page's suite READS this line, extracts the awk, and runs it against
 # a fixture (r3 finding L-4 — before that, a shell one-liner nothing executes was the whole of the
 # fix for r2's M4). Edit this line and three cases go red.
+# ⚠ Applied to $VAL — THIS checkout's generator, run on the edit — not to $OUT, which is master's.
+# ⛔ review r2 F5: RELAYED HERE, straight after the validation and BEFORE publishing — a publishing failure
+# (offline, CANNOT RUN) exits below, and it used to take this edit's warnings with it. MEASURED 2026-11-07 in
+# a scratch copy of this hook: a validation that prints a ⚠ UNREAD line and exits 0, and a publisher that
+# exits 2 (CANNOT RUN offline), print the ⚠ line, then the publishing failure.
+OUT="$VAL"
 echo "$OUT" | awk '/^⚠/ {p=1; print; next} p && /^   [^ ]/ {print; next} {p=0}'
+
+# ⛔ backlog #408: published from a FRESH origin/master by regen-pages.py, never from this checkout's tree.
+OUT=$(python3 "$REPO/scripts/regen-pages.py" --page backlog-table --after-edit 2>&1)
+PRC=$?
+
+if [ "$PRC" -ne 0 ]; then
+  sources_sig > "$MARK" 2>/dev/null || true
+  echo "⚠  the backlog view was NOT rebuilt from origin/master:"
+  echo "$OUT" | tail -4
+  echo "   The page at http://127.0.0.1:7391/backlog-table is now STALE."
+  exit 0
+fi
+
+[ "$VRC" -eq 0 ] && rm -f "$MARK"
+echo "$OUT" | grep 'this edit appears after it merges' || echo "↻ backlog-table rebuilt from origin/master"
+echo "   http://127.0.0.1:7391/backlog-table"
 exit 0

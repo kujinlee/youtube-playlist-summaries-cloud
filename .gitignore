@@ -198,3 +198,6 @@ docs/explainers/questions.md
 # share of compactions the 1.5 x W ceiling forces can be measured (`check-compaction-boundary.py --summary`).
 .claude/compaction-boundary.log
 .claude/agenda-log.jsonl
+# backlog #408: the lock scripts/regen-pages.py holds while it builds every page from a fresh origin/master tree
+# (that tree lives in a private temp directory, never in the repository).
+.claude/regen-pages.lock

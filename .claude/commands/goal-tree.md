@@ -9,8 +9,12 @@ relationship of work threads (or lack there of)?"*
 **Run the logger FIRST, and print what it printed** (backlog #363), so the chat and the page agree:
 
 ```bash
-python3 scripts/goal-tree.py --snapshot --page --print
+python3 scripts/regen-pages.py --page goal-tree; python3 scripts/goal-tree.py --print
 ```
+
+The first command snapshots and renders from a FRESH `origin/master` tree (backlog #408), never from this checkout;
+the second prints the snapshot it just logged. ⛔ If the first says `CANNOT RUN — pages NOT rebuilt`, nothing was
+snapshotted and the printed tree is the LAST snapshot replayed: say so above it.
 
 It reads the RELATIONS from `docs/goal-threads.md` and DERIVES every leaf's state from `git log origin/master`,
 `gh pr list` and `.claude/inflight.jsonl`; it logs the snapshot to the main checkout's git-ignored `.claude/goal-tree-log.jsonl` only when the tree

@@ -290,11 +290,11 @@
     "file": "scripts/explainer-serve.py",
     "edits": [
       [
-        "                r = subprocess.run([sys.executable, str(SCRIPTS / script)],",
-        "                r = subprocess.run([sys.executable, script],"
+        "                r = REGEN_EXEC([sys.executable, str(SCRIPTS / REGEN_RUNNER), \"--page\", want],",
+        "                r = REGEN_EXEC([sys.executable, REGEN_RUNNER, \"--page\", want],"
       ]
     ],
-    "expect": "the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else"
+    "expect": "the argv is exactly [python, SCRIPTS/regen-pages.py, --page, <allow-list key>] — nothing else"
   },
   {
     "name": "a generator that exits NON-ZERO is reported as a successful rebuild",
@@ -750,5 +750,10 @@
   },
   {"name": "the reload poll ignores the Refresh button's claim and blanks its message (backlog #502)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && s.getAttribute('data-refresh')) || staleMsg);", "say(serverMsg || staleMsg);"]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
   {"name": "the Refresh claim is ranked BELOW the polls' own messages, so a stale warning replaces it (backlog #502)", "file": "scripts/explainer-serve.py", "edits": [["(s && s.getAttribute('data-refresh')) || staleMsg);", "staleMsg || (s && s.getAttribute('data-refresh')) || '');"]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
-  {"name": "the Refresh claim outranks an unreachable server, so a hung or failed rebuild hides the outage (backlog #502 r1)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && ", "say((s && s.getAttribute('data-refresh')) || serverMsg || (s && "]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]}
+  {"name": "the Refresh claim outranks an unreachable server, so a hung or failed rebuild hides the outage (backlog #502 r1)", "file": "scripts/explainer-serve.py", "edits": [["say(serverMsg || (s && ", "say((s && s.getAttribute('data-refresh')) || serverMsg || (s && "]], "expect": ["a Refresh claim survives both polls; an unclaimed span is still the polls' (run)"]},
+  {"name": "backlog #408: every Refresh press rebuilds ONE fixed page, whatever key was pressed", "file": "scripts/explainer-serve.py", "edits": [["str(SCRIPTS / REGEN_RUNNER), \"--page\", want],", "str(SCRIPTS / REGEN_RUNNER), \"--page\", sorted(REGENERABLE)[0]],"]], "expect": "backlog #408: every allow-listed page is routed through the runner under its OWN key"},
+  {"name": "review r1 X3: the Refresh runner shares the server's process group, so a timeout cannot end its children", "file": "scripts/explainer-serve.py", "edits": [["                         text=True, start_new_session=True)", "                         text=True, start_new_session=False)"]], "expect": "⛔⛔ review r1 X3: ...and the runner's whole process group is gone: its child never writes its marker"},
+  {"name": "review r1 X3: a Refresh timeout SIGKILLs the runner at once, so it cannot stop its generators first", "file": "scripts/explainer-serve.py", "edits": [["        _signal_group(p.pid, signal.SIGTERM)", "        _signal_group(p.pid, signal.SIGKILL)"]], "expect": "⛔⛔ review r1 X3: a Refresh timeout sends the RUNNER SIGTERM first — so it can stop its generators and release its lock — and still raises the timeout"},
+  {"name": "review r1 X3: a Refresh press goes back to a bare subprocess.run", "file": "scripts/explainer-serve.py", "edits": [["REGEN_EXEC = run_in_group", "REGEN_EXEC = subprocess.run"]], "expect": "review r1 X3: a Refresh press runs the runner through run_in_group, not a bare subprocess.run"},
+  {"name": "review r2 F4: the post-SIGKILL drain is unbounded again, so a descendant outside the group holding the pipes holds the Refresh timeout", "file": "scripts/explainer-serve.py", "edits": [["        p.communicate(timeout=REGEN_DRAIN)\n    except subprocess.TimeoutExpired:\n        for f in (p.stdout, p.stderr):", "        p.communicate()\n    except subprocess.TimeoutExpired:\n        for f in (p.stdout, p.stderr):"]], "expect": "⛔⛔ review r2 F4: a Refresh timeout whose runner left a descendant OUTSIDE its group holding the pipes still raises within its bounds — the drain is bounded, never a wait for that descendant's EOF"}
 ]

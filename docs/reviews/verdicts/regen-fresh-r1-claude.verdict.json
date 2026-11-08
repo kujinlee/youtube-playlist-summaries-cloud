@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/regen-fresh-r1-claude.md": "100644 3c1b7783dbb0bfb51090a7073bf373fb1403f4f2"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "fec9ce91663d8bea6f4898ec251c0df81dd35226",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 13940 chars, names fec9ce91663d",
+  "refused": false,
+  "review": "regen-fresh-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/rgf",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

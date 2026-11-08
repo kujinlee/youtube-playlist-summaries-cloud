@@ -37,7 +37,9 @@ case "$FILE_PATH" in
   *) exit 0 ;;
 esac
 
-OUT=$(python3 "$REPO/scripts/gen-dashboard.py" 2>&1) || {
+# ⛔ backlog #408: built from a FRESH origin/master by regen-pages.py, never from this checkout's tree — so
+# the page shows MASTER, not the edit that fired this hook, and the success line says exactly that (review r1 C2).
+OUT=$(python3 "$REPO/scripts/regen-pages.py" --page dashboard --after-edit 2>&1) || {
   echo "⚠  the dashboard store changed but the page was NOT regenerated:"
   echo "$OUT" | tail -4
   echo "   The page at http://127.0.0.1:7391/dashboard is now STALE."
@@ -49,5 +51,6 @@ OUT=$(python3 "$REPO/scripts/gen-dashboard.py" 2>&1) || {
 # than replacing it with a bare success line.
 echo "$OUT" | grep '⚠' || true
 
-echo "↻ dashboard regenerated — http://127.0.0.1:7391/dashboard"
+echo "$OUT" | grep 'this edit appears after it merges' || echo "↻ dashboard rebuilt from origin/master"
+echo "   http://127.0.0.1:7391/dashboard"
 exit 0
