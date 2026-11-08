@@ -19229,3 +19229,25 @@ Merged: PR #537 `311d3631`, PR #538 `4d7766f8` (the per-suite limit scales with 
 PR #536 `64e4b67a`. Backlog #544 updated: two more review rounds whose only job was re-answering loosening ids after
 master merges that left every flagged file unchanged. The goal threads now quote the owner's 11-07 20:06 weekend
 mandate under its four goals.
+
+## 2026-11-08
+⚠ The merge check is deliberately looser, as the owner chose this morning (11:33, option A "Tie to flagged files"). When
+a reviewer says a flagged line is "not a loosening", that answer now holds as long as the file the line sits in is
+unchanged. Before, any change at all after the review (a doc, another script, a merge of master) threw every answer away
+and cost a whole extra review round. Any change to the flagged file itself still throws its answer away.
+<!--tech-->
+Backlog #544, branch `answer-binds-file`, `scripts/check-merge-ready.py`. GATE LOOSENING by design. **What now passes
+that did not before:** a `LOOSENING-CHECK <id>: not a loosening` answer, from a verdict whose reviewed head is not the
+tree being merged, clears its flagged line when that line's file has the SAME entry (mode and blob) in the reviewed tree
+(the verdict's `head`, overlaid by its `dirty`) and in HEAD. So a change after the round to ANY OTHER path no longer
+voids it: a doc, a sibling script or module the flagged file imports, a config or policy file it reads, a moved
+submodule, a file under `docs/reviews/coordinator/`. Three self-test cases that asserted the old rule were FLIPPED, not
+deleted: "ANY edit after the round (a doc) voids the answer" (now: a doc edit keeps it, a one-byte edit to the flagged
+file voids it), "an ignored submodule moved after the round voids its answer" and "a .py under docs/reviews/coordinator/
+committed after the round voids its answer" (both now keep it). Unchanged and still fail closed: a changed, renamed or
+missing flagged file, a `dirty: null` verdict, an unreadable verdict, an unreachable reviewed head (a new real-git case),
+a gate that did not run, a reviewer's finding, and "a finding is retired only by a later round of the SAME half". A gate
+symlink's answer is bound to the link AND its target. A flagged file the branch DELETES has no blob, so its answers keep
+the old exact-tree rule (`tree_matches`, kept with all its cases). No verdict format change: the blob is read from the
+recorded `head` with `git ls-tree`, so existing verdicts keep working. 348 -> 363 cases; mutations 156 -> 163, four
+entries re-bound to the new text.
