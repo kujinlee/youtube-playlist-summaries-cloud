@@ -1685,7 +1685,7 @@
   "expect": "#508 r2 Codex 5: ...nor the same half's later assent on ANOTHER tree"
  },
  {
-  "name": "#508 r2 Codex 5: a later round of the same half retires a finding without answering that id",
+  "name": "#508 r2 Codex 5: a later round of the same half retires a finding whatever it answers that id, a finding again too",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
@@ -1693,7 +1693,7 @@
     "True\n"
    ]
   ],
-  "expect": "#508 r2 Codex 5: ...nor a later round of the same half that does not answer THAT id"
+  "expect": "#508 r2 Codex 5: ...nor a later round of the same half that answers THAT id a finding AGAIN \u2014 both verdicts stay named"
  },
  {
   "name": "#508 r2 Codex 5: review_answers names no verdict whose finding stands",

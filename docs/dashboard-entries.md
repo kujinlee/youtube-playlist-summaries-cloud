@@ -19252,5 +19252,9 @@ Also passes, inside the same bound: a `.gitattributes` change after the round (`
 `filter=` for the flagged path) — it is a different file, and it changes the bytes a fresh checkout writes while the
 flagged file's blob stays the same (r1 Claude F2). A flagged file the branch DELETES has no blob, so its answers keep
 the old exact-tree rule (`tree_matches`, kept with all its cases). No verdict format change: the blob is read from the
-recorded `head` with `git ls-tree`, so existing verdicts keep working. 348 -> 364 cases; mutations 156 -> 164, four
-entries re-bound to the new text.
+recorded `head` with `git ls-tree`, so existing verdicts keep working. 348 -> 365 cases; mutations 156 -> 164, four
+entries re-bound to the new text. PR #543's CI sweep then found two mutations the new per-id binding had disarmed, both
+fixed with no case weakened: the `#508 r1 m3` real-git case now also edits ANOTHER line of the flagged file after round 7
+(a docs-only edit no longer takes that round's answer off the tree, so the case had stopped testing a finding from
+another tree), and a new case pins the one thing the same-half `== not a loosening` clause still decides alone — a later
+round that answers THAT id a finding again leaves the earlier verdict named.

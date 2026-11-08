@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 364 cases
+    python3 scripts/check-merge-ready.py --self-test # 365 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -2261,6 +2261,14 @@ def _self_test_body() -> int:
     check("#508 r2 Codex 5: ...nor a later round of the same half that does not answer THAT id",
           answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[1]: _N}, True),
                           V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset(_ids[1:]))
+    # ⟳ backlog #544 (PR #543 CI shard 22): with the third field a per-id SET, `i in ok2` already means the
+    # later round ANSWERS that id, so the case above is guarded twice and the `== not a loosening` clause
+    # alone decides only this: a later round that answers THAT id a finding AGAIN retires nothing, so the
+    # HELD note still names the earlier verdict too.
+    check("#508 r2 Codex 5: ...nor a later round of the same half that answers THAT id a finding AGAIN — both verdicts stay named",
+          (standing_findings([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _F}, True)]),
+           standing_findings([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, True)])),
+          ({_ids[0]: ["docs/reviews/verdicts/k-r1-codex.verdict.json", "docs/reviews/verdicts/k-r2-codex.verdict.json"]}, {}))
     check("#508 r2 Codex 5: ...nor the same half's later assent on ANOTHER tree",
           answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, False),
                           V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset())
@@ -3483,10 +3491,14 @@ def _self_test_body() -> int:
         check("⭐ #544 (was #508 r1 Codex 2) real git: an ignored submodule moved after the round KEEPS the answer, rc=0",
               (_rc0, _rc, "failure path" in _o), (0, 0, False))
         # r1 CLAUDE m3: a FINDING on an earlier tree, for a line that has not changed since, still holds.
+        # ⟳ backlog #544 (PR #543 CI shard 7): an answer is bound to its flagged FILE now, so a docs-only fix
+        # left round 7's record ON this tree and the case stopped testing the other-tree half. The fix also
+        # edits ANOTHER line of the flagged file — the flagged line unchanged, round 7's answer off this tree.
         _g8("reset", "-q", "--hard", _c1)
         _verdict8("k-r7-claude", _c1, {_id8: "finding"})
         _w8("docs/a.md", "a docs-only fix after round 1\n")
-        _g8("commit", "-qam", "docs fix")
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 2\n    return 0\n# fixed after round 7\n")
+        _g8("commit", "-qam", "docs fix, and another line of the flagged file")
         _verdict8("k-r8-codex", _g8("rev-parse", "HEAD"), {_id8: "not a loosening"})
         _rc, _o = _main8("--pr", "89")
         check("⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3",
