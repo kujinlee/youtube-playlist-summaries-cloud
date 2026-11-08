@@ -1946,7 +1946,31 @@ EXPECTED_MUTATIONS = {
     # `kind` (11). Nothing was retargeted; every one that remains is run against the suite below.
     # ⟳ r4 (F1): 80 → 84. `own_prs` REFUSES a malformed gh node instead of dropping it: six entries
     # pin the validation (2 retired: the old drop-based filter's two anchors no longer exist).
-    "scripts/check-stalled-work.py": 84,
+    # ⟳ backlog #545 (2026-11-07): 84 -> 103. 19 for DIRTY-NO-CI — a PR conflicting with master whose
+    # head has no check run: the query's two fields, the `mergeable` refusal, CONFLICTING vs UNKNOWN,
+    # `head_has_run` (inverted, head-oid check), the fact and item plumbing (4), the item's three
+    # conditions, the draft precedence, its age and wording, and its stalled state and hook tier.
+    # Nothing retired; three existing anchors re-bound to the same edit (a trailing `,` and one
+    # extended past a line `head_has_run` now shares).
+    # ⟳ resumed build (2026-11-08): 103 -> 106. The DIRTY line carries its age (2: the age, and an
+    # unknown date said as unknown), and a fresh DRAFT that conflicts is reported (1, PR #537).
+    # ⟳ backlog #545 r1 fold (2026-11-08): 106 -> 122. 16 new: a run is a `pull_request` workflow suite (push
+    # event, any suite, truncation, a missing key: 4), DIRTY-NO-CI's own first hook tier (1), UNKNOWN-MERGE (own_prs,
+    # the item, its head-run test, its stalled state, pr_fact, items_from: 6), the mergeable enum (1), the master
+    # base (test, refusal, query: 3), the future-date floor (1). Nothing retired; 14 existing anchors re-bound to
+    # the same edit on the reshaped lines.
+    # ⟳ backlog #545 r2 fold (2026-11-08): 122 -> 133. 11 new: an unseen run is DIRTY-UNSEEN, never the no-CI
+    # diagnosis (the item, its stalled state, its hook tier: 3), a malformed suite page is unmeasured (2), the
+    # UNKNOWN-MERGE grace (gone, given to an undated head, its last second, its width: 4), the base-ref refusal (2).
+    # Nothing retired; 12 existing anchors re-bound to the same edit on the reshaped lines.
+    # ⟳ backlog #545 Phase 6 fold (2026-11-08, `docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md`):
+    # 133 -> 133. 10 RETIRED with the code they named, which the fold deletes: DIRTY-UNSEEN's branch, stalled state
+    # and tier (3), UNKNOWN-MERGE's branch, head-run test and stalled state (3), the MERGE_GRACE_S grace (4). 10 new:
+    # the one UNMEASURED line (both OK points, the UNKNOWN arm, never hiding a stale or undated draft, never a stalled
+    # state, never a hook tier: 7), and r3 Claude R3-F1's well-formed suite node (3). Re-bound to the reshaped lines:
+    # 5 (head_has_run inverted, the head-run test, the NOT MEASURED wording, DIRTY-NO-CI's stalled state and tier);
+    # 3 expects renamed with their cases, one of them (the missing checkSuites key) stale since r2.
+    "scripts/check-stalled-work.py": 133,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
