@@ -19000,3 +19000,23 @@ there built 4 of 5 in 35.7 s naming the clone's master (goal-tree: `gh` auth und
 path, a tree swapped for a symlink to each checkout, a timed-out generator's child, a runner SIGTERMed and SIGKILLed; r2: `<common>/worktrees` swapped for a symlink, a victim's `gitdir` rewritten, the private
 dir and its ancestor swapped, a generator that ignores SIGTERM, the main repository's git dir byte-identical after a run);
 mutations 10 -> 53; explainer-serve 233 -> 239 cases, 68 -> 73 mutations; session-state 109 -> 111 mutations.
+
+## 2026-11-08
+Review round 3 of the fresh-pages change found two more ways a wrong path could slip in, and a third spot that could
+leave a stuck git lock in your main copy if the rebuild was stopped mid-fetch. All three are fixed. Because each review
+round kept finding a new way for "another program running as you" to swap a folder mid-run, a design review wrote down
+what the rebuild protects against: accidents (a folder already in the way, a stale lock, a hung or killed step, a stray
+setting, two rebuilds at once). Deliberate tampering by another program running as you is out of scope, because such a
+program could delete your copy directly. That limit is now stated in the script and in backlog item 408.
+<!--tech-->
+Backlog #408, PR #536, round-3 fold (`docs/reviews/claude/regen-fresh-r3-claude.md`; threat model:
+`docs/reviews/architecture-review-2026-11-08-regen-runner-threat-model.md` §2). `scripts/regen-pages.py`: R3-F1 —
+`_real_dir` (`os.lstat`, refuse a symlink) before each in-clone verb and the read-back, and `read_back` compares
+`--show-toplevel`/`--absolute-git-dir` to `str(tree)`/`str(tree / ".git")` exactly, no `realpath` (not a claim of
+race-freedom). R3-F2 — `_env()` drops an inherited `REGEN_MAIN_CHECKOUT`; `session-state.main_checkout` honours it only
+when `root` shares its common dir or `root`'s `objects/info/alternates` names `<common>/objects` (verified in a real
+`clone --shared`, including one made from a linked worktree; `remote.origin.url` cannot serve, the runner sets it to
+GitHub). R3-F3 — `_git`'s stop-signal arm and its timeout arm share `_stop_git`: SIGTERM, `GIT_GRACE`, SIGKILL, a drain
+bounded by `GIT_DRAIN` 2 s, pipes closed. Defence-against-tampering wording removed from the docstrings and comments;
+swap cases kept as pinned behaviour. regen-pages 101 -> 106 cases, 53 -> 58 mutations (three anchors rebound);
+session-state 131 -> 132 cases, 111 -> 114 mutations.

@@ -160,7 +160,7 @@
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    if rc != 0 or os.path.realpath(gd) != os.path.realpath(tree / \".git\"):",
+        "    if rc != 0 or gd != str(tree / \".git\"):",
         "    if rc != 0:"
       ]
     ],
@@ -173,7 +173,7 @@
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    if rc != 0 or os.path.realpath(top) != os.path.realpath(tree):",
+        "    if rc != 0 or top != str(tree):",
         "    if rc != 0:"
       ]
     ],
@@ -253,7 +253,7 @@
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    return {k: v for k, v in os.environ.items() if k not in REPO_VARS}",
+        "    return {k: v for k, v in os.environ.items() if k not in REPO_VARS and k != MAIN_CHECKOUT_ENV}",
         "    return dict(os.environ)"
       ]
     ],
@@ -691,6 +691,75 @@
     "expect": [
       "⭐ review r2: ...then, INSIDE the clone and only there: checkout --detach of the sha, origin/master set to it, and origin's URL set to the main checkout's",
       "⭐⭐ review r2: in the clone origin/master is the FETCHED sha — not the main checkout's stale local master a clone copies — and origin is the main checkout's own URL"
+    ]
+  },
+  {
+    "name": "review r3 R3-F1: no lstat before the in-clone verbs, so a tree swapped for a symlink to a clean main checkout has its HEAD detached",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        _real_dir(tree, f\"the clone's {what}\")",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F1: <private>/tree swapped for a symlink to a clean main checkout right after the clone — refused before any in-clone git verb; that checkout's HEAD is still on its branch"
+    ]
+  },
+  {
+    "name": "review r3 R3-F1: the read-back compares through realpath again, so a tree git reads back under another path is accepted",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    if rc != 0 or top != str(tree):",
+        "    if rc != 0 or os.path.realpath(top) != os.path.realpath(tree):"
+      ],
+      [
+        "    if rc != 0 or gd != str(tree / \".git\"):",
+        "    if rc != 0 or os.path.realpath(gd) != os.path.realpath(tree / \".git\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F1: read_back compares the tree path EXACTLY — a tree git reads back under another path (its temp root moved behind a symlink) is refused, never accepted through realpath; and removed"
+    ]
+  },
+  {
+    "name": "review r3 R3-F2: an inherited REGEN_MAIN_CHECKOUT passes through _env to git and to a generator out of a clone",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "if k not in REPO_VARS and k != MAIN_CHECKOUT_ENV}",
+        "if k not in REPO_VARS}"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F2: an INHERITED REGEN_MAIN_CHECKOUT never reaches a generator out of a clone, or git; one in a clone gets this run's value, not the inherited one"
+    ]
+  },
+  {
+    "name": "review r3 R3-F3: a stop signal mid-git SIGKILLs it at once, with no SIGTERM grace to remove its lock",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    except BaseException:\n        _stop_git(p)\n        raise",
+        "    except BaseException:\n        p.kill()\n        _stop_git(p)\n        raise"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F3: a stop signal mid-git sends git SIGTERM FIRST — its own clean-up (the lock removal) runs — and the signal is still re-raised"
+    ]
+  },
+  {
+    "name": "review r3 R3-F3: the drain after SIGKILLing git is unbounded, so a child of git holding its pipes holds the runner",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        p.communicate(timeout=GIT_DRAIN)",
+        "        p.communicate()"
+      ]
+    ],
+    "expect": [
+      "⛔ review r3 R3-F3: ...and a git that IGNORES SIGTERM is SIGKILLed, then its pipes — still held by a child of git — are drained for a BOUNDED time, not until that child exits"
     ]
   }
 ]

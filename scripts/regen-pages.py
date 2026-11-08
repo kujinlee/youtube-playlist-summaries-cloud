@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 101 cases
+    python3 scripts/regen-pages.py --self-test             # 106 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -54,23 +54,23 @@ NEVER pull, reset or check out there. Instead, under a lock (`LOCK_REL`):
      anything — its HEAD that sha, its status clean), and only then does each generator run as
      `<tree>/scripts/<generator>.py` with `cwd=<tree>`, so the generator's CODE is master's too. Each one is
      told the main checkout in `REGEN_MAIN_CHECKOUT`, which `session-state.main_checkout` honours only when
-     git names that path as its own main checkout: the live ledger and the goal-tree log are there;
+     git names that path as its own main checkout AND the clone's alternates name its objects (review r3
+     R3-F2); an inherited value is stripped from everything else (`_env`). The live ledger and the goal-tree
+     log are there;
   4. afterwards the private directory is REMOVED, and nothing else: its contents through the descriptor
      opened at creation (`shutil.rmtree(..., dir_fd=)`, which follows no symlink), then the directory
-     itself by `rmdir`, only when `os.lstat` still names the device and inode recorded at creation. A
-     directory, or a symlink, swapped in at that path or at any ancestor of it is REFUSED and left.
-⛔ NOTHING RUNS IN THE MAIN REPOSITORY BUT `fetch`, `rev-parse` and `config --get`. Review round 1
-reproduced data loss in the reuse design (a forged `.git`, a real worktree at the fixed path, a symlink
-swapped in after the ownership proof made its `checkout --force` + `clean -fd` rewrite somebody else's
-checkout). Round 2 reproduced it in round 1's linked-worktree design, which created and deleted admin
-entries under `<common>/worktrees/`: a symlink swapped in for that directory sent the delete elsewhere
-(R2-F1), and another worktree's `gitdir` text, edited to name this run's tree, had ITS entry deleted
-(R2-F2). A clone owns no admin entry, so there is no entry to find, match or delete.
-⚠ BOUND, stated (R2-F1's residual): the private directory's own ancestors are the temp root, which is no
-repository. The identity check bounds a swap there to "deletes only a directory with the identity this run
-created"; between the last `lstat` and the `rmdir` a swap can still remove an EMPTY directory, and nothing
-more, because `rmdir` refuses one with contents. A swap during the clone makes git write the tree
-somewhere else; that is creation, never deletion, and it is left behind.
+     itself by `rmdir`, only when `os.lstat` still names the device and inode recorded at creation; a
+     path that names anything else by then is left, not removed.
+⛔ THREAT MODEL (the Phase 6 review `docs/reviews/architecture-review-2026-11-08-regen-runner-threat-model.md`,
+§2 — read it there; it is not restated here). IN SCOPE are ACCIDENTS — an occupied path, a stale lock, a killed
+or hung generator, a signal mid-run, an inherited environment, a crash's debris, two runs at once — under which
+the runner must never lose or move data or write into the main repository. OUT OF SCOPE, stated and NOT
+defended: a process running as this same user that rewrites paths or git admin files inside the private
+directory or `.git` while a run is in flight; it needs no help from the runner to destroy the checkout. The
+identity and `lstat` checks refuse a path they find ALREADY redirected; none is a claim of race-freedom.
+Absent such a process, nothing runs in the main repository but `fetch`, `rev-parse` and `config --get`: a
+clone owns no admin entry there to find, match or delete (round 1's reuse design and round 2's linked-worktree
+design each did, and each lost data in review).
 ⚠ A CRASHED RUN (SIGKILL, power loss) leaves its private directory in the temp root, and nothing in the
 repository. It is left, not swept. MEASURED 2026-11-07, a scratch clone of this repository (4,417 tracked
 files), 3 runs of fetch + clone + checkout + read-back + removal: 4.02, 4.14 and 3.71 s, against 2.41-3.53 s
@@ -128,6 +128,7 @@ PRIVATE_PREFIX = "regen-pages-"     # each run's private temp directory (backlog
 LOCK_REL = ".claude/regen-pages.lock"   # git-ignored, in the MAIN checkout
 GIT_TIMEOUT = 120      # seconds, per git call; a fetch on a slow link is the long one
 GIT_GRACE = 5          # seconds a timed-out git call gets after SIGTERM to remove its own lock files
+GIT_DRAIN = 2          # seconds a SIGKILLed git call's pipes are drained before they are closed (R3-F3)
 GROUP_GRACE = 5        # seconds a generator's process group gets after SIGTERM, before SIGKILL
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
 LOCK_WAIT = 150        # seconds a second rebuild waits for the first before saying CANNOT RUN
@@ -146,14 +147,18 @@ REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GI
 def _env() -> dict[str, str]:
     """The environment for git and the generators, minus every inherited variable that changes WHICH
     repository or tree git acts on: a hook context can set `GIT_DIR`, which `cwd` does NOT override, so the
-    clone and the generators' own git calls would act on it. Config variables pass through."""
-    return {k: v for k, v in os.environ.items() if k not in REPO_VARS}
+    clone and the generators' own git calls would act on it. Config variables pass through.
+    ⛔ An inherited `MAIN_CHECKOUT_ENV` is dropped too (review r3 R3-F2): only `launch` sets it, and only for a
+    generator in a clone this run made — a stale or wrong one must never reach a generator, or git."""
+    return {k: v for k, v in os.environ.items() if k not in REPO_VARS and k != MAIN_CHECKOUT_ENV}
 
 
 def _git(args: list[str], cwd: pathlib.Path, timeout: float = GIT_TIMEOUT) -> tuple[int, str]:
     """One git call. (rc, stdout) on success, (rc, the error text) on failure; 124 on a timeout.
     ⚠ A timeout sends SIGTERM first and SIGKILL only GIT_GRACE s later, so git can remove its own `*.lock`
-    files on the way out (review r1 C5): a SIGKILLed git leaves them, and every later run fails on them."""
+    files on the way out (review r1 C5): a SIGKILLed git leaves them, and every later run fails on them.
+    A stop signal mid-call (`_on_signal`'s SystemExit, ^C) takes the SAME path before it is re-raised (review
+    r3 R3-F3), and the drain after a SIGKILL is bounded by GIT_DRAIN (`_stop_git`)."""
     try:
         p = subprocess.Popen(["git", *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              stdin=subprocess.DEVNULL, text=True, env=_env(), errors="replace")
@@ -162,19 +167,36 @@ def _git(args: list[str], cwd: pathlib.Path, timeout: float = GIT_TIMEOUT) -> tu
     try:
         out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        p.terminate()
-        try:
-            p.communicate(timeout=GIT_GRACE)
-        except subprocess.TimeoutExpired:
-            p.kill()
-            p.communicate()
+        _stop_git(p)
         return 124, f"timed out after {timeout:.0f}s"
     except BaseException:
-        p.kill()
-        p.communicate()
+        _stop_git(p)
         raise
     rc = p.returncode
     return rc, ((out if rc == 0 else (err or out)) or "").strip()
+
+
+def _stop_git(p: subprocess.Popen) -> None:
+    """SIGTERM, up to GIT_GRACE s for git to remove its own `*.lock` files, then SIGKILL; then drain its pipes
+    for at most GIT_DRAIN s, CLOSE them and reap it — never waiting for EOF from a child of git that still holds
+    them (review r3 R3-F3, the r2 F4 shape `explainer-serve._reap_killed` fixed)."""
+    with contextlib.suppress(ProcessLookupError):
+        p.terminate()
+    try:
+        p.communicate(timeout=GIT_GRACE)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    with contextlib.suppress(ProcessLookupError):
+        p.kill()
+    try:
+        p.communicate(timeout=GIT_DRAIN)
+    except subprocess.TimeoutExpired:
+        for f in (p.stdout, p.stderr):
+            with contextlib.suppress(OSError):
+                f.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            p.wait(timeout=GIT_DRAIN)
 
 
 def _brief(text: str) -> str:
@@ -229,12 +251,15 @@ def origin_url(main: pathlib.Path, git=_git) -> str:
 def read_back(tree: pathlib.Path, sha: str, git=_git) -> str | None:
     """None when `tree` is a repository of its OWN — its top level itself, its git dir its own `.git`, never a
     linked worktree of anything and never a checkout git reached by walking up — at `sha`, clean; else what
-    is wrong. A tree that fails any of these is never built from."""
+    is wrong. A tree that fails any of these is never built from.
+    The paths are compared EXACTLY, never through `realpath` (review r3 R3-F1): `tree` is already resolved
+    (`Private`), so a `tree` that is a symlink to another checkout reads back that checkout's path and is
+    refused, where `realpath` on both sides accepted it."""
     rc, top = git(["rev-parse", "--show-toplevel"], tree)
-    if rc != 0 or os.path.realpath(top) != os.path.realpath(tree):
+    if rc != 0 or top != str(tree):
         return f"reads its top level as {_brief(top)!r} (exit {rc}), not the tree itself"
     rc, gd = git(["rev-parse", "--absolute-git-dir"], tree)
-    if rc != 0 or os.path.realpath(gd) != os.path.realpath(tree / ".git"):
+    if rc != 0 or gd != str(tree / ".git"):
         return f"is no clone of its own (its git dir is {_brief(gd)!r}, exit {rc})"
     rc, head = git(["rev-parse", "HEAD"], tree)
     if rc != 0 or head != sha:
@@ -245,10 +270,24 @@ def read_back(tree: pathlib.Path, sha: str, git=_git) -> str | None:
     return None
 
 
+def _real_dir(tree: pathlib.Path, before: str) -> None:
+    """CannotRun unless `tree` is, by `lstat`, a real directory — never a symlink — before `before` runs in it
+    (review r3 R3-F1). ⚠ NOT a claim of race-freedom: a same-user process can still swap the path between this
+    check and the git call. That class is out of scope (module docstring → THREAT MODEL); this check refuses a
+    tree that is ALREADY redirected, and never lets the read-back accept one."""
+    try:
+        mode = os.lstat(tree).st_mode
+    except OSError as exc:
+        raise CannotRun(f"{tree} is gone before {before} ({exc})") from None
+    if not stat.S_ISDIR(mode):
+        raise CannotRun(f"{tree} is a symlink or not a directory before {before}; refused, nothing ran in it")
+
+
 def clone_tree(main: pathlib.Path, sha: str, url: str, tree: pathlib.Path, git=_git) -> None:
     """A NEW clone of the main checkout at `tree`, at `sha`, then the read-back (review r2). `--shared`: the
     objects are read through alternates, so the main repository is never written; every other git call runs
-    with `cwd=tree`, INSIDE the clone. CannotRun naming the step."""
+    with `cwd=tree`, INSIDE the clone, each only once `_real_dir` has found `tree` a real directory.
+    CannotRun naming the step."""
     rc, out = git(["clone", "--shared", "--no-checkout", "--quiet", str(main), str(tree)], tree.parent)
     if rc != 0:
         raise CannotRun(f"`git clone --shared` of {main} into {tree} failed (exit {rc}: {_brief(out)})"
@@ -257,9 +296,11 @@ def clone_tree(main: pathlib.Path, sha: str, url: str, tree: pathlib.Path, git=_
                         f"checkout of {sha[:12]}"),
                        (["update-ref", f"refs/remotes/{REMOTE}/{BRANCH}", sha], f"setting {REMOTE}/{BRANCH}"),
                        (["remote", "set-url", REMOTE, url], f"setting {REMOTE}'s URL")):
+        _real_dir(tree, f"the clone's {what}")
         rc, out = git(args, tree)
         if rc != 0:
             raise CannotRun(f"the clone's {what} failed (exit {rc}: {_brief(out)})")
+    _real_dir(tree, "the read-back")
     why = read_back(tree, sha, git)
     if why:
         raise CannotRun(f"{tree} {why}")
@@ -268,7 +309,8 @@ def clone_tree(main: pathlib.Path, sha: str, url: str, tree: pathlib.Path, git=_
 class Private:
     """This run's private directory, held OPEN from the moment it is made: `fd` is a descriptor on it and
     `ident` its (st_dev, st_ino). `discard` deletes through `fd` and removes the path only while it still
-    names `ident` — so a swap of the path, or of any ancestor, is refused (review r2 F1)."""
+    names `ident` (review r2 F1) — a path that names something else by then is left. Not a defence against a
+    same-user swap racing it: out of scope (module docstring → THREAT MODEL)."""
 
     def __init__(self, scratch: str | None = None):
         self.path = pathlib.Path(os.path.realpath(tempfile.mkdtemp(prefix=PRIVATE_PREFIX, dir=scratch)))
@@ -293,9 +335,9 @@ def discard(priv: Private) -> list[str]:
     """Remove THIS RUN's private directory and nothing else. -> a note for anything left behind or refused.
     ⛔ No git verb runs here, and nothing under the main repository is touched (review r2 F1/F2). The contents
     are deleted through the descriptor opened at creation — `shutil.rmtree(name, dir_fd=)` follows no symlink,
-    and a symlink found there is unlinked, never followed — so a path that now leads elsewhere cannot steer
-    them. The directory itself is `rmdir`ed only while its path still names the identity recorded at
-    creation; a directory or a symlink swapped in at it, or at an ancestor, is REFUSED and left."""
+    and a symlink found there is unlinked, never followed. The directory itself is `rmdir`ed only while its
+    path still names the identity recorded at creation; anything else found at it is left. These are what the
+    cases pin, not a claim against a same-user swap racing the removal (module docstring → THREAT MODEL)."""
     notes = []
     try:
         for name in sorted(os.listdir(priv.fd)):
@@ -993,8 +1035,70 @@ def _self_test_body() -> int:
     case("an inherited GIT_DIR / GIT_WORK_TREE is DROPPED for git and the generators; config vars pass",
          ("GIT_DIR" in _e, "GIT_WORK_TREE" in _e, _e.get("GIT_CONFIG_NOSYSTEM")), (False, False, "1"))
 
+    # ⛔ review r3 R3-F3: a stop signal arriving mid-git (here a SIGALRM whose handler raises, as `_on_signal`
+    # raises SystemExit) takes the timeout's path: SIGTERM first, so git can remove its lock, and a BOUNDED
+    # drain after a SIGKILL. A fake `git` on PATH stands in for a fetch; the signal is sent only once it says it
+    # is ready (a fixed timer lost the race: macOS scans a NEW executable before its first run).
+    class _Stop(BaseException):
+        pass
+    _fbin = tmp / "fakegit-bin"
+    _fbin.mkdir()
+    _fgit = _fbin / "git"
+
+    _ready = tmp / "fakegit-ready"
+
+    def _stopped_git(script):
+        _ready.unlink(missing_ok=True)
+        _fgit.write_text("#!/bin/bash\n" + script.replace("READY", f"echo > {_ready}"))
+        _fgit.chmod(0o755)
+        _sent: list[float] = []
+
+        def _send_when_ready():
+            deadline = time.monotonic() + 30
+            while not _ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            _sent.append(time.monotonic())
+            os.kill(os.getpid(), signal.SIGALRM)
+        _saved_path, _saved_alrm = os.environ.get("PATH", ""), signal.getsignal(signal.SIGALRM)
+        _saved_k = (globals()["GIT_GRACE"], globals()["GIT_DRAIN"])
+        os.environ["PATH"] = f"{_fbin}{os.pathsep}{_saved_path}"
+        globals()["GIT_GRACE"], globals()["GIT_DRAIN"] = 0.5, 0.5
+
+        def _raise(_s, _f):
+            raise _Stop()
+        signal.signal(signal.SIGALRM, _raise)
+        _sender = threading.Thread(target=_send_when_ready, daemon=True)
+        try:
+            _sender.start()
+            try:
+                _git(["fetch"], tmp, 60)
+                got = "returned"
+            except _Stop:
+                got = "re-raised"
+            _sender.join(5)
+        finally:
+            signal.signal(signal.SIGALRM, _saved_alrm)
+            os.environ["PATH"] = _saved_path
+            globals()["GIT_GRACE"], globals()["GIT_DRAIN"] = _saved_k
+        return got, time.monotonic() - (_sent[0] if _sent else 0)
+    _lockmark = tmp / "fakegit-cleaned"
+    _stop_term = _stopped_git(f"trap 'echo cleaned > {_lockmark}; exit 143' TERM\nREADY\n"
+                              "while :; do sleep 0.05; done\n")
+    case("⛔ review r3 R3-F3: a stop signal mid-git sends git SIGTERM FIRST — its own clean-up (the lock removal) "
+         "runs — and the signal is still re-raised",
+         (_stop_term[0], _read(_lockmark).strip()), ("re-raised", "cleaned"))
+    _holder = tmp / "fakegit-holder"
+    _stop_kill = _stopped_git(f"trap '' TERM\nsleep 6 &\necho $! > {_holder}\nREADY\n"
+                              "while :; do sleep 0.05; done\n")
+    with contextlib.suppress(OSError, ValueError):
+        os.kill(int(_read(_holder).strip()), signal.SIGKILL)
+    case("⛔ review r3 R3-F3: ...and a git that IGNORES SIGTERM is SIGKILLed, then its pipes — still held by a "
+         "child of git — are drained for a BOUNDED time, not until that child exits",
+         (_stop_kill[0], _stop_kill[1] < 3), ("re-raised", True))
+
     # ⛔⛔ review r2 F1's residual: the private dir is removed only while its PATH still names the directory this
-    # run created. Each swap happens inside the block, after the clone, as the repro did.
+    # run created. Each swap happens inside the block, after the clone, as the repro did. These PIN behaviour;
+    # same-user tampering is out of scope and none of them is a claim of defence (module docstring → THREAT MODEL).
     def swapped(swap):
         notes = io.StringIO()
         with contextlib.redirect_stdout(notes):
@@ -1137,6 +1241,21 @@ def _self_test_body() -> int:
         _TREE_MAIN.pop(str(tmp / "gt2"), None)
     case("⭐ review r2: a generator in a clone is told the main checkout in REGEN_MAIN_CHECKOUT; out of one, nothing",
          (_env_in, launch("env.py", 30, tmp / "gt2")), ((0, "/the/main/checkout"), (0, "UNSET")))
+    _saved_inh = os.environ.get(MAIN_CHECKOUT_ENV)
+    os.environ[MAIN_CHECKOUT_ENV] = "/an/inherited/wrong/checkout"
+    _TREE_MAIN[str(tmp / "gt2")] = "/the/main/checkout"
+    try:
+        _inh_in = launch("env.py", 30, tmp / "gt2")
+        _TREE_MAIN.pop(str(tmp / "gt2"), None)
+        _inh_out, _inh_env = launch("env.py", 30, tmp / "gt2"), MAIN_CHECKOUT_ENV in _env()
+    finally:
+        _TREE_MAIN.pop(str(tmp / "gt2"), None)
+        os.environ.pop(MAIN_CHECKOUT_ENV, None)
+        if _saved_inh is not None:
+            os.environ[MAIN_CHECKOUT_ENV] = _saved_inh
+    case("⛔ review r3 R3-F2: an INHERITED REGEN_MAIN_CHECKOUT never reaches a generator out of a clone, or git; one "
+         "in a clone gets this run's value, not the inherited one",
+         (_inh_in, _inh_out, _inh_env), ((0, "/the/main/checkout"), (0, "UNSET"), False))
     (tmp / "gt2" / "scripts" / "fds.py").write_text(
         "import os, sys\nfor fd in map(int, sys.argv[1:] or os.environ['FDS'].split()):\n"
         "    os.fstat(fd)\nprint('held')\n")
@@ -1344,7 +1463,8 @@ def _self_test_body() -> int:
          (got[0], snap(old) == old_snap, untouched(), left_in(rscr)), ("ok", True, True, []))
 
     # ⛔⛔ review r1 X2/C3, THE SWAP: the tree is replaced by a symlink to someone else's checkout after the
-    # read-back. Nothing destructive runs any more, and the removal follows no symlink.
+    # read-back. Nothing destructive runs any more, and the removal follows no symlink. Pinned behaviour, not a
+    # defence: same-user tampering is out of scope (module docstring → THREAT MODEL).
     for name, target in (("ANOTHER linked worktree", other), ("the MAIN checkout", real_main)):
         with contextlib.redirect_stdout(io.StringIO()):
             with fresh(real_main, wait=5, scratch=str(rscr)) as (st, _s):
@@ -1353,6 +1473,46 @@ def _self_test_body() -> int:
         case(f"⛔⛔ review r1 X2/C3: the tree swapped for a symlink to {name} before removal — that checkout is "
              f"untouched, and this run's own directory is still removed",
              (target.is_dir(), untouched(), left_in(rscr)), (True, True, []))
+
+    # ⛔ review r3 R3-F1, AS REPRODUCED: right after `clone` returns, `<private>/tree` is renamed aside and a
+    # symlink to a CLEAN main checkout on `master` (whose master IS origin/master, so a checkout of the sha
+    # succeeds) put in its place. Round 2 ran `checkout --detach` there — detaching that checkout's HEAD — and
+    # its `realpath` read-back accepted it. Pinned behaviour of the `lstat` and exact-path checks; NOT a claim
+    # of race-freedom (module docstring → THREAT MODEL).
+    clean_main = tmp / "cleanmain"
+    sh("clone", "-q", "origin.git", "cleanmain")
+
+    def swap_after_clone(args, cwd, timeout=GIT_TIMEOUT):
+        got = _git(args, cwd, timeout)
+        if args[:1] == ["clone"] and got[0] == 0:
+            t = pathlib.Path(args[-1])
+            t.rename(t.parent / "tree-aside")
+            t.symlink_to(clean_main)
+        return got
+    _sw1 = outcome(lambda: _fresh_once(clean_main, git=swap_after_clone, wait=5, scratch=str(rscr)))
+    case("⛔ review r3 R3-F1: <private>/tree swapped for a symlink to a clean main checkout right after the clone — "
+         "refused before any in-clone git verb; that checkout's HEAD is still on its branch",
+         (_sw1[0], "is a symlink or not a directory" in _sw1[1], sh("symbolic-ref", "-q", "HEAD", cwd=clean_main),
+          left_in(rscr)), ("CANNOT RUN", True, "refs/heads/master", []))
+    # The temp root itself swapped for a symlink to where it now lives, right after the clone: `<private>/tree`
+    # is still a real directory by `lstat`, but git reads it back under ANOTHER path. `realpath` on both sides
+    # accepted that; the exact compare refuses it.
+    _anc = tmp / "rscratch-anc"
+    _anc.mkdir()
+
+    def move_root_after_clone(args, cwd, timeout=GIT_TIMEOUT):
+        got = _git(args, cwd, timeout)
+        if args[:1] == ["clone"] and got[0] == 0:
+            _anc.rename(tmp / "rscratch-anc-real")
+            _anc.symlink_to(tmp / "rscratch-anc-real")
+        return got
+    _sw2 = outcome(lambda: _fresh_once(clean_main, git=move_root_after_clone, wait=5, scratch=str(_anc)))
+    if _anc.is_symlink():
+        _anc.unlink()
+        (tmp / "rscratch-anc-real").rename(_anc)
+    case("⛔ review r3 R3-F1: read_back compares the tree path EXACTLY — a tree git reads back under another path "
+         "(its temp root moved behind a symlink) is refused, never accepted through realpath; and removed",
+         (_sw2[0], "not the tree itself" in _sw2[1], left_in(_anc)), ("CANNOT RUN", True, []))
 
     # ⛔⛔ review r2 F1, AS REPRODUCED: `<common>/worktrees` renamed aside and replaced, mid-run, by a symlink to
     # unrelated data holding a same-named directory. Round 1's cleanup deleted that directory. Nothing reads or

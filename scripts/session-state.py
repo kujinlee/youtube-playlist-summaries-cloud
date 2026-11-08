@@ -53,7 +53,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 131 cases
+    python3 scripts/session-state.py --self-test  # 132 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -623,18 +623,48 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
     ⛔ backlog #408, review r2: a page generator runs in a private CLONE of origin/master (`regen-pages.py`), whose
     own common dir is the clone's, so the rule above would name the clone and its empty `.claude/`. The runner
     therefore names the main checkout it cloned in `MAIN_CHECKOUT_ENV`. That name is never trusted as text: git
-    is asked from THAT path, and it is honoured only when git names it as its own main checkout."""
+    is asked from THAT path, and it is honoured only when git names it as its own main checkout AND it is THIS
+    repository's (review r3 R3-F2): `root`'s own common dir is that one, or `root` is a `clone --shared` whose
+    `objects/info/alternates` names that common dir's `objects`. (`remote.origin.url` cannot say: the runner
+    points the clone's `origin` at GitHub.) An inherited name for another repository is refused, never honoured."""
     named = os.environ.get(MAIN_CHECKOUT_ENV, "")
     if named and not os.path.isabs(named):
         return root, f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not an absolute path"
-    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], Path(named) if named else root, 10)
-    common = out.strip() if rc == 0 else ""
-    if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
-        return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
+    common, why = _common_dir(Path(named) if named else root, run)
+    if why:
+        return root, why
     if named and os.path.realpath(Path(common).parent) != os.path.realpath(named):
         return root, (f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not a main checkout "
                       f"(git names {clean(common, 100)!r} as its common dir)")
+    if named and not _same_repository(root, common, run):
+        return root, (f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not a checkout of the repository {root} "
+                      "belongs to (neither its common dir nor its clone's alternates); refused")
     return Path(common).parent, None
+
+
+def _common_dir(where: Path, run=_run) -> tuple[str, str | None]:
+    """(the absolute, existing common git dir asked from `where`, None), or ('', why)."""
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], where, 10)
+    common = out.strip() if rc == 0 else ""
+    if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
+        return "", f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
+    return common, None
+
+
+def _same_repository(root: Path, common: str, run=_run) -> bool:
+    """Is `root` a checkout of the repository whose common dir is `common`: it shares that common dir, or its
+    own common dir's `objects/info/alternates` names `<common>/objects` (a `clone --shared` of it)."""
+    own, why = _common_dir(root, run)
+    if why:
+        return False
+    if os.path.realpath(own) == os.path.realpath(common):
+        return True
+    want = os.path.realpath(os.path.join(common, "objects"))
+    try:
+        lines = Path(own, "objects", "info", "alternates").read_text().splitlines()
+    except OSError:
+        return False
+    return any(os.path.isabs(ln.strip()) and os.path.realpath(ln.strip()) == want for ln in lines)
 
 
 def guess_kind(entry: dict) -> str:
@@ -1407,24 +1437,41 @@ def _self_test_body() -> int:
              main_checkout(wt, lambda c, w, timeout=TIMEOUT: (0, "[{\"number\": 1}]\n"))[0], wt)
         # ⛔ backlog #408, review r2: a generator in a private CLONE is told the main checkout by the runner, and that
         # name is honoured only when git, asked from it, names it as its own main checkout.
+        # The clone is a REAL `clone --shared`, as the runner makes it (review r3 R3-F2: the name is honoured only for
+        # a root that is this repository's — its common dir, or a clone whose alternates name it).
+        clone, other = root / "private-clone", root / "other-repo"
+        subprocess.run(["git", "clone", "--shared", "--no-checkout", "--quiet", str(repo), str(clone)],
+                       capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+        other.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other, capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
         _saved_env = os.environ.get(MAIN_CHECKOUT_ENV)
         try:
             os.environ[MAIN_CHECKOUT_ENV] = str(repo)
-            _named_main = main_checkout(root, _run)
+            _named_main = main_checkout(clone, _run)
+            _named_from_wt = main_checkout(wt, _run)
+            _named_from_nonrepo = main_checkout(root, _run)
             os.environ[MAIN_CHECKOUT_ENV] = str(wt)
-            _named_linked = main_checkout(root, _run)
+            _named_linked = main_checkout(clone, _run)
             os.environ[MAIN_CHECKOUT_ENV] = "mainrepo"
-            _named_rel = main_checkout(root, _run)
+            _named_rel = main_checkout(clone, _run)
+            os.environ[MAIN_CHECKOUT_ENV] = str(other)
+            _other_from_clone = main_checkout(clone, _run)
+            _other_from_wt = main_checkout(wt, _run)
         finally:
             os.environ.pop(MAIN_CHECKOUT_ENV, None)
             if _saved_env is not None:
                 os.environ[MAIN_CHECKOUT_ENV] = _saved_env
-        case("⭐ backlog #408: a generator run from a non-repository (its private clone) names the MAIN checkout the "
+        case("⭐ backlog #408: a generator run from its private `clone --shared` names the MAIN checkout the "
              "runner put in REGEN_MAIN_CHECKOUT",
-             _named_main, (repo.resolve(), None))
+             (_named_main, _named_from_wt), ((repo.resolve(), None), (repo.resolve(), None)))
         case("⛔ backlog #408: ...but a name that is a LINKED worktree, or relative, is refused, never trusted as text",
              (_named_linked[0], "is not a main checkout" in str(_named_linked[1]), _named_rel[0],
-              "not an absolute path" in str(_named_rel[1])), (root, True, root, True))
+              "not an absolute path" in str(_named_rel[1])), (clone, True, clone, True))
+        case("⛔ review r3 R3-F2: a REGEN_MAIN_CHECKOUT naming ANOTHER repository's main checkout is refused, from a clone "
+             "and from a real checkout alike; and from a non-repository, which no alternates tie to it",
+             [(r[0], "is not a checkout of the repository" in str(r[1]))
+              for r in (_other_from_clone, _other_from_wt, _named_from_nonrepo)],
+             [(clone, True), (wt, True), (root, True)])
         out = collect(wt, run=gh_only, now="T")
         case("⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'",
              ("[main-job] Codex r2 on PR #7" in out, "none RECORDED" in out), (True, False))

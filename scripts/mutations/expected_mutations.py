@@ -1484,7 +1484,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 94, the open `sweep-red` issues in the block — the CANNOT READ arm, its
     # mark, the names, the cap, collect()'s wiring, and the reader's command, directory, failure and element checks.
     # ⟳ backlog #408 r2: 109 -> 111 — `main_checkout` honours the runner's REGEN_MAIN_CHECKOUT (ignored; trusted as text).
-    "scripts/session-state.py": 111,
+    # ⟳ backlog #408 r3 (R3-F2): 111 -> 114 — the name is honoured only for THIS repository: the same-repository check
+    # skipped, any alternates file passing, and a shared common dir not recognised.
+    "scripts/session-state.py": 114,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
@@ -1821,7 +1823,10 @@ EXPECTED_MUTATIONS = {
     # the private dir's rmdir and identity, deletion by path), and 8 are new: the SIGKILL escalation against a
     # child that ignores SIGTERM (r2 F6), `lstat` not `stat`, the clone -> main-checkout map, its hand-off and its
     # removal, a failed step inside the clone, a failed clone, and origin's URL.
-    "scripts/regen-pages.py": 53,
+    # ⟳ review round 3's fold: 53 -> 58, none retired (three anchors rebound onto the exact-path read-back and the
+    # widened `_env`): the `lstat` before the in-clone verbs and the exact path compare (R3-F1), the inherited
+    # REGEN_MAIN_CHECKOUT stripped (R3-F2), and `_git`'s stop-signal SIGTERM grace and bounded drain (R3-F3).
+    "scripts/regen-pages.py": 58,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
