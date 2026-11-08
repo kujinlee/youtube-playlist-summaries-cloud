@@ -18945,3 +18945,21 @@ lasting fix is making the slowest checks cheaper, which stays open.
 `.github/workflows/ci.yml` `mutation-sweep` matrix 18 -> 24 (backlog #231's "any shard exceeds 1,500s" trigger fired: push
 run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41s). Predicted slowest shard ~1,545s (floor ~520s
 from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
+
+## 2026-11-07
+Our own self-tests stop leaving temporary folders behind. The shared temp folder had built up about 117,000 of them,
+which slows any command that has to look through it. Now each test run gets its own temporary folder that is deleted when
+the run ends, even when a test fails. One run of every self-test used to leave 124 folders behind; it now leaves none.
+The folders already there were not deleted, because other tools share that place; the backlog item gives a command a
+person can run to clear the old ones.
+<!--tech-->
+Backlog #512. `scripts/fixture_git.py` `isolated()` (which every dispatched `--self-test` enters, backlog #382) now
+makes a `fixture-tmp-*` directory, points `TMPDIR` and `tempfile.tempdir` at it for the block (the second because Python
+caches the directory), puts the fresh `HOME` inside it, and `rmtree`s it in the outer `finally`. MEASURED (each of the
+95 `--self-test`s run with `TMPDIR` set to its own empty directory, 6 at a time): `origin/master` `f7ff7eb0` left 124
+entries (check-fixture-git-isolation 64, check-compaction-boundary 23 `cb-*`, check-function-revokes 14,
+check-test-counts 7, gates-for-pr 6 `gates-for-pr-logs-*`, recall-llm 3, check-selection-card 2, five others 1 each,
+check-agent-large-read 1 `large-read-*`); this branch left 0. fixture_git 43 -> 52 cases (a mkdtemp, a child `mktemp`
+and a child `mkdtemp` land inside; a nested block; the caller's directory holds exactly what it held after a normal, a
+raising and a refused block); mutations 13 -> 19 (three anchors re-bound to the new text). `large-read-state-*` (29,617
+entries) has no producer in any commit (`git log --all -G`); the newest is 11-05 03:45.
