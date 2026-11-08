@@ -66,7 +66,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 238 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 239 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -133,6 +133,9 @@ REGEN_LOCKS_GUARD = threading.Lock()
 REGEN_RUNNER = "regen-pages.py"
 # Seconds a timed-out runner gets, after SIGTERM, to kill its generators, remove its tree and exit.
 REGEN_GRACE = 15
+# Seconds the pipes are drained after SIGKILL before they are CLOSED (review r2 F4): a descendant that left the
+# group (`setsid`) can hold them open for ever, and EOF is never waited for past this bound.
+REGEN_DRAIN = 2
 
 
 def _signal_group(pgid: int, sig: int) -> None:
@@ -142,13 +145,33 @@ def _signal_group(pgid: int, sig: int) -> None:
         pass
 
 
+def _reap_killed(p: subprocess.Popen) -> None:
+    """After SIGKILL to `p`'s group: drain its pipes for at most REGEN_DRAIN s, then CLOSE them and reap `p`
+    itself, without waiting for EOF from a descendant outside the group (review r2 F4 — an unbounded
+    `communicate()` here waited 3.08 s, and for ever, on one)."""
+    try:
+        p.communicate(timeout=REGEN_DRAIN)
+    except subprocess.TimeoutExpired:
+        for f in (p.stdout, p.stderr):
+            try:
+                f.close()
+            except OSError:
+                pass
+        try:
+            p.wait(timeout=REGEN_DRAIN)
+        except subprocess.TimeoutExpired:
+            pass                                       # SIGKILLed already; nothing more can be sent
+
+
 def run_in_group(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess:
     """`subprocess.run(argv, capture_output=True, text=True, timeout=timeout)`, with the runner in a process
     group of its own (backlog #408, review r1 X3). On a timeout the GROUP gets SIGTERM — the runner's handler
     then kills its generators' groups, removes its tree and closes its lock — and SIGKILL only after
     REGEN_GRACE s; then the timeout is raised as before. Before this a timeout SIGKILLed the runner alone, so
     its generator ran on while the lock it was built under was released. ⚠ The 504 therefore comes up to
-    REGEN_GRACE s after the click's bound when the runner is slow to stop."""
+    REGEN_GRACE s after the click's bound when the runner is slow to stop, plus at most 2 x REGEN_DRAIN s for
+    a descendant that left the group and holds the pipes (`_reap_killed`). ⚠ BOUND: such a descendant is not
+    killed, only no longer waited for — the same bound `regen-pages.py` states."""
     p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
                          text=True, start_new_session=True)
     try:
@@ -159,11 +182,11 @@ def run_in_group(argv: list[str], *, timeout: float) -> subprocess.CompletedProc
             p.communicate(timeout=REGEN_GRACE)
         except subprocess.TimeoutExpired:
             _signal_group(p.pid, signal.SIGKILL)
-            p.communicate()
+            _reap_killed(p)
         raise
     except BaseException:
         _signal_group(p.pid, signal.SIGKILL)
-        p.communicate()
+        _reap_killed(p)
         raise
     return subprocess.CompletedProcess(argv, p.returncode, out, err)
 
@@ -3266,6 +3289,34 @@ def _self_test_body() -> int:
              lambda: _gt[:3] == (True, True, True))
         case("⛔⛔ review r1 X3: ...and the runner's whole process group is gone: its child never writes its marker",
              lambda: _gt[3] is False)
+        # ⛔⛔ review r2 F4: a runner whose descendant LEFT the group (`setsid`) and holds its pipes. The Refresh
+        # timeout must still come back within its bounds, never when that descendant chooses to exit.
+        (_gd / "escaper.py").write_text(
+            "import os, subprocess, sys, time\nd = sys.argv[1]\n"
+            "q = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'], start_new_session=True)\n"
+            "open(os.path.join(d, 'escaped.pid'), 'w').write(str(q.pid))\ntime.sleep(30)\n")
+
+        def _escaped_timeout():
+            saved = (globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"])
+            globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = 0.3, 0.3
+            t0 = time.monotonic()
+            try:
+                run_in_group([sys.executable, str(_gd / "escaper.py"), str(_gd)], timeout=0.8)
+                raised = False
+            except subprocess.TimeoutExpired:
+                raised = True
+            finally:
+                globals()["REGEN_GRACE"], globals()["REGEN_DRAIN"] = saved
+            took = time.monotonic() - t0
+            try:
+                os.kill(int((_gd / "escaped.pid").read_text()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+            return raised, (_gd / "escaped.pid").exists(), took < 5
+        _esc = _escaped_timeout()
+        case("⛔⛔ review r2 F4: a Refresh timeout whose runner left a descendant OUTSIDE its group holding the pipes "
+             "still raises within its bounds — the drain is bounded, never a wait for that descendant's EOF",
+             lambda: _esc == (True, True, True))
         case("review r1 X3: run_in_group returns what subprocess.run would — exit code, stdout, stderr",
              lambda: (lambda r: (r.returncode, r.stdout, r.stderr))(run_in_group(
                  [sys.executable, "-c", "import sys; print('o'); print('e', file=sys.stderr); sys.exit(4)"],

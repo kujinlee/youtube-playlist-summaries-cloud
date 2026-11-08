@@ -152,7 +152,7 @@
       ]
     ],
     "expect": [
-      "⛔ origin/master that does not resolve is CANNOT RUN, before any tree is added"
+      "⛔ origin/master that does not resolve is CANNOT RUN, before any clone"
     ]
   },
   {
@@ -160,7 +160,7 @@
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    if rc != 0 or os.path.dirname(os.path.realpath(gd)) != os.path.realpath(common / \"worktrees\"):",
+        "    if rc != 0 or os.path.realpath(gd) != os.path.realpath(tree / \".git\"):",
         "    if rc != 0:"
       ]
     ],
@@ -182,16 +182,16 @@
     ]
   },
   {
-    "name": "backlog #408: a tree whose git dir is any directory named `worktrees`' child is accepted, another repository's included",
+    "name": "review r2: a main checkout with no origin URL is accepted, so the clone's origin names the main checkout and its stale local master",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "os.path.dirname(os.path.realpath(gd)) != os.path.realpath(common / \"worktrees\")",
-        "os.path.basename(os.path.dirname(os.path.realpath(gd))) != \"worktrees\""
+        "    if rc != 0 or not url or \"\\n\" in url:",
+        "    if False:"
       ]
     ],
     "expect": [
-      "⛔ a tree whose git dir belongs to ANOTHER repository is refused"
+      "⛔ review r2: a main checkout with no origin URL is CANNOT RUN before any clone — a clone whose origin named the main checkout would fetch its stale local master"
     ]
   },
   {
@@ -217,33 +217,35 @@
       ]
     ],
     "expect": [
-      "⛔ a tree that is not clean after the add is CANNOT RUN, and is removed"
+      "⛔ a tree that is not clean after the checkout is CANNOT RUN, and is removed"
     ]
   },
   {
-    "name": "review r1: the add is given --force, so it no longer refuses a path that already exists",
+    "name": "review r2: the clone is made without --shared, so it copies the objects instead of reading them through alternates",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "git([\"worktree\", \"add\", \"--quiet\", \"--detach\", str(tree)",
-        "git([\"worktree\", \"add\", \"--quiet\", \"--detach\", \"--force\", str(tree)"
+        "[\"clone\", \"--shared\", \"--no-checkout\", \"--quiet\", str(main), str(tree)]",
+        "[\"clone\", \"--no-checkout\", \"--quiet\", str(main), str(tree)]"
       ]
     ],
     "expect": [
-      "⭐ backlog #408: every run adds a NEW tree, `worktree add --detach <private>/tree <sha>`, NO --force"
+      "⭐ review r2: every run CLONES — `clone --shared --no-checkout --quiet <main checkout> <private>/tree`, run from the private dir",
+      "⭐⭐ REAL git: the tree is origin/master AFTER a fetch, a CLONE of its own whose objects come through alternates from the main checkout, in the private temp dir — though the main checkout never moved"
     ]
   },
   {
-    "name": "backlog #408: the new tree is added at the remote's branch NAME, not the fetched sha",
+    "name": "review r2: origin/master is never set in the clone, so the goal tree reads the main checkout's stale local master",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    rc, out = git([\"worktree\", \"add\", \"--quiet\", \"--detach\", str(tree), sha], main)",
-        "    rc, out = git([\"worktree\", \"add\", \"--quiet\", \"--detach\", str(tree), BRANCH], main)"
+        "                       ([\"update-ref\", f\"refs/remotes/{REMOTE}/{BRANCH}\", sha], f\"setting {REMOTE}/{BRANCH}\"),\n",
+        ""
       ]
     ],
     "expect": [
-      "⭐ backlog #408: every run adds a NEW tree, `worktree add --detach <private>/tree <sha>`, NO --force"
+      "⭐ review r2: ...then, INSIDE the clone and only there: checkout --detach of the sha, origin/master set to it, and origin's URL set to the main checkout's",
+      "⭐⭐ review r2: in the clone origin/master is the FETCHED sha — not the main checkout's stale local master a clone copies — and origin is the main checkout's own URL"
     ]
   },
   {
@@ -403,29 +405,29 @@
     ]
   },
   {
-    "name": "review r1: discard deletes no admin entry, so every run leaves a registered worktree behind",
+    "name": "review r2: discard deletes nothing inside the private dir, so every run leaves a full tree in the temp root",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "            shutil.rmtree(e)\n        except OSError as exc:\n            notes.append(f\"could not remove this run's worktree entry",
-        "            pass\n        except OSError as exc:\n            notes.append(f\"could not remove this run's worktree entry"
+        "        for name in sorted(os.listdir(priv.fd)):",
+        "        for name in []:"
       ]
     ],
     "expect": [
-      "⛔ after the block the tree is GONE: its private directory and its admin entry, nothing left over"
+      "⛔ after the block the private dir is GONE, nothing is left in the temp root, and NOTHING was ever made under the main repository's `worktrees/`"
     ]
   },
   {
-    "name": "review r1: discard leaves the private directory, so every run leaves a full tree in the temp root",
+    "name": "review r2: discard never removes the private dir itself",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "        shutil.rmtree(private)\n    except FileNotFoundError:",
-        "        pass\n    except FileNotFoundError:"
+        "                os.rmdir(priv.path)",
+        "                pass"
       ]
     ],
     "expect": [
-      "⛔ after the block the tree is GONE: its private directory and its admin entry, nothing left over"
+      "⛔ after the block the private dir is GONE, nothing is left in the temp root, and NOTHING was ever made under the main repository's `worktrees/`"
     ]
   },
   {
@@ -433,7 +435,7 @@
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "            for note in discard(private, tree, common):",
+        "            for note in discard(priv):",
         "            for note in []:"
       ]
     ],
@@ -442,29 +444,29 @@
     ]
   },
   {
-    "name": "review r1: own_entries matches EVERY admin entry, so discard deletes other worktrees' admin data",
+    "name": "review r2 F1: the private dir's identity is not checked, so an EMPTY directory swapped in at its path is removed",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "        if os.path.normpath(named) == want:",
-        "        if True:"
+        "        if now != priv.ident:",
+        "        if False:"
       ]
     ],
     "expect": [
-      "⛔ discard deletes ONLY this run's admin entry: a crashed run's and another worktree's are untouched"
+      "⛔⛔ review r2 F1: an EMPTY directory swapped in at the private path survives — refused by identity — while the run's own tree is still removed through its descriptor"
     ]
   },
   {
-    "name": "review r1 X2/C3: own_entries resolves the tree through realpath, so a symlink swapped in names ANOTHER worktree's entry",
+    "name": "review r2 F1: the contents are deleted by PATH, not through the descriptor, so a swapped ancestor sends the delete elsewhere",
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "    want = os.path.join(str(tree), \".git\")",
-        "    want = os.path.join(os.path.realpath(tree), \".git\")"
+        "                    shutil.rmtree(name, dir_fd=priv.fd)",
+        "                    shutil.rmtree(priv.path / name)"
       ]
     ],
     "expect": [
-      "⛔⛔ review r1 X2/C3: the tree swapped for a symlink to ANOTHER linked worktree before removal — that checkout is untouched, and this run's own entry and directory are still removed"
+      "⛔⛔ review r2 F1: the private dir's ANCESTOR swapped for a symlink to a same-named tree elsewhere — that tree and its file survive, and the run's own tree is still removed (its emptied dir is left, refused)"
     ]
   },
   {
@@ -498,7 +500,7 @@
     "file": "scripts/regen-pages.py",
     "edits": [
       [
-        "        gone = end_group(p)",
+        "        gone = end_group(p, GROUP_GRACE)",
         "        gone = True"
       ]
     ],
@@ -582,6 +584,113 @@
     ],
     "expect": [
       "⛔ the suite refuses to materialise THIS repository, whatever a case passes for tree_for"
+    ]
+  },
+  {
+    "name": "review r2 F6: the escalation never reaches SIGKILL, so a generator that ignores SIGTERM runs on",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    for sig in (signal.SIGTERM, signal.SIGKILL):",
+        "    for sig in (signal.SIGTERM, signal.SIGTERM):"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r2 F6: a generator that IGNORES SIGTERM is SIGKILLed after the grace — gone before launch returns, and reported as a timeout, not as having survived"
+    ]
+  },
+  {
+    "name": "review r2: discard stats THROUGH a symlink, so a tree swapped for a link to a checkout is treated as a directory",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                if stat.S_ISDIR(os.lstat(name, dir_fd=priv.fd).st_mode):",
+        "                if stat.S_ISDIR(os.stat(name, dir_fd=priv.fd).st_mode):"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ review r1 X2/C3: the tree swapped for a symlink to ANOTHER linked worktree before removal — that checkout is untouched, and this run's own directory is still removed",
+      "discard deletes the private dir's directories, files AND symlinks (unlinked, never followed), then the dir"
+    ]
+  },
+  {
+    "name": "review r2: the clone is never mapped to its main checkout, so its generators cannot find the ledger",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        _TREE_MAIN[str(tree)] = str(main)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: while the block runs, the clone is mapped to the main checkout its generators are told of",
+      "⭐⭐ review r2: session-state.main_checkout, run in the clone with what launch hands a generator, names the MAIN checkout — where the ledger and the goal-tree log live"
+    ]
+  },
+  {
+    "name": "review r2: launch never hands a generator REGEN_MAIN_CHECKOUT",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        env[MAIN_CHECKOUT_ENV] = _TREE_MAIN[str(tree)]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: a generator in a clone is told the main checkout in REGEN_MAIN_CHECKOUT; out of one, nothing"
+    ]
+  },
+  {
+    "name": "review r2: a removed clone stays mapped to its main checkout",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "            _TREE_MAIN.pop(str(tree), None)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ after the block the private dir is GONE, nothing is left in the temp root, and NOTHING was ever made under the main repository's `worktrees/`"
+    ]
+  },
+  {
+    "name": "review r2: a failed step inside the clone is ignored, so a tree that is not at the sha, or names no origin, is built from",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "        rc, out = git(args, tree)\n        if rc != 0:",
+        "        rc, out = git(args, tree)\n        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2: a failed checkout, origin/master update or URL update inside the clone is CANNOT RUN, naming the step, and nothing is left"
+    ]
+  },
+  {
+    "name": "review r2: a failed clone is ignored",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "    rc, out = git([\"clone\", \"--shared\", \"--no-checkout\", \"--quiet\", str(main), str(tree)], tree.parent)\n    if rc != 0:",
+        "    rc, out = git([\"clone\", \"--shared\", \"--no-checkout\", \"--quiet\", str(main), str(tree)], tree.parent)\n    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ review r2: a failed clone is CANNOT RUN, and its private dir is removed"
+    ]
+  },
+  {
+    "name": "review r2: origin's URL is never set in the clone, so its fetch and gh reach the main checkout",
+    "file": "scripts/regen-pages.py",
+    "edits": [
+      [
+        "                       ([\"remote\", \"set-url\", REMOTE, url], f\"setting {REMOTE}'s URL\")):",
+        "                       ):"
+      ]
+    ],
+    "expect": [
+      "⭐ review r2: ...then, INSIDE the clone and only there: checkout --detach of the sha, origin/master set to it, and origin's URL set to the main checkout's",
+      "⭐⭐ review r2: in the clone origin/master is the FETCHED sha — not the main checkout's stale local master a clone copies — and origin is the main checkout's own URL"
     ]
   }
 ]

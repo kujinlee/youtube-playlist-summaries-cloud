@@ -53,7 +53,7 @@ list prints `NO CHECKS`.
     python3 scripts/session-state.py --add ID WHAT ON_DONE [--kind owner-wait|owner-instruction|routine]
     python3 scripts/session-state.py --migrate-kinds [--apply] [--override ID=KIND ...]   # one-time: give each entry a kind
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 129 cases
+    python3 scripts/session-state.py --self-test  # 131 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -80,6 +80,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEDGER_REL = ".claude/inflight.jsonl"
+# backlog #408: the main checkout a page generator's private clone came from, set by `regen-pages.py` (`main_checkout`)
+MAIN_CHECKOUT_ENV = "REGEN_MAIN_CHECKOUT"
 TIMEOUT = 30      # the `gh pr list` call; with ISSUE_TIMEOUT, 45 s under the hook's 60 s harness timeout
 ISSUE_TIMEOUT = 15   # the `gh issue list` call for open `sweep-red` issues (PR #496 r1 C4)
 SWEEP_RED_SHOWN = 3  # open sweep-red issues named in the block; the rest is a count
@@ -617,11 +619,21 @@ def main_checkout(root: Path, run=_run) -> tuple[Path, str | None]:
     written to) a linked worktree's own `.claude/`, it is a ledger nobody reads — measured 2026-10-28, a worktree
     snapshot said "none RECORDED" while the main ledger held 6 jobs. The same `--git-common-dir` rule as
     `check-ci-watched.py`'s `sentinel_for` (on master): the parent of `git rev-parse --path-format=absolute --git-common-dir`. An answer that is not an absolute,
-    existing directory is refused, never resolved against the cwd."""
-    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], root, 10)
+    existing directory is refused, never resolved against the cwd.
+    ⛔ backlog #408, review r2: a page generator runs in a private CLONE of origin/master (`regen-pages.py`), whose
+    own common dir is the clone's, so the rule above would name the clone and its empty `.claude/`. The runner
+    therefore names the main checkout it cloned in `MAIN_CHECKOUT_ENV`. That name is never trusted as text: git
+    is asked from THAT path, and it is honoured only when git names it as its own main checkout."""
+    named = os.environ.get(MAIN_CHECKOUT_ENV, "")
+    if named and not os.path.isabs(named):
+        return root, f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not an absolute path"
+    rc, out = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], Path(named) if named else root, 10)
     common = out.strip() if rc == 0 else ""
     if not common or "\n" in common or not os.path.isabs(common) or not os.path.isdir(common):
         return root, f"git rev-parse --git-common-dir gave no usable path (exit {rc}: {clean(out, 100)})"
+    if named and os.path.realpath(Path(common).parent) != os.path.realpath(named):
+        return root, (f"{MAIN_CHECKOUT_ENV}={clean(named, 100)!r} is not a main checkout "
+                      f"(git names {clean(common, 100)!r} as its common dir)")
     return Path(common).parent, None
 
 
@@ -1393,6 +1405,26 @@ def _self_test_body() -> int:
              ((repo.resolve(), None), True))
         case("a rev-parse answer that is not an absolute directory is refused, never resolved against the cwd",
              main_checkout(wt, lambda c, w, timeout=TIMEOUT: (0, "[{\"number\": 1}]\n"))[0], wt)
+        # ⛔ backlog #408, review r2: a generator in a private CLONE is told the main checkout by the runner, and that
+        # name is honoured only when git, asked from it, names it as its own main checkout.
+        _saved_env = os.environ.get(MAIN_CHECKOUT_ENV)
+        try:
+            os.environ[MAIN_CHECKOUT_ENV] = str(repo)
+            _named_main = main_checkout(root, _run)
+            os.environ[MAIN_CHECKOUT_ENV] = str(wt)
+            _named_linked = main_checkout(root, _run)
+            os.environ[MAIN_CHECKOUT_ENV] = "mainrepo"
+            _named_rel = main_checkout(root, _run)
+        finally:
+            os.environ.pop(MAIN_CHECKOUT_ENV, None)
+            if _saved_env is not None:
+                os.environ[MAIN_CHECKOUT_ENV] = _saved_env
+        case("⭐ backlog #408: a generator run from a non-repository (its private clone) names the MAIN checkout the "
+             "runner put in REGEN_MAIN_CHECKOUT",
+             _named_main, (repo.resolve(), None))
+        case("⛔ backlog #408: ...but a name that is a LINKED worktree, or relative, is refused, never trusted as text",
+             (_named_linked[0], "is not a main checkout" in str(_named_linked[1]), _named_rel[0],
+              "not an absolute path" in str(_named_rel[1])), (root, True, root, True))
         out = collect(wt, run=gh_only, now="T")
         case("⭐ collect() run in a LINKED WORKTREE shows the MAIN checkout's ledger — never 'none RECORDED'",
              ("[main-job] Codex r2 on PR #7" in out, "none RECORDED" in out), (True, False))

@@ -18953,6 +18953,8 @@ with uncommitted changes, and the main copy was 18 merges behind. Now every page
 fetched fresh each time, in a brand-new temporary copy that is deleted afterwards. Your own copy, with its unsaved
 edits, is never touched, and neither is any other working copy. A first version reused one copy and reset it each
 time; review showed that reset could wipe unsaved work in your copy or another one, so it was replaced before merging.
+The second version still registered each temporary copy inside your repository, and review showed its clean-up could
+be steered into deleting someone else's data, so now the temporary copy is a separate clone that registers nothing.
 If the latest main cannot be fetched, nothing is rebuilt and the message says CANNOT RUN instead of quietly using an
 old copy. Each page already shows the commit it was built from, and that is now main's latest. Until the main checkout
 has this change and the page server is restarted, the Refresh button still uses the old path. An entry or backlog row
@@ -18960,21 +18962,26 @@ on an unmerged branch appears on the pages only after it merges, and the message
 copy from the first version sits in the main checkout at `.claude/regen-tree`; it can be removed once this merges
 (backlog item 408).
 <!--tech-->
-Backlog #408, branch `regen-fresh`, PR #536 (review round 1 folded: `docs/reviews/coordinator/regen-fresh-r1-coordinator.md`).
+Backlog #408, branch `regen-fresh`, PR #536 (review rounds 1 and 2 folded: `docs/reviews/coordinator/regen-fresh-r1-coordinator.md`,
+`docs/reviews/coordinator/regen-fresh-r2-coordinator.md`).
 `scripts/regen-pages.py`: `fresh()` = `main_of` (`--git-common-dir`) + `tree_lock` (`fcntl.flock` on
 `.claude/regen-pages.lock`, 150 s, inherited by every generator via `pass_fds`, released by closing) + `fetch_master`
-(`git fetch --quiet origin master`, `rev-parse refs/remotes/origin/master^{commit}`) + `add_tree` (`tempfile.mkdtemp`
-0700 `regen-pages-*`, `git worktree add --quiet --detach <private>/tree <sha>`, no `--force`, then `read_back`: top level,
-`--absolute-git-dir` under `<common>/worktrees/`, HEAD, clean status) + `discard` (the admin entry whose `gitdir` names the
-literal tree path, then the private dir, both `shutil.rmtree`). No `checkout`, `clean`, `reset`, `prune` or
-`worktree remove` anywhere: MEASURED in a scratch repo, `worktree remove --force` through a symlink to another worktree
+(`git fetch --quiet origin master`, `rev-parse refs/remotes/origin/master^{commit}`) + `origin_url` + `Private` (`tempfile.mkdtemp`
+0700 `regen-pages-*`, held open, st_dev/st_ino recorded) + `clone_tree` (`git clone --shared --no-checkout --quiet <main>
+<private>/tree`; in the clone only `checkout --detach <sha>`, `update-ref refs/remotes/origin/master`, `remote set-url
+origin <main's url>`; then `read_back`: top level, `--absolute-git-dir` = `<tree>/.git`, HEAD, clean status) + `discard`
+(contents through the descriptor, `shutil.rmtree(name, dir_fd=)`, symlinks unlinked; then `rmdir` only while `lstat`
+still names the recorded identity). Generators get `REGEN_MAIN_CHECKOUT`, honoured by `session-state.main_checkout` only
+when git names it a main checkout. In the main repository only `fetch`, `rev-parse`, `config --get` run: MEASURED in a scratch repo, `worktree remove --force` through a symlink to another worktree
 deleted it. `launch`: `start_new_session=True`, waits on the generator, `end_group` (SIGTERM, SIGKILL after 5 s) before it
-returns; `_on_signal` (TERM/HUP/INT) kills live generator groups first. `explainer-serve.py` Refresh: `run_in_group`
-(own group, SIGTERM on timeout, SIGKILL after `REGEN_GRACE` 15 s). Edit hooks: `--page <key> --after-edit` prints
+returns (stated bound: a descendant that leaves the group is not reached or detected); `_on_signal` (TERM/HUP/INT) kills live generator groups first. `explainer-serve.py` Refresh: `run_in_group`
+(own group, SIGTERM on timeout, SIGKILL after `REGEN_GRACE` 15 s, then a drain bounded by `REGEN_DRAIN` 2 s). Edit hooks: `--page <key> --after-edit` prints
 `pages show origin/master <sha>; this edit appears after it merges`; the backlog hook also validates the EDITED file with
-this checkout's generator into a removed temp dir. `lock_hint` names a stale `*.lock` in full. MEASURED per-run cost in a
-scratch clone of this repository: 3.53, 3.09, 2.41 s (reuse design: 0.65-0.83 s warm, 4.45 s cold); a five-page run
-there built 4 of 5 in 35.7 s naming the clone's master (goal-tree: `gh` auth under the temp HOME). Suite 32 -> 85 cases
+this checkout's generator into a removed temp dir, and relays its warnings BEFORE publishing. `lock_hint` names a stale `*.lock` in full. MEASURED per-run cost in a
+scratch clone of this repository: 4.02, 4.14, 3.71 s (round 1's worktree design: 3.53, 3.09, 2.41 s; reuse design:
+0.65-0.83 s warm, 4.45 s cold); in round 1, a five-page run
+there built 4 of 5 in 35.7 s naming the clone's master (goal-tree: `gh` auth under the temp HOME). Suite 32 -> 101 cases
 (real-git data-loss cases for a forged `.git` to main and to another worktree, a real worktree and a symlink at the old
-path, a tree swapped for a symlink to each checkout, a timed-out generator's child, a runner SIGTERMed and SIGKILLed);
-mutations 10 -> 45; explainer-serve 233 -> 238 cases, 68 -> 72 mutations.
+path, a tree swapped for a symlink to each checkout, a timed-out generator's child, a runner SIGTERMed and SIGKILLed; r2: `<common>/worktrees` swapped for a symlink, a victim's `gitdir` rewritten, the private
+dir and its ancestor swapped, a generator that ignores SIGTERM, the main repository's git dir byte-identical after a run);
+mutations 10 -> 53; explainer-serve 233 -> 239 cases, 68 -> 73 mutations; session-state 109 -> 111 mutations.

@@ -1411,5 +1411,31 @@
     "expect": [
       "backlog #507 r3: refs compare by KIND too — `backlog #30` does not track `PR #30`"
     ]
+  },
+  {
+    "name": "backlog #408: REGEN_MAIN_CHECKOUT is ignored, so a generator in its private clone reads the clone's empty ledger",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    named = os.environ.get(MAIN_CHECKOUT_ENV, \"\")",
+        "    named = \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #408: a generator run from a non-repository (its private clone) names the MAIN checkout the runner put in REGEN_MAIN_CHECKOUT"
+    ]
+  },
+  {
+    "name": "backlog #408: the name in REGEN_MAIN_CHECKOUT is trusted as text, so a linked worktree passes for the main checkout",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if named and os.path.realpath(Path(common).parent) != os.path.realpath(named):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ backlog #408: ...but a name that is a LINKED worktree, or relative, is refused, never trusted as text"
+    ]
   }
 ]

@@ -1304,7 +1304,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ backlog #408: 68 -> 69 — a Refresh press routes through regen-pages.py `--page <key>`, each key as itself.
     # ⟳ its review round 1 (Codex X3): 69 -> 72 — the runner in a process group of its own, SIGTERM before
     # SIGKILL on a Refresh timeout, and the press wired through `run_in_group`.
-    "scripts/explainer-serve.py": 72,
+    # ⟳ its review round 2 (F4): 72 -> 73 — the post-SIGKILL drain of a Refresh timeout is BOUNDED.
+    "scripts/explainer-serve.py": 73,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1482,7 +1483,8 @@ EXPECTED_MUTATIONS = {
     # the cap above the real ledger's owner text); and `--override`/`--apply`/`--kind` that cannot be used are refused.
     # ⟳ 2026-11-04, PR #496 r1 C4: 85 -> 94, the open `sweep-red` issues in the block — the CANNOT READ arm, its
     # mark, the names, the cap, collect()'s wiring, and the reader's command, directory, failure and element checks.
-    "scripts/session-state.py": 109,
+    # ⟳ backlog #408 r2: 109 -> 111 — `main_checkout` honours the runner's REGEN_MAIN_CHECKOUT (ignored; trusted as text).
+    "scripts/session-state.py": 111,
     # ⟳ 2026-11-04, PR #496 r2 X1: the sweep-red alert, moved out of shell into a tested helper — an older green
     # closing, ancestry misread, the marker dropped, unreadable ancestry closing, a failed gh swallowed.
     # ⟳ 5 -> 6, PR #496 r3: auto-close REMOVED, and the two ancestry mutations with it — a green closes, comments on
@@ -1812,7 +1814,14 @@ EXPECTED_MUTATIONS = {
     # literal-path match that a swapped-in symlink cannot redirect, the temp root, the process group, its
     # ending, the inherited lock, the stop signal and the live registry, the lock-file hint, `--after-edit`,
     # and the suite's refusal of this repository (safe to mutate now: its cases hand `fresh` a decoy git).
-    "scripts/regen-pages.py": 45,
+    # ⟳ review round 2's fold: 45 -> 53. Round 1's linked-worktree design is GONE (a swapped `<common>/worktrees`
+    # symlink and an edited `gitdir` text each made its cleanup delete somebody else's data), replaced by a
+    # private `clone --shared`. Its nine worktree-specific entries are retargeted one for one onto the clone
+    # (no origin URL, `--shared`, origin/master in the clone, the git-dir read-back, the descriptor deletion,
+    # the private dir's rmdir and identity, deletion by path), and 8 are new: the SIGKILL escalation against a
+    # child that ignores SIGTERM (r2 F6), `lstat` not `stat`, the clone -> main-checkout map, its hand-off and its
+    # removal, a failed step inside the clone, a failed clone, and origin's URL.
+    "scripts/regen-pages.py": 53,
     # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
     # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
     # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
