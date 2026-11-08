@@ -371,13 +371,12 @@ def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, t
 def _self_test() -> int:
     """No generator runs: every launch is a fake. Wrapped per backlog #382's canonical entry."""
     import fixture_git
-    global _IN_SUITE
-    _IN_SUITE = True
     with fixture_git.isolated():
         return _self_test_body()
 
 
 def _self_test_body() -> int:
+    globals()["_IN_SUITE"] = True                     # `fresh` refuses the real repository from here on
     import contextlib
     import io
     cases = failures = 0
