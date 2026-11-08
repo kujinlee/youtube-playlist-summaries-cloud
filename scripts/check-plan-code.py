@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 431 cases
+    python3 scripts/check-plan-code.py --self-test          # 418 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -128,8 +128,8 @@ SUITE_TIMEOUT_CEILING = 600
 # ⛔ r1 (both halves, F1): THE CEILING IS PER RUN, NOT PER SHARD. Three hung mutants at 600 s are 1,800 s,
 # the whole `timeout-minutes: 30` of a pull request's shard; the job is then KILLED, and the line naming
 # each hang, and every verdict the shard reached, never reach the log. So a run under `--event` (CI) has a
-# CUMULATIVE budget: the sweep job's own `timeout-minutes`, READ from `CI_WORKFLOW` for that event
-# (`sweep_budget`), less SWEEP_HEADROOM. Every suite run is capped at the budget left (`run_suite_parts`),
+# CUMULATIVE budget: the sweep job's own `timeout-minutes`, as the RUNNER evaluated it (`LIMIT_VAR`, below),
+# less SWEEP_HEADROOM. Every suite run is capped at the budget left (`run_suite_parts`),
 # and once it is spent the run STOPS and its LAST line is BUDGET_STOP, naming the mutants that did not
 # finish and those not reached.
 # ⟳ r2 (Codex F1-F3): the deadline is ABSOLUTE in JOB time (`ci_deadline`): the job's first step writes
@@ -143,8 +143,14 @@ SUITE_TIMEOUT_CEILING = 600
 SWEEP_HEADROOM = 120
 CI_WORKFLOW = ".github/workflows/ci.yml"
 SWEEP_JOB = "mutation-sweep"
-# ⛔ r2 F1: the epoch the sweep job's FIRST step writes to `$GITHUB_ENV` (`_self_test` pins the step to ci.yml).
+# ⛔ r2 F1: the epoch the sweep job's FIRST step writes to `$GITHUB_ENV` (`sweep_limit_pin` pins the step to ci.yml).
 JOB_START_VAR = "SWEEP_JOB_START"
+# ⛔ Architecture review 2026-11-08 (sweep-deadline), replacing r1-r2's workflow READER: the job's limit in minutes,
+# put in the sweep step's env by a YAML ALIAS of the job's own `timeout-minutes: &LIMIT_ANCHOR ...`. The runner
+# evaluates ONE node for the job's kill and for this value, so the harness parses neither ci.yml nor the event
+# expression; it reads one integer, and on CI a missing or non-integer one is CANNOT RUN (`ci_deadline`).
+LIMIT_VAR = "SWEEP_TIMEOUT_MINUTES"
+LIMIT_ANCHOR = "sweep-limit"
 BUDGET_STOP = "CANNOT RUN — this run's time budget ran out"
 # The absolute `time.monotonic()` by which this run must stop, or None (no budget: off CI). Set ONLY by
 # `mutate_delivered` for the length of its run, read ONLY by `run_suite_parts` (the one producer of a
@@ -1277,125 +1283,105 @@ def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None,
     return r.returncode, r.stdout, r.stderr
 
 
-_YAML_ENTRY = re.compile(r"([A-Za-z0-9_][A-Za-z0-9_-]*):(?: +(.*))?")
-
-
-def _yaml_entries(lines: list, lo: int, hi: int) -> "tuple[list, str | None]":
-    """PURE. The block-mapping entries of `lines[lo:hi]` at its SHALLOWEST indent: `[key, value, start, end]`
-    each (`end` is the next entry's line), or `([], why)` for a line this cannot read as one.
-
-    ⛔ r2 F2: every line MORE indented than an entry is that entry's content and is never read as a key — in
-    valid YAML a block scalar, a nested mapping and a continued scalar are all deeper than their key. So a
-    `run-name: |` block holding `  mutation-sweep:` belongs to `run-name`, which is not on the path."""
-    out: list = []
-    child = None
-    for i in range(lo, hi):
-        st = lines[i].lstrip(" ")
-        if not st.strip() or st.startswith("#"):
-            continue
-        ind = len(lines[i]) - len(st)
-        if child is None:
-            child = ind
-        if ind > child:
-            continue
-        if ind < child:
-            return [], f"line {i + 1} is indented between two levels"
-        hit = _YAML_ENTRY.fullmatch(st.rstrip(" "))
-        if hit is None:
-            return [], f"line {i + 1} is not a plain `key:` entry: {st.strip()[:60]!r}"
-        if out:
-            out[-1][3] = i
-        out.append([hit.group(1), re.sub(r"(?:^| )#.*", "", hit.group(2) or "").strip(), i, hi])
-    return out, None
-
-
-def workflow_value(ci_text: str, path: tuple) -> "tuple[str | None, str | None]":
-    """PURE. The plain scalar at `path` (e.g. `("jobs", "mutation-sweep", "timeout-minutes")`) of a workflow,
-    read as YAML block mappings, or `(None, why)`.
-
-    ⛔ r2 F2: a SUBSET reader that REFUSES what it does not understand, never one that searches. Off the path
-    nothing is read; on it, a line that is not a plain `key:` entry (a quoted key, `? k`, a `<<:` merge, a
-    sequence item, a document marker, a tab-indented line), a line between two indent levels, a duplicate key
-    or a scalar continued onto the next line is a reason. A mapping given on its key's own line (an alias, a
-    flow mapping) has no entries below it, so its key is "0 times" there — a reason too. No YAML parser is
-    installed on the runner, and a dependency for one value is the larger risk; `_self_test` reads the real
-    ci.yml, so a workflow that leaves the subset reds the PR that changes it."""
-    lines = ci_text.lstrip("\ufeff").splitlines()
-    lo, hi = 0, len(lines)
-    for depth, want in enumerate(path):
-        entries, why = _yaml_entries(lines, lo, hi)
-        if why:
-            return None, why
-        hits = [e for e in entries if e[0] == want]
-        where = ".".join(path[:depth + 1])
-        if len(hits) != 1:
-            return None, f"`{where}` appears {len(hits)} times"
-        _, value, start, end = hits[0]
-        if depth < len(path) - 1:
-            lo, hi = start + 1, end
-        elif not value or any(lines[j].strip() and not lines[j].strip().startswith("#")
-                              for j in range(start + 1, end)):
-            return None, f"`{where}` is not a one-line scalar"
-    return value, None
-
-
-def sweep_budget(ci_text: "str | None", event: str,
-                 job: str = SWEEP_JOB) -> "tuple[float | None, str | None]":
-    """PURE. `(seconds, None)`: the time a sweep run under `event` may take — `jobs.<job>.timeout-minutes` of
-    `CI_WORKFLOW` for that event, less `SWEEP_HEADROOM` — or `(None, why)`.
-
-    READ from the workflow, never typed here: a copy of 30/60 would drift the day the job's limit moves.
-    The two shapes it understands are a bare integer and `${{ github.event_name == 'E' && A || B }}`;
-    anything else is a CANNOT RUN, never a guess (a guess too long is the kill this exists to prevent).
-    """
-    if ci_text is None:
-        return None, f"{CI_WORKFLOW} could not be read"
-    val, why = workflow_value(ci_text, ("jobs", job, "timeout-minutes"))
-    if why:
-        return None, f"{CI_WORKFLOW}: {why}"
-    if val.isdigit():
-        return int(val) * 60 - SWEEP_HEADROOM, None
-    two = re.fullmatch(r"\$\{\{\s*github\.event_name\s*==\s*'([a-z_]+)'\s*&&\s*(\d+)\s*\|\|\s*(\d+)\s*\}\}",
-                       val)
-    if two is None:
-        return None, f"{CI_WORKFLOW}'s `{job}` timeout-minutes is a shape this cannot read: {val!r}"
-    minutes = int(two.group(2)) if event == two.group(1) else int(two.group(3))
-    return minutes * 60 - SWEEP_HEADROOM, None
-
-
-def ci_deadline(env, ci_text: "str | None", arg_event: "str | None", wall: float,
+def ci_deadline(env, arg_event: "str | None", wall: float,
                 mono: float) -> "tuple[float | None, str | None, str | None]":
     """PURE. On CI: `(deadline, line, None)` — the `time.monotonic()` by which this run must stop and the TIME
     BUDGET line that says why — or `(None, None, why)`. `wall`/`mono` are `time.time()`/`time.monotonic()` now.
 
-    ⛔ r2: EVERY INPUT IS THE RUNNER'S OWN, AND A MISSING OR CONFLICTING ONE IS A REASON, NEVER A DEFAULT.
-      * the EVENT is `GITHUB_EVENT_NAME` (F3), so a run with no `--event` still has a budget, and an
-        `--event` that disagrees (60 minutes inside a 30-minute job) is refused;
-      * the JOB is `GITHUB_JOB`, whose `timeout-minutes` is read at exactly `jobs.<job>` (F2);
-      * the CLOCK starts at `JOB_START_VAR`, the epoch the job's FIRST step writes (F1), so checkout,
+    ⛔ EVERY INPUT IS THE RUNNER'S OWN, AND A MISSING OR MALFORMED ONE IS A REASON, NEVER A DEFAULT.
+      * the LIMIT is `LIMIT_VAR`, the job's `timeout-minutes` as the runner evaluated it, aliased into the step's
+        env from the job's own node (architecture review 2026-11-08). Nothing here reads ci.yml or mirrors the
+        event expression, so a workflow other than ci.yml gives the limit of the job that actually ran. A value
+        that is not a whole number of minutes (an alias the runner did not expand, an expression it did not
+        evaluate, a float) is refused: a wrong assumption about the runner turns the shard red, never unbudgeted;
+      * the EVENT is `GITHUB_EVENT_NAME` (r2 F3). It no longer feeds the budget, but `--event` still chooses the
+        manifest SELECTION, so an `--event` that disagrees with the runner's is still refused;
+      * the CLOCK starts at `JOB_START_VAR`, the epoch the job's FIRST step writes (r2 F1), so checkout,
         `npm ci` and everything else before the sweep are spent from the budget, not added after it.
     """
     event = env.get("GITHUB_EVENT_NAME", "")
     if not event:
-        return None, None, "GITHUB_EVENT_NAME is not set, so the event the job's limit depends on is unknown"
+        return None, None, "GITHUB_EVENT_NAME is not set, so this run's event is unknown"
     if arg_event is not None and arg_event != event:
         return None, None, f"--event {arg_event!r} is not this run's event (GITHUB_EVENT_NAME={event!r})"
-    job = env.get("GITHUB_JOB", "")
-    if not job:
-        return None, None, "GITHUB_JOB is not set, so which job's timeout-minutes applies is unknown"
+    minutes = env.get(LIMIT_VAR, "")
+    if not re.fullmatch(r"[1-9][0-9]{0,3}", minutes):
+        return None, None, (f"{LIMIT_VAR} is {minutes!r}, not a whole number of minutes, so the job's limit is "
+                            f"unknown (the sweep step's env must alias the job's `timeout-minutes: "
+                            f"&{LIMIT_ANCHOR}`, and the runner must expand and evaluate it)")
     raw = env.get(JOB_START_VAR, "")
     if not re.fullmatch(r"[0-9]{1,12}", raw):
         return None, None, (f"{JOB_START_VAR} is {raw!r}, not the epoch the job's first step records, so "
                             f"when the job's limit runs out is unknown")
     if int(raw) > wall:
         return None, None, f"{JOB_START_VAR}={raw} is later than now ({wall:.0f})"
-    secs, why = sweep_budget(ci_text, event, job)
-    if why:
-        return None, None, why
+    limit = int(minutes) * 60
+    secs = limit - SWEEP_HEADROOM
     left = int(raw) + secs - wall
-    return mono + left, (f"TIME BUDGET — {secs:.0f}s: {CI_WORKFLOW}'s jobs.{job}.timeout-minutes for event "
-                         f"{event!r}, less {SWEEP_HEADROOM}s of headroom, from the job's first step "
+    return mono + left, (f"TIME BUDGET — {secs:.0f}s: the job's timeout-minutes ({LIMIT_VAR}={minutes}, event "
+                         f"{event!r}), less {SWEEP_HEADROOM}s of headroom, from the job's first step "
                          f"({JOB_START_VAR}); {max(left, 0.0):.0f}s of it left as this run starts"), None
+
+
+def _step_items(body: list, steps_at: int) -> list:
+    """PURE. The line indexes in `body` where the step items under `body[steps_at]` (`    steps:`) begin."""
+    out = []
+    for i in range(steps_at + 1, len(body)):
+        line = body[i]
+        if line.startswith("      - "):
+            out.append(i)
+        elif line.strip() and not line.startswith("      ") and not line.lstrip().startswith("#"):
+            break
+    return out
+
+
+def sweep_limit_pin(ci_text: str) -> list:
+    """PURE. What in `ci_text` breaks the sweep job's budget contract: `[]` when nothing does.
+
+    A STATIC pin, read with line patterns over the one job, NOT a YAML parser (the parser it replaces is what
+    r1-r3 kept finding holes in). It is a guard on the REPO'S OWN ci.yml, run by the self-test, so it reds the PR
+    that reshapes the job; the run-time guarantee does not rest on it — the two values are one YAML node, and a
+    value the runner did not deliver is CANNOT RUN in `ci_deadline`. It checks:
+      * the job's own `timeout-minutes` carries `&LIMIT_ANCHOR`, defined once in the file's code;
+      * `*LIMIT_ANCHOR` appears once in the file, as `LIMIT_VAR: *LIMIT_ANCHOR`, in the step that runs `--mutate`;
+      * the job has ONE `timeout-minutes` in any spelling — a step's first key (`- timeout-minutes:`, R3-F1), a
+        later key, a flow mapping or a quoted key: a step-level limit kills the step before the budget runs out;
+      * the job's FIRST step writes `JOB_START_VAR`, and the file names it once.
+    The job is the lines after `  <SWEEP_JOB>:` up to the next line indented less than four spaces. A comment
+    is not read (nor counted file-wide). A shape these patterns do not know (a step list at another indent) is a problem, never a pass."""
+    lines = ci_text.lstrip("\ufeff").replace("\r\n", "\n").split("\n")
+    starts = [i for i, ln in enumerate(lines) if ln.rstrip() == f"  {SWEEP_JOB}:"]
+    if len(starts) != 1:
+        return [f"`  {SWEEP_JOB}:` appears {len(starts)} times, not once"]
+    end = next((i for i in range(starts[0] + 1, len(lines))
+                if lines[i].strip() and not lines[i].lstrip().startswith("#")
+                and len(lines[i]) - len(lines[i].lstrip(" ")) < 4), len(lines))
+    every = [re.sub(r"(?:^|\s)#.*", "", ln) for ln in lines]
+    whole = "\n".join(every)
+    body, code = lines[starts[0] + 1:end], every[starts[0] + 1:end]
+    problems = []
+    anchored = [ln for ln in code if re.fullmatch(rf"    timeout-minutes: &{LIMIT_ANCHOR} \S.*", ln)]
+    once = whole.count(f"&{LIMIT_ANCHOR}") == 1
+    if len(anchored) != 1 or not once:
+        problems.append(f"the job's own timeout-minutes does not carry `&{LIMIT_ANCHOR}` exactly once")
+    limits = sum(len(re.findall(r"(?:^|[\s{,])[\"']?timeout-minutes[\"']?\s*:", ln)) for ln in code)
+    if limits != 1:
+        problems.append(f"the job has {limits} timeout-minutes, not ONE, its own")
+    steps_at = next((i for i, ln in enumerate(code) if ln.rstrip() == "    steps:"), None)
+    items = [] if steps_at is None else _step_items(code, steps_at)
+    if len(items) < 2:
+        return problems + ["the job's steps are not a list of `      - ` items this pin can read"]
+    bounds = list(zip(items, items[1:] + [len(code)]))
+    alias = [i for i, ln in enumerate(code) if re.fullmatch(rf" +{LIMIT_VAR}: \*{LIMIT_ANCHOR}\s*", ln)]
+    in_step = [b for b in bounds if alias and b[0] < alias[0] < b[1]]
+    if (len(alias) != 1 or whole.count(f"*{LIMIT_ANCHOR}") != 1 or not in_step
+            or "check-plan-code.py --mutate" not in "\n".join(code[in_step[0][0]:in_step[0][1]])):
+        problems.append(f"the step that runs --mutate does not set `{LIMIT_VAR}: *{LIMIT_ANCHOR}`, once")
+    first = "\n".join(body[bounds[0][0]:bounds[0][1]])
+    if (f'echo "{JOB_START_VAR}=$(date +%s)" >> "$GITHUB_ENV"' not in first
+            or whole.count(f"{JOB_START_VAR}=") != 1):
+        problems.append(f"the job's FIRST step does not write {JOB_START_VAR}, named once in the file")
+    return problems
 
 
 def budget_spent() -> bool:
@@ -2654,7 +2640,7 @@ def _budget_wiring(root: pathlib.Path) -> dict:
     ⛔ A SMALL FUNCTION ON PURPOSE (PR #400 r1 H1, measured): `check-main-drivable` analyses every
     `main()` call site against its ENCLOSING function, and inside the long `_self_test` this one
     call cost its suite ~30s and pushed it past `SUITE_TIMEOUT`. Here it costs nothing."""
-    _gh = ("CI", "GITHUB_EVENT_NAME", "GITHUB_JOB", JOB_START_VAR)
+    _gh = ("CI", "GITHUB_EVENT_NAME", JOB_START_VAR, LIMIT_VAR)
     saved = {k: os.environ.pop(k, None) for k in _gh}
     out = {}
     torn: dict = {}
@@ -2667,11 +2653,8 @@ def _budget_wiring(root: pathlib.Path) -> dict:
             hold.callback(lambda: torn.__setitem__(_k, _b.getvalue()))
         return r
     (root / "changed.txt").write_text("scripts/thing.py\0")
-    # r1 F1: a run under --event reads its time budget from the workflow — the real line's shape, with an
-    # event whose 2 minutes leave NO budget after the headroom, so the "spent" row stops before any suite.
-    (root / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
-    (root / CI_WORKFLOW).write_text(f"jobs:\n  {SWEEP_JOB}:\n    timeout-minutes: "
-                                    "${{ github.event_name == 'workflow_dispatch' && 2 || 30 }}\n")
+    # r1 F1: a CI run's budget is the job's limit the runner put in LIMIT_VAR (30 minutes on every row but
+    # "spent", whose 2 minutes leave NO budget after the headroom, so it stops before any suite). No ci.yml.
     scoped = ["--event", "pull_request", "--changed", str(root / "changed.txt")]
     try:
         for key, ci, extra, bud in (("local", None, [], 0), ("flag", None, ["--allow-long-local"], 0),
@@ -2681,23 +2664,24 @@ def _budget_wiring(root: pathlib.Path) -> dict:
                                     ("scoped2", "true", scoped + ["--shard0", "1/2"], 0),
                                     ("push", "true", ["--event", "push"], 0),
                                     ("seeds", "true", ["--seeds", "3,5"], 0),
-                                    ("spent", "true", ["--event", "workflow_dispatch"], 0),
+                                    ("spent", "true", ["--event", "push"], 0),
                                     # r2 F1: a job that started 1,700 s ago has none of a push's 1,680 left
                                     ("late", "true", ["--event", "push"], 0),
                                     # r2 F3: no event from the runner, or an --event that disagrees with it
                                     ("noevent", "true", [], 0),
                                     ("conflict", "true", ["--event", "schedule"], 0),
                                     ("nostart", "true", ["--event", "push"], 0),
-                                    ("noci", "true", ["--event", "push"], 0)):
+                                    # arch 11-08: no limit from the runner, or one it did not expand
+                                    ("nolimit", "true", ["--event", "push"], 0),
+                                    ("rawlimit", "true", ["--event", "push"], 0)):
             for _k in _gh:
                 os.environ.pop(_k, None)
-            if key == "noci":     # LAST: the same root with no workflow to read a budget from
-                (root / CI_WORKFLOW).unlink()
             # The runner's own variables on EVERY row, so the rows off CI prove they are ignored there.
             _ev = (extra[extra.index("--event") + 1] if "--event" in extra and key != "conflict" else "push")
-            os.environ.update({"GITHUB_EVENT_NAME": _ev, "GITHUB_JOB": SWEEP_JOB,
+            os.environ.update({"GITHUB_EVENT_NAME": _ev,
+                               LIMIT_VAR: {"spent": "2", "rawlimit": f"*{LIMIT_ANCHOR}"}.get(key, "30"),
                                JOB_START_VAR: str(int(time.time()) - (1700 if key == "late" else 0))})
-            for _k in {"noevent": "GITHUB_EVENT_NAME", "nostart": JOB_START_VAR}.get(key, "").split():
+            for _k in {"noevent": "GITHUB_EVENT_NAME", "nostart": JOB_START_VAR, "nolimit": LIMIT_VAR}.get(key, "").split():
                 os.environ.pop(_k)
             if ci is not None:
                 os.environ["CI"] = ci
@@ -2818,104 +2802,91 @@ def _self_test_body() -> int:
     case("...and a suite over that limit is still rc 2, CANNOT RUN, naming the limit it ran under",
          (_rc_l, "CANNOT RUN" in _se_l and "333.0s" in _se_l and "NOT CHECKED" in _se_l), (2, True))
 
-    # ⛔ r1 F1 (both halves): THE SHARD'S BUDGET. Read from the job's own `timeout-minutes` for the event —
-    # a fixture with a job before and after it, so reading the wrong job's value goes red.
-    _fx_ci = ("jobs:\n  other:\n    timeout-minutes: 5\n  mutation-sweep:\n    runs-on: x\n"
-              "    timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}\n"
-              "  after:\n    timeout-minutes: 9\n")
-    case("⭐ r1 F1: a sweep run's budget is ITS job's timeout-minutes for the event, less SWEEP_HEADROOM",
-         [sweep_budget(_fx_ci, _e) for _e in ("schedule", "pull_request")],
-         [(60 * 60 - SWEEP_HEADROOM, None), (30 * 60 - SWEEP_HEADROOM, None)])
-    case("...a bare integer is read as it stands",
-         sweep_budget("jobs:\n  mutation-sweep:\n    timeout-minutes: 7\n", "push"), (7 * 60 - SWEEP_HEADROOM, None))
-    case("...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it "
-         "cannot read is a REASON, never a guessed budget",
-         [(sweep_budget(_t, "push")[0], bool(sweep_budget(_t, "push")[1])) for _t in
-          (None, "jobs:\n  x:\n    timeout-minutes: 5\n",
-           "jobs:\n  mutation-sweep:\n    runs-on: x\n  after:\n    timeout-minutes: 9\n",
-           "jobs:\n  mutation-sweep:\n    timeout-minutes: ${{ inputs.t }}\n")],
-         [(None, True)] * 4)
-    # ⛔ r2 F2 (Codex): the value is read at EXACTLY jobs.mutation-sweep.timeout-minutes. Codex's counterexample
-    # is a `run-name` block scalar whose TEXT looks like the job, prepended to a valid workflow; the line reader
-    # took its 60 minutes inside the real 30-minute job.
-    _r2f2 = "run-name: |\n  mutation-sweep:\n    timeout-minutes: 60\n"
-    _ci_txt = (pathlib.Path(__file__).resolve().parent.parent / CI_WORKFLOW).read_text(encoding="utf-8")
-    case("⭐ r2 F2: a block scalar whose text looks like the sweep job is not read: the budget is the REAL job's",
-         [sweep_budget(_r2f2 + _t, "push") for _t in (_ci_txt, _fx_ci)],
-         [(30 * 60 - SWEEP_HEADROOM, None)] * 2)
-    _sub = "jobs:\n  mutation-sweep:\n    timeout-minutes: 30\n"
-    case("⭐ r2 F2: a trailing comment is not part of the value",
-         sweep_budget("jobs:\n  mutation-sweep:\n    timeout-minutes: 30  # was 60\n", "push"),
-         (30 * 60 - SWEEP_HEADROOM, None))
-    case("⭐ r2 F2: a duplicate key, on the path or at the value, is a REASON, never one of the two",
-         [bool(sweep_budget(_t, "push")[1]) for _t in
-          (_sub + "    timeout-minutes: 60\n", _sub + "  mutation-sweep:\n    timeout-minutes: 60\n",
-           _sub + "jobs:\n  x:\n    timeout-minutes: 60\n")], [True] * 3)
-    case("⭐ r2 F2: a mapping with a value on its own line (an alias, a flow mapping) is a REASON",
-         [bool(sweep_budget(_t, "push")[1]) for _t in
-          ("jobs:\n  mutation-sweep: *j\n", "jobs:\n  mutation-sweep: {timeout-minutes: 60}\n",
-           "jobs: *all\n")], [True] * 3)
-    case("⭐ r2 F2: a line that is not a plain `key:` entry where an entry is read (a merge key, a sequence "
-         "item, a document marker, a quoted key) is a REASON",
-         [bool(sweep_budget(_t, "push")[1]) for _t in
-          ("jobs:\n  mutation-sweep:\n    <<: *d\n    runs-on: x\n", "---\n" + _sub,
-           "jobs:\n  - mutation-sweep\n", _sub + "    \"timeout-minutes\": 60\n")],
-         [True] * 4)
-    case("⭐ r2 F2: a value continued onto the next line is a REASON, not its first line",
-         sweep_budget(_sub[:-1] + "\n      0\n", "push")[0], None)
-    case("⭐ r2 F2: a line indented BETWEEN two levels is a REASON, not a sibling",
-         sweep_budget("jobs:\n    mutation-sweep:\n      timeout-minutes: 60\n  x:\n    timeout-minutes: 30\n",
-                      "push")[0], None)
-    case("⭐ r2 F2: an indent made with a tab is a REASON",
-         sweep_budget("jobs:\n  mutation-sweep:\n\t timeout-minutes: 60\n", "push")[0], None)
-    _ci_real = [sweep_budget(_ci_txt, _e) for _e in ("schedule", "push")]
-    case("...and the REAL ci.yml is read: no reason, a positive budget, the schedule's no smaller than a "
-         "push's (a reshaped line reds THIS suite, in the same PR)",
-         ([_w for _, _w in _ci_real], all((_b or 0) > 0 for _b, _ in _ci_real),
-          (_ci_real[0][0] or 0) >= (_ci_real[1][0] or 0)), ([None, None], True, True))
-    # ⛔ r2 F1: the clock's start is written by the sweep job's FIRST step, ONCE in the workflow, and the job
-    # has ONE timeout-minutes (a step-level one would kill the step before the job's budget ran out).
-    _lines = _ci_txt.splitlines()
-
-    def _entry(_lo, _hi, _key):
-        # A reader that refuses gives an EMPTY entry, so the cases below go red rather than the suite crashing.
-        return ([e for e in _yaml_entries(_lines, _lo, _hi)[0] if e[0] == _key] or [["", "", 0, 0]])[0]
-    _jobs = _entry(0, len(_lines), "jobs")
-    _sw = _entry(_jobs[2] + 1, _jobs[3], SWEEP_JOB)
-    _st = _entry(_sw[2] + 1, _sw[3], "steps")
-    _items = [i for i in range(_st[2] + 1, _st[3]) if _lines[i].lstrip(" ").startswith("- ")]
-    _first = "\n".join(_lines[_items[0]:_items[1]]) if len(_items) > 1 else ""
-    case("⭐ r2 F1: the REAL sweep job's FIRST step writes the epoch the budget counts from, once in ci.yml",
-         (f'echo "{JOB_START_VAR}=$(date +%s)" >> "$GITHUB_ENV"' in _first, _ci_txt.count(f"{JOB_START_VAR}=")),
-         (True, 1))
-    case("...and the sweep job has ONE timeout-minutes, its own (no step-level one)",
-         sum(bool(re.match(r"\s+timeout-minutes:", _lines[i])) for i in range(_sw[2] + 1, _sw[3])), 1)
-    # ⛔ r2 F1 + F3: `ci_deadline` — every input the runner's own; the clock from the job's first step.
-    _env = {"GITHUB_EVENT_NAME": "push", "GITHUB_JOB": SWEEP_JOB, JOB_START_VAR: "1000000"}
-    _dl, _dline, _dwhy = ci_deadline(_env, _fx_ci, None, 1000150.0, 500.0)
+    # ⛔ THE SHARD'S BUDGET (r1 F1; r2 F1/F3; architecture review 2026-11-08, sweep-deadline). The job's limit is
+    # the RUNNER's evaluated `timeout-minutes`, aliased into the step's env as LIMIT_VAR; nothing reads ci.yml.
+    _env = {"GITHUB_EVENT_NAME": "push", LIMIT_VAR: "30", JOB_START_VAR: "1000000"}
+    _dl, _dline, _dwhy = ci_deadline(_env, None, 1000150.0, 500.0)
     case("⭐ r2 F1: the deadline counts from the JOB's start: 150 s of setup leaves 1,530 s of a push's 1,680",
          (_dl, _dwhy, "1530s of it left" in (_dline or "")), (500.0 + 30 * 60 - SWEEP_HEADROOM - 150, None, True))
-    case("⭐ r2 F3: the EVENT is the runner's: with no --event the schedule's budget is still read",
-         ci_deadline({**_env, "GITHUB_EVENT_NAME": "schedule"}, _fx_ci, None, 1000000.0, 0.0)[0],
-         60 * 60 - SWEEP_HEADROOM)
-    case("⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (no 60 minutes in a 30-minute job)",
-         ci_deadline(_env, _fx_ci, "schedule", 1000000.0, 0.0)[0::2],
+    case("⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event "
+         "(60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)",
+         [ci_deadline({**_env, **_v}, None, 1000000.0, 0.0)[0] for _v in
+          ({LIMIT_VAR: "60"}, {LIMIT_VAR: "7"}, {"GITHUB_EVENT_NAME": "schedule"})],
+         [60 * 60 - SWEEP_HEADROOM, 7 * 60 - SWEEP_HEADROOM, 30 * 60 - SWEEP_HEADROOM])
+    _no_lim = {_k: _v for _k, _v in _env.items() if _k != LIMIT_VAR}
+    case("⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did "
+         "not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default",
+         [(ci_deadline(_e, None, 1000000.0, 0.0)[0], LIMIT_VAR in (ci_deadline(_e, None, 1000000.0, 0.0)[2] or ""))
+          for _e in [_no_lim] + [{**_env, LIMIT_VAR: _v} for _v in
+                                 ("", f"*{LIMIT_ANCHOR}", "${{ github.event_name == 'schedule' && 60 || 30 }}",
+                                  "30.0", " 30", "30\n", "0", "030", "12345")]],
+         [(None, True)] * 10)
+    case("⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (it would choose the wrong selection)",
+         ci_deadline(_env, "schedule", 1000000.0, 0.0)[0::2],
          (None, "--event 'schedule' is not this run's event (GITHUB_EVENT_NAME='push')"))
     case("⭐ r2 F3: no GITHUB_EVENT_NAME is a REASON, never a default event",
-         ci_deadline({**_env, "GITHUB_EVENT_NAME": ""}, _fx_ci, "push", 1000000.0, 0.0)[0], None)
-    case("⭐ r2: no GITHUB_JOB is a REASON, never a default job",
-         ci_deadline({**_env, "GITHUB_JOB": ""}, _fx_ci, None, 1000000.0, 0.0)[0], None)
-    case("⭐ r2: the job named by GITHUB_JOB is the one read",
-         ci_deadline({**_env, "GITHUB_JOB": "other"}, "jobs:\n  other:\n    timeout-minutes: 5\n", None,
-                     1000000.0, 0.0)[0], 5 * 60 - SWEEP_HEADROOM)
-    case("...and `sweep_budget` reads the job it is GIVEN, not the sweep job",
-         [sweep_budget(_fx_ci, "push", _j) for _j in ("other", "after", SWEEP_JOB)],
-         [(5 * 60 - SWEEP_HEADROOM, None), (9 * 60 - SWEEP_HEADROOM, None), (30 * 60 - SWEEP_HEADROOM, None)])
+         ci_deadline({**_env, "GITHUB_EVENT_NAME": ""}, "push", 1000000.0, 0.0)[0], None)
     case("⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON",
-         [ci_deadline({**_env, JOB_START_VAR: _v}, _fx_ci, None, 1000000.0, 0.0)[0]
+         [ci_deadline({**_env, JOB_START_VAR: _v}, None, 1000000.0, 0.0)[0]
           for _v in ("", "12a", " 1000000", "1000001")], [None] * 4)
     case("the budget's headroom is pinned — at most 31 s before the step and 4 s after it were MEASURED",
          SWEEP_HEADROOM, 120)
+    # ⛔ THE STATIC PIN over the REAL ci.yml, and one fixture per broken clause: each is the real file with ONE
+    # change and must give exactly that clause's problem. A change that no longer applies leaves the fixture
+    # equal to the real file, which is red here too (its `changed` is False), never vacuous.
+    _ci_txt = (pathlib.Path(__file__).resolve().parent.parent / CI_WORKFLOW).read_text(encoding="utf-8")
+    case("⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate "
+         "step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+         sweep_limit_pin(_ci_txt), [])
+    _head, _sep, _job = _ci_txt.partition(f"\n  {SWEEP_JOB}:\n")
+    _mstep = "      - name: Mutation manifest against the delivered scripts (one shard)\n"
+    _alias_line = f"          {LIMIT_VAR}: *{LIMIT_ANCHOR}\n"
+    _install = "      - name: Install dependencies\n        run: npm ci\n"
+
+    def _in_job(*_pairs):
+        _j = _job
+        for _old, _new in _pairs:
+            _j = _j.replace(_old, _new, 1)
+        return _head + _sep + _j
+    _p_lim = "the job has 2 timeout-minutes, not ONE, its own"
+    _p_anchor = f"the job's own timeout-minutes does not carry `&{LIMIT_ANCHOR}` exactly once"
+    _p_alias = f"the step that runs --mutate does not set `{LIMIT_VAR}: *{LIMIT_ANCHOR}`, once"
+    _p_epoch = f"the job's FIRST step does not write {JOB_START_VAR}, named once in the file"
+    _pin_fx = (
+        ("R3-F1: a step-level limit as the step's FIRST key",
+         _in_job((_mstep, "      - timeout-minutes: 5\n" + _mstep.replace("      - ", "        ", 1))), [_p_lim]),
+        ("a step-level limit as a later key", _in_job((_mstep, _mstep + "        timeout-minutes: 5\n")), [_p_lim]),
+        ("a step-level limit in a flow mapping",
+         _in_job((_mstep, "      - {name: x, timeout-minutes: 5, run: 'true'}\n" + _mstep)), [_p_lim]),
+        ("a step-level limit under a quoted key",
+         _in_job((_mstep, _mstep + "        \"timeout-minutes\": 5\n")), [_p_lim]),
+        ("the job's limit without the anchor",
+         _in_job((f"timeout-minutes: &{LIMIT_ANCHOR} ", "timeout-minutes: ")), [_p_anchor]),
+        ("the anchor defined again before the job (an alias binds the LATEST)",
+         _head.replace("\n    timeout-minutes: 30\n", f"\n    timeout-minutes: &{LIMIT_ANCHOR} 30\n", 1) + _sep + _job,
+         [_p_anchor]),
+        ("a literal limit in the step's env, not the alias",
+         _in_job((_alias_line, f"          {LIMIT_VAR}: 30\n")), [_p_alias]),
+        ("the alias QUOTED, which YAML reads as the string, not the node",
+         _in_job((_alias_line, f"          {LIMIT_VAR}: \"*{LIMIT_ANCHOR}\"\n")), [_p_alias]),
+        ("the alias moved to a step that does not run --mutate",
+         _in_job((_alias_line, ""), (_install, _install.replace("\n        run:", "\n        env:\n"
+                                                                + _alias_line.rstrip("\n") + "\n        run:"))),
+         [_p_alias]),
+        ("the epoch step no longer FIRST",
+         _in_job(("      - name: Record when this job started",
+                  "      - run: 'true'\n      - name: Record when this job started")), [_p_epoch]),
+    )
+    case("⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit "
+         "included",
+         [(_n, _fx != _ci_txt, sweep_limit_pin(_fx)) for _n, _fx, _ in _pin_fx],
+         [(_n, True, _w) for _n, _, _w in _pin_fx])
+    case("...and a job it cannot find, or steps it cannot read, is a problem, never a pass",
+         [sweep_limit_pin(_t) for _t in
+          ("jobs:\n  other:\n    timeout-minutes: 5\n",
+           f"jobs:\n  {SWEEP_JOB}:\n    timeout-minutes: &{LIMIT_ANCHOR} 30\n    steps:\n    - run: x\n    - run: y\n")],
+         [[f"`  {SWEEP_JOB}:` appears 0 times, not once"],
+          ["the job's steps are not a list of `      - ` items this pin can read"]])
     _seen_b: list = []
 
     def _budget_seen(*a, **k):
@@ -3979,12 +3950,13 @@ def _self_test_body() -> int:
             case("⭐ #506: main() wires --seeds to the run, and the verdict line names the seeds, rc=0",
                  (_wired["seeds"][0], "under PYTHONHASHSEED 3, 5" in _wired["seeds"][1]), (0, True))
             _spent_out = _wired["spent"][1].rstrip("\n").split("\n")
-            case("⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so "
+            case("⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so "
                  "the run stops, rc=1, and its LAST line is the budget stop",
                  (_wired["spent"][0], "TIME BUDGET — 0s" in _wired["spent"][1],
                   _spent_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True))
-            case("...and with no workflow to read a budget from, a CI-event run REFUSES before measuring, rc=2",
-                 (_wired["noci"][0], "SELECTION" in _wired["noci"][1]), (2, False))
+            case("...and with no job limit from the runner, or one it did not expand, a CI run REFUSES before "
+                 "measuring, rc=2", [(_wired[k][0], "SELECTION" in _wired[k][1]) for k in ("nolimit", "rawlimit")],
+                 [(2, False)] * 2)
             _late_out = _wired["late"][1].rstrip("\n").split("\n")
             case("⭐ r2 F1: main() counts a CI run's budget from the JOB's first step — 1,700 s after it, a push's "
                  "1,680 are spent, so the run stops at once, rc=1, its LAST line the budget stop",
@@ -3995,7 +3967,7 @@ def _self_test_body() -> int:
                  [(2, False)] * 2)
             case("⭐ r2 F1: main() on CI with no job-start epoch REFUSES before measuring, rc=2",
                  (_wired["nostart"][0], "SELECTION" in _wired["nostart"][1]), (2, False))
-            case("⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's event",
+            case("⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's limit",
                  "TIME BUDGET — 1680s" in _wired["ci"][1], True)
             case("⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts",
                  [_k for _k in ("push", "spent", "ci") if "measured over" not in (_wired["torn"].get(_k) or "")
@@ -7256,11 +7228,7 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         if _ci:
             # ⛔ r1 F1, r2 F1-F3: EVERY run on CI has its job's budget, or it does not run — with or without
             # --event, from the runner's own environment (`ci_deadline`), counted from the job's FIRST step.
-            try:
-                _ci_text = (mroot / CI_WORKFLOW).read_text(encoding="utf-8")
-            except OSError:
-                _ci_text = None
-            deadline, _line, why = ci_deadline(os.environ, _ci_text, a.event, time.time(), time.monotonic())
+            deadline, _line, why = ci_deadline(os.environ, a.event, time.time(), time.monotonic())
             if why:
                 print(f"CANNOT RUN — no time budget for this sweep run: {why}. Without one, hung mutants can "
                       f"run past the job's timeout-minutes and the job is killed with its evidence unprinted. "

@@ -840,7 +840,16 @@ EXPECTED_MUTATIONS = {
     # workflow reader that refuses rather than searches (six, r2 F2), the job-start epoch, event and job read
     # from the runner (`ci_deadline`, eleven, r2 F1 + F3), and the report printed before teardown (three).
     # Seven r1 entries re-bound to the rewritten reader and `main`, two of them renamed; none retired.
-    "scripts/check-plan-code.py": 300,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-08 suite-cost-b r3 fold (architecture review 2026-11-08, sweep-deadline): 300 -> 301. The job's
+    # limit now arrives as an integer in the step's env, aliased from the job's own `timeout-minutes` node, so the
+    # YAML reader (`_yaml_entries`, `workflow_value`), `sweep_budget` and the GITHUB_JOB lookup are DELETED, and the
+    # 14 entries on that code are RETIRED with it (only deleted code): the six r2 F2 reader entries, five r1 F1
+    # reader/expression entries, the r2 F3 event-feeds-the-budget entry and both r2 GITHUB_JOB entries. Two r1 F1
+    # entries are re-bound to the new limit (headroom; a missing limit guessed). Fifteen added: three for
+    # `ci_deadline`'s limit (padding/zero accepted, the limit ignored, the variable renamed) and twelve for
+    # `sweep_limit_pin` (its anchor, alias, ONE-timeout-minutes — R3-F1's first-key spelling — epoch, job-end,
+    # comment and refusal clauses). Every added or re-bound entry hand-checked by the harness's rule.
+    "scripts/check-plan-code.py": 301,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.

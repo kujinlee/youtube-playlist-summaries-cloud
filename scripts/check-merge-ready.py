@@ -291,7 +291,9 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     # ⟳ 2026-11-06, backlog #506: the sweep shard's TIMEOUT is keyed on the event — 60 min on the schedule,
     # which runs every suite under two hash seeds, 30 otherwise. A job SETTING, not a condition: it gates no
     # step, and the shard runs on a pull request exactly as before.
-    ("ci.yml", "timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}"):
+    # ⟳ 2026-11-08, PR #538 (backlog #558): the line now carries the YAML anchor `&sweep-limit`, which the sweep
+    # step's env aliases as `SWEEP_TIMEOUT_MINUTES` (check-plan-code's time budget). Still a setting, not a gate.
+    ("ci.yml", "timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}"):
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),

@@ -3197,98 +3197,29 @@
     ]
   },
   {
-    "name": "r1 F1: the sweep's budget ignores the event, so the schedule's 60 minutes read as 30",
+    "name": "r1 F1 (re-bound arch 11-08): the headroom is not taken off the job's limit, so the budget runs to the kill itself",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    minutes = int(two.group(2)) if event == two.group(1) else int(two.group(3))",
-        "    minutes = int(two.group(3))"
+        "    secs = limit - SWEEP_HEADROOM",
+        "    secs = limit"
       ]
     ],
     "expect": [
-      "⭐ r1 F1: a sweep run's budget is ITS job's timeout-minutes for the event, less SWEEP_HEADROOM",
-      "⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+      "⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event (60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)"
     ]
   },
   {
-    "name": "r1 F1: the headroom is not taken off the event's timeout-minutes, so the budget runs to the kill itself",
+    "name": "r1 F1 (re-bound arch 11-08): a missing job limit is GUESSED as 30 minutes",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return minutes * 60 - SWEEP_HEADROOM, None",
-        "    return minutes * 60, None"
+        "    minutes = env.get(LIMIT_VAR, \"\")",
+        "    minutes = env.get(LIMIT_VAR, \"\") or \"30\""
       ]
     ],
     "expect": [
-      "⭐ r1 F1: a sweep run's budget is ITS job's timeout-minutes for the event, less SWEEP_HEADROOM",
-      "⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
-    ]
-  },
-  {
-    "name": "r1 F1: a bare-integer timeout-minutes keeps no headroom",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        return int(val) * 60 - SWEEP_HEADROOM, None",
-        "        return int(val) * 60, None"
-      ]
-    ],
-    "expect": [
-      "...a bare integer is read as it stands"
-    ]
-  },
-  {
-    "name": "r1 F1 (re-bound r2): the reader runs past the sweep job's end, into the NEXT job's lines",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            lo, hi = start + 1, end",
-        "            lo, hi = start + 1, len(lines)"
-      ]
-    ],
-    "expect": [
-      "⭐ r1 F1: a sweep run's budget is ITS job's timeout-minutes for the event, less SWEEP_HEADROOM"
-    ]
-  },
-  {
-    "name": "r1 F1: a timeout-minutes shape it cannot read is GUESSED as 30 minutes",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        return None, f\"{CI_WORKFLOW}'s `{job}` timeout-minutes is a shape this cannot read: {val!r}\"",
-        "        return 30 * 60 - SWEEP_HEADROOM, None"
-      ]
-    ],
-    "expect": [
-      "...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it cannot read is a REASON, never a guessed budget"
-    ]
-  },
-  {
-    "name": "r1 F1 (re-bound r2): a key found 0 times (no sweep job) or twice is GUESSED a value",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            return None, f\"`{where}` appears {len(hits)} times\"",
-        "            return \"28\", None"
-      ]
-    ],
-    "expect": [
-      "...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it cannot read is a REASON, never a guessed budget",
-      "⭐ r2 F2: a mapping with a value on its own line (an alias, a flow mapping) is a REASON"
-    ]
-  },
-  {
-    "name": "r1 F1: an unreadable workflow is GUESSED a budget, so a CI-event run goes ahead without its real one",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        return None, f\"{CI_WORKFLOW} could not be read\"",
-        "        return 1680, None"
-      ]
-    ],
-    "expect": [
-      "...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it cannot read is a REASON, never a guessed budget",
-      "...and with no workflow to read a budget from, a CI-event run REFUSES before measuring, rc=2"
+      "⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default"
     ]
   },
   {
@@ -3302,7 +3233,7 @@
     ],
     "expect": [
       "the budget's headroom is pinned — at most 31 s before the step and 4 s after it were MEASURED",
-      "⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
     ]
   },
   {
@@ -3412,7 +3343,7 @@
     ],
     "expect": [
       "⭐ r1 F1: a run whose budget is already spent starts NO suite, is NOT MEASURED, and its last line names the control and the mutations it never reached",
-      "⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
     ]
   },
   {
@@ -3516,7 +3447,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
     ]
   },
   {
@@ -3533,7 +3464,7 @@
       ]
     ],
     "expect": [
-      "⭐ r1 F1: main() gives a CI-event run the budget its workflow states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
     ]
   },
   {
@@ -3546,85 +3477,7 @@
       ]
     ],
     "expect": [
-      "...and with no workflow to read a budget from, a CI-event run REFUSES before measuring, rc=2"
-    ]
-  },
-  {
-    "name": "r2 F2: a line deeper than an entry is read as an entry, so a block scalar's text can pose as the job",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        if ind > child:\n            continue",
-        "        if False:\n            continue"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F2: a block scalar whose text looks like the sweep job is not read: the budget is the REAL job's"
-    ]
-  },
-  {
-    "name": "r2 F2: a trailing comment is kept in the value",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "re.sub(r\"(?:^| )#.*\", \"\", hit.group(2) or \"\").strip()",
-        "(hit.group(2) or \"\").strip()"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F2: a trailing comment is not part of the value"
-    ]
-  },
-  {
-    "name": "r2 F2: a duplicate key is read as its FIRST occurrence",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        if len(hits) != 1:",
-        "        if not hits:"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F2: a duplicate key, on the path or at the value, is a REASON, never one of the two"
-    ]
-  },
-  {
-    "name": "r2 F2: a line that is not a plain `key:` entry is skipped instead of refused",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            return [], f\"line {i + 1} is not a plain `key:` entry: {st.strip()[:60]!r}\"",
-        "            continue"
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F2: a line that is not a plain `key:` entry where an entry is read (a merge key, a sequence item, a document marker, a quoted key) is a REASON"
-    ]
-  },
-  {
-    "name": "r2 F2: a value continued onto the next line is read as its first line",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        elif not value or any(",
-        "        elif not value or False and any("
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F2: a value continued onto the next line is a REASON, not its first line"
-    ]
-  },
-  {
-    "name": "r2 F2: a line between two indent levels is read as a sibling",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        if ind < child:\n            return [], f\"line {i + 1} is indented between two levels\"",
-        "        if False:\n            return [], f\"line {i + 1} is indented between two levels\""
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F2: a line indented BETWEEN two levels is a REASON, not a sibling"
+      "...and with no job limit from the runner, or one it did not expand, a CI run REFUSES before measuring, rc=2"
     ]
   },
   {
@@ -3637,7 +3490,8 @@
       ]
     ],
     "expect": [
-      "⭐ r2 F1: the REAL sweep job's FIRST step writes the epoch the budget counts from, once in ci.yml"
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
     ]
   },
   {
@@ -3663,47 +3517,8 @@
       ]
     ],
     "expect": [
-      "⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (no 60 minutes in a 30-minute job)",
+      "⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (it would choose the wrong selection)",
       "⭐ r2 F3: main() on CI with no GITHUB_EVENT_NAME, or an --event that disagrees with it, REFUSES before measuring, rc=2"
-    ]
-  },
-  {
-    "name": "r2 F3: the budget's event is not the runner's, so the schedule reads a push's 30 minutes",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\")",
-        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\") and \"push\""
-      ]
-    ],
-    "expect": [
-      "⭐ r2 F3: the EVENT is the runner's: with no --event the schedule's budget is still read"
-    ]
-  },
-  {
-    "name": "r2: a missing GITHUB_JOB defaults to the sweep job",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    job = env.get(\"GITHUB_JOB\", \"\")",
-        "    job = env.get(\"GITHUB_JOB\", \"\") or SWEEP_JOB"
-      ]
-    ],
-    "expect": [
-      "⭐ r2: no GITHUB_JOB is a REASON, never a default job"
-    ]
-  },
-  {
-    "name": "r2: the budget is read for the sweep job whatever GITHUB_JOB names",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    secs, why = sweep_budget(ci_text, event, job)",
-        "    secs, why = sweep_budget(ci_text, event)"
-      ]
-    ],
-    "expect": [
-      "⭐ r2: the job named by GITHUB_JOB is the one read"
     ]
   },
   {
@@ -3770,7 +3585,7 @@
       ]
     ],
     "expect": [
-      "⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's event"
+      "⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's limit"
     ]
   },
   {
@@ -3810,6 +3625,203 @@
     ],
     "expect": [
       "⭐ r2 F1: a run given a `hold` leaves its teardown to the holder — the deadline stands until it closes"
+    ]
+  },
+  {
+    "name": "arch 11-08: a job limit with padding, a leading zero, zero or five digits is accepted as minutes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not re.fullmatch(r\"[1-9][0-9]{0,3}\", minutes):",
+        "    if not minutes.strip().isdigit():"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default"
+    ]
+  },
+  {
+    "name": "arch 11-08: the runner's limit is ignored, so every CI run gets 30 minutes again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    limit = int(minutes) * 60",
+        "    limit = 30 * 60"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event (60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)"
+    ]
+  },
+  {
+    "name": "arch 11-08: the harness reads a limit variable the workflow never sets",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "LIMIT_VAR = \"SWEEP_TIMEOUT_MINUTES\"",
+        "LIMIT_VAR = \"SWEEP_LIMIT\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin looks for an anchor the workflow never defines",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "LIMIT_ANCHOR = \"sweep-limit\"",
+        "LIMIT_ANCHOR = \"limit\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "R3-F1: the pin counts a timeout-minutes only at a line's start, so a step's FIRST-key limit passes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "r\"(?:^|[\\s{,])[\\\"']?timeout-minutes[\\\"']?\\s*:\"",
+        "r\"^\\s+timeout-minutes:\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin stops counting the job's timeout-minutes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if limits != 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin no longer checks the job's limit carries the anchor",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if len(anchored) != 1 or not once:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: an anchor defined a second time passes, so the alias can bind to the wrong node",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    once = whole.count(f\"&{LIMIT_ANCHOR}\") == 1",
+        "    once = True"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the alias may sit in any step, not only the one that runs --mutate",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            or \"check-plan-code.py --mutate\" not in \"\\n\".join(code[in_step[0][0]:in_step[0][1]])):",
+        "            or False):"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: a QUOTED or literal value in the step's env passes as the alias",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "rf\" +{LIMIT_VAR}: \\*{LIMIT_ANCHOR}\\s*\"",
+        "rf\" +{LIMIT_VAR}: .*\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the epoch may be written by any step, not the job's first",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    first = \"\\n\".join(body[bounds[0][0]:bounds[0][1]])",
+        "    first = \"\\n\".join(body)"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: a workflow with no sweep job passes the pin",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return [f\"`  {SWEEP_JOB}:` appears {len(starts)} times, not once\"]",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "...and a job it cannot find, or steps it cannot read, is a problem, never a pass"
+    ]
+  },
+  {
+    "name": "arch 11-08: steps the pin cannot read pass it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return problems + [\"the job's steps are not a list of `      - ` items this pin can read\"]",
+        "        return problems"
+      ]
+    ],
+    "expect": [
+      "...and a job it cannot find, or steps it cannot read, is a problem, never a pass"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin's job runs past its end into the next job",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                and len(lines[i]) - len(lines[i].lstrip(\" \")) < 4), len(lines))",
+        "                and len(lines[i]) - len(lines[i].lstrip(\" \")) < 2), len(lines))"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin reads comments as code, so a comment naming the anchor counts as a second one",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    every = [re.sub(r\"(?:^|\\s)#.*\", \"\", ln) for ln in lines]",
+        "    every = list(lines)"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step"
     ]
   }
 ]

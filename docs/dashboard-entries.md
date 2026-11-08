@@ -18991,7 +18991,11 @@ last line names what did not finish and what was never reached, instead of the j
 then showed that budget could still overrun: it started counting only when the test run began (after a few setup steps),
 could read the time limit from the wrong place in the workflow file, and could be skipped or doubled by a wrong command-line
 option. Now the clock starts at the job's very first step, the time limit is read from exactly the right place, the event is
-taken from GitHub's own setting, and the last line is printed before any cleanup. The
+taken from GitHub's own setting, and the last line is printed before any cleanup. A third review found two
+more small holes in how the time limit was read from the workflow file, so that reading was removed altogether: the
+workflow now hands the job's own time limit to the check directly (one value, used in both places), and if GitHub
+does not deliver it as a whole number the run refuses to start rather than run without a budget. One CI run still
+has to confirm that GitHub delivers it. The
 harness's own self-check also uses about 10% less CPU per run, though the run's wall time did not change measurably on this
 machine. The full test run is still near its time limit (backlog 231 stays open).
 <!--tech-->
@@ -19007,7 +19011,14 @@ r2 fold (Codex R2-F1..F3, fix-induced): `ci_deadline` builds the deadline on CI 
 inputs — `SWEEP_JOB_START` (the epoch the sweep job's first step writes to `$GITHUB_ENV`), `GITHUB_EVENT_NAME` (a disagreeing
 `--event` is CANNOT RUN), `GITHUB_JOB` — and `workflow_value` reads exactly `jobs.<job>.timeout-minutes`, refusing YAML outside
 its subset; `mutate_delivered(hold=…)` defers teardown until `main` has flushed the report. Off CI `--event` starts no budget.
-Self-test 407 -> 431; manifest 280 -> 300 (seven re-bound). `_walks_dir` indexes lister calls and flows
+Self-test 407 -> 431; manifest 280 -> 300 (seven re-bound). r3 fold, after Phase 6 (`docs/reviews/architecture-review-2026-11-08-sweep-deadline.md`,
+THRASHING): ci.yml anchors the job's `timeout-minutes: &sweep-limit ${{ … }}` and aliases it into the sweep step's env as
+`SWEEP_TIMEOUT_MINUTES: *sweep-limit`; `ci_deadline` reads that integer (`[1-9][0-9]{0,3}`, else CANNOT RUN). Deleted:
+`_yaml_entries`, `workflow_value`, `sweep_budget`, the `GITHUB_JOB` lookup (R3-F2 dissolved). New `sweep_limit_pin` (static,
+line patterns over the job) holds the anchor, the alias in the `--mutate` step, the epoch first step, and ONE
+`timeout-minutes` in any spelling (R3-F1 closed). Self-test 431 -> 418; manifest 300 -> 301 (14 retired on deleted code, 2
+re-bound, 15 added). `check-merge-ready.py`'s accounted mention follows the anchored line. PENDING: the first CI run's
+`TIME BUDGET — 1680s … SWEEP_TIMEOUT_MINUTES=30` line in every shard. `_walks_dir` indexes lister calls and flows
 by enclosing scope in one walk (backlog #231): identical answers on all 99 `scripts/*.py`, 22-53% less CPU. Self-test 373 -> 407
 cases; manifest 228 -> 280 entries (52 added, none retired; three retargeted for F3). Filed backlog #564 (the fixture-variation mutant whose cost grows
 with the repository) and backlog #565 (the self-test's full `docs/` stage copy).

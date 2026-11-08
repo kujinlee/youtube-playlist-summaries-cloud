@@ -1052,14 +1052,16 @@ jobs:
     # (shard) and shared by its controls and mutants. Measured on a Mac, a 30-mutant slice: 32.5 s unseeded,
     # 57.6 s seeded (the per-mutant copies it replaced took 201-414 s). Not measured on this runner; the
     # first nightly is the measurement, and a timeout still files `sweep-red`.
-    # ⛔ PR #538 r1 fold (backlog #558): THE HARNESS READS THIS LINE. `check-plan-code.sweep_budget` takes the run's
-    # cumulative time budget from it (less SWEEP_HEADROOM, 120 s), so a shard whose hung mutants would outlast the
-    # job STOPS and prints what it lost instead of being killed. Keep a bare integer or this `event_name == 'E' &&
-    # A || B` shape: any other is CANNOT RUN in every shard, and the harness's self-test (which reads this file)
-    # goes red first, in the PR that changes it. ⟳ r2 fold: it is read at exactly `jobs.<GITHUB_JOB>.timeout-minutes`
-    # (`workflow_value`, which refuses YAML outside its subset rather than searching), for GITHUB_EVENT_NAME, and
-    # counted from the epoch the job's first step writes; this job must keep ONE timeout-minutes, its own.
-    timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
+    # ⛔ PR #538 (backlog #558): THE SWEEP'S TIME BUDGET IS THIS VALUE, AND THE HARNESS NEVER PARSES THIS FILE FOR IT.
+    # The anchor `&sweep-limit` is aliased into the sweep step's env (`SWEEP_TIMEOUT_MINUTES: *sweep-limit`), so the
+    # runner evaluates ONE YAML node for both the job's kill and the harness's budget; `check-plan-code.ci_deadline`
+    # reads that integer (less SWEEP_HEADROOM, 120 s) from the step's environment and counts it from the epoch the
+    # job's first step writes. A missing or non-integer value is CANNOT RUN in every shard, never a default. Keep
+    # the anchor on this line, the alias in the sweep step, and ONE timeout-minutes in this job (a step-level one
+    # would kill the step before the budget ran out): `check-plan-code.sweep_limit_pin`, run by its self-test, reds
+    # the PR that breaks any of the three. (Architecture review 2026-11-08, sweep-deadline: this replaced a YAML
+    # subset reader that three review rounds kept finding holes in.)
+    timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
       # cancelling them turns one finding into an unknown — the reader needs every survivor
@@ -1276,6 +1278,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           RUN_ID: ${{ github.run_id }}
+          # The job's own timeout-minutes, the SAME YAML node (an alias of `&sweep-limit` above): the harness's budget.
+          SWEEP_TIMEOUT_MINUTES: *sweep-limit
         # ⟳ 2026-11-06, backlog #506 — THE CLASS CHECK. A mutant can be "killed" only when a hash order falls
         # the right way (measured: dropping `sorted()` in check-review-decision survived under 4 seeds of
         # 0-599), and then it reds an unrelated PR's sweep about once in N runs. On the SCHEDULE only, every
