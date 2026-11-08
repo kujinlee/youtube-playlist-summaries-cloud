@@ -349,7 +349,11 @@ EXPECTED_MUTATIONS = {
     # (Phase 6 review): its 25 entries went with it, so this branch adds 9 net.
     # ⟳ 2026-11-07, backlog #406 (suite cost): 325 -> 327 — the sibling import loses its memo, and its key loses the
     # file stamp (a rewritten sibling served stale).
-    "scripts/goal-tree.py": 327,
+    # ⟳ 2026-11-08, PR #537 round 1's fold: 327 -> 333, none retired; the two above RE-BOUND to the new key (the memo
+    # never consulted; a hit that checks nothing). Six new: the hit skips the sibling's own bytes, never keys the files its
+    # import loaded, the audit hook not installed, the hook blind to `open`, the real pycache_prefix kept (a stale
+    # .pyc), and the memo keyed on the name instead of the path.
+    "scripts/goal-tree.py": 333,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

@@ -18985,3 +18985,20 @@ entries) has no producer in any commit (`git log --all -G`); the newest is 11-05
 Three of the slowest checks in the full test run now do less repeated work, and they still test exactly the same things. Each check's tests run again for every deliberately broken copy of that check, so a few seconds saved per run adds up across hundreds of copies. The usage-pace check stops re-reading the same log lines in its largest test. The check that tests whether a script's entry point can be driven stops re-analysing the same script files. The goal-tree page stops re-loading the same helper scripts. Measured on a heavily loaded machine: about a fifth to a third less work for each. The 30-minute limit per test group (backlog #231) stays open until CI confirms it.
 <!--tech-->
 Backlog #231 and backlog #406, branch `suite-cost-a`. `scripts/check-usage-pace.py`: `meter_row(line)` (an `lru_cache`, 4096) holds the per-line parse `pace_line` did inline; calls 8.11 M → 5.33 M. `scripts/check-main-drivable.py`: `_memo_by_node` on `argv_forwarders`, `dispatches_a_suite`, `suite_entries`, `suite_reachable`, `_dead_branch_ids`; `classify` is an `lru_cache(256)` on `(text, path)`, and the seven named real-guard cases pass the live reconcile's path so it hits; calls 67.6 M → 55.5 M. `scripts/goal-tree.py`: `_sibling` → `_sibling_at(name, path, mtime_ns, size)` (an `lru_cache`, 16), so a rewritten sibling is imported afresh; suite CPU ~2.9 → ~1.9 s. New cases: each cache hits, a changed input gets its own answer (a changed line, a different tree, a different text or path, a rewritten sibling). Mutations: check-main-drivable 201 → 208, check-usage-pace 174 → 175, goal-tree 325 → 327; cases 455 → 462, 392 → 393, 428 → 431.
+
+## 2026-11-08
+The goal-tree check's speed-up from yesterday could, in rare cases, use an out-of-date copy of a helper script: if a
+helper was rewritten to exactly the same length with its timestamp put back, or if only a file the helper itself loads
+changed. Now it compares the actual contents of the helper and of every file the helper read, and it never runs
+Python's saved compiled copy. It keeps the speed-up: about 2 seconds a run instead of about 17 when nothing is
+pre-compiled, which is how the mutation sweep runs it.
+<!--tech-->
+Backlog #406 and backlog #231, PR #537 round 1's fold. `scripts/goal-tree.py`: `_sibling_at`'s `(name, path, mtime_ns,
+size)` key is replaced by `_SIBLING_MEMO` keyed on the path; a hit compares the sibling's bytes and the bytes of every
+path opened during its import (a `sys.addaudithook` `open` hook) with what the import read; the import runs under an empty
+`sys.pycache_prefix` with `dont_write_bytecode`, so nothing comes from a `.pyc`. Cases 431 → 434 (same-size rewrite with
+the mtime restored and a stale `.pyc` planted; a dependency-only change, likewise; one name in two directories);
+mutations 327 → 333. MEASURED (no `__pycache__`, interleaved, 3 runs, load 21 → 15): master 18.07 / 17.34 / 15.69 s,
+round-1 head 2.55 / 1.95 / 1.79 s, this fold 2.27 / 2.25 / 1.81 s; keying on every `scripts/*.py` instead: 5.35 / 4.51 /
+5.60 s. With a warm `__pycache__` this fold is slower than master locally (2.28-3.65 s vs 2.39-2.98 s), the price of
+never reading bytecode.
