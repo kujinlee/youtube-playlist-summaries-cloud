@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 437 cases
+    python3 scripts/goal-tree.py --self-test                 # 438 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -91,6 +91,7 @@ EXIT CODES (repo convention): 0 = done · 1 = `docs/goal-threads.md` or the log 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import html
 import importlib.util
@@ -98,10 +99,7 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import sys
-import tempfile
-import threading
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
@@ -185,94 +183,53 @@ QUEUED_RELATIONS = ("fix", "blocker")    # review r1 C2: declared under a goal, 
 def _sibling(name: str):
     """A hyphenated sibling script, imported by path (one rule, one place — not a copy of it).
 
-    ⚠ ONE IMPORT PER STATE OF EVERYTHING IT READ (backlog #406): the suite asked for the same three siblings ~180
-    times and each call re-executed the whole module, which was most of the suite. A lookup is a hit only when the
-    sibling's own bytes AND the bytes of every file its import opened (`gen-backlog-page` loads `check-docs.py` for
-    `CELL_SPLIT`; `gen-dashboard` loads its grammar gate) are what the cached import read — compared byte for byte,
-    so a same-size rewrite with the mtime put back is a miss (r1 Codex F1, F2). The import itself reads SOURCE,
-    never `__pycache__` (`_sibling_import`), so a miss is a fresh module and never stale bytecode (r1 Claude F2).
+    ⚠ OUTSIDE A SWEEP, EVERY CALL IS A FRESH IMPORT, as it always was: a process that rewrites a sibling, or a
+    file the sibling reads at import, gets the new one on its next call. The sibling's OWN bytes are compiled
+    directly (`compile`, never its `__pycache__`), so a same-size rewrite in the same second, or with the mtime
+    put back, is never served old bytecode (r1 Claude F2). A module the sibling itself loads by path is loaded
+    by Python's own rules, `.pyc` included, as before this cache existed.
 
-    ⚠ THE BOUND: the key is FILES OPENED during the import. A directory listing, an environment variable or the
-    clock read at import is not in it; nor is a module the import reached by a plain `import`, which Python serves
-    from `sys.modules` either way (as the uncached import did). A path opened RELATIVE is re-read relative to the
-    working directory of the lookup, and a dependency rewritten DURING the import can be keyed on its new bytes. A
-    shared module is safe because nothing here writes a sibling's attributes; a caller that patches one must call
-    `_SIBLING_MEMO.clear()` after.
+    ⚠ INSIDE `_sibling_sweep()` (backlog #406): the suite asked for the same three siblings ~180 times and each
+    call re-executed the whole module, which was most of the suite. In a sweep a sibling is imported ONCE PER
+    PATH and that module is returned after. THE BOUND, and the reason it is safe: a sweep reads the tree as it
+    stood when it started, as a process's own `import` does. Nothing in it rewrites a real sibling, and the
+    mutation harness gives each mutant a fresh process. A sweep that rewrites a sibling, or a file one reads at
+    import, is served the first import — which is why the cache lives only there (Phase 6, 2026-11-08:
+    `docs/reviews/architecture-review-2026-11-08-goal-tree-sibling-cache.md`). Nothing here writes a sibling's
+    attributes; a caller in a sweep that patches one must undo it.
 
-    ⛔ OVERLAP CANNOT CORRUPT IT (r2 Codex F1, F2): one re-entrant lock is held for the whole lookup, import and
-    record, so two threads' imports SERIALISE and a sibling that calls `_sibling` during its own import re-enters.
-    Each import in progress has its OWN read-list on `_SIBLING_STACK`, and a read is noted in every list on it,
-    since an outer import depends on what its inner imports read — and an inner import that FAILS builds no key of
-    its own, so the outer list is then the only record of it. A thread that is not importing but opens a file
-    meanwhile is noted too: an extra key entry, which can only cause a miss."""
+    The memo is one dict and its only writes are whole-key stores, so a re-entrant import (a sibling calling
+    `_sibling` during its own) and two threads need no lock: the worst overlap imports one path twice, and
+    either module is a correct import of the same bytes."""
     path = str(SCRIPTS / f"{name}.py")
-    with _SIBLING_LOCK:
-        hit = _SIBLING_MEMO.get(path)
-        if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):
-            return hit[1]
-        reads, mod = _sibling_import(name, path)
-        _SIBLING_MEMO[path] = (reads, mod)
-        return mod
-
-
-# backlog #406: path -> (((file, its bytes as the import read them), ...), module). The sibling itself is first.
-_SIBLING_MEMO: dict = {}
-_SIBLING_LOCK = threading.RLock()        # r2 Codex F2: held for a whole lookup; re-entrant for r2 Codex F1
-_SIBLING_STACK: list = []                # one read-list per import in progress, outermost first; empty when idle
-
-
-def _note_open(event: str, args: tuple) -> None:
-    """Audit hook: while a sibling imports, note each path it opens in EVERY import in progress (r2 Codex F1). Kept
-    to a test and appends — it must not raise, since an audit hook's exception aborts the operation that raised
-    the event."""
-    if _SIBLING_STACK and event == "open" and args and isinstance(args[0], (str, bytes, os.PathLike)):
-        for opened in _SIBLING_STACK:
-            opened.append(args[0])
-
-
-sys.addaudithook(_note_open)
-
-
-def _bytes_of(path: str):
-    """The file's bytes, or None when it cannot be read: absence is a state too, and compares like one."""
-    try:
-        return pathlib.Path(path).read_bytes()
-    except OSError:
-        return None
-
-
-def _sibling_import(name: str, path: str):
-    """`_sibling`'s miss: `(reads, module)`. The sibling's bytes are read BEFORE it runs, so a rewrite racing the
-    import leaves the key OLDER than what ran: the next lookup misses, never serves stale.
-
-    ⛔ NO BYTECODE (r1 Claude F2): `.pyc` freshness is the source's mtime in SECONDS plus its size, so a same-size
-    rewrite in the same second (or with the mtime put back) is served the old code. While the sibling imports,
-    `pycache_prefix` is an empty directory and writing is off, so the sibling and every module it loads by path
-    are compiled from source. Only the OUTERMOST import (stack depth 0 -> 1 -> 0) saves and restores the two
-    settings, so an inner one never saves the outer's temporary values as if they were the originals (r2 Codex F2).
-    Called with `_SIBLING_LOCK` held."""
-    reads, seen = [(path, pathlib.Path(path).read_bytes())], {path}
+    memo = _SIBLING_MEMO
+    if memo is not None and path in memo:
+        return memo[path]
     spec = importlib.util.spec_from_file_location("_" + name.replace("-", "_"), path)
     mod = importlib.util.module_from_spec(spec)
-    opened: list = []
-    outermost = not _SIBLING_STACK
-    if outermost:
-        saved = sys.dont_write_bytecode, sys.pycache_prefix
-        nowhere = tempfile.mkdtemp()
-        sys.dont_write_bytecode, sys.pycache_prefix = True, nowhere
-    _SIBLING_STACK.append(opened)
+    exec(compile(pathlib.Path(path).read_bytes(), path, "exec", dont_inherit=True), mod.__dict__)
+    if memo is not None:
+        memo[path] = mod
+    return mod
+
+
+# backlog #406: path -> module, and only inside `_sibling_sweep()`. None means every call imports afresh.
+_SIBLING_MEMO: dict | None = None
+
+
+@contextlib.contextmanager
+def _sibling_sweep():
+    """Import each sibling once per path for the duration (backlog #406). ONLY the self-test (`_self_test_body`)
+    opens one: it is the one caller that asks for the same siblings ~180 times, and the one whose files do not
+    change while it asks. The previous state is put back in `finally`, so a sweep that raises does not leave the
+    memo on; a nested sweep shares the outer one's memo."""
+    global _SIBLING_MEMO
+    saved = _SIBLING_MEMO
+    _SIBLING_MEMO = {} if saved is None else saved
     try:
-        spec.loader.exec_module(mod)
+        yield
     finally:
-        _SIBLING_STACK.pop()
-        if outermost:
-            sys.dont_write_bytecode, sys.pycache_prefix = saved
-            shutil.rmtree(nowhere, ignore_errors=True)
-    for p in map(os.fsdecode, opened):
-        if p not in seen:
-            seen.add(p)
-            reads.append((p, _bytes_of(p)))
-    return tuple(reads), mod
+        _SIBLING_MEMO = saved
 
 
 _SS = _sibling("session-state")   # clean(), check_summary(), read_ledger(), _run()
@@ -2380,13 +2337,67 @@ BACKLOG_BAD = BACKLOG_FIXTURE + "| x9 | broken row | x |\n"
 # ── self-test ─────────────────────────────────────────────────────────────────────────────────
 def _self_test() -> int:
     """No git and no gh: every source is a fixture, injected through `run`. Wrapped anyway, so that a
-    later case that does reach git cannot inherit the caller's GIT_* (backlog #373)."""
+    later case that does reach git cannot inherit the caller's GIT_* (backlog #373). The body runs in ONE
+    `_sibling_sweep()` (backlog #406); what a caller OUTSIDE a sweep sees is observed first, before it starts."""
     import fixture_git
     with fixture_git.isolated():
         return _self_test_body()
 
 
 def _self_test_body() -> int:
+    """backlog #406: observe a caller outside any sweep, THEN run every case inside one sweep."""
+    outside = _sibling_outside_probe()
+    with _sibling_sweep():
+        return _self_test_cases(outside=outside)
+
+
+def _rewrite_same_stamp(f: pathlib.Path, text: str) -> None:
+    """Rewrite `f` at the SAME size and put its mtime back: nothing a stat can see has changed."""
+    st = f.stat()
+    assert len(text.encode()) == st.st_size, "the rewrite must keep the size"
+    f.write_text(text, encoding="utf-8")
+    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
+def _sibling_outside_probe() -> dict:
+    """backlog #406: what `_sibling` does for a caller that is NOT in a sweep — every real caller, since only the
+    self-test opens one. Run before the self-test's sweep starts, so it sees the module's own default state."""
+    import py_compile
+    import tempfile
+    got = {"fresh": _sibling("gen-work-lines") is not _sibling("gen-work-lines")}
+    real = SCRIPTS
+    with tempfile.TemporaryDirectory() as td:
+        d = pathlib.Path(td)
+        (d / "sib-x.py").write_text("V = 1\n", encoding="utf-8")
+        (d / "sib-s.py").write_text("V = 1\n", encoding="utf-8")
+        (d / "dep-d.py").write_text("W = 1\n", encoding="utf-8")
+        (d / "sib-d.py").write_text(
+            "import importlib.util, pathlib\n"
+            "_s = importlib.util.spec_from_file_location('_dep_d', pathlib.Path(__file__).with_name('dep-d.py'))\n"
+            "_m = importlib.util.module_from_spec(_s)\n"
+            "_s.loader.exec_module(_m)\n"
+            "V = _m.W\n", encoding="utf-8")
+        globals()["SCRIPTS"] = d
+        try:
+            x1 = _sibling("sib-x").V
+            (d / "sib-x.py").write_text("V = 22\n", encoding="utf-8")
+            got["rewritten"] = (x1, _sibling("sib-x").V)
+            # r1 Codex F1 + Claude F2: same size, mtime put back, and a .pyc of the OLD source waiting.
+            s1 = _sibling("sib-s").V
+            py_compile.compile(str(d / "sib-s.py"), cfile=importlib.util.cache_from_source(str(d / "sib-s.py")),
+                               doraise=True)
+            _rewrite_same_stamp(d / "sib-s.py", "V = 2\n")
+            got["same_stamp"] = (s1, _sibling("sib-s").V)
+            # r1 Codex F2: only the file the sibling LOADS changes.
+            d1 = _sibling("sib-d").V
+            (d / "dep-d.py").write_text("W = 22\n", encoding="utf-8")
+            got["dependency"] = (d1, _sibling("sib-d").V)
+        finally:
+            globals()["SCRIPTS"] = real
+    return got
+
+
+def _self_test_cases(*, outside: dict) -> int:
     import contextlib
     import io
     import tempfile
@@ -2416,140 +2427,61 @@ def _self_test_body() -> int:
             "## GOAL beta\n"
             '> 2026-10-28 03:41 "the second goal"\n'
             "- bookkeeping · PR #20 · filed rows\n")
-    # ── backlog #406: a sibling is imported ONCE PER FILE STATE, never served stale ───────────────────
+    # ── backlog #406: a sibling is imported ONCE PER PATH inside a sweep, and afresh outside one ──────────
     case("backlog #406: the same sibling twice is ONE import", _sibling("gen-work-lines") is _sibling("gen-work-lines"),
          True)
-    import py_compile
-
-    def _rewrite_same_stamp(f: pathlib.Path, text: str) -> None:
-        """Rewrite `f` at the SAME size and put its mtime back: nothing a stat can see has changed."""
-        st = f.stat()
-        assert len(text.encode()) == st.st_size, "the rewrite must keep the size"
-        f.write_text(text, encoding="utf-8")
-        os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))
-
-    def _plant_pyc(f: pathlib.Path) -> None:
-        """Compile `f` into its own `__pycache__` now, as an earlier run would have: a stale-bytecode trap."""
-        py_compile.compile(str(f), cfile=importlib.util.cache_from_source(str(f)), doraise=True)
-
+    case("backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports", outside["fresh"], True)
+    case("backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+         outside["rewritten"], (1, 22))
+    case("backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a "
+         "stale .pyc (r1 Codex F1, Claude F2)", outside["same_stamp"], (1, 2))
+    case("backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)",
+         outside["dependency"], (1, 22))
     _real_scripts = SCRIPTS
     with tempfile.TemporaryDirectory() as _std:
         _sd = pathlib.Path(_std)
         (_sd / "a").mkdir()
         (_sd / "b").mkdir()
-        (_sd / "sib-x.py").write_text("V = 1\n", encoding="utf-8")
-        (_sd / "sib-s.py").write_text("V = 1\n", encoding="utf-8")
-        (_sd / "dep-d.py").write_text("W = 1\n", encoding="utf-8")
-        (_sd / "sib-d.py").write_text(
-            "import importlib.util, pathlib\n"
-            "_s = importlib.util.spec_from_file_location('_dep_d', pathlib.Path(__file__).with_name('dep-d.py'))\n"
-            "_m = importlib.util.module_from_spec(_s)\n"
-            "_s.loader.exec_module(_m)\n"
-            "V = _m.W\n", encoding="utf-8")
         (_sd / "a" / "sib-p.py").write_text("V = 1\n", encoding="utf-8")
         (_sd / "b" / "sib-p.py").write_text("V = 2\n", encoding="utf-8")
-        globals()["SCRIPTS"] = _sd
+        (_sd / "sib-n.py").write_text("V = 1\n", encoding="utf-8")
+        # goal-tree itself has `from __future__ import annotations`; a sibling must not compile under it.
+        (_sd / "sib-f.py").write_text("def f(a: int): pass\nV = f.__annotations__['a'] is int\n", encoding="utf-8")
         try:
-            _v1 = _sibling("sib-x").V
-            _v1_again = _sibling("sib-x").V
-            (_sd / "sib-x.py").write_text("V = 22\n", encoding="utf-8")
-            _v2 = _sibling("sib-x").V
-            # r1 Codex F1 + Claude F2: same size, mtime put back, and a .pyc of the OLD source waiting.
-            _s1 = _sibling("sib-s").V
-            _plant_pyc(_sd / "sib-s.py")
-            _rewrite_same_stamp(_sd / "sib-s.py", "V = 2\n")
-            _s2 = _sibling("sib-s").V
-            # r1 Codex F2: only the file the sibling LOADS changes — same size, mtime put back, old .pyc waiting.
-            _d1 = _sibling("sib-d").V
-            _plant_pyc(_sd / "dep-d.py")
-            _rewrite_same_stamp(_sd / "dep-d.py", "W = 2\n")
-            _d2 = _sibling("sib-d").V
             globals()["SCRIPTS"] = _sd / "a"
             _p1 = _sibling("sib-p").V
             globals()["SCRIPTS"] = _sd / "b"
             _p2 = _sibling("sib-p").V
+            globals()["SCRIPTS"] = _sd
+            _f = _sibling("sib-f").V
+            # A nested sweep shares the outer one's memo: what it imported is still the module after it ends.
+            with _sibling_sweep():
+                _n_inner = _sibling("sib-n")
+            _n_shared = _sibling("sib-n") is _n_inner
+            # A sweep that RAISES puts the previous state back (r3 Claude F1/F5's lesson: the restore is in
+            # `finally`, and a case makes that load-bearing). Opened from the no-sweep state, as a real caller would.
+            _held, globals()["_SIBLING_MEMO"] = _SIBLING_MEMO, None
+            try:
+                try:
+                    with _sibling_sweep():
+                        _sibling("sib-n")
+                        raise ValueError("the sweep fails")
+                except ValueError:
+                    pass
+                _after_raise = (_SIBLING_MEMO is None, _sibling("sib-n") is not _sibling("sib-n"))
+            finally:
+                globals()["_SIBLING_MEMO"] = _held
         finally:
             globals()["SCRIPTS"] = _real_scripts
-    case("backlog #406: a sibling REWRITTEN in this process is imported afresh, never the cached module",
-         (_v1, _v1_again, _v2), (1, 1, 22))
-    case("backlog #406: a SAME-SIZE rewrite with the mtime put back is a miss, and never served from a stale .pyc "
-         "(r1 Codex F1, Claude F2)", (_s1, _s2), (1, 2))
-    case("backlog #406: a change ONLY in a file the sibling's import loads is a miss, compiled from source "
-         "(r1 Codex F2)", (_d1, _d2), (1, 2))
     case("backlog #406: one name in two directories is two imports — the memo is keyed on the PATH", (_p1, _p2),
          (1, 2))
+    case("backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags", _f, True)
+    case("backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends",
+         _n_shared, True)
+    case("backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again",
+         _after_raise, (True, True))
     case("backlog #406: ...and SCRIPTS is restored, so the real siblings are read again",
          _sibling("gen-work-lines").__name__, "_gen_work_lines")
-    # ── r2 Codex F1, F2: a re-entrant import, and two overlapping in two threads ───────────────────
-    # The siblings reach `_sibling` and the events through a module served from `sys.modules` (no file opened).
-    import types
-    _probe = types.SimpleNamespace(sibling=_sibling, ev={k: threading.Event() for k in ("t1_in", "t2_in", "t1_done")},
-                                   saw=[], errors=[])
-    _orig_bytecode = (sys.dont_write_bytecode, sys.pycache_prefix)
-    with tempfile.TemporaryDirectory() as _rtd:
-        _rd = pathlib.Path(_rtd)
-        _data = "int(pathlib.Path(__file__).with_name('{}').read_text())"
-        # F1: A imports B, THEN reads its own data file.
-        (_rd / "sib-ra.py").write_text("import _gt_probe as g, pathlib\nB = g.sibling('sib-rb').V\n"
-                                       f"V = (B, {_data.format('ra.txt')})\n", encoding="utf-8")
-        (_rd / "sib-rb.py").write_text("V = 1\n", encoding="utf-8")
-        (_rd / "ra.txt").write_text("1", encoding="utf-8")
-        # The inner import's read: A imports B, only B reads the data file, and B FAILS on it, which A catches. A
-        # failed import builds no key, so the outer list is the only record of B's read (a successful B's key is
-        # built by reading its files again with A on the stack, which A would record either way).
-        (_rd / "sib-oa.py").write_text("import _gt_probe as g\ntry:\n    V = g.sibling('sib-ob').V\n"
-                                       "except ValueError:\n    V = 'inner failed'\n", encoding="utf-8")
-        (_rd / "sib-ob.py").write_text(f"import pathlib\nV = {_data.format('ob.txt')}\n"
-                                       "if V == 1:\n    raise ValueError('not yet')\n", encoding="utf-8")
-        (_rd / "ob.txt").write_text("1", encoding="utf-8")
-        # F2: T1 enters and waits (bounded) for T2 to enter; T2 waits for T1 to finish, then reads its data file.
-        # Without the lock T2 enters at once and T1 finishes inside T2's import — Codex's interleaving, by events.
-        # With it T2 cannot enter, so T1's bounded wait is what times out: `saw` records whether T2 got in.
-        (_rd / "sib-t1.py").write_text("import _gt_probe as g\ng.ev['t1_in'].set()\n"
-                                       "g.saw.append(g.ev['t2_in'].wait(0.2))\nV = 1\n", encoding="utf-8")
-        (_rd / "sib-t2.py").write_text("import _gt_probe as g, pathlib\ng.ev['t2_in'].set()\n"
-                                       f"g.ev['t1_done'].wait(10)\nV = {_data.format('t2.txt')}\n",
-                                       encoding="utf-8")
-        (_rd / "t2.txt").write_text("1", encoding="utf-8")
-        sys.modules["_gt_probe"] = _probe
-        globals()["SCRIPTS"] = _rd
-        try:
-            _ra1 = _sibling("sib-ra").V
-            (_rd / "ra.txt").write_text("2", encoding="utf-8")
-            _ra2 = _sibling("sib-ra").V
-            _oa1 = _sibling("sib-oa").V
-            (_rd / "ob.txt").write_text("2", encoding="utf-8")
-            _oa2 = _sibling("sib-oa").V
-
-            def _run(name, done=None):
-                try:
-                    _sibling(name)
-                except BaseException as e:      # a thread's exception is otherwise only printed
-                    _probe.errors.append(repr(e))
-                finally:
-                    if done is not None:
-                        done.set()
-            _t1 = threading.Thread(target=_run, args=("sib-t1", _probe.ev["t1_done"]))
-            _t2 = threading.Thread(target=_run, args=("sib-t2",))
-            _t1.start()
-            _t1_entered = _probe.ev["t1_in"].wait(10)
-            _t2.start()
-            _t1.join(20)
-            _t2.join(20)
-            _after_threads = (sys.dont_write_bytecode, sys.pycache_prefix)
-            (_rd / "t2.txt").write_text("2", encoding="utf-8")
-            _t2v = _sibling("sib-t2").V
-        finally:
-            globals()["SCRIPTS"] = _real_scripts
-            sys.modules.pop("_gt_probe", None)
-    case("backlog #406 r2 Codex F1: a RE-ENTRANT import (A calls _sibling(B) during its own) keeps A's LATER reads "
-         "in A's key, so a change to them is a miss", (_ra1, _ra2), ((1, 1), (1, 2)))
-    case("backlog #406 r2 Codex F1: a file only the INNER import read is in the OUTER key too — even when the inner "
-         "import FAILED and the outer caught it — so its change is a miss", (_oa1, _oa2), ("inner failed", 2))
-    case("backlog #406 r2 Codex F2: two threads' imports SERIALISE — the second never enters while the first runs, "
-         "its later read stays in its key, and the bytecode settings are the originals after both",
-         (_t1_entered, _probe.saw, _probe.errors, _after_threads == _orig_bytecode, _t2v),
-         (True, [False], [], True, 2))
 
     goals = parse_threads(good)
 

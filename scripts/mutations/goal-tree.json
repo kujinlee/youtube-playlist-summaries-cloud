@@ -4229,108 +4229,60 @@
     ]
   },
   {
-    "name": "backlog #406: the sibling memo is never consulted, so every call re-executes the sibling",
+    "name": "backlog #406: the sibling memo is never consulted, so every call in the sweep re-executes the sibling",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):\n            return hit[1]",
-        "        if False and hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):\n            return hit[1]"
+        "    if memo is not None and path in memo:\n        return memo[path]",
+        "    if False and memo is not None and path in memo:\n        return memo[path]"
       ]
     ],
     "expect": [
-      "backlog #406: the same sibling twice is ONE import"
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
     ]
   },
   {
-    "name": "backlog #406: a memo hit checks nothing it read, so a rewritten sibling is served stale",
+    "name": "backlog #406: a miss is never stored in the memo, so every call in the sweep re-executes the sibling",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "if hit is not None and all(_bytes_of(p) == b for p, b in hit[0]):",
-        "if hit is not None and True:"
+        "        memo[path] = mod\n",
+        "        pass\n"
       ]
     ],
     "expect": [
-      "backlog #406: a sibling REWRITTEN in this process is imported afresh, never the cached module"
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
     ]
   },
   {
-    "name": "backlog #406 r1 Codex F1: a memo hit skips the sibling's OWN bytes, so a same-stamp rewrite is served stale",
+    "name": "backlog #406: the memo is ON by default, so a caller outside any sweep is served a rewritten sibling stale",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "all(_bytes_of(p) == b for p, b in hit[0])",
-        "all(_bytes_of(p) == b for p, b in hit[0][1:])"
+        "_SIBLING_MEMO: dict | None = None",
+        "_SIBLING_MEMO: dict | None = {}"
       ]
     ],
     "expect": [
-      "backlog #406: a SAME-SIZE rewrite with the mtime put back is a miss, and never served from a stale .pyc (r1 Codex F1, Claude F2)"
+      "backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports",
+      "backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)",
+      "backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)"
     ]
   },
   {
-    "name": "backlog #406 r1 Codex F2: the files the import LOADED are never put in the key, so a dependency's change is served stale",
+    "name": "backlog #406: the memo is keyed on the NAME, so one name in two directories shares a module",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            reads.append((p, _bytes_of(p)))",
-        "            pass"
-      ]
-    ],
-    "expect": [
-      "backlog #406: a change ONLY in a file the sibling's import loads is a miss, compiled from source (r1 Codex F2)"
-    ]
-  },
-  {
-    "name": "backlog #406 r1 Codex F2: the audit hook is never installed, so the import's own reads are not recorded",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "\nsys.addaudithook(_note_open)\n",
-        "\n"
-      ]
-    ],
-    "expect": [
-      "backlog #406: a change ONLY in a file the sibling's import loads is a miss, compiled from source (r1 Codex F2)"
-    ]
-  },
-  {
-    "name": "backlog #406 r1 Codex F2: the hook records no `open` event, so the import's own reads are not recorded",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "and event == \"open\" and args",
-        "and event == \"never\" and args"
-      ]
-    ],
-    "expect": [
-      "backlog #406: a change ONLY in a file the sibling's import loads is a miss, compiled from source (r1 Codex F2)"
-    ]
-  },
-  {
-    "name": "backlog #406 r1 Claude F2: the import keeps the real pycache_prefix, so a stale .pyc is served on a miss",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "sys.dont_write_bytecode, sys.pycache_prefix = True, nowhere",
-        "sys.dont_write_bytecode = True"
-      ]
-    ],
-    "expect": [
-      "backlog #406: a SAME-SIZE rewrite with the mtime put back is a miss, and never served from a stale .pyc (r1 Codex F1, Claude F2)",
-      "backlog #406: a change ONLY in a file the sibling's import loads is a miss, compiled from source (r1 Codex F2)"
-    ]
-  },
-  {
-    "name": "backlog #406: the sibling memo is keyed on the NAME, so one name in two directories shares a module",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "hit = _SIBLING_MEMO.get(path)",
-        "hit = _SIBLING_MEMO.get(name)"
+        "path in memo:\n        return memo[path]",
+        "name in memo:\n        return memo[name]"
       ],
       [
-        "_SIBLING_MEMO[path] = (reads, mod)",
-        "_SIBLING_MEMO[name] = (reads, mod)"
+        "        memo[path] = mod\n",
+        "        memo[name] = mod\n"
       ]
     ],
     "expect": [
@@ -4338,55 +4290,98 @@
     ]
   },
   {
-    "name": "backlog #406 r2 Codex F1: an inner import's exit CLEARS every read-list, so the outer import's later reads are not in its key",
+    "name": "backlog #406 r1 Claude F2: the sibling is loaded through its __pycache__, so a same-stamp rewrite is served a stale .pyc",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        _SIBLING_STACK.pop()\n",
-        "        del _SIBLING_STACK[:]\n"
+        "    exec(compile(pathlib.Path(path).read_bytes(), path, \"exec\", dont_inherit=True), mod.__dict__)\n",
+        "    spec.loader.exec_module(mod)\n"
       ]
     ],
     "expect": [
-      "backlog #406 r2 Codex F1: a RE-ENTRANT import (A calls _sibling(B) during its own) keeps A's LATER reads in A's key, so a change to them is a miss"
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)"
     ]
   },
   {
-    "name": "backlog #406 r2 Codex F1: a read is noted only in the INNERMOST import, so the outer key misses what its inner import read",
+    "name": "backlog #406: the sweep's restore is not in finally, so a sweep that raises leaves the memo on",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "for opened in _SIBLING_STACK:",
-        "for opened in _SIBLING_STACK[-1:]:"
+        "    try:\n        yield\n    finally:\n        _SIBLING_MEMO = saved\n",
+        "    yield\n    _SIBLING_MEMO = saved\n"
       ]
     ],
     "expect": [
-      "backlog #406 r2 Codex F1: a file only the INNER import read is in the OUTER key too — even when the inner import FAILED and the outer caught it — so its change is a miss"
+      "backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again"
     ]
   },
   {
-    "name": "backlog #406 r2 Codex F2: no lock, so two threads' imports overlap and one pops the other's read-list",
+    "name": "backlog #406: the sweep never restores the previous state, so the memo stays on after it",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "    with _SIBLING_LOCK:\n",
-        "    if True:\n"
+        "    finally:\n        _SIBLING_MEMO = saved\n",
+        "    finally:\n        pass\n"
       ]
     ],
     "expect": [
-      "backlog #406 r2 Codex F2: two threads' imports SERIALISE — the second never enters while the first runs, its later read stays in its key, and the bytecode settings are the originals after both"
+      "backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again"
     ]
   },
   {
-    "name": "backlog #406 r2 Codex F2: the outermost import never restores the bytecode settings, so a deleted temporary pycache_prefix is left set",
+    "name": "backlog #406: a nested sweep starts its own memo, so what it imported is lost when it ends",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            sys.dont_write_bytecode, sys.pycache_prefix = saved\n",
-        "            pass\n"
+        "    _SIBLING_MEMO = {} if saved is None else saved\n",
+        "    _SIBLING_MEMO = {}\n"
       ]
     ],
     "expect": [
-      "backlog #406 r2 Codex F2: two threads' imports SERIALISE — the second never enters while the first runs, its later read stays in its key, and the bytecode settings are the originals after both"
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the outside-a-sweep probe is taken INSIDE the self-test's sweep, so it observes the memo, not a real caller",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    outside = _sibling_outside_probe()\n    with _sibling_sweep():\n",
+        "    with _sibling_sweep():\n        outside = _sibling_outside_probe()\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports",
+      "backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)",
+      "backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the self-test body runs outside any sweep, so the suite re-executes every sibling (the speedup unwired)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    with _sibling_sweep():\n        return _self_test_cases(outside=outside)",
+        "    if True:\n        return _self_test_cases(outside=outside)"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the sibling is compiled under goal-tree's own `from __future__` flags (dont_inherit dropped)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "path, \"exec\", dont_inherit=True)",
+        "path, \"exec\")"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags"
     ]
   }
 ]

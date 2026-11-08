@@ -353,7 +353,14 @@ EXPECTED_MUTATIONS = {
     # never consulted; a hit that checks nothing). Six new: the hit skips the sibling's own bytes, never keys the files its
     # import loaded, the audit hook not installed, the hook blind to `open`, the real pycache_prefix kept (a stale
     # .pyc), and the memo keyed on the name instead of the path.
-    "scripts/goal-tree.py": 337,
+    # ⟳ 2026-11-08, PR #537 round 3 fold (Phase 6, architecture-review-2026-11-08-goal-tree-sibling-cache): 337 -> 336.
+    # The cache was REDESIGNED: it lives only inside `_sibling_sweep()` (the self-test), so the audit hook, the
+    # read-list stack, the lock and the bytecode-settings swap are gone, and so are their 12 mutations. Eleven replace
+    # them, each on the new code: the memo never consulted / never stored; ON by default; keyed on the name; the
+    # sibling read through its .pyc; compiled under goal-tree's `from __future__` flags; the sweep restore out of
+    # finally / never run; a nested sweep with its own memo; the outside probe taken inside the sweep; the body run
+    # outside any sweep. Above master's 325 by eleven.
+    "scripts/goal-tree.py": 336,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

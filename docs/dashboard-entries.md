@@ -19018,3 +19018,22 @@ Backlog #406 and backlog #231, PR #537 round 2's fold (Codex R2-F1, R2-F2, both 
 FAILS, caught by the outer; two threads overlapped by `threading.Event`s). Mutations 333 → 337; one anchor re-bound to
 the new indentation. MEASURED (no `__pycache__`, `PYTHONDONTWRITEBYTECODE=1`, interleaved, load 5.8 → 6.7): round-1
 fold 3.11 / 1.81 / 2.07 s, this fold 2.49 / 2.06 / 2.43 s; about 0.2 s of it is the thread case's bounded wait.
+
+## 2026-11-08
+The goal-tree check's helper cache kept getting more complicated: each fix for a rare case added machinery, and the
+next review found a problem in that machinery. A design review found that every problem needed a caller that does not
+exist, and that the only caller that wants the cache is the check's own test run. So the cache now exists only while
+that test run is going. Everywhere else a helper is loaded fresh every time, as before this branch. The test run is as
+fast as before (about 2 seconds, against about 14 to 22 seconds without the cache).
+<!--tech-->
+Backlog #406 and backlog #231, PR #537 round 3's fold, after Phase 6 on THRASHING
+(`docs/reviews/architecture-review-2026-11-08-goal-tree-sibling-cache.md`). `scripts/goal-tree.py`: `_SIBLING_MEMO` is
+`None` except inside `_sibling_sweep()` (a context manager; restore in `finally`, nested sweeps share one memo), which
+only the self-test opens (`_self_test_body`, which the isolated `_self_test` calls); outside, `_sibling` compiles the sibling's own bytes with `compile(..., dont_inherit=True)` on
+every call. Deleted: the `open` audit hook, `_SIBLING_STACK`, `_SIBLING_LOCK`, `_sibling_import` and its
+`dont_write_bytecode` / `pycache_prefix` swap. `_sibling_outside_probe()` observes a no-sweep caller before the sweep
+opens. Cases 437 → 438, mutations 337 → 336 (master 325): the twelve on deleted code replaced by eleven, each
+hand-checked rc 1 with `parse_fail_names` equal to its `expect`. R3-F1 to R3-F5 are dissolved or applied to the sweep's
+restore; no backlog row. MEASURED (no `__pycache__`, `PYTHONDONTWRITEBYTECODE=1`, interleaved, load 48 → 20): master
+21.89 / 17.49 / 13.57 s, round-2 fold 2.94 / 2.10 / 2.38 s, this fold 2.34 / 1.95 / 2.25 s, no memo at all 21.32 /
+14.46 / 14.93 s.
