@@ -120,8 +120,11 @@ if [ "${1:-}" = "--self-test" ]; then
   probe "a QUOTED ALLOW_PLAN_LEAK=1 is denied"            "ALLOW_PLAN_LEAK='1' git push origin feat/x" deny
   probe "...and a quoted NAME"                            "\"ALLOW_PLAN_LEAK\"=1 git push origin feat/x" deny
   probe "ALLOW_PLAN_LEAK in ANY form is denied — even =0" "ALLOW_PLAN_LEAK=0 git push origin feat/x" deny
-  probe "an unbalanced quote no longer denies a normal push" "git push origin \"feat/x" allow
-  # ── backlog #428: detection reads the QUOTE-STRIPPED form, and FAILS CLOSED ──
+  # ⟳ PR #542 round 2: this was ALLOWED (PR #443 dropped a shlex step that refused it). The detector now LEXES
+  # the command, and an unbalanced quote is a construct it cannot resolve: with `git` and `push` both present
+  # it REFUSES (the coordinator's round 2 rule). bash itself refuses to run this line, so the refusal costs nothing.
+  probe "an unbalanced quote beside a push is refused, NOT CHECKED (round 2)" "git push origin \"feat/x" deny
+  # ── backlog #428: detection reads the LEXED form (round 2), and FAILS CLOSED ──
   # Rule 1 depends on the CURRENT branch, so these run in a fixture clone whose default branch is
   # master, checked out on a feature branch — not in whatever checkout runs this self-test.
   fx="$(mktemp -d)" || { echo "  FAIL  could not make a fixture directory — NOT RUN"; exit 1; }
@@ -166,6 +169,11 @@ if [ "${1:-}" = "--self-test" ]; then
   probe "a backtick push to master is refused"                       "\`git push origin master\`"         deny
   probe "a redirection glued to master does not hide it"             "git push origin master>/dev/null"   deny
   probe "control: 2>&1 after a feature push is allowed"              "git push -u origin feat/x 2>&1 | tail -1" allow
+  # ── PR #542 round 2: quoted text is never shell syntax, and every invocation is judged ──
+  probe "⭐ a quoted '>' does not eat --force (X-F2 r2)"             "git push origin feat/x --push-option='>' --force" deny
+  probe "⭐ a quoted ';git stash' does not exempt a push to master (X-F3 r2)" \
+                              "git -c alias.x=';git stash' push origin master"                            deny
+  probe "⭐ a push before a # decoy is judged (X-F1 r2)"              "/usr/bin/git push origin master # git push origin feat/x" deny
   # The default branch itself: HEAD and @ name the current branch.
   fxgit -C "$fx/work" checkout -q master || { echo "  FAIL  could not check out master — NOT RUN"; exit 1; }
   probe "⭐ git push origin HEAD on master is refused (C-F4)"         "git push origin HEAD"               deny
@@ -224,18 +232,27 @@ A gate that cannot read its input refuses; it never passes."
 
 # ── IS THIS A PUSH? — `scripts/push-command.py`, FAIL CLOSED (backlog #428) ─────────────────────────
 # ⟳ 2026-11-08: this was a `grep` over the RAW command, so `git "push" origin master` was not a push and
-# every rule below was skipped. The detector deletes quotes and backslashes first (rule 3's form) and,
-# when the words `git` and `push` both appear but no `git … push` invocation is recognised, reads the
-# command as a push ANYWAY (mode `loose`). Its output: the mode, then one `push <args>` line per push
-# segment, up to the next `;`, `&`, `|` or line end, redirections removed. The rules below read ONLY those.
+# every rule below was skipped. The detector reads the command and, when the words `git` and `push` both
+# appear but no `git … push` invocation is recognised, reads the command as a push ANYWAY (mode `loose`).
+# Its output: the mode, then one `push <args>` line per push segment. The rules below read ONLY those.
 # ⟳ PR #542 round 1: once a real `git … push` is recognised, only real push segments are read (C-F2), and
 # `git commit` / `git stash` push words are arguments, never a push. A backslash-newline is one line (C-F1).
+# ⟳ PR #542 round 2 (X-F1..X-F3): round 1 deleted quotes BEFORE splitting, so a quoted `>` ate a flag and a
+# quoted `;git stash` exempted a push. The detector now LEXES the command as bash does: `;` `&` `|` `<` `>`
+# and `#` count only UNQUOTED, the subcommand is read after git's global options, and EVERY command is
+# judged. What it cannot follow (`$(`, a backtick, `$'…'`, a subshell, an unbalanced quote, `eval`, `sh -c`)
+# is mode `unresolved`, refused below whenever the words `git` and `push` both appear.
 # ⚠ THE BOUND, the detector's docstring word for word in substance, measured by its `--self-test`: REFUSED —
 # on the DEFAULT branch `git log --grep push`, `echo "git push later"` and `echo push; git status`; on ANY
-# branch `gh pr create --title "git push origin master"`, `git log --oneline --grep "push to master"`, and
-# a push whose arguments keep `(`, `)`, a backtick, `$(`, `<` or `>` (`(cd x && git push origin feat/x)`).
-# ALLOWED — `git commit -m "push the fix, not master" && git push origin feat/x`, `git stash push -m …` on
-# any branch, a feature push then `--title "Do not push to master"`, and `git push -u origin feat/x 2>&1`.
+# branch `gh pr create --title "git push origin master"`, `git log --oneline --grep "push to master"`, a
+# dangerous flag after a loose push word (`git log --grep "push --force"`, X-F4), any command with both words
+# and an unresolved construct (`(cd x && git push origin feat/x)`, `cd "$(…)" && git push origin feat/x`,
+# `bash -c 'git push origin feat/x'`, an unbalanced quote), and a push argument holding `(`, `)`, a backtick,
+# `$(`, `<` or `>` even quoted. A heredoc body is lexed as command lines.
+# ALLOWED — `git commit -m "push the fix, not master" && git push origin feat/x`, every bare `git stash …` /
+# `git commit …` on any branch (`git stash push -m "git push origin master"` included; `/usr/bin/git stash` and
+# `env git stash` are loose, not exempt), a feature push then `--title "Do not push to master"`, and
+# `git push -u origin feat/x 2>&1`.
 # ⛔ The detector not running is a REFUSAL, never a pass: a push gate that cannot tell is not a gate.
 detector="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/scripts/push-command.py"
 detected="$(printf '%s' "$cmd" | python3 "$detector" segments 2>/dev/null)"
@@ -243,6 +260,12 @@ detect_rc=$?
 mode="$(printf '%s\n' "$detected" | head -1)"
 case "$detect_rc:$mode" in
   0:none) allow ;;
+  0:unresolved) deny "Blocked: this command holds the words \`git\` and \`push\` and shell syntax the push gate cannot
+follow ($(printf '%s\n' "$detected" | sed -n 2p)) — NOT CHECKED. A substitution, a backtick, a subshell, an
+unbalanced quote, \`eval\` or \`sh -c\` can run a push this gate cannot see, so it refuses rather than guess
+(PR #542 round 2, backlog #428).
+
+Run the push as its own plain command: git push -u origin <branch>" ;;
   0:strict) loose_note="" ;;
   0:loose) loose_note="
 

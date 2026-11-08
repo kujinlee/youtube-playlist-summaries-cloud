@@ -19294,3 +19294,36 @@ JSON, non-string command, missing `jq` refuse (NOT CHECKED); hook `--self-test` 
 `tempfile`, `pathlib` load only in the self-test. Bound restated in the docstring and the hook comment, each case
 measured. push-command 39 -> 64 cases; hook self-test 33 -> 53; mutations 18 -> 32 (18 rebound, 14 new), each
 hand-checked in a `stage_tree` copy; hook-side fixes each reverted by hand and their cases went red.
+
+## 2026-11-08
+The second review of the push safety check found that the first round of fixes had opened three new holes. Because
+the check threw away all quote marks before splitting a command into parts, a quoted symbol such as `>` or `;` inside
+an ordinary option was read as if it were shell punctuation: it could swallow a `--force`, cut a real push in two, or
+make a push look like a harmless `git stash`. A push to master followed by a comment that mentioned a feature branch
+was also let through. The check now reads a command the way the shell does, remembering what was quoted, and judges
+every git command in it. Anything it cannot follow (a `$( … )`, backticks, brackets, an unclosed quote, `eval` or
+`sh -c`) is refused whenever the words "git" and "push" both appear. The price is stated plainly: a feature-branch push
+next to such syntax, a `git log` search for "push --force", or a quoted "git push origin master" is refused. In
+exchange, `git stash push` with a message that names a push is now always allowed.
+<!--tech-->
+Backlog #428, PR #542 round 2 fold (Codex half, NOT CONVERGED: X-F1, X-F2, X-F3 High and X-F4 Low, all four caused by
+round 1's fold, ONE cause: quotes deleted before the split). `scripts/push-command.py`: the chunk/regex tokenizer is
+REPLACED by `lex` — one left-to-right pass with quote state, `;`/`&`/`|`/newline/`<`/`>` operators only when unquoted,
+redirections dropped with their target (an fd number is not a word), a `#` at a word start is a comment, `\`+newline
+joins. `_judge` reads every command: leading assignments and reserved words skipped; `git` + global options + the
+SUBCOMMAND (`_subcommand`); `push` = strict, `commit`/`stash` = not a push, anything else = the fail-closed LOOSE
+reading over the command's words with quotes deleted. New mode `unresolved` (`$(`, backtick, `$'`, unquoted paren,
+unbalanced quote, `eval`, `sh -c`), emitted only when the words `git` and `push` both appear; the hook refuses it,
+naming the construct, NOT CHECKED. X-F4: the bound is restated in the docstring and the hook comment, with cases:
+REFUSED on any branch — a dangerous flag after a loose push word (`git log --grep "push --force"`), a command with
+both words and an unresolved construct (`cd "$(…)" && git push origin feat/x`, `bash -c 'git push origin feat/x'`, an
+unbalanced quote), a quoted `(`/`)`/`<`/`>` in a push argument, heredoc bodies lexed as command lines; ALLOWED — every
+bare `git stash`/`git commit` (`git stash push -m "git push origin master"`). Red-before MEASURED: the new self-test
+over the round 1 detector and hook fails 45 of 112, including every Codex repro through the hook (11 deny cases
+allowed, the stash case refused). FLIPPED existing cases, each explained in place: `git -C "my dir" push origin
+master` loose -> strict; `echo "git push later"` strict -> loose; `git commit -m "$(git push …)"` and `echo $(git
+stash push)` loose -> unresolved; the hook's "an unbalanced quote no longer denies a normal push" allow -> deny (the
+coordinator's round 2 rule; bash refuses to run that line). push-command 64 -> 112 cases; hook self-test 53 -> 56;
+mutations 32 -> 47 (16 rebound to `lex`/`_judge`, 15 new), each hand-checked ONE AT A TIME in a `stage_tree` copy.
+Latency MEASURED, 3 runs each, same machine, interleaved: `git push origin feat/x` 243-261 ms before, 186-196 ms after;
+`echo push` 77-83 ms before, 86-103 ms after (noise-level; the first before-run read 324-363 and 133-159 ms).

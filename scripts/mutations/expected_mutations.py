@@ -2038,5 +2038,15 @@ EXPECTED_MUTATIONS = {
     # The 18 existing entries were REBOUND to the rewritten code, intent and name unchanged (the regex
     # `GITOPTS` became the token scan `_reach`). Each of the 32 hand-checked in a `stage_tree` copy: rc 1,
     # and `parse_fail_names` names every expected case exactly once.
-    "scripts/push-command.py": 32,
+    # ⟳ 2026-11-08, PR #542 round 2 fold: 32 -> 47. The tokenizer was REPLACED by a quote-aware lexer (`lex`),
+    # so 16 entries were REBOUND to it, name and intent unchanged (the quote/backslash removal, the separator
+    # and line end, the bare-flag and `-c` skips, the segment's leading word, the line continuation, the
+    # exemption, the later-git-word rule — now the `$(` refusal —, the command-word rule, and the three
+    # redirection rules). FIFTEEN new: the quote-aware separator (X-F1) and redirection (X-F2), the subcommand
+    # position (X-F4), judging every invocation (X-F1), the comment at a word start and only there (2), the
+    # unresolved constructs (backtick, subshell, unbalanced quote, ANSI-C, `eval`/`sh -c`, the both-words
+    # condition: 6), the assignment and reserved-word skips (2), and the loose reading's quote deletion (1).
+    # Each of the 47 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and `parse_fail_names` names
+    # every expected case exactly once.
+    "scripts/push-command.py": 47,
 }
