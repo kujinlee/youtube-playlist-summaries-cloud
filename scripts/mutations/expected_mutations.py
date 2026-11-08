@@ -1754,7 +1754,13 @@ EXPECTED_MUTATIONS = {
     # (1), the run list's timeout (1), a compare's timeout (1), a refused compare read as "does not contain" (1).
     # ⟳ 2026-11-06, MERGE of origin/master (#508, PR #522) into batch-ci (#534): the merge-base pins 102; #508 moved it
     # to 148 (+46) and batch-ci to 110 (+8), over disjoint entries, so the merged manifest holds 102 + 46 + 8 = 156.
-    "scripts/check-merge-ready.py": 156,
+    # ⟳ 2026-11-08, backlog #544: 156 -> 163, none retired. An answer bound to its flagged FILE: the deleted-file
+    # exact-tree branch (1), a deleted file bound to nothing (1), a symlink target dropped (1), an absent file read
+    # as identical (1), a record clearing ids it is not bound for (1), a finding retired by a round bound for
+    # another id (1), the call site binding nothing (1). Four entries re-bound to the new text, same subjects.
+    # ⟳ 2026-11-08, answer-binds-file r1 CLAUDE F1: 163 -> 164, none retired — `gather`'s `via` key renamed, killed
+    # by the real-git case that edits a gate symlink's TARGET after the round.
+    "scripts/check-merge-ready.py": 164,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
