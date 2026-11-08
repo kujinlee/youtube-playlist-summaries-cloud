@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ONE owner for the environment a self-test fixture runs `git` in (backlog #373).
 
-    python3 scripts/fixture_git.py --self-test  # 52 cases
+    python3 scripts/fixture_git.py --self-test  # 60 cases
 
 ⛔ WHY THIS EXISTS. A fixture that builds a repository under a temp directory and runs `git` with the
 caller's environment is not working in that directory when the caller exported `GIT_DIR` (a git hook
@@ -97,23 +97,28 @@ def isolated(**extra: str):
     entries in the host's `$TMPDIR`, most left by suites that never removed their worlds.
     `tempfile.tempdir` is set as well as `TMPDIR` because Python caches the directory on first use:
     `TMPDIR` alone would redirect the children and not this process. Bound: a process that outlives
-    the block, or a path a suite names itself (`/tmp/...`, `dir=`), is not covered."""
+    the block, or a path a suite names itself (`/tmp/...`, `dir=`), is not covered.
+
+    ⟳ r1 (Codex R1-F1): both are restored in the OUTERMOST `finally`, to exactly what they were, an
+    unset `TMPDIR` and a `None` cache included. The scratch `mkdtemp` itself fills an empty cache, so
+    a block refused by `env()` (or a failed `mkdtemp`) must restore too, not only one that reached
+    its `yield`."""
     saved = dict(os.environ)
     saved_tempdir = tempfile.tempdir
-    scratch = tempfile.mkdtemp(prefix="fixture-tmp-")
     try:
-        home = None if "HOME" in extra else tempfile.mkdtemp(prefix="fixture-home-", dir=scratch)
-        inner = {**{k: saved[k] for k in PROCESS_PASSED if k in saved},
-                 **env(**extra, **({} if home is None else {"HOME": home})), "TMPDIR": scratch}
-        _replace_environ(inner)
-        tempfile.tempdir = scratch
+        scratch = tempfile.mkdtemp(prefix="fixture-tmp-")
         try:
+            home = None if "HOME" in extra else tempfile.mkdtemp(prefix="fixture-home-", dir=scratch)
+            inner = {**{k: saved[k] for k in PROCESS_PASSED if k in saved},
+                     **env(**extra, **({} if home is None else {"HOME": home})), "TMPDIR": scratch}
+            _replace_environ(inner)
+            tempfile.tempdir = scratch
             yield inner
         finally:
-            tempfile.tempdir = saved_tempdir
-            _replace_environ(saved)
+            shutil.rmtree(scratch, ignore_errors=True)
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        tempfile.tempdir = saved_tempdir
+        _replace_environ(saved)
 
 
 def _self_test() -> int:
@@ -263,6 +268,46 @@ def _self_test_body() -> int:
             except ValueError:
                 pass
             case("a refused isolated() leaves nothing behind", entries(), before_tmp)
+
+            # ⟳ r1 (Codex R1-F1, Claude R1-F1): the prior state is restored EXACTLY, from a state this suite
+            # never otherwise sees (it runs inside isolated(), so its cache is always set). Each case enters a
+            # block from a chosen (TMPDIR, tempfile.tempdir) and reads both back. With TMPDIR unset, `TEMP`
+            # (dropped inside the block) points the scratch mkdtemp at the private directory, not the host /tmp.
+            sibling = t / "sibling-tmp"
+            sibling.mkdir()
+
+            def prior_state_after(path: str, tmpdir: str | None, cache: str | None) -> tuple:
+                keep_env, keep_cache = dict(os.environ), tempfile.tempdir
+                try:
+                    os.environ["TEMP"] = host_tmp
+                    if tmpdir is None:
+                        os.environ.pop("TMPDIR", None)
+                    else:
+                        os.environ["TMPDIR"] = tmpdir
+                    tempfile.tempdir = cache
+                    try:
+                        if path == "refused":
+                            with isolated(GIT_DIR="x"):
+                                pass
+                        else:
+                            with isolated():
+                                if path == "raising":
+                                    raise KeyError("a failed case")
+                    except (KeyError, ValueError):
+                        pass
+                    return os.environ.get("TMPDIR", "<unset>"), tempfile.tempdir
+                finally:
+                    _replace_environ(keep_env)
+                    tempfile.tempdir = keep_cache
+
+            for path in ("normal", "raising", "refused"):
+                case(f"⭐ from TMPDIR unset and a None cache, a {path} block restores both exactly",
+                     prior_state_after(path, None, None), ("<unset>", None))
+                case(f"⭐ from TMPDIR set and a None cache, a {path} block restores both exactly",
+                     prior_state_after(path, host_tmp, None), (host_tmp, None))
+            case("⭐ a cache naming a directory other than TMPDIR is given back as that directory, not reset",
+                 prior_state_after("normal", host_tmp, str(sibling)), (host_tmp, str(sibling)))
+            case("...and none of the prior-state blocks leaves anything behind", entries(), before_tmp)
 
             # ── isolated(): the PROCESS, so every launch shape inherits it ───────────────────
             outer = dict(os.environ)
