@@ -1754,6 +1754,12 @@ EXPECTED_MUTATIONS = {
     # (1), the run list's timeout (1), a compare's timeout (1), a refused compare read as "does not contain" (1).
     # ⟳ 2026-11-06, MERGE of origin/master (#508, PR #522) into batch-ci (#534): the merge-base pins 102; #508 moved it
     # to 148 (+46) and batch-ci to 110 (+8), over disjoint entries, so the merged manifest holds 102 + 46 + 8 = 156.
+    # ⟳ 2026-11-08, backlog #544: 156 -> 163, none retired. An answer bound to its flagged FILE: the deleted-file
+    # exact-tree branch (1), a deleted file bound to nothing (1), a symlink target dropped (1), an absent file read
+    # as identical (1), a record clearing ids it is not bound for (1), a finding retired by a round bound for
+    # another id (1), the call site binding nothing (1). Four entries re-bound to the new text, same subjects.
+    # ⟳ 2026-11-08, answer-binds-file r1 CLAUDE F1: 163 -> 164, none retired — `gather`'s `via` key renamed, killed
+    # by the real-git case that edits a gate symlink's TARGET after the round.
     # ⟳ 2026-11-08, backlog #538: 156 -> 162, none retired. The held side is HEAD's, materialised: the working-tree
     # harness read again (1), the isolation dropped at the call (1), its sys.path half (1) and its hidden-module half
     # (1), a failing `git archive` read as an archive (1), an archive that does not unpack passed over (1).
@@ -1763,7 +1769,10 @@ EXPECTED_MUTATIONS = {
     # symlink/submodule (1), a path leaving scripts/ (1), a file written over (1), a failing `git cat-file` (1), an
     # answer that is not the blob (1), bytes not hashed against the id (X-F1) (1), more than asked (1), every
     # fileless module trusted (X-F2) (1), and the restore's three halves (C-F2) (3).
-    "scripts/check-merge-ready.py": 176,
+    # ⟳ 2026-11-08, MERGE of origin/master (backlog #544, PR #543) into held-pins-head (backlog #538): the merge-base
+    # pins 156; #544 moved it to 164 (+8, none retired) and #538 to 176 (+20, none retired), over disjoint entries,
+    # so the merged manifest holds 156 + 8 + 20 = 184 (per-entry 3-way merge: 0 missing, 0 extra, 0 duplicate names).
+    "scripts/check-merge-ready.py": 184,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

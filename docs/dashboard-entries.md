@@ -19231,6 +19231,35 @@ master merges that left every flagged file unchanged. The goal threads now quote
 mandate under its four goals.
 
 ## 2026-11-08
+⚠ The merge check is deliberately looser, as the owner chose this morning (11:33, option A "Tie to flagged files"). When
+a reviewer says a flagged line is "not a loosening", that answer now holds as long as the file the line sits in is
+unchanged. Before, any change at all after the review (a doc, another script, a merge of master) threw every answer away
+and cost a whole extra review round. Any change to the flagged file itself still throws its answer away.
+<!--tech-->
+Backlog #544, branch `answer-binds-file`, `scripts/check-merge-ready.py`. GATE LOOSENING by design. **What now passes
+that did not before:** a `LOOSENING-CHECK <id>: not a loosening` answer, from a verdict whose reviewed head is not the
+tree being merged, clears its flagged line when that line's file has the SAME entry (mode and blob) in the reviewed tree
+(the verdict's `head`, overlaid by its `dirty`) and in HEAD. So a change after the round to ANY OTHER path no longer
+voids it: a doc, a sibling script or module the flagged file imports, a config or policy file it reads, a moved
+submodule, a file under `docs/reviews/coordinator/`. Three self-test cases that asserted the old rule were FLIPPED, not
+deleted: "ANY edit after the round (a doc) voids the answer" (now: a doc edit keeps it, a one-byte edit to the flagged
+file voids it), "an ignored submodule moved after the round voids its answer" and "a .py under docs/reviews/coordinator/
+committed after the round voids its answer" (both now keep it). Unchanged and still fail closed: a changed, renamed or
+missing flagged file, a `dirty: null` verdict, an unreadable verdict, an unreachable reviewed head (a new real-git case),
+a gate that did not run, a reviewer's finding, and "a finding is retired only by a later round of the SAME half". A gate
+symlink's answer is bound to the link AND its target (a real-git case edits the target after the round; r1 Claude F1).
+Also passes, inside the same bound: a `.gitattributes` change after the round (`eol=`, `working-tree-encoding=`,
+`filter=` for the flagged path) — it is a different file, and it changes the bytes a fresh checkout writes while the
+flagged file's blob stays the same (r1 Claude F2). A flagged file the branch DELETES has no blob, so its answers keep
+the old exact-tree rule (`tree_matches`, kept with all its cases). No verdict format change: the blob is read from the
+recorded `head` with `git ls-tree`, so existing verdicts keep working. 348 -> 365 cases; mutations 156 -> 164, four
+entries re-bound to the new text. PR #543's CI sweep then found two mutations the new per-id binding had disarmed, both
+fixed with no case weakened: the `#508 r1 m3` real-git case now also edits ANOTHER line of the flagged file after round 7
+(a docs-only edit no longer takes that round's answer off the tree, so the case had stopped testing a finding from
+another tree), and a new case pins the one thing the same-half `== not a loosening` clause still decides alone — a later
+round that answers THAT id a finding again leaves the earlier verdict named.
+
+## 2026-11-08
 The merge check compares two copies of the mutation-test settings: the one the pull request shows, and the one its test
 tool actually uses. It read the first from the committed pull request but the second from whatever files happened to be on
 disk, so an old uncommitted copy could hide a lowered setting and let the pull request read as ready. Both now come from the

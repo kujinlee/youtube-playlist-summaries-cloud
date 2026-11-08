@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 367 cases
+    python3 scripts/check-merge-ready.py --self-test # 384 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -918,7 +918,7 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
     return out
 
 
-# ── backlog #508 (2): A FLAGGED LINE IS ANSWERED BY THE REVIEWER, ON THE EXACT TREE BEING MERGED ────
+# ── backlog #508 (2): A FLAGGED LINE IS ANSWERED BY THE REVIEWER, ON ITS FILE AS MERGED (backlog #544) ─
 # ⛔ WHY. The failure-path proxy is syntactic and cannot tell a rewrite that refuses MORE from one that
 # refuses less. MEASURED 2026-11-06 from the written records (PR comments and bodies via `gh pr view`,
 # PRs #400-#519; backlog #508's row for #505): of 21 loosening HOLDs judged in writing, 19 were judged
@@ -926,15 +926,28 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
 # lines go into the final round's prompt (`--flagged-block`, which `codex-review.py` appends itself),
 # the reviewer answers EACH in its review, the recorder copies the answers into the verdict file
 # (`codex-review.loosening_answers`, the ONE parser), and this gate clears a flagged line only when a
-# verdict recorded on the tree being merged answers it `not a loosening` and none answers it a finding.
-# ⛔ FAILS CLOSED, every way: an unanswered line, an answer on another tree, a verdict that cannot be
+# verdict that reviewed the flagged file as it is being merged answers it `not a loosening` and none
+# answers it a finding.
+# ⛔ FAILS CLOSED, every way: an unanswered line, an answer on another version of its file, a verdict that cannot be
 # read, a `dirty: null` record, a reviewer's finding — each leaves the line HELD. REJECTED by the owner:
 # any rule that reads "text inserted mid-line" as harmless (`if bad` -> `if bad and False` passes it).
 # ⚠ BOUND: a Claude half's verdict is written by the coordinator from the filed review — the same trust
 # `record-review-verdict.py` states for its `head`. The answer is the reviewer's text, copied, not proof.
 VERDICT_DIR = "docs/reviews/verdicts/"
-# What may differ between the reviewed tree and the merging one: the round's own records. Nothing else —
-# a docs edit after the round also voids its answers (owner: the EXACT tree).
+# ⟳ backlog #544, OWNER 2026-11-08 11:33 PST (selection card, option A "Tie to flagged files"), REPLACING
+# "a docs edit after the round also voids its answers (owner: the EXACT tree)": an answer is bound to the
+# FILE its flagged line sits in. It survives any change that leaves that file's entry (mode and blob)
+# identical between the reviewed tree and the merging one, and dies with ANY change to that file
+# (`file_matches`, `flag_binds`). MEASURED on PR #522, PR #536 and PR #539: a merge of master that left
+# every flagged file byte-identical voided every answer and cost a whole review round. ⚠ WHAT NOW PASSES
+# that the exact tree refused: a change AFTER the round to any other file — a doc, a sibling script the
+# flagged file imports, a submodule, a policy file it reads — keeps the answer. So does a `.gitattributes`
+# change (r1 CLAUDE F2): an `eol=`/`working-tree-encoding=`/`filter=` line for the flagged path alters the bytes a
+# fresh checkout writes for it while its blob, the bound thing, stays the same. The owner accepted that.
+# Still fail closed: a file missing from either tree, a `dirty` that is not a dict, an unreachable head.
+# ⚠ A file the branch DELETES has no blob to bind to; its answers keep the EXACT-tree rule below.
+# What may differ, for that exact-tree rule, between the reviewed tree and the merging one: the round's
+# own records. Nothing else.
 # ⟳ r1 CLAUDE M2: the coordinator document and the decision log are the round's own records too — they
 # cannot exist before the round, and #515-#519 each committed them after it. The decision scheme's
 # baseline is NOT a record: only the log file is named.
@@ -1020,13 +1033,42 @@ def tree_matches(reviewed: dict, dirty, merged: dict) -> bool:
     return True
 
 
+def file_matches(reviewed: dict, dirty, merged: dict, path) -> bool:
+    """PURE. backlog #544: is `path` — as the verdict reviewed it, `reviewed` overlaid by `dirty` — the
+    IDENTICAL entry (mode and object id) in the tree being merged? Only that one path is compared. FAILS
+    CLOSED: a `dirty` that is not a dict, no path, or a path absent from EITHER tree never matches."""
+    if not isinstance(dirty, dict) or not isinstance(path, str) or not path:
+        return False
+    saw = _entry(dirty[path] if path in dirty else reviewed.get(path))
+    return saw is not None and saw == _entry(merged.get(path))
+
+
+def flag_binds(flags: list[tuple[str, str, str]], fs: list[dict]) -> "dict[str, tuple[str, ...] | None]":
+    """PURE. backlog #544: {flag id: the paths, in the tree being merged, whose entries its answer is
+    bound to}. A flag names its file by `_name` (`old -> new` for a rename); its lines sit in that
+    record's NEW path and, for a gate symlink whose target changed (`gather`'s `via`), in the target as
+    well, so both are bound. None — the EXACT-tree rule, `tree_matches` — when a record of that name has
+    no new path (the branch deletes the file) or no record names it."""
+    by: dict = {}
+    for f in fs:
+        n = _name(f)
+        if n in by and by[n] is None:
+            continue
+        if not f["new"]:
+            by[n] = None
+            continue
+        by[n] = tuple(sorted({*(by.get(n) or ()), f["new"], *([f["via"]] if f.get("via") else [])}))
+    return {i: by.get(p) for i, p, _t in flags}
+
+
 # A verdict's subject, round and half, from its name — the order "later" is read in (no record carries a time).
 VERDICT_NAME = re.compile(r"docs/reviews/verdicts/([a-z0-9][a-z0-9-]*)-r([0-9]+)-(claude|codex)\.verdict\.json")
 
 
 def standing_findings(records) -> "dict[str, list[str]]":
     """PURE. {id: the verdict paths whose finding for it still stands}. `records` is every verdict the
-    branch adds, as (path, record, on the tree being merged). Any answer other than exactly
+    branch adds, as (path, record, the ids whose answers are bound to the tree being merged — backlog
+    #544, a set). Any answer other than exactly
     `not a loosening` is a finding.
     ⟳ r1 CLAUDE m3: a finding counts from a record on ANY tree, since an unrelated edit does not touch it.
     ⟳ r2 CODEX 5: but an id hashes the REMOVED base text, so a repaired replacement keeps the id, and the
@@ -1044,7 +1086,7 @@ def standing_findings(records) -> "dict[str, list[str]]":
             if a == NOT_A_LOOSENING:
                 continue
             if k is not None and any(
-                    ok2 and (r2.get("loosening_answers") or {}).get(i) == NOT_A_LOOSENING
+                    i in ok2 and (r2.get("loosening_answers") or {}).get(i) == NOT_A_LOOSENING
                     and (k2 := key(p2)) is not None and k2[:2] == k[:2] and k2[2] > k[2]
                     for p2, r2, ok2 in records):
                 continue
@@ -1055,13 +1097,16 @@ def standing_findings(records) -> "dict[str, list[str]]":
 def answered_flags(records) -> frozenset[str]:
     """PURE. The ids a record ON the tree being merged answers exactly `not a loosening`, less every id
     with a standing finding (`standing_findings`; `records` as there)."""
-    clear = {i for _p, r, ok in records if ok for i, a in (r.get("loosening_answers") or {}).items()
-             if a == NOT_A_LOOSENING}
+    clear = {i for _p, r, ok in records for i, a in (r.get("loosening_answers") or {}).items()
+             if i in ok and a == NOT_A_LOOSENING}
     return frozenset(clear - set(standing_findings(records)))
 
 
-def review_answers(read, files: list[str]) -> tuple[frozenset[str], list[str]]:
-    """(answered ids, notes) from the verdicts this branch adds, each kept only if its tree is HEAD's.
+def review_answers(read, files: list[str], binds: dict) -> tuple[frozenset[str], list[str]]:
+    """(answered ids, notes) from the verdicts this branch adds. An answer for an id is kept only if the
+    file it is bound to (`binds`, from `flag_binds`) is identical in the reviewed tree and HEAD's — or,
+    for an id bound to None, only if the WHOLE tree is (`tree_matches`). An id not in `binds` is kept by
+    nothing: it is not a line this branch flags.
     `read(cmd)` returns stdout or raises; a raise here leaves every line held (the caller's `except`).
     A record that cannot be used is SKIPPED with a note — never read as an answer."""
     notes, anywhere = [], []
@@ -1076,7 +1121,7 @@ def review_answers(read, files: list[str]) -> tuple[frozenset[str], list[str]]:
             continue
         if not (isinstance(rec, dict) and isinstance(rec.get("loosening_answers"), dict)):
             continue                                    # a verdict from before #508, or no answers
-        anywhere.append([p, rec, False])                # r1 m3: its findings count on any tree
+        anywhere.append([p, rec, frozenset()])          # r1 m3: its findings count on any tree
         if rec.get("gate_ran") is not True or rec.get("refused"):
             notes.append(f"{p}: the gate did not run, so its answers do not count")
             continue
@@ -1091,12 +1136,28 @@ def review_answers(read, files: list[str]) -> tuple[frozenset[str], list[str]]:
             continue
         if head_t is None:
             head_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]))
-        if not tree_matches(reviewed, rec.get("dirty"), head_t):
-            notes.append(f"{p}: reviewed a different tree ({vhead[:12]}), so its answers do not count")
-            continue
-        anywhere[-1][2] = True
+        # ⟳ backlog #544: each id against ITS file's entry; the whole tree only for a deleted file.
+        whole, ok = None, set()
+        for i in sorted(rec["loosening_answers"]):
+            if i not in binds:
+                continue
+            if binds[i] is None:
+                if whole is None:
+                    whole = tree_matches(reviewed, rec.get("dirty"), head_t)
+                if not whole:
+                    notes.append(f"{p}: reviewed a different tree ({vhead[:12]}) and {i}'s file is deleted "
+                                 f"on the branch, so that answer does not count")
+                    continue
+            else:
+                moved = [q for q in binds[i] if not file_matches(reviewed, rec.get("dirty"), head_t, q)]
+                if moved:
+                    notes.append(f"{p}: answered {i} on a different {moved[0]} than this tree's "
+                                 f"({vhead[:12]}), so that answer does not count")
+                    continue
+            ok.add(i)
+        anywhere[-1][2] = frozenset(ok)
     got, standing = answered_flags(anywhere), standing_findings(anywhere)
-    for i in sorted(set(standing) & {i for _p, r, ok in anywhere if ok for i in r["loosening_answers"]}):
+    for i in sorted(set(standing) & {i for _p, r, ok in anywhere for i in ok}):
         notes.append(f"{', '.join(standing[i])}: answered {i} a finding, and no later round of the same "
                      f"half answered it `not a loosening` on this tree, so it stays HELD")
     return got, notes
@@ -1853,7 +1914,7 @@ def main(argv: list[str]) -> int:
         flags = failure_path_flags("", fs)
         if flags and nr is not None:
             try:
-                answered, notes = review_answers(git_reader(_run), files)
+                answered, notes = review_answers(git_reader(_run), files, flag_binds(flags, fs))
             except Exception as exc:
                 notes = [f"the branch's verdicts could not be read ({_describe(exc)}), so every "
                          f"flagged line stays HELD"]
@@ -2305,9 +2366,51 @@ def _self_test_cases() -> int:
               "docs/reviews/claude/k-r1-codex.md", "docs/reviews/coordinator/k-r1-coordinator.py",
               "docs/reviews/verdicts/k-r1-codex.verdict.json.py", "docs/reviews/verdicts/sub/k-r1-codex.verdict.json")],
           [False] * 6)
+    # ── backlog #544, owner 2026-11-08 card A: an answer is bound to its flagged FILE, not the whole tree.
+    _a2 = ("100644", "2" * 40)
+    check("#544: the flagged file unchanged matches, though a DOC and another gate changed after the round",
+          file_matches(_R, {}, {**_M, "docs/x.md": ("100644", "4" * 40), "scripts/n.py": _a2}, "scripts/a.py"), True)
+    check("#544: ...a one-byte change to the flagged file (a new blob) does not",
+          file_matches(_R, {}, {**_M, "scripts/a.py": ("100644", "3" * 40)}, "scripts/a.py"), False)
+    check("#544: ...nor a MODE change with the same blob",
+          file_matches(_R, {}, {**_M, "scripts/a.py": ("100755", "1" * 40)}, "scripts/a.py"), False)
+    check("#544: ...nor the file MISSING from the merging tree, from the reviewed one, or from both",
+          [file_matches(_R, {}, {"docs/x.md": _M["docs/x.md"]}, "scripts/a.py"),
+           file_matches(_R, {}, {**_M, "scripts/b.py": _a2}, "scripts/b.py"),
+           file_matches(_R, {}, _M, "scripts/b.py"),
+           file_matches(_R, {"scripts/a.py": "000000 " + "0" * 40}, {"docs/x.md": _M["docs/x.md"]}, "scripts/a.py")],
+          [False] * 4)
+    check("#544: an uncommitted fix the reviewer SAW, committed as seen, matches; changed again, it does not",
+          (file_matches(_R, {"scripts/a.py": "100644 " + "3" * 40}, {**_M, "scripts/a.py": ("100644", "3" * 40)},
+                        "scripts/a.py"),
+           file_matches(_R, {"scripts/a.py": "100644 " + "3" * 40}, _M, "scripts/a.py")), (True, False))
+    check("#544: a tree the wrapper COULD NOT DESCRIBE (dirty None), or no path, never matches",
+          (file_matches(_R, None, _M, "scripts/a.py"), file_matches(_R, {}, _M, None)), (False, False))
+    _fsb = [{"old": "scripts/a.py", "new": "scripts/a.py", "copy": False, "status": "M", "hunks": []},
+            {"old": "scripts/r.py", "new": "scripts/r2.py", "copy": False, "status": "R", "hunks": []},
+            {"old": "scripts/d.py", "new": None, "copy": False, "status": "D", "hunks": []},
+            {"old": "scripts/l.py", "new": "scripts/l.py", "copy": False, "status": "M", "via": "lib/t.py", "hunks": []}]
+    check("#544: flag_binds — a file binds its own path, a rename its NEW path, a gate symlink its TARGET too, "
+          "and a deleted or unknown file None (the exact tree)",
+          flag_binds([("i1", "scripts/a.py", "x"), ("i2", "scripts/r.py -> scripts/r2.py", "x"),
+                      ("i3", "scripts/d.py", "x"), ("i4", "scripts/l.py", "x"), ("i5", "scripts/u.py", "x")], _fsb),
+          {"i1": ("scripts/a.py",), "i2": ("scripts/r2.py",), "i3": None, "i4": ("lib/t.py", "scripts/l.py"),
+           "i5": None})
+    check("#544: ...and a gate symlink that ALSO changed itself binds both its records' paths, once each",
+          flag_binds([("j1", "scripts/l.py", "y"), ("j2", "scripts/l.py", "z")],
+                     [{"old": "scripts/l.py", "new": "scripts/l.py", "copy": False, "status": "M", "hunks": []},
+                      {"old": "scripts/l.py", "new": "scripts/l.py", "copy": False, "status": "M", "via": "lib/u.py",
+                       "hunks": []}]),
+          {"j1": ("lib/u.py", "scripts/l.py"), "j2": ("lib/u.py", "scripts/l.py")})
+    check("#544: file_matches over another reviewed tree: its own entry for the path is what is compared",
+          (file_matches({"scripts/a.py": ("100644", "3" * 40)}, {}, {"scripts/a.py": ("100644", "3" * 40)}, "scripts/a.py"),
+           file_matches({"scripts/a.py": ("100644", "3" * 40)}, {}, _M, "scripts/a.py")), (True, False))
     _ids = [i for i, _p, _t in failure_path_flags(DF(_CK, "-    return 1", "-    sys.exit(2)", "+    pass"))]
     def V(name, answers, on_tree):
-        return (f"docs/reviews/verdicts/{name}.verdict.json", {"loosening_answers": answers}, on_tree)
+        # backlog #544: the third field is the SET of ids whose answers are bound to this tree; a bool
+        # here means "every id it answers" or "none".
+        ok = frozenset(answers) if on_tree is True else frozenset() if on_tree is False else frozenset(on_tree)
+        return (f"docs/reviews/verdicts/{name}.verdict.json", {"loosening_answers": answers}, ok)
     _N, _F = "not a loosening", "finding"
     check("#508: answers — every id `not a loosening` is answered",
           answered_flags([V("k-r1-codex", {_ids[0]: _N}, True), V("k-r1-claude", {_ids[1]: _N}, True)]),
@@ -2331,9 +2434,23 @@ def _self_test_cases() -> int:
           frozenset(_ids[:1]))
     check("#508 r2 Codex 5: ...but not a later round of the OTHER half",
           answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset())
+    check("#544: a record bound for ONE id clears only that id, though it answers both",
+          answered_flags([V("k-r1-codex", {_ids[0]: _N, _ids[1]: _N}, {_ids[0]})]), frozenset(_ids[:1]))
+    check("#544: ...and a same-half later round whose answer for THAT id is on a changed file retires nothing, though the other half assents",
+          answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N, _ids[1]: _N}, {_ids[1]}),
+                          V("k-r2-claude", {_ids[0]: _N}, True)]),
+          frozenset(_ids[1:]))
     check("#508 r2 Codex 5: ...nor a later round of the same half that does not answer THAT id",
           answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[1]: _N}, True),
                           V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset(_ids[1:]))
+    # ⟳ backlog #544 (PR #543 CI shard 22): with the third field a per-id SET, `i in ok2` already means the
+    # later round ANSWERS that id, so the case above is guarded twice and the `== not a loosening` clause
+    # alone decides only this: a later round that answers THAT id a finding AGAIN retires nothing, so the
+    # HELD note still names the earlier verdict too.
+    check("#508 r2 Codex 5: ...nor a later round of the same half that answers THAT id a finding AGAIN — both verdicts stay named",
+          (standing_findings([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _F}, True)]),
+           standing_findings([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, True)])),
+          ({_ids[0]: ["docs/reviews/verdicts/k-r1-codex.verdict.json", "docs/reviews/verdicts/k-r2-codex.verdict.json"]}, {}))
     check("#508 r2 Codex 5: ...nor the same half's later assent on ANOTHER tree",
           answered_flags([V("k-r1-codex", {_ids[0]: _F}, False), V("k-r2-codex", {_ids[0]: _N}, False),
                           V("k-r2-claude", {_ids[0]: _N}, True)]), frozenset())
@@ -3705,11 +3822,37 @@ def _self_test_cases() -> int:
         check("⭐ #508 real git: ...a FINDING from another verdict on that tree keeps it HELD, rc=3",
               (_rc, "failure path" in _o), (3, True))
         _g8("reset", "-q", "--hard", _c2)
-        _w8("docs/a.md", "edited after the round\n")
-        _g8("commit", "-qam", "late doc edit")
+        # backlog #544: a real MERGE of master that changes only another file (a doc), as on PR #536 and PR #539.
+        _b8, _base8 = _g8("rev-parse", "--abbrev-ref", "HEAD"), _g8("rev-parse", "refs/remotes/origin/master")
+        _g8("checkout", "-q", "-b", "m544", _base8)
+        _w8("docs/a.md", "edited on master after the round\n")
+        _g8("commit", "-qam", "master moves a doc")
+        _g8("update-ref", "refs/remotes/origin/master", "HEAD")
+        _g8("checkout", "-q", _b8)
+        _g8("merge", "-q", "--no-edit", "m544")
         _rc, _o = _main8("--pr", "84")
-        check("⭐ #508 real git: ...and ANY edit after the round (a doc) voids the answer, rc=3, saying why",
-              (_rc, "failure path" in _o, "different tree" in _o), (3, True, True))
+        _g8("update-ref", "refs/remotes/origin/master", _base8)
+        # ⟳ backlog #544, FLIPPED DELIBERATELY (owner 2026-11-08 card A): this case read "ANY edit after the
+        # round (a doc) voids the answer, rc=3". A doc edit now KEEPS it; an edit to the flagged file voids it.
+        check("⭐ #544 real git: a MERGE of master changing only a DOC after the round KEEPS the answer "
+              "(the flagged file is identical), rc=0",
+              (_rc, "failure path" in _o, len(_g8("rev-list", "--parents", "-n1", "HEAD").split())), (0, False, 3))
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 3\n    return 0\n")
+        _g8("commit", "-qam", "one byte of the flagged file, after the round")
+        _rc, _o = _main8("--pr", "184")
+        check("⭐ #544 real git: ...but a ONE-BYTE edit to the flagged file voids it, rc=3, naming the file",
+              (_rc, "failure path" in _o, f"answered {_id8} on a different scripts/check-k.py" in _o), (3, True, True))
+        _g8("reset", "-q", "--hard", _c2)
+        _g8("mv", "scripts/check-k.py", "scripts/check-k2.py")
+        _g8("commit", "-qm", "rename the flagged file, after the round")
+        _rc, _o = _main8("--pr", "185")
+        check("⭐ #544 real git: ...and a RENAME of the flagged file after the round voids it, rc=3",
+              (_rc, "failure path" in _o), (3, True))
+        _g8("reset", "-q", "--hard", _c1)
+        _verdict8("k-r4-codex", "0123456789abcdef" * 2 + "01234567", {_id8: "not a loosening"})
+        _rc, _o = _main8("--pr", "186")
+        check("⭐ #544 real git: an answer whose reviewed head is UNREACHABLE here voids, fail closed, rc=3",
+              (_rc, "failure path" in _o, "cannot be read here" in _o), (3, True, True))
         _g8("reset", "-q", "--hard", _c2)
         _w8("docs/reviews/verdicts/k-r3-codex.verdict.json", "{not json")
         _g8("add", "-A")
@@ -3748,13 +3891,21 @@ def _self_test_cases() -> int:
         _g8("update-index", "--cacheinfo", f"160000,{'b' * 40},policy")
         _g8("commit", "-qm", "policy B after the round")
         _rc, _o = _main8("--pr", "88")
-        check("⭐ #508 r1 Codex 2 real git: an ignored submodule moved after the round voids its answer, rc=3",
-              (_rc0, _rc, "different tree" in _o), (0, 3, True))
+        # ⟳ backlog #544, FLIPPED DELIBERATELY (owner 2026-11-08 card A): this read "an ignored submodule
+        # moved after the round voids its answer, rc=3". The gitlink is not the flagged file, so it now
+        # KEEPS the answer. r1 Codex 2's whole-tree comparison still governs a DELETED flagged file
+        # (`tree_matches`, its pure cases above, and the deletion case below).
+        check("⭐ #544 (was #508 r1 Codex 2) real git: an ignored submodule moved after the round KEEPS the answer, rc=0",
+              (_rc0, _rc, "failure path" in _o), (0, 0, False))
         # r1 CLAUDE m3: a FINDING on an earlier tree, for a line that has not changed since, still holds.
+        # ⟳ backlog #544 (PR #543 CI shard 7): an answer is bound to its flagged FILE now, so a docs-only fix
+        # left round 7's record ON this tree and the case stopped testing the other-tree half. The fix also
+        # edits ANOTHER line of the flagged file — the flagged line unchanged, round 7's answer off this tree.
         _g8("reset", "-q", "--hard", _c1)
         _verdict8("k-r7-claude", _c1, {_id8: "finding"})
         _w8("docs/a.md", "a docs-only fix after round 1\n")
-        _g8("commit", "-qam", "docs fix")
+        _w8("scripts/check-k.py", "def f(bad):\n    if bad:\n        return 2\n    return 0\n# fixed after round 7\n")
+        _g8("commit", "-qam", "docs fix, and another line of the flagged file")
         _verdict8("k-r8-codex", _g8("rev-parse", "HEAD"), {_id8: "not a loosening"})
         _rc, _o = _main8("--pr", "89")
         check("⭐ #508 r1 m3 real git: a FINDING from an earlier round on an UNCHANGED line beats a later assent, rc=3",
@@ -3780,9 +3931,52 @@ def _self_test_cases() -> int:
         _g8("add", "docs/reviews/coordinator/policy.py")
         _g8("commit", "-qm", "policy flipped after the round")
         _rc, _o = _main8("--pr", "92")
-        check("⭐ #508 r2 Codex 3 real git: a .py under docs/reviews/coordinator/ committed after the round voids "
-              "its answer, rc=3",
-              (_rc, "k-r12-codex.verdict.json: reviewed a different tree" in _o), (3, True))
+        # ⟳ backlog #544, FLIPPED DELIBERATELY (owner 2026-11-08 card A): this read "a .py under
+        # docs/reviews/coordinator/ committed after the round voids its answer, rc=3". It is not the
+        # flagged file, so it now KEEPS it — the loosening the owner accepted, named in the dashboard.
+        check("⭐ #544 (was #508 r2 Codex 3) real git: a .py under docs/reviews/coordinator/ committed after the "
+              "round KEEPS the answer, rc=0",
+              (_rc, "failure path" in _o), (0, False))
+        # backlog #544: a flagged file the branch DELETES has no blob to bind to — the EXACT tree governs.
+        _g8("reset", "-q", "--hard", "refs/remotes/origin/master")
+        _g8("rm", "-q", "scripts/check-j.py")
+        _g8("commit", "-qm", "delete a gate")
+        _rcd, _blkd = _main8("--flagged-block")
+        _idsd = re.findall(r"id `([0-9a-f]{12})`", _blkd)
+        _verdict8("j-r1-codex", _g8("rev-parse", "HEAD"), {i: "not a loosening" for i in _idsd})
+        _rc0, _o0 = _main8("--pr", "93")
+        _w8("docs/a.md", "a doc after the round\n")
+        _g8("commit", "-qam", "doc after the round")
+        _rc, _o = _main8("--pr", "94")
+        # The deletion itself is HELD by `scope_exits` either way (rc=3 both times), so the FAILURE-PATH hold is read.
+        check("⭐ #544 real git: a DELETED flagged file's answers keep the EXACT-tree rule — its failure-path "
+              "hold cleared on that tree, back after a later doc edit",
+              (_rcd, len(_idsd) > 0, "failure path" in _o0, "failure path" in _o, "is deleted on the branch" in _o),
+              (0, True, False, True, True))
+        # ⟳ answer-binds-file r1 CLAUDE F1: a gate SYMLINK's answer is bound to its TARGET too, end to end —
+        # `gather` writes `via`, `flag_binds` reads it; the pure cases above hand-build that key.
+        _g8("reset", "-q", "--hard", "refs/remotes/origin/master")
+        _w8("tools/t.py", "def t(bad):\n    if bad:\n        return 1\n    return 0\n")
+        (_r8 / "scripts/check-l.py").symlink_to("../tools/t.py")
+        _g8("add", "tools/t.py", "scripts/check-l.py")
+        _g8("commit", "-qm", "a gate symlinked to tools/")
+        _base8l = _g8("rev-parse", "refs/remotes/origin/master")
+        _g8("update-ref", "refs/remotes/origin/master", "HEAD")
+        _w8("tools/t.py", "def t(bad):\n    if bad:\n        return 2\n    return 0\n")
+        _g8("commit", "-qam", "the target rewritten")
+        _rcl, _blkl = _main8("--flagged-block")
+        _idsl = re.findall(r"id `([0-9a-f]{12})`", _blkl)
+        _verdict8("l-r1-codex", _g8("rev-parse", "HEAD"), {i: "not a loosening" for i in _idsl})
+        _rc0, _o0 = _main8("--pr", "95")
+        _w8("tools/t.py", "def t(bad):\n    if bad:\n        return 3\n    return 0\n")
+        _g8("commit", "-qam", "the target edited after the round")
+        _rc, _o = _main8("--pr", "96")
+        _g8("update-ref", "refs/remotes/origin/master", _base8l)
+        check("⭐ #544 r1 Claude F1 real git: a gate SYMLINK's answer clears on its reviewed target (rc=0), and "
+              "an edit to the TARGET after the round voids it, rc=3, naming the target",
+              (_rcl, len(_idsl) > 0, _rc0, "failure path" in _o0, _rc, "failure path" in _o,
+               all(f"answered {i} on a different tools/t.py" in _o for i in _idsl)),
+              (0, True, 0, False, 3, True, True))
     finally:
         shutil.rmtree(_r8, ignore_errors=True)
     # ⟳ r2 CODEX 1, VERBATIM and through `gather`: `a()`'s assignment moves into `c()` while `b()`'s

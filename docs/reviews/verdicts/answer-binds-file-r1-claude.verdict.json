@@ -1,0 +1,31 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/answer-binds-file-r1-claude.md": "100644 200c92396de052bfd4431aa6b95a2f5320faa440",
+    "docs/reviews/codex/answer-binds-file-r1-codex.md": "100644 9d7837eab395a259cdb9472522b566e25a5eb241",
+    "docs/reviews/verdicts/answer-binds-file-r1-codex.verdict.json": "100644 868107bd5841b06bb9ae54290d5fc1b3c7c8e8ba"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3863c11ad9fe1a9993b4f194dafe2f71e6953557",
+  "intrusions": [],
+  "loosening_answers": {
+    "10f587a01725": "not a loosening",
+    "1d9326b385a7": "not a loosening",
+    "6f2121cd3021": "finding",
+    "766bf98f8fce": "not a loosening",
+    "7895f28f4d34": "finding",
+    "78c781c7b7fc": "finding",
+    "f420a0304250": "finding"
+  },
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9238 chars, names 3863c11ad9fe",
+  "refused": false,
+  "review": "answer-binds-file-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/abf",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
