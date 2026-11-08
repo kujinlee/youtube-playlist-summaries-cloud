@@ -19219,3 +19219,13 @@ failed-step case did `o[1].split` on an `("ok", (tree, sha))` result (mutants 2-
 `outcome()` maps a non-`CannotRun` raise to `("CRASHED", …)`; the first `fresh()` block's crash feeds its cases;
 `str(o[1])` in the step case. No `expect` retargeted: once reached, each named case goes red. regen-pages 106 -> 107
 cases (the guard read through check-plan-code's own `parse_fail_names`), 58 -> 60 mutations.
+
+## 2026-11-08
+The four branches open overnight are all merged this morning. The full mutation sweep on master is green again, after a
+day of red caused by one slow test suite hitting a fixed two-minute limit. There is a new page explaining why the sweep
+kept getting slower and what made it fast again: http://127.0.0.1:7391/2026-11-08-topic-ci-sweep-speed.html.
+<!--tech-->
+Merged: PR #537 `311d3631`, PR #538 `4d7766f8` (the per-suite limit scales with its own control run), PR #539 `d7a15f82`,
+PR #536 `64e4b67a`. Backlog #544 updated: two more review rounds whose only job was re-answering loosening ids after
+master merges that left every flagged file unchanged. The goal threads now quote the owner's 11-07 20:06 weekend
+mandate under its four goals.
