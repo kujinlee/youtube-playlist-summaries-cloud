@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 363 cases
+    python3 scripts/check-merge-ready.py --self-test # 364 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -938,7 +938,9 @@ VERDICT_DIR = "docs/reviews/verdicts/"
 # (`file_matches`, `flag_binds`). MEASURED on PR #522, PR #536 and PR #539: a merge of master that left
 # every flagged file byte-identical voided every answer and cost a whole review round. ⚠ WHAT NOW PASSES
 # that the exact tree refused: a change AFTER the round to any other file — a doc, a sibling script the
-# flagged file imports, a submodule, a policy file it reads — keeps the answer. The owner accepted that.
+# flagged file imports, a submodule, a policy file it reads — keeps the answer. So does a `.gitattributes`
+# change (r1 CLAUDE F2): an `eol=`/`working-tree-encoding=`/`filter=` line for the flagged path alters the bytes a
+# fresh checkout writes for it while its blob, the bound thing, stays the same. The owner accepted that.
 # Still fail closed: a file missing from either tree, a `dirty` that is not a dict, an unreachable head.
 # ⚠ A file the branch DELETES has no blob to bind to; its answers keep the EXACT-tree rule below.
 # What may differ, for that exact-tree rule, between the reviewed tree and the merging one: the round's
@@ -3532,6 +3534,30 @@ def _self_test_body() -> int:
               "hold cleared on that tree, back after a later doc edit",
               (_rcd, len(_idsd) > 0, "failure path" in _o0, "failure path" in _o, "is deleted on the branch" in _o),
               (0, True, False, True, True))
+        # ⟳ answer-binds-file r1 CLAUDE F1: a gate SYMLINK's answer is bound to its TARGET too, end to end —
+        # `gather` writes `via`, `flag_binds` reads it; the pure cases above hand-build that key.
+        _g8("reset", "-q", "--hard", "refs/remotes/origin/master")
+        _w8("tools/t.py", "def t(bad):\n    if bad:\n        return 1\n    return 0\n")
+        (_r8 / "scripts/check-l.py").symlink_to("../tools/t.py")
+        _g8("add", "tools/t.py", "scripts/check-l.py")
+        _g8("commit", "-qm", "a gate symlinked to tools/")
+        _base8l = _g8("rev-parse", "refs/remotes/origin/master")
+        _g8("update-ref", "refs/remotes/origin/master", "HEAD")
+        _w8("tools/t.py", "def t(bad):\n    if bad:\n        return 2\n    return 0\n")
+        _g8("commit", "-qam", "the target rewritten")
+        _rcl, _blkl = _main8("--flagged-block")
+        _idsl = re.findall(r"id `([0-9a-f]{12})`", _blkl)
+        _verdict8("l-r1-codex", _g8("rev-parse", "HEAD"), {i: "not a loosening" for i in _idsl})
+        _rc0, _o0 = _main8("--pr", "95")
+        _w8("tools/t.py", "def t(bad):\n    if bad:\n        return 3\n    return 0\n")
+        _g8("commit", "-qam", "the target edited after the round")
+        _rc, _o = _main8("--pr", "96")
+        _g8("update-ref", "refs/remotes/origin/master", _base8l)
+        check("⭐ #544 r1 Claude F1 real git: a gate SYMLINK's answer clears on its reviewed target (rc=0), and "
+              "an edit to the TARGET after the round voids it, rc=3, naming the target",
+              (_rcl, len(_idsl) > 0, _rc0, "failure path" in _o0, _rc, "failure path" in _o,
+               all(f"answered {i} on a different tools/t.py" in _o for i in _idsl)),
+              (0, True, 0, False, 3, True, True))
     finally:
         shutil.rmtree(_r8, ignore_errors=True)
     # ⟳ r2 CODEX 1, VERBATIM and through `gather`: `a()`'s assignment moves into `c()` while `b()`'s

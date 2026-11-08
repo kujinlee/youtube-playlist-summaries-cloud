@@ -1758,7 +1758,9 @@ EXPECTED_MUTATIONS = {
     # exact-tree branch (1), a deleted file bound to nothing (1), a symlink target dropped (1), an absent file read
     # as identical (1), a record clearing ids it is not bound for (1), a finding retired by a round bound for
     # another id (1), the call site binding nothing (1). Four entries re-bound to the new text, same subjects.
-    "scripts/check-merge-ready.py": 163,
+    # ⟳ 2026-11-08, answer-binds-file r1 CLAUDE F1: 163 -> 164, none retired — `gather`'s `via` key renamed, killed
+    # by the real-git case that edits a gate symlink's TARGET after the round.
+    "scripts/check-merge-ready.py": 164,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

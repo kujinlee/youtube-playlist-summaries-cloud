@@ -1388,6 +1388,17 @@
   "expect": "⭐ #544 real git: ...but a ONE-BYTE edit to the flagged file voids it, rc=3, naming the file"
  },
  {
+  "name": "#544 r1 Claude F1: gather writes a gate symlink's target under another key, so flag_binds binds the link only",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via\": tgt,\n",
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via_\": tgt,\n"
+   ]
+  ],
+  "expect": "⭐ #544 r1 Claude F1 real git: a gate SYMLINK's answer clears on its reviewed target (rc=0), and an edit to the TARGET after the round voids it, rc=3, naming the target"
+ },
+ {
   "name": "#508 (2): a verdict whose gate did NOT run still answers",
   "file": "scripts/check-merge-ready.py",
   "edits": [

@@ -19247,7 +19247,10 @@ file voids it), "an ignored submodule moved after the round voids its answer" an
 committed after the round voids its answer" (both now keep it). Unchanged and still fail closed: a changed, renamed or
 missing flagged file, a `dirty: null` verdict, an unreadable verdict, an unreachable reviewed head (a new real-git case),
 a gate that did not run, a reviewer's finding, and "a finding is retired only by a later round of the SAME half". A gate
-symlink's answer is bound to the link AND its target. A flagged file the branch DELETES has no blob, so its answers keep
+symlink's answer is bound to the link AND its target (a real-git case edits the target after the round; r1 Claude F1).
+Also passes, inside the same bound: a `.gitattributes` change after the round (`eol=`, `working-tree-encoding=`,
+`filter=` for the flagged path) — it is a different file, and it changes the bytes a fresh checkout writes while the
+flagged file's blob stays the same (r1 Claude F2). A flagged file the branch DELETES has no blob, so its answers keep
 the old exact-tree rule (`tree_matches`, kept with all its cases). No verdict format change: the blob is read from the
-recorded `head` with `git ls-tree`, so existing verdicts keep working. 348 -> 363 cases; mutations 156 -> 163, four
+recorded `head` with `git ls-tree`, so existing verdicts keep working. 348 -> 364 cases; mutations 156 -> 164, four
 entries re-bound to the new text.
