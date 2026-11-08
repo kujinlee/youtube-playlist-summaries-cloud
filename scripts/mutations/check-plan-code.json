@@ -3201,8 +3201,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        minutes = int(two.group(2)) if event == two.group(1) else int(two.group(3))",
-        "        minutes = int(two.group(3))"
+        "    minutes = int(two.group(2)) if event == two.group(1) else int(two.group(3))",
+        "    minutes = int(two.group(3))"
       ]
     ],
     "expect": [
@@ -3215,8 +3215,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return minutes * 60 - SWEEP_HEADROOM, None",
-        "        return minutes * 60, None"
+        "    return minutes * 60 - SWEEP_HEADROOM, None",
+        "    return minutes * 60, None"
       ]
     ],
     "expect": [
@@ -3229,8 +3229,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            return int(val) * 60 - SWEEP_HEADROOM, None",
-        "            return int(val) * 60, None"
+        "        return int(val) * 60 - SWEEP_HEADROOM, None",
+        "        return int(val) * 60, None"
       ]
     ],
     "expect": [
@@ -3238,16 +3238,16 @@
     ]
   },
   {
-    "name": "r1 F1: the reader runs past the sweep job's end, so it takes the NEXT job's timeout-minutes",
+    "name": "r1 F1 (re-bound r2): the reader runs past the sweep job's end, into the NEXT job's lines",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if re.match(r\"  \\S\", line):\n            break",
-        "        if False:\n            break"
+        "            lo, hi = start + 1, end",
+        "            lo, hi = start + 1, len(lines)"
       ]
     ],
     "expect": [
-      "...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it cannot read is a REASON, never a guessed budget"
+      "⭐ r1 F1: a sweep run's budget is ITS job's timeout-minutes for the event, less SWEEP_HEADROOM"
     ]
   },
   {
@@ -3255,8 +3255,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            return None, f\"{CI_WORKFLOW}'s `{SWEEP_JOB}` timeout-minutes is a shape this cannot read: {val!r}\"",
-        "            return 30 * 60 - SWEEP_HEADROOM, None"
+        "        return None, f\"{CI_WORKFLOW}'s `{job}` timeout-minutes is a shape this cannot read: {val!r}\"",
+        "        return 30 * 60 - SWEEP_HEADROOM, None"
       ]
     ],
     "expect": [
@@ -3264,16 +3264,17 @@
     ]
   },
   {
-    "name": "r1 F1: a workflow with no sweep job is GUESSED a budget",
+    "name": "r1 F1 (re-bound r2): a key found 0 times (no sweep job) or twice is GUESSED a value",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return None, f\"{CI_WORKFLOW} has no `{SWEEP_JOB}:` job\"",
-        "        return 1680, None"
+        "            return None, f\"`{where}` appears {len(hits)} times\"",
+        "            return \"28\", None"
       ]
     ],
     "expect": [
-      "...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it cannot read is a REASON, never a guessed budget"
+      "...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it cannot read is a REASON, never a guessed budget",
+      "⭐ r2 F2: a mapping with a value on its own line (an alias, a flow mapping) is a REASON"
     ]
   },
   {
@@ -3540,12 +3541,275 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "f\"NOTHING WAS MEASURED.\", file=sys.stderr)\n                return 2\n            deadline = _t0 + _secs",
-        "f\"NOTHING WAS MEASURED.\", file=sys.stderr)\n                _secs = 0.0\n            deadline = _t0 + _secs"
+        "f\"NOTHING WAS MEASURED.\", file=sys.stderr)\n                return 2\n            print(_line)",
+        "f\"NOTHING WAS MEASURED.\", file=sys.stderr)\n                _line = \"TIME BUDGET — none\"\n            print(_line)"
       ]
     ],
     "expect": [
       "...and with no workflow to read a budget from, a CI-event run REFUSES before measuring, rc=2"
+    ]
+  },
+  {
+    "name": "r2 F2: a line deeper than an entry is read as an entry, so a block scalar's text can pose as the job",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if ind > child:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F2: a block scalar whose text looks like the sweep job is not read: the budget is the REAL job's"
+    ]
+  },
+  {
+    "name": "r2 F2: a trailing comment is kept in the value",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "re.sub(r\"(?:^| )#.*\", \"\", hit.group(2) or \"\").strip()",
+        "(hit.group(2) or \"\").strip()"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F2: a trailing comment is not part of the value"
+    ]
+  },
+  {
+    "name": "r2 F2: a duplicate key is read as its FIRST occurrence",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if len(hits) != 1:",
+        "        if not hits:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F2: a duplicate key, on the path or at the value, is a REASON, never one of the two"
+    ]
+  },
+  {
+    "name": "r2 F2: a line that is not a plain `key:` entry is skipped instead of refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            return [], f\"line {i + 1} is not a plain `key:` entry: {st.strip()[:60]!r}\"",
+        "            continue"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F2: a line that is not a plain `key:` entry where an entry is read (a merge key, a sequence item, a document marker, a quoted key) is a REASON"
+    ]
+  },
+  {
+    "name": "r2 F2: a value continued onto the next line is read as its first line",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        elif not value or any(",
+        "        elif not value or False and any("
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F2: a value continued onto the next line is a REASON, not its first line"
+    ]
+  },
+  {
+    "name": "r2 F2: a line between two indent levels is read as a sibling",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if ind < child:\n            return [], f\"line {i + 1} is indented between two levels\"",
+        "        if False:\n            return [], f\"line {i + 1} is indented between two levels\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F2: a line indented BETWEEN two levels is a REASON, not a sibling"
+    ]
+  },
+  {
+    "name": "r2 F1: the harness reads a job-start variable the workflow never writes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "JOB_START_VAR = \"SWEEP_JOB_START\"",
+        "JOB_START_VAR = \"JOB_START\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: the REAL sweep job's FIRST step writes the epoch the budget counts from, once in ci.yml"
+    ]
+  },
+  {
+    "name": "r2 F3: a missing GITHUB_EVENT_NAME defaults to push",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\")\n    if not event:",
+        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\") or \"push\"\n    if not event:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: no GITHUB_EVENT_NAME is a REASON, never a default event"
+    ]
+  },
+  {
+    "name": "r2 F3: an --event that disagrees with the runner's is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if arg_event is not None and arg_event != event:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (no 60 minutes in a 30-minute job)",
+      "⭐ r2 F3: main() on CI with no GITHUB_EVENT_NAME, or an --event that disagrees with it, REFUSES before measuring, rc=2"
+    ]
+  },
+  {
+    "name": "r2 F3: the budget's event is not the runner's, so the schedule reads a push's 30 minutes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\")",
+        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\") and \"push\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: the EVENT is the runner's: with no --event the schedule's budget is still read"
+    ]
+  },
+  {
+    "name": "r2: a missing GITHUB_JOB defaults to the sweep job",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    job = env.get(\"GITHUB_JOB\", \"\")",
+        "    job = env.get(\"GITHUB_JOB\", \"\") or SWEEP_JOB"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: no GITHUB_JOB is a REASON, never a default job"
+    ]
+  },
+  {
+    "name": "r2: the budget is read for the sweep job whatever GITHUB_JOB names",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    secs, why = sweep_budget(ci_text, event, job)",
+        "    secs, why = sweep_budget(ci_text, event)"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: the job named by GITHUB_JOB is the one read"
+    ]
+  },
+  {
+    "name": "r2 F1: a missing job-start epoch defaults to NOW, so the budget counts from the sweep's start again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    raw = env.get(JOB_START_VAR, \"\")",
+        "    raw = env.get(JOB_START_VAR, \"\") or str(int(wall))"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON",
+      "⭐ r2 F1: main() on CI with no job-start epoch REFUSES before measuring, rc=2"
+    ]
+  },
+  {
+    "name": "r2 F1: a job start with stray whitespace is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not re.fullmatch(r\"[0-9]{1,12}\", raw):",
+        "    if not raw.strip().isdigit():"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON"
+    ]
+  },
+  {
+    "name": "r2 F1: a job start in the FUTURE is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if int(raw) > wall:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON"
+    ]
+  },
+  {
+    "name": "r2 F1: the budget counts from the sweep's own start, not the job's, so setup time runs past the kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    left = int(raw) + secs - wall",
+        "    left = secs"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: the deadline counts from the JOB's start: 150 s of setup leaves 1,530 s of a push's 1,680",
+      "⭐ r2 F1: main() counts a CI run's budget from the JOB's first step — 1,700 s after it, a push's 1,680 are spent, so the run stops at once, rc=1, its LAST line the budget stop"
+    ]
+  },
+  {
+    "name": "r2 F3: main() gives a CI run a budget only when it passes --event",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if _ci:\n            # ⛔ r1 F1, r2 F1-F3",
+        "        if _ci and a.event is not None:\n            # ⛔ r1 F1, r2 F1-F3"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's event"
+    ]
+  },
+  {
+    "name": "r2 F1: main() passes no hold, so the run's teardown runs BEFORE its report is printed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seeds=seeds, hold=hold,",
+        "seeds=seeds, hold=None,"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts"
+    ]
+  },
+  {
+    "name": "r2 F1: main() closes the hold before printing the report",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "select=select, deadline=deadline)\n        if report and report[0].startswith(LOCAL_REFUSAL):",
+        "select=select, deadline=deadline)\n        hold.close()\n        if report and report[0].startswith(LOCAL_REFUSAL):"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts"
+    ]
+  },
+  {
+    "name": "r2 F1: mutate_delivered ignores the hold and tears down before it returns",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        _keep = _own if hold is None else hold",
+        "        _keep = _own"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a run given a `hold` leaves its teardown to the holder — the deadline stands until it closes"
     ]
   }
 ]

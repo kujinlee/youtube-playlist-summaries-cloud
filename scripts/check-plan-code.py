@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 407 cases
+    python3 scripts/check-plan-code.py --self-test          # 431 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -131,12 +131,20 @@ SUITE_TIMEOUT_CEILING = 600
 # CUMULATIVE budget: the sweep job's own `timeout-minutes`, READ from `CI_WORKFLOW` for that event
 # (`sweep_budget`), less SWEEP_HEADROOM. Every suite run is capped at the budget left (`run_suite_parts`),
 # and once it is spent the run STOPS and its LAST line is BUDGET_STOP, naming the mutants that did not
-# finish and those not reached. HEADROOM covers what the budget's clock does not see: MEASURED on 42 shard
-# jobs (runs 42449427382, 42380275076) the steps before the sweep took at most 31 s and those after it at
-# most 4 s; tearing down a staged tree and its seed copy took 6-8 s locally (ESTIMATED the same on CI).
+# finish and those not reached.
+# ⟳ r2 (Codex F1-F3): the deadline is ABSOLUTE in JOB time (`ci_deadline`): the job's first step writes
+# its epoch, so the steps before the sweep (at most 31 s MEASURED on 42 shard jobs, runs 42449427382,
+# 42380275076) are now INSIDE the clock, not added after it. HEADROOM covers only what the clock still does
+# not see, and the report is printed and flushed BEFORE teardown: job start to that first step at most 2 s
+# (MEASURED, 42 jobs of runs 42432742676 and 42387350733, at the API's 1 s resolution); killing the
+# in-flight suite (a timed-out `subprocess.run` returned at its timeout with a pipe-holding grandchild,
+# MEASURED locally); then, after the report, teardown 6-8 s (ESTIMATED from local runs) and the post
+# steps at most 4 s (MEASURED). So the report lands ~117 s before the kill, and the job ends red, not killed.
 SWEEP_HEADROOM = 120
 CI_WORKFLOW = ".github/workflows/ci.yml"
 SWEEP_JOB = "mutation-sweep"
+# ⛔ r2 F1: the epoch the sweep job's FIRST step writes to `$GITHUB_ENV` (`_self_test` pins the step to ci.yml).
+JOB_START_VAR = "SWEEP_JOB_START"
 BUDGET_STOP = "CANNOT RUN — this run's time budget ran out"
 # The absolute `time.monotonic()` by which this run must stop, or None (no budget: off CI). Set ONLY by
 # `mutate_delivered` for the length of its run, read ONLY by `run_suite_parts` (the one producer of a
@@ -1269,9 +1277,72 @@ def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None,
     return r.returncode, r.stdout, r.stderr
 
 
-def sweep_budget(ci_text: "str | None", event: str) -> "tuple[float | None, str | None]":
-    """PURE. `(seconds, None)`: the time a sweep run under `event` may take — the `timeout-minutes` of
-    `CI_WORKFLOW`'s `SWEEP_JOB` job for that event, less `SWEEP_HEADROOM` — or `(None, why)`.
+_YAML_ENTRY = re.compile(r"([A-Za-z0-9_][A-Za-z0-9_-]*):(?: +(.*))?")
+
+
+def _yaml_entries(lines: list, lo: int, hi: int) -> "tuple[list, str | None]":
+    """PURE. The block-mapping entries of `lines[lo:hi]` at its SHALLOWEST indent: `[key, value, start, end]`
+    each (`end` is the next entry's line), or `([], why)` for a line this cannot read as one.
+
+    ⛔ r2 F2: every line MORE indented than an entry is that entry's content and is never read as a key — in
+    valid YAML a block scalar, a nested mapping and a continued scalar are all deeper than their key. So a
+    `run-name: |` block holding `  mutation-sweep:` belongs to `run-name`, which is not on the path."""
+    out: list = []
+    child = None
+    for i in range(lo, hi):
+        st = lines[i].lstrip(" ")
+        if not st.strip() or st.startswith("#"):
+            continue
+        ind = len(lines[i]) - len(st)
+        if child is None:
+            child = ind
+        if ind > child:
+            continue
+        if ind < child:
+            return [], f"line {i + 1} is indented between two levels"
+        hit = _YAML_ENTRY.fullmatch(st.rstrip(" "))
+        if hit is None:
+            return [], f"line {i + 1} is not a plain `key:` entry: {st.strip()[:60]!r}"
+        if out:
+            out[-1][3] = i
+        out.append([hit.group(1), re.sub(r"(?:^| )#.*", "", hit.group(2) or "").strip(), i, hi])
+    return out, None
+
+
+def workflow_value(ci_text: str, path: tuple) -> "tuple[str | None, str | None]":
+    """PURE. The plain scalar at `path` (e.g. `("jobs", "mutation-sweep", "timeout-minutes")`) of a workflow,
+    read as YAML block mappings, or `(None, why)`.
+
+    ⛔ r2 F2: a SUBSET reader that REFUSES what it does not understand, never one that searches. Off the path
+    nothing is read; on it, a line that is not a plain `key:` entry (a quoted key, `? k`, a `<<:` merge, a
+    sequence item, a document marker, a tab-indented line), a line between two indent levels, a duplicate key
+    or a scalar continued onto the next line is a reason. A mapping given on its key's own line (an alias, a
+    flow mapping) has no entries below it, so its key is "0 times" there — a reason too. No YAML parser is
+    installed on the runner, and a dependency for one value is the larger risk; `_self_test` reads the real
+    ci.yml, so a workflow that leaves the subset reds the PR that changes it."""
+    lines = ci_text.lstrip("\ufeff").splitlines()
+    lo, hi = 0, len(lines)
+    for depth, want in enumerate(path):
+        entries, why = _yaml_entries(lines, lo, hi)
+        if why:
+            return None, why
+        hits = [e for e in entries if e[0] == want]
+        where = ".".join(path[:depth + 1])
+        if len(hits) != 1:
+            return None, f"`{where}` appears {len(hits)} times"
+        _, value, start, end = hits[0]
+        if depth < len(path) - 1:
+            lo, hi = start + 1, end
+        elif not value or any(lines[j].strip() and not lines[j].strip().startswith("#")
+                              for j in range(start + 1, end)):
+            return None, f"`{where}` is not a one-line scalar"
+    return value, None
+
+
+def sweep_budget(ci_text: "str | None", event: str,
+                 job: str = SWEEP_JOB) -> "tuple[float | None, str | None]":
+    """PURE. `(seconds, None)`: the time a sweep run under `event` may take — `jobs.<job>.timeout-minutes` of
+    `CI_WORKFLOW` for that event, less `SWEEP_HEADROOM` — or `(None, why)`.
 
     READ from the workflow, never typed here: a copy of 30/60 would drift the day the job's limit moves.
     The two shapes it understands are a bare integer and `${{ github.event_name == 'E' && A || B }}`;
@@ -1279,27 +1350,52 @@ def sweep_budget(ci_text: "str | None", event: str) -> "tuple[float | None, str 
     """
     if ci_text is None:
         return None, f"{CI_WORKFLOW} could not be read"
-    lines = ci_text.split("\n")
-    try:
-        start = lines.index(f"  {SWEEP_JOB}:")
-    except ValueError:
-        return None, f"{CI_WORKFLOW} has no `{SWEEP_JOB}:` job"
-    for line in lines[start + 1:]:
-        if re.match(r"  \S", line):
-            break
-        hit = re.fullmatch(r"    timeout-minutes:\s*(.*?)\s*", line)
-        if hit is None:
-            continue
-        val = hit.group(1)
-        if val.isdigit():
-            return int(val) * 60 - SWEEP_HEADROOM, None
-        two = re.fullmatch(r"\$\{\{\s*github\.event_name\s*==\s*'([a-z_]+)'\s*&&\s*(\d+)\s*\|\|\s*(\d+)\s*\}\}",
-                           val)
-        if two is None:
-            return None, f"{CI_WORKFLOW}'s `{SWEEP_JOB}` timeout-minutes is a shape this cannot read: {val!r}"
-        minutes = int(two.group(2)) if event == two.group(1) else int(two.group(3))
-        return minutes * 60 - SWEEP_HEADROOM, None
-    return None, f"{CI_WORKFLOW}'s `{SWEEP_JOB}` job has no timeout-minutes"
+    val, why = workflow_value(ci_text, ("jobs", job, "timeout-minutes"))
+    if why:
+        return None, f"{CI_WORKFLOW}: {why}"
+    if val.isdigit():
+        return int(val) * 60 - SWEEP_HEADROOM, None
+    two = re.fullmatch(r"\$\{\{\s*github\.event_name\s*==\s*'([a-z_]+)'\s*&&\s*(\d+)\s*\|\|\s*(\d+)\s*\}\}",
+                       val)
+    if two is None:
+        return None, f"{CI_WORKFLOW}'s `{job}` timeout-minutes is a shape this cannot read: {val!r}"
+    minutes = int(two.group(2)) if event == two.group(1) else int(two.group(3))
+    return minutes * 60 - SWEEP_HEADROOM, None
+
+
+def ci_deadline(env, ci_text: "str | None", arg_event: "str | None", wall: float,
+                mono: float) -> "tuple[float | None, str | None, str | None]":
+    """PURE. On CI: `(deadline, line, None)` — the `time.monotonic()` by which this run must stop and the TIME
+    BUDGET line that says why — or `(None, None, why)`. `wall`/`mono` are `time.time()`/`time.monotonic()` now.
+
+    ⛔ r2: EVERY INPUT IS THE RUNNER'S OWN, AND A MISSING OR CONFLICTING ONE IS A REASON, NEVER A DEFAULT.
+      * the EVENT is `GITHUB_EVENT_NAME` (F3), so a run with no `--event` still has a budget, and an
+        `--event` that disagrees (60 minutes inside a 30-minute job) is refused;
+      * the JOB is `GITHUB_JOB`, whose `timeout-minutes` is read at exactly `jobs.<job>` (F2);
+      * the CLOCK starts at `JOB_START_VAR`, the epoch the job's FIRST step writes (F1), so checkout,
+        `npm ci` and everything else before the sweep are spent from the budget, not added after it.
+    """
+    event = env.get("GITHUB_EVENT_NAME", "")
+    if not event:
+        return None, None, "GITHUB_EVENT_NAME is not set, so the event the job's limit depends on is unknown"
+    if arg_event is not None and arg_event != event:
+        return None, None, f"--event {arg_event!r} is not this run's event (GITHUB_EVENT_NAME={event!r})"
+    job = env.get("GITHUB_JOB", "")
+    if not job:
+        return None, None, "GITHUB_JOB is not set, so which job's timeout-minutes applies is unknown"
+    raw = env.get(JOB_START_VAR, "")
+    if not re.fullmatch(r"[0-9]{1,12}", raw):
+        return None, None, (f"{JOB_START_VAR} is {raw!r}, not the epoch the job's first step records, so "
+                            f"when the job's limit runs out is unknown")
+    if int(raw) > wall:
+        return None, None, f"{JOB_START_VAR}={raw} is later than now ({wall:.0f})"
+    secs, why = sweep_budget(ci_text, event, job)
+    if why:
+        return None, None, why
+    left = int(raw) + secs - wall
+    return mono + left, (f"TIME BUDGET — {secs:.0f}s: {CI_WORKFLOW}'s jobs.{job}.timeout-minutes for event "
+                         f"{event!r}, less {SWEEP_HEADROOM}s of headroom, from the job's first step "
+                         f"({JOB_START_VAR}); {max(left, 0.0):.0f}s of it left as this run starts"), None
 
 
 def budget_spent() -> bool:
@@ -1902,11 +1998,14 @@ def mutate_delivered(root: pathlib.Path,
                      select: "frozenset | None" = None,
                      seeds: "tuple[int, ...] | None" = None,
                      deadline: "float | None" = None,
+                     hold: "contextlib.ExitStack | None" = None,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
 
-    `deadline` (r1 F1) is the absolute `time.monotonic()` by which the run must stop (`sweep_budget`), None
+    `deadline` (r1 F1) is the absolute `time.monotonic()` by which the run must stop (`ci_deadline`), None
     for no budget. Once it passes, the run STOPS and its report ENDS with a `budget_stop_line`.
+    `hold` (r2 F1): the caller's stack, which then owns this run's teardown (the staged tree, its seed copy,
+    the deadline's reset), so `main` prints and flushes the report BEFORE that unbounded work, not after it.
 
     `select` (backlog #330) is a pull request's diff-scoped selection of TARGETS, None for the
     whole manifest. It is applied BEFORE the shard, so the shards split the SELECTED entries
@@ -2015,7 +2114,10 @@ def mutate_delivered(root: pathlib.Path,
     # green first — and must not pay for the suites of files it never touches, which is the cost
     # this flag exists to cut.
     targets = sorted({m["file"] for m in shard_muts})
-    with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
+    with contextlib.ExitStack() as _own:
+        _keep = _own if hold is None else hold   # r2 F1: under a `hold` the teardown waits for the report
+        td = _keep.enter_context(tempfile.TemporaryDirectory())
+        cleanup = _keep.enter_context(contextlib.ExitStack())
         d = pathlib.Path(td)
         cleanup.callback(_set_deadline, _set_deadline(deadline))   # this run's budget, put back on exit
         staging = stage_tree(root, d)
@@ -2552,8 +2654,18 @@ def _budget_wiring(root: pathlib.Path) -> dict:
     ⛔ A SMALL FUNCTION ON PURPOSE (PR #400 r1 H1, measured): `check-main-drivable` analyses every
     `main()` call site against its ENCLOSING function, and inside the long `_self_test` this one
     call cost its suite ~30s and pushed it past `SUITE_TIMEOUT`. Here it costs nothing."""
-    saved = os.environ.pop("CI", None)
+    _gh = ("CI", "GITHUB_EVENT_NAME", "GITHUB_JOB", JOB_START_VAR)
+    saved = {k: os.environ.pop(k, None) for k in _gh}
     out = {}
+    torn: dict = {}
+    _real_md = mutate_delivered
+
+    def _held(*a_, hold=None, _k=None, _b=None, **k_):
+        # r2 F1: what stdout already holds when the run's teardown starts — None if main passed no `hold`.
+        r = _real_md(*a_, hold=hold, **k_)
+        if hold is not None:
+            hold.callback(lambda: torn.__setitem__(_k, _b.getvalue()))
+        return r
     (root / "changed.txt").write_text("scripts/thing.py\0")
     # r1 F1: a run under --event reads its time budget from the workflow — the real line's shape, with an
     # event whose 2 minutes leave NO budget after the headroom, so the "spent" row stops before any suite.
@@ -2570,20 +2682,39 @@ def _budget_wiring(root: pathlib.Path) -> dict:
                                     ("push", "true", ["--event", "push"], 0),
                                     ("seeds", "true", ["--seeds", "3,5"], 0),
                                     ("spent", "true", ["--event", "workflow_dispatch"], 0),
+                                    # r2 F1: a job that started 1,700 s ago has none of a push's 1,680 left
+                                    ("late", "true", ["--event", "push"], 0),
+                                    # r2 F3: no event from the runner, or an --event that disagrees with it
+                                    ("noevent", "true", [], 0),
+                                    ("conflict", "true", ["--event", "schedule"], 0),
+                                    ("nostart", "true", ["--event", "push"], 0),
                                     ("noci", "true", ["--event", "push"], 0)):
-            os.environ.pop("CI", None)
+            for _k in _gh:
+                os.environ.pop(_k, None)
             if key == "noci":     # LAST: the same root with no workflow to read a budget from
                 (root / CI_WORKFLOW).unlink()
+            # The runner's own variables on EVERY row, so the rows off CI prove they are ignored there.
+            _ev = (extra[extra.index("--event") + 1] if "--event" in extra and key != "conflict" else "push")
+            os.environ.update({"GITHUB_EVENT_NAME": _ev, "GITHUB_JOB": SWEEP_JOB,
+                               JOB_START_VAR: str(int(time.time()) - (1700 if key == "late" else 0))})
+            for _k in {"noevent": "GITHUB_EVENT_NAME", "nostart": JOB_START_VAR}.get(key, "").split():
+                os.environ.pop(_k)
             if ci is not None:
                 os.environ["CI"] = ci
             buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
-                    _suite_owns_the_pins():
-                out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
+            globals()["mutate_delivered"] = functools.partial(_held, _k=key, _b=buf)
+            try:
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
+                        _suite_owns_the_pins():
+                    out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
+            finally:
+                globals()["mutate_delivered"] = _real_md
     finally:
-        os.environ.pop("CI", None)
-        if saved is not None:
-            os.environ["CI"] = saved
+        for _k in _gh:
+            os.environ.pop(_k, None)
+            if saved[_k] is not None:
+                os.environ[_k] = saved[_k]
+    out["torn"] = torn
     return out
 
 
@@ -2696,20 +2827,93 @@ def _self_test_body() -> int:
          [sweep_budget(_fx_ci, _e) for _e in ("schedule", "pull_request")],
          [(60 * 60 - SWEEP_HEADROOM, None), (30 * 60 - SWEEP_HEADROOM, None)])
     case("...a bare integer is read as it stands",
-         sweep_budget("  mutation-sweep:\n    timeout-minutes: 7\n", "push"), (7 * 60 - SWEEP_HEADROOM, None))
+         sweep_budget("jobs:\n  mutation-sweep:\n    timeout-minutes: 7\n", "push"), (7 * 60 - SWEEP_HEADROOM, None))
     case("...and no workflow, no sweep job, a sweep job with no timeout-minutes of its own, or a shape it "
          "cannot read is a REASON, never a guessed budget",
          [(sweep_budget(_t, "push")[0], bool(sweep_budget(_t, "push")[1])) for _t in
           (None, "jobs:\n  x:\n    timeout-minutes: 5\n",
-           "  mutation-sweep:\n    runs-on: x\n  after:\n    timeout-minutes: 9\n",
-           "  mutation-sweep:\n    timeout-minutes: ${{ inputs.t }}\n")],
+           "jobs:\n  mutation-sweep:\n    runs-on: x\n  after:\n    timeout-minutes: 9\n",
+           "jobs:\n  mutation-sweep:\n    timeout-minutes: ${{ inputs.t }}\n")],
          [(None, True)] * 4)
+    # ⛔ r2 F2 (Codex): the value is read at EXACTLY jobs.mutation-sweep.timeout-minutes. Codex's counterexample
+    # is a `run-name` block scalar whose TEXT looks like the job, prepended to a valid workflow; the line reader
+    # took its 60 minutes inside the real 30-minute job.
+    _r2f2 = "run-name: |\n  mutation-sweep:\n    timeout-minutes: 60\n"
     _ci_txt = (pathlib.Path(__file__).resolve().parent.parent / CI_WORKFLOW).read_text(encoding="utf-8")
+    case("⭐ r2 F2: a block scalar whose text looks like the sweep job is not read: the budget is the REAL job's",
+         [sweep_budget(_r2f2 + _t, "push") for _t in (_ci_txt, _fx_ci)],
+         [(30 * 60 - SWEEP_HEADROOM, None)] * 2)
+    _sub = "jobs:\n  mutation-sweep:\n    timeout-minutes: 30\n"
+    case("⭐ r2 F2: a trailing comment is not part of the value",
+         sweep_budget("jobs:\n  mutation-sweep:\n    timeout-minutes: 30  # was 60\n", "push"),
+         (30 * 60 - SWEEP_HEADROOM, None))
+    case("⭐ r2 F2: a duplicate key, on the path or at the value, is a REASON, never one of the two",
+         [bool(sweep_budget(_t, "push")[1]) for _t in
+          (_sub + "    timeout-minutes: 60\n", _sub + "  mutation-sweep:\n    timeout-minutes: 60\n",
+           _sub + "jobs:\n  x:\n    timeout-minutes: 60\n")], [True] * 3)
+    case("⭐ r2 F2: a mapping with a value on its own line (an alias, a flow mapping) is a REASON",
+         [bool(sweep_budget(_t, "push")[1]) for _t in
+          ("jobs:\n  mutation-sweep: *j\n", "jobs:\n  mutation-sweep: {timeout-minutes: 60}\n",
+           "jobs: *all\n")], [True] * 3)
+    case("⭐ r2 F2: a line that is not a plain `key:` entry where an entry is read (a merge key, a sequence "
+         "item, a document marker, a quoted key) is a REASON",
+         [bool(sweep_budget(_t, "push")[1]) for _t in
+          ("jobs:\n  mutation-sweep:\n    <<: *d\n    runs-on: x\n", "---\n" + _sub,
+           "jobs:\n  - mutation-sweep\n", _sub + "    \"timeout-minutes\": 60\n")],
+         [True] * 4)
+    case("⭐ r2 F2: a value continued onto the next line is a REASON, not its first line",
+         sweep_budget(_sub[:-1] + "\n      0\n", "push")[0], None)
+    case("⭐ r2 F2: a line indented BETWEEN two levels is a REASON, not a sibling",
+         sweep_budget("jobs:\n    mutation-sweep:\n      timeout-minutes: 60\n  x:\n    timeout-minutes: 30\n",
+                      "push")[0], None)
+    case("⭐ r2 F2: an indent made with a tab is a REASON",
+         sweep_budget("jobs:\n  mutation-sweep:\n\t timeout-minutes: 60\n", "push")[0], None)
     _ci_real = [sweep_budget(_ci_txt, _e) for _e in ("schedule", "push")]
     case("...and the REAL ci.yml is read: no reason, a positive budget, the schedule's no smaller than a "
          "push's (a reshaped line reds THIS suite, in the same PR)",
          ([_w for _, _w in _ci_real], all((_b or 0) > 0 for _b, _ in _ci_real),
           (_ci_real[0][0] or 0) >= (_ci_real[1][0] or 0)), ([None, None], True, True))
+    # ⛔ r2 F1: the clock's start is written by the sweep job's FIRST step, ONCE in the workflow, and the job
+    # has ONE timeout-minutes (a step-level one would kill the step before the job's budget ran out).
+    _lines = _ci_txt.splitlines()
+
+    def _entry(_lo, _hi, _key):
+        # A reader that refuses gives an EMPTY entry, so the cases below go red rather than the suite crashing.
+        return ([e for e in _yaml_entries(_lines, _lo, _hi)[0] if e[0] == _key] or [["", "", 0, 0]])[0]
+    _jobs = _entry(0, len(_lines), "jobs")
+    _sw = _entry(_jobs[2] + 1, _jobs[3], SWEEP_JOB)
+    _st = _entry(_sw[2] + 1, _sw[3], "steps")
+    _items = [i for i in range(_st[2] + 1, _st[3]) if _lines[i].lstrip(" ").startswith("- ")]
+    _first = "\n".join(_lines[_items[0]:_items[1]]) if len(_items) > 1 else ""
+    case("⭐ r2 F1: the REAL sweep job's FIRST step writes the epoch the budget counts from, once in ci.yml",
+         (f'echo "{JOB_START_VAR}=$(date +%s)" >> "$GITHUB_ENV"' in _first, _ci_txt.count(f"{JOB_START_VAR}=")),
+         (True, 1))
+    case("...and the sweep job has ONE timeout-minutes, its own (no step-level one)",
+         sum(bool(re.match(r"\s+timeout-minutes:", _lines[i])) for i in range(_sw[2] + 1, _sw[3])), 1)
+    # ⛔ r2 F1 + F3: `ci_deadline` — every input the runner's own; the clock from the job's first step.
+    _env = {"GITHUB_EVENT_NAME": "push", "GITHUB_JOB": SWEEP_JOB, JOB_START_VAR: "1000000"}
+    _dl, _dline, _dwhy = ci_deadline(_env, _fx_ci, None, 1000150.0, 500.0)
+    case("⭐ r2 F1: the deadline counts from the JOB's start: 150 s of setup leaves 1,530 s of a push's 1,680",
+         (_dl, _dwhy, "1530s of it left" in (_dline or "")), (500.0 + 30 * 60 - SWEEP_HEADROOM - 150, None, True))
+    case("⭐ r2 F3: the EVENT is the runner's: with no --event the schedule's budget is still read",
+         ci_deadline({**_env, "GITHUB_EVENT_NAME": "schedule"}, _fx_ci, None, 1000000.0, 0.0)[0],
+         60 * 60 - SWEEP_HEADROOM)
+    case("⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (no 60 minutes in a 30-minute job)",
+         ci_deadline(_env, _fx_ci, "schedule", 1000000.0, 0.0)[0::2],
+         (None, "--event 'schedule' is not this run's event (GITHUB_EVENT_NAME='push')"))
+    case("⭐ r2 F3: no GITHUB_EVENT_NAME is a REASON, never a default event",
+         ci_deadline({**_env, "GITHUB_EVENT_NAME": ""}, _fx_ci, "push", 1000000.0, 0.0)[0], None)
+    case("⭐ r2: no GITHUB_JOB is a REASON, never a default job",
+         ci_deadline({**_env, "GITHUB_JOB": ""}, _fx_ci, None, 1000000.0, 0.0)[0], None)
+    case("⭐ r2: the job named by GITHUB_JOB is the one read",
+         ci_deadline({**_env, "GITHUB_JOB": "other"}, "jobs:\n  other:\n    timeout-minutes: 5\n", None,
+                     1000000.0, 0.0)[0], 5 * 60 - SWEEP_HEADROOM)
+    case("...and `sweep_budget` reads the job it is GIVEN, not the sweep job",
+         [sweep_budget(_fx_ci, "push", _j) for _j in ("other", "after", SWEEP_JOB)],
+         [(5 * 60 - SWEEP_HEADROOM, None), (9 * 60 - SWEEP_HEADROOM, None), (30 * 60 - SWEEP_HEADROOM, None)])
+    case("⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON",
+         [ci_deadline({**_env, JOB_START_VAR: _v}, _fx_ci, None, 1000000.0, 0.0)[0]
+          for _v in ("", "12a", " 1000000", "1000001")], [None] * 4)
     case("the budget's headroom is pinned — at most 31 s before the step and 4 s after it were MEASURED",
          SWEEP_HEADROOM, 120)
     _seen_b: list = []
@@ -3781,6 +3985,21 @@ def _self_test_body() -> int:
                   _spent_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True))
             case("...and with no workflow to read a budget from, a CI-event run REFUSES before measuring, rc=2",
                  (_wired["noci"][0], "SELECTION" in _wired["noci"][1]), (2, False))
+            _late_out = _wired["late"][1].rstrip("\n").split("\n")
+            case("⭐ r2 F1: main() counts a CI run's budget from the JOB's first step — 1,700 s after it, a push's "
+                 "1,680 are spent, so the run stops at once, rc=1, its LAST line the budget stop",
+                 (_wired["late"][0], "TIME BUDGET — 1680s" in _wired["late"][1], "0s of it left" in _wired["late"][1],
+                  _late_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True, True))
+            case("⭐ r2 F3: main() on CI with no GITHUB_EVENT_NAME, or an --event that disagrees with it, REFUSES "
+                 "before measuring, rc=2", [(_wired[k][0], "SELECTION" in _wired[k][1]) for k in ("noevent", "conflict")],
+                 [(2, False)] * 2)
+            case("⭐ r2 F1: main() on CI with no job-start epoch REFUSES before measuring, rc=2",
+                 (_wired["nostart"][0], "SELECTION" in _wired["nostart"][1]), (2, False))
+            case("⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's event",
+                 "TIME BUDGET — 1680s" in _wired["ci"][1], True)
+            case("⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts",
+                 [_k for _k in ("push", "spent", "ci") if "measured over" not in (_wired["torn"].get(_k) or "")
+                  and BUDGET_STOP not in (_wired["torn"].get(_k) or "")], [])
         # ── THE REPORTER IS INJECTED, AND THE DEFAULT IS SILENCE ──────────────────────────
         # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
         # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
@@ -4306,6 +4525,21 @@ def _self_test_body() -> int:
         case("⭐ r1 F1: a RE-CONTROL cut short by the budget is named as not finished, on the last line",
              (_ok_r, isinstance(_ev_r, NotMeasured), _n_r, (_rep_r or [''])[-1].startswith(BUDGET_STOP),
               "Did not finish (1): re-control scripts/thing.py." in (_rep_r or [''])[-1]), (False, True, 3, True, True))
+        # ⛔ r2 F1: under a `hold` the run's teardown (its staged tree, and the deadline's reset with it) waits for
+        # the CALLER, so `main` can print the report first.
+        with tempfile.TemporaryDirectory() as _tdh:
+            _h_root = pathlib.Path(_tdh); _mini(_h_root)
+            _prev_h = _set_deadline(None)
+            _h_dl = time.monotonic() + 3600.0
+            try:
+                with contextlib.ExitStack() as _hold:
+                    mutate_delivered(_h_root, deadline=_h_dl, hold=_hold)
+                    _h_during = _DEADLINE
+                _h_after = _DEADLINE
+            finally:
+                _set_deadline(_prev_h)
+        case("⭐ r2 F1: a run given a `hold` leaves its teardown to the holder — the deadline stands until it closes",
+             (_h_during == _h_dl, _h_after), (True, None))
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -6994,7 +7228,6 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             print(why, file=sys.stderr)
             return 2
     if a.mutate:
-        _t0 = time.monotonic()   # r1 F1: the budget's clock starts with the run, not with its first suite
         # ⛔ backlog #359 r3: the pins this run USES are its display, asserted HERE, in the process
         # that consumes them and before any mutation runs — check-merge-ready reads the display.
         _held = own_pin_problems()
@@ -7018,21 +7251,23 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # backlog #330: THE SELECTION, decided once by `select_manifests` and LOGGED before any
         # suite runs — which manifests, and the changed path that selected each, or "full: why".
         select = scope = deadline = None
-        if a.event is not None:
-            # ⛔ r1 F1: a run under a CI event has its job's budget, read from the workflow, or it does not run.
+        # L1: only a CI runner's own `CI=true` counts — an exported `CI=false` is not CI.
+        _ci = os.environ.get("CI", "").lower() == "true"
+        if _ci:
+            # ⛔ r1 F1, r2 F1-F3: EVERY run on CI has its job's budget, or it does not run — with or without
+            # --event, from the runner's own environment (`ci_deadline`), counted from the job's FIRST step.
             try:
                 _ci_text = (mroot / CI_WORKFLOW).read_text(encoding="utf-8")
             except OSError:
                 _ci_text = None
-            _secs, why = sweep_budget(_ci_text, a.event)
+            deadline, _line, why = ci_deadline(os.environ, _ci_text, a.event, time.time(), time.monotonic())
             if why:
                 print(f"CANNOT RUN — no time budget for this sweep run: {why}. Without one, hung mutants can "
                       f"run past the job's timeout-minutes and the job is killed with its evidence unprinted. "
                       f"NOTHING WAS MEASURED.", file=sys.stderr)
                 return 2
-            deadline = _t0 + _secs
-            print(f"TIME BUDGET — {_secs:.0f}s: {CI_WORKFLOW}'s `{SWEEP_JOB}` timeout-minutes for event "
-                  f"{a.event!r}, less {SWEEP_HEADROOM}s of headroom")
+            print(_line)
+        if a.event is not None:
             raw = None
             if a.changed is not None:
                 try:
@@ -7057,15 +7292,16 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # to silence, so a nested run cannot write into the stream its parent reads.
         # ⛔ OFF CI the budget applies unless THIS invocation asks otherwise; `CI` is set by
         # every GitHub Actions runner, so the sharded gate is never refused.
-        # L1: only a CI runner's own `CI=true` counts — an exported `CI=false` is not CI.
-        _ci = os.environ.get("CI", "").lower() == "true"
         budget = None if (_ci or a.allow_long_local) else (
             LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
         only = frozenset(a.only) if a.only else None
+        # ⛔ r2 F1: the run's teardown is HELD until the report is printed and flushed (its length is unbounded).
+        hold = contextlib.ExitStack()
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
-                                               shard=shard, budget=budget, only=only, seeds=seeds,
+                                               shard=shard, budget=budget, only=only, seeds=seeds, hold=hold,
                                                select=select, deadline=deadline)
         if report and report[0].startswith(LOCAL_REFUSAL):
+            hold.close()
             print(report[0], file=sys.stderr)
             return 2
         # r1 F1: a budget stop is the LAST line of the log, after the verdict line, where a reader of a
@@ -7122,6 +7358,8 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             print(not_measured_line(verdict, shard, only, scope))
         for r in stops:
             print(f"  \u2717 {r}", flush=True)
+        sys.stdout.flush()
+        hold.close()
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
     # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts

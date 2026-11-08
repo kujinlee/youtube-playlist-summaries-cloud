@@ -18987,7 +18987,11 @@ deliberately broken copy of another check takes 6 to 11 times longer than the no
 Now each check's limit is based on how long that check took moments earlier: 20 times its normal time, at least 2 minutes and
 at most 10. A check that really hangs still fails. Because a 10-minute limit lets only a few hangs fill a whole 30-minute CI
 job, each CI run now also has a total time budget, read from the job's own time limit: when it runs out, the run stops and its
-last line names what did not finish and what was never reached, instead of the job being killed with nothing printed. The
+last line names what did not finish and what was never reached, instead of the job being killed with nothing printed. A review
+then showed that budget could still overrun: it started counting only when the test run began (after a few setup steps),
+could read the time limit from the wrong place in the workflow file, and could be skipped or doubled by a wrong command-line
+option. Now the clock starts at the job's very first step, the time limit is read from exactly the right place, the event is
+taken from GitHub's own setting, and the last line is printed before any cleanup. The
 harness's own self-check also uses about 10% less CPU per run, though the run's wall time did not change measurably on this
 machine. The full test run is still near its time limit (backlog 231 stays open).
 <!--tech-->
@@ -18998,7 +19002,12 @@ F2), `seed_runs` and `run_suite(_parts)`. The control AND the re-control keep th
 rc 2 CANNOT RUN (backlog #558). r1 F1, the shard budget: under `--event`, `sweep_budget` reads the `mutation-sweep` job's
 `timeout-minutes` from `.github/workflows/ci.yml` for the event, less `SWEEP_HEADROOM` 120 s (1,680 s on a pull request or push,
 3,480 s on the schedule); `run_suite_parts` caps every child at the budget left and starts none once it is spent; the run then
-stops and prints `CANNOT RUN — this run's time budget ran out…` as its LAST line, naming the unfinished and the unreached. `_walks_dir` indexes lister calls and flows
+stops and prints `CANNOT RUN — this run's time budget ran out…` as its LAST line, naming the unfinished and the unreached.
+r2 fold (Codex R2-F1..F3, fix-induced): `ci_deadline` builds the deadline on CI for EVERY `--mutate` run from the runner's own
+inputs — `SWEEP_JOB_START` (the epoch the sweep job's first step writes to `$GITHUB_ENV`), `GITHUB_EVENT_NAME` (a disagreeing
+`--event` is CANNOT RUN), `GITHUB_JOB` — and `workflow_value` reads exactly `jobs.<job>.timeout-minutes`, refusing YAML outside
+its subset; `mutate_delivered(hold=…)` defers teardown until `main` has flushed the report. Off CI `--event` starts no budget.
+Self-test 407 -> 431; manifest 280 -> 300 (seven re-bound). `_walks_dir` indexes lister calls and flows
 by enclosing scope in one walk (backlog #231): identical answers on all 99 `scripts/*.py`, 22-53% less CPU. Self-test 373 -> 407
 cases; manifest 228 -> 280 entries (52 added, none retired; three retargeted for F3). Filed backlog #564 (the fixture-variation mutant whose cost grows
 with the repository) and backlog #565 (the self-test's full `docs/` stage copy).

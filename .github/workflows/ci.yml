@@ -1056,7 +1056,9 @@ jobs:
     # cumulative time budget from it (less SWEEP_HEADROOM, 120 s), so a shard whose hung mutants would outlast the
     # job STOPS and prints what it lost instead of being killed. Keep a bare integer or this `event_name == 'E' &&
     # A || B` shape: any other is CANNOT RUN in every shard, and the harness's self-test (which reads this file)
-    # goes red first, in the PR that changes it.
+    # goes red first, in the PR that changes it. ⟳ r2 fold: it is read at exactly `jobs.<GITHUB_JOB>.timeout-minutes`
+    # (`workflow_value`, which refuses YAML outside its subset rather than searching), for GITHUB_EVENT_NAME, and
+    # counted from the epoch the job's first step writes; this job must keep ONE timeout-minutes, its own.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
@@ -1191,6 +1193,13 @@ jobs:
         # REOPEN #231 if any shard exceeds 1,500s.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
+      # ⛔ FIRST, BEFORE CHECKOUT — PR #538 r2 fold (backlog #558). `check-plan-code.ci_deadline` counts the
+      # sweep's time budget from this epoch, so checkout, setup and `npm ci` are spent FROM the budget, not
+      # added after it (a budget counted from the sweep's own start fell past the kill). A run on CI with no
+      # epoch is CANNOT RUN; `check-plan-code`'s self-test pins this step as the job's first, and the name once.
+      - name: Record when this job started (the sweep's time budget counts from here)
+        run: echo "SWEEP_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       # ⚠ fetch-depth: 0 for parity with `verify`, not because the sweep reads history — it
       # copies the tree into a temp dir with no `.git` at all. Keeping the two checkouts
       # identical means a guard that grows a history-reading case does not fail HERE for a

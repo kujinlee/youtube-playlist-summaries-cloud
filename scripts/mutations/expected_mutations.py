@@ -836,7 +836,11 @@ EXPECTED_MUTATIONS = {
     # the two that dropped `control_parts`' limit (now removed) and the one that dropped the re-control's
     # became "the control/re-control runs under the CEILING / the mutant's limit" — and seven re-bound to
     # moved text. None retired.
-    "scripts/check-plan-code.py": 280,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-08 suite-cost-b r2 fold (backlog #558): 280 -> 300 — twenty for the deadline's inputs: the
+    # workflow reader that refuses rather than searches (six, r2 F2), the job-start epoch, event and job read
+    # from the runner (`ci_deadline`, eleven, r2 F1 + F3), and the report printed before teardown (three).
+    # Seven r1 entries re-bound to the rewritten reader and `main`, two of them renamed; none retired.
+    "scripts/check-plan-code.py": 300,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
