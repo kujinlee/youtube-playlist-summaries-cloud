@@ -19297,3 +19297,28 @@ named failure paths of the raw-blob read, and a materialise-once count. C-F3: `_
 it and 22-26 s with it, 3 runs each, same code. check-merge-ready 354 -> 367 cases, 162 -> 176 mutations (the two
 archive entries retargeted to the raw-blob read, one backlog #536 anchor rebound after a re-indent, none retired).
 Bound: a head with no harness has no reader, so its pins are CANNOT RUN.
+
+## 2026-11-08
+Round 2 of the review found three more ways the merge check's own process could be fooled while reading the pull
+request's copy of the test tool: a committed compiled file standing in for the source, a project kept inside a Python
+environment folder, and leftovers from the first read. Rather than patch a fourth hole, the check no longer loads that
+tool into itself at all. It starts a separate, sealed Python run on a clean copy of the pull request's own source files,
+and accepts only a well-formed answer from it; any compiled file in the pull request, a crash, a hang or a garbled
+answer means "cannot run", never "ready".
+<!--tech-->
+Backlog #538, PR #541, round 2 fold (Codex r2 R2-F1/X-F1, R2-F2/X-F2, R2-F3/X-F3). `scripts/check-merge-ready.py`:
+`pin_pair` reads both display texts (`pins_text`), then `_head_read` materialises HEAD's `scripts/` from raw blobs (as r1)
+writing ONLY `*.py`, refusing any `__pycache__/`, `*.pyc` or `*.pyo` (`PinsUnreadable`), and runs
+`sys.executable -I -B -S -c _DRIVER` in that temporary directory (`PYTHONDONTWRITEBYTECODE=1`, own session, killed by
+process group after `CHILD_TIMEOUT` = 60 s). The driver imports the harness, calls `pin_display` on each text and reads
+`EXPECTED_MUTATIONS`, type-checks each answer exactly before serialising, and prints one JSON document;
+`_child_answer_ok` requires exactly the schema and the sides asked, `_json_strict` refuses duplicate keys and non-finite
+numbers, and a non-zero exit is CANNOT RUN. Deleted: `_isolated_import`, `_lib_roots`, `_in_lib`, `_head_harness`,
+`held_pins`, `pins_at`, `_compile_memo` (and `import sysconfig`). New cases: Codex's committed unchecked-hash `.pyc` in a
+real repository (clean, and with the cache deleted from the working tree); any bytecode beside an honest source (a
+cache, a sourceless `.pyc`, a `.pyo`), with the fake HEAD no longer filtering `__pycache__`; Codex's prefix repro (the
+repository as `sys.prefix`, the working tree's `_redir` preloaded); `sys.path`/`sys.modules` unchanged across the suite's
+first `pin_pair` and a successful and a failing read; the child's control, a non-zero exit after answering, three schema
+violations, non-JSON output and a timeout. Every `_dirty_case` read now runs with `PYTHONPATH` naming the working tree's
+`scripts/`. check-merge-ready 384 -> 392 cases; mutations 184 -> 181 (8 retired with their code, 5 new, 5 re-bound; each
+listed at the pin in `scripts/mutations/expected_mutations.py`).

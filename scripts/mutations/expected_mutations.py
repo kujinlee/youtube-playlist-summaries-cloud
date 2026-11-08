@@ -1772,7 +1772,19 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-08, MERGE of origin/master (backlog #544, PR #543) into held-pins-head (backlog #538): the merge-base
     # pins 156; #544 moved it to 164 (+8, none retired) and #538 to 176 (+20, none retired), over disjoint entries,
     # so the merged manifest holds 156 + 8 + 20 = 184 (per-entry 3-way merge: 0 missing, 0 extra, 0 duplicate names).
-    "scripts/check-merge-ready.py": 184,
+    # ⟳ 2026-11-08, backlog #538 r2 (a REDESIGN: HEAD's harness is read in a CHILD process): 184 -> 181 = 184 - 8 + 5.
+    # RETIRED (8), their code deleted with `_isolated_import`, `_lib_roots`, the lazy `_head_harness` getter and the
+    # suite's compile memo — the parent now imports nothing to read the pins, so there is no isolation to weaken:
+    # the import WITHOUT isolation, its sys.path filter, its hidden-module filter (their subject, a working-tree module
+    # reaching HEAD's harness, is the new `-I` entry); "every FILELESS module trusted" (`own()` is gone); the
+    # restore's three halves (nothing to restore: the X-F3 case asserts sys.path and sys.modules UNCHANGED across a
+    # pin_pair, killed by the re-bound C-F1 entry); "materialised on EVERY call" (one child per pin_pair; the
+    # count case stays). NEW (5): the child without `-I`, committed bytecode skipped not refused, the exit code
+    # unchecked, the JSON schema unchecked, no timeout. RE-BOUND (5), same subjects: the working-tree harness read
+    # again, the displays parsed by the working-tree harness (C-F1), the held-versus-display comparison (#536,
+    # re-indented), a refused display read as nothing (`_child_pins`), and pin_display's SystemExit (the driver's
+    # BaseException catch; its case now names SystemExit).
+    "scripts/check-merge-ready.py": 181,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

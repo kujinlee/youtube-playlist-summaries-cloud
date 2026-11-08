@@ -1098,12 +1098,12 @@
   ]
  },
  {
-  "name": "a display check-plan-code refuses reads as pinning nothing, so a duplicate key or a computed pin fails OPEN (backlog #359 r3) ⟳ r7: re-bound to `pins_at`'s `_cross` call — the per-call catch is gone",
+  "name": "a display check-plan-code refuses reads as pinning nothing, so a duplicate key or a computed pin fails OPEN (backlog #359 r3) ⟳ r7: re-bound to `pins_at`'s `_cross` call — the per-call catch is gone ⟳ backlog #538 r2: re-bound to `_child_pins`, where the child's refusal is read",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,",
-    "    try:\n        return reader.pin_display(shown.stdout)\n    except Exception:\n        return {}\n    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,"
+    "    if \"error\" in answer:\n        raise PinsUnreadable(f\"{what}: {answer['error']}\")\n",
+    "    if \"error\" in answer:\n        return {}\n"
    ]
   ],
   "expect": [
@@ -1138,12 +1138,12 @@
   ]
  },
  {
-  "name": "pins_at bypasses `_cross` with its own `except Exception`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s)",
+  "name": "pins_at bypasses `_cross` with its own `except Exception`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s) ⟳ backlog #538 r2: re-bound to the child's driver, whose catch is BaseException",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,\n                  error=lambda d: PinsUnreadable(f\"{rev}: {home}: {d}\"))",
-    "    try:\n        return _exact_pins(reader.pin_display(shown.stdout))\n    except Exception as exc:\n        raise PinsUnreadable(f\"{rev}: {home}: {_describe(exc)}\") from None"
+    "        except BaseException as exc:\n            return {\"error\": describe(exc)}\n",
+    "        except Exception as exc:\n            return {\"error\": describe(exc)}\n"
    ]
   ],
   "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
@@ -1806,8 +1806,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "            if differ:\n                raise PinsUnreadable(",
-    "            if False:\n                raise PinsUnreadable("
+    "        if differ:\n            raise PinsUnreadable(",
+    "        if False:\n            raise PinsUnreadable("
    ]
   ],
   "expect": [
@@ -1949,8 +1949,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                got.append(_import_sibling(tmp / PINS_SCRIPT, \"_cpc_head_for_merge_ready\",\n",
-    "                got.append(_import_sibling(PINS_READER, \"_cpc_head_for_merge_ready\",\n"
+    "\"harness\": str(root / PINS_SCRIPT),",
+    "\"harness\": str(PINS_READER),"
    ]
   ],
   "expect": [
@@ -1959,21 +1959,6 @@
    "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
    "backlog #538: ...while an HONEST head with a LOWERING redirect left uncommitted is read as HEAD holds it: nothing held, clean or dirty (the adjacent negative)",
    "⛔ backlog #538 r1 (C-F1): an honest pin fall is HELD on a clean tree (the control) AND under a working-tree pin_display that answers from the working-tree pins file: no working-tree code parses a display"
-  ]
- },
- {
-  "name": "backlog #538: the head harness is imported WITHOUT isolation, so its sibling import reuses the module the working-tree reader loaded",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "                stack.enter_context(_isolated_import())\n",
-    "                stack.enter_context(contextlib.nullcontext())\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
-   "⛔ backlog #538 r1 (X-F2, C-F2): sys.path and sys.modules are restored EXACTLY after a successful held read and after a failing one, a fileless module the head harness made included",
-   "⛔ backlog #538 r1 (X-F2): a module the head harness imports but HEAD does not hold is CANNOT RUN, though one is already loaded from outside the library (with a file, or FILELESS) or sits on a non-library sys.path entry"
   ]
  },
  {
@@ -2003,57 +1988,17 @@
   ]
  },
  {
-  "name": "backlog #538: the isolated import keeps the working tree on sys.path, so a module HEAD lacks is found as an untracked file",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "    sys.path[:] = [p for p in saved_path if _in_lib(p, roots)]\n",
-    "    pass\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
-   "⛔ backlog #538 r1 (X-F2): a module the head harness imports but HEAD does not hold is CANNOT RUN, though one is already loaded from outside the library (with a file, or FILELESS) or sits on a non-library sys.path entry"
-  ]
- },
- {
-  "name": "backlog #538: the isolated import hides no loaded module, so the head harness's sibling import reuses the working tree's",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "    for name in [n for n, m in saved_mods.items() if not own(n, m)]:\n",
-    "    for name in []:\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538 r1 (X-F2): a module the head harness imports but HEAD does not hold is CANNOT RUN, though one is already loaded from outside the library (with a file, or FILELESS) or sits on a non-library sys.path entry"
-  ]
- },
- {
   "name": "backlog #538: r1 C-F1: the displays are parsed by the WORKING-TREE harness again, so a dirty reader hides an honest fall",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    reader = harness()\n",
-    "    reader = _import_sibling(PINS_READER, \"_cpc_for_merge_ready\", PinsUnreadable)\n"
+    "    old = {} if base_home is None else _child_pins(ans[\"base\"], f\"{rev}: {base_home}\")\n",
+    "    old = {} if base_home is None else _cross(lambda: _import_sibling(PINS_READER, \"_cpc_for_merge_ready\", PinsUnreadable).pin_display(base_text), reduce=_exact_pins, error=PinsUnreadable)\n"
    ]
   ],
   "expect": [
    "⛔ backlog #538 r1 (C-F1): an honest pin fall is HELD on a clean tree (the control) AND under a working-tree pin_display that answers from the working-tree pins file: no working-tree code parses a display",
-   "⛔ backlog #538 r1 (X-F2, C-F2): sys.path and sys.modules are restored EXACTLY after a successful held read and after a failing one, a fileless module the head harness made included"
-  ]
- },
- {
-  "name": "backlog #538: r1: HEAD's scripts/ is materialised on EVERY call, not once per pin_pair",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "            if not got:\n                tmp = ",
-    "            if True:\n                tmp = "
-   ]
-  ],
-  "expect": [
-   "backlog #538 r1: HEAD's scripts/ read as raw blobs holds what the display shows (the control), and is materialised ONCE for both displays and the held pins"
+   "⛔ backlog #538 r2 (X-F3): sys.path and sys.modules are UNCHANGED across the suite's first pin_pair, a successful held read and a failing one, a path and a fileless module the head harness made included"
   ]
  },
  {
@@ -2161,58 +2106,6 @@
   ]
  },
  {
-  "name": "backlog #538: r1 X-F2: every FILELESS module is trusted as the interpreter's own again, so one made in the working tree is visible and survives",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        return name in sys.builtin_module_names or _imp.is_frozen(name)\n",
-    "        return \"__path__\" not in mod.__dict__\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538 r1 (X-F2): a module the head harness imports but HEAD does not hold is CANNOT RUN, though one is already loaded from outside the library (with a file, or FILELESS) or sits on a non-library sys.path entry"
-  ]
- },
- {
-  "name": "backlog #538: r1 C-F2: the isolation's restore keeps what the block added",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        for name in [n for n in list(sys.modules) if n not in saved_mods]:\n",
-    "        for name in []:\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538 r1 (X-F2, C-F2): sys.path and sys.modules are restored EXACTLY after a successful held read and after a failing one, a fileless module the head harness made included"
-  ]
- },
- {
-  "name": "backlog #538: r1 C-F2: the isolation's restore does not put the hidden modules back",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        sys.modules.update(saved_mods)\n",
-    "        pass\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538 r1 (X-F2, C-F2): sys.path and sys.modules are restored EXACTLY after a successful held read and after a failing one, a fileless module the head harness made included"
-  ]
- },
- {
-  "name": "backlog #538: r1 C-F2: the isolation's restore does not put sys.path back",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        sys.path[:] = saved_path\n",
-    "        pass\n"
-   ]
-  ],
-  "expect": [
-   "⛔ backlog #538 r1 (X-F2, C-F2): sys.path and sys.modules are restored EXACTLY after a successful held read and after a failing one, a fileless module the head harness made included"
-  ]
- },
- {
   "name": "#544: a DELETED flagged file's answer is not compared with the whole tree, so a doc edit after the round keeps it",
   "file": "scripts/check-merge-ready.py",
   "edits": [
@@ -2288,5 +2181,71 @@
    ]
   ],
   "expect": "⭐ #544 real git: ...but a ONE-BYTE edit to the flagged file voids it, rc=3, naming the file"
+ },
+ {
+  "name": "backlog #538 r2: HEAD's child runs WITHOUT -I, so a PYTHONPATH naming the working tree supplies a module HEAD does not hold",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "[sys.executable, \"-I\", \"-B\", \"-S\", \"-c\", _DRIVER]",
+    "[sys.executable, \"-B\", \"-S\", \"-c\", _DRIVER]"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though an untracked copy sits in the working tree, redirecting (the first read) or not (the second)"
+  ]
+ },
+ {
+  "name": "backlog #538 r2 X-F1: committed bytecode in HEAD's scripts/ is skipped, not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PinsUnreadable(f\"HEAD: {path!r} is committed Python bytecode, which can run code its source does not hold\")\n",
+    "            continue\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2 (X-F1): a committed unchecked-hash .pyc that holds the display's pins, beside a harness source that redirects, is CANNOT RUN for the BYTECODE, with the cache in the working tree or not",
+   "⛔ backlog #538 r2 (X-F1): ...and ANY committed bytecode is refused beside an HONEST source, never skipped (a cache, a sourceless .pyc, a .pyo)"
+  ]
+ },
+ {
+  "name": "backlog #538 r2: the child's exit code is not checked, so a child that answers and then fails is read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if child.returncode != 0:\n        tail",
+    "    if False:\n        tail"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2: a child that answers and then exits NON-ZERO is CANNOT RUN, named for the exit"
+  ]
+ },
+ {
+  "name": "backlog #538 r2: the child's JSON is not checked against its schema",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if not _child_answer_ok(ans, base_text is not None, head_text is not None):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2: a child that prints JSON OUTSIDE the schema is CANNOT RUN: an extra key, a value that is not an int, a pins answer that is not a dict"
+  ]
+ },
+ {
+  "name": "backlog #538 r2: the child has no timeout, so a child that hangs holds the gate",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "out, err = child.communicate(req, timeout=CHILD_TIMEOUT)",
+    "out, err = child.communicate(req, timeout=None)"
+   ]
+  ],
+  "expect": [
+   "⛔ backlog #538 r2: ...and a child that runs past its timeout"
+  ]
  }
 ]
