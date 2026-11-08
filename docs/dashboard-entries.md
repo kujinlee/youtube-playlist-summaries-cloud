@@ -18934,3 +18934,14 @@ cancelled shard 3 again at 30m14s (re-control 57/70), shard 12 at 29m41s. `ci.ym
 1,500s" fired. Backlog 558: `SUITE_TIMEOUT = 120` in `scripts/check-plan-code.py` is flat across suites;
 `check-fixture-variation.py --self-test` exceeded it on shard 16 of the `1d5fd219` push run (the schedule run on the
 same commit was green).
+
+## 2026-11-07
+The full test run on the main branch is split across 24 groups again instead of 18, because several groups had grown
+past their 30-minute limit and every merge was showing a red mark that was not a real failure. More groups means each
+finishes inside the limit again, though only just; the cost is that six of them wait in line for a first group to
+finish, about 17-19 minutes and longer when other runs are busy, since the account runs at most 20 jobs at once. The
+lasting fix is making the slowest checks cheaper, which stays open.
+<!--tech-->
+`.github/workflows/ci.yml` `mutation-sweep` matrix 18 -> 24 (backlog #231's "any shard exceeds 1,500s" trigger fired: push
+run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41s). Predicted slowest shard ~1,545s (floor ~520s
+from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
