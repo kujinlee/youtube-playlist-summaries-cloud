@@ -18965,4 +18965,4 @@ status). `launch` runs `<tree>/scripts/<generator>` with `cwd=<tree>` and `GIT_D
 four edit hooks, `explainer-serve.py` POST `/regenerate` (`[python, SCRIPTS/regen-pages.py, --page, <key>]`),
 `scripts/regen-pages.sh`, `.claude/commands/goal-tree.md`, the dashboard skill. MEASURED: the fresh-tree step costs 0.65-0.83 s
 warm (3 runs) and 4.45 s cold. A full `--all` into a temp HOME took 56 s, and every page named `f7ff7eb0` (origin/master);
-goal-tree's gh got a 401 under the temp HOME. Suite 32 -> 65 cases, mutations 10 -> 31 / 31 killed; explainer-serve 68 -> 69.
+goal-tree's gh got a 401 under the temp HOME. Suite 32 -> 66 cases, mutations 10 -> 31 / 31 killed; explainer-serve 68 -> 69.

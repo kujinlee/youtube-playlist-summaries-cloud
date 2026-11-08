@@ -4,7 +4,7 @@
     python3 scripts/regen-pages.py --hook < payload.json   # what .claude/hooks/regen-pages.sh runs
     python3 scripts/regen-pages.py --all                   # every page, now
     python3 scripts/regen-pages.py --page backlog-table    # one page (the edit hooks, the Refresh button)
-    python3 scripts/regen-pages.py --self-test             # 65 cases
+    python3 scripts/regen-pages.py --self-test             # 66 cases
 
 WHY (owner decision D3, 2026-10-28, backlog #363). A merge moves the state every generated page reads —
 the dashboard's PR list, the backlog's closed rows, the goals and features maps, the goal tree's leaves —
@@ -83,6 +83,7 @@ LOCK_REL = ".claude/regen-tree.lock"
 GIT_TIMEOUT = 120      # seconds, per git call; a fetch on a slow link is the long one
 LOCK_WAIT = 150        # seconds a second rebuild waits for the first before saying CANNOT RUN
 SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+_IN_SUITE = False      # set by `_self_test`; see `fresh`
 
 
 class CannotRun(Exception):
@@ -200,7 +201,12 @@ def tree_lock(main: pathlib.Path, wait: float = LOCK_WAIT):
 
 @contextlib.contextmanager
 def fresh(repo: pathlib.Path = ROOT, git=_git, wait: float = LOCK_WAIT):
-    """The ONE way a page is built: (tree, sha) of a fresh `origin/master`, locked for the block."""
+    """The ONE way a page is built: (tree, sha) of a fresh `origin/master`, locked for the block.
+    ⛔ Refused inside the suite for THIS repository: measured while building this, one case that reached the
+    default `tree_for` fetched and added `.claude/regen-tree` in the real main checkout. Not mutated, on
+    purpose — a mutant that removed this guard would do exactly that to the real checkout."""
+    if _IN_SUITE and os.path.realpath(repo) == os.path.realpath(ROOT):
+        raise CannotRun("the self-test never materialises the real repository")
     main, common = main_of(repo, git)
     with tree_lock(main, wait):
         yield materialise(main, common, git)
@@ -365,6 +371,8 @@ def main(argv: list[str] | None = None, *, stdin=None, run=launch, pages=None, t
 def _self_test() -> int:
     """No generator runs: every launch is a fake. Wrapped per backlog #382's canonical entry."""
     import fixture_git
+    global _IN_SUITE
+    _IN_SUITE = True
     with fixture_git.isolated():
         return _self_test_body()
 
@@ -694,6 +702,9 @@ def _self_test_body() -> int:
     rc_u, said_u = drive(["--page", "gen-goals-page.py"], "", run=rec)
     case("--page refuses a name that is not a page KEY, naming the legal set",
          (rc_u, "goal-tree" in said_u), (2, True))
+
+    case("⛔ the suite refuses to materialise THIS repository, whatever a case passes for tree_for",
+         (outcome(lambda: _fresh_once(ROOT))[0], drive(["--all"], "", run=rec, tree_for=fresh)[0]), ("CANNOT RUN", 2))
 
     # ⭐ THE REAL THING, against real git: a bare origin, a main clone with an UNCOMMITTED edit, master
     # moving on twice. The tree follows origin/master; the main checkout's HEAD and edit are untouched.
