@@ -139,8 +139,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "timeout=SUITE_TIMEOUT,\n                           env=mutation_env(d, seed))",
-        "timeout=SUITE_TIMEOUT)"
+        "timeout=cap,\n                           env=mutation_env(d, seed))",
+        "timeout=cap)"
       ]
     ],
     "expect": "a spawned suite resolves Path.home() into the run's own tree"
@@ -240,8 +240,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(not_measured_line(verdict, shard, only, scope))\n        return 0 if ok else 1",
-        "            print(not_measured_line(verdict, shard, only, scope)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
+        "            print(not_measured_line(verdict, shard, only, scope))\n        for r in stops:",
+        "            print(not_measured_line(verdict, shard, only, scope)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        for r in stops:"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -929,8 +929,8 @@
     "name": "the before-control phase counts from zero, so the first subject is reported as 0 of N",
     "edits": [
       [
-        "        for position, name in enumerate(targets, 1):\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")",
-        "        for position, name in enumerate(targets, 0):\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")"
+        "        for position, name in enumerate(targets, 1):\n            if budget_spent():\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")",
+        "        for position, name in enumerate(targets, 0):\n            if budget_spent():\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")"
       ]
     ],
     "expect": [
@@ -1007,8 +1007,8 @@
     "name": "the re-control loop counts from zero, so the phase that re-proves every suite green reports its first subject as 0 of N",
     "edits": [
       [
-        "        for position, name in enumerate(targets, 1):\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")",
-        "        for position, name in enumerate(targets, 0):\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")"
+        "        for position, name in enumerate(targets, 1):\n            if budget_spent():\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")",
+        "        for position, name in enumerate(targets, 0):\n            if budget_spent():\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")"
       ]
     ],
     "expect": [
@@ -2097,8 +2097,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                                               select=select)",
-        "                                               select=None)"
+        "                                               select=select, deadline=deadline)",
+        "                                               select=None, deadline=deadline)"
       ]
     ],
     "expect": [
@@ -2280,8 +2280,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    pairs = [(n.target, n.iter)]",
-        "                    pairs = []"
+        "            pairs = [(n.target, n.iter)]",
+        "            pairs = []"
       ]
     ],
     "expect": [
@@ -2346,8 +2346,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "rc, out, err = run_suite_parts(d, name, seed)",
-        "rc, out, err = run_suite_parts(d, name)"
+        "rc, out, err = run_suite_parts(d, name, seed, limit=limit)",
+        "rc, out, err = run_suite_parts(d, name, limit=limit)"
       ]
     ],
     "expect": [
@@ -2647,8 +2647,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "run_suite_parts(trees[seed], name, seed)) for seed in seeds]",
-        "run_suite_parts(d, name, seed)) for seed in seeds]"
+        "run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]",
+        "run_suite_parts(d, name, seed, limit=limit)) for seed in seeds]"
       ]
     ],
     "expect": [
@@ -2673,8 +2673,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]\n",
-        "    with contextlib.ExitStack() as fresh:\n        trees = seed_trees(d, seeds, fresh)\n        return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]\n"
+        "    return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]\n",
+        "    with contextlib.ExitStack() as fresh:\n        trees = seed_trees(d, seeds, fresh)\n        return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]\n"
       ]
     ],
     "expect": [
@@ -2686,8 +2686,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "seed_runs(d, fname, seeds, here)]",
-        "seed_runs(d, fname, seeds)]"
+        "seed_runs(d, fname, seeds, here, limit=limit)]",
+        "seed_runs(d, fname, seeds, limit=limit)]"
       ]
     ],
     "expect": [
@@ -2738,8 +2738,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "control_parts(d, name, seeds, trees)\n            out = merged_output",
-        "control_parts(d, name, seeds)\n            out = merged_output"
+        "control_parts(d, name, seeds, trees)\n            recontrol_rc[name] = rc",
+        "control_parts(d, name, seeds)\n            recontrol_rc[name] = rc"
       ]
     ],
     "expect": [
@@ -2853,6 +2853,975 @@
       "⛔ backlog #533: a MISSING pins file is {} WITH the reason",
       "⛔ sweep-pin-select r1 F2: an unreadable pins file is REPORTED by its consumer with read_pins's reason, never an agreement with {}",
       "⛔ backlog #533: a copy with NO pins file is REFUSED by --mutate, rc=2, never measured against {}"
+    ]
+  },
+  {
+    "name": "backlog #231: a lister in a class body is filed under the module's top level, so a class attribute reads as a walk",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not isinstance(stmt, defs + (ast.ClassDef,)):\n            out.append(TOP)",
+        "        if True:\n            out.append(TOP)"
+      ]
+    ],
+    "expect": [
+      "...and a lister in a CLASS BODY, outside any def, is in no scope — it is not a walk"
+    ]
+  },
+  {
+    "name": "backlog #231: a node is filed under no function scope, so every lister inside a def is lost",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if isinstance(up, defs):\n                out.append(id(up))",
+        "            if False:\n                out.append(id(up))"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a module-level name carries the directory into a function's lister"
+    ]
+  },
+  {
+    "name": "backlog #231: the module's taint is not seeded into a function's scope",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    module = taint(flows.get(TOP, []), set())",
+        "    module = set()"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a module-level name carries the directory into a function's lister"
+    ]
+  },
+  {
+    "name": "backlog #231: a scope is tainted from EVERY scope's flows, so a sibling function's assignment leaks in",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        tainted = taint(flows.get(key, []), module)",
+        "        tainted = taint([f for v in flows.values() for f in v], module)"
+      ]
+    ],
+    "expect": [
+      "...nor is a name assigned in a SIBLING function, which the lister's scope cannot see"
+    ]
+  },
+  {
+    "name": "backlog #231: the taint stops after one pass in source order, so a later assignment never reaches an earlier reader",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    out |= names\n                    grew = True",
+        "                    out |= names\n                    grew = False"
+      ]
+    ],
+    "expect": [
+      "...and a name assigned from one assigned LATER in the scope is still tainted — a fixpoint, not one pass in source order"
+    ]
+  },
+  {
+    "name": "backlog #231: the tree-wide `ls-files` prefilter always says no, so a `git ls-files` call is never a lister",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    any_ls = any(isinstance(m, ast.Constant) and m.value == \"ls-files\" for m in every)",
+        "    any_ls = False"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a call carrying `ls-files` is a lister, whatever it is called"
+    ]
+  },
+  {
+    "name": "backlog #231: a carried NAME no longer counts, only a constant naming the directory",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return const or not names.isdisjoint(tainted)",
+        "        return const"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: a module-level name carries the directory into a function's lister"
+    ]
+  },
+  {
+    "name": "backlog #558: an untimed suite gets NO limit, so a hung control never times out",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if control_seconds is None:\n        return SUITE_TIMEOUT",
+        "    if control_seconds is None:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: an untimed suite (a control) gets the flat SUITE_TIMEOUT"
+    ]
+  },
+  {
+    "name": "backlog #558: the floor is dropped, so a fast control's mutants time out in seconds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return min(SUITE_TIMEOUT_CEILING, max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR * control_seconds))",
+        "return min(SUITE_TIMEOUT_CEILING, SUITE_TIMEOUT_FACTOR * control_seconds)"
+      ]
+    ],
+    "expect": [
+      "...a fast control is FLOORED at SUITE_TIMEOUT, never below it"
+    ]
+  },
+  {
+    "name": "backlog #558: the ceiling is dropped, so a slow target's real hang holds the shard without bound",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return min(SUITE_TIMEOUT_CEILING, max(",
+        "    return min(float(\"inf\"), max("
+      ]
+    ],
+    "expect": [
+      "...and a very slow one is CAPPED, so a real infinite loop still times out"
+    ]
+  },
+  {
+    "name": "backlog #558: the factor is 1, which is the flat limit that went red again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT_FACTOR = 20",
+        "SUITE_TIMEOUT_FACTOR = 1"
+      ]
+    ],
+    "expect": [
+      "the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded ceiling lets a real hang hold a shard"
+    ]
+  },
+  {
+    "name": "backlog #558: the ceiling drifts to unbounded with nothing to catch it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT_CEILING = 600",
+        "SUITE_TIMEOUT_CEILING = 100000"
+      ]
+    ],
+    "expect": [
+      "the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded ceiling lets a real hang hold a shard"
+    ]
+  },
+  {
+    "name": "backlog #558: run_suite_parts ignores the limit it is given",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    limit = SUITE_TIMEOUT if limit is None else limit",
+        "    limit = SUITE_TIMEOUT"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat SUITE_TIMEOUT when given none — never no timeout at all"
+    ]
+  },
+  {
+    "name": "backlog #558: run_suite_parts given no limit runs the child with NO timeout",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SUITE_TIMEOUT if limit is None else limit",
+        "None if limit is None else limit"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat SUITE_TIMEOUT when given none — never no timeout at all"
+    ]
+  },
+  {
+    "name": "backlog #558: the timeout message names the flat constant, not the limit the suite ran under",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"{limit:.1f}s. NOT CHECKED.\")",
+        "f\"{SUITE_TIMEOUT}s. NOT CHECKED.\")"
+      ]
+    ],
+    "expect": [
+      "...and a suite over that limit is still rc 2, CANNOT RUN, naming the limit it ran under"
+    ]
+  },
+  {
+    "name": "backlog #558: run_suite drops the limit on its way to run_suite_parts",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seed, limit=limit)\n    return rc, merged_output(out, err)",
+        "seed)\n    return rc, merged_output(out, err)"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+      "⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and seed_runs (every seed) under the limit they are given"
+    ]
+  },
+  {
+    "name": "backlog #558: seed_runs drops the limit, so every seeded mutant runs under the flat 120 s",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "name, seed, limit=limit)) for seed in seeds]",
+        "name, seed)) for seed in seeds]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+      "⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and seed_runs (every seed) under the limit they are given"
+    ]
+  },
+  {
+    "name": "r1 Codex F3: an unseeded control and re-control run under the CEILING, not the flat limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return run_suite_parts(d, name)\n    rc, so, se = 0, \"\", \"\"",
+        "        return run_suite_parts(d, name, limit=SUITE_TIMEOUT_CEILING)\n    rc, so, se = 0, \"\", \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "r1 Codex F3: a seeded control and re-control run under the CEILING, not the flat limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seed_runs(d, name, seeds, trees):",
+        "seed_runs(d, name, seeds, trees, limit=SUITE_TIMEOUT_CEILING):"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "r1 Codex F3: the re-control runs under the MUTANT's limit, so a restored suite 6x slower certifies the run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            rc, so, se = control_parts(d, name, seeds, trees)\n            recontrol_rc[name] = rc",
+        "            rc, so, se = (run_suite_parts(d, name, limit=limits.get(name)) if not seeds\n                          else control_parts(d, name, seeds, trees))\n            recontrol_rc[name] = rc"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: no target's limit is derived from its control",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            limits[name] = suite_limit(control_seconds[name] / max(1, len(seeds or ())))",
+        "            limits[name] = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: the control's time is not divided by its seed count, so two seeds double every limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "control_seconds[name] / max(1, len(seeds or ()))",
+        "control_seconds[name]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: mutate_delivered never hands the limits to run_mutations",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "set(targets), limits=limits,",
+        "set(targets), limits=None,"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: run_mutations looks up no limit for the mutated target",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        limit = (limits or {}).get(fname)",
+        "        limit = None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+      "⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and seed_runs (every seed) under the limit they are given"
+    ]
+  },
+  {
+    "name": "backlog #558: a seeded mutant run drops its limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "here, limit=limit)]",
+        "here)]"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 2 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "backlog #558: an unseeded mutant run drops its limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "run_suite(d, fname, limit=limit), None",
+        "run_suite(d, fname), None"
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #558: under 1 seed(s) the control and the re-control run under the flat limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time"
+    ]
+  },
+  {
+    "name": "r1 F1 (re-bound arch 11-08): the headroom is not taken off the job's limit, so the budget runs to the kill itself",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    secs = limit - SWEEP_HEADROOM",
+        "    secs = limit"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event (60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)"
+    ]
+  },
+  {
+    "name": "r1 F1 (re-bound arch 11-08): a missing job limit is GUESSED as 30 minutes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    minutes = env.get(LIMIT_VAR, \"\")",
+        "    minutes = env.get(LIMIT_VAR, \"\") or \"30\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default"
+    ]
+  },
+  {
+    "name": "r1 F1: the headroom drifts to nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SWEEP_HEADROOM = 120",
+        "SWEEP_HEADROOM = 0"
+      ]
+    ],
+    "expect": [
+      "the budget's headroom is pinned — at most 31 s before the step and 4 s after it were MEASURED",
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+    ]
+  },
+  {
+    "name": "r1 F1: a suite run is not capped at the budget left, so one hang carries the shard past its kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    cap = limit if left is None or left >= limit else left",
+        "    cap = limit"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: under a budget a suite run is capped at the budget LEFT, never its own longer limit",
+      "...a run the budget cut short is rc 2 and SAYS the budget stopped it, naming its own limit"
+    ]
+  },
+  {
+    "name": "r1 F1: a run the budget cut short reads as an ordinary timeout of its own limit",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if cap < limit:\n            return 2",
+        "        if False:\n            return 2"
+      ]
+    ],
+    "expect": [
+      "...a run the budget cut short is rc 2 and SAYS the budget stopped it, naming its own limit"
+    ]
+  },
+  {
+    "name": "r1 F1: a suite is started after the budget is spent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if left is not None and left <= 0:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...and once the budget is spent NO suite is started: rc 2, CANNOT RUN"
+    ]
+  },
+  {
+    "name": "r1 F2: the seeded call with no trees drops its limits again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seed_trees(d, seeds, cleanup), limits=limits)",
+        "seed_trees(d, seeds, cleanup))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F2: a SEEDED run_mutations given no trees makes its own, and runs every seed under the limit it was given"
+    ]
+  },
+  {
+    "name": "r1 F1: run_mutations carries on after the budget is spent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if budget_spent():\n            # r1 F1: STOP",
+        "        if False:\n            # r1 F1: STOP"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: once the budget is spent run_mutations STOPS — one suite started, not three — and fails",
+      "...and its LAST line names the mutant that did not finish and each one not reached",
+      "⭐ r1 F1: a MUTANT cut short by the budget stops the run — no later mutant, no re-control — and the run says so ONCE, last, naming it and the mutant never reached"
+    ]
+  },
+  {
+    "name": "r1 F1: the stop line leaves out the FIRST mutant not reached",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "[m.get(\"name\", \"?\") for m in muts[position - 1:]]",
+        "[m.get(\"name\", \"?\") for m in muts[position:]]"
+      ]
+    ],
+    "expect": [
+      "...and its LAST line names the mutant that did not finish and each one not reached",
+      "⭐ r1 F1: a MUTANT cut short by the budget stops the run — no later mutant, no re-control — and the run says so ONCE, last, naming it and the mutant never reached"
+    ]
+  },
+  {
+    "name": "r1 F1: the stop line names the FINISHED mutants as the ones that did not finish",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "[e[\"name\"] for e in ev_muts if e.get(\"measured\") is False]",
+        "[e[\"name\"] for e in ev_muts if e.get(\"measured\") is True]"
+      ]
+    ],
+    "expect": [
+      "...and its LAST line names the mutant that did not finish and each one not reached",
+      "⭐ r1 F1: a MUTANT cut short by the budget stops the run — no later mutant, no re-control — and the run says so ONCE, last, naming it and the mutant never reached"
+    ]
+  },
+  {
+    "name": "r1 F1: mutate_delivered never applies the deadline it is given",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "cleanup.callback(_set_deadline, _set_deadline(deadline))",
+        "cleanup.callback(_set_deadline, _set_deadline(None))"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a run whose budget is already spent starts NO suite, is NOT MEASURED, and its last line names the control and the mutations it never reached",
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+    ]
+  },
+  {
+    "name": "r1 F1: mutate_delivered leaves its deadline behind for whatever runs next",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        cleanup.callback(_set_deadline, _set_deadline(deadline))   # this run's budget",
+        "        _set_deadline(deadline)   # this run's budget"
+      ]
+    ],
+    "expect": [
+      "...and the run puts the budget it replaced back when it ends"
+    ]
+  },
+  {
+    "name": "r1 F1: a run stopped in its controls does not say what it never reached",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if budget_spent():\n            # r1 F1: a control cut short",
+        "        if False:\n            # r1 F1: a control cut short"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a run whose budget is already spent starts NO suite, is NOT MEASURED, and its last line names the control and the mutations it never reached"
+    ]
+  },
+  {
+    "name": "r1 F1: the control loop starts a control after the budget is spent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if budget_spent():\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")",
+        "            if False:\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"control {name}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a run whose budget is already spent starts NO suite, is NOT MEASURED, and its last line names the control and the mutations it never reached"
+    ]
+  },
+  {
+    "name": "r1 F1: a run stopped in its mutants goes on to the re-controls, and says so twice",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if m_report and m_report[-1].startswith(BUDGET_STOP):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a MUTANT cut short by the budget stops the run — no later mutant, no re-control — and the run says so ONCE, last, naming it and the mutant never reached"
+    ]
+  },
+  {
+    "name": "r1 F1: the re-control loop starts a re-control after the budget is spent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if budget_spent():\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")",
+        "            if False:\n                break\n            if progress is not None:\n                progress(position, len(targets), f\"re-control {name}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a budget that runs out AFTER the last mutant starts no re-control, and names it not reached"
+    ]
+  },
+  {
+    "name": "r1 F1: a re-control never started is not a stop, so the run certifies without one",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if len(recontrol_rc) < len(targets) or (budget_spent()",
+        "        if (budget_spent()"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a budget that runs out AFTER the last mutant starts no re-control, and names it not reached"
+    ]
+  },
+  {
+    "name": "r1 F1: a re-control the budget cut short is not named on the stop line",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        " or (budget_spent() and 2 in recontrol_rc.values()):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: a RE-CONTROL cut short by the budget is named as not finished, on the last line"
+    ]
+  },
+  {
+    "name": "r1 F1: main() never hands the budget to mutate_delivered",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "select=select, deadline=deadline)",
+        "select=select, deadline=None)"
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+    ]
+  },
+  {
+    "name": "r1 F1: main() prints the budget stop among the other lines, above the verdict, not LAST",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if r not in stops:\n                print(f\"  \\u2717 {r}\")",
+        "            if True:\n                print(f\"  \\u2717 {r}\")"
+      ],
+      [
+        "        for r in stops:\n            print(f\"  \\u2717 {r}\", flush=True)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so the run stops, rc=1, and its LAST line is the budget stop"
+    ]
+  },
+  {
+    "name": "r1 F1: main() runs a CI-event sweep with no budget when the workflow cannot be read",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"NOTHING WAS MEASURED.\", file=sys.stderr)\n                return 2\n            print(_line)",
+        "f\"NOTHING WAS MEASURED.\", file=sys.stderr)\n                _line = \"TIME BUDGET — none\"\n            print(_line)"
+      ]
+    ],
+    "expect": [
+      "...and with no job limit from the runner, or one it did not expand, a CI run REFUSES before measuring, rc=2"
+    ]
+  },
+  {
+    "name": "r2 F1: the harness reads a job-start variable the workflow never writes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "JOB_START_VAR = \"SWEEP_JOB_START\"",
+        "JOB_START_VAR = \"JOB_START\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "r2 F3: a missing GITHUB_EVENT_NAME defaults to push",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\")\n    if not event:",
+        "    event = env.get(\"GITHUB_EVENT_NAME\", \"\") or \"push\"\n    if not event:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: no GITHUB_EVENT_NAME is a REASON, never a default event"
+    ]
+  },
+  {
+    "name": "r2 F3: an --event that disagrees with the runner's is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if arg_event is not None and arg_event != event:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (it would choose the wrong selection)",
+      "⭐ r2 F3: main() on CI with no GITHUB_EVENT_NAME, or an --event that disagrees with it, REFUSES before measuring, rc=2"
+    ]
+  },
+  {
+    "name": "r2 F1: a missing job-start epoch defaults to NOW, so the budget counts from the sweep's start again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    raw = env.get(JOB_START_VAR, \"\")",
+        "    raw = env.get(JOB_START_VAR, \"\") or str(int(wall))"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON",
+      "⭐ r2 F1: main() on CI with no job-start epoch REFUSES before measuring, rc=2"
+    ]
+  },
+  {
+    "name": "r2 F1: a job start with stray whitespace is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not re.fullmatch(r\"[0-9]{1,12}\", raw):",
+        "    if not raw.strip().isdigit():"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON"
+    ]
+  },
+  {
+    "name": "r2 F1: a job start in the FUTURE is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if int(raw) > wall:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON"
+    ]
+  },
+  {
+    "name": "r2 F1: the budget counts from the sweep's own start, not the job's, so setup time runs past the kill",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    left = int(raw) + secs - wall",
+        "    left = secs"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: the deadline counts from the JOB's start: 150 s of setup leaves 1,530 s of a push's 1,680",
+      "⭐ r2 F1: main() counts a CI run's budget from the JOB's first step — 1,700 s after it, a push's 1,680 are spent, so the run stops at once, rc=1, its LAST line the budget stop"
+    ]
+  },
+  {
+    "name": "r2 F3: main() gives a CI run a budget only when it passes --event",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if _ci:\n            # ⛔ r1 F1, r2 F1-F3",
+        "        if _ci and a.event is not None:\n            # ⛔ r1 F1, r2 F1-F3"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's limit"
+    ]
+  },
+  {
+    "name": "r2 F1: main() passes no hold, so the run's teardown runs BEFORE its report is printed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "seeds=seeds, hold=hold,",
+        "seeds=seeds, hold=None,"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts"
+    ]
+  },
+  {
+    "name": "r2 F1: main() closes the hold before printing the report",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "select=select, deadline=deadline)\n        if report and report[0].startswith(LOCAL_REFUSAL):",
+        "select=select, deadline=deadline)\n        hold.close()\n        if report and report[0].startswith(LOCAL_REFUSAL):"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts"
+    ]
+  },
+  {
+    "name": "r2 F1: mutate_delivered ignores the hold and tears down before it returns",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        _keep = _own if hold is None else hold",
+        "        _keep = _own"
+      ]
+    ],
+    "expect": [
+      "⭐ r2 F1: a run given a `hold` leaves its teardown to the holder — the deadline stands until it closes"
+    ]
+  },
+  {
+    "name": "arch 11-08: a job limit with padding, a leading zero, zero or five digits is accepted as minutes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not re.fullmatch(r\"[1-9][0-9]{0,3}\", minutes):",
+        "    if not minutes.strip().isdigit():"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default"
+    ]
+  },
+  {
+    "name": "arch 11-08: the runner's limit is ignored, so every CI run gets 30 minutes again",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    limit = int(minutes) * 60",
+        "    limit = 30 * 60"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event (60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)"
+    ]
+  },
+  {
+    "name": "arch 11-08: the harness reads a limit variable the workflow never sets",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "LIMIT_VAR = \"SWEEP_TIMEOUT_MINUTES\"",
+        "LIMIT_VAR = \"SWEEP_LIMIT\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin looks for an anchor the workflow never defines",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "LIMIT_ANCHOR = \"sweep-limit\"",
+        "LIMIT_ANCHOR = \"limit\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "R3-F1: the pin counts a timeout-minutes only at a line's start, so a step's FIRST-key limit passes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "r\"(?:^|[\\s{,])[\\\"']?timeout-minutes[\\\"']?\\s*:\"",
+        "r\"^\\s+timeout-minutes:\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin stops counting the job's timeout-minutes",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if limits != 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin no longer checks the job's limit carries the anchor",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if len(anchored) != 1 or not once:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: an anchor defined a second time passes, so the alias can bind to the wrong node",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    once = whole.count(f\"&{LIMIT_ANCHOR}\") == 1",
+        "    once = True"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the alias may sit in any step, not only the one that runs --mutate",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            or \"check-plan-code.py --mutate\" not in \"\\n\".join(code[in_step[0][0]:in_step[0][1]])):",
+        "            or False):"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: a QUOTED or literal value in the step's env passes as the alias",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "rf\" +{LIMIT_VAR}: \\*{LIMIT_ANCHOR}\\s*\"",
+        "rf\" +{LIMIT_VAR}: .*\""
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: the epoch may be written by any step, not the job's first",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    first = \"\\n\".join(body[bounds[0][0]:bounds[0][1]])",
+        "    first = \"\\n\".join(body)"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit included"
+    ]
+  },
+  {
+    "name": "arch 11-08: a workflow with no sweep job passes the pin",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return [f\"`  {SWEEP_JOB}:` appears {len(starts)} times, not once\"]",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "...and a job it cannot find, or steps it cannot read, is a problem, never a pass"
+    ]
+  },
+  {
+    "name": "arch 11-08: steps the pin cannot read pass it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        return problems + [\"the job's steps are not a list of `      - ` items this pin can read\"]",
+        "        return problems"
+      ]
+    ],
+    "expect": [
+      "...and a job it cannot find, or steps it cannot read, is a problem, never a pass"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin's job runs past its end into the next job",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                and len(lines[i]) - len(lines[i].lstrip(\" \")) < 4), len(lines))",
+        "                and len(lines[i]) - len(lines[i].lstrip(\" \")) < 2), len(lines))"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step"
+    ]
+  },
+  {
+    "name": "arch 11-08: the pin reads comments as code, so a comment naming the anchor counts as a second one",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    every = [re.sub(r\"(?:^|\\s)#.*\", \"\", ln) for ln in lines]",
+        "    every = list(lines)"
+      ]
+    ],
+    "expect": [
+      "⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate step, ONE timeout-minutes in the job, and the epoch written by the job's first step"
     ]
   }
 ]

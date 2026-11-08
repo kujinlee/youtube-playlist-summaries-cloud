@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 373 cases
+    python3 scripts/check-plan-code.py --self-test          # 418 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -108,6 +108,54 @@ from coverage_verdict import (  # noqa: E402
 # `run_suite`, the timeout path could only be reached by waiting two minutes, so no
 # case reached it and "a hung suite is recorded as caught" survived. Round 5, M2.
 SUITE_TIMEOUT = 120
+# ⛔ backlog #558: ONE flat limit gave a FALSE red. MEASURED on master's push run 42377549561 (`1d5fd219`),
+# shard 16: `check-fixture-variation.py`'s control took 15.8 s, and its mutant "deadness is judged over
+# every file…" did not finish in 120 s — while its neighbours on the same runner took ~14.5 s each. The
+# schedule run on the same commit took 125.3 s for that mutant over TWO seeds against a 21.7 s control
+# (5.8x per seed), and locally it took 248 s of CPU against the control's 23 s (10.7x). So the cause is
+# chiefly the MUTANT'S OWN WORK (it analyses every file instead of one), which grows with the population,
+# with runner variance on top — not a slow runner alone. A mutation run's limit is therefore derived
+# from its target's own CONTROL, timed on the same runner minutes earlier (`suite_limit`):
+#   max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR x the control's per-suite seconds), never above the CEILING.
+# FACTOR 20 is ~1.9x the largest ratio measured (10.7x). The CEILING bounds ONE suite run: an infinite
+# loop still times out — after at most 600 s instead of 120 — and a timeout is still rc 2, CANNOT RUN,
+# never a pass. A control has no measurement yet, so it keeps the flat SUITE_TIMEOUT, and so does the
+# RE-CONTROL (r1 Codex F3): it proves the restored suite still behaves as it did, and "as it did"
+# includes finishing inside the bound its first control was held to. Under the mutant's limit a
+# restored suite 6x slower than its control (30 s -> 200 s) certified a run master refused.
+SUITE_TIMEOUT_FACTOR = 20
+SUITE_TIMEOUT_CEILING = 600
+# ⛔ r1 (both halves, F1): THE CEILING IS PER RUN, NOT PER SHARD. Three hung mutants at 600 s are 1,800 s,
+# the whole `timeout-minutes: 30` of a pull request's shard; the job is then KILLED, and the line naming
+# each hang, and every verdict the shard reached, never reach the log. So a run under `--event` (CI) has a
+# CUMULATIVE budget: the sweep job's own `timeout-minutes`, as the RUNNER evaluated it (`LIMIT_VAR`, below),
+# less SWEEP_HEADROOM. Every suite run is capped at the budget left (`run_suite_parts`),
+# and once it is spent the run STOPS and its LAST line is BUDGET_STOP, naming the mutants that did not
+# finish and those not reached.
+# ⟳ r2 (Codex F1-F3): the deadline is ABSOLUTE in JOB time (`ci_deadline`): the job's first step writes
+# its epoch, so the steps before the sweep (at most 31 s MEASURED on 42 shard jobs, runs 42449427382,
+# 42380275076) are now INSIDE the clock, not added after it. HEADROOM covers only what the clock still does
+# not see, and the report is printed and flushed BEFORE teardown: job start to that first step at most 2 s
+# (MEASURED, 42 jobs of runs 42432742676 and 42387350733, at the API's 1 s resolution); killing the
+# in-flight suite (a timed-out `subprocess.run` returned at its timeout with a pipe-holding grandchild,
+# MEASURED locally); then, after the report, teardown 6-8 s (ESTIMATED from local runs) and the post
+# steps at most 4 s (MEASURED). So the report lands ~117 s before the kill, and the job ends red, not killed.
+SWEEP_HEADROOM = 120
+CI_WORKFLOW = ".github/workflows/ci.yml"
+SWEEP_JOB = "mutation-sweep"
+# ⛔ r2 F1: the epoch the sweep job's FIRST step writes to `$GITHUB_ENV` (`sweep_limit_pin` pins the step to ci.yml).
+JOB_START_VAR = "SWEEP_JOB_START"
+# ⛔ Architecture review 2026-11-08 (sweep-deadline), replacing r1-r2's workflow READER: the job's limit in minutes,
+# put in the sweep step's env by a YAML ALIAS of the job's own `timeout-minutes: &LIMIT_ANCHOR ...`. The runner
+# evaluates ONE node for the job's kill and for this value, so the harness parses neither ci.yml nor the event
+# expression; it reads one integer, and on CI a missing or non-integer one is CANNOT RUN (`ci_deadline`).
+LIMIT_VAR = "SWEEP_TIMEOUT_MINUTES"
+LIMIT_ANCHOR = "sweep-limit"
+BUDGET_STOP = "CANNOT RUN — this run's time budget ran out"
+# The absolute `time.monotonic()` by which this run must stop, or None (no budget: off CI). Set ONLY by
+# `mutate_delivered` for the length of its run, read ONLY by `run_suite_parts` (the one producer of a
+# suite run) and `budget_spent` — one reader, so no hand-off can drop it (r1 F2 was a dropped hand-off).
+_DEADLINE: "float | None" = None
 
 # ⛔ THE LOCAL SWEEP BUDGET — the owner's rule, made mechanical 2026-10-25: a FULL sweep belongs to
 # the pull request's CI shards; a local run is a PARTIAL diagnostic. The rule was written (velocity
@@ -370,7 +418,8 @@ def seed_revert(trees: dict, d: pathlib.Path, fname: str, text: str) -> "str | N
     return None
 
 
-def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> list:
+def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None,
+              limit: "float | None" = None) -> list:
     """`[(seed, rc, stdout, stderr), ...]`: `name`'s suite under each seed, each in ITS OWN tree (`seed_trees`).
 
     `trees` are the run's trees; without them this call makes its own, used once and deleted.
@@ -379,15 +428,17 @@ def seed_runs(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) ->
     """
     if trees is None:
         with contextlib.ExitStack() as cleanup:
-            return seed_runs(d, name, seeds, seed_trees(d, seeds, cleanup))
+            return seed_runs(d, name, seeds, seed_trees(d, seeds, cleanup), limit=limit)
     cannot = [(seed, 2, "", trees[seed]) for seed in seeds if isinstance(trees[seed], str)]
     if cannot:
         return cannot
-    return [(seed, *run_suite_parts(trees[seed], name, seed)) for seed in seeds]
+    return [(seed, *run_suite_parts(trees[seed], name, seed, limit=limit)) for seed in seeds]
 
 
 def control_parts(d: pathlib.Path, name: str, seeds, trees: "dict | None" = None) -> tuple[int, str, str]:
     """A CONTROL run under EVERY seed (backlog #506): the first one that is not green, else the last green one.
+
+    Always under the flat `SUITE_TIMEOUT` — the re-control too (r1 Codex F3, see the constants' block).
 
     ⛔ THIS IS WHAT STOPS A RED CONTROL FROM FORGING A KILL. A suite red under seed B WITHOUT any mutation
     reddens every mutant under B, so a mutant killed only by luck under seed A would read killed under both.
@@ -583,46 +634,94 @@ def _walks_dir(src: str, d: str) -> bool:
     def names_d(v) -> bool:
         return isinstance(v, str) and (v.rstrip("/") == d or (
             v.startswith(d + "/") and any(c in v.split("/")[depth] for c in "*?[")))
+    # backlog #231 COST (2026-11-07): this function was the largest single cost of `--self-test`
+    # (MEASURED: 6.1 s of CPU after the parse, over the real `scripts/`), because every function
+    # scope was re-walked and tainted whether or not it held a lister call, and `carries` re-walked
+    # every value on every fixpoint pass. Now ONE walk records each node's parent, the lister calls
+    # and the assignment-like FLOWS; each flow and each lister is filed under the scopes that enclose
+    # it, and only a scope holding a lister is tainted — one without cannot return True. `facts`
+    # and `parent` are keyed by `id` of nodes `tree` keeps alive until this call returns, so neither
+    # can outlive or cross a parse. The answer is unchanged: a scope's members are what `ast.walk`
+    # of it reached before (every def above a node, plus the module's top level when the node's
+    # top-level statement is not a def or class — a class body outside a def is in NO scope), and
+    # the taint is the least fixpoint of a monotone rule, so evaluation order cannot move it.
+    facts: dict = {}
+    def fact(expr) -> tuple:
+        got = facts.get(id(expr))
+        if got is None:
+            subs = list(ast.walk(expr))
+            got = facts[id(expr)] = (
+                any(isinstance(n, ast.Constant) and names_d(n.value) for n in subs),
+                frozenset(n.id for n in subs if isinstance(n, ast.Name)))
+        return got
     def carries(expr, tainted) -> bool:
-        return any((isinstance(n, ast.Constant) and names_d(n.value))
-                   or (isinstance(n, ast.Name) and n.id in tainted) for n in ast.walk(expr))
-    def taint(nodes, seed) -> set:
+        const, names = fact(expr)
+        return const or not names.isdisjoint(tainted)
+    def taint(flows, seed) -> set:
         out, grew = set(seed), True
         while grew:
             grew = False
-            for n in nodes:
-                if isinstance(n, ast.Assign):
-                    pairs = [(t, n.value) for t in n.targets]
-                elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
-                    pairs = [(n.target, n.value)]
-                elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
-                    pairs = [(n.target, n.iter)]
-                elif isinstance(n, ast.withitem) and n.optional_vars is not None:
-                    pairs = [(n.optional_vars, n.context_expr)]
-                else:
-                    continue
-                for tg, val in pairs:
-                    if carries(val, out):
-                        new = {m.id for m in ast.walk(tg) if isinstance(m, ast.Name)} - out
-                        grew |= bool(new)
-                        out |= new
+            for names, val in flows:
+                if not names <= out and carries(val, out):
+                    out |= names
+                    grew = True
         return out
     defs = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
-    top = [n for st in tree.body if not isinstance(st, defs + (ast.ClassDef,)) for n in ast.walk(st)]
-    module = taint(top, set())
-    for nodes in [top] + [list(ast.walk(f)) for f in ast.walk(tree) if isinstance(f, defs)]:
-        tainted = taint(nodes, module)
-        for n in nodes:
-            if not isinstance(n, ast.Call):
-                continue
+    TOP = None                        # the module's top level, as a scope key
+    parent: dict = {}
+    every, i = [tree], 0
+    while i < len(every):             # `ast.walk`'s traversal, recording each child's parent
+        for ch in ast.iter_child_nodes(every[i]):
+            parent[id(ch)] = every[i]
+            every.append(ch)
+        i += 1
+    def scopes_of(n) -> list:
+        """The keys of the scopes whose `ast.walk` reaches `n`."""
+        out, stmt, up = [], n, parent.get(id(n))
+        if up is None:
+            return out                # `tree` itself
+        while up is not tree:
+            if isinstance(up, defs):
+                out.append(id(up))
+            stmt, up = up, parent[id(up)]
+        if not isinstance(stmt, defs + (ast.ClassDef,)):
+            out.append(TOP)
+        return out
+    # A call carries `ls-files` only if the tree does, so its arguments are walked only then.
+    any_ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for m in every)
+    flows: dict = {}                  # scope key -> [(names a flow assigns, the value it reads)]
+    listers: dict = {}                # scope key -> [the expressions a lister call is applied to]
+    for n in every:
+        if isinstance(n, ast.Assign):
+            pairs = [(t, n.value) for t in n.targets]
+        elif isinstance(n, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and n.value is not None:
+            pairs = [(n.target, n.value)]
+        elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
+            pairs = [(n.target, n.iter)]
+        elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+            pairs = [(n.optional_vars, n.context_expr)]
+        elif isinstance(n, ast.Call):
             args = list(n.args) + [k.value for k in n.keywords]
             name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", None)
-            ls = any(isinstance(m, ast.Constant) and m.value == "ls-files" for a in args for m in ast.walk(a))
+            ls = any_ls and any(isinstance(m, ast.Constant) and m.value == "ls-files"
+                                for a in args for m in ast.walk(a))
             if not (name in WALK_CALLS or ls):
                 continue
             subject = args + ([n.func.value] if isinstance(n.func, ast.Attribute) else [])
-            if any(carries(x, tainted) for x in subject):
-                return True
+            for key in scopes_of(n):
+                listers.setdefault(key, []).append(subject)
+            continue
+        else:
+            continue
+        for key in scopes_of(n):
+            flows.setdefault(key, []).extend((fact(tg)[1], val) for tg, val in pairs)
+    if not listers:
+        return False
+    module = taint(flows.get(TOP, []), set())
+    for key, subjects in listers.items():
+        tainted = taint(flows.get(key, []), module)
+        if any(carries(x, tainted) for subject in subjects for x in subject):
+            return True
     return False
 
 
@@ -1144,25 +1243,171 @@ def merged_output(stdout: str, stderr: str) -> str:
     return (stderr + stdout).strip()
 
 
-def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None) -> tuple[int, str, str]:
+def suite_limit(control_seconds: "float | None") -> float:
+    """PURE. The seconds one suite run may take (backlog #558): the flat `SUITE_TIMEOUT` when its
+    control has not been timed (`None` — a control run itself), else `SUITE_TIMEOUT_FACTOR` x the
+    control's PER-SUITE seconds, floored at `SUITE_TIMEOUT` and capped at `SUITE_TIMEOUT_CEILING`.
+    Always FINITE, so a real hang still times out. The constants' block says why these values."""
+    if control_seconds is None:
+        return SUITE_TIMEOUT
+    return min(SUITE_TIMEOUT_CEILING, max(SUITE_TIMEOUT, SUITE_TIMEOUT_FACTOR * control_seconds))
+
+
+def run_suite_parts(d: pathlib.Path, name: str, seed: "int | None" = None,
+                    limit: "float | None" = None) -> tuple[int, str, str]:
     """`(rc, stdout, stderr)` — the RAW halves, for the one caller that must budget them.
 
-    The only producer. `run_suite` is the merged view every other consumer wants.
+    The only producer. `run_suite` is the merged view every other consumer wants. `limit` is
+    `suite_limit`'s answer for this target; None is the flat `SUITE_TIMEOUT`. Under a run's budget
+    (`_DEADLINE`) the child gets the SMALLER of its limit and the budget left, and none at all once it is
+    spent — so no suite run can carry the shard past its job's `timeout-minutes` (r1 F1).
     """
+    limit = SUITE_TIMEOUT if limit is None else limit
+    left = None if _DEADLINE is None else _DEADLINE - time.monotonic()
+    if left is not None and left <= 0:
+        return 2, "", (f"CANNOT RUN — {name} --self-test was NOT STARTED: this run's time budget is "
+                       f"spent. NOT CHECKED.")
+    cap = limit if left is None or left >= limit else left
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
     try:
         r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
-                           capture_output=True, text=True, timeout=SUITE_TIMEOUT,
+                           capture_output=True, text=True, timeout=cap,
                            env=mutation_env(d, seed))
     except subprocess.TimeoutExpired:
+        if cap < limit:
+            return 2, "", (f"CANNOT RUN — {name} --self-test was STOPPED after {cap:.1f}s, when this "
+                           f"run's time budget ran out (its own limit was {limit:.1f}s). NOT CHECKED.")
         return 2, "", (f"CANNOT RUN — {name} --self-test did not finish in "
-                       f"{SUITE_TIMEOUT}s. NOT CHECKED.")
+                       f"{limit:.1f}s. NOT CHECKED.")
     return r.returncode, r.stdout, r.stderr
 
 
-def run_suite(d: pathlib.Path, name: str, seed: "int | None" = None) -> tuple[int, str]:
-    rc, out, err = run_suite_parts(d, name, seed)
+def ci_deadline(env, arg_event: "str | None", wall: float,
+                mono: float) -> "tuple[float | None, str | None, str | None]":
+    """PURE. On CI: `(deadline, line, None)` — the `time.monotonic()` by which this run must stop and the TIME
+    BUDGET line that says why — or `(None, None, why)`. `wall`/`mono` are `time.time()`/`time.monotonic()` now.
+
+    ⛔ EVERY INPUT IS THE RUNNER'S OWN, AND A MISSING OR MALFORMED ONE IS A REASON, NEVER A DEFAULT.
+      * the LIMIT is `LIMIT_VAR`, the job's `timeout-minutes` as the runner evaluated it, aliased into the step's
+        env from the job's own node (architecture review 2026-11-08). Nothing here reads ci.yml or mirrors the
+        event expression, so a workflow other than ci.yml gives the limit of the job that actually ran. A value
+        that is not a whole number of minutes (an alias the runner did not expand, an expression it did not
+        evaluate, a float) is refused: a wrong assumption about the runner turns the shard red, never unbudgeted;
+      * the EVENT is `GITHUB_EVENT_NAME` (r2 F3). It no longer feeds the budget, but `--event` still chooses the
+        manifest SELECTION, so an `--event` that disagrees with the runner's is still refused;
+      * the CLOCK starts at `JOB_START_VAR`, the epoch the job's FIRST step writes (r2 F1), so checkout,
+        `npm ci` and everything else before the sweep are spent from the budget, not added after it.
+    """
+    event = env.get("GITHUB_EVENT_NAME", "")
+    if not event:
+        return None, None, "GITHUB_EVENT_NAME is not set, so this run's event is unknown"
+    if arg_event is not None and arg_event != event:
+        return None, None, f"--event {arg_event!r} is not this run's event (GITHUB_EVENT_NAME={event!r})"
+    minutes = env.get(LIMIT_VAR, "")
+    if not re.fullmatch(r"[1-9][0-9]{0,3}", minutes):
+        return None, None, (f"{LIMIT_VAR} is {minutes!r}, not a whole number of minutes, so the job's limit is "
+                            f"unknown (the sweep step's env must alias the job's `timeout-minutes: "
+                            f"&{LIMIT_ANCHOR}`, and the runner must expand and evaluate it)")
+    raw = env.get(JOB_START_VAR, "")
+    if not re.fullmatch(r"[0-9]{1,12}", raw):
+        return None, None, (f"{JOB_START_VAR} is {raw!r}, not the epoch the job's first step records, so "
+                            f"when the job's limit runs out is unknown")
+    if int(raw) > wall:
+        return None, None, f"{JOB_START_VAR}={raw} is later than now ({wall:.0f})"
+    limit = int(minutes) * 60
+    secs = limit - SWEEP_HEADROOM
+    left = int(raw) + secs - wall
+    return mono + left, (f"TIME BUDGET — {secs:.0f}s: the job's timeout-minutes ({LIMIT_VAR}={minutes}, event "
+                         f"{event!r}), less {SWEEP_HEADROOM}s of headroom, from the job's first step "
+                         f"({JOB_START_VAR}); {max(left, 0.0):.0f}s of it left as this run starts"), None
+
+
+def _step_items(body: list, steps_at: int) -> list:
+    """PURE. The line indexes in `body` where the step items under `body[steps_at]` (`    steps:`) begin."""
+    out = []
+    for i in range(steps_at + 1, len(body)):
+        line = body[i]
+        if line.startswith("      - "):
+            out.append(i)
+        elif line.strip() and not line.startswith("      ") and not line.lstrip().startswith("#"):
+            break
+    return out
+
+
+def sweep_limit_pin(ci_text: str) -> list:
+    """PURE. What in `ci_text` breaks the sweep job's budget contract: `[]` when nothing does.
+
+    A STATIC pin, read with line patterns over the one job, NOT a YAML parser (the parser it replaces is what
+    r1-r3 kept finding holes in). It is a guard on the REPO'S OWN ci.yml, run by the self-test, so it reds the PR
+    that reshapes the job; the run-time guarantee does not rest on it — the two values are one YAML node, and a
+    value the runner did not deliver is CANNOT RUN in `ci_deadline`. It checks:
+      * the job's own `timeout-minutes` carries `&LIMIT_ANCHOR`, defined once in the file's code;
+      * `*LIMIT_ANCHOR` appears once in the file, as `LIMIT_VAR: *LIMIT_ANCHOR`, in the step that runs `--mutate`;
+      * the job has ONE `timeout-minutes` in any spelling — a step's first key (`- timeout-minutes:`, R3-F1), a
+        later key, a flow mapping or a quoted key: a step-level limit kills the step before the budget runs out;
+      * the job's FIRST step writes `JOB_START_VAR`, and the file names it once.
+    The job is the lines after `  <SWEEP_JOB>:` up to the next line indented less than four spaces. A comment
+    is not read (nor counted file-wide). A shape these patterns do not know (a step list at another indent) is a problem, never a pass."""
+    lines = ci_text.lstrip("\ufeff").replace("\r\n", "\n").split("\n")
+    starts = [i for i, ln in enumerate(lines) if ln.rstrip() == f"  {SWEEP_JOB}:"]
+    if len(starts) != 1:
+        return [f"`  {SWEEP_JOB}:` appears {len(starts)} times, not once"]
+    end = next((i for i in range(starts[0] + 1, len(lines))
+                if lines[i].strip() and not lines[i].lstrip().startswith("#")
+                and len(lines[i]) - len(lines[i].lstrip(" ")) < 4), len(lines))
+    every = [re.sub(r"(?:^|\s)#.*", "", ln) for ln in lines]
+    whole = "\n".join(every)
+    body, code = lines[starts[0] + 1:end], every[starts[0] + 1:end]
+    problems = []
+    anchored = [ln for ln in code if re.fullmatch(rf"    timeout-minutes: &{LIMIT_ANCHOR} \S.*", ln)]
+    once = whole.count(f"&{LIMIT_ANCHOR}") == 1
+    if len(anchored) != 1 or not once:
+        problems.append(f"the job's own timeout-minutes does not carry `&{LIMIT_ANCHOR}` exactly once")
+    limits = sum(len(re.findall(r"(?:^|[\s{,])[\"']?timeout-minutes[\"']?\s*:", ln)) for ln in code)
+    if limits != 1:
+        problems.append(f"the job has {limits} timeout-minutes, not ONE, its own")
+    steps_at = next((i for i, ln in enumerate(code) if ln.rstrip() == "    steps:"), None)
+    items = [] if steps_at is None else _step_items(code, steps_at)
+    if len(items) < 2:
+        return problems + ["the job's steps are not a list of `      - ` items this pin can read"]
+    bounds = list(zip(items, items[1:] + [len(code)]))
+    alias = [i for i, ln in enumerate(code) if re.fullmatch(rf" +{LIMIT_VAR}: \*{LIMIT_ANCHOR}\s*", ln)]
+    in_step = [b for b in bounds if alias and b[0] < alias[0] < b[1]]
+    if (len(alias) != 1 or whole.count(f"*{LIMIT_ANCHOR}") != 1 or not in_step
+            or "check-plan-code.py --mutate" not in "\n".join(code[in_step[0][0]:in_step[0][1]])):
+        problems.append(f"the step that runs --mutate does not set `{LIMIT_VAR}: *{LIMIT_ANCHOR}`, once")
+    first = "\n".join(body[bounds[0][0]:bounds[0][1]])
+    if (f'echo "{JOB_START_VAR}=$(date +%s)" >> "$GITHUB_ENV"' not in first
+            or whole.count(f"{JOB_START_VAR}=") != 1):
+        problems.append(f"the job's FIRST step does not write {JOB_START_VAR}, named once in the file")
+    return problems
+
+
+def budget_spent() -> bool:
+    """True once this run's budget (`_DEADLINE`) has run out; never under no budget."""
+    return _DEADLINE is not None and time.monotonic() >= _DEADLINE
+
+
+def _set_deadline(deadline: "float | None") -> "float | None":
+    """Make `deadline` this run's budget; returns the one it replaces, for the caller to put back."""
+    global _DEADLINE
+    prev, _DEADLINE = _DEADLINE, deadline
+    return prev
+
+
+def budget_stop_line(unfinished: list, unreached: list) -> str:
+    """PURE. The LAST line of a run whose budget ran out (r1 F1): what did not finish, and what was never
+    started. Printed by the harness itself, so it reaches the log before the job is killed."""
+    return (f"{BUDGET_STOP}, so it STOPPED before its job's timeout-minutes could kill it. Did not finish "
+            f"({len(unfinished)}): {'; '.join(unfinished) or 'none'}. Not reached ({len(unreached)}): "
+            f"{'; '.join(unreached) or 'none'}. Treat every one of them as NOT CHECKED; each verdict above "
+            f"stands.")
+
+
+def run_suite(d: pathlib.Path, name: str, seed: "int | None" = None,
+              limit: "float | None" = None) -> tuple[int, str]:
+    rc, out, err = run_suite_parts(d, name, seed, limit=limit)
     return rc, merged_output(out, err)
 
 
@@ -1738,8 +1983,15 @@ def mutate_delivered(root: pathlib.Path,
                      only: "frozenset | None" = None,
                      select: "frozenset | None" = None,
                      seeds: "tuple[int, ...] | None" = None,
+                     deadline: "float | None" = None,
+                     hold: "contextlib.ExitStack | None" = None,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
+
+    `deadline` (r1 F1) is the absolute `time.monotonic()` by which the run must stop (`ci_deadline`), None
+    for no budget. Once it passes, the run STOPS and its report ENDS with a `budget_stop_line`.
+    `hold` (r2 F1): the caller's stack, which then owns this run's teardown (the staged tree, its seed copy,
+    the deadline's reset), so `main` prints and flushes the report BEFORE that unbounded work, not after it.
 
     `select` (backlog #330) is a pull request's diff-scoped selection of TARGETS, None for the
     whole manifest. It is applied BEFORE the shard, so the shards split the SELECTED entries
@@ -1848,8 +2100,12 @@ def mutate_delivered(root: pathlib.Path,
     # green first — and must not pay for the suites of files it never touches, which is the cost
     # this flag exists to cut.
     targets = sorted({m["file"] for m in shard_muts})
-    with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
+    with contextlib.ExitStack() as _own:
+        _keep = _own if hold is None else hold   # r2 F1: under a `hold` the teardown waits for the report
+        td = _keep.enter_context(tempfile.TemporaryDirectory())
+        cleanup = _keep.enter_context(contextlib.ExitStack())
         d = pathlib.Path(td)
+        cleanup.callback(_set_deadline, _set_deadline(deadline))   # this run's budget, put back on exit
         staging = stage_tree(root, d)
         if staging:
             return False, staging, NotMeasured.from_counts([], None, ev_files)
@@ -1861,6 +2117,10 @@ def mutate_delivered(root: pathlib.Path,
         trees = seed_trees(d, seeds, cleanup) if seeds else None
         report = []
         control_seconds: dict = {}
+        # backlog #558: each GREEN target's limit for its mutant runs (never its re-control: r1 F3), from its
+        # own control. Local to this run, so a later run (or another fixture's same-named target) never
+        # inherits it.
+        limits: dict = {}
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
         # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
@@ -1872,6 +2132,8 @@ def mutate_delivered(root: pathlib.Path,
         # one session. With the comment hoisted, both blocks are pure code and are distinguished
         # by `control` vs `re-control`, which is what they actually differ by.
         for position, name in enumerate(targets, 1):
+            if budget_spent():
+                break
             if progress is not None:
                 progress(position, len(targets), f"control {name}")
             _t0 = time.monotonic()
@@ -1887,6 +2149,8 @@ def mutate_delivered(root: pathlib.Path,
                               f"CHECKED.\n    {diagnostic_tail(so, se)}")
                 control_seconds.pop(name, None)     # r2 L: a FAILED control prices nothing
                 continue
+            # PER SUITE: under N seeds the control ran the suite N times (`control_parts`).
+            limits[name] = suite_limit(control_seconds[name] / max(1, len(seeds or ())))
             # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN — after this control proved GREEN (r1 L2:
             # a slow FAILING control read as "REFUSED LOCALLY"). The estimate only grows, so the
             # targets timed so far bound it — refusing here costs one suite, not all.
@@ -1895,9 +2159,15 @@ def mutate_delivered(root: pathlib.Path,
             if why:
                 # r2 L: an EARLIER failed control is reported FIRST — a refusal must not hide it.
                 return False, report + [why], NotMeasured.from_counts([], None, ev_files)
+        if budget_spent():
+            # r1 F1: a control cut short by the budget is in `report` already; this line says what is lost.
+            return False, report + [budget_stop_line(
+                [f"control {t}" for t in targets if ev_files.get(t, {}).get("rc") == 2],
+                [f"control {t}" for t in targets if t not in ev_files]
+                + [f"all {len(shard_muts)} mutation(s)"])], NotMeasured.from_counts([], None, ev_files)
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
-        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
+        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets), limits=limits,
                                                           progress=progress, seeds=seeds, trees=trees)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
@@ -1906,6 +2176,9 @@ def mutate_delivered(root: pathlib.Path,
         # MEASURED over work it actually did, and the cardinality clause stops being able to see
         # a genuinely skipped mutation because every run already fails it.
         declared = len(shard_muts)
+        if m_report and m_report[-1].startswith(BUDGET_STOP):
+            # r1 F1: no time is left for a re-control, and without one there is no verdict to certify.
+            return False, m_report, NotMeasured.from_counts(m_muts, declared, ev_files)
         # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
         # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
         # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
@@ -1917,10 +2190,14 @@ def mutate_delivered(root: pathlib.Path,
         # clear it. It is passed to the predicate rather than overwriting its result,
         # because the predicate is where the whole contract now lives.
         controls_green = True
+        recontrol_rc: dict = {}
         for position, name in enumerate(targets, 1):
+            if budget_spent():
+                break
             if progress is not None:
                 progress(position, len(targets), f"re-control {name}")
             rc, so, se = control_parts(d, name, seeds, trees)
+            recontrol_rc[name] = rc
             out = merged_output(so, se)
             if not control_is_green(rc, out):
                 ok = False
@@ -1932,6 +2209,13 @@ def mutate_delivered(root: pathlib.Path,
                     f"{rc}), so the tree changed underneath it. Any 'caught' above may be "
                     f"an artefact of that, not of its mutation. Treat this run as NOT "
                     f"CHECKED.\n    {diagnostic_tail(so, se)}")
+        # r1 F1: the budget ran out in, or before, the re-controls — say what that cost, LAST.
+        if len(recontrol_rc) < len(targets) or (budget_spent() and 2 in recontrol_rc.values()):
+            ok = controls_green = False
+            m_report.append(budget_stop_line(
+                [m["name"] for m in m_muts if m.get("measured") is False]
+                + [f"re-control {t}" for t, r in recontrol_rc.items() if r == 2],
+                [f"re-control {t}" for t in targets if t not in recontrol_rc]))
         # ONE assignment, AFTER both controls, holding all three clauses. r2 computed this
         # BEFORE the after-control and then overwrote it, which worked but split one rule
         # across two statements — and the split is what let `check()` reproduce the bug
@@ -1949,7 +2233,8 @@ def mutate_delivered(root: pathlib.Path,
 
 
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
-                  progress=None, seeds=None, trees=None) -> tuple[bool, list[str], list[dict], list[str]]:
+                  progress=None, seeds=None, trees=None,
+                  limits: "dict | None" = None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
 
     `d` holds runnable scripts — assembled from a plan, or copied from the delivered
@@ -1966,10 +2251,15 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     """
     if seeds and trees is None:
         with contextlib.ExitStack() as cleanup:
-            return run_mutations(d, muts, known, progress, seeds, seed_trees(d, seeds, cleanup))
+            return run_mutations(d, muts, known, progress, seeds, seed_trees(d, seeds, cleanup), limits=limits)
     ok, report, ev_muts, ev_survivors = True, [], [], []
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
+        if budget_spent():
+            # r1 F1: STOP, and say what is lost — a run carried on would be killed with its evidence unprinted.
+            report.append(budget_stop_line([e["name"] for e in ev_muts if e.get("measured") is False],
+                                           [m.get("name", "?") for m in muts[position - 1:]]))
+            return False, report, ev_muts, ev_survivors
         # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
         # suite, and the OUTER harness captures a suite's stderr into `control_is_green` — so
         # progress leaking out of a nested run would be read as part of that suite's output.
@@ -2008,12 +2298,14 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             continue
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
+        limit = (limits or {}).get(fname)   # backlog #558: this target's, from its own control
         if seeds:
             here = seed_apply(trees, d, fname, src)
-            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se in seed_runs(d, fname, seeds, here)],
+            rc, out, odd = seed_outcome([(s, r, merged_output(so, se)) for s, r, so, se
+                                         in seed_runs(d, fname, seeds, here, limit=limit)],
                                         wants=mut.get("expect"))
         else:
-            (rc, out), odd = run_suite(d, fname), None
+            (rc, out), odd = run_suite(d, fname, limit=limit), None
         (d / fname).write_text(orig)
         stuck = seed_revert(trees, d, fname, orig) if seeds else None
         if stuck:
@@ -2348,9 +2640,21 @@ def _budget_wiring(root: pathlib.Path) -> dict:
     ⛔ A SMALL FUNCTION ON PURPOSE (PR #400 r1 H1, measured): `check-main-drivable` analyses every
     `main()` call site against its ENCLOSING function, and inside the long `_self_test` this one
     call cost its suite ~30s and pushed it past `SUITE_TIMEOUT`. Here it costs nothing."""
-    saved = os.environ.pop("CI", None)
+    _gh = ("CI", "GITHUB_EVENT_NAME", JOB_START_VAR, LIMIT_VAR)
+    saved = {k: os.environ.pop(k, None) for k in _gh}
     out = {}
+    torn: dict = {}
+    _real_md = mutate_delivered
+
+    def _held(*a_, hold=None, _k=None, _b=None, **k_):
+        # r2 F1: what stdout already holds when the run's teardown starts — None if main passed no `hold`.
+        r = _real_md(*a_, hold=hold, **k_)
+        if hold is not None:
+            hold.callback(lambda: torn.__setitem__(_k, _b.getvalue()))
+        return r
     (root / "changed.txt").write_text("scripts/thing.py\0")
+    # r1 F1: a CI run's budget is the job's limit the runner put in LIMIT_VAR (30 minutes on every row but
+    # "spent", whose 2 minutes leave NO budget after the headroom, so it stops before any suite). No ci.yml.
     scoped = ["--event", "pull_request", "--changed", str(root / "changed.txt")]
     try:
         for key, ci, extra, bud in (("local", None, [], 0), ("flag", None, ["--allow-long-local"], 0),
@@ -2359,18 +2663,42 @@ def _budget_wiring(root: pathlib.Path) -> dict:
                                     ("scoped1", "true", scoped + ["--shard0", "0/2"], 0),
                                     ("scoped2", "true", scoped + ["--shard0", "1/2"], 0),
                                     ("push", "true", ["--event", "push"], 0),
-                                    ("seeds", "true", ["--seeds", "3,5"], 0)):
-            os.environ.pop("CI", None)
+                                    ("seeds", "true", ["--seeds", "3,5"], 0),
+                                    ("spent", "true", ["--event", "push"], 0),
+                                    # r2 F1: a job that started 1,700 s ago has none of a push's 1,680 left
+                                    ("late", "true", ["--event", "push"], 0),
+                                    # r2 F3: no event from the runner, or an --event that disagrees with it
+                                    ("noevent", "true", [], 0),
+                                    ("conflict", "true", ["--event", "schedule"], 0),
+                                    ("nostart", "true", ["--event", "push"], 0),
+                                    # arch 11-08: no limit from the runner, or one it did not expand
+                                    ("nolimit", "true", ["--event", "push"], 0),
+                                    ("rawlimit", "true", ["--event", "push"], 0)):
+            for _k in _gh:
+                os.environ.pop(_k, None)
+            # The runner's own variables on EVERY row, so the rows off CI prove they are ignored there.
+            _ev = (extra[extra.index("--event") + 1] if "--event" in extra and key != "conflict" else "push")
+            os.environ.update({"GITHUB_EVENT_NAME": _ev,
+                               LIMIT_VAR: {"spent": "2", "rawlimit": f"*{LIMIT_ANCHOR}"}.get(key, "30"),
+                               JOB_START_VAR: str(int(time.time()) - (1700 if key == "late" else 0))})
+            for _k in {"noevent": "GITHUB_EVENT_NAME", "nostart": JOB_START_VAR, "nolimit": LIMIT_VAR}.get(key, "").split():
+                os.environ.pop(_k)
             if ci is not None:
                 os.environ["CI"] = ci
             buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
-                    _suite_owns_the_pins():
-                out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
+            globals()["mutate_delivered"] = functools.partial(_held, _k=key, _b=buf)
+            try:
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()), \
+                        _suite_owns_the_pins():
+                    out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
+            finally:
+                globals()["mutate_delivered"] = _real_md
     finally:
-        os.environ.pop("CI", None)
-        if saved is not None:
-            os.environ["CI"] = saved
+        for _k in _gh:
+            os.environ.pop(_k, None)
+            if saved[_k] is not None:
+                os.environ[_k] = saved[_k]
+    out["torn"] = torn
     return out
 
 
@@ -2435,6 +2763,151 @@ def _self_test_body() -> int:
          _constructs([{"name": "m", "caught": True, "measured": 1}], 1, True), False)
     case("...and a MISSING `measured` key is refused too",
          _constructs([{"name": "m", "caught": True}], 1, True), False)
+
+    # ⛔ ABOVE the hung-suite case, and its no-limit call does not time out: a mutant that drops the
+    # flat default reaches `{limit:.1f}` with None there and crashes the suite, so this case must have
+    # printed its `[FAIL]` first (MEASURED 2026-11-08: placed after it, that mutant crashed unattributed).
+    import subprocess as _sp
+    _real = _sp.run
+    # ⛔ backlog #558: a mutant's limit is derived from its target's CONTROL, never unbounded.
+    case("⭐ backlog #558: an untimed suite (a control) gets the flat SUITE_TIMEOUT",
+         suite_limit(None), SUITE_TIMEOUT)
+    case("...a fast control is FLOORED at SUITE_TIMEOUT, never below it",
+         suite_limit(0.5), SUITE_TIMEOUT)
+    case("...a slow control's mutants get SUITE_TIMEOUT_FACTOR x its time — the 15.8 s that went "
+         "red on master's shard 16 now allows 316 s",
+         suite_limit(15.8), 15.8 * SUITE_TIMEOUT_FACTOR)
+    case("...and a very slow one is CAPPED, so a real infinite loop still times out",
+         suite_limit(10_000.0), SUITE_TIMEOUT_CEILING)
+    case("the limit's constants are pinned — a factor of 1 is the flat limit again, an unbounded "
+         "ceiling lets a real hang hold a shard",
+         (SUITE_TIMEOUT_FACTOR, SUITE_TIMEOUT_CEILING), (20, 600))
+    _seen_t: list = []
+
+    def _timeout_seen(*a, **k):
+        _seen_t.append(k.get("timeout"))
+        if len(_seen_t) == 1:         # the given-limit call hangs; the no-limit call completes, so a
+            raise _sp.TimeoutExpired(cmd="x", timeout=k.get("timeout"))   # None limit is SEEN, not formatted
+        return _sp.CompletedProcess(a[0] if a else [], 0, "", "")
+
+    _sp.run = _timeout_seen
+    try:
+        _rc_l, _so_l, _se_l = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+        run_suite_parts(pathlib.Path("."), "whatever.py")
+    finally:
+        _sp.run = _real
+    case("⭐ backlog #558: run_suite_parts runs the child under the limit it is GIVEN, and the flat "
+         "SUITE_TIMEOUT when given none — never no timeout at all",
+         _seen_t, [333.0, SUITE_TIMEOUT])
+    case("...and a suite over that limit is still rc 2, CANNOT RUN, naming the limit it ran under",
+         (_rc_l, "CANNOT RUN" in _se_l and "333.0s" in _se_l and "NOT CHECKED" in _se_l), (2, True))
+
+    # ⛔ THE SHARD'S BUDGET (r1 F1; r2 F1/F3; architecture review 2026-11-08, sweep-deadline). The job's limit is
+    # the RUNNER's evaluated `timeout-minutes`, aliased into the step's env as LIMIT_VAR; nothing reads ci.yml.
+    _env = {"GITHUB_EVENT_NAME": "push", LIMIT_VAR: "30", JOB_START_VAR: "1000000"}
+    _dl, _dline, _dwhy = ci_deadline(_env, None, 1000150.0, 500.0)
+    case("⭐ r2 F1: the deadline counts from the JOB's start: 150 s of setup leaves 1,530 s of a push's 1,680",
+         (_dl, _dwhy, "1530s of it left" in (_dline or "")), (500.0 + 30 * 60 - SWEEP_HEADROOM - 150, None, True))
+    case("⭐ arch 11-08: the budget is the LIMIT the runner gave, less the headroom, whatever the event "
+         "(60 -> 3,480 s, 7 -> 300 s; a schedule's 30 stays 1,680 — the harness mirrors no event expression)",
+         [ci_deadline({**_env, **_v}, None, 1000000.0, 0.0)[0] for _v in
+          ({LIMIT_VAR: "60"}, {LIMIT_VAR: "7"}, {"GITHUB_EVENT_NAME": "schedule"})],
+         [60 * 60 - SWEEP_HEADROOM, 7 * 60 - SWEEP_HEADROOM, 30 * 60 - SWEEP_HEADROOM])
+    _no_lim = {_k: _v for _k, _v in _env.items() if _k != LIMIT_VAR}
+    case("⭐ arch 11-08: a missing or non-integer limit — an alias the runner did not expand, an expression it did "
+         "not evaluate, a float, padding, zero, a leading zero, five digits — is a REASON naming it, never a default",
+         [(ci_deadline(_e, None, 1000000.0, 0.0)[0], LIMIT_VAR in (ci_deadline(_e, None, 1000000.0, 0.0)[2] or ""))
+          for _e in [_no_lim] + [{**_env, LIMIT_VAR: _v} for _v in
+                                 ("", f"*{LIMIT_ANCHOR}", "${{ github.event_name == 'schedule' && 60 || 30 }}",
+                                  "30.0", " 30", "30\n", "0", "030", "12345")]],
+         [(None, True)] * 10)
+    case("⭐ r2 F3: an --event that disagrees with GITHUB_EVENT_NAME is a REASON (it would choose the wrong selection)",
+         ci_deadline(_env, "schedule", 1000000.0, 0.0)[0::2],
+         (None, "--event 'schedule' is not this run's event (GITHUB_EVENT_NAME='push')"))
+    case("⭐ r2 F3: no GITHUB_EVENT_NAME is a REASON, never a default event",
+         ci_deadline({**_env, "GITHUB_EVENT_NAME": ""}, "push", 1000000.0, 0.0)[0], None)
+    case("⭐ r2 F1: a missing, non-numeric or FUTURE job start is a REASON",
+         [ci_deadline({**_env, JOB_START_VAR: _v}, None, 1000000.0, 0.0)[0]
+          for _v in ("", "12a", " 1000000", "1000001")], [None] * 4)
+    case("the budget's headroom is pinned — at most 31 s before the step and 4 s after it were MEASURED",
+         SWEEP_HEADROOM, 120)
+    # ⛔ THE STATIC PIN over the REAL ci.yml, and one fixture per broken clause: each is the real file with ONE
+    # change and must give exactly that clause's problem. A change that no longer applies leaves the fixture
+    # equal to the real file, which is red here too (its `changed` is False), never vacuous.
+    _ci_txt = (pathlib.Path(__file__).resolve().parent.parent / CI_WORKFLOW).read_text(encoding="utf-8")
+    case("⭐ arch 11-08: the REAL ci.yml keeps the budget contract: the anchored limit, its alias in the --mutate "
+         "step, ONE timeout-minutes in the job, and the epoch written by the job's first step",
+         sweep_limit_pin(_ci_txt), [])
+    _head, _sep, _job = _ci_txt.partition(f"\n  {SWEEP_JOB}:\n")
+    _mstep = "      - name: Mutation manifest against the delivered scripts (one shard)\n"
+    _alias_line = f"          {LIMIT_VAR}: *{LIMIT_ANCHOR}\n"
+    _install = "      - name: Install dependencies\n        run: npm ci\n"
+
+    def _in_job(*_pairs):
+        _j = _job
+        for _old, _new in _pairs:
+            _j = _j.replace(_old, _new, 1)
+        return _head + _sep + _j
+    _p_lim = "the job has 2 timeout-minutes, not ONE, its own"
+    _p_anchor = f"the job's own timeout-minutes does not carry `&{LIMIT_ANCHOR}` exactly once"
+    _p_alias = f"the step that runs --mutate does not set `{LIMIT_VAR}: *{LIMIT_ANCHOR}`, once"
+    _p_epoch = f"the job's FIRST step does not write {JOB_START_VAR}, named once in the file"
+    _pin_fx = (
+        ("R3-F1: a step-level limit as the step's FIRST key",
+         _in_job((_mstep, "      - timeout-minutes: 5\n" + _mstep.replace("      - ", "        ", 1))), [_p_lim]),
+        ("a step-level limit as a later key", _in_job((_mstep, _mstep + "        timeout-minutes: 5\n")), [_p_lim]),
+        ("a step-level limit in a flow mapping",
+         _in_job((_mstep, "      - {name: x, timeout-minutes: 5, run: 'true'}\n" + _mstep)), [_p_lim]),
+        ("a step-level limit under a quoted key",
+         _in_job((_mstep, _mstep + "        \"timeout-minutes\": 5\n")), [_p_lim]),
+        ("the job's limit without the anchor",
+         _in_job((f"timeout-minutes: &{LIMIT_ANCHOR} ", "timeout-minutes: ")), [_p_anchor]),
+        ("the anchor defined again before the job (an alias binds the LATEST)",
+         _head.replace("\n    timeout-minutes: 30\n", f"\n    timeout-minutes: &{LIMIT_ANCHOR} 30\n", 1) + _sep + _job,
+         [_p_anchor]),
+        ("a literal limit in the step's env, not the alias",
+         _in_job((_alias_line, f"          {LIMIT_VAR}: 30\n")), [_p_alias]),
+        ("the alias QUOTED, which YAML reads as the string, not the node",
+         _in_job((_alias_line, f"          {LIMIT_VAR}: \"*{LIMIT_ANCHOR}\"\n")), [_p_alias]),
+        ("the alias moved to a step that does not run --mutate",
+         _in_job((_alias_line, ""), (_install, _install.replace("\n        run:", "\n        env:\n"
+                                                                + _alias_line.rstrip("\n") + "\n        run:"))),
+         [_p_alias]),
+        ("the epoch step no longer FIRST",
+         _in_job(("      - name: Record when this job started",
+                  "      - run: 'true'\n      - name: Record when this job started")), [_p_epoch]),
+    )
+    case("⭐ arch 11-08: each broken clause of the contract is named, and only it — R3-F1's first-key step limit "
+         "included",
+         [(_n, _fx != _ci_txt, sweep_limit_pin(_fx)) for _n, _fx, _ in _pin_fx],
+         [(_n, True, _w) for _n, _, _w in _pin_fx])
+    case("...and a job it cannot find, or steps it cannot read, is a problem, never a pass",
+         [sweep_limit_pin(_t) for _t in
+          ("jobs:\n  other:\n    timeout-minutes: 5\n",
+           f"jobs:\n  {SWEEP_JOB}:\n    timeout-minutes: &{LIMIT_ANCHOR} 30\n    steps:\n    - run: x\n    - run: y\n")],
+         [[f"`  {SWEEP_JOB}:` appears 0 times, not once"],
+          ["the job's steps are not a list of `      - ` items this pin can read"]])
+    _seen_b: list = []
+
+    def _budget_seen(*a, **k):
+        _seen_b.append(k.get("timeout"))
+        raise _sp.TimeoutExpired(cmd="x", timeout=k.get("timeout"))
+
+    _sp.run = _budget_seen
+    _prev_dl = _set_deadline(time.monotonic() + 50.0)
+    try:
+        _rc_b, _so_b, _se_b = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+        _set_deadline(time.monotonic() - 1.0)
+        _rc_s, _so_s, _se_s = run_suite_parts(pathlib.Path("."), "whatever.py", limit=333.0)
+    finally:
+        _sp.run = _real
+        _set_deadline(_prev_dl)
+    case("⭐ r1 F1: under a budget a suite run is capped at the budget LEFT, never its own longer limit",
+         [40.0 < _x <= 50.0 for _x in _seen_b[:1]], [True])
+    case("...a run the budget cut short is rc 2 and SAYS the budget stopped it, naming its own limit",
+         (_rc_b, "time budget ran out" in _se_b, "333.0s" in _se_b), (2, True, True))
+    case("...and once the budget is spent NO suite is started: rc 2, CANNOT RUN",
+         (_rc_s, "NOT STARTED" in _se_s, len(_seen_b)), (2, True, 1))
 
     # A hung suite is a CANNOT RUN (rc 2), not a traceback and not a verdict.
     import subprocess as _sp
@@ -2724,6 +3197,60 @@ def _self_test_body() -> int:
         _ok, _rep, _evm, _evs = run_mutations(_d, _mut, {"m.py"})
         case("run_mutations catches a real mutation", (_ok, _evs), (True, []))
         case("run_mutations records the caught mutation", len(_evm), 1)
+        # ⛔ backlog #558, DIRECT: each hand-off of a limit is given a value of its OWN, recorded at the
+        # producer (`check-fixture-variation.py` found every direct call passing the default; the
+        # through-`mutate_delivered` case below reaches them only indirectly).
+        _lim_d: list = []
+        _real_parts_d = run_suite_parts
+
+        def _rec_d(_dd, _nn, _ss=None, limit=None):
+            _lim_d.append(limit)
+            return _real_parts_d(_dd, _nn, _ss, limit=limit)
+        globals()["run_suite_parts"] = _rec_d
+        try:
+            _okl, _, _, _ = run_mutations(_d, _mut, {"m.py"}, limits={"m.py": 77.0, "other.py": 5.0})
+            run_suite(_d, "m.py", limit=88.0)
+            with contextlib.ExitStack() as _csl:
+                seed_runs(_d, "m.py", (3, 5), seed_trees(_d, (3, 5), _csl), limit=99.0)
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+        case("⭐ backlog #558: run_mutations runs a mutant under ITS target's limit, and run_suite and "
+             "seed_runs (every seed) under the limit they are given",
+             (_okl, _lim_d), (True, [77.0, 88.0, 99.0, 99.0]))
+        # ⛔ r1 F2 (both halves): the SEEDED call with no trees makes its own — and must still forward the limits.
+        _lim_f2: list = []
+
+        def _rec_f2(_dd, _nn, _ss=None, limit=None):
+            _lim_f2.append(limit)
+            return _real_parts_d(_dd, _nn, _ss, limit=limit)
+        globals()["run_suite_parts"] = _rec_f2
+        try:
+            _okf2 = run_mutations(_d, _mut, {"m.py"}, seeds=(3, 5), limits={"m.py": 66.0})[0]
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+        case("⭐ r1 F2: a SEEDED run_mutations given no trees makes its own, and runs every seed under the "
+             "limit it was given", (_okf2, _lim_f2), (True, [66.0, 66.0]))
+        # ⛔ r1 F1: once the budget is spent run_mutations STOPS. The stub cuts the FIRST mutant (rc 2) and
+        # spends the budget as it does; the other two must never start, and the report's LAST line says so.
+        _calls_b: list = []
+
+        def _cut_b(_dd, _nn, _ss=None, limit=None):
+            _calls_b.append(_nn)
+            _set_deadline(time.monotonic() - 1.0)
+            return 2, "", "CANNOT RUN — stub: cut short by the budget. NOT CHECKED."
+        _three = [dict(_mut[0], name=f"mut {_i}") for _i in (1, 2, 3)]
+        _prev_b = _set_deadline(None)
+        globals()["run_suite_parts"] = _cut_b
+        try:
+            _okb, _repb, _evb, _ = run_mutations(_d, _three, {"m.py"})
+        finally:
+            globals()["run_suite_parts"] = _real_parts_d
+            _set_deadline(_prev_b)
+        case("⭐ r1 F1: once the budget is spent run_mutations STOPS — one suite started, not three — and fails",
+             (_okb, len(_calls_b)), (False, 1))
+        case("...and its LAST line names the mutant that did not finish and each one not reached",
+             ((_repb or [''])[-1].startswith(BUDGET_STOP), "Did not finish (1): mut 1." in (_repb or [''])[-1],
+              "Not reached (2): mut 2; mut 3." in (_repb or [''])[-1]), (True, True, True))
         # backlog #252: the same rules, applied up front over the delivered text — sequentially, as the run does.
         _src = {"m.py": "def f():\n    return 1\nx = 1\nx = 1\n"}.get
         case("anchor_problems: a binding anchor, and a second edit that binds only AFTER the first, are clean",
@@ -3422,6 +3949,29 @@ def _self_test_body() -> int:
             case("...and on CI the budget never applies, rc=0", _rc_ci, 0)
             case("⭐ #506: main() wires --seeds to the run, and the verdict line names the seeds, rc=0",
                  (_wired["seeds"][0], "under PYTHONHASHSEED 3, 5" in _wired["seeds"][1]), (0, True))
+            _spent_out = _wired["spent"][1].rstrip("\n").split("\n")
+            case("⭐ r1 F1: main() gives a CI run the budget its job's limit states — here none is left, so "
+                 "the run stops, rc=1, and its LAST line is the budget stop",
+                 (_wired["spent"][0], "TIME BUDGET — 0s" in _wired["spent"][1],
+                  _spent_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True))
+            case("...and with no job limit from the runner, or one it did not expand, a CI run REFUSES before "
+                 "measuring, rc=2", [(_wired[k][0], "SELECTION" in _wired[k][1]) for k in ("nolimit", "rawlimit")],
+                 [(2, False)] * 2)
+            _late_out = _wired["late"][1].rstrip("\n").split("\n")
+            case("⭐ r2 F1: main() counts a CI run's budget from the JOB's first step — 1,700 s after it, a push's "
+                 "1,680 are spent, so the run stops at once, rc=1, its LAST line the budget stop",
+                 (_wired["late"][0], "TIME BUDGET — 1680s" in _wired["late"][1], "0s of it left" in _wired["late"][1],
+                  _late_out[-1].startswith(f"  \u2717 {BUDGET_STOP}")), (1, True, True, True))
+            case("⭐ r2 F3: main() on CI with no GITHUB_EVENT_NAME, or an --event that disagrees with it, REFUSES "
+                 "before measuring, rc=2", [(_wired[k][0], "SELECTION" in _wired[k][1]) for k in ("noevent", "conflict")],
+                 [(2, False)] * 2)
+            case("⭐ r2 F1: main() on CI with no job-start epoch REFUSES before measuring, rc=2",
+                 (_wired["nostart"][0], "SELECTION" in _wired["nostart"][1]), (2, False))
+            case("⭐ r2 F3: main() on CI with NO --event still has its job's budget, from the runner's limit",
+                 "TIME BUDGET — 1680s" in _wired["ci"][1], True)
+            case("⭐ r2 F1: main() prints the whole report BEFORE the run's teardown starts",
+                 [_k for _k in ("push", "spent", "ci") if "measured over" not in (_wired["torn"].get(_k) or "")
+                  and BUDGET_STOP not in (_wired["torn"].get(_k) or "")], [])
         # ── THE REPORTER IS INJECTED, AND THE DEFAULT IS SILENCE ──────────────────────────
         # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
         # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
@@ -3846,11 +4396,11 @@ def _self_test_body() -> int:
             # control loops moved to `run_suite_parts` to budget the two streams separately.
             # The stub then missed both controls, the call indices shifted by two, and the case
             # went red — correctly. Stub the PRODUCER, which every path still goes through.
-            def _timeout_on_the_mutated_run(_d, _name, _seed=None):
+            def _timeout_on_the_mutated_run(_d, _name, _seed=None, limit=None):
                 _calls.append(_name)
                 if len(_calls) == 2:          # 1 = before-control, 2 = the mutation, 3 = after
                     return 2, "", "CANNOT RUN — stub timeout. NOT CHECKED."
-                return _real_run_suite(_d, _name, _seed)
+                return _real_run_suite(_d, _name, _seed, limit=limit)
             globals()["run_suite_parts"] = _timeout_on_the_mutated_run
             try:
                 _ok8, _rep8, _ev8 = mutate_delivered(_r)
@@ -3861,6 +4411,107 @@ def _self_test_body() -> int:
                  (True, False))
             case("...and it is reported as a cannot-run, not as a catch",
                  any("did NOT COMPLETE" in r for r in _rep8), True)
+        # ⛔ backlog #558, THROUGH `mutate_delivered`: every suite run's limit, recorded at the producer.
+        # The clock is FAKED so the control "takes" 10 s per suite run — deterministic under any load —
+        # and each run is still the real fixture suite. 10 s x the factor (20) is 200 s: above the
+        # floor, below the ceiling, so a dropped hand-off (None -> 120 s) and a per-seed division left out
+        # (20 s -> 400 s under two seeds) each read differently.
+        _real_parts, _real_clock = run_suite_parts, time.monotonic
+        for _seeds558 in (None, (0, 7)):
+            with tempfile.TemporaryDirectory() as _td:
+                _r = pathlib.Path(_td); _mini(_r)
+                _lim558, _skew = [], [0.0]
+
+                def _priced(_d, _name, _seed=None, limit=None):
+                    _lim558.append(limit)
+                    _skew[0] += 10.0
+                    return _real_parts(_d, _name, _seed, limit=limit)
+                globals()["run_suite_parts"] = _priced
+                time.monotonic = lambda: _real_clock() + _skew[0]
+                try:
+                    mutate_delivered(_r, seeds=_seeds558)
+                finally:
+                    globals()["run_suite_parts"] = _real_parts
+                    time.monotonic = _real_clock
+            _n558 = len(_seeds558 or (0,))
+            # ⟳ r1 Codex F3: the RE-CONTROL is flat too — the third block of `None`s.
+            case(f"⭐ backlog #558: under {_n558} seed(s) the control and the re-control run under the flat "
+                 f"limit, and the mutant under SUITE_TIMEOUT_FACTOR x the control's PER-SUITE time",
+                 # the fixture's REAL run time is on top of the fake 10 s: allow it 8 s per suite (a loaded
+                 # runner), still below the 20 s a dropped seed division gives
+                 [None if x is None else 10.0 * SUITE_TIMEOUT_FACTOR <= x < 18.0 * SUITE_TIMEOUT_FACTOR
+                  for x in _lim558],
+                 [None] * _n558 + [True] * _n558 + [None] * _n558)
+        # ⛔ r1 F1, THROUGH `mutate_delivered`: where the budget runs out decides what is lost, and the report's
+        # LAST line must say which. Each run's stub spends the budget at ONE call (1 = control, 2 = the
+        # mutant, 3 = the re-control); `cut` says whether that call itself is cut short (rc 2) or finishes.
+        _real_parts_c = run_suite_parts
+
+        def _budget_run(_at, _cut, _deadline=None, _two=False):
+            _calls_c: list = []
+
+            def _spend(_d, _name, _seed=None, limit=None):
+                _calls_c.append(_name)
+                if len(_calls_c) == _at:
+                    _set_deadline(time.monotonic() - 1.0)
+                    if _cut:
+                        return 2, "", "CANNOT RUN — stub: cut short by the budget. NOT CHECKED."
+                return _real_parts_c(_d, _name, _seed, limit=limit)
+            with tempfile.TemporaryDirectory() as _tdc:
+                _rc_root = pathlib.Path(_tdc); _mini(_rc_root)
+                if _two:     # TWO mutations, so run_mutations itself reaches a mutant it must not start
+                    (_rc_root / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
+                        [{"name": f"value is {_w}", "file": "scripts/thing.py",   # distinct anchors (#74)
+                          "edits": [[_a, _a.replace("1", _v)]], "expect": "value is one"}
+                         for _w, _a, _v in (("two", "VALUE != 1", "2"), ("three", "if VALUE != 1:", "3"))]))
+                    EXPECTED_MUTATIONS["scripts/thing.py"] = 2
+                _prev_c = _set_deadline(None)
+                globals()["run_suite_parts"] = _spend
+                try:
+                    _okc, _repc, _evc = mutate_delivered(_rc_root, deadline=_deadline)
+                    _left = _DEADLINE
+                finally:
+                    globals()["run_suite_parts"] = _real_parts_c
+                    _set_deadline(_prev_c)
+                    EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+            return _okc, _repc, _evc, len(_calls_c), _left
+        _ok_p, _rep_p, _ev_p, _n_p, _left_p = _budget_run(0, False, time.monotonic() - 1.0)
+        case("⭐ r1 F1: a run whose budget is already spent starts NO suite, is NOT MEASURED, and its last line "
+             "names the control and the mutations it never reached",
+             (_ok_p, isinstance(_ev_p, NotMeasured), _n_p, (_rep_p or [''])[-1].startswith(BUDGET_STOP),
+              "Not reached (2): control scripts/thing.py; all 1 mutation(s)." in (_rep_p or [''])[-1]),
+             (False, True, 0, True, True))
+        case("...and the run puts the budget it replaced back when it ends", _left_p, None)
+        _ok_m, _rep_m, _ev_m, _n_m, _ = _budget_run(2, True, _two=True)
+        case("⭐ r1 F1: a MUTANT cut short by the budget stops the run — no later mutant, no re-control — and "
+             "the run says so ONCE, last, naming it and the mutant never reached",
+             (_ok_m, isinstance(_ev_m, NotMeasured), _n_m, sum(_r.startswith(BUDGET_STOP) for _r in _rep_m),
+              "Did not finish (1): value is two. Not reached (1): value is three." in (_rep_m or [''])[-1]),
+             (False, True, 2, 1, True))
+        _ok_a, _rep_a, _ev_a, _n_a, _ = _budget_run(2, False)
+        case("⭐ r1 F1: a budget that runs out AFTER the last mutant starts no re-control, and names it "
+             "not reached", (_ok_a, isinstance(_ev_a, NotMeasured), _n_a,
+                             "Not reached (1): re-control scripts/thing.py." in (_rep_a or [''])[-1]),
+             (False, True, 2, True))
+        _ok_r, _rep_r, _ev_r, _n_r, _ = _budget_run(3, True)
+        case("⭐ r1 F1: a RE-CONTROL cut short by the budget is named as not finished, on the last line",
+             (_ok_r, isinstance(_ev_r, NotMeasured), _n_r, (_rep_r or [''])[-1].startswith(BUDGET_STOP),
+              "Did not finish (1): re-control scripts/thing.py." in (_rep_r or [''])[-1]), (False, True, 3, True, True))
+        # ⛔ r2 F1: under a `hold` the run's teardown (its staged tree, and the deadline's reset with it) waits for
+        # the CALLER, so `main` can print the report first.
+        with tempfile.TemporaryDirectory() as _tdh:
+            _h_root = pathlib.Path(_tdh); _mini(_h_root)
+            _prev_h = _set_deadline(None)
+            _h_dl = time.monotonic() + 3600.0
+            try:
+                with contextlib.ExitStack() as _hold:
+                    mutate_delivered(_h_root, deadline=_h_dl, hold=_hold)
+                    _h_during = _DEADLINE
+                _h_after = _DEADLINE
+            finally:
+                _set_deadline(_prev_h)
+        case("⭐ r2 F1: a run given a `hold` leaves its teardown to the holder — the deadline stands until it closes",
+             (_h_during == _h_dl, _h_after), (True, None))
         # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
         # second reports `caught` for coverage that does not exist. Also untested until now.
         with tempfile.TemporaryDirectory() as _td:
@@ -5955,6 +6606,29 @@ def _self_test_body() -> int:
     case("...but a target that only QUOTES a path to ONE file under `scripts/` — even inside a glob "
          "call — and walks another directory, is not a walker of it",
          "scripts/check-q.py" in (_sel(["scripts/check-x.py"], src=_SW) or _SW), False)
+    # backlog #231 COST: `_walks_dir` now files each lister call and each assignment under the
+    # scopes that enclose it, instead of re-walking every scope. These pin the scope rule it must
+    # still reproduce, and that its `lru_cache` answers per (source, directory) — never stale.
+    _gw = _SW["scripts/check-gw.py"]
+    case("⭐ backlog #231: the cached `_walks_dir` answers per INPUT — the same source for another "
+         "directory, then a changed source for the same one, each changes the answer",
+         (_walks_dir(_gw, "scripts"), _walks_dir(_gw, "docs"),
+          _walks_dir(_gw.replace("'scripts/", "'lib/"), "scripts"), _walks_dir(_gw, "scripts")),
+         (True, False, False, True))
+    case("⭐ backlog #231: a module-level name carries the directory into a function's lister",
+         _walks_dir("import os\nR = 'scripts'\ndef f():\n    return os.listdir(R)\n", "scripts"), True)
+    case("...and a lister in a CLASS BODY, outside any def, is in no scope — it is not a walk",
+         _walks_dir("import glob\nclass C:\n    ALL = glob.glob('scripts/*.py')\n", "scripts"), False)
+    case("...nor is a name assigned in a SIBLING function, which the lister's scope cannot see",
+         _walks_dir("import os\ndef g():\n    R = 'scripts'\ndef f():\n    return os.listdir(R)\n",
+                    "scripts"), False)
+    case("...and a name assigned from one assigned LATER in the scope is still tainted — a fixpoint, "
+         "not one pass in source order",
+         _walks_dir("import os\ndef f():\n    c = b\n    b = 'scripts'\n    return os.listdir(c)\n",
+                    "scripts"), True)
+    case("⭐ backlog #231: a call carrying `ls-files` is a lister, whatever it is called",
+         _walks_dir("import subprocess\nsubprocess.run(['git', 'ls-files', 'scripts'])\n", "scripts"),
+         True)
     case("⭐ r2 X2 on the real tree: check-usage-pace.py selects check-canonical-source, which walks scripts/",
          "scripts/check-canonical-source.py" in (_rsel("scripts/check-usage-pace.py") or set()), True)
     # C3: the dependency manifests change staged `node_modules` without any staged path changing.
@@ -6548,7 +7222,19 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # question — the manifest's own problems belong to `mutate_delivered`'s report.
         # backlog #330: THE SELECTION, decided once by `select_manifests` and LOGGED before any
         # suite runs — which manifests, and the changed path that selected each, or "full: why".
-        select = scope = None
+        select = scope = deadline = None
+        # L1: only a CI runner's own `CI=true` counts — an exported `CI=false` is not CI.
+        _ci = os.environ.get("CI", "").lower() == "true"
+        if _ci:
+            # ⛔ r1 F1, r2 F1-F3: EVERY run on CI has its job's budget, or it does not run — with or without
+            # --event, from the runner's own environment (`ci_deadline`), counted from the job's FIRST step.
+            deadline, _line, why = ci_deadline(os.environ, a.event, time.time(), time.monotonic())
+            if why:
+                print(f"CANNOT RUN — no time budget for this sweep run: {why}. Without one, hung mutants can "
+                      f"run past the job's timeout-minutes and the job is killed with its evidence unprinted. "
+                      f"NOTHING WAS MEASURED.", file=sys.stderr)
+                return 2
+            print(_line)
         if a.event is not None:
             raw = None
             if a.changed is not None:
@@ -6574,19 +7260,24 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
         # to silence, so a nested run cannot write into the stream its parent reads.
         # ⛔ OFF CI the budget applies unless THIS invocation asks otherwise; `CI` is set by
         # every GitHub Actions runner, so the sharded gate is never refused.
-        # L1: only a CI runner's own `CI=true` counts — an exported `CI=false` is not CI.
-        _ci = os.environ.get("CI", "").lower() == "true"
         budget = None if (_ci or a.allow_long_local) else (
             LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
         only = frozenset(a.only) if a.only else None
+        # ⛔ r2 F1: the run's teardown is HELD until the report is printed and flushed (its length is unbounded).
+        hold = contextlib.ExitStack()
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
-                                               shard=shard, budget=budget, only=only, seeds=seeds,
-                                               select=select)
+                                               shard=shard, budget=budget, only=only, seeds=seeds, hold=hold,
+                                               select=select, deadline=deadline)
         if report and report[0].startswith(LOCAL_REFUSAL):
+            hold.close()
             print(report[0], file=sys.stderr)
             return 2
+        # r1 F1: a budget stop is the LAST line of the log, after the verdict line, where a reader of a
+        # red shard looks first.
+        stops = [r for r in report if r.startswith(BUDGET_STOP)]
         for r in report:
-            print(f"  \u2717 {r}")
+            if r not in stops:
+                print(f"  \u2717 {r}")
         # BACKLOG #93, AND ITS ANSWER CHANGED - READ THIS BEFORE RE-ADDING A DIFFERENCE.
         # This gate and the plan-mode gate USED to differ on purpose: this one was
         # `trustworthy` ALONE, that one also let through `declared is None`. #93's warning
@@ -6633,6 +7324,10 @@ def main(argv: list[str], local_budget: "float | None" = None) -> int:
             # coverage verdict" contradicts itself. Measured 2026-09-03: the first run of
             # F2-S4 emitted exactly that sentence.
             print(not_measured_line(verdict, shard, only, scope))
+        for r in stops:
+            print(f"  \u2717 {r}", flush=True)
+        sys.stdout.flush()
+        hold.close()
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
     # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts
