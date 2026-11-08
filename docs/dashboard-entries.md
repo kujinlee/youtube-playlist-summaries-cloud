@@ -19095,3 +19095,53 @@ re-bound, 15 added). `check-merge-ready.py`'s accounted mention follows the anch
 by enclosing scope in one walk (backlog #231): identical answers on all 99 `scripts/*.py`, 22-53% less CPU. Self-test 373 -> 407
 cases; manifest 228 -> 280 entries (52 added, none retired; three retargeted for F3). Filed backlog #564 (the fixture-variation mutant whose cost grows
 with the repository) and backlog #565 (the self-test's full `docs/` stage copy).
+
+## 2026-11-08
+When a pull request conflicts with the main branch, GitHub quietly runs no tests on it, and it looks the same as tests
+still waiting to start. On 2026-11-06 that cost about two hours on PR #529. Now the stalled-work note shown with each
+message names such a PR ("DIRTY, no CI run on its head", with how long ago its last commit was), draft or not, and says what to do: merge the main branch in and push. The two
+pull requests parked for the owner (PR #392, PR #376) are not named: they conflict too, but they already had test runs
+before they did, so their results are visible and they would only nag. If GitHub cannot be reached, the note says the
+check could not run, never that all is clear. Backlog #545.
+Review round 1 fold: "a test run" now means a GitHub Actions run started by the pull request itself, not any status
+another tool posts; the conflict line is always shown first, so a long list cannot push it out; a PR whose mergeability
+GitHub has not worked out yet gets a note instead of silence; and a PR stacked on another branch is no longer told to
+merge the main branch.
+Review round 2 fold: when the tool could not see whether tests ran (for example GitHub listed only part of a PR's
+checks), it no longer says "no tests will run, merge now"; it says the conflict is real and the test status was not
+measured. A PR pushed a moment ago is given five minutes before GitHub's still-working state counts as stuck (GitHub
+measured at under two minutes on 132 recent pushes). A PR whose target branch arrives blank now makes the check
+report that it could not run, instead of quietly skipping that PR.
+Review round 3 and a design review: each earlier fix had added a new kind of warning for cases where the tool could
+not see enough, and each next review found a flaw in the newest one. None of those warnings had ever fired on a real
+pull request. So they are gone. The note now warns about one thing only: a conflict where the tool saw for certain
+that no tests ran. Anything it could not see shows up only in the full report, and the next message checks again.
+<!--tech-->
+`scripts/check-stalled-work.py`: `GH_QUERY` adds `mergeable` and the head commit's `statusCheckRollup{state}`;
+`pr_node_problem` refuses a node with no string `mergeable` (CANNOT RUN); `head_has_run(row, oid)` -> True/False, or None when
+gh's last commit is not the head; `pr_item` returns `DIRTY-NO-CI` when `conflicting` and the head run is not True (draft or
+not), aged by the head commit, the age printed in the line (or "head commit date unknown"). The new status is in `STALLED_STATES` and the hook's first tier. Keyed on `mergeable ==
+CONFLICTING`, which a draft has too (PR #537, a draft, read CONFLICTING / DIRTY on 2026-11-08); `UNKNOWN` is not a conflict. MEASURED 2026-11-07:
+`statusCheckRollup` is null on PR #529's no-run heads `4ae91ab3` and `da1d55ad`, FAILURE on PR #392's head; a live run reports
+PR #392 and PR #376 as OK. 183 -> 203 cases, including one `collect` case with a DIRTY no-run, a CLEAN and a held DIRTY PR in
+which only the first is reported, and one with a fresh DIRTY draft beside a fresh MERGEABLE draft. 84 -> 106 mutations; three
+existing anchors re-bound to the same edit.
+r1 fold (`docs/reviews/coordinator/dirty-no-ci-r1-coordinator.md`): `head_has_run` reads `checkSuites(first:20)` and
+counts only a suite whose `workflowRun.event` is `pull_request` (Codex R1-F1; MEASURED 2026-11-08: PR #529's no-run
+heads carry only the `cursor` and `claude` apps' suites); truncated suites or a missing key are unknown (Claude R1-F5).
+`DIRTY-NO-CI` is its own first hook tier (R1-F1). `UNKNOWN-MERGE` for `mergeable: UNKNOWN` with no PR run (R1-F2); a
+value outside GitHub's enum is CANNOT RUN. `baseRefName` read; only a master-based PR is reported (R1-F3). A future head
+date ages 0 (R1-F4). 203 -> 217 cases; 106 -> 122 mutations.
+r2 fold (`docs/reviews/coordinator/dirty-no-ci-r2-coordinator.md`, all three fix-induced): `pr_item` gives DIRTY-NO-CI only
+for `headRun is False`; `None` is the new stalled state `DIRTY-UNSEEN` (hook tier 2), worded NOT MEASURED with a
+conditional action (R2-F1; `checkSuites` filters only by `appId`/`checkName`, introspected; MEASURED: max 4 suites on
+132 heads). `MERGE_GRACE_S` = 300: an UNKNOWN head no older than that is `MERGE-PENDING`, not stalled, no tier; an
+undated head gets no grace (R2-F2; MEASURED: first `pull_request` run 2-111 s after the head's first suite).
+`BASE_REF_RE` refuses an empty or malformed `baseRefName`, CANNOT RUN (R2-F3). Class audit: `head_has_run` reads a
+non-list `nodes` or a boolean `totalCount` as unknown. 217 -> 225 cases; 122 -> 133 mutations, 12 anchors re-bound.
+r3 + Phase 6 fold (`docs/reviews/architecture-review-2026-11-08-dirty-pr-states.md`, THRASHING: R3-F2..F4 caused by
+r2): DIRTY-UNSEEN, UNKNOWN-MERGE, MERGE-PENDING and `MERGE_GRACE_S` deleted; `pr_item`'s one unmeasured line is
+`UNMEASURED` (not in `STALLED_STATES` or `HOOK_TIERS`, replaces only OK, never a stalled draft). `suite_node_ok`: a
+measured none needs every node a dict with a `workflowRun` key, null or a string `event` (R3-F1). MEASURED: 0 of 187
+heads truncated or malformed; 0 UNKNOWN reads on an open no-run PR in the transcripts. 225 -> 225 cases; 133 -> 133
+mutations (10 retired with deleted code, 10 new, 5 re-bound; one expect stale since r2 corrected).
