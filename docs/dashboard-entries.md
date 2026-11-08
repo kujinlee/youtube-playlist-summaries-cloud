@@ -18988,6 +18988,10 @@ message names such a PR ("DIRTY, no CI run on its head", with how long ago its l
 pull requests parked for the owner (PR #392, PR #376) are not named: they conflict too, but they already had test runs
 before they did, so their results are visible and they would only nag. If GitHub cannot be reached, the note says the
 check could not run, never that all is clear. Backlog #545.
+Review round 1 fold: "a test run" now means a GitHub Actions run started by the pull request itself, not any status
+another tool posts; the conflict line is always shown first, so a long list cannot push it out; a PR whose mergeability
+GitHub has not worked out yet gets a note instead of silence; and a PR stacked on another branch is no longer told to
+merge the main branch.
 <!--tech-->
 `scripts/check-stalled-work.py`: `GH_QUERY` adds `mergeable` and the head commit's `statusCheckRollup{state}`;
 `pr_node_problem` refuses a node with no string `mergeable` (CANNOT RUN); `head_has_run(row, oid)` -> True/False, or None when
@@ -18998,3 +19002,9 @@ CONFLICTING`, which a draft has too (PR #537, a draft, read CONFLICTING / DIRTY 
 PR #392 and PR #376 as OK. 183 -> 203 cases, including one `collect` case with a DIRTY no-run, a CLEAN and a held DIRTY PR in
 which only the first is reported, and one with a fresh DIRTY draft beside a fresh MERGEABLE draft. 84 -> 106 mutations; three
 existing anchors re-bound to the same edit.
+r1 fold (`docs/reviews/coordinator/dirty-no-ci-r1-coordinator.md`): `head_has_run` reads `checkSuites(first:20)` and
+counts only a suite whose `workflowRun.event` is `pull_request` (Codex R1-F1; MEASURED 2026-11-08: PR #529's no-run
+heads carry only the `cursor` and `claude` apps' suites); truncated suites or a missing key are unknown (Claude R1-F5).
+`DIRTY-NO-CI` is its own first hook tier (R1-F1). `UNKNOWN-MERGE` for `mergeable: UNKNOWN` with no PR run (R1-F2); a
+value outside GitHub's enum is CANNOT RUN. `baseRefName` read; only a master-based PR is reported (R1-F3). A future head
+date ages 0 (R1-F4). 203 -> 217 cases; 106 -> 122 mutations.

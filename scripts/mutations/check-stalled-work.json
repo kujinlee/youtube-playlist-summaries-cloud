@@ -1107,20 +1107,20 @@
       ]
     ],
     "expect": [
-      "545: the gh query asks for mergeable and the head commit's rollup"
+      "545: the gh query asks for mergeable, the base and the head commit's check suites"
     ]
   },
   {
-    "name": "545: the gh query stops asking for the head commit's check rollup, so every head reads as having no run",
+    "name": "545: the gh query stops asking for the head commit's check suites, so every head's run is unknown",
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "committedDate statusCheckRollup{state}}",
+        "committedDate \"\n            \"checkSuites(first:20){totalCount nodes{workflowRun{event}}}}",
         "committedDate}"
       ]
     ],
     "expect": [
-      "545: the gh query asks for mergeable and the head commit's rollup"
+      "545: the gh query asks for mergeable, the base and the head commit's check suites"
     ]
   },
   {
@@ -1141,8 +1141,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"conflicting\": r[\"mergeable\"] == \"CONFLICTING\"",
-        "\"conflicting\": r[\"mergeable\"] != \"MERGEABLE\""
+        "\"conflicting\": on_ci_base and r[\"mergeable\"] == \"CONFLICTING\"",
+        "\"conflicting\": on_ci_base and r[\"mergeable\"] != \"MERGEABLE\""
       ]
     ],
     "expect": [
@@ -1159,20 +1159,20 @@
       ]
     ],
     "expect": [
-      "545: own_prs reads a CONFLICTING PR with no rollup on its head as conflicting, no run; a MERGEABLE one as not conflicting"
+      "545: own_prs reads a CONFLICTING PR with no PR-CI suite on its head as conflicting, no run; a MERGEABLE one as not conflicting"
     ]
   },
   {
-    "name": "545: head_has_run inverts: a null rollup reads as a run",
+    "name": "545: head_has_run inverts: a pull_request suite reads as no run, and app suites alone as a run",
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "return commit.get(\"statusCheckRollup\") is not None",
-        "return commit.get(\"statusCheckRollup\") is None"
+        "            return True\n        return False if suites",
+        "            return False\n        return True if suites"
       ]
     ],
     "expect": [
-      "545: head_has_run: a rollup is a run, a null rollup is none, a last commit that is not the head is unknown"
+      "545: head_has_run: a pull_request suite is a run, app suites alone are none, a last commit that is not the head is unknown"
     ]
   },
   {
@@ -1180,12 +1180,12 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        if oid and commit[\"oid\"] == oid:\n            return commit.get(\"statusCheckRollup\")",
-        "        if True:\n            return commit.get(\"statusCheckRollup\")"
+        "        if not (oid and commit[\"oid\"] == oid):\n            return None",
+        "        if False:\n            return None"
       ]
     ],
     "expect": [
-      "545: head_has_run: a rollup is a run, a null rollup is none, a last commit that is not the head is unknown"
+      "545: head_has_run: a pull_request suite is a run, app suites alone are none, a last commit that is not the head is unknown"
     ]
   },
   {
@@ -1193,8 +1193,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"conflicting\": pr.get(\"conflicting\", False), \"run\"",
-        "\"conflicting\": False, \"run\""
+        "\"conflicting\": pr.get(\"conflicting\", False), \"mergeUnknown\"",
+        "\"conflicting\": False, \"mergeUnknown\""
       ]
     ],
     "expect": [
@@ -1219,8 +1219,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"conflicting\": f.get(\"conflicting\", False), \"headRun\"",
-        "\"conflicting\": False, \"headRun\""
+        "\"conflicting\": f.get(\"conflicting\", False),\n",
+        "\"conflicting\": False,\n"
       ]
     ],
     "expect": [
@@ -1258,8 +1258,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "pr.get(\"headRun\") is not True:\n        age",
-        "True:\n        age"
+        "pr.get(\"conflicting\") and pr.get(\"headRun\") is not True:",
+        "pr.get(\"conflicting\"):"
       ]
     ],
     "expect": [
@@ -1271,8 +1271,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "and pr.get(\"headRun\") is not True",
-        "and pr.get(\"headRun\") is False"
+        "is not True:\n        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  #",
+        "is False:\n        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  #"
       ]
     ],
     "expect": [
@@ -1297,8 +1297,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        age = 0 if commit_ts is None else int(now - commit_ts)\n        seen",
-        "        age = 0\n        seen"
+        "        age = 0 if commit_ts is None else max(0, int(now - commit_ts))  # r1 Claude R1-F4",
+        "        age = 0  # r1 Claude R1-F4"
       ]
     ],
     "expect": [
@@ -1323,8 +1323,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"UNPROCESSED\")",
-        "\"UNKNOWN-DRAFT\", \"UNPROCESSED\")"
+        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"UNKNOWN-MERGE\"",
+        "\"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\""
       ]
     ],
     "expect": [
@@ -1336,8 +1336,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\"), (\"UNPROCESSED\",)",
-        "\"UNKNOWN-DRAFT\"), (\"UNPROCESSED\",)"
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\"",
+        "HOOK_TIERS = ((\"STALLED\""
       ]
     ],
     "expect": [
@@ -1362,8 +1362,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "when = \"head commit date unknown\" if commit_ts is None else",
-        "when = \"last commit 0m ago\" if commit_ts is None else"
+        "when = \"head commit date unknown\" if commit_ts is None else f\"last commit {fmt_age(age)} ago\"\n        return Item(\"DIRTY-NO-CI\"",
+        "when = \"last commit 0m ago\" if commit_ts is None else f\"last commit {fmt_age(age)} ago\"\n        return Item(\"DIRTY-NO-CI\""
       ]
     ],
     "expect": [
@@ -1375,12 +1375,220 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"conflicting\": r[\"mergeable\"] == \"CONFLICTING\", \"headRun\"",
-        "\"conflicting\": r[\"mergeable\"] == \"CONFLICTING\" and not r[\"isDraft\"], \"headRun\""
+        "\"conflicting\": on_ci_base and r[\"mergeable\"] == \"CONFLICTING\",",
+        "\"conflicting\": on_ci_base and r[\"mergeable\"] == \"CONFLICTING\" and not r[\"isDraft\"],"
       ]
     ],
     "expect": [
       "545: collect over a FRESH DIRTY draft and a FRESH MERGEABLE draft reports ONLY the dirty one, aged"
+    ]
+  },
+  {
+    "name": "545 r1: any workflow run counts as PR CI, so a push-event run hides a DIRTY head",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "(n.get(\"workflowRun\") or {}).get(\"event\") == \"pull_request\"",
+        "(n.get(\"workflowRun\") or {}).get(\"event\") is not None"
+      ]
+    ],
+    "expect": [
+      "545 r1: head_has_run: other apps' suites plus a PUSH-event workflow run are no PR CI"
+    ]
+  },
+  {
+    "name": "545 r1: any check suite counts as PR CI (the rollup's reading), so a status-only head is never DIRTY",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if any((n.get(\"workflowRun\") or {}).get(\"event\") == \"pull_request\" for n in nodes):",
+        "if nodes or commit.get(\"statusCheckRollup\"):"
+      ]
+    ],
+    "expect": [
+      "545 r1: a CONFLICTING head whose only signal is a pending commit STATUS is DIRTY-NO-CI (Codex's input)"
+    ]
+  },
+  {
+    "name": "545 r1: truncated check suites read as a measured 'no run'",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "return False if suites[\"totalCount\"] == len(nodes) else None",
+        "return False"
+      ]
+    ],
+    "expect": [
+      "545 r1: head_has_run: suites TRUNCATED before a pull_request one was seen are unknown, never 'none'"
+    ]
+  },
+  {
+    "name": "545 r1: a missing checkSuites key reads as a measured absence",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        suites = commit[\"checkSuites\"]\n",
+        "        suites = commit.get(\"checkSuites\") or {\"totalCount\": 0, \"nodes\": []}\n"
+      ]
+    ],
+    "expect": [
+      "545 r1: a head with no checkSuites key is 'no CI run seen', not 'no CI run on its head'"
+    ]
+  },
+  {
+    "name": "545 r1: DIRTY-NO-CI shares the STALLED tier again, so the cap cuts the young DIRTY line first",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "HOOK_TIERS = ((\"DIRTY-NO-CI\",), (\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\"),",
+        "HOOK_TIERS = ((\"STALLED\", \"STALLED-DRAFT\", \"UNKNOWN-DRAFT\", \"UNKNOWN-MERGE\", \"DIRTY-NO-CI\"),"
+      ]
+    ],
+    "expect": [
+      "545 r1: with 8 OLDER stalled tips, the young DIRTY-NO-CI line is still in the capped hook block, first"
+    ]
+  },
+  {
+    "name": "545 r1: own_prs drops mergeability-unknown, so an UNKNOWN PR is silent",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"mergeUnknown\": on_ci_base and r[\"mergeable\"] == \"UNKNOWN\"",
+        "\"mergeUnknown\": False"
+      ]
+    ],
+    "expect": [
+      "545 r1: own_prs reads UNKNOWN as mergeability-unknown, and CONFLICTING as not"
+    ]
+  },
+  {
+    "name": "545 r1: the UNKNOWN-MERGE note is never emitted",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if pr.get(\"mergeUnknown\") and",
+        "    if False and"
+      ]
+    ],
+    "expect": [
+      "545 r1: an UNKNOWN-mergeability PR with no run on its head is an UNKNOWN-MERGE note, aged in its text"
+    ]
+  },
+  {
+    "name": "545 r1: the UNKNOWN note drops its head-run test, so a PR with CI nags",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "pr.get(\"mergeUnknown\") and pr.get(\"headRun\") is not True:",
+        "pr.get(\"mergeUnknown\"):"
+      ]
+    ],
+    "expect": [
+      "545 r1: ...but one whose head HAS a run is NOT reported"
+    ]
+  },
+  {
+    "name": "545 r1: UNKNOWN-MERGE is not a stalled state, so the check exits clear and the hook says nothing",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"DIRTY-NO-CI\", \"UNKNOWN-MERGE\", \"UNPROCESSED\")",
+        "\"DIRTY-NO-CI\", \"UNPROCESSED\")"
+      ]
+    ],
+    "expect": [
+      "545 r1: UNKNOWN-MERGE is a stalled state, in the hook's tiers"
+    ]
+  },
+  {
+    "name": "545 r1: pr_fact drops mergeability-unknown",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"mergeUnknown\": pr.get(\"mergeUnknown\", False),",
+        "\"mergeUnknown\": False,"
+      ]
+    ],
+    "expect": [
+      "545: pr_fact carries the conflict and the head-run facts it is given"
+    ]
+  },
+  {
+    "name": "545 r1: items_from drops mergeability-unknown, so collect never notes it",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"mergeUnknown\": f.get(\"mergeUnknown\", False), \"headRun\"",
+        "\"mergeUnknown\": False, \"headRun\""
+      ]
+    ],
+    "expect": [
+      "545 r1: collect over an UNKNOWN no-run PR and a CLEAN one: the hook block carries ONLY the UNKNOWN one"
+    ]
+  },
+  {
+    "name": "545 r1: a mergeable outside GitHub's enum is no longer refused",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if r[\"mergeable\"] not in MERGEABLE_STATES:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "545 r1: own_prs REFUSES a mergeable outside GitHub's enum (lower case 'conflicting')"
+    ]
+  },
+  {
+    "name": "545 r1: the base test is dropped, so a stacked PR gets the merge-master remedy",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        on_ci_base = r.get(\"baseRefName\") == PR_CI_BASE",
+        "        on_ci_base = True"
+      ]
+    ],
+    "expect": [
+      "545 r1: a CONFLICTING or UNKNOWN PR based on another branch is neither conflicting nor unknown here"
+    ]
+  },
+  {
+    "name": "545 r1: a node with no baseRefName is no longer refused",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if not isinstance(r.get(\"baseRefName\"), str):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "545 r1: own_prs REFUSES a node with no baseRefName"
+    ]
+  },
+  {
+    "name": "545 r1: the gh query stops asking for the base, so every PR reads as not master-based",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "headRefName baseRefName headRefOid",
+        "headRefName headRefOid"
+      ]
+    ],
+    "expect": [
+      "545: the gh query asks for mergeable, the base and the head commit's check suites"
+    ]
+  },
+  {
+    "name": "545 r1: a future head date gives a negative age again",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "max(0, int(now - commit_ts))  # r1 Claude R1-F4",
+        "int(now - commit_ts)  # r1 Claude R1-F4"
+      ]
+    ],
+    "expect": [
+      "545 r1: a DIRTY head committed a day in the FUTURE is aged 0, never negative"
     ]
   }
 ]

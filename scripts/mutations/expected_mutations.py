@@ -1882,7 +1882,12 @@ EXPECTED_MUTATIONS = {
     # extended past a line `head_has_run` now shares).
     # ⟳ resumed build (2026-11-08): 103 -> 106. The DIRTY line carries its age (2: the age, and an
     # unknown date said as unknown), and a fresh DRAFT that conflicts is reported (1, PR #537).
-    "scripts/check-stalled-work.py": 106,
+    # ⟳ backlog #545 r1 fold (2026-11-08): 106 -> 122. 16 new: a run is a `pull_request` workflow suite (push
+    # event, any suite, truncation, a missing key: 4), DIRTY-NO-CI's own first hook tier (1), UNKNOWN-MERGE (own_prs,
+    # the item, its head-run test, its stalled state, pr_fact, items_from: 6), the mergeable enum (1), the master
+    # base (test, refusal, query: 3), the future-date floor (1). Nothing retired; 14 existing anchors re-bound to
+    # the same edit on the reshaped lines.
+    "scripts/check-stalled-work.py": 122,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
