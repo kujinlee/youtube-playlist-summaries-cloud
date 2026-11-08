@@ -19246,3 +19246,25 @@ cases: the row's three steps in a real repository (clean-tree control + dirty pr
 archive, a junk archive. check-merge-ready 348 -> 354 cases, 156 -> 162 mutations (each hand-checked in a `stage_tree` copy:
 rc 1, `parse_fail_names` equal to its `expect`). Bound: a head harness naming a pins file outside `scripts/` is CANNOT RUN; an
 absolute path is read as it stands.
+
+## 2026-11-08
+Round 1 of the review found two more ways an old or altered copy could stand in for the pull request's own files, and
+both are closed. The settings the pull request SHOWS were still read by whatever copy of the test tool sat on disk, and
+the way the committed files were unpacked could be told to rewrite them. Now one copy, unpacked byte for byte from the
+pull request itself, reads both sides, and the check puts everything it touched back exactly as it was.
+<!--tech-->
+Backlog #538, PR #541, round 1 fold (C-F1, X-F1, X-F2, C-F2, C-F3). `scripts/check-merge-ready.py`: `pin_pair` opens
+`_head_harness(run)`, a getter that on first use materialises HEAD's `scripts/` from raw blobs (`HEAD_LS` =
+`git ls-tree -r -z HEAD -- scripts`, `HEAD_CAT` = `git cat-file --batch`; each blob re-hashed by `_blob_id`, only modes
+100644/100755, each path written once with `open(..., "xb")` under `scripts/`) and imports `PINS_SCRIPT` under
+`_isolated_import`, held until the pair is read. `pins_at(run, rev, harness)` parses BOTH displays with that module's
+`pin_display`; `held_pins(harness)` reads its `EXPECTED_MUTATIONS`. `_pins_reader` and `git archive` are gone.
+`_isolated_import` keeps a fileless module only if it is a builtin or frozen by name, and its restore drops EVERY entry
+the block added before putting the saved ones back. New cases: Claude's dirty `pin_display` repro (clean control +
+dirty, both HELD); Codex's `export-subst` and an `export-ignore` variant (CANNOT RUN); exact `sys.path`/`sys.modules`
+after a successful and a failing read, outside `_dirty_case`'s own snapshot; a preloaded fileless module hidden; ten
+named failure paths of the raw-blob read, and a materialise-once count. C-F3: `_compile_memo` (suite only) memoises
+`SourceFileLoader.source_to_code` by source SHA-256 (module bodies still execute per import): measured 41-61 s without
+it and 22-26 s with it, 3 runs each, same code. check-merge-ready 354 -> 367 cases, 162 -> 176 mutations (the two
+archive entries retargeted to the raw-blob read, one backlog #536 anchor rebound after a re-indent, none retired).
+Bound: a head with no harness has no reader, so its pins are CANNOT RUN.

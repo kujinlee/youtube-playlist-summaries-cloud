@@ -1757,7 +1757,13 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-08, backlog #538: 156 -> 162, none retired. The held side is HEAD's, materialised: the working-tree
     # harness read again (1), the isolation dropped at the call (1), its sys.path half (1) and its hidden-module half
     # (1), a failing `git archive` read as an archive (1), an archive that does not unpack passed over (1).
-    "scripts/check-merge-ready.py": 162,
+    # ⟳ 2026-11-08, backlog #538 r1: 162 -> 176, none retired; the two archive entries are RETARGETED to the raw-blob
+    # read that replaced `git archive` (a failing `git ls-tree`, an entry that does not parse). New: the displays
+    # parsed by the working-tree harness (C-F1) (1), materialised on every call (1), an empty listing (1), a
+    # symlink/submodule (1), a path leaving scripts/ (1), a file written over (1), a failing `git cat-file` (1), an
+    # answer that is not the blob (1), bytes not hashed against the id (X-F1) (1), more than asked (1), every
+    # fileless module trusted (X-F2) (1), and the restore's three halves (C-F2) (3).
+    "scripts/check-merge-ready.py": 176,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
