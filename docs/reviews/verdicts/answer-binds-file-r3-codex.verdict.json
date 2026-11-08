@@ -1,0 +1,28 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 2150 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "264d28ea1686d75f6fea21a989cecacc7f6de260",
+  "intrusions": [],
+  "loosening_answers": {
+    "10f587a01725": "not a loosening",
+    "1d9326b385a7": "not a loosening",
+    "34cc62ed27bc": "not a loosening",
+    "6f2121cd3021": "finding",
+    "766bf98f8fce": "not a loosening",
+    "7895f28f4d34": "finding",
+    "78c781c7b7fc": "finding",
+    "f420a0304250": "finding"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/abf-r3-codex.txt",
+  "reason": "2150 chars",
+  "refused": false,
+  "review": "answer-binds-file-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/abf"
+}
