@@ -2309,5 +2309,18 @@
       "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
       "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
     ]
+  },
+  {
+    "name": "backlog #231: meter_row loses its memo, so the sweep re-parses every line once per suffix",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "@functools.lru_cache(maxsize=METER_ROW_MEMO)\ndef meter_row(",
+        "def meter_row("
+      ]
+    ],
+    "expect": [
+      "⭐ backlog #231: meter_row is memoised on the line's text, and a changed line is a changed answer"
+    ]
   }
 ]

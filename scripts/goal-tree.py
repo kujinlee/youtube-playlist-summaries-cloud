@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 428 cases
+    python3 scripts/goal-tree.py --self-test                 # 431 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -92,6 +92,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import functools
 import html
 import importlib.util
 import json
@@ -179,8 +180,22 @@ QUEUED_RELATIONS = ("fix", "blocker")    # review r1 C2: declared under a goal, 
 
 
 def _sibling(name: str):
-    """A hyphenated sibling script, imported by path (one rule, one place — not a copy of it)."""
-    spec = importlib.util.spec_from_file_location("_" + name.replace("-", "_"), SCRIPTS / f"{name}.py")
+    """A hyphenated sibling script, imported by path (one rule, one place — not a copy of it).
+
+    ⚠ ONE IMPORT PER FILE STATE (backlog #406): the suite asked for the same three siblings ~180 times and each
+    call re-executed the whole module, which was most of the suite. The key is the name, the path and the file's
+    (mtime_ns, size), so a sibling rewritten in this process is imported afresh rather than served stale. A
+    shared module is safe because nothing here writes a sibling's attributes; a caller that patches one must
+    call `_sibling_at.cache_clear()` after."""
+    path = SCRIPTS / f"{name}.py"
+    st = path.stat()
+    return _sibling_at(name, str(path), st.st_mtime_ns, st.st_size)
+
+
+@functools.lru_cache(maxsize=16)
+def _sibling_at(name: str, path: str, mtime_ns: int, size: int):
+    """`_sibling`'s import, memoised on everything it reads: the file at `path` in the state the stamp names."""
+    spec = importlib.util.spec_from_file_location("_" + name.replace("-", "_"), path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -2327,6 +2342,26 @@ def _self_test_body() -> int:
             "## GOAL beta\n"
             '> 2026-10-28 03:41 "the second goal"\n'
             "- bookkeeping · PR #20 · filed rows\n")
+    # ── backlog #406: a sibling is imported ONCE PER FILE STATE, never served stale ───────────────────
+    case("backlog #406: the same sibling twice is ONE import", _sibling("gen-work-lines") is _sibling("gen-work-lines"),
+         True)
+    with tempfile.TemporaryDirectory() as _std:
+        _sd = pathlib.Path(_std)
+        (_sd / "sib-x.py").write_text("V = 1\n", encoding="utf-8")
+        _real_scripts = SCRIPTS
+        globals()["SCRIPTS"] = _sd
+        try:
+            _v1 = _sibling("sib-x").V
+            _v1_again = _sibling("sib-x").V
+            (_sd / "sib-x.py").write_text("V = 22\n", encoding="utf-8")
+            _v2 = _sibling("sib-x").V
+        finally:
+            globals()["SCRIPTS"] = _real_scripts
+    case("backlog #406: a sibling REWRITTEN in this process is imported afresh, never the cached module",
+         (_v1, _v1_again, _v2), (1, 1, 22))
+    case("backlog #406: ...and SCRIPTS is restored, so the real siblings are read again",
+         _sibling("gen-work-lines").__name__, "_gen_work_lines")
+
     goals = parse_threads(good)
 
     # ── the grammar ──────────────────────────────────────────────────────────────────────────

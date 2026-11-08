@@ -147,11 +147,12 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 392 cases
+    python3 scripts/check-usage-pace.py --self-test  # 393 cases
 """
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import math
 import os
@@ -310,6 +311,27 @@ def local_midnight(now: float) -> float:
     return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
 
 
+METER_ROW_MEMO = 4096
+
+
+@functools.lru_cache(maxsize=METER_ROW_MEMO)
+def meter_row(line: str) -> tuple[object, object, object] | None:
+    """One meter-log line's `(at, used_percentage, resets_at)`, UNCHECKED, or None when the line is not JSON or
+    lacks one of the three. PURE: the answer depends on the line's text alone, which is the whole key.
+
+    ⚠ MEMOISED (backlog #231): the soundness sweep in the self-test re-reads every suffix of its logs, so one line is
+    parsed up to ~80 times, and that was most of the suite's single largest case. Each value is a float, a str, None
+    or another JSON value; `pace_line` only READS them (`is_number`, comparisons), and a list or a dict reading is
+    refused by `is_number` before anything could touch it. Bounded, so a log at the bound cannot grow it: one
+    production read parses each line once, and the cache costs it a hash per line."""
+    try:
+        row = parse_json(line)
+        w = row["rate_limits"]["seven_day"]
+        return row["at"], w["used_percentage"], w["resets_at"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: bool = False) -> tuple[float | None, str]:
     """The RULE (backlog #500): today's pace line from the meter log's text, or (None, why) when it cannot be
     read. The owner's 11-01 15:38 rule: start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at
@@ -347,12 +369,10 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
     for line in text.splitlines():
         if '"seven_day"' not in line:  # every row carries it; a C-speed skip of blank and garbage lines (r3 C1)
             continue
-        try:
-            row = parse_json(line)
-            w = row["rate_limits"]["seven_day"]
-            at, p, r = row["at"], w["used_percentage"], w["resets_at"]
-        except (ValueError, KeyError, TypeError):
+        row = meter_row(line)
+        if row is None:
             continue
+        at, p, r = row
         if is_number(at):
             if breach is None and max_at is not None and at < max_at - METER_SKEW_S:
                 breach = (at, max_at)
@@ -1590,6 +1610,14 @@ def _self_test_body() -> int:
             check("⭐ #501 r3 SWEEP: no in-contract cut answer differs from the whole log; the out-of-contract CONTROL "
                   "finds at least one (wrong in contract, cuts > 1000, control can fail)",
                   (in_contract[0], in_contract[1] > 1000, control[0] >= 1), (0, True, True))
+            # backlog #231: the sweep's cost was re-parsing each line once per suffix, so `meter_row` is memoised on
+            # the line. A hit is the SAME tuple; a line that differs in one reading gets its own answer, never the
+            # cached one; and a line that is not a reading is None.
+            l_50, l_51 = meter((NOW, 50, NOW + 86400)).strip(), meter((NOW, 51, NOW + 86400)).strip()
+            first_50 = meter_row(l_50)
+            check("⭐ backlog #231: meter_row is memoised on the line's text, and a changed line is a changed answer",
+                  (first_50, meter_row(l_51), meter_row(l_50) is first_50, meter_row("{")),
+                  ((NOW, 50.0, NOW + 86400), (NOW, 51.0, NOW + 86400), True, None))
 
         # ── the weekly boundaries ──────────────────────────────────────────────────────────────────
         check("weekly 0 is OK", kind(cache(0)), OK)

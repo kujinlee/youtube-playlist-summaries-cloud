@@ -4227,5 +4227,31 @@
     "expect": [
       "backlog #496: clause 1 wins over a cross-reference to a decided row (r1 Claude F6)"
     ]
+  },
+  {
+    "name": "backlog #406: _sibling_at loses its memo, so every call re-executes the sibling",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "@functools.lru_cache(maxsize=16)\ndef _sibling_at(",
+        "def _sibling_at("
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import"
+    ]
+  },
+  {
+    "name": "backlog #406: the import key drops the file's stamp, so a rewritten sibling is served stale",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "return _sibling_at(name, str(path), st.st_mtime_ns, st.st_size)",
+        "return _sibling_at(name, str(path), 0, 0)"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sibling REWRITTEN in this process is imported afresh, never the cached module"
+    ]
   }
 ]
