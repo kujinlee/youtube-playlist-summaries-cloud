@@ -4227,5 +4227,161 @@
     "expect": [
       "backlog #496: clause 1 wins over a cross-reference to a decided row (r1 Claude F6)"
     ]
+  },
+  {
+    "name": "backlog #406: the sibling memo is never consulted, so every call in the sweep re-executes the sibling",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if memo is not None and path in memo:\n        return memo[path]",
+        "    if False and memo is not None and path in memo:\n        return memo[path]"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: a miss is never stored in the memo, so every call in the sweep re-executes the sibling",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        memo[path] = mod\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the memo is ON by default, so a caller outside any sweep is served a rewritten sibling stale",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_SIBLING_MEMO: dict | None = None",
+        "_SIBLING_MEMO: dict | None = {}"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports",
+      "backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)",
+      "backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the memo is keyed on the NAME, so one name in two directories shares a module",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "path in memo:\n        return memo[path]",
+        "name in memo:\n        return memo[name]"
+      ],
+      [
+        "        memo[path] = mod\n",
+        "        memo[name] = mod\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: one name in two directories is two imports — the memo is keyed on the PATH"
+    ]
+  },
+  {
+    "name": "backlog #406 r1 Claude F2: the sibling is loaded through its __pycache__, so a same-stamp rewrite is served a stale .pyc",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    exec(compile(pathlib.Path(path).read_bytes(), path, \"exec\", dont_inherit=True), mod.__dict__)\n",
+        "    spec.loader.exec_module(mod)\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the sweep's restore is not in finally, so a sweep that raises leaves the memo on",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    try:\n        yield\n    finally:\n        _SIBLING_MEMO = saved\n",
+        "    yield\n    _SIBLING_MEMO = saved\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again"
+    ]
+  },
+  {
+    "name": "backlog #406: the sweep never restores the previous state, so the memo stays on after it",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    finally:\n        _SIBLING_MEMO = saved\n",
+        "    finally:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sweep that RAISES leaves no memo on — every call after it is a fresh import again"
+    ]
+  },
+  {
+    "name": "backlog #406: a nested sweep starts its own memo, so what it imported is lost when it ends",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    _SIBLING_MEMO = {} if saved is None else saved\n",
+        "    _SIBLING_MEMO = {}\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the outside-a-sweep probe is taken INSIDE the self-test's sweep, so it observes the memo, not a real caller",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    outside = _sibling_outside_probe()\n    with _sibling_sweep():\n",
+        "    with _sibling_sweep():\n        outside = _sibling_outside_probe()\n"
+      ]
+    ],
+    "expect": [
+      "backlog #406: OUTSIDE a sweep, the same sibling twice is TWO imports",
+      "backlog #406: OUTSIDE a sweep, a sibling REWRITTEN in this process is imported afresh",
+      "backlog #406: OUTSIDE a sweep, a SAME-SIZE rewrite with the mtime put back is the new source, never a stale .pyc (r1 Codex F1, Claude F2)",
+      "backlog #406: OUTSIDE a sweep, a change ONLY in a file the sibling's import loads is seen (r1 Codex F2)"
+    ]
+  },
+  {
+    "name": "backlog #406: the self-test body runs outside any sweep, so the suite re-executes every sibling (the speedup unwired)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    with _sibling_sweep():\n        return _self_test_cases(outside=outside)",
+        "    if True:\n        return _self_test_cases(outside=outside)"
+      ]
+    ],
+    "expect": [
+      "backlog #406: the same sibling twice is ONE import",
+      "backlog #406: a NESTED sweep shares the outer memo, so its import is still the module after it ends"
+    ]
+  },
+  {
+    "name": "backlog #406: the sibling is compiled under goal-tree's own `from __future__` flags (dont_inherit dropped)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "path, \"exec\", dont_inherit=True)",
+        "path, \"exec\")"
+      ]
+    ],
+    "expect": [
+      "backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags"
+    ]
   }
 ]
