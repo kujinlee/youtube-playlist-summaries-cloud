@@ -1052,7 +1052,16 @@ jobs:
     # (shard) and shared by its controls and mutants. Measured on a Mac, a 30-mutant slice: 32.5 s unseeded,
     # 57.6 s seeded (the per-mutant copies it replaced took 201-414 s). Not measured on this runner; the
     # first nightly is the measurement, and a timeout still files `sweep-red`.
-    timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
+    # ⛔ PR #538 (backlog #558): THE SWEEP'S TIME BUDGET IS THIS VALUE, AND THE HARNESS NEVER PARSES THIS FILE FOR IT.
+    # The anchor `&sweep-limit` is aliased into the sweep step's env (`SWEEP_TIMEOUT_MINUTES: *sweep-limit`), so the
+    # runner evaluates ONE YAML node for both the job's kill and the harness's budget; `check-plan-code.ci_deadline`
+    # reads that integer (less SWEEP_HEADROOM, 120 s) from the step's environment and counts it from the epoch the
+    # job's first step writes. A missing or non-integer value is CANNOT RUN in every shard, never a default. Keep
+    # the anchor on this line, the alias in the sweep step, and ONE timeout-minutes in this job (a step-level one
+    # would kill the step before the budget ran out): `check-plan-code.sweep_limit_pin`, run by its self-test, reds
+    # the PR that breaks any of the three. (Architecture review 2026-11-08, sweep-deadline: this replaced a YAML
+    # subset reader that three review rounds kept finding holes in.)
+    timeout-minutes: &sweep-limit ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
       # cancelling them turns one finding into an unknown — the reader needs every survivor
@@ -1186,6 +1195,13 @@ jobs:
         # REOPEN #231 if any shard exceeds 1,500s.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
+      # ⛔ FIRST, BEFORE CHECKOUT — PR #538 r2 fold (backlog #558). `check-plan-code.ci_deadline` counts the
+      # sweep's time budget from this epoch, so checkout, setup and `npm ci` are spent FROM the budget, not
+      # added after it (a budget counted from the sweep's own start fell past the kill). A run on CI with no
+      # epoch is CANNOT RUN; `check-plan-code`'s self-test pins this step as the job's first, and the name once.
+      - name: Record when this job started (the sweep's time budget counts from here)
+        run: echo "SWEEP_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       # ⚠ fetch-depth: 0 for parity with `verify`, not because the sweep reads history — it
       # copies the tree into a temp dir with no `.git` at all. Keeping the two checkouts
       # identical means a guard that grows a history-reading case does not fail HERE for a
@@ -1262,6 +1278,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           RUN_ID: ${{ github.run_id }}
+          # The job's own timeout-minutes, the SAME YAML node (an alias of `&sweep-limit` above): the harness's budget.
+          SWEEP_TIMEOUT_MINUTES: *sweep-limit
         # ⟳ 2026-11-06, backlog #506 — THE CLASS CHECK. A mutant can be "killed" only when a hash order falls
         # the right way (measured: dropping `sorted()` in check-review-decision survived under 4 seeds of
         # 0-599), and then it reds an unrelated PR's sweep about once in N runs. On the SCHEDULE only, every

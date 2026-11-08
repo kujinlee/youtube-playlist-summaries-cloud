@@ -837,7 +837,32 @@ EXPECTED_MUTATIONS = {
     # The r4 M1 control entry was re-bound.
     # ⟳ 2026-11-06, merging PR #523 (backlog #506) into backlog #533: 182 + 46 = 228. The two lines above are
     # each PR measured from the common 178; the merged manifest holds both sets (4 + 46 added, none retired).
-    "scripts/check-plan-code.py": 228,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-11-07 backlog #231 + #558: 228 -> 254 — seven for `_walks_dir`'s scope index (class body, def
+    # scopes, module seed, sibling isolation, the fixpoint, the `ls-files` prefilter, a carried name) and
+    # nineteen for the per-target suite limit (`suite_limit`'s three arms and two pins, `run_suite_parts`'
+    # two, the message, and every hand-off from the control to the mutant and re-control runs). Eight
+    # existing entries were re-bound to the threaded `limit=` text, none retired.
+    # ⟳ 2026-11-08 suite-cost-b r1 fold (backlog #558): 254 -> 280 — twenty-five for the shard's time budget
+    # (`sweep_budget`'s reading of ci.yml, its headroom pin, `run_suite_parts`' cap, and every stop and its
+    # last line in `run_mutations`, `mutate_delivered` and `main`) and one for r1 F2 (the seeded, tree-less
+    # call forwards its limits). Three entries were RETARGETED for r1 F3 — the re-control is flat again, so
+    # the two that dropped `control_parts`' limit (now removed) and the one that dropped the re-control's
+    # became "the control/re-control runs under the CEILING / the mutant's limit" — and seven re-bound to
+    # moved text. None retired.
+    # ⟳ 2026-11-08 suite-cost-b r2 fold (backlog #558): 280 -> 300 — twenty for the deadline's inputs: the
+    # workflow reader that refuses rather than searches (six, r2 F2), the job-start epoch, event and job read
+    # from the runner (`ci_deadline`, eleven, r2 F1 + F3), and the report printed before teardown (three).
+    # Seven r1 entries re-bound to the rewritten reader and `main`, two of them renamed; none retired.
+    # ⟳ 2026-11-08 suite-cost-b r3 fold (architecture review 2026-11-08, sweep-deadline): 300 -> 301. The job's
+    # limit now arrives as an integer in the step's env, aliased from the job's own `timeout-minutes` node, so the
+    # YAML reader (`_yaml_entries`, `workflow_value`), `sweep_budget` and the GITHUB_JOB lookup are DELETED, and the
+    # 14 entries on that code are RETIRED with it (only deleted code): the six r2 F2 reader entries, five r1 F1
+    # reader/expression entries, the r2 F3 event-feeds-the-budget entry and both r2 GITHUB_JOB entries. Two r1 F1
+    # entries are re-bound to the new limit (headroom; a missing limit guessed). Fifteen added: three for
+    # `ci_deadline`'s limit (padding/zero accepted, the limit ignored, the variable renamed) and twelve for
+    # `sweep_limit_pin` (its anchor, alias, ONE-timeout-minutes — R3-F1's first-key spelling — epoch, job-end,
+    # comment and refusal clauses). Every added or re-bound entry hand-checked by the harness's rule.
+    "scripts/check-plan-code.py": 301,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
