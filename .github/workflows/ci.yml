@@ -1168,14 +1168,18 @@ jobs:
         #
         # ⟳ 2026-11-07: 18 -> 24, backlog #231 — ITS TRIGGER FIRED A THIRD TIME. MEASURED on master push
         # run 42387350733 (fcf00068, N=18): shards 3, 12 and 14 were CANCELLED at 30m; a re-run cancelled
-        # shard 3 again at 30m14s (1,334s of mutant work over 228 mutants + 264s control, re-control at
-        # 57 of 70 when killed) and shard 12 took 29m41s. One wave no longer fits the budget, so 24 is
-        # back: its per-shard work was MEASURED at a 1,001s slowest shard on 11-03 (run 41609884078),
-        # at the cost of a second wave (~500s of queueing, which is latency, not `timeout-minutes`).
-        # PREDICTED, not measured, for today's manifest: shard 3's mutant work x 18/24 = ~1,000s plus the
-        # ~435s floor that does not divide -> ~1,435s on the slowest shard. That is INSIDE 30m but near
-        # the 1,500s line, so the per-suite cost (the ~64s `gen-backlog-page` cases, a 103s
-        # `R2-2` case) is the next lever and stays open on backlog #231.
+        # shard 3 again at 30m14s (1,344s of mutant work, re-control at 57 of 70 when killed, ~1,881s
+        # needed) and shard 12 took 29m41s. Shard 12's complete log gives the floor that does NOT divide
+        # by N: ~25s setup + ~247s control + ~247s re-control = ~520s.
+        # PREDICTED, not measured: shard 3 at N=24 = 1,344 x 18/24 + ~537 = ~1,545s — INSIDE the 30m
+        # timeout by only ~14%, and OVER the 1,500s line below, so this buys a green master, not
+        # headroom; backlog #231 stays open (reopened in PR #532) and the next lever is per-suite cost
+        # (the ~64s `gen-backlog-page` cases, a 103s `R2-2` case), not a larger N. (11-03's measured
+        # 1,001s slowest shard at N=24 was on a manifest ~1.6x lighter, so it does not support today.)
+        # The cost is a SECOND WAVE: 24 + `verify` + `schema-gates` = 26 against the account's 20-job
+        # limit, so six shards wait for a first-wave shard to finish (~1,000-1,140s today), and the
+        # limit is shared by every concurrent run — this PR's own run had a shard wait 1,986s. That is
+        # latency, not `timeout-minutes` (queue time is not charged), and no watcher has an age bound.
         # REOPEN #231 if any shard exceeds 1,500s.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
