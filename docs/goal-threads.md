@@ -29,6 +29,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-10-26 09:51 "in http://127.0.0.1:7391/features.html, guard-and-gate-harness section has very large number of open backlogs. when you have chance audit, scrub them then fix high priority ones."
 > 2026-10-26 21:08 "keep working for guard-and-gate-harness backlog fixes along with other fixes necessary. try not to be blocked by non-critical decisions. merge when they become merge ready"
 > 2026-10-27 03:28 "continue in AFK mode"
+> 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 - fix · backlog #251, PR #411 · warn on each changed decision line no mutation anchor reaches
 - fix · backlog #365, PR #412 · the hook guard refuses an unknown hook type and an empty exemption reason
 - fix · backlog #369, PR #413 · the in-flight ledger refuses a change that would erase it
@@ -47,6 +48,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · PR #421 · backlog #383 filed
 - side · PR #418 · the skills explainer gets the text-style switcher; backlog #376 filed
 - fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area · waits on the weekly reset (Fri 11-06 02:00)
+- fix · backlog #545, PR #539 · the stalled-work hook names a DIRTY PR that has no CI run
+- bookkeeping · backlog #544 · measured twice more on 11-08: a merge of master that changes no flagged file still voids every sibling PR's loosening answers
 ## GOAL comprehensibility-suite
 > 2026-10-27 11:30 "I am aiming to complete comprehensibility suite features. … what is current status of comprehensibility suite?"
 > 2026-10-27 17:45 "we would need to define role and usages for these comprehensibility/status/explainer pages (goals, features, backlogs, dashboard, worklines, brief etc) … these pages are currently developed and produced in ad-hoc manner without overarching design"
@@ -74,6 +77,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-05 08:12 "at the merge decision by hold, can this be decided by agnet or can it be decided in gate itself"
 - bookkeeping · backlog #508 · filed 2026-11-05 from the owner's card A: a rising self-test count is cleared by the gate; every other flagged line is answered by the final reviewer, not the PR's author
 > 2026-11-05 08:19 "If the agenda list shows larger goat that the line item belongs to, I can see the current focus or which area you are working on"
+> 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 - fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
 - fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this · waits on the owner's walkthrough
 - fix · backlog #504 · the agenda log's record check refuses a step whose refs are not (kind, number) pairs
@@ -86,6 +90,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #520 · the wording-only timeline case tests a real wording-only tree; an added thread already merged is told as landed
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 - fix · backlog #496 · NEEDS YOU flags a row whose status records a decision after its NEEDS-OWNER marker (DECIDED / answered by the owner, or a status head rewritten after the marker), with the remedy, and keeps it listed
+- fix · backlog #408, PR #536 · the generated pages are rebuilt from a fresh private tree, with a stated threat model, after a thrashing-armed architecture review
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
 > 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"
@@ -131,6 +136,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #501 · the usage guard should read only the tail of a large meter log (filed from backlog #500's round-1 review)
 > 2026-11-05 08:36 "by reset time is approaching, gradually loosing the hard stop limit or do not apply the hard stop altogether after certain time of last day might be better"
 > 2026-11-05 08:40 "what has been the burning rate of usage? Will the 6 hours before the reset be enough to utilize the remaining capacity?"
+> 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 - fix · backlog #510 · the weekly stop rises from 97% to 99% over the whole last day before the reset, only on a fresh meter reading (owner card A, 08:47, replacing the 08:38 six-hour window)
 - fix · backlog #521 · on the last day the usage hook leads with the room the reset would lose — USE IT — instead of only saying hold back
 - fix · backlog #522 · the usage hooks run origin/master's guard, never the checked-out branch's (measured 11-05 19:58 and 20:38)
@@ -146,6 +152,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-02 16:35 "Now we move our focus on dev speed improvement. we have http://127.0.0.1:7391/2026-10-29-topic-dev-speed-monitor.html#remedies Can we have a list of task items in higher impact to lower impact order?"
 > 2026-11-05 00:30 "we had backlog for formating backlog prose for human reader (newline, indenting etc) Have you implemented it?"
 > 2026-11-05 00:42 "this backlog #40 shows that (1) filed entry -> formatted (2) STATUS CELL, what changed in this entry -> not formatted"
+> 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 - fix · backlog #384, PR #474 · direction lane: the comprehensibility suite's overarching design; the spec merged and its rows are filed as backlog #470 to backlog #479
 - fix · backlog #405, PR #476 · early stop's METHOD proven wrong in five review rounds and discarded; the same goal moves to backlog #481 (the suite exits at its own first named failure). PR #476 shipped only two CI fixes (a running master run is not cancelled, the changed-file diff sees renames)
 - fix · backlog #481 · REPLACES backlog #405 for the same goal: the suite itself exits with failure at its first named failure, so the harness infers nothing
@@ -178,6 +185,10 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #533 · a mutation pin bump no longer sweeps the whole manifest: the pins move out of the sweep harness into a data file (phase 1 of the owner's card A, 11-06 09:10)
 - fix · backlog #534 · one full sweep on a batch branch of master plus every ready PR head, instead of one per PR (phase 2 of card A); build after backlog #533
 - fix · backlog #537 · the explainer question watcher no longer holds every auto compaction, so compaction comes at a pause (owner 11-06 card A; the window lowers to 200k locally)
+- fix · backlog #231, PR #534 · gen-backlog-page's suite runs in 27 s instead of 73 s: its pure layout and drift builds are memoised
+- fix · backlog #512, PR #535 · fixture_git.isolated() gives each self-test block its own TMPDIR and removes it
+- fix · backlog #231, backlog #406, PR #537 · the self-tests of check-usage-pace, goal-tree and check-main-drivable cost less; a timing case an lru_cache masked is now a spy case
+- fix · backlog #558, PR #538 · a mutant's suite timeout scales with its own control, min(600, max(120, 20×control)); master's full sweep is green again
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
