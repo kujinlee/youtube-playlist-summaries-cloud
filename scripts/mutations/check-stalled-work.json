@@ -290,8 +290,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"isDraft\": r[\"isDraft\"], \"headCommittedAt\": head_commit_ts(r, oid)})",
-        "\"isDraft\": r[\"isDraft\"], \"headCommittedAt\": None})"
+        "\"isDraft\": r[\"isDraft\"], \"headCommittedAt\": head_commit_ts(r, oid),",
+        "\"isDraft\": r[\"isDraft\"], \"headCommittedAt\": None,"
       ]
     ],
     "expect": [
@@ -303,8 +303,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "        if oid and commit[\"oid\"] == oid:",
-        "        if oid:"
+        "        if oid and commit[\"oid\"] == oid:\n            return iso_epoch(",
+        "        if oid:\n            return iso_epoch("
       ]
     ],
     "expect": [
@@ -945,8 +945,8 @@
     "file": "scripts/check-stalled-work.py",
     "edits": [
       [
-        "\"at\": at if at is not None else local_ts.get(pr.get(\"headRefOid\", \"\"))}",
-        "\"at\": at}"
+        "\"at\": at if at is not None else local_ts.get(pr.get(\"headRefOid\", \"\")),",
+        "\"at\": at,"
       ]
     ],
     "expect": [
@@ -1095,6 +1095,292 @@
     ],
     "expect": [
       "r4 F1: a boolean number is not an int"
+    ]
+  },
+  {
+    "name": "545: the gh query stops asking for mergeable, so no PR can be read as conflicting",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"isCrossRepository mergeable commits",
+        "\"isCrossRepository commits"
+      ]
+    ],
+    "expect": [
+      "545: the gh query asks for mergeable and the head commit's rollup"
+    ]
+  },
+  {
+    "name": "545: the gh query stops asking for the head commit's check rollup, so every head reads as having no run",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "committedDate statusCheckRollup{state}}",
+        "committedDate}"
+      ]
+    ],
+    "expect": [
+      "545: the gh query asks for mergeable and the head commit's rollup"
+    ]
+  },
+  {
+    "name": "545: a node with no mergeable is no longer refused: unmeasured reads as 'no conflict'",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if not isinstance(r.get(\"mergeable\"), str):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "545: own_prs REFUSES a node with no mergeable — unmeasured, never 'no conflict'"
+    ]
+  },
+  {
+    "name": "545: mergeable UNKNOWN is read as a conflict",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"conflicting\": r[\"mergeable\"] == \"CONFLICTING\"",
+        "\"conflicting\": r[\"mergeable\"] != \"MERGEABLE\""
+      ]
+    ],
+    "expect": [
+      "545: mergeable UNKNOWN (GitHub still computing) is not a conflict"
+    ]
+  },
+  {
+    "name": "545: own_prs drops the head-run fact, so every head's run is unknown",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"headRun\": head_has_run(r, oid)})",
+        "\"headRun\": None})"
+      ]
+    ],
+    "expect": [
+      "545: own_prs reads a CONFLICTING PR with no rollup on its head as conflicting, no run; a MERGEABLE one as not conflicting"
+    ]
+  },
+  {
+    "name": "545: head_has_run inverts: a null rollup reads as a run",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "return commit.get(\"statusCheckRollup\") is not None",
+        "return commit.get(\"statusCheckRollup\") is None"
+      ]
+    ],
+    "expect": [
+      "545: head_has_run: a rollup is a run, a null rollup is none, a last commit that is not the head is unknown"
+    ]
+  },
+  {
+    "name": "545: head_has_run trusts gh's last commit even when it is not the PR's head",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        if oid and commit[\"oid\"] == oid:\n            return commit.get(\"statusCheckRollup\")",
+        "        if True:\n            return commit.get(\"statusCheckRollup\")"
+      ]
+    ],
+    "expect": [
+      "545: head_has_run: a rollup is a run, a null rollup is none, a last commit that is not the head is unknown"
+    ]
+  },
+  {
+    "name": "545: pr_fact drops the conflict",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"conflicting\": pr.get(\"conflicting\", False), \"run\"",
+        "\"conflicting\": False, \"run\""
+      ]
+    ],
+    "expect": [
+      "545: pr_fact carries the conflict and the head-run facts it is given"
+    ]
+  },
+  {
+    "name": "545: pr_fact drops the head-run fact",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"run\": pr.get(\"headRun\")}",
+        "\"run\": None}"
+      ]
+    ],
+    "expect": [
+      "545: pr_fact carries the conflict and the head-run facts it is given"
+    ]
+  },
+  {
+    "name": "545: items_from drops the conflict between the fact and the item, so collect reports nothing",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"conflicting\": f.get(\"conflicting\", False), \"headRun\"",
+        "\"conflicting\": False, \"headRun\""
+      ]
+    ],
+    "expect": [
+      "545: collect over a DIRTY no-run PR, a CLEAN PR and a held DIRTY PR with a run reports ONLY the first"
+    ]
+  },
+  {
+    "name": "545: items_from says every head has a run, so a conflict is never reported",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"headRun\": f.get(\"run\")}",
+        "\"headRun\": True}"
+      ]
+    ],
+    "expect": [
+      "545: collect over a DIRTY no-run PR, a CLEAN PR and a held DIRTY PR with a run reports ONLY the first"
+    ]
+  },
+  {
+    "name": "545: the conflict test is dropped: every PR with no run on its head is called DIRTY",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "if pr.get(\"conflicting\") and pr.get(\"headRun\")",
+        "if pr.get(\"headRun\")"
+      ]
+    ],
+    "expect": [
+      "545: a MERGEABLE PR with no run on its head is NOT reported (CI may simply be queued)"
+    ]
+  },
+  {
+    "name": "545: the head-run test is dropped: a held PR whose head already ran nags on every prompt",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "pr.get(\"headRun\") is not True:\n        age",
+        "True:\n        age"
+      ]
+    ],
+    "expect": [
+      "545: a CONFLICTING PR whose head HAS a run (an owner-held PR) is NOT reported"
+    ]
+  },
+  {
+    "name": "545: an UNKNOWN head run is assumed to have CI",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "and pr.get(\"headRun\") is not True",
+        "and pr.get(\"headRun\") is False"
+      ]
+    ],
+    "expect": [
+      "545: a conflict whose head run is UNKNOWN is reported, never assumed to have CI"
+    ]
+  },
+  {
+    "name": "545: a DRAFT is exempted from the DIRTY report, so a stale dirty draft says only STALLED-DRAFT",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "    if pr.get(\"conflicting\") and",
+        "    if not draft and pr.get(\"conflicting\") and"
+      ]
+    ],
+    "expect": [
+      "545: a stale DRAFT that is also DIRTY with no run says DIRTY-NO-CI, the cause CI cannot fix itself"
+    ]
+  },
+  {
+    "name": "545: a DIRTY PR is no longer aged by its head commit",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "        age = 0 if commit_ts is None else int(now - commit_ts)\n        seen",
+        "        age = 0\n        seen"
+      ]
+    ],
+    "expect": [
+      "545: ...aged by its head commit"
+    ]
+  },
+  {
+    "name": "545: an unknown head run is worded as a known absence",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"no CI run on its head\" if pr.get(\"headRun\") is False else",
+        "\"no CI run on its head\" if True else"
+      ]
+    ],
+    "expect": [
+      "545: a conflict whose head run is UNKNOWN is reported, never assumed to have CI"
+    ]
+  },
+  {
+    "name": "545: DIRTY-NO-CI is not a stalled state, so the check exits clear and the hook says nothing",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\", \"UNPROCESSED\")",
+        "\"UNKNOWN-DRAFT\", \"UNPROCESSED\")"
+      ]
+    ],
+    "expect": [
+      "545: DIRTY-NO-CI is a stalled state and in the hook's FIRST tier, before unfolded halves"
+    ]
+  },
+  {
+    "name": "545: DIRTY-NO-CI is not in the hook's tiers, so the hook block drops the line",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"UNKNOWN-DRAFT\", \"DIRTY-NO-CI\"), (\"UNPROCESSED\",)",
+        "\"UNKNOWN-DRAFT\"), (\"UNPROCESSED\",)"
+      ]
+    ],
+    "expect": [
+      "545: DIRTY-NO-CI is a stalled state and in the hook's FIRST tier, before unfolded halves"
+    ]
+  },
+  {
+    "name": "545: the DIRTY line drops its age, so the coordinator cannot tell a fresh conflict from an old one",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "f\"PR {head}: DIRTY, {seen}, {when}\"",
+        "f\"PR {head}: DIRTY, {seen}\""
+      ]
+    ],
+    "expect": [
+      "545: a CONFLICTING PR with no run on its head is DIRTY-NO-CI, naming the PR and the remedy"
+    ]
+  },
+  {
+    "name": "545: an unknown head date is printed as a made-up age",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "when = \"head commit date unknown\" if commit_ts is None else",
+        "when = \"last commit 0m ago\" if commit_ts is None else"
+      ]
+    ],
+    "expect": [
+      "545: ...and an unknown head date says so in the line, never a made-up age"
+    ]
+  },
+  {
+    "name": "545: own_prs exempts a DRAFT from the conflict, so a fresh dirty draft (PR #537) is silent",
+    "file": "scripts/check-stalled-work.py",
+    "edits": [
+      [
+        "\"conflicting\": r[\"mergeable\"] == \"CONFLICTING\", \"headRun\"",
+        "\"conflicting\": r[\"mergeable\"] == \"CONFLICTING\" and not r[\"isDraft\"], \"headRun\""
+      ]
+    ],
+    "expect": [
+      "545: collect over a FRESH DIRTY draft and a FRESH MERGEABLE draft reports ONLY the dirty one, aged"
     ]
   }
 ]

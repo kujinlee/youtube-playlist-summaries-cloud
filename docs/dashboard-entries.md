@@ -18945,3 +18945,21 @@ lasting fix is making the slowest checks cheaper, which stays open.
 `.github/workflows/ci.yml` `mutation-sweep` matrix 18 -> 24 (backlog #231's "any shard exceeds 1,500s" trigger fired: push
 run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41s). Predicted slowest shard ~1,545s (floor ~520s
 from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
+
+## 2026-11-08
+When a pull request conflicts with the main branch, GitHub quietly runs no tests on it, and it looks the same as tests
+still waiting to start. On 2026-11-06 that cost about two hours on PR #529. Now the stalled-work note shown with each
+message names such a PR ("DIRTY, no CI run on its head", with how long ago its last commit was), draft or not, and says what to do: merge the main branch in and push. The two
+pull requests parked for the owner (PR #392, PR #376) are not named: they conflict too, but they already had test runs
+before they did, so their results are visible and they would only nag. If GitHub cannot be reached, the note says the
+check could not run, never that all is clear. Backlog #545.
+<!--tech-->
+`scripts/check-stalled-work.py`: `GH_QUERY` adds `mergeable` and the head commit's `statusCheckRollup{state}`;
+`pr_node_problem` refuses a node with no string `mergeable` (CANNOT RUN); `head_has_run(row, oid)` -> True/False, or None when
+gh's last commit is not the head; `pr_item` returns `DIRTY-NO-CI` when `conflicting` and the head run is not True (draft or
+not), aged by the head commit, the age printed in the line (or "head commit date unknown"). The new status is in `STALLED_STATES` and the hook's first tier. Keyed on `mergeable ==
+CONFLICTING`, which a draft has too (PR #537, a draft, read CONFLICTING / DIRTY on 2026-11-08); `UNKNOWN` is not a conflict. MEASURED 2026-11-07:
+`statusCheckRollup` is null on PR #529's no-run heads `4ae91ab3` and `da1d55ad`, FAILURE on PR #392's head; a live run reports
+PR #392 and PR #376 as OK. 183 -> 203 cases, including one `collect` case with a DIRTY no-run, a CLEAN and a held DIRTY PR in
+which only the first is reported, and one with a fresh DIRTY draft beside a fresh MERGEABLE draft. 84 -> 106 mutations; three
+existing anchors re-bound to the same edit.

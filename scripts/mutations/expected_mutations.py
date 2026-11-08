@@ -1871,7 +1871,15 @@ EXPECTED_MUTATIONS = {
     # `kind` (11). Nothing was retargeted; every one that remains is run against the suite below.
     # ⟳ r4 (F1): 80 → 84. `own_prs` REFUSES a malformed gh node instead of dropping it: six entries
     # pin the validation (2 retired: the old drop-based filter's two anchors no longer exist).
-    "scripts/check-stalled-work.py": 84,
+    # ⟳ backlog #545 (2026-11-07): 84 -> 103. 19 for DIRTY-NO-CI — a PR conflicting with master whose
+    # head has no check run: the query's two fields, the `mergeable` refusal, CONFLICTING vs UNKNOWN,
+    # `head_has_run` (inverted, head-oid check), the fact and item plumbing (4), the item's three
+    # conditions, the draft precedence, its age and wording, and its stalled state and hook tier.
+    # Nothing retired; three existing anchors re-bound to the same edit (a trailing `,` and one
+    # extended past a line `head_has_run` now shares).
+    # ⟳ resumed build (2026-11-08): 103 -> 106. The DIRTY line carries its age (2: the age, and an
+    # unknown date said as unknown), and a fresh DRAFT that conflicts is reported (1, PR #537).
+    "scripts/check-stalled-work.py": 106,
     # backlog #399 (2026-10-30): the usage pacing hook's rules, its override and its two hook paths.
     # ⟳ PR #446 r1 fold: 27 -> 63. One retired with its subject (the REFUSE text no longer names the
     # override, so "drops the override hint" became its inverse) and 37 new: the timestamp bounds, the
