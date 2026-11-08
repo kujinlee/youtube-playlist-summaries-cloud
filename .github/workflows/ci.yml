@@ -1180,6 +1180,9 @@ jobs:
         # limit, so six shards wait for a first-wave shard to finish (~1,000-1,140s today), and the
         # limit is shared by every concurrent run — this PR's own run had a shard wait 1,986s. That is
         # latency, not `timeout-minutes` (queue time is not charged), and no watcher has an age bound.
+        # MEASURED on this change's own run 42432742676 (PR #533, c3d85c6d, N=24): all 24 shards green,
+        # mean 1,300s, slowest 1,499s / 1,460s / 1,459s (job wall clock) — 1.20x inside 30m, and AT the
+        # 1,500s line, as predicted. The next manifest growth crosses it.
         # REOPEN #231 if any shard exceeds 1,500s.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
