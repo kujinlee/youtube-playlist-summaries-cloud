@@ -19037,3 +19037,19 @@ hand-checked rc 1 with `parse_fail_names` equal to its `expect`. R3-F1 to R3-F5 
 restore; no backlog row. MEASURED (no `__pycache__`, `PYTHONDONTWRITEBYTECODE=1`, interleaved, load 48 → 20): master
 21.89 / 17.49 / 13.57 s, round-2 fold 2.94 / 2.10 / 2.38 s, this fold 2.34 / 1.95 / 2.25 s, no memo at all 21.32 /
 14.46 / 14.93 s.
+
+## 2026-11-08
+CI's mutation check found a hole this branch made in the usage guard's tests. The guard skips blank and garbage lines
+in its usage log without reading them, and a test proved the skip by timing it. This branch's new cache made reading
+identical blank lines fast even without the skip, so the timing test could no longer tell. The test now counts which
+lines are actually read instead of timing them, so it gives the same answer on any machine.
+<!--tech-->
+Backlog #231, PR #537. CI sweep run 42475874759, shard 20: the `#500 r3 C1: the blank-line skip is removed` mutant of
+`scripts/check-usage-pace.py` SURVIVED. Cause: `meter_row` is now an `lru_cache` on the line, so with the skip gone
+4 MiB of `"\n"` is one `parse_json` and ~4 M cache hits. MEASURED locally (load 6.9): original 0.15 / 0.20 / 0.18 s,
+branch mutant 0.52 / 0.39 / 0.36 s (under the case's 2 s), master's mutant 29.3 s — so master is not exposed. New case
+`⭐ #500 r3 C1: blank and garbage meter lines never reach the parse — only the seven_day row does`: a spy replaces
+`meter_row` in the module globals over a log of blank lines and 200 DISTINCT garbage lines on each side of one real row, and
+asserts only that row reached it and the answer equals the row's alone. The manifest entry's `expect` now names it;
+the timing case stays as a backstop. Hand-checked in a staged copy: mutant suite rc 1, `parse_fail_names` = exactly
+the new case (393/394); unmutated 394/394. Cases 393 → 394; mutations unchanged at 175.

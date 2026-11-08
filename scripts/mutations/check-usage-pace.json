@@ -1638,7 +1638,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)"
+      "⭐ #500 r3 C1: blank and garbage meter lines never reach the parse — only the seven_day row does"
     ]
   },
   {

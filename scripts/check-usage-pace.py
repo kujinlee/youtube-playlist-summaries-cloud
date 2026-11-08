@@ -147,7 +147,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 393 cases
+    python3 scripts/check-usage-pace.py --self-test  # 394 cases
 """
 from __future__ import annotations
 
@@ -1069,6 +1069,22 @@ def _self_test_body() -> int:
         blank_line = pace_line("\n" * (METER_MAX_BYTES - 1), NOW, WEEK_RESET)
         check("⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)",
               (blank_line[0], time.monotonic() - t0 < 2.0), (None, True))
+        # The skip's property, COUNTED rather than timed: since backlog #231 memoised `meter_row`, a log of identical
+        # blank lines is one parse and a cache hit per line, so on CI's runner the timing above no longer tells the
+        # skip's removal apart (shard 20, run 42475874759). A spy on `meter_row` sees exactly which lines reach the
+        # parse: blank lines and DISTINCT garbage lines (no cache can absorb them) must never reach it; the one row
+        # that carries `"seven_day"` must, and the answer must be the one that row gives alone.
+        _g, _seen = globals(), []
+        _real_row = _g["meter_row"]
+        _g["meter_row"] = lambda line: (_seen.append(line), _real_row(line))[1]
+        try:
+            _row = meter((NOW - 60, 20, WEEK_RESET)).strip()
+            _junk = "".join(f"\n\n{{\"garbage\": {i}}}\n" for i in range(200))
+            _skipped = pace_line(_junk + _row + "\n" + _junk, NOW, WEEK_RESET)
+        finally:
+            _g["meter_row"] = _real_row
+        check("⭐ #500 r3 C1: blank and garbage meter lines never reach the parse — only the seven_day row does",
+              (_seen, _skipped), ([_row], pace_line(_row + "\n", NOW, WEEK_RESET)))
         check("⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter",
               [evm(cache(89.9), m)[0] + "/" + evm(cache(90), m)[0]
                for m in (m85, meter((NOW - 60, 20, WEEK_RESET)), None, meter((NOW - 60, 99, WEEK_RESET)))],
