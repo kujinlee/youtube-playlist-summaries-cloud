@@ -18946,6 +18946,41 @@ lasting fix is making the slowest checks cheaper, which stays open.
 run 42387350733 on `fcf00068`, shard 3 cancelled at 30m twice, shard 12 at 29m41s). Predicted slowest shard ~1,545s (floor ~520s
 from shard 12's complete log), inside 30m by ~14% and over the 1,500s line, so backlog #231 stays open. This PR's own full-sweep run is the measurement.
 
+## 2026-11-07
+The full mutation test run (the job that checks the tests would catch a planted bug) is cheaper again, without
+dropping a single check. One page generator's tests were a fifth of the whole run, because they rebuilt the full
+backlog page about a dozen times and redid the same layout work each time. They now remember work they have already
+done inside a run, and take about 27 seconds instead of about 73. Two new backlog items record the owner's
+questions: what each planted-bug check actually catches compared with what it costs (559), and reusing a check's
+result across runs when nothing it read has changed (560).
+<!--tech-->
+Backlog 231. Measured from CI run 42432742676 (24 shards, all green; progress lines mapped through `shard_slice` over
+the manifests at `c3d85c6d`, 4,093/4,093 matched): `scripts/gen-backlog-page.py` was 4,098 s of 20,076 s mutant work
+(20.4%; 77 entries, mean 53.2 s). Cut: `layout_body` (documented PURE) is `functools.lru_cache`d, and the suite's
+`_drifted` page builds are memoised like `_built` (7 calls, 2 inputs). Local suite 71.1 / 77.8 / 70.9 s before,
+30.6 / 25.5 / 25.3 s after; 247/247 cases, 77 entries all still killed; no entry, case or pin changed. Each mutant is
+its own process, so a mutated `layout_body` is what fills the cache. Files backlog 559 and 560.
+
+## 2026-11-07
+Our own self-tests stop leaving temporary folders behind. The shared temp folder had built up about 117,000 of them,
+which slows any command that has to look through it. Now each test run gets its own temporary folder that is deleted when
+the run ends, even when a test fails. One run of every self-test used to leave 124 folders behind; it now leaves none.
+The folders already there were not deleted, because other tools share that place; the backlog item gives a command a
+person can run to clear the old ones.
+<!--tech-->
+Backlog #512. `scripts/fixture_git.py` `isolated()` (which every dispatched `--self-test` enters, backlog #382) now
+makes a `fixture-tmp-*` directory, points `TMPDIR` and `tempfile.tempdir` at it for the block (the second because Python
+caches the directory), puts the fresh `HOME` inside it, and `rmtree`s it on every exit; both are restored exactly (an
+unset `TMPDIR` and a `None` cache included) in the OUTERMOST `finally`, so a refused block restores too (r1 fold). MEASURED (each of the
+95 `--self-test`s run with `TMPDIR` set to its own empty directory, 6 at a time): `origin/master` `f7ff7eb0` left 124
+entries (check-fixture-git-isolation 64, check-compaction-boundary 23 `cb-*`, check-function-revokes 14,
+check-test-counts 7, gates-for-pr 6 `gates-for-pr-logs-*`, recall-llm 3, check-selection-card 2, five others 1 each,
+check-agent-large-read 1 `large-read-*`); this branch left 0. fixture_git 43 -> 60 cases (a mkdtemp, a child `mktemp`
+and a child `mkdtemp` land inside; a nested block; the caller's directory holds exactly what it held after a normal, a
+raising and a refused block; from `TMPDIR` unset and set with a `None` cache, and from a cache naming another directory,
+each path restores both exactly); mutations 13 -> 23 (anchors re-bound to the new text). `large-read-state-*` (29,617
+entries) has no producer in any commit (`git log --all -G`); the newest is 11-05 03:45.
+
 ## 2026-11-08
 When a pull request conflicts with the main branch, GitHub quietly runs no tests on it, and it looks the same as tests
 still waiting to start. On 2026-11-06 that cost about two hours on PR #529. Now the stalled-work note shown with each

@@ -62,6 +62,7 @@ from typing import Callable, Sequence
 
 import argparse
 import contextlib
+import functools
 import html
 import os
 import inspect
@@ -1066,6 +1067,12 @@ def _one_block(h: str) -> bool:
     return outside == h or len(visible_text(outside)) >= LAYOUT_MIN_CHARS
 
 
+# ⟳ backlog #231 (sweep cost): MEMOISED, because it is PURE — a function of `h` and this module's
+# constants only. A page build lays out every real row, the suite builds the page about a dozen times,
+# and this was ~60% of the suite's CPU; the mutation sweep runs the suite once per entry. A mutant
+# that edits the body below is still what computes every value cached here: the cache lives for ONE
+# process, and each mutant is its own process.
+@functools.lru_cache(maxsize=None)
 def layout_body(h: str) -> str:
     """PURE. `md(body)` → the same HTML with block structure inserted (see the rules above).
 
@@ -3320,8 +3327,14 @@ def _self_test_body() -> int:
         return [dict(r, hist=None, closed=True) if r["num"] == _gnum else dict(r, hist=None)
                 for r in parse(BACKLOG.read_text().splitlines())]
 
+    # Memoised like `_built` (backlog #231): seven calls over two distinct inputs, each a full page.
+    _drifted_cache: dict[tuple, str] = {}
+
     def _drifted(unread: list[str]) -> str:
-        return build(_drifted_rows(unread), "sha", "2026-01-01 00:00", "stamp", unread=unread)
+        if tuple(unread) not in _drifted_cache:
+            _drifted_cache[tuple(unread)] = build(_drifted_rows(unread), "sha", "2026-01-01 00:00",
+                                                  "stamp", unread=unread)
+        return _drifted_cache[tuple(unread)]
 
     case("the drift box exists to be asserted about (the fixture is not vacuous)",
          lambda: _DRIFT in _drifted([]) and _DRIFT in _drifted(["| ⭐2 | x |"]))
