@@ -1,0 +1,38 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5029 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "66a2d8a09a599811a2ac535d1865219edd9f6c50",
+  "intrusions": [],
+  "loosening_answers": {
+    "0639175f96f3": "finding",
+    "19e3cb6a182b": "finding",
+    "1c483d300bca": "finding",
+    "2d51171ccc52": "not a loosening",
+    "2fec52dc562d": "not a loosening",
+    "30d52ad23ac7": "not a loosening",
+    "475f8e419a00": "finding",
+    "484e60231961": "not a loosening",
+    "4a4c20c73163": "not a loosening",
+    "6a9e243ccfd4": "not a loosening",
+    "6ed1cdc83491": "finding",
+    "727e65f884c9": "not a loosening",
+    "a37789af0a0d": "finding",
+    "b4c2d38505b1": "finding",
+    "c361c21aa22d": "not a loosening",
+    "e6c86a86ce2e": "not a loosening",
+    "e886704a5c48": "not a loosening",
+    "f090c90de19b": "not a loosening"
+  },
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/phq-r4-head.txt",
+  "reason": "5029 chars",
+  "refused": false,
+  "review": "push-hook-quoted-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/phq"
+}

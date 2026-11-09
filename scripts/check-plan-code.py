@@ -4696,6 +4696,8 @@ def _self_test_body() -> int:
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
                                       "scripts/peer-sites.py",
+                                      # ⟳ 2026-11-08, backlog #428: the push gate's detection.
+                                      "scripts/push-command.py",
                                       # ⟳ 2026-09-29, backlog #191: the LLM recall
                                       # matcher. A LIVE inventory, so it grows with the
                                       # manifest that ships beside the script.
