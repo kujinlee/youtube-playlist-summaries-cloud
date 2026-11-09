@@ -777,6 +777,20 @@ def _self_test_body() -> int:
     case("hook_lines: the archived worktree is named FIRST, the CANNOT RUN line after it says 'archived 1'",
          (len(hl), hl[0].startswith("=== WORKTREE ARCHIVE") and ": a; kept 0" in hl[0],
           "CANNOT RUN" in hl[1] and "archived 1 worktree(s)" in hl[1]), (2, True, True))
+    # Fixture variation (backlog #589): each pure rule is called at a SECOND, different value as well.
+    hr = hook_lines([Row("a", "b", "c" * 40, "/w/a", "ARCHIVED", [], "/a b/a")], Path("/a b"), None, None,
+                    root=Path("/r"))
+    case("hook_lines: the archive path is quoted as one word and the undo names the given root, not <main>",
+         ("to '/a b': a" in hr[0], "rm /r/<name> && git worktree move '/a b'/<name> /r/<name>" in hr[0]),
+         (True, True))
+    ok_row = {"headRefName": "x", "state": "MERGED", "headRefOid": "a" * 40, "isCrossRepository": False,
+              "mergedAt": "2026-01-01T00:00:00Z"}
+    case("check_prs accepts a well-formed list and returns it whole", check_prs([ok_row]), [ok_row])
+    case("pr_index: this repository's MERGED PR is recorded at its head, with its merge time",
+         pr_index([ok_row]),
+         {"x": {"open": False, "merged": {"a" * 40: datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)}}})
+    case("parse_time reads a zoned mergedAt", parse_time("2026-01-01T00:00:00+09:00").utcoffset(),
+         datetime.timedelta(hours=9))
 
     tmp = Path(tempfile.mkdtemp(prefix="prune-wt-selftest-"))
     here = os.getcwd()
@@ -789,6 +803,34 @@ def _self_test_body() -> int:
     why = evaluate(None, gonewt, {}, "/", [], now, logged={str(tmp / "no-such-dir"): "/arch/no-such-dir"}).reasons[0]
     case("a missing directory advises `git worktree repair <the logged archive path>`, never prune (r2 F4)",
          ("`git worktree repair /arch/no-such-dir`" in why, "NEVER `git worktree prune`" in why), (True, True))
+    # evaluate on a LIVE (not prunable) worktree: each argument decides its own keep-reason (fixture variation).
+    plain = tmp / "plain"
+    plain.mkdir()
+    live = {"path": str(plain), "head": "d" * 40, "branch": "br", "locked": False, "prunable": False}
+    old_idx = {"br": {"open": False, "merged": {"d" * 40: now - datetime.timedelta(hours=3)}}}
+    new_idx = {"br": {"open": False, "merged": {"d" * 40: now - datetime.timedelta(hours=1)}}}
+    case("evaluate: a cwd INSIDE the worktree keeps it",
+         evaluate(None, live, old_idx, str(plain / "sub"), [], now).reasons, ["it is the current working directory"])
+    case("evaluate: a process whose cwd is inside keeps it, naming its pid",
+         evaluate(None, live, old_idx, "/", [("7", os.path.realpath(plain))], now).reasons,
+         ["a running process has its cwd inside (pid 7)"])
+    case("evaluate: an OPEN PR keeps it", evaluate(None, live, {"br": {"open": True, "merged": {}}}, "/", [], now).reasons,
+         ["open PR", "no merged PR"])
+    case("evaluate: a merge 1 h before `now` keeps it",
+         evaluate(None, live, new_idx, "/", [], now).reasons, ["its PR merged under 2 h ago (an agent may still be working there)"])
+    case("evaluate: the same merge 3 h before a later `now`, with a refusal at this HEAD, is KEPT for the refusal",
+         evaluate(None, live, new_idx, "/", [], now + datetime.timedelta(hours=2),
+                  refused={str(plain): {"head": "d" * 40, "at": now.timestamp()}}).reasons[0].startswith(
+                      "git refused to move it before"), True)
+    case("evaluate: past every rule, a directory git cannot read is KEPT on git's own rc",
+         evaluate(Budget(30.0), live, old_idx, "/", [], now).reasons[0].startswith("git status exited "), True)
+    case("dev_of: a path that does not exist yet reads its nearest existing ancestor",
+         dev_of(plain / "x" / "y") == os.stat(plain).st_dev, True)
+    case("git_link: a directory with no .git file has no link", git_link(str(plain)), None)
+    (plain / "refused.json").write_text("[1, 2]")
+    case("load_refused: a missing file and a non-object file both read as empty",
+         (load_refused(plain / "absent.json"), load_refused(plain / "refused.json")), ({}, {}))
+    case("archive_note: an archive that does not exist prints nothing", archive_note(Budget(1.0), plain / "absent"), None)
     try:
         parse_time("2026-01-01T00:00:00")
         got = "accepted"
@@ -803,6 +845,9 @@ def _self_test_body() -> int:
     over = archive_note(Budget(1.0), warn)
     case(f"the archive-size line: silent AT {ARCHIVE_WARN}, printed at {ARCHIVE_WARN + 1} (r2 F5)",
          (at_limit, bool(over) and f"holds {ARCHIVE_WARN + 1} worktrees" in over), (None, True))
+    sized = archive_note(Budget(60.0), warn)
+    case(f"the archive-size line: with over {DU_MIN_S:g} s left it adds the size; with 1 s it does not",
+         (bool(sized) and sized.split(" worktrees", 1)[1].split(" MB:", 1)[0].lstrip(", ").isdigit()," MB:" in (over or "")), (True, False))
     globals()["HOOK_MAX_LINES"] = 2
     try:
         capped = hook_lines([Row("a", "b", "c" * 40, "/w/a", "ARCHIVED", [], "/x/a"),
@@ -1220,10 +1265,12 @@ def _refused_world(tmp: Path, case, now) -> None:
     rc, lines = run(args, now=now)
     case("... and once its HEAD differs from the remembered one, it is tried (and reported) again",
          (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]]), (1, ["FAILED"]))
-    for hours, want in ((23, (0, ["KEPT"])), (25, (1, ["FAILED"]))):
+    # The 25 h case is the SAME stored refusal (23 h before `now`) read at a clock 2 h later: it is the `now`
+    # run() is given that expires it (fixture variation, backlog #589).
+    for hours, later, want in ((23, 0, (0, ["KEPT"])), (25, 2, (1, ["FAILED"]))):
         (logs / REFUSED_FILE).write_text(json.dumps(
-            {os.path.realpath(p): {"head": head, "at": (now - datetime.timedelta(hours=hours)).timestamp()}}))
-        rc, lines = run(args, now=now)
+            {os.path.realpath(p): {"head": head, "at": (now - datetime.timedelta(hours=23)).timestamp()}}))
+        rc, lines = run(args, now=now + datetime.timedelta(hours=later))
         case(f"r3 F5: a refusal remembered {hours} h ago at this HEAD is "
              + ("still KEPT quietly" if want[0] == 0 else "EXPIRED: tried and reported again"),
              (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]]), want)
