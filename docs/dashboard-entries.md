@@ -19367,6 +19367,14 @@ key/value entry was a third survivor, found by hand-check and not in the CI repo
 0 retired, 2 re-anchored); `check-merge-ready.py` changed only in that one self-test case.
 
 ## 2026-11-08
+Filed backlog #580 at the owner's word ("yes, file it", 20:10, in the binding explainer): a post-merge AUDIT of
+loosening answers. After each merge it lists every `not a loosening` answer the merge relied on whose flagged file's
+dependency closure changed since the answer was given. It reports and never blocks. This answers the residual that
+option A accepted, at no merge cost. Measured over 71 master merges since 11-01: binding the gate's answers to its
+file plus its 4 directly loaded scripts would have voided them on 37 (≈52%), against 8 (≈11%) for the file alone. The
+explainer page that carries the owner's three questions and their answers is committed with it.
+
+## 2026-11-08
 The safety check that stops a push to master no longer misses a push written with quotes around the word "push", or one
 that runs git by its full path. It now reads the command with quotes removed, and when the words "git" and "push" both
 appear in a form it does not recognise, it checks the command anyway. The cost, stated plainly: an ordinary command that
