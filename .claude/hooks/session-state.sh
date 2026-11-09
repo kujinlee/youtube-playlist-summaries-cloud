@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # ⛔ stdin is NOT read: the payload is not needed, and draining it blocked the hook when the pipe was held
 # open (PR #410 r2: 60 s, empty output). The python child gets /dev/null for every subprocess it starts.
 python3 "$REPO_ROOT/scripts/session-state.py" </dev/null 2>&1 || echo "=== IN FLIGHT: CANNOT RUN — session-state.py exited $? ==="
-# backlog #588: remove the worktrees under .claude/worktrees/ whose PR merged (67 of them, 11 GB, froze the Mac on
+# backlog #589: remove the worktrees under .claude/worktrees/ whose PR merged (67 of them, 11 GB, froze the Mac on
 # 2026-11-09). It runs AFTER the in-flight block, on what is LEFT of settings.json's 60 s bound for this hook: its
 # `--deadline` is 55 s minus the seconds already used ($SECONDS), so the two together stay under 60. With under 10 s
 # left it is NOT RUN, and says so. It prints nothing unless it removed, deferred or failed, or could not run.

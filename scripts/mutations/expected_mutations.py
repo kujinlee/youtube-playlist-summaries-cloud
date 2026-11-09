@@ -2118,7 +2118,7 @@ EXPECTED_MUTATIONS = {
     # ARITHMETIC: 99 + 8 = 107. Each of the 8 new and the 3 re-anchored hand-checked ONE AT A TIME in a
     # `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case exactly once.
     "scripts/push-command.py": 108,
-    # backlog #588 (2026-11-09): prune-merged-worktrees.py, NEW. One mutation per removal rule that a case can
+    # backlog #589 (2026-11-09): prune-merged-worktrees.py, NEW. One mutation per removal rule that a case can
     # turn red (open PR, fork, reuse x2, untracked, tracked, ignored, unpushed, gone remote, locked, cwd, gh rc,
     # .remember copy, log, dry-run, truncation, allowlist delete, regenerable).
     "scripts/prune-merged-worktrees.py": 18,

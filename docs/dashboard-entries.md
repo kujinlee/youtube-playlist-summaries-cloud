@@ -19638,7 +19638,7 @@ morning 67 of them (11 GB) had piled up and were the likely cause of the Mac fre
 listed with its reason by `python3 scripts/prune-merged-worktrees.py --dry-run`, and every removal can
 be undone from `.claude/pruned-worktrees/log.tsv`.
 <!--tech-->
-Backlog #588. `scripts/prune-merged-worktrees.py` (one `gh pr list` for every PR, fail closed; `git worktree remove`
+Backlog #589. `scripts/prune-merged-worktrees.py` (one `gh pr list` for every PR, fail closed; `git worktree remove`
 without `--force`; branch refs kept; a non-empty `.remember/` copied first), called from
 `.claude/hooks/session-state.sh` with `--deadline` = 55 s minus the seconds the in-flight block used. 51 self-test
 cases, 18 mutations all killed.

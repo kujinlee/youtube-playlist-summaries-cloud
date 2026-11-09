@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove the git worktrees under `.claude/worktrees/` whose work has already merged (backlog #588).
+"""Remove the git worktrees under `.claude/worktrees/` whose work has already merged (backlog #589).
 
 WHY THIS EXISTS (2026-11-09). The owner's Mac (16 GB) froze: `fseventsd`, macOS's file-event daemon,
 had grown to 44 GB. The likely load was 67 accumulated worktrees under `.claude/worktrees/` (11 GB),
@@ -383,7 +383,7 @@ def hook_lines(rows: list[Row]) -> list[str]:
     kept = sum(r.verdict == "KEPT" for r in rows)
     if not (gone or failed or deferred):
         return []
-    lines = [f"=== WORKTREE PRUNE (backlog #588): removed {len(gone)} merged worktree(s)"
+    lines = [f"=== WORKTREE PRUNE (backlog #589): removed {len(gone)} merged worktree(s)"
              + (f": {', '.join(gone[:6])}{' ...' if len(gone) > 6 else ''}" if gone else "")
              + f"; kept {kept}; undo from .claude/pruned-worktrees/log.tsv ==="]
     if failed:
