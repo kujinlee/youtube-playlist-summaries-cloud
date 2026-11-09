@@ -19681,3 +19681,26 @@ a bound on picks either way; shadow mode measures. Saved as `readsets.json` in `
 harness hash + sha; `sweep-select` resolves once before the matrix. Backlog #586 and backlog #560 Status cells
 note the spike and the spec.
 Round 4 (a scoped check past the review cap, Codex) of the redesign found two High holes caused by the round-3 fold (an external symlink unlinked mid-trace hides a probe; `ioctl` counted as read-only). They are filed as backlog #590, to close before any skip takes effect, and not folded.
+
+## 2026-11-09
+The build plan for backlog #586 is written: picking a pull request's mutation sweep by what each guard's tests were
+seen to read. It is eight small pull requests, in order. The first one only measures. It runs every guard's tests
+under `strace` on GitHub's own machines, to prove tracing works there and to record exactly which system calls the
+tests make. Those recorded calls become the allowlist that backlog #590 asked for, so anything outside them is
+refused instead of guessed at. The next four build the parts, and none of them change which guards a pull request
+runs. The sixth and seventh run in trial mode: they report what would have been skipped and check it against
+master's full sweep, again changing nothing. Only the eighth lets a pull request skip a guard. It waits until
+backlog #590 is closed and 20 complete trial pull requests have shown no miss. Nothing needs you; the plan goes to
+review next.
+<!--tech-->
+Branch `plan-586-observed-reach`, docs only. Plan `docs/superpowers/plans/2026-11-09-observed-reach-selection.md`
+(anchor `dev-speed-first`) for spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md`. Slices:
+1 measure (`scripts/strace-measure.py` + `.github/workflows/strace-measure.yml`; preserves the spike's read sets as
+`scripts/fixtures/observed-reach-spike-pr545.json`, reduction re-run 2026-11-09: 47 untraced, readers
+check-canonical-source / check-dashboard-entry / check-features); 2 `scripts/strace_reads.py` parse + cwd/path
+refusals (incl. backlog #590 R4-F1, an external path removed); 3 default-deny classifier (allowlist a subset of the
+measured set; `FS_IOC_SETFLAGS` denied); 4 `--record-reads` + `record-reads` job + cache save + live unshare/setns
+cases, closes backlog #590; 5 `scripts/reach_select.py` (`Δ`, rule 3, validity); 6 `sweep-select` report-only +
+`verdicts.jsonl`; 7 `scripts/shadow-compare.py` + `--mutant` replay; 8 the switch. Each new self-tested script names
+W1-W8 wiring (declared count, manifest, pin, `EXAMINED_KEYS`, POPULATION, caller), the PR #551 lesson. Fallback 2F
+(audit hook) if strace is unavailable.
