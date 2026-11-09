@@ -19622,3 +19622,25 @@ Cleaned up five backlog rows that still read as open after their work had merged
 was 68% of the mutation sweep), #534 (one full sweep per batch), #501 (the usage guard reads the meter log's tail)
 and #496 (a settled NEEDS-OWNER marker) are now ticked, each with the PR and commit that shipped it. Backlog #361 stays
 open, but its status no longer says "in review": PR #425 merged, and its remaining audit is backlog #391.
+
+## 2026-11-09 [needs-you]
+A design spec waits for your walkthrough: a pull request's mutation sweep would pick guards by what their tests
+were SEEN to read, instead of by every guard whose code merely mentions a changed file (backlog #586). A
+measurement run tonight found that on PR #545, which changed only the backlog and the dashboard, 64 guards were
+swept, but only 6 of them actually read either file. The proposal would sweep 36 there (an estimate). A guard
+whose test starts other programs cannot be traced, so it is still picked exactly as today. The full sweep on
+every merge to master and on the daily schedule stays as the safety net you named. The same recording is the
+first piece of backlog #560, the verdict cache. Six questions for you are in section 7 of the spec, each with a
+recommended answer.
+<!--tech-->
+Branch `spec-586-observed-reach`, docs only. Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md`
+(new anchor `dev-speed-first` in `docs/anchors.md`): record `reads` / `listed` / `spawned` / rc / blob SHAs on the
+master full sweep's unmutated controls under `sys.addaudithook`, merge into `readsets.json` in
+`mutation-sweep-complete`, `actions/cache` keyed by Python + harness hash + sha; a PR restores the newest entry
+whose sha is an ancestor of its base. Fallback to today's naming rule for spawners, a missing / stale / failed /
+wrong-key read set, and an unparseable cache; added and deleted paths always also go through the naming rule
+(`stat`/`exists` raise no audit event). MEASURED on `d206e066`: 43 of 90 targets traceable; PR #545 64 picked = 3
+traceable readers + 33 spawners + 28 traceable non-readers; PR #543 68 picked, 27 traceable non-readers. INFERRED
+selection 64 → 36 and 68 → 41; 25 and 33 if the 13 git-only spawners count as traceable (a later step). Spike
+report on record unchanged at `docs/reviews/measurements/2026-11-09-observed-reads-spike.md`. Backlog #586 and
+backlog #560 Status cells note the spike and the spec.
