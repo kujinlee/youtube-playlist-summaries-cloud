@@ -314,6 +314,18 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source. ⟳ r1 fold: re-derived, 36 -> 47 keys, none lost — combine_rc, is_timeout_kill,
+    # last_complete_week, pct_text and valid_week are new, and main / record_main / report_main gained gh, today, clock.
+    "ci-durations.py": ("append_log.fetched", "append_log.path", "combine_rc.rc_rec", "combine_rc.rc_rep", "compare_weeks.min_samples",
+                        "compare_weeks.rows", "compare_weeks.week", "fetch.budget_s", "fetch.clock", "fetch.gh", "fetch.since",
+                        "fetch.skip", "format_report.min_samples", "format_report.verdicts", "format_report.week", "is_rise.cur_median",
+                        "is_rise.prev_median", "is_timeout_kill.annotations", "iso_week.merged_at", "job_rows.jobs",
+                        "job_rows.merged_at", "job_rows.pr", "job_rows.sha", "last_complete_week.today", "main.argv", "main.gh",
+                        "main.today", "new_rows.existing", "new_rows.fetched", "parse_log.text", "pct_text.cur", "pct_text.prev",
+                        "pick_ci_run.runs", "pick_ci_run.sha", "previous_week.week", "read_log.path", "record_main.budget_s",
+                        "record_main.clock", "record_main.gh", "record_main.path", "record_main.since", "report_main.min_samples",
+                        "report_main.path", "report_main.today", "report_main.week", "valid_week.week", "verdict_rc.verdicts"),
     # backlog #534 (2026-11-06): the batch full sweep, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case except `main.root`, EXEMPT with its reason.
     # ⟳ batch-ci r1 fold: re-derived — 25 -> 41 keys, none lost: `classify`, `import_closure`, `latest_run`,
@@ -1325,6 +1337,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #397 (2026-11-09): ci-durations.py — temp-file paths, and the three entry points driven through ONE
+    # helper each (`rec`, `rep`, `cli`), so their parameters have one call site; the helpers' CALLERS vary them.
+    # ⟳ r1 fold: `fetch.*` and `append_log.path` exemptions deleted (now varied at direct call sites); the wrong
+    # `main.argv` reason ("the record path needs the network") deleted — main takes an injected gh (R1-F6).
+    "ci-durations.py:read_log.path": "a temp-file path; read_log decides on the file's content, which parse_log's own cases vary",
+    "ci-durations.py:record_main.budget_s": "driven through ONE helper, `rec`, which forwards **kw; its callers vary budget_s (the default, 35 with a fake clock, and -1)",
+    "ci-durations.py:record_main.clock": "driven through ONE helper, `rec`, which forwards **kw; its callers vary clock (time.monotonic, and a fake clock that advances 10 s per gh call)",
+    "ci-durations.py:main.gh": "driven through ONE helper, `cli`; its callers vary gh (a broken gh on the --report paths, and a fake gh whose PR is already logged on the record + report paths)",
+    "ci-durations.py:main.argv": "driven through ONE helper, `cli`; its callers vary argv (--report with --week 2026-W45, with --week 2025-W53, without --week; and the default record + report, with and without --budget-s -1, over two logs)",
+    "ci-durations.py:main.today": "driven through ONE helper, `cli`; its callers vary today (2026-11-10, and a non-date that must crash into rc 2)",
     # backlog #534 (2026-11-06): batch-ci.py's main() runs against ONE fixture clone — every repository, PR and run
     # it acts on lives inside that clone and its fake gh, and those ARE varied (five batches, eight PRs, three runs).
     "batch-ci.py:main.root": "main() is driven against ONE fixture clone: building a second clone would vary the path and nothing main decides on; what it decides on (the batches, PRs, runs and trees inside that clone and the fake gh) is varied across the e2e's calls",

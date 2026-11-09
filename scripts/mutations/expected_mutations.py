@@ -1553,6 +1553,21 @@ EXPECTED_MUTATIONS = {
     # bases (1), and the worktree created inside plan's clean-up (R3-F3, 1). Not added: the review's "cut = n",
     # which is EQUIVALENT — dropping the shared heading relabels its section to None in all four lists alike.
     "scripts/batch-ci.py": 95,
+    # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. 25: the 25%
+    # threshold in three directions, both sample minimums, the median, the zero baseline, the slowest-shard group
+    # row and its derivation, the skipped-job filter, the idempotent append, the run picker, the week step, the
+    # fetch's skip / budget / incomplete-run branches, the two CANNOT RUN exits, and the report and CLI wiring.
+    # ⟳ 25 -> 44 (r1 fold): 19 added, one or more per finding — the timeout-kill kept, a non-timeout cancel voiding
+    # the group row, the annotation test and its fetch wiring (R1-F1); none-recorded and the stale log (R1-F2); the
+    # default week (R1-F3); the CLI and record_main crash wrappers, a real ISO week, field types and merged_at
+    # (R1-F4); both halves of combine_rc (R1-F6); the truncated percentage (R1-F7); the per-call timeout (R1-F8);
+    # and the PR / jobs / runs truncation refusals (R1-F9). Six entries re-anchored to the moved code, none retired.
+    # ⟳ 44 -> 61 (r2 fold): 17 added — a PR is a snapshot written whole and checked on read: the unmeasured list,
+    # the no-timestamp shard voiding its group (R2-F4), the complete / torn classes and their three torn clauses,
+    # the retry-and-replace of an incomplete snapshot and the torn refusal (R2-F2), any unrecorded PR is rc 2 and an
+    # unmeasured job is NOT MEASURED (R2-F1), an empty jobs list (R2-F3), the lock (R2-F5), the week checked against
+    # the merge date (R2-F6), and the constant --since (R2-F7). One expect renamed with its case, none retired.
+    "scripts/ci-durations.py": 61,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
