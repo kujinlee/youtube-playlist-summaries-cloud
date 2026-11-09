@@ -19345,3 +19345,23 @@ not run; an in-session grandchild killed by the group kill; a `setsid` grandchil
 `"held"` key. check-merge-ready 392 -> 400 cases; mutations 181 -> 187 (M1, M1b, M1c, M2, M3, M4; none retired or
 re-bound), each hand-checked alone in a `stage_tree` copy (rc 1, `parse_fail_names` naming its expect). Measured:
 0 stdlib-named top-level `scripts/` names on master `b15e4f96` and on HEAD.
+
+## 2026-11-08
+The automatic check that tries small deliberate breakages of the merge checker found three breakages its tests no
+longer noticed, all because this pull request moved the pin reading into a separate sealed process. One test was
+being answered by a different, later failure that happened to print similar words; it now demands the exact message
+of the step it is about. The other two broke a type check that the sealed process now always makes first, so
+breaking the old copy changed nothing; they now break the sealed process's own check instead. Coverage is unchanged:
+the same number of breakages, all of them caught.
+<!--tech-->
+Backlog #538, PR #541, CI diff-scoped sweep survivors. (1) "a failing `git ls-tree` is read as an answer" (backlog #359
+r3): defence load-bearing (a base whose `pins_home` ignores a failing `ls-tree` reads as no pins, so a fall is not
+held), case masked by `HEAD_LS`, whose "`git ls-tree` of scripts/ exited 128" held both old substrings. Case
+"⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}" now requires each command's exact text
+(`git merge-base m HEAD` / `git ls-tree` / `git show` ... `exited 128`). (2) and (3), both r7 Claude F2: `_exact_pins`'s
+`type(...)` checks became equivalent mutants. `_child_pins` calls it only on an answer `_child_answer_ok` has
+already passed (`type(a["pins"]) is dict and all(type(k) is str and type(v) is int ...)`, over JSON that only decodes
+to exact builtins), and the `_DRIVER` refuses a bool before that. Both entries were re-anchored, manifest only, to the
+`_DRIVER`'s `_type(got) is not _dict` / `_type(k) is not _str or _type(v) is not _int` with the same expect. The
+key/value entry was a third survivor, found by hand-check and not in the CI report. Mutations stay at 187 (0 added,
+0 retired, 2 re-anchored); `check-merge-ready.py` changed only in that one self-test case.

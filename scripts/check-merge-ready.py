@@ -3175,10 +3175,16 @@ def _self_test_body() -> int:
     # through to the held-versus-displayed comparison, which ALSO says CANNOT RUN (the synthetic display is not
     # the real harness's pins). A bare "CANNOT RUN" was answered by that second clause, and the full sweep
     # reported the mutation SURVIVED. So each third must be refused for ITS OWN failing command.
+    # ⟳ backlog #538 r4: and the ls-tree third was masked AGAIN, by HEAD's scripts/ listing (`HEAD_LS`), also an
+    # `ls-tree` and also failed here, whose "`git ls-tree` of scripts/ exited 128" held both old substrings. A
+    # `pins_home` that ignores its rc fell through to that listing and the sweep reported the mutation SURVIVED.
+    # So each third must name ITS OWN command's exact refusal text.
     check("⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}",
-          [(lambda r: r.startswith("CANNOT RUN") and f"`git {w}" in r and "exited 128" in r)(
+          [(lambda r: r.startswith("CANNOT RUN") and want in r)(
                str(_err(lambda c, w=w: 128 if c[1] == w else 0)))
-           for w in ("merge-base", "ls-tree", "show")], [True, True, True])
+           for w, want in (("merge-base", "`git merge-base m HEAD` exited 128"),
+                           ("ls-tree", "`git ls-tree` exited 128"), ("show", "`git show` exited 128"))],
+          [True, True, True])
     # ⟳ backlog #538 r1 (X-F1): HEAD's `scripts/` is read as RAW BLOBS. Each way that read can fail is CANNOT RUN,
     # named for its own step, so none is answered only by a later import failure; the control reads the same tree.
     def _extract(ls=None, cat=None, count=None):

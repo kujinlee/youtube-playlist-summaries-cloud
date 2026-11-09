@@ -1182,27 +1182,27 @@
   "expect": "⭐ main() is CANNOT RUN, rc=2, when the dashboard gate's import raises an exception whose __str__ exits (r6 Codex F1)"
  },
  {
-  "name": "_exact_pins checks with isinstance, so a bool — an int subclass — passes as a pin and a fall is hidden as READY (r7 Claude F2)",
+  "name": "the child's driver checks pin_display's answer with isinstance, so a bool — an int subclass — passes as a pin and a fall is hidden as READY (r7 Claude F2) — re-anchored (backlog #538 r4) from `_exact_pins`, which the r2 child read put BEHIND this driver and `_child_answer_ok` (`type(v) is int` on decoded JSON), so its mutation became equivalent",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    if type(got) is not dict:",
-    "    if not isinstance(got, dict):"
+    "            if _type(got) is not _dict:\n                raise TypeError(\"pin_display did not return an exact dict\")",
+    "            if not isinstance(got, _dict):\n                raise TypeError(\"pin_display did not return an exact dict\")"
    ],
    [
-    "        if type(k) is not str or type(v) is not int:",
-    "        if not isinstance(k, str) or not isinstance(v, int):"
+    "                if _type(k) is not _str or _type(v) is not _int:\n                    raise TypeError(",
+    "                if not isinstance(k, _str) or not isinstance(v, _int):\n                    raise TypeError("
    ]
   ],
   "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
  },
  {
-  "name": "_exact_pins checks the dict but not its keys and values, so a bool pin passes as 1 and a fall is hidden as READY (r7 Claude F2)",
+  "name": "the child's driver checks the dict but not its keys and values, so a bool pin passes as 1 and a fall is hidden as READY (r7 Claude F2) — re-anchored (backlog #538 r4) from `_exact_pins`, which the r2 child read put BEHIND this driver and `_child_answer_ok` (`type(v) is int` on decoded JSON), so its mutation became equivalent",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if type(k) is not str or type(v) is not int:\n            raise TypeError(",
-    "        if False:\n            raise TypeError("
+    "                if _type(k) is not _str or _type(v) is not _int:\n                    raise TypeError(",
+    "                if False:\n                    raise TypeError("
    ]
   ],
   "expect": "⭐ main() is CANNOT RUN, rc=2, when pin_display returns bool values, which are not ints here"
