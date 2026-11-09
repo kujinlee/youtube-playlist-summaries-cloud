@@ -19363,3 +19363,33 @@ output, detached HEAD added); hook self-test 56 -> 59. Mutations 47 -> 79: all 4
 79 new, one per decision branch, each hand-checked ONE AT A TIME in a `stage_tree` copy. Filed: backlog #579 (levels
 2-3); backlog #574 amended (C-F6 joins; re-scoped to rule 1 in `.githooks/pre-push`). Decision-log row: redesign,
 skipped accrete. Latency MEASURED, 3 runs each, same fixture: a plain feature-branch push 438, 323, 274 ms before (machine loaded), 147, 156, 139 ms after; `echo push` 117, 141, 134 ms before, 128, 109, 109 ms after (not interleaved, so noise-level).
+
+## 2026-11-08
+The fourth review of the push safety check found three more holes, and all three are now closed. First, in
+`push 2&>/dev/null HEAD:master` the check took the `2` for part of the redirection, but bash passes it as a normal
+word, so the check misread where the push goes. Second, a `git checkout master` or `git switch master` before a push
+in the same command was judged as if the push ran on the branch you started on. Third, a push option's value such as
+`--push-option --force` or `--push-option master` got through, though the old check refused it. Now the `2` is read as
+bash reads it. A branch change next to a push is refused, and the message names the command. After a `cd` or
+`git -C`, a push that relies on "the current branch" is refused, but one that names its branch is still allowed.
+Option values the old check refused are refused again. On 1,634 real commands from past sessions, 16 more are
+refused than before (1,266, up from 1,250). Most are a `git worktree` or `git merge` next to a push.
+<!--tech-->
+Backlog #428, PR #542 round 4 fold (Codex X-F1..X-F3, all BLOCKING; past the round cap, nothing else folded).
+X-F1: `lex` ends the open word at the `&` of `&>`, so a digit glued to `&>` is an argument; a digit names a descriptor
+only glued to `<`/`>`. Bash-agreement inputs +7 (each accepted operator `>` `<` `>>` `>|` `&>` `>&N` `<&N` with an
+adjacent digit word, an attached digit and neither), atoms +6; a 7th broken-lexer control restores the misreading and
+reddens the check (12 unsafe of 255 accepted; 1,025 strings, 0 unsafe for the real lexer). X-F2: new rule
+`branch-change` (hook message names the mover, says NOT CHECKED): `BRANCH_MOVERS` (`checkout` `switch` `rebase`
+`reset` `merge` `pull` `worktree` `update-ref` `symbolic-ref`), `stash branch`, `branch -m/-M/--move`,
+`gh … checkout` and a git command with an unreadable global option, composed with a git push in EITHER order (a loop
+can repeat the push), refuse while rule 1 is in force. `cd`/`pushd`/`popd`, `-C`, `--git-dir`, `--work-tree` and a
+`GIT_DIR=`/`GIT_WORK_TREE=` prefix make the current branch UNKNOWN: `HEAD`, `@` or no refspec refuses, a named
+refspec is judged as before. Refusing every `cd` outright was MEASURED first: +284 corpus refusals (281 `cd`),
+rejected. X-F3: `_bad_value` judges every push-option value, separate (`-o`, `--push-option`) and `=`: naming the
+default branch (split on blank `:` `/` `=`), beginning with `-`, or mentioning force or no-verify refuses (`option`);
+lifted by `ALLOW_DEFAULT_BRANCH_PUSH=1` / `ALLOW_DANGEROUS_PUSH=1` respectively. Corpus (`feat/x`, in-process):
+1,250 → 1,266 unique, 1,383 → 1,400 occurrences (+16, all `branch-change`: 9 `worktree`, 4 `merge`, 1 `checkout`,
+1 `cd` before a bare push, 1 unreadable git option; the value rule refused 0). push-command 265 → 325 cases; hook
+self-test 59/59; mutations 79 → 99, each of the 20 hand-checked alone in a `stage_tree` copy (rc 1, its case named
+once), and the 16 existing entries whose code the fold touched re-checked the same way.

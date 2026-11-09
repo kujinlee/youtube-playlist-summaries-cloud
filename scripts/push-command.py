@@ -19,40 +19,53 @@ THE RULE — `decide(command, current_branch, default_branch, has_remote)`:
      views, lower-cased, refuses unless `ALLOW_DANGEROUS_PUSH=1` appears.
   3. LEX A CLOSED LANGUAGE EXACTLY, ELSE REFUSE (`outside`). Unquoted: `[A-Za-z0-9_./:=@+,%^-]`, blanks, newline,
      `;` `&` `|`, the redirections `<` `>` `>>` `>|` `&>` with a target word, and `N>&M` / `N<&M` with
-     digits. Single quotes: anything. Double quotes: anything but a backtick or a backslash, and `$` only as a
+     digits. Digits GLUED to `<` or `>` name a descriptor; `&>` never takes one (`2&>f` is the word `2`, as bash
+     reads it: PR #542 round 4, X-F1). Single quotes: anything. Double quotes: anything but a backtick or a backslash, and `$` only as a
      parameter. A parameter is `$NAME`, `${NAME}`, `$?` `$$` `$!` `$#` `$0`-`$9`, read as a word of UNKNOWN
      value; unquoted, its word COUNT is unknown too (bash splits it). Everything else is outside: `<<`, `<<<`,
      `<>`, `&>>` (bash 3.2 and 5 disagree), `>&` without digits, two redirections in a row, a redirection with no target, an unbalanced quote,
      `$'`, `$"`, `$(`, `${…op…}`, and any unquoted backtick, backslash, `#`, `{`, `}`, `*`, `?`, `[`, `]`, `~`,
      `!`, `(`, `)` or non-ASCII character. Inside this language bash does nothing but split words, remove quotes
-     and substitute the parameters, so the lexer's commands ARE bash's commands. `--self-test` measures that
-     against `/bin/bash` (the bash-agreement check).
+     and substitute the parameters, so the lexer's commands are meant to BE bash's commands. `--self-test`
+     measures that against `/bin/bash` (the bash-agreement check), and the check is only as good as its inputs:
+     round 4's X-F1 (`2&>`) was a construct no input held. Every accepted operator now appears with an adjacent
+     digit word, an attached digit, and neither.
   4. JUDGE EVERY COMMAND from closed tables (leading assignments and `if`/`then`/`do`/… skipped):
        - `git` (or `…/git`): global options from `GIT_VALUE_OPTS` / `GIT_EQ_OPTS` / `GIT_FLAG_OPTS`; an unknown
          one in a command holding a push word refuses. Subcommand `push`: options from `PUSH_FLAGS` /
          `PUSH_EQ` / `PUSH_VALUE`; `-f`/`--force`/`+<refspec>` and `--no-verify` are rule 2; any other option
          refuses. Each refspec's destination is the text after its last `:`, minus `refs/heads/` or `heads/`,
          with `HEAD`/`@` read as the current branch; the default branch is rule 1, and so is a push with fewer
-         than two positionals on the default branch. A subcommand in `INERT_SUB` is text. Any other subcommand
+         than two positionals on the default branch. An option's VALUE that names the default branch, begins
+         with `-`, or mentions force or no-verify refuses (`option`; master's text match refused it: r4 X-F3). A subcommand in `INERT_SUB` is text. Any other subcommand
          holding a push word refuses.
        - a CODE RUNNER (`CODE_RUNNERS`: `bash`, `eval`, `xargs`, `env`, `python3`, `timeout`, …) holding a push
          word, or taking code (`-c`, `-e`, `-`, or reading stdin), refuses; so does one that runs its arguments as
          a command (`ARGV_RUNNERS`: `env`, `xargs`, `timeout`, …) given a word of unknown value.
        - a command in `INERT_TEXT` (`echo`, `grep`, `gh`, `cd`, …) is text.
        - any other command holding a push word refuses.
+       - r4 X-F2, `branch-change`: the current branch is resolved BEFORE the command runs. A command that can
+         move it (`BRANCH_MOVERS`: `checkout`, `switch`, `rebase`, `reset`, `merge`, `pull`, `worktree`,
+         `update-ref`, `symbolic-ref`; `stash branch`; `branch -m/-M/--move`; `gh … checkout`; a git command with
+         an option this cannot read), in EITHER order with a git push (a loop can repeat the push), refuses. A
+         `cd`/`pushd`/`popd`, `-C`, `--git-dir`, `--work-tree` or a `GIT_DIR=` prefix changes the REPOSITORY: the
+         push is judged with the current branch UNKNOWN, so `HEAD`, `@` or no refspec refuses and a named
+         refspec is judged as usual. Off with rule 1's switches (no remote, `ALLOW_DEFAULT_BRANCH_PUSH=1`).
        - a word of unknown value refuses as a command word; at or before a git command's subcommand (except a
          double-quoted `-C` value); and anywhere in a git command holding a push word.
   `decide` prints `allow`, or `deny <rule> <reason>` with rule one of `default-branch`, `force`, `no-verify`,
-  `hookspath`, `plan-leak`, `outside`, `option`, `code-runner`, `unjudged`. Exit 0. The hook refuses any other
+  `hookspath`, `plan-leak`, `outside`, `option`, `code-runner`, `unjudged`, `branch-change`. Exit 0. The hook refuses any other
   exit or output.
   ⏱ A DEADLINE: `main` arms SIGALRM at `DEADLINE_S` with the DEFAULT action, so a run that stalls, even inside C
   code, is killed (the hook sees exit 142 and REFUSES, saying so). Never a pass.
 
 ⚠ THE BOUND, SAID PLAINLY: a command holding the word `push` is refused unless it is written in the closed language
 above and every command in it is judged allowed. MEASURED on 1,634 unique transcript commands holding `git` and
-`push` (the Phase 6 corpus, `feat/x` fixture, decided in-process): THIS FILE refuses 1,250 unique / 1,383
-occurrences, against round 2's hook 1,166 / 1,292 (86 new, 2 relieved). The architecture review's level-1
-prototype refused 1,241 / 1,374 (77 new, 2 relieved); the 9 beyond it are a parameter as a command word or before
+`push` (the Phase 6 corpus, `feat/x` fixture, decided in-process): THIS FILE refuses 1,266 unique / 1,400
+occurrences, against round 2's hook 1,166 / 1,292 (102 new, 2 relieved); round 4's fold added 16 (all
+`branch-change`: 9 `worktree`, 4 `merge`, 1 `checkout`, 1 `cd` before a push with no refspec, 1 unreadable git
+option), and its option-value rule refused none. The architecture review's level-1
+prototype refused 1,241 / 1,374 (77 new, 2 relieved); 9 of the round 3 fold's refusals beyond it are a parameter as a command word or before
 a git subcommand (`$PY x.py`, `git -C $W push …`), which bash may expand into a push. The common refusals: a heredoc or a `$(` beside a push (`git commit -m
 "$(cat <<'EOF' …)" && git push …`), `${S:?}`, `[ … ]`, `@{u}`, a backslash continuation, a `#` comment, a
 backslash inside double quotes, `timeout`/`env` around a push. THE REMEDY, printed with every such refusal: run
@@ -68,12 +81,15 @@ against an ACCIDENT, not a boundary against a determined agent.
 WHAT WOULD MAKE THIS FAIL (its falsifier): any of the round 1-3 repros in `--self-test` (`git "push" origin
 master`, `git push \\<newline> origin master`, `cat <<EOF … EOF` then `git push origin master # '`, `git
 --attr-source stash push origin master`, `git push origin {master,}`, `git push origin $"master"`, `git push -uf
-origin feat/x`, `echo master | xargs git push origin`, `git push origin HEAD:heads/master`) decided `allow` on a
+origin feat/x`, `echo master | xargs git push origin`, `git push origin HEAD:heads/master`) or round 4
+(`git push 2&>/dev/null HEAD:master`, `git checkout master && git push origin HEAD`, `git switch master && git
+push`, `git push origin feat/x --push-option master`, `--push-option --force`, `--push-option --no-verify`)
+decided `allow` on a
 feature branch of a repository whose default branch is master; or the bash-agreement check finding a command bash
 runs that the lexer did not report; or a feature-branch push refused.
 
     python3 scripts/push-command.py decide <current> <default> <has_remote 0|1> < command.txt
-    python3 scripts/push-command.py --self-test  # 265 cases
+    python3 scripts/push-command.py --self-test  # 325 cases
 
 ⚡ Only `re` and `sys` load on the `decide` path (PR #542 round 1, C-F8): the self-test's imports are lazy.
 """
@@ -131,6 +147,15 @@ ARGV_RUNNERS = frozenset({"eval", "exec", "xargs", "env", "command", "builtin", 
                           "nice", "sudo", "watch", "parallel", "time"})
 STDIN_CODE = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish", "python", "python3", "perl", "ruby", "node",
                         "osascript"})
+# r4 X-F2: commands that can change the current branch, or the repository `git` acts on, before a push in the
+# same text runs. The hook resolves the current branch BEFORE any of it runs, so composed with a push, they refuse.
+BRANCH_MOVERS = frozenset({"checkout", "switch", "rebase", "reset", "merge", "pull", "worktree", "update-ref",
+                           "symbolic-ref"})
+DIR_MOVERS = frozenset({"cd", "pushd", "popd"})
+# r4 X-F2: options and environment that point `git` at ANOTHER repository, whose current branch is unknown here.
+REPO_OPTS = frozenset({"-C", "--git-dir", "--work-tree"})
+REPO_EQ = ("--git-dir=", "--work-tree=")
+REPO_ENV = ("GIT_DIR=", "GIT_WORK_TREE=")
 
 
 class Outside(Exception):
@@ -209,6 +234,8 @@ def lex(cmd: str) -> list[list[str]]:
         if c in "<>" or cmd.startswith("&>", i):
             if skip and not started:
                 raise Outside("two redirections in a row")
+            if c == "&":
+                end_word()   # r4 X-F1: `&>` takes no descriptor; bash ends `2` at the `&`: an ARGUMENT
             if started and not quoted and "".join(buf).isdigit():
                 buf, started = [], False     # `2>`: the digits name a descriptor, not a word
             else:
@@ -256,17 +283,37 @@ def _unknown(word: str) -> bool:
     return UNKNOWN in word or SPLIT in word
 
 
-def _judge_push(args: list[str], cur: str, default: str, rule1: bool, danger: bool) -> tuple[str, str] | None:
-    """The arguments after `push`: options from a closed allowlist, then each destination."""
+def _bad_value(opt: str, vals: list[str], default: str, rule1: bool, danger: bool) -> tuple[str, str] | None:
+    """r4 X-F3: a push option's VALUE that master's text match refused. Master read every word after `push` as a
+    flag or a refspec, so a value naming the default branch, beginning with `-`, or mentioning force or no-verify
+    was refused there; it is refused here too, so this branch refuses everything master refused on that path."""
+    for v in vals:
+        low = v.lower()
+        if rule1 and default in re.split(r"[\s:/=]", v):
+            return "option", f"the value of `{opt}` (`{v}`) names `{default}`, the default branch"
+        if not danger and (v.startswith("-") or "force" in low or "no-verify" in low):
+            return "option", f"the value of `{opt}` (`{v}`) begins with `-` or mentions force or no-verify"
+    return None
+
+
+def _judge_push(args: list[str], cur: str | None, default: str, rule1: bool, danger: bool) -> tuple[str, str] | None:
+    """The arguments after `push`: options from a closed allowlist, then each destination. `cur` None: the push
+    acts on another repository (`-C`, `--git-dir`), whose current branch is unknown."""
     pos, i = [], 0
     while i < len(args):
         a = args[i]
         if a.startswith("-") and a != "-":
             if a in PUSH_VALUE:
                 i += 2
+                why = _bad_value(a, args[i - 1:i], default, rule1, danger)
+                if why:
+                    return why
                 continue
             if a in PUSH_FLAGS or a.startswith(PUSH_EQ):
                 i += 1
+                why = _bad_value(a.split("=", 1)[0], a.split("=", 1)[1:], default, rule1, danger)
+                if why:
+                    return why
                 continue
             if a in FORCE_OPTS:
                 if not danger:
@@ -290,15 +337,23 @@ def _judge_push(args: list[str], cur: str, default: str, rule1: bool, danger: bo
                 dest = dest[len(p):]
         if dest in ("HEAD", "@"):
             dest = cur
+            if rule1 and cur is None:
+                return "branch-change", (f"the refspec `{r}` names the current branch of a repository reached "
+                                         "through `cd`, `-C` or `--git-dir`, which this gate did not resolve")
         if rule1 and dest == default:
             return "default-branch", f"the refspec `{r}` names `{default}`"
+    if rule1 and len(pos) < 2 and cur is None:
+        return "branch-change", ("a push with no refspec pushes the current branch of a repository reached through "
+                                 "`cd`, `-C` or `--git-dir`, which this gate did not resolve")
     if rule1 and len(pos) < 2 and cur == default:
         return "default-branch", f"a push with no refspec pushes the current branch, `{default}`"
     return None
 
 
-def _judge(words: list[str], cur: str, default: str, rule1: bool, danger: bool) -> tuple[str, str] | None:
-    """One command, in a text that mentions push: `(rule, reason)` to refuse, else None."""
+def _judge(words: list[str], cur: str | None, default: str, rule1: bool, danger: bool,
+           seen: list) -> tuple[str, str] | None:
+    """One command, in a text that mentions push: `(rule, reason)` to refuse, else None. Appends
+    `(name, args)` to `seen` for the r4 X-F2 composition rule (`args` None: a git option it cannot read)."""
     c = 0
     while c < len(words) and (words[c] in RESERVED or ASSIGN.match(words[c])):
         c += 1
@@ -309,6 +364,7 @@ def _judge(words: list[str], cur: str, default: str, rule1: bool, danger: bool) 
     pushy = _has_push(words)
     name = words[c].rsplit("/", 1)[-1]
     if name == "git":
+        seen.append(("git", None))   # None until the option scan reaches a subcommand: an unreadable option
         s, quoted_c = c + 1, None
         while s < len(words) and words[s].startswith("-") and len(words[s]) > 1:
             w = words[s]
@@ -328,6 +384,10 @@ def _judge(words: list[str], cur: str, default: str, rule1: bool, danger: bool) 
         if pushy and any(_unknown(w) for k, w in enumerate(words) if k > s):
             return "unjudged", "a word of unknown value (a parameter) in a git command that mentions push"
         sub = words[s] if s < len(words) else ""
+        seen[-1] = ("git", words[s:])
+        if any(w in REPO_OPTS or w.startswith(REPO_EQ) for w in words[c + 1:s]) \
+                or any(w.startswith(REPO_ENV) for w in words[:c]):
+            cur = None   # r4 X-F2: another repository, whose current branch this gate did not resolve
         if sub == "push":
             return _judge_push(words[s + 1:], cur, default, rule1, danger)
         if sub in INERT_SUB:
@@ -335,6 +395,7 @@ def _judge(words: list[str], cur: str, default: str, rule1: bool, danger: bool) 
         if pushy:
             return "unjudged", f"git `{sub}` mentions push"
         return None
+    seen.append((name, words[c + 1:]))
     if name in CODE_RUNNERS:
         rest = words[c + 1:]
         positional = [w for w in rest if not w.startswith("-")]
@@ -347,6 +408,21 @@ def _judge(words: list[str], cur: str, default: str, rule1: bool, danger: bool) 
         return None
     if pushy:
         return "unjudged", f"`{name}` mentions push and is not a command this gate knows"
+    return None
+
+
+def _moves(name: str, args: list[str] | None) -> str | None:
+    """r4 X-F2: why this command can change the branch, or the repository, a later push acts on; else None."""
+    if name == "gh" and args and "checkout" in args:
+        return "`gh ... checkout` changes the current branch"
+    if name != "git":
+        return None
+    if args is None:
+        return "a git command with a global option this gate does not read, beside a push"
+    sub = args[0] if args else ""
+    if sub in BRANCH_MOVERS or (sub == "stash" and args[1:2] == ["branch"]) or (sub == "branch" and any(
+            w == "--move" or (w[:1] == "-" and w[1:2] != "-" and ("m" in w or "M" in w)) for w in args[1:])):
+        return f"`git {' '.join(args[:2])}` can change the current branch before the push runs"
     return None
 
 
@@ -367,10 +443,25 @@ def decide(cmd: str, cur: str, default: str, has_remote: bool) -> tuple[str, str
         cmds = lex(cmd)
     except Outside as e:
         return "deny", "outside", str(e)
+    seen: list = []
     for words in cmds:
-        why = _judge(words, cur, default, rule1, danger)
+        why = _judge(words, cur, default, rule1, danger, seen)
         if why:
             return "deny", why[0], why[1]
+    # r4 X-F2: the current branch was resolved before ANY of this runs. A command that can move it, or the
+    # directory, composed with a push in either order (a loop can repeat the push after it), refuses.
+    if rule1 and any(n == "git" and r and r[0] == "push" for n, r in seen):
+        for n, r in seen:
+            moved = _moves(n, r)
+            if moved:
+                return "deny", "branch-change", moved
+        # A `cd` changes which REPOSITORY git acts on: judged conservatively, every push is judged again with the
+        # current branch UNKNOWN, so one that pushes whatever is checked out (`HEAD`, `@`, no refspec) refuses.
+        if any(n in DIR_MOVERS for n, _ in seen):
+            for words in cmds:
+                why = _judge(words, None, default, rule1, danger, [])
+                if why:
+                    return "deny", why[0], why[1]
     return "allow", "", ""
 
 
@@ -437,6 +528,8 @@ ORACLE_ATOMS = (
     "'a ; b'", '"c | d"', "''", '""', "a'b'c", "'>'", '"&&"', "'$X'", "pu'sh'",
     # redirections, the dangerous direction being a target or a descriptor read as an argument
     ">", "<", ">>", ">|", "&>", "&>>", "2>&1", "1>&2", "<&0", ">f", "<f", "2>f", "> f", ">&-", ">& -u", "3>",
+    # r4 X-F1: a digit glued to each operator, `&>` included (where it is an ARGUMENT)
+    "2&>f", "2&>", "2>>f", "2>|f", "0<f", "0<&0",
     # parameters
     "$X", '"$X"', "${X}", "$?", "$1", "a$X", '"a $X b"', "$X$X",
     # outside the language (the lexer must refuse them; listed so a refusal is exercised)
@@ -459,6 +552,14 @@ ORACLE_INPUTS = (
     ("a descriptor duplication", "git push o m 2>&1 1>&2 <&0 n"),
     ("a descriptor redirection", "git push o 2>f m"),
     ("a quoted descriptor is a word", "git push o '2'>f m"),
+    # r4 X-F1: each accepted operator with an adjacent digit WORD, an attached digit, and neither
+    ("`>` with a digit word, an attached digit, and neither", "git push o 2 >f m 2>g n >h k"),
+    ("`<` with a digit word, an attached digit, and neither", "git push o 0 <f m 0<f n <f k"),
+    ("`>>` with a digit word, an attached digit, and neither", "git push o 2 >>f m 2>>g n >>h k"),
+    ("`>|` with a digit word, an attached digit, and neither", "git push o 2 >|f m 2>|g n >|h k"),
+    ("`&>` with a digit word, an attached digit, and neither (r4 X-F1)", "git push o 2 &>f m 2&>g n &>h k"),
+    ("`>&N` with a digit word, an attached digit, and neither", "git push o 2 >&1 m 2>&1 n >&1 k"),
+    ("`<&N` with a digit word, an attached digit, and neither", "git push o 0 <&0 m 0<&0 n <&0 k"),
     ("parameters", 'git push $X "$X" ${X} a$X "a $X b" $? $1'),
     ("an assignment prefix", "A=1 git push o m"),
     ("reserved words", "if git push o m; then git push p q; fi"),
@@ -479,6 +580,9 @@ ORACLE_CONTROLS = (
      "        if q == \"'\":\n            if c == \"'\":\n                q = None\n            else:",
      "        if q == \"'\":\n            buf.append(c)\n            if c == \"'\":\n                q = None\n            else:"),
     ("a newline is a blank, not a separator", "SEPS = \";&|\\n\"", "SEPS = \";&|\"\nBLANK = \" \\t\\n\""),
+    ("a digit before `&>` is read as a descriptor (r4 X-F1)",
+     "            if c == \"&\":\n                end_word()",
+     "            if False:\n                end_word()"),
     ("a parameter is read as its literal name",
      "        buf.append(marker)\n        started = True\n        return m.end()",
      "        buf.append(m.group())\n        started = True\n        return m.end()"),
@@ -685,6 +789,17 @@ def _self_test_body() -> int:
          'cd "$S/wt" && git push -u origin feat/x', F, "allow"),
         ("x-4 a script run before a feature push is allowed",
          "python3 scripts/x.py && git push -u origin feat/x", F, "allow"),
+        # round 4 (Codex X-F1..X-F3)
+        ("r4-F1", "git -c remote.2.url=https://github.com/kujinlee/youtube-playlist-summaries-cloud.git push "
+         "2&>/dev/null HEAD:master", F, "deny default-branch"),
+        ("r4-F2a", "git checkout master && git push origin HEAD", F, "deny branch-change"),
+        ("r4-F2b", "git switch master && git push", F, "deny branch-change"),
+        ("r4-F3a", "git push origin push-hook-quoted --push-option master", "push-hook-quoted", "deny option"),
+        ("r4-F3b", "git push origin push-hook-quoted --push-option --force", "push-hook-quoted", "deny option"),
+        ("r4-F3c", "git push origin push-hook-quoted --push-option --no-verify", "push-hook-quoted", "deny option"),
+        ("r4-ok-1 a push alone is allowed", "git push origin feat/x", F, "allow"),
+        ("r4-ok-2 a non-moving git command beside a push is allowed", "git status && git push origin feat/x", F,
+         "allow"),
     ]
     for name, cmd, cur, want in matrix:
         case(f"matrix {name}", d(cmd, cur), want)
@@ -749,6 +864,10 @@ def _self_test_body() -> int:
     case("lex: `2>&1` names descriptors, not words", lex("git push o m 2>&1"), [["git", "push", "o", "m"]])
     case("lex: a QUOTED digit before `>` is a word", lex("git push o '2'>f"), [["git", "push", "o", "2"]])
     case("lex: `&>`, `>>`, `>|` take a target", lex("a &>f b >>h d >|i e"), [["a", "b", "d", "e"]])
+    case("⭐ lex: a digit before `&>` is an ARGUMENT, never a descriptor (r4 X-F1)", lex("git push o 2&>f m"),
+         [["git", "push", "o", "2", "m"]])
+    case("lex: a digit ATTACHED to `>` `>>` `>|` `<` is a descriptor; a spaced one is a word",
+         lex("a 2>f b 2>>f c 2>|f d 0<f e 2 >f g"), [["a", "b", "c", "d", "e", "2", "g"]])
     case("lex: parameters are words of unknown value", lex('a $X "b $Y" ${Z}'),
          [["a", SPLIT, "b " + UNKNOWN, SPLIT]])
     # judging: git's global options
@@ -830,6 +949,59 @@ def _self_test_body() -> int:
          d("git -C $W push origin feat/x"), "deny unjudged")
     case("judge: a parameter in an inert git command is allowed", d('git commit -m "$M" && git push origin feat/x'),
          "allow")
+    # judging: a branch or repository change composed with a push (r4 X-F2)
+    for sub in ("rebase origin/master", "reset --hard origin/master", "merge master", "pull origin master",
+                "worktree add ../w master", "update-ref HEAD refs/heads/master", "symbolic-ref HEAD refs/heads/master"):
+        case(f"judge: `git {sub.split()[0]}` beside a push refuses (r4 X-F2)", d(f"git {sub} && git push"),
+             "deny branch-change")
+    case("⭐ judge: `git stash branch` beside a push refuses (r4 X-F2)", d("git stash branch y && git push"),
+         "deny branch-change")
+    case("⭐ judge: `git branch -m` beside a push refuses (r4 X-F2)", d("git branch -m master && git push"),
+         "deny branch-change")
+    case("judge: `git branch -M` beside a push refuses", d("git branch -fM x master; git push"), "deny branch-change")
+    case("judge: `git branch --move` beside a push refuses", d("git branch --move x master; git push"),
+         "deny branch-change")
+    case("judge: `git branch -a` beside a push is allowed (it lists)", d("git branch -a && git push origin feat/x"),
+         "allow")
+    case("judge: `git stash list` beside a push is allowed", d("git stash list && git push"), "allow")
+    case("⭐ judge: `gh pr checkout` beside a push refuses (r4 X-F2)", d("gh pr checkout 5 && git push"),
+         "deny branch-change")
+    case("judge: an unreadable git option beside a push refuses (it may move the branch)",
+         d("git --frobnicate status; git push origin feat/x"), "deny branch-change")
+    case("⭐ judge: a branch change AFTER the push refuses too (a loop can repeat the push)",
+         d("git push origin feat/x; git checkout master"), "deny branch-change")
+    case("judge: a branch change with no remote is allowed (rule 1 is off)",
+         d("git checkout master && git push", has_remote=False), "allow")
+    case("judge: the branch escape lifts the composition rule",
+         d("ALLOW_DEFAULT_BRANCH_PUSH=1 git checkout master && git push"), "allow")
+    case("⭐ judge: a `cd` beside a push of HEAD refuses (the current branch is unknown, r4 X-F2)",
+         d("cd /wt && git push origin HEAD"), "deny branch-change")
+    case("⭐ judge: a `cd` beside a push with no refspec refuses", d("cd /wt && git push"), "deny branch-change")
+    case("judge: a `pushd` beside a push of `@` refuses", d("pushd /wt && git push origin @"), "deny branch-change")
+    case("judge: a `cd` beside a push naming its refspec is allowed", d("cd /wt && git push -u origin feat/x"),
+         "allow")
+    case("judge: a `cd` beside a push naming the default branch is still rule 1", d("cd /wt && git push origin master"),
+         "deny default-branch")
+    case("⭐ judge: `-C` with a push of HEAD refuses (another repository)", d("git -C /wt push origin HEAD"),
+         "deny branch-change")
+    case("judge: `-C` with a push with no refspec refuses", d("git -C /wt push -u origin"), "deny branch-change")
+    case("judge: `--git-dir=` with a push of `@` refuses", d("git --git-dir=/wt/.git push origin @"),
+         "deny branch-change")
+    case("judge: a `GIT_DIR=` prefix with a bare push refuses", d("GIT_DIR=/wt/.git git push"), "deny branch-change")
+    # judging: a push option's VALUE (r4 X-F3)
+    case("⭐ judge: an `=` push-option value naming the default branch refuses (r4 X-F3)",
+         d("git push --push-option=master origin feat/x"), "deny option")
+    case("⭐ judge: a `-o` value beginning with `-` refuses (r4 X-F3)", d("git push -o -f origin feat/x"),
+         "deny option")
+    case("judge: a push-option value mentioning force refuses", d("git push -o ci.force origin feat/x"),
+         "deny option")
+    case("judge: a --force-with-lease value naming the default branch refuses",
+         d("git push --force-with-lease=master origin feat/x"), "deny option")
+    case("judge: an ordinary push-option value is allowed", d("git push -o ci.skip origin feat/x"), "allow")
+    case("judge: the force escape lifts a value beginning with `-`",
+         d("ALLOW_DANGEROUS_PUSH=1 git push -o --force origin feat/x"), "allow")
+    case("judge: the branch escape lifts a value naming the default branch",
+         d("ALLOW_DEFAULT_BRANCH_PUSH=1 git push -o master origin feat/x"), "allow")
 
     # ── the CLI contract the hook reads ──
     r = subprocess.run([sys.executable, __file__, "decide", "feat/x", "master", "1"],
@@ -959,6 +1131,21 @@ def _self_test_body() -> int:
             ("hook: C-F5 r3 — `--no-veri` is refused", "git push --no-veri origin feat/x", "deny"),
             ("hook: C-F6 r3 — xargs is refused", "git push origin feat/x; echo master | xargs git push origin", "deny"),
             ("hook: C-F6 r3 — heads/master is refused", "git push origin HEAD:heads/master", "deny"),
+            # round 4: each Codex repro, through the delivered hook
+            ("⭐ hook: X-F1 r4 — a digit before `&>` is the remote, so HEAD:master is the refspec",
+             "git -c remote.2.url=https://github.com/kujinlee/youtube-playlist-summaries-cloud.git push "
+             "2&>/dev/null HEAD:master", "deny"),
+            ("⭐ hook: X-F2 r4 — a checkout before a push of HEAD is refused",
+             "git checkout master && git push origin HEAD", "deny"),
+            ("hook: X-F2 r4 — a switch before a bare push is refused", "git switch master && git push", "deny"),
+            ("⭐ hook: X-F3 r4 — a push-option value naming master is refused",
+             "git push origin feat/x --push-option master", "deny"),
+            ("hook: X-F3 r4 — a push-option value --force is refused", "git push origin feat/x --push-option --force",
+             "deny"),
+            ("hook: X-F3 r4 — a push-option value --no-verify is refused",
+             "git push origin feat/x --push-option --no-verify", "deny"),
+            ("hook: X-F2 r4 — `git status` beside a feature push is allowed", "git status && git push origin feat/x",
+             "allow"),
         ]:
             case(name, _hook(work, cmd)[0], want)
         dd, why = _hook(work, 'cd "$(pwd)" && git push origin feat/x')
@@ -971,6 +1158,9 @@ def _self_test_body() -> int:
         case("hook: a default-branch refusal names the branch", (dd, "'master'" in why), ("deny", True))
         dd, why = _hook(work, "git push --force origin feat/x")
         case("hook: a force refusal offers --force-with-lease", (dd, "--force-with-lease" in why), ("deny", True))
+        dd, why = _hook(work, "git checkout master && git push origin HEAD")
+        case("hook: a BRANCH-CHANGE refusal names the command and says NOT CHECKED (r4 X-F2)",
+             (dd, "`git checkout master`" in why, "NOT CHECKED" in why), ("deny", True, True))
         _git(work, "checkout", "-q", "master")
         for name, cmd, want in [
             ("hook: `git log --grep push` is allowed on the default branch", "git log --grep push", "allow"),

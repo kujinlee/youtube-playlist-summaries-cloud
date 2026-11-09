@@ -899,5 +899,225 @@
    ]
   ],
   "expect": "decide reads has_remote"
+ },
+ {
+  "name": "a digit before `&>` is read as a descriptor, so `2` vanishes and HEAD:master is the remote (r4 X-F1)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            if c == \"&\":\n                end_word()   # r4 X-F1",
+    "            if False:\n                end_word()   # r4 X-F1"
+   ]
+  ],
+  "expect": "matrix r4-F1"
+ },
+ {
+  "name": "a branch change composed with a push is not refused (r4 X-F2)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if rule1 and any(n == \"git\" and r and r[0] == \"push\" for n, r in seen):",
+    "    if False:"
+   ]
+  ],
+  "expect": "matrix r4-F2a"
+ },
+ {
+  "name": "`checkout`, `switch` and the other BRANCH_MOVERS are not recognised (r4 X-F2)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if sub in BRANCH_MOVERS or ",
+    "    if False or "
+   ]
+  ],
+  "expect": "matrix r4-F2b"
+ },
+ {
+  "name": "`git stash branch` is not a mover",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(sub == \"stash\" and args[1:2] == [\"branch\"])",
+    "False"
+   ]
+  ],
+  "expect": "⭐ judge: `git stash branch` beside a push refuses (r4 X-F2)"
+ },
+ {
+  "name": "`git branch -m` is not a mover (only `--move` is)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "w == \"--move\" or (w[:1] == \"-\" and w[1:2] != \"-\" and (\"m\" in w or \"M\" in w))",
+    "w == \"--move\""
+   ]
+  ],
+  "expect": "⭐ judge: `git branch -m` beside a push refuses (r4 X-F2)"
+ },
+ {
+  "name": "`gh pr checkout` is not a mover",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if name == \"gh\" and args and \"checkout\" in args:",
+    "    if False:"
+   ]
+  ],
+  "expect": "⭐ judge: `gh pr checkout` beside a push refuses (r4 X-F2)"
+ },
+ {
+  "name": "a git command with an unreadable option is recorded as readable, so it cannot count as a mover",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        seen.append((\"git\", None))   # None until",
+    "        seen.append((\"git\", []))   # None until"
+   ]
+  ],
+  "expect": "judge: an unreadable git option beside a push refuses (it may move the branch)"
+ },
+ {
+  "name": "a `cd` does not make the current branch unknown (r4 X-F2)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if any(n in DIR_MOVERS for n, _ in seen):",
+    "        if False:"
+   ]
+  ],
+  "expect": "⭐ judge: a `cd` beside a push of HEAD refuses (the current branch is unknown, r4 X-F2)"
+ },
+ {
+  "name": "`-C` does not make the current branch unknown",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            cur = None   # r4 X-F2",
+    "            pass   # r4 X-F2"
+   ]
+  ],
+  "expect": "⭐ judge: `-C` with a push of HEAD refuses (another repository)"
+ },
+ {
+  "name": "a `GIT_DIR=` prefix is not read as another repository",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "                or any(w.startswith(REPO_ENV) for w in words[:c]):",
+    "                or False:"
+   ]
+  ],
+  "expect": "judge: a `GIT_DIR=` prefix with a bare push refuses"
+ },
+ {
+  "name": "`HEAD`/`@` with the current branch unknown is not refused",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            if rule1 and cur is None:\n                return \"branch-change\"",
+    "            if False:\n                return \"branch-change\""
+   ]
+  ],
+  "expect": "judge: `--git-dir=` with a push of `@` refuses"
+ },
+ {
+  "name": "a push with no refspec and the current branch unknown is not refused",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if rule1 and len(pos) < 2 and cur is None:",
+    "    if False:"
+   ]
+  ],
+  "expect": "judge: `-C` with a push with no refspec refuses"
+ },
+ {
+  "name": "the composition rule ignores rule 1's switches (no remote, the branch escape)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if rule1 and any(n == \"git\" and r and r[0] == \"push\"",
+    "    if any(n == \"git\" and r and r[0] == \"push\""
+   ]
+  ],
+  "expect": "judge: a branch change with no remote is allowed (rule 1 is off)"
+ },
+ {
+  "name": "a separate push-option value (`-o V`, `--push-option V`) is not judged (r4 X-F3)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "                why = _bad_value(a, args[i - 1:i], default, rule1, danger)",
+    "                why = None"
+   ]
+  ],
+  "expect": "matrix r4-F3b"
+ },
+ {
+  "name": "an `=` push-option value is not judged",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "                why = _bad_value(a.split(\"=\", 1)[0], a.split(\"=\", 1)[1:], default, rule1, danger)",
+    "                why = None"
+   ]
+  ],
+  "expect": "⭐ judge: an `=` push-option value naming the default branch refuses (r4 X-F3)"
+ },
+ {
+  "name": "a push-option value naming the default branch is not refused",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if rule1 and default in re.split(r\"[\\s:/=]\", v):",
+    "        if False:"
+   ]
+  ],
+  "expect": "matrix r4-F3a"
+ },
+ {
+  "name": "a push-option value beginning with `-` is not refused",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "v.startswith(\"-\") or \"force\" in low",
+    "\"force\" in low"
+   ]
+  ],
+  "expect": "⭐ judge: a `-o` value beginning with `-` refuses (r4 X-F3)"
+ },
+ {
+  "name": "a push-option value mentioning force or no-verify is not refused",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    " or \"force\" in low or \"no-verify\" in low)",
+    ")"
+   ]
+  ],
+  "expect": "judge: a push-option value mentioning force refuses"
+ },
+ {
+  "name": "the force escape does not lift a push-option value",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if not danger and (v.startswith",
+    "        if (v.startswith"
+   ]
+  ],
+  "expect": "judge: the force escape lifts a value beginning with `-`"
+ },
+ {
+  "name": "the branch escape does not lift a push-option value naming the default branch",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if rule1 and default in re.split",
+    "        if default in re.split"
+   ]
+  ],
+  "expect": "judge: the branch escape lifts a value naming the default branch"
  }
 ]

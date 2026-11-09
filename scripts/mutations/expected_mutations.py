@@ -2058,5 +2058,13 @@ EXPECTED_MUTATIONS = {
     # destinations (10), code runners and text commands (7), the CLI and the deadline (4).
     # ARITHMETIC: 47 - 47 + 79 = 79. Each of the 79 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and
     # `parse_fail_names` names every expected case exactly once.
-    "scripts/push-command.py": 79,
+    # ⟳ 2026-11-08, PR #542 round 4 fold (Codex X-F1..X-F3): 79 -> 99. TWENTY new, none retired: `&>` never takes a
+    # descriptor (X-F1, 1); the branch-change composition rule, its movers (BRANCH_MOVERS, `stash branch`,
+    # `branch -m`, `gh … checkout`, an unreadable git option), its rule-1 switches, and the UNKNOWN current branch
+    # after `cd`, `-C` and `GIT_DIR=` for `HEAD`/`@` and for no refspec (X-F2, 12); push-option values, separate and
+    # `=`, naming the default branch, beginning with `-`, mentioning force, and both escapes (X-F3, 7).
+    # ARITHMETIC: 79 + 20 = 99. Each of the 20 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and
+    # `parse_fail_names` names its expected case exactly once; 16 existing entries whose code the fold touched
+    # re-checked the same way, all still killed and attributed.
+    "scripts/push-command.py": 99,
 }

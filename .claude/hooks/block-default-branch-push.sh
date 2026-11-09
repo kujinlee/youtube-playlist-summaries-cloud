@@ -329,6 +329,13 @@ Instead:
 Merge only on scripts/check-merge-ready.py READY; a HOLD goes to the owner.
 
 Deliberate exception: re-run prefixed with ALLOW_DEFAULT_BRANCH_PUSH=1" ;;
+  # ── RULE 1, composed (PR #542 round 4, X-F2): this hook resolves the current branch BEFORE the command runs, so a
+  # `checkout`/`switch`/`cd`/… beside a push could make it push a branch this gate never judged ──
+  branch-change) deny "Blocked: this command changes the branch or the repository a push acts on, in the same command
+as the push (${reason}). The push gate resolved the current branch before any of it runs, so it
+cannot tell where that push would land — NOT CHECKED (backlog #428).
+
+Run the branch change first, then the push as its own plain command: git push -u origin <branch>" ;;
   # ── the reading itself: a command the push gate cannot read exactly ──
   outside) deny "Blocked: this command mentions push and uses shell syntax outside what the push gate reads exactly
 (${reason}) — NOT CHECKED. Bash could run a push this gate cannot see, so it refuses rather than guess
