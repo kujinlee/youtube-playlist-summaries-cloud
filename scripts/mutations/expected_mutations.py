@@ -1557,7 +1557,12 @@ EXPECTED_MUTATIONS = {
     # threshold in three directions, both sample minimums, the median, the zero baseline, the slowest-shard group
     # row and its derivation, the skipped-job filter, the idempotent append, the run picker, the week step, the
     # fetch's skip / budget / incomplete-run branches, the two CANNOT RUN exits, and the report and CLI wiring.
-    "scripts/ci-durations.py": 25,
+    # ⟳ 25 -> 44 (r1 fold): 19 added, one or more per finding — the timeout-kill kept, a non-timeout cancel voiding
+    # the group row, the annotation test and its fetch wiring (R1-F1); none-recorded and the stale log (R1-F2); the
+    # default week (R1-F3); the CLI and record_main crash wrappers, a real ISO week, field types and merged_at
+    # (R1-F4); both halves of combine_rc (R1-F6); the truncated percentage (R1-F7); the per-call timeout (R1-F8);
+    # and the PR / jobs / runs truncation refusals (R1-F9). Six entries re-anchored to the moved code, none retired.
+    "scripts/ci-durations.py": 44,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real

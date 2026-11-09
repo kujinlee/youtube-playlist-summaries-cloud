@@ -19388,11 +19388,14 @@ job's typical (median) time in one week is 25% or more above the week before. It
 merged since 2026-10-26, found a rise nobody had reported: the slowest mutation-sweep shard went from about 12
 minutes to about 20 minutes (+61%) between the week of 10-26 and the week of 11-02. Nothing runs the script
 automatically yet. Backlog #584 proposes a weekly scheduled CI job for that. The same run also showed noise that
-would make the warning easy to ignore (25 of its 26 warnings), filed as backlog #585.
+would make the warning easy to ignore (25 of its 26 warnings), filed as backlog #585. A first review found nine
+ways it could report a wrong answer; all nine are fixed. The two most serious: a test shard killed for running too
+long was being thrown away, so the slowest shard looked faster than it was, and a run that recorded nothing could
+still report success.
 <!--tech-->
 Backlog #397 slice 1, branch `ci-duration-tripwire`. RECORD: read-only `gh` reads each merged PR's `CI` run on its
-final head and appends one JSON line per job (`started_at` -> `completed_at`, execution seconds; skipped and cancelled
-jobs are not recorded), plus a derived `<group> [slowest shard]` row per matrix group, to
+final head and appends one JSON line per job (`started_at` -> `completed_at`, execution seconds; skipped jobs are not
+recorded, and a cancelled job only when its check run's annotation records a `timeout-minutes` kill), plus a derived `<group> [slowest shard]` row per matrix group, to
 `<main checkout>/.claude/ci-durations.jsonl` (git-ignored, resolved through `--git-common-dir`; it is not tracked
 because every row can be re-derived and a tracked append-only log conflicts across parallel branches). The append is
 keyed on (pr, sha, job) and skips PRs already logged. A 200 s budget per call ends the call as PARTIAL (rc 2); a
@@ -19401,4 +19404,11 @@ when `4*cur >= 5*prev`, NOT MEASURED below 3 samples in either week or on a 0 s 
 measured. 55 self-test cases (the FAILS IF, 24%/25% adjacent pairs at two baselines); 25 mutations, 25/25 killed and
 attributed by `check-plan-code.py --mutate . --only scripts/ci-durations.py`. MEASURED real run: W45 vs W44:
 `[slowest shard]` 739.5 s -> 1188 s (n=68 -> 71, +61%), `verify` 355.5 s -> 381 s (+7%), `mutation-sweep-complete`
-4 s -> 6 s (+50%). The script declares `NO-CALLER:` until backlog #584.
+4 s -> 6 s (+50%). The script declares `NO-CALLER:` until backlog #584. ⟳ r1 fold (Claude half; Codex was killed by
+the OS for low memory, re-attempted in r2): all nine findings fixed — timeout-killed shards kept and a non-timeout
+cancel voids its group row (R1-F1); PRs listed but none recorded, and a stale log, are rc 2 (R1-F2); the default week
+is the last complete ISO week (R1-F3); every crash is rc 2, never 1, with a typed log and a real `--week` (R1-F4);
+mutation entry 23's case now reds on the property (R1-F5); a measured RISE is not masked by a record rc 2 (R1-F6);
+the percentage is truncated so it never contradicts the verdict (R1-F7); every `gh` call is bounded by the budget
+left (R1-F8); truncated PR / runs / jobs pages are refused (R1-F9). 55 -> 83 cases, 25 -> 44 mutations, all 44
+hand-checked caught. The +61% figure above was measured before the fold.

@@ -17,11 +17,23 @@ TWO HALVES, AND THE RULE IS KEPT APART FROM THE FETCH (the repo's `separate-the-
   * WARN — group the log by the ISO week of each PR's MERGE date. For each job and job group,
     compare the evaluated week's median with the previous ISO week's, and WARN when it rose 25% or
     more. A job with fewer than `MIN_SAMPLES` rows in EITHER week is NOT MEASURED, never "fine".
+    The evaluated week defaults to the last COMPLETE ISO week before today (UTC), never the latest
+    week in the log: a partial week is too thin to measure, and a stale log must not be read as
+    current (r1 R1-F2, R1-F3). A log with no merge in that week is CANNOT RUN, naming its latest.
 
 ⚠ WHAT A DURATION HERE IS, AND IS NOT. `started_at` -> `completed_at` is a job's EXECUTION time. It
 excludes the time a job waited in the queue for a runner, so the slowest shard is a floor on the
-run's wall-clock, not the wall-clock itself. Skipped and cancelled jobs are not recorded: a skipped
-job takes ~0 s and would drag a median down for a reason that is not speed.
+run's wall-clock, not the wall-clock itself. Skipped jobs are not recorded: a skipped job takes
+~0 s and would drag a median down for a reason that is not speed.
+
+⚠ A CANCELLED JOB IS TWO DIFFERENT THINGS (r1 R1-F1). A shard KILLED BY ITS `timeout-minutes` is
+reported `cancelled`, and it is the slowest shard there is — measured on CI run 42432602877, where
+three sweep shards ran 30-35 min and came back `cancelled`. A job cancelled by anything else (a
+newer push, a manual cancel) says nothing about speed. The two are told apart by the REASON GitHub
+records, not by a duration guess: a timeout kill carries the failure annotation "The job has exceeded
+the maximum execution time of …" on its check run. A timed-out job is recorded (`timed_out: true`)
+and counts toward its group's slowest shard; any other cancelled shard makes its group's slowest
+shard UNKNOWN, so that group gets NO derived row — never the maximum of the shards that survived.
 
 ⚠ THE SHARD COUNT IS NOT CONSTANT. The sweep selects manifests per PR, so a docs PR may run a few
 shards and a harness PR the full set; per-shard rows are therefore noisy across PRs, and the group
@@ -39,8 +51,12 @@ conflicting on one log. `--log PATH` overrides.
 EXIT CODES (the repo's convention)
     0  no rise in the evaluated week (NOT MEASURED jobs are listed, never counted as fine)
     1  a rise of 25% or more was found
-    2  CANNOT RUN — no `gh`, no network, nothing parsed, a malformed log, the time budget ran out
-       before every PR was read (re-run: the append is idempotent), or NO job could be measured
+    2  CANNOT RUN — no `gh`, no network, nothing parsed, PRs listed but none recorded, a list that
+       may be truncated, a malformed log, an invalid --week, the time budget ran out before every
+       PR was read (re-run: the append is idempotent), NO job could be measured, or ANY unexpected
+       error (an uncaught crash would exit 1, which is the RISE code — r1 R1-F4)
+    Record + report (the default): a measured RISE is rc 1 even beside a PARTIAL record — it was
+    measured on the rows already logged; otherwise either half's CANNOT RUN is rc 2 (r1 R1-F6).
 
 NO-CALLER: slice 1 builds the instrument and its rule; which loop runs it weekly (a scheduled CI job
 that opens an issue on rc 1, or the SessionStart path) is backlog #584, filed with this slice. Until
@@ -49,14 +65,16 @@ then the row's FAILS IF ("nothing reports it in that week") is NOT met by this s
 Usage:
     python3 scripts/ci-durations.py                      # record the last 21 days, then report
     python3 scripts/ci-durations.py --record --since 2026-10-26
-    python3 scripts/ci-durations.py --report [--week 2026-W45]
-    python3 scripts/ci-durations.py --self-test  # 55 cases
+    python3 scripts/ci-durations.py --report [--week 2026-W45]   # default: the last complete week
+    python3 scripts/ci-durations.py --self-test  # 83 cases
 """
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import fractions
 import json
+import math
 import pathlib
 import re
 import shutil
@@ -73,7 +91,10 @@ RECORDED_CONCLUSIONS = ("success", "failure")
 MATRIX = re.compile(r"^(?P<base>.+) \((?P<idx>\d+)\)$")
 GROUP_SUFFIX = " [slowest shard]"
 DEFAULT_BUDGET_S = 200   # under the 270 s cap an agent's tool call has; the append resumes
-GH_TIMEOUT_S = 60
+GH_TIMEOUT_S = 60        # each call's timeout is ALSO capped by the budget left (r1 R1-F8)
+TIMEOUT_MARK = "exceeded the maximum execution time"   # the check-run annotation of a timeout kill
+PR_LIMIT = 500           # `gh pr list --limit`; a full page may be truncated, so it is refused (R1-F9)
+LOG_FIELDS = {"pr": int, "sha": str, "merged_at": str, "week": str, "job": str, "seconds": int}
 
 
 class CannotRun(Exception):
@@ -100,21 +121,53 @@ def previous_week(week: str) -> str:
     return f"{py}-W{pw:02d}"
 
 
+def valid_week(week: str) -> bool:
+    """PURE. True only for a `YYYY-Www` that names a real ISO week (2025-W53 does not exist)."""
+    if not re.fullmatch(r"\d{4}-W\d{2}", week):
+        return False
+    try:
+        _dt.date.fromisocalendar(int(week[:4]), int(week[6:]), 1)
+    except ValueError:
+        return False
+    return True
+
+
+def last_complete_week(today: _dt.date) -> str:
+    """PURE. The ISO week before the one `today` falls in — the last week that can no longer grow."""
+    y, w, _ = today.isocalendar()
+    return previous_week(f"{y}-W{w:02d}")
+
+
+def is_timeout_kill(annotations) -> bool:
+    """PURE. True when a cancelled job's check-run annotations record a `timeout-minutes` kill."""
+    if not isinstance(annotations, list):
+        raise CannotRun("a check run's annotations were not a list")
+    return any(TIMEOUT_MARK in (a.get("message") or "") for a in annotations)
+
+
 def job_rows(pr: int, sha: str, merged_at: str, jobs: list[dict]) -> list[dict]:
     """PURE. The GitHub jobs list of one run -> one log row per recorded job, plus group rows.
 
-    A job is recorded only if it concluded `success` or `failure` and has both timestamps. Each
-    matrix group (`base (N)`) gains ONE derived row holding its slowest shard's seconds.
+    A job is recorded only if it concluded `success` or `failure`, or was cancelled by its timeout
+    (`timed_out`, set by the fetch from the check run's annotations), and has both timestamps. Each
+    matrix group (`base (N)`) gains ONE derived row holding its slowest shard's seconds — unless a
+    shard was cancelled for another reason, which makes the slowest shard unknown: no group row.
     """
     rows = []
+    unknown: set[str] = set()
     for j in jobs:
-        if j.get("conclusion") not in RECORDED_CONCLUSIONS:
+        concl = j.get("conclusion")
+        timed_out = concl == "cancelled" and j.get("timed_out") is True
+        if concl not in RECORDED_CONCLUSIONS and not timed_out:
+            m = MATRIX.match(j.get("name") or "")
+            if concl == "cancelled" and m:
+                unknown.add(m.group("base"))
             continue
         if not j.get("started_at") or not j.get("completed_at"):
             continue
         secs = int((_ts(j["completed_at"]) - _ts(j["started_at"])).total_seconds())
         rows.append({"pr": pr, "sha": sha, "merged_at": merged_at, "week": iso_week(merged_at),
-                     "job": j["name"], "seconds": secs, "derived": False})
+                     "job": j["name"], "seconds": secs, "derived": False, "timed_out": timed_out})
     groups: dict[str, int] = {}
     for r in rows:
         m = MATRIX.match(r["job"])
@@ -122,6 +175,8 @@ def job_rows(pr: int, sha: str, merged_at: str, jobs: list[dict]) -> list[dict]:
             base = m.group("base")
             groups[base] = max(groups.get(base, -1), r["seconds"])
     for base, secs in sorted(groups.items()):
+        if base in unknown:
+            continue
         rows.append({"pr": pr, "sha": sha, "merged_at": merged_at, "week": iso_week(merged_at),
                      "job": base + GROUP_SUFFIX, "seconds": secs, "derived": True})
     return rows
@@ -194,6 +249,26 @@ def compare_weeks(rows: list[dict], week: str, min_samples: int = MIN_SAMPLES) -
     return out
 
 
+def pct_text(prev: float, cur: float) -> str:
+    """PURE. The rise as a signed percentage, one decimal, TRUNCATED toward zero in exact arithmetic,
+    so the text never crosses the 25% line the verdict did not (r1 R1-F7: `round` printed +25% by OK).
+    """
+    p, c = fractions.Fraction(prev), fractions.Fraction(cur)
+    tenths = math.trunc((c - p) * 1000 / p)
+    sign = "-" if tenths < 0 else "+"
+    return f"{sign}{abs(tenths) // 10}.{abs(tenths) % 10}%"
+
+
+def combine_rc(rc_rec: int, rc_rep: int) -> int:
+    """PURE. Record + report -> one rc. A measured RISE dominates (it was measured on the rows
+    already logged); otherwise either half's CANNOT RUN is CANNOT RUN; else no rise (r1 R1-F6)."""
+    if rc_rep == RISE_FOUND:
+        return RISE_FOUND
+    if CANNOT_RUN in (rc_rec, rc_rep):
+        return CANNOT_RUN
+    return NO_RISE
+
+
 def verdict_rc(verdicts: list[dict]) -> int:
     """PURE. 1 if any RISE; 2 if nothing at all was measured; else 0."""
     if any(v["status"] == "RISE" for v in verdicts):
@@ -220,8 +295,7 @@ def format_report(verdicts: list[dict], week: str, min_samples: int = MIN_SAMPLE
         if v["status"] == "NOT MEASURED":
             lines.append(f"{head} — NOT MEASURED: {v['why']}. {meds}")
         else:
-            pct = round((v["cur"] - v["prev"]) / v["prev"] * 100)
-            lines.append(f"{head} — {meds}, {pct:+d}%")
+            lines.append(f"{head} — {meds}, {pct_text(v['prev'], v['cur'])}")
     rc = verdict_rc(verdicts)
     if rc == RISE_FOUND:
         n = sum(v["status"] == "RISE" for v in verdicts)
@@ -235,7 +309,8 @@ def format_report(verdicts: list[dict], week: str, min_samples: int = MIN_SAMPLE
 
 
 def parse_log(text: str) -> list[dict]:
-    """PURE. JSON-lines -> rows. A malformed or incomplete line is CANNOT RUN, never skipped."""
+    """PURE. JSON-lines -> rows. A malformed, incomplete or mistyped line is CANNOT RUN, never
+    skipped — and never a crash later, whose exit 1 is the RISE code (r1 R1-F4)."""
     rows = []
     for i, line in enumerate(text.splitlines(), 1):
         if not line.strip():
@@ -244,9 +319,22 @@ def parse_log(text: str) -> list[dict]:
             r = json.loads(line)
         except json.JSONDecodeError as exc:
             raise CannotRun(f"log line {i} is not JSON ({exc})") from None
-        missing = [k for k in ("pr", "sha", "week", "job", "seconds") if k not in r]
+        if not isinstance(r, dict):
+            raise CannotRun(f"log line {i} is not a JSON object")
+        missing = [k for k in LOG_FIELDS if k not in r]
         if missing:
             raise CannotRun(f"log line {i} lacks {', '.join(missing)}")
+        # Each later check reads only the fields PRESENT, so the missing-field refusal above is the
+        # ONLY thing that refuses a short line — its mutant then accepts the line, never crashes (R1-F5).
+        bad = [k for k, t in LOG_FIELDS.items() if k in r and type(r[k]) is not t]
+        if bad:
+            raise CannotRun(f"log line {i} has the wrong type for {', '.join(bad)}")
+        try:
+            _ts(r.get("merged_at") or "2000-01-01T00:00:00Z")
+        except ValueError:
+            raise CannotRun(f"log line {i} has merged_at {r['merged_at']!r}, not an ISO time") from None
+        if "week" in r and not valid_week(r["week"]):
+            raise CannotRun(f"log line {i} has week {r['week']!r}, not a real ISO week")
         rows.append(r)
     return rows
 
@@ -273,8 +361,16 @@ def append_log(path: pathlib.Path, fetched: list[dict]) -> int:
     return len(add)
 
 
-def report_main(path: pathlib.Path, week: str | None, min_samples: int = MIN_SAMPLES) -> int:
-    """Read the log, evaluate one week against the week before it, print, return the rc."""
+def utc_today() -> _dt.date:
+    return _dt.datetime.now(_dt.timezone.utc).date()
+
+
+def report_main(path: pathlib.Path, week: str | None, min_samples: int = MIN_SAMPLES,
+                today: _dt.date | None = None) -> int:
+    """Read the log, evaluate one week against the week before it, print, return the rc.
+
+    The week defaults to the last COMPLETE ISO week before `today` (UTC), never the log's latest.
+    """
     try:
         rows = read_log(path)
     except CannotRun as exc:
@@ -284,7 +380,11 @@ def report_main(path: pathlib.Path, week: str | None, min_samples: int = MIN_SAM
         print(f"CANNOT RUN — the log {path} holds no rows. Run --record first. "
               f"TREAT THIS AS NOT MEASURED.")
         return CANNOT_RUN
-    wk = week or latest_week(rows)
+    wk = week or last_complete_week(today or utc_today())
+    if not any(r["week"] == wk for r in rows):
+        print(f"CANNOT RUN — the log {path} holds no merge in {wk}; its latest merge is in "
+              f"{latest_week(rows)}. Run --record. TREAT THIS AS NOT MEASURED, never as no rise.")
+        return CANNOT_RUN
     verdicts = compare_weeks(rows, wk, min_samples)
     print(format_report(verdicts, wk, min_samples))
     return verdict_rc(verdicts)
@@ -292,68 +392,114 @@ def report_main(path: pathlib.Path, week: str | None, min_samples: int = MIN_SAM
 
 # ---------------------------------------------------------------- the FETCH: read-only `gh`
 
-def _gh(args: list[str]) -> str:
+def _gh(args: list[str], timeout: float = GH_TIMEOUT_S) -> str:
     """Run read-only `gh`. -> stdout. Any failure is CannotRun, never an empty answer."""
     if not shutil.which("gh"):
         raise CannotRun("`gh` is not on PATH")
     try:
         p = subprocess.run(["gh", *args], cwd=ROOT, capture_output=True, text=True,
-                           timeout=GH_TIMEOUT_S)
+                           timeout=timeout)
     except subprocess.TimeoutExpired:
-        raise CannotRun(f"`gh {' '.join(args[:2])}` timed out after {GH_TIMEOUT_S}s") from None
+        raise CannotRun(f"`gh {' '.join(args[:2])}` timed out after {timeout:g}s") from None
     if p.returncode != 0:
         raise CannotRun(f"`gh {' '.join(args[:2])}` exited {p.returncode}: "
                         f"{p.stderr.strip()[:300]}")
     return p.stdout
 
 
-def _gh_json(gh, args: list[str]):
-    out = gh(args)
+def _gh_json(gh, args: list[str], timeout: float):
+    out = gh(args, timeout=timeout)
     try:
         return json.loads(out)
     except json.JSONDecodeError:
         raise CannotRun(f"`gh {' '.join(args[:2])}` returned no JSON: {out[:200]!r}") from None
 
 
+def page_is_whole(payload, key: str) -> bool:
+    """PURE. True only when a list response holds every item: its `total_count` is present and no
+    larger than the items on the page. A truncated page is refused, never read as whole (R1-F9)."""
+    if not isinstance(payload, dict) or not isinstance(payload.get(key), list):
+        return False
+    tc = payload.get("total_count")
+    return isinstance(tc, int) and tc <= len(payload[key])
+
+
+class _OutOfBudget(Exception):
+    """The time budget would be exceeded by the next `gh` call."""
+
+
 def fetch(since: str, skip: set[tuple], gh=_gh, budget_s: float = DEFAULT_BUDGET_S,
           clock=time.monotonic) -> tuple[list[dict], dict]:
     """Read every PR merged on or after `since` -> (rows, stats). `gh` is injectable for tests.
 
-    A PR whose (number, head sha) is in `skip` is not fetched again. When the time budget runs
-    out, the remaining PRs are counted in stats["unread"] and the caller must say PARTIAL.
+    A PR whose (number, head sha) is in `skip` is not fetched again. EVERY `gh` call is bounded by
+    the budget left — checked before the call, and passed as its timeout — so the whole fetch ends
+    within the budget (r1 R1-F8). When it runs out, the PR being read and the rest are counted in
+    stats["unread"], and the caller must say PARTIAL.
     """
     t0 = clock()
-    repo = _gh_json(gh, ["repo", "view", "--json", "nameWithOwner"]).get("nameWithOwner")
-    if not repo:
-        raise CannotRun("`gh repo view` named no repository")
-    prs = _gh_json(gh, ["pr", "list", "--state", "merged", "--search", f"merged:>={since}",
-                        "--limit", "500", "--json", "number,headRefOid,mergedAt"])
+
+    def call(args):
+        left = budget_s - (clock() - t0)
+        if left <= 0:
+            raise _OutOfBudget
+        return _gh_json(gh, args, min(GH_TIMEOUT_S, left))
+
+    try:
+        repo = call(["repo", "view", "--json", "nameWithOwner"]).get("nameWithOwner")
+        if not repo:
+            raise CannotRun("`gh repo view` named no repository")
+        prs = call(["pr", "list", "--state", "merged", "--search", f"merged:>={since}",
+                    "--limit", str(PR_LIMIT), "--json", "number,headRefOid,mergedAt"])
+    except _OutOfBudget:
+        raise CannotRun(f"the {budget_s:g}s budget ran out before the merged PRs were listed") from None
     if not isinstance(prs, list):
         raise CannotRun("`gh pr list` did not return a list")
+    if len(prs) >= PR_LIMIT:
+        raise CannotRun(f"`gh pr list` returned {len(prs)} PRs, its --limit, so the list may be "
+                        f"truncated; use a later --since")
     stats = {"prs": len(prs), "skipped_known": 0, "no_ci_run": 0, "incomplete": 0,
              "recorded": 0, "unread": 0}
     rows: list[dict] = []
-    for i, pr in enumerate(sorted(prs, key=lambda p: p["mergedAt"])):
+    ordered = sorted(prs, key=lambda p: p["mergedAt"])
+    for i, pr in enumerate(ordered):
         if (pr["number"], pr["headRefOid"]) in skip:
             stats["skipped_known"] += 1
             continue
-        if clock() - t0 > budget_s:
-            stats["unread"] = len(prs) - i
+        try:
+            got = _read_pr(call, repo, pr)
+        except _OutOfBudget:
+            rest = [(q["number"], q["headRefOid"]) in skip for q in ordered[i:]]
+            stats["unread"] = rest.count(False)
+            stats["skipped_known"] += rest.count(True)
             break
-        sha = pr["headRefOid"]
-        runs = _gh_json(gh, ["api", f"repos/{repo}/actions/runs?head_sha={sha}&per_page=50"])
-        run = pick_ci_run(runs.get("workflow_runs", []), sha)
-        if run is None:
-            stats["no_ci_run"] += 1
+        if isinstance(got, str):
+            stats[got] += 1
             continue
-        if run.get("status") != "completed":
-            stats["incomplete"] += 1
-            continue
-        jobs = _gh_json(gh, ["api", f"repos/{repo}/actions/runs/{run['id']}/jobs"
-                                    f"?filter=latest&per_page=100"])
-        rows.extend(job_rows(pr["number"], sha, pr["mergedAt"], jobs.get("jobs", [])))
+        rows.extend(got)
         stats["recorded"] += 1
     return rows, stats
+
+
+def _read_pr(call, repo: str, pr: dict):
+    """One PR -> its rows, or the stats key that says why it has none."""
+    sha = pr["headRefOid"]
+    runs = call(["api", f"repos/{repo}/actions/runs?head_sha={sha}&per_page=50"])
+    if not page_is_whole(runs, "workflow_runs"):
+        raise CannotRun(f"the runs list for {sha[:12]} is incomplete or truncated")
+    run = pick_ci_run(runs["workflow_runs"], sha)
+    if run is None:
+        return "no_ci_run"
+    if run.get("status") != "completed":
+        return "incomplete"
+    jobs = call(["api", f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100"])
+    if not page_is_whole(jobs, "jobs"):
+        raise CannotRun(f"the jobs list of run {run['id']} is incomplete or truncated")
+    for j in jobs["jobs"]:
+        if j.get("conclusion") == "cancelled" and j.get("check_run_url"):
+            path = j["check_run_url"].split("api.github.com/", 1)[-1] + "/annotations"
+            j["timed_out"] = is_timeout_kill(call(["api", path]))
+    return job_rows(pr["number"], sha, pr["mergedAt"], jobs["jobs"])
 
 
 def default_log() -> pathlib.Path:
@@ -371,16 +517,26 @@ def default_log() -> pathlib.Path:
     return c.parent / ".claude" / "ci-durations.jsonl"
 
 
-def record_main(path: pathlib.Path, since: str, gh=_gh, budget_s: float = DEFAULT_BUDGET_S) -> int:
+def record_main(path: pathlib.Path, since: str, gh=_gh, budget_s: float = DEFAULT_BUDGET_S,
+                clock=time.monotonic) -> int:
     try:
         known = {(r["pr"], r["sha"]) for r in read_log(path)}
-        rows, st = fetch(since, known, gh=gh, budget_s=budget_s)
+        rows, st = fetch(since, known, gh=gh, budget_s=budget_s, clock=clock)
     except CannotRun as exc:
         print(f"CANNOT RUN — {exc}. TREAT THIS AS NOT RECORDED.")
+        return CANNOT_RUN
+    except Exception as exc:  # noqa: BLE001 - an unexpected gh payload shape is CANNOT RUN, not rc 1
+        print(f"CANNOT RUN — an unexpected gh answer ({type(exc).__name__}: {exc}). "
+              f"TREAT THIS AS NOT RECORDED.")
         return CANNOT_RUN
     if st["prs"] == 0:
         print(f"CANNOT RUN — nothing parsed: 0 merged PRs since {since}. "
               f"TREAT THIS AS NOT RECORDED.")
+        return CANNOT_RUN
+    if st["recorded"] == 0 and st["prs"] > st["skipped_known"] + st["unread"]:
+        print(f"CANNOT RUN — nothing recorded: {st['prs'] - st['skipped_known']} PR(s) needed reading "
+              f"and none was ({st['no_ci_run']} without a `{WORKFLOW}` run on their head, "
+              f"{st['incomplete']} with the run not yet complete). TREAT THIS AS NOT RECORDED.")
         return CANNOT_RUN
     added = append_log(path, rows)
     print(f"recorded {st['recorded']} PR(s), {added} new row(s) -> {path}; "
@@ -460,7 +616,7 @@ def _self_test_body() -> int:
           RISE_FOUND)
     check("⭐ ...and the report names the job and both medians",
           lambda: ("RISE" in format_report(compare_weeks(rise2, "2026-W40"), "2026-W40")
-                   and "mutation-sweep [slowest shard] — 2026-W39 600s (n=3) -> 2026-W40 800s (n=3), +33%"
+                   and "mutation-sweep [slowest shard] — 2026-W39 600s (n=3) -> 2026-W40 800s (n=3), +33.3%"
                    in format_report(compare_weeks(rise2, "2026-W40"), "2026-W40")), True)
 
     # --- adjacent negatives: 24% does not warn, 25% does — at two baselines
@@ -568,34 +724,90 @@ def _self_test_body() -> int:
           lambda: pick_ci_run(runs[:1], "abc"), None)
     check("...and None when no run at all is on that sha", lambda: pick_ci_run(runs, "nope"), None)
 
-    # --- the log parser refuses, never skips
-    check("a malformed log line is CANNOT RUN, not skipped",
-          lambda: parse_log('{"pr": 1}\nnot json\n'), "raised CannotRun: log line 1 lacks sha, week, job, seconds")
+    # --- R1-F1: a cancelled job is two things — a timeout kill (kept, the slowest) or not (dropped)
+    jobs3 = [_job("mutation-sweep (1)", "2026-11-08T01:05:53Z", "2026-11-08T01:10:53Z"),
+             dict(_job("mutation-sweep (2)", "2026-11-08T01:05:53Z", "2026-11-08T01:35:55Z", "cancelled"),
+                  timed_out=True)]
+    r3 = {r["job"]: r["seconds"] for r in job_rows(9, "t1", "2026-11-08T02:00:00Z", jobs3)}
+    check("⭐ R1-F1: a shard KILLED BY ITS TIMEOUT is recorded, and is the group's slowest shard",
+          lambda: (r3.get("mutation-sweep (2)"), r3.get("mutation-sweep [slowest shard]")), (1802, 1802))
+    jobs4 = [_job("sweep (1)", "2026-11-08T01:00:00Z", "2026-11-08T01:05:00Z"),
+             dict(_job("sweep (2)", "2026-11-08T01:00:00Z", "2026-11-08T01:20:00Z", "cancelled"),
+                  timed_out=False)]
+    r4 = {r["job"]: r["seconds"] for r in job_rows(10, "t2", "2026-11-08T02:00:00Z", jobs4)}
+    check("⭐ R1-F1: a shard cancelled for another reason is dropped, and its group gets NO row "
+          "(never the max of the survivors)", lambda: sorted(r4), ["sweep (1)"])
+    check("is_timeout_kill reads the timeout annotation GitHub records on the check run",
+          lambda: is_timeout_kill([{"message": "Node.js 20 is deprecated"},
+                                   {"message": "The job has exceeded the maximum execution time of 30m0s"}]),
+          True)
+    check("...and another cancel reason is not a timeout kill",
+          lambda: is_timeout_kill([{"message": "The operation was canceled."}]), False)
+
+    # --- the log parser refuses, never skips (R1-F5: each input's ONLY defect is the one named)
+    good = {"pr": 1, "sha": "a", "merged_at": "2026-11-04T00:00:00Z", "week": "2026-W45", "job": "j",
+            "seconds": 1}
+    check("a log line missing a field is CANNOT RUN, not read as data",
+          lambda: parse_log('{"pr": 1}\n'),
+          "raised CannotRun: log line 1 lacks sha, merged_at, week, job, seconds")
+    check("...and a line lacking ONLY merged_at is refused too (R1-F4: it crashed the default week)",
+          lambda: parse_log(json.dumps({k: v for k, v in good.items() if k != "merged_at"})),
+          "raised CannotRun: log line 1 lacks merged_at")
     check("...and a line that is not JSON names its line number",
-          lambda: str(parse_log('\n{"pr": 1, "sha": "a", "week": "w", "job": "j", "seconds": 1}\n{oops')[0]),
+          lambda: parse_log("\n" + json.dumps(good) + "\n{oops"),
           "raised CannotRun: log line 3 is not JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1))")
+    check("R1-F4: seconds as a STRING is refused, never a crash in the report",
+          lambda: parse_log(json.dumps(dict(good, seconds="12"))),
+          "raised CannotRun: log line 1 has the wrong type for seconds")
+    check("...and a week that is not a real ISO week is refused",
+          lambda: parse_log(json.dumps(dict(good, week="2025-W53"))),
+          "raised CannotRun: log line 1 has week '2025-W53', not a real ISO week")
+    check("...and a well-formed line is read", lambda: parse_log(json.dumps(good)), [good])
+    check("valid_week refuses a week that does not exist (2025 has 52)",
+          lambda: (valid_week("2026-W53"), valid_week("2025-W53"), valid_week("2026-W00"),
+                   valid_week("2026-W5")), (True, False, False, False))
+    check("last_complete_week is the ISO week BEFORE today's, at two dates",
+          lambda: (last_complete_week(_dt.date(2026, 11, 9)), last_complete_week(_dt.date(2027, 1, 6))),
+          ("2026-W45", "2026-W53"))
+
+    # --- R1-F7: the printed percentage never contradicts the verdict
+    edge = _rows("verify", A, [1000] * 3) + _rows("verify", B, [1249, 1249, 1250, 1250], 10)
+    check("R1-F7: a 24.95% rise prints as OK with +24.9%, never a rounded +25%",
+          lambda: [ln.strip() for ln in format_report(compare_weeks(edge, "2026-W45"), "2026-W45")
+                   .splitlines() if " verify " in ln],
+          ["OK           verify — 2026-W44 1000s (n=3) -> 2026-W45 1249.5s (n=4), +24.9%"])
+    check("pct_text truncates toward zero, at a fall and an exact rise",
+          lambda: (pct_text(300, 100), pct_text(100, 125)), ("-66.6%", "+25.0%"))
 
     # --- the FETCH, through an injected gh: the wiring from PR list to rows
     gh_calls: list[list[str]] = []
+    timeouts: list[float] = []
+    now = [0.0]
 
-    def fake_gh(prs, runs_by_sha, jobs_by_run):
-        def gh(args):
+    def fake_gh(prs, runs_by_sha, jobs_by_run, notes=None, step=0.0, short=()):
+        def gh(args, timeout):
             gh_calls.append(list(args))
+            timeouts.append(timeout)
+            now[0] += step
             if args[0] == "repo":
                 return json.dumps({"nameWithOwner": "o/r"})
             if args[0] == "pr":
                 return json.dumps(prs)
             path = args[1]
+            if path.endswith("/annotations"):
+                return json.dumps((notes or {})[int(path.split("/check-runs/")[1].split("/")[0])])
             if "head_sha=" in path:
-                return json.dumps({"workflow_runs": runs_by_sha[path.split("head_sha=")[1].split("&")[0]]})
-            return json.dumps({"jobs": jobs_by_run[int(path.split("/runs/")[1].split("/")[0])]})
+                wr = runs_by_sha[path.split("head_sha=")[1].split("&")[0]]
+                return json.dumps({"total_count": len(wr) + ("runs" in short), "workflow_runs": wr})
+            js = jobs_by_run[int(path.split("/runs/")[1].split("/")[0])]
+            return json.dumps({"total_count": len(js) + ("jobs" in short), "jobs": js})
         return gh
 
-    gh1 = fake_gh([{"number": 543, "headRefOid": "abc", "mergedAt": "2026-11-08T22:11:59Z"},
-                   {"number": 544, "headRefOid": "ghi", "mergedAt": "2026-11-09T05:38:06Z"}],
-                  {"abc": [dict(runs[2], status="completed")],
-                   "ghi": [{"name": "CI", "head_sha": "ghi", "id": 8, "status": "in_progress"}]},
-                  {6: jobs1, 8: jobs2})
+    pr543 = {"number": 543, "headRefOid": "abc", "mergedAt": "2026-11-08T22:11:59Z"}
+    pr544 = {"number": 544, "headRefOid": "ghi", "mergedAt": "2026-11-09T05:38:06Z"}
+    runs543 = {"abc": [dict(runs[2], status="completed")],
+               "ghi": [{"name": "CI", "head_sha": "ghi", "id": 8, "status": "in_progress"}]}
+    gh1 = fake_gh([pr543, pr544], runs543, {6: jobs1, 8: jobs2})
 
     def fetched(skip=frozenset(), **kw):
         rows, st = fetch("2026-11-01", set(skip), gh=gh1, **kw)
@@ -614,66 +826,142 @@ def _self_test_body() -> int:
           lambda: (fetched({(543, "abc")})[1]["skipped_known"],
                    fetched({(543, "abc")})[1]["recorded"]), (1, 0))
 
-    def budget_run():
-        ticks = iter([0, 0, 500, 500, 500])
-        st = fetched(budget_s=100, clock=lambda: next(ticks))[1]
-        return st["recorded"], st["unread"]
-    check("an exhausted time budget leaves PRs counted as unread, never silently dropped",
-          budget_run, (1, 1))
+    def timeout_fetch():
+        tjobs = [_job("mutation-sweep (1)", "2026-11-08T01:05:53Z", "2026-11-08T01:10:53Z"),
+                 dict(_job("mutation-sweep (2)", "2026-11-08T01:05:53Z", "2026-11-08T01:35:55Z", "cancelled"),
+                      check_run_url="https://api.github.com/repos/o/r/check-runs/77"),
+                 dict(_job("verify", "2026-11-08T01:05:53Z", "2026-11-08T01:06:53Z", "cancelled"),
+                      check_run_url="https://api.github.com/repos/o/r/check-runs/78")]
+        g = fake_gh([pr543], {"abc": [dict(runs[2], status="completed")]}, {6: tjobs},
+                    {77: [{"message": "The job has exceeded the maximum execution time of 30m0s"}],
+                     78: [{"message": "The operation was canceled."}]})
+        rows, _ = fetch("2026-11-05", set(), gh=g)
+        return {r["job"]: r["seconds"] for r in rows}
+    check("⭐ R1-F1 wiring: fetch reads each cancelled job's annotations — a timeout kill is the "
+          "slowest shard, another cancel is dropped",
+          timeout_fetch, {"mutation-sweep (1)": 300, "mutation-sweep (2)": 1802,
+                          "mutation-sweep [slowest shard]": 1802})
 
-    def broken_gh(args):
+    def budget_run():
+        # Each gh call takes 10 s on the fake clock; the budget is 35 s. PR 543 needs two calls
+        # (runs, jobs) and ends at 40 s, so PR 544 is unread. Every call's timeout is the budget LEFT.
+        now[0] = 0.0
+        timeouts.clear()
+        g = fake_gh([pr543, pr544], runs543, {6: jobs1, 8: jobs2}, step=10.0)
+        _, st = fetch("2026-11-01", set(), gh=g, budget_s=35, clock=lambda: now[0])
+        return st["recorded"], st["unread"], timeouts
+    check("⭐ R1-F8: every gh call is bounded by the budget left, and an exhausted budget leaves "
+          "the PR unread, never silently dropped", budget_run, (1, 1, [35, 25, 15, 5]))
+
+    def refused(prs, short=()):
+        try:
+            fetch("2026-11-01", set(), gh=fake_gh(prs, runs543, {6: jobs1, 8: jobs2}, short=short))
+        except CannotRun as exc:
+            return str(exc).split(",")[0].split(" is ")[0]
+        return "read"
+    check("R1-F9: a PR list as long as its --limit may be truncated, and is refused",
+          lambda: refused([dict(pr543, number=n) for n in range(PR_LIMIT)]),
+          f"`gh pr list` returned {PR_LIMIT} PRs")
+    check("R1-F9: a jobs page smaller than its total_count is refused",
+          lambda: refused([pr543], ("jobs",)), "the jobs list of run 6")
+    check("R1-F9: a runs page smaller than its total_count is refused",
+          lambda: refused([pr543], ("runs",)), "the runs list for abc")
+    check("...and whole pages are read", lambda: refused([pr543]), "read")
+
+    def broken_gh(args, timeout):
         raise CannotRun("`gh api` exited 1: HTTP 401")
-    with tempfile.TemporaryDirectory() as td:
-        lp = pathlib.Path(td) / "log.jsonl"
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_b = record_main(lp, "2026-11-01", gh=broken_gh)
-        check("a gh failure while recording is rc 2 and says NOT RECORDED",
-              lambda: (rc_b, "TREAT THIS AS NOT RECORDED" in buf.getvalue()), (CANNOT_RUN, True))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_e = record_main(lp, "2026-10-15", gh=fake_gh([], {}, {}))
-        check("0 merged PRs parsed is rc 2 (nothing parsed), never a quiet success",
-              lambda: (rc_e, "nothing parsed: 0 merged PRs since 2026-10-15" in buf.getvalue()),
-              (CANNOT_RUN, True))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_p = record_main(pathlib.Path(td) / "p.jsonl", "2026-11-01", gh=gh1, budget_s=-1)
-        check("a record cut short by the budget is rc 2 and says PARTIAL",
-              lambda: (rc_p, "PARTIAL" in buf.getvalue()), (CANNOT_RUN, True))
+
+    def rec(gh, since="2026-11-01", **kw):
+        with tempfile.TemporaryDirectory() as td:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = record_main(pathlib.Path(td) / "log.jsonl", since, gh=gh, **kw)
+            return rc, buf.getvalue()
+    check("a gh failure while recording is rc 2 and says NOT RECORDED",
+          lambda: (lambda r: (r[0], "TREAT THIS AS NOT RECORDED" in r[1]))(rec(broken_gh)), (CANNOT_RUN, True))
+    check("0 merged PRs parsed is rc 2 (nothing parsed), never a quiet success",
+          lambda: (lambda r: (r[0], "nothing parsed: 0 merged PRs since 2026-10-15" in r[1]))(
+              rec(fake_gh([], {}, {}), "2026-10-15")), (CANNOT_RUN, True))
+    def partial():
+        now[0] = 0.0
+        g = fake_gh([pr543, pr544], runs543, {6: jobs1, 8: jobs2}, step=10.0)
+        return rec(g, budget_s=35, clock=lambda: now[0])
+    check("a record cut short by the budget is rc 2 and says PARTIAL",
+          lambda: (lambda r: (r[0], "PARTIAL — the 35s budget ran out with 1 PR(s) unread" in r[1]))(partial()),
+          (CANNOT_RUN, True))
+    check("...and a budget spent before the PRs are even listed is rc 2, NOT RECORDED",
+          lambda: (lambda r: (r[0], "budget ran out before the merged PRs were listed" in r[1]))(
+              rec(gh1, budget_s=-1)), (CANNOT_RUN, True))
+    renamed = fake_gh([pr543, pr544], {"abc": [dict(runs[2], name="CI v2", status="completed")],
+                                       "ghi": [dict(runs543["ghi"][0], name="CI v2")]}, {})
+    check("⭐ R1-F2: PRs listed but NONE recorded (the CI workflow renamed) is rc 2, never rc 0",
+          lambda: (lambda r: (r[0], "nothing recorded: 2 PR(s) needed reading" in r[1]))(rec(renamed)),
+          (CANNOT_RUN, True))
+    check("R1-F4: an unexpected gh payload shape (a PR without mergedAt) is rc 2, never a crash",
+          lambda: (lambda r: (r[0], "unexpected gh answer (KeyError" in r[1]))(
+              rec(fake_gh([{"number": 1, "headRefOid": "x"}, pr543], runs543, {6: jobs1}))),
+          (CANNOT_RUN, True))
 
     # --- the WIRING: report_main over a log file, the path a caller takes
+    T46, T41 = _dt.date(2026, 11, 10), _dt.date(2026, 10, 6)   # in W46 and W41
     with tempfile.TemporaryDirectory() as td:
         lp = pathlib.Path(td) / "log.jsonl"
         append_log(lp, rise1 + flat2)
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_w = report_main(lp, None)
-        check("⭐ report_main over a logged rise exits 1 and WARNs for the LATEST week (W45)",
-              lambda: (rc_w, "WARN: 1 job(s) rose 25% or more in 2026-W45" in buf.getvalue()),
+
+        def rep(week, n=MIN_SAMPLES, today=T46, path=lp):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = report_main(path, week, n, today)
+            return rc, buf.getvalue()
+        check("⭐ report_main over a logged rise exits 1 and WARNs for the last COMPLETE week (W45)",
+              lambda: (lambda r: (r[0], "WARN: 1 job(s) rose 25% or more in 2026-W45" in r[1]))(rep(None)),
               (RISE_FOUND, True))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_w2 = report_main(lp, "2026-W40")
+        check("⭐ R1-F3: ...at a second today, the default is THAT today's last complete week (W40)",
+              lambda: (lambda r: (r[0], "no measured job rose 25% or more in 2026-W40" in r[1]))(
+                  rep(None, today=T41)), (NO_RISE, True))
         check("⭐ ...and with --week it evaluates THAT week: W40's 24% is no rise, rc 0",
-              lambda: (rc_w2, "no measured job rose 25% or more in 2026-W40" in buf.getvalue()),
-              (NO_RISE, True))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_n = report_main(lp, "2026-W45", 4)
+              lambda: (lambda r: (r[0], "no measured job rose 25% or more in 2026-W40" in r[1]))(
+                  rep("2026-W40")), (NO_RISE, True))
         check("report_main passes its minimum to the rule: at min 4, W45's 3 samples are NOT MEASURED",
-              lambda: (rc_n, "min 4 samples per week" in buf.getvalue()), (CANNOT_RUN, True))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_m = report_main(pathlib.Path(td) / "absent.jsonl", None)
+              lambda: (lambda r: (r[0], "min 4 samples per week" in r[1]))(rep("2026-W45", 4)),
+              (CANNOT_RUN, True))
+        check("⭐ R1-F2: a STALE log (no merge in the evaluated week) is rc 2 and names its latest week",
+              lambda: (lambda r: (r[0], "holds no merge in 2026-W48; its latest merge is in 2026-W45"
+                                  in r[1]))(rep(None, today=_dt.date(2026, 12, 1))), (CANNOT_RUN, True))
         check("an empty or absent log is rc 2, never rc 0",
-              lambda: (rc_m, "holds no rows" in buf.getvalue()), (CANNOT_RUN, True))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc_cli = main(["--report", "--log", str(lp), "--week", "2026-W45"])
+              lambda: (lambda r: (r[0], "holds no rows" in r[1]))(rep(None, path=pathlib.Path(td) / "absent.jsonl")),
+              (CANNOT_RUN, True))
+
+        def cli(argv, gh=broken_gh, today=T46):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = main(argv, gh=gh, today=today)
+            return rc, buf.getvalue()
         check("⭐ the CLI's --report path reaches the rule: rc 1 and the WARN line",
-              lambda: (rc_cli, "WARN: 1 job(s) rose 25% or more in 2026-W45" in buf.getvalue()),
-              (RISE_FOUND, True))
+              lambda: (lambda r: (r[0], "WARN: 1 job(s) rose 25% or more in 2026-W45" in r[1]))(
+                  cli(["--report", "--log", str(lp), "--week", "2026-W45"])), (RISE_FOUND, True))
+        check("R1-F4: --week 2025-W53 (no such week) is rc 2 with a reason, never a crash's rc 1",
+              lambda: (lambda r: (r[0], "is not a real ISO week" in r[1]))(
+                  cli(["--report", "--log", str(lp), "--week", "2025-W53"])), (CANNOT_RUN, True))
+        check("R1-F4: ANY uncaught error in the CLI is rc 2, never rc 1 (the RISE code)",
+              lambda: (lambda r: (r[0], "CANNOT RUN — an unexpected error: TypeError" in r[1]))(
+                  cli(["--report", "--log", str(lp)], today="not-a-date")), (CANNOT_RUN, True))
+
+        # R1-F6: record + report through main with an injected gh — the combined rc.
+        known = fake_gh([pr543], runs543, {6: jobs1})
+        # The record half is rc 2 here because its budget is spent (`--budget-s -1`); the same rc as PARTIAL.
+        check("⭐ R1-F6: a record that is rc 2 beside a measured RISE is rc 1 — the rise is not masked",
+              lambda: cli(["--log", str(lp), "--budget-s", "-1"], gh=known)[0], RISE_FOUND)
+        lp2 = pathlib.Path(td) / "flat.jsonl"
+        append_log(lp2, flat1)
+        check("⭐ R1-F6: a record that is rc 2 beside a report of no rise is rc 2, never rc 0",
+              lambda: cli(["--log", str(lp2), "--budget-s", "-1"], gh=known)[0], CANNOT_RUN)
+        append_log(lp2, job_rows(543, "abc", "2026-11-08T22:11:59Z", jobs1))
+        check("...and a complete record beside a report of no rise is rc 0",
+              lambda: cli(["--log", str(lp2)], gh=known)[0], NO_RISE)
+        check("combine_rc: RISE dominates, then CANNOT RUN from either half, at every pair",
+              lambda: [combine_rc(0, 0), combine_rc(0, 1), combine_rc(0, 2),
+                       combine_rc(2, 0), combine_rc(2, 1), combine_rc(2, 2)], [0, 1, 2, 2, 1, 2])
 
     print(f"{ok}/{ok + fail} self-test cases passed")
     drift = _count_drift(ok + fail)
@@ -693,31 +981,43 @@ def _count_drift(actual: int) -> str | None:
     return None
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, gh=_gh, today: _dt.date | None = None) -> int:
+    """The CLI. `gh` and `today` are injectable so the record + report path is cased offline."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--record", action="store_true", help="fetch and append only")
     ap.add_argument("--report", action="store_true", help="evaluate the log only")
     ap.add_argument("--since", help="record PRs merged on or after this date (default: 21 days ago)")
-    ap.add_argument("--week", help="the ISO week to evaluate, YYYY-Www (default: the latest merge's)")
+    ap.add_argument("--week", help="the ISO week to evaluate, YYYY-Www (default: the last complete week)")
     ap.add_argument("--min-samples", type=int, default=MIN_SAMPLES)
     ap.add_argument("--budget-s", type=float, default=DEFAULT_BUDGET_S)
     ap.add_argument("--log", type=pathlib.Path)
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
-    log = a.log or default_log()
-    since = a.since or (_dt.date.today() - _dt.timedelta(days=21)).isoformat()
-    if a.week and not re.fullmatch(r"\d{4}-W\d{2}", a.week):
-        print(f"CANNOT RUN — --week {a.week!r} is not YYYY-Www.")
+    # ⚠ Every other path is wrapped: an uncaught exception exits 1, which is the RISE code, so a
+    # crash would be filed as a rise by a caller keyed on rc 1 (r1 R1-F4).
+    try:
+        return _run(a, gh, today)
+    except Exception as exc:  # noqa: BLE001 - any crash is CANNOT RUN, never rc 1
+        print(f"CANNOT RUN — an unexpected error: {type(exc).__name__}: {exc}. "
+              f"TREAT THIS AS NOT MEASURED.")
         return CANNOT_RUN
+
+
+def _run(a, gh, today: _dt.date | None) -> int:
+    if a.week and not valid_week(a.week):
+        print(f"CANNOT RUN — --week {a.week!r} is not a real ISO week (YYYY-Www).")
+        return CANNOT_RUN
+    log = a.log or default_log()
+    since = a.since or ((today or utc_today()) - _dt.timedelta(days=21)).isoformat()
     do_record = a.record or not a.report
     do_report = a.report or not a.record
-    rc_rec = record_main(log, since, budget_s=a.budget_s) if do_record else NO_RISE
+    rc_rec = record_main(log, since, gh=gh, budget_s=a.budget_s) if do_record else NO_RISE
     if not do_report:
         return rc_rec
-    rc_rep = report_main(log, a.week, a.min_samples)
-    return CANNOT_RUN if CANNOT_RUN in (rc_rec, rc_rep) else rc_rep
+    rc_rep = report_main(log, a.week, a.min_samples, today)
+    return combine_rc(rc_rec, rc_rep)
 
 
 if __name__ == "__main__":

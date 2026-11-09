@@ -315,16 +315,17 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. DERIVED by running
-    # `analyse()` on the delivered source: 36 keys, every one varied by a case except the eight EXEMPT below.
-    "ci-durations.py": ("append_log.fetched", "append_log.path", "compare_weeks.min_samples", "compare_weeks.rows",
-                        "compare_weeks.week", "fetch.budget_s", "fetch.clock", "fetch.gh", "fetch.since",
-                        "fetch.skip", "format_report.min_samples", "format_report.verdicts", "format_report.week",
-                        "is_rise.cur_median", "is_rise.prev_median", "iso_week.merged_at", "job_rows.jobs",
-                        "job_rows.merged_at", "job_rows.pr", "job_rows.sha", "main.argv", "new_rows.existing",
-                        "new_rows.fetched", "parse_log.text", "pick_ci_run.runs", "pick_ci_run.sha",
-                        "previous_week.week", "read_log.path", "record_main.budget_s", "record_main.gh",
-                        "record_main.path", "record_main.since", "report_main.min_samples", "report_main.path",
-                        "report_main.week", "verdict_rc.verdicts"),
+    # `analyse()` on the delivered source. ⟳ r1 fold: re-derived, 36 -> 47 keys, none lost — combine_rc, is_timeout_kill,
+    # last_complete_week, pct_text and valid_week are new, and main / record_main / report_main gained gh, today, clock.
+    "ci-durations.py": ("append_log.fetched", "append_log.path", "combine_rc.rc_rec", "combine_rc.rc_rep", "compare_weeks.min_samples",
+                        "compare_weeks.rows", "compare_weeks.week", "fetch.budget_s", "fetch.clock", "fetch.gh", "fetch.since",
+                        "fetch.skip", "format_report.min_samples", "format_report.verdicts", "format_report.week", "is_rise.cur_median",
+                        "is_rise.prev_median", "is_timeout_kill.annotations", "iso_week.merged_at", "job_rows.jobs",
+                        "job_rows.merged_at", "job_rows.pr", "job_rows.sha", "last_complete_week.today", "main.argv", "main.gh",
+                        "main.today", "new_rows.existing", "new_rows.fetched", "parse_log.text", "pct_text.cur", "pct_text.prev",
+                        "pick_ci_run.runs", "pick_ci_run.sha", "previous_week.week", "read_log.path", "record_main.budget_s",
+                        "record_main.clock", "record_main.gh", "record_main.path", "record_main.since", "report_main.min_samples",
+                        "report_main.path", "report_main.today", "report_main.week", "valid_week.week", "verdict_rc.verdicts"),
     # backlog #534 (2026-11-06): the batch full sweep, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case except `main.root`, EXEMPT with its reason.
     # ⟳ batch-ci r1 fold: re-derived — 25 -> 41 keys, none lost: `classify`, `import_closure`, `latest_run`,
@@ -1330,15 +1331,23 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
-    # backlog #397 (2026-11-09): ci-durations.py — the fetch through one helper, temp-file paths, and one main() call.
-    "ci-durations.py:fetch.gh": "the fetch is driven through ONE helper, `fetched`, over ONE fake gh; what fetch decides on is the gh ANSWERS (PR list, runs, run status, jobs), varied across the helper's calls and the broken and empty gh of record_main's cases",
-    "ci-durations.py:fetch.since": "the fetch is driven through ONE helper, `fetched`, over ONE fake gh; since is only interpolated into the `gh pr list` query (the date filter is GitHub's), and a case asserts that query carries it",
-    "ci-durations.py:fetch.skip": "the fetch is driven through ONE helper, `fetched`, over ONE fake gh, which passes its own `skip` through as `set(skip)`; the helper's callers vary it (empty, and {(543, 'abc')})",
-    "ci-durations.py:fetch.budget_s": "the fetch is driven through ONE helper, `fetched`, over ONE fake gh, which forwards **kw; its callers vary budget_s (the default, and 100 with a fake clock), and record_main passes -1",
-    "ci-durations.py:fetch.clock": "the fetch is driven through ONE helper, `fetched`, over ONE fake gh, which forwards **kw; its callers vary clock (time.monotonic, and a fake that jumps past the budget)",
-    "ci-durations.py:append_log.path": "a temp-file path; append_log decides on the log's CONTENT, varied (empty, then holding r1)",
+    # backlog #397 (2026-11-09): ci-durations.py — temp-file paths, and the three entry points driven through ONE
+    # helper each (`rec`, `rep`, `cli`), so their parameters have one call site; the helpers' CALLERS vary them.
+    # ⟳ r1 fold: `fetch.*` and `append_log.path` exemptions deleted (now varied at direct call sites); the wrong
+    # `main.argv` reason ("the record path needs the network") deleted — main takes an injected gh (R1-F6).
     "ci-durations.py:read_log.path": "a temp-file path; read_log decides on the file's content, which parse_log's own cases vary",
-    "ci-durations.py:main.argv": "main() has ONE call site, the --report path (the record path needs the network); the rule it reaches is varied at report_main and compare_weeks",
+    "ci-durations.py:record_main.path": "driven through ONE helper, `rec`, which makes a fresh temp-file path per call; record_main decides on the log's CONTENT and the gh answers, and the R1-F6 cases reach it via main over two different logs",
+    "ci-durations.py:record_main.since": "driven through ONE helper, `rec`; its callers vary since (the default 2026-11-01, and 2026-10-15), and since is only interpolated into the `gh pr list` query, which fetch's own case asserts",
+    "ci-durations.py:record_main.gh": "driven through ONE helper, `rec`; its callers vary gh (a broken gh, an empty gh, gh1, a renamed-workflow gh, a malformed-payload gh)",
+    "ci-durations.py:record_main.budget_s": "driven through ONE helper, `rec`, which forwards **kw; its callers vary budget_s (the default, 35 with a fake clock, and -1)",
+    "ci-durations.py:record_main.clock": "driven through ONE helper, `rec`, which forwards **kw; its callers vary clock (time.monotonic, and a fake clock that advances 10 s per gh call)",
+    "ci-durations.py:report_main.path": "driven through ONE helper, `rep`; its callers vary path (a log holding rows, and an absent file)",
+    "ci-durations.py:report_main.week": "driven through ONE helper, `rep`; its callers vary week (None, 2026-W40, 2026-W45)",
+    "ci-durations.py:report_main.min_samples": "driven through ONE helper, `rep`; its callers vary it (the default 3, and 4)",
+    "ci-durations.py:report_main.today": "driven through ONE helper, `rep`; its callers vary today (2026-11-10, 2026-10-06, 2026-12-01)",
+    "ci-durations.py:main.gh": "driven through ONE helper, `cli`; its callers vary gh (a broken gh on the --report paths, and a fake gh whose PR is already logged on the record + report paths)",
+    "ci-durations.py:main.argv": "driven through ONE helper, `cli`; its callers vary argv (--report with --week 2026-W45, with --week 2025-W53, without --week; and the default record + report, with and without --budget-s -1, over two logs)",
+    "ci-durations.py:main.today": "driven through ONE helper, `cli`; its callers vary today (2026-11-10, and a non-date that must crash into rc 2)",
     # backlog #534 (2026-11-06): batch-ci.py's main() runs against ONE fixture clone — every repository, PR and run
     # it acts on lives inside that clone and its fake gh, and those ARE varied (five batches, eight PRs, three runs).
     "batch-ci.py:main.root": "main() is driven against ONE fixture clone: building a second clone would vary the path and nothing main decides on; what it decides on (the batches, PRs, runs and trees inside that clone and the fake gh) is varied across the e2e's calls",
