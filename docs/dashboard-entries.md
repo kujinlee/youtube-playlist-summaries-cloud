@@ -19616,3 +19616,9 @@ replaced (R2-F2). ANY unrecorded PR is rc 2, and an empty jobs list counts as un
 snapshot of a compared week lists unmeasured is NOT MEASURED (R2-F1), and a shard with no timestamps voids its group
 (R2-F4). A row's `week` must equal its merge's ISO week (R2-F6). The `--since` query is asserted at two dates (R2-F7).
 83 -> 93 cases, 44 -> 61 mutations, all 61 hand-checked caught.
+
+## 2026-11-09
+Cleaned up five backlog rows that still read as open after their work had merged. Backlog #401 (the one guard that
+was 68% of the mutation sweep), #534 (one full sweep per batch), #501 (the usage guard reads the meter log's tail)
+and #496 (a settled NEEDS-OWNER marker) are now ticked, each with the PR and commit that shipped it. Backlog #361 stays
+open, but its status no longer says "in review": PR #425 merged, and its remaining audit is backlog #391.
