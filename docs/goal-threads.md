@@ -50,6 +50,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #511 · the harness section of the features page splits into six sub-sections, so its open rows read by area · waits on the weekly reset (Fri 11-06 02:00)
 - fix · backlog #545, PR #539 · the stalled-work hook names a DIRTY PR that has no CI run
 - bookkeeping · backlog #544 · measured twice more on 11-08: a merge of master that changes no flagged file still voids every sibling PR's loosening answers
+- bookkeeping · backlog #578 · filed from the held-pins-head Phase 6 review: every `python3 scripts/X.py`, the merge gate included, runs a stdlib-named file committed in `scripts/`
 ## GOAL comprehensibility-suite
 > 2026-10-27 11:30 "I am aiming to complete comprehensibility suite features. … what is current status of comprehensibility suite?"
 > 2026-10-27 17:45 "we would need to define role and usages for these comprehensibility/status/explainer pages (goals, features, backlogs, dashboard, worklines, brief etc) … these pages are currently developed and produced in ad-hoc manner without overarching design"
