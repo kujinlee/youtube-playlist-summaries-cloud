@@ -19629,3 +19629,13 @@ open, but its status no longer says "in review": PR #425 merged, and its remaini
 
 <!--tech-->
 Backlog #231 Status: seven master push-event runs at N=24 (`gh run view --json jobs`), with the slowest shard varying (19, 6, 19, 16, 7, 2, 11). Four budget stops on 11-08/09: PR #542, PR #546 twice, and master run 42634452353 (sweep-red issue #548). Docs only.
+
+## 2026-11-09
+A redesign no longer goes unreviewed because the review round cap was reached. The cap limits how many rounds one
+design gets; when review concludes the design must change, the new design starts again at round 1 with both reviewers.
+A second redesign of the same thing goes to the owner instead.
+<!--tech-->
+`docs/review-method.md` §0 Q4c, after the round table: "A REDESIGN RESTARTS THE COUNT" (owner 2026-11-09 10:41, asked on
+the backlog #586 walkthrough). New review id `<subject>-redesign-r1-*`; the old last coordinator doc gets a
+`REDESIGNED -> <id>` line; old findings stay disposed; a second redesign is notified to the human. First use:
+`spec-586-redesign-r1` (both halves) on PR #552.
