@@ -8,7 +8,9 @@ answer A: record under `strace -f`). Written 2026-11-09 for backlog #586, folded
 was the cap), then folded with the owner's decisions (§7). The redesign (the dedicated recording job and the
 strace recorder) is reviewed as its own stream, `spec-586-redesign`: round 1 (both halves, 20 findings) is
 folded here as MECHANISM changes inside the owner's decisions
-(`docs/reviews/coordinator/spec-586-redesign-r1-coordinator.md`). Nothing here is built. Every number is marked
+(`docs/reviews/coordinator/spec-586-redesign-r1-coordinator.md`). Round 2 (Codex, 7 findings) found every High
+inside a rule round 1's fold had ADDED, so its fold SIMPLIFIES: it removes path modelling and widens the refusal
+or the pick instead of adding another layer (`docs/reviews/coordinator/spec-586-redesign-r2-coordinator.md`). Nothing here is built. Every number is marked
 MEASURED (run) or INFERRED (reasoned, not run). The read sets on record were taken by an AUDIT-HOOK spike
 (`docs/reviews/measurements/2026-11-09-observed-reads-spike.md`), not by strace; §5 says which figures that
 affects.
@@ -78,7 +80,10 @@ whose two sets differ is marked `seed_dependent` in its record, so shadow mode c
 `CHILD_HOME`, so suite U can write a file (under the tree, under `.home`, or at a fixed path outside it) that a
 later suite T reads; T's own trace then never shows the repo file F that U derived it from. Each run records the
 paths it WROTE (below). A target whose `reads` or `probed`, over the WHOLE trace and not only the staged roots,
-meet a path any OTHER target's run wrote is INCOMPLETE (`cross-run flow`). Paths under a run's copy are compared
+meet a path any OTHER target's run wrote, or whose `listed` directories (over the whole trace) include an
+ANCESTOR of such a path, is INCOMPLETE (`cross-run flow`; r2 Codex F5: U creates `docs/generated/flag`, T lists
+`docs/generated` and branches on it, and no path of T's meets U's write). The check does not model which entry a
+listing revealed: a written path below any directory T listed refuses T. Paths under a run's copy are compared
 relative to that copy; a fresh temp name never collides. The harness already sets `PYTHONDONTWRITEBYTECODE`, so
 bytecode caches are not shared writes. How many targets this rule refuses is UNMEASURED; build step 1 counts it.
 
@@ -94,27 +99,32 @@ largest traced/plain wall-clock ratio build step 1 MEASURES over the spawner sui
 that times out is INCOMPLETE (`timeout`); the target takes today's rule. The job logs and stores a tally of
 refusals by reason, so shadow mode reports the fallback rate by cause.
 
-**The recorder: `strace -f` (owner, 2026-11-09 10:40).** The suite runs as
-`strace -f -yy -o <log> -e trace=%file,%process,getdents64,fchdir,io_uring_setup <argv>`, so every child process
-is traced: python, git, node and the shell. **The calls are chosen by strace CLASS, never by a hand-written list
-(r1 Codex F3, Claude F4):** `%file` is every syscall that takes a file name (`open`, `openat`, `openat2`, the
-`stat` and `access` families, `statx`, `readlink`/`readlinkat`, `execve`/`execveat`, `chdir`, `unlink*`,
-`rename*`, `mkdir*`, `symlink*`, `link*`, …) and `%process` every process-lifecycle call (`clone`, `clone3`,
-`fork`, `vfork`, `execve`, `exit*`, `unshare`, `setns`). Build step 1 MEASURES what the runner's glibc, Python,
-git and Node actually call under it, instead of confirming a guessed list. Owner's Q1 option B — failed opens
-plus stat and access probes — is implemented by strace itself, with no Python stat or access wrapper. How each
-call counts:
-- a SUCCESSFUL open or `execve`: `reads` (an executed script is read by the kernel without a userspace `openat`);
-- a FAILED one, and EVERY path any other `%file` call names, present or not, succeeded or not (`readlink`,
-  `unlink`, `rename`, `mkdir`, `link` failing with `ENOENT` or `EEXIST` are existence probes): `probed` at least;
+**The recorder: `strace -f` (owner, 2026-11-09 10:40).** The suite runs as `strace -f -yy -o <log> <argv>`,
+so every child process is traced: python, git, node and the shell. **There is NO `-e trace=` filter (r2 Codex
+F2):** round 1 chose calls by strace class, and `unshare` and `setns`, two refusal triggers, are in neither
+`%file` nor `%process`, so the filter hid them. strace now logs every syscall and the PARSER classifies each by
+name, so no refusal trigger can be filtered away before it is seen. The parser's table puts every syscall name
+in one class, and **a name the table does not hold makes the trace INCOMPLETE** (`unclassified syscall`): a gap
+in the table costs a target its read set, never a lost read. Build step 1 MEASURES which names the runner's
+glibc, Python, git and Node issue, so the table is filled from the measurement, not a guess. Owner's Q1 option
+B — failed opens plus stat and access probes — is implemented by strace itself, with no Python stat or access
+wrapper. How each call counts:
+- a SUCCESSFUL read-only open or `execve`: `reads` (an executed script is read by the kernel without a userspace
+  `openat`);
+- EVERY path any call names, present or not, succeeded or not: `probed` at least;
 - `readlink*` of a path: `reads` of the link itself (its content is the link's target);
-- an open with `O_CREAT`, `O_WRONLY`, `O_RDWR` or `O_TRUNC`, and the destination of `rename*`, `link*`,
-  `symlink*`, `mkdir*`, and the path of `unlink*`: `wrote`;
+- **a call is a WRITE unless the table names it READ-ONLY (r2 Codex F6).** The read-only class is short and
+  closed (the read-only opens, the `stat`/`access`/`statx` families, `readlink*`, `getdents64`, `execve*`,
+  `chdir`/`fchdir`, and the descriptor and process calls that name no path). Every other call that names a path
+  or a descriptor `-yy` labels, succeeded or not, is `wrote` for every path it names: an open with `O_CREAT`,
+  `O_WRONLY`, `O_RDWR` or `O_TRUNC`, `truncate`/`ftruncate`, the `chmod`, `chown`, `utime*`/`utimensat` and
+  `*xattr` families, `mknod*`, `mkdir*`, `rmdir`, `unlink*`, `link*`, `symlink*`, and BOTH sides of `rename*`.
+  A metadata change is a write because a suite can branch on what `stat` returns;
 - `getdents64` on a descriptor `-yy` names: `listed`.
 
-**What makes a trace INCOMPLETE on sight** (the target takes today's rule, §3): `io_uring_setup` anywhere (an
-open submitted through `io_uring` is not a syscall strace sees; §4.2's "rare" becomes a detected refusal);
-`unshare`, `setns`, `chroot` or `pivot_root`; a `clone`/`clone3` whose flags the parser cannot read; a strace
+**What makes a trace INCOMPLETE on sight** (the target takes today's rule, §3): a syscall name the parser's
+table does not hold; `io_uring_setup` anywhere (an open submitted through `io_uring` is not a syscall strace
+sees; §4.2's "rare" becomes a detected refusal); `unshare`, `setns`, `chroot` or `pivot_root`; a `clone`/`clone3` whose flags the parser cannot read; a strace
 `unfinished`/`resumed` pair that does not match; strace's own nonzero exit; the timeout above.
 
 **Normalising strace's paths against the staged tree.** strace logs a path as the process passed it, so the
@@ -134,20 +144,29 @@ recorder resolves each one before it counts:
   resolved ONLY through the kernel's decoration of the returned descriptor on the same line; a failed or
   path-only call through one is INCOMPLETE (resolving `fd/N` otherwise needs a descriptor table across `dup`,
   `fcntl` and `O_CLOEXEC`, which the recorder does not keep);
-- **symlinks on a failed or path-only call (r1 Claude F2):** `..` is folded lexically, then every component is
-  resolved through a LINK TABLE: the links created during the trace (`symlink*`, `link*`, `rename*` are traced),
-  and none from staging (below). A link that already existed when the staged copy was made cannot point into
-  it, since the copy's temp path did not exist yet; so a path that traverses a link the table cannot resolve, and
-  that could name a staged path, is INCOMPLETE;
+- **`..` is NEVER folded (r2 Codex F3).** Folding it lexically drops a link component before the link can be
+  followed (`outside/link/../flag` with `link -> staged/docs/nested` is `staged/docs/flag` to the kernel). A
+  successful open needs no folding: its `-yy` label is the kernel's own resolution. A FAILED or path-only call
+  whose path, after joining with its cwd or directory label, has a `..` component is INCOMPLETE (`unresolved ..`);
+- **symlinks on a failed or path-only call (r1 Claude F2):** every component is resolved through a LINK TABLE:
+  the links created during the trace (`symlink*`, `link*`, `rename*` are logged), and none from staging (below).
+  A link that already existed when the staged copy was made cannot point into it, since the copy's temp path
+  did not exist yet; so a path that traverses a link the table cannot resolve, and that could name a staged
+  path, is INCOMPLETE;
 - **staging provenance (r1 Codex F5):** `stage_tree` copies with `shutil.copytree`'s default, which DEREFERENCES
   symlinks, so a staged regular file can stand for a repo symlink (21 tracked symlinks, MEASURED,
   `git ls-files -s`, mode `120000`). At staging the recorder builds a map from each staged path under a repo
   symlink (a file link, or any path under a directory link) to its repo link path and the repo path it resolves
   to, through every link in the chain. A read or probe of a mapped staged path records ALL of them, so a PR that
   changes only the target, or only the link, picks. A link whose target leaves the staged roots or does not exist
-  makes any read through it INCOMPLETE (`unmapped staged path`).
+  makes any read through it INCOMPLETE (`unmapped staged path`). **A LISTING is not translated (r2 Codex F4):** a
+  target that lists a mapped staged directory (one at or under a repo directory link) is INCOMPLETE (`listed
+  through a link`), because a change inside the link's target directory changes that listing under a name rule
+  3(b) never sees. A directory that merely HOLDS a link needs nothing: the link is itself a tracked path, so
+  adding or deleting it is an `A` or `D` under that directory.
 
-Only paths that resolve under a staged root count as `reads`, `probed` or `listed`; `wrote` keeps every path.
+Only paths that resolve under a staged root count as `reads`, `probed` or `listed` for rule 3; `wrote`, and
+the cross-run check's reads, probes and listings, keep every path.
 
 **`.git` reads, exactly (r1 Codex F4, Claude F9).** The staged tree has NO `.git`: `stage_tree` copies
 `HARNESS_TREE` only, into a temp directory outside the checkout. Three cases, decided by the path's COMPONENTS,
@@ -169,12 +188,12 @@ never by a prefix, so `.github/workflows/ci.yml` and `.githooks/pre-push` are or
 - `probed`: every path under the staged roots a traced process tried to open and could not, or passed to a
   `stat`- or `access`-family call, present or not;
 - `listed`: the directories under the staged roots any traced process listed (`getdents64`);
-- `wrote`: every path any traced process created, wrote, renamed, linked or unlinked, anywhere (for the
+- `wrote`: every path any traced process named in a call the parser does not class READ-ONLY, anywhere (for the
   cross-run rule; never a dependency of its own);
 - `git_membership`: `true` when a traced process read the real checkout's `.git` (above);
 - `trace`: `complete`, or the reason it is not (strace missing, ptrace denied, strace's own exit, a log that did
-  not parse, an unresolved path, `io_uring`, an unmodelled `clone`/`unshare`, a `/proc` path, an unmapped staged
-  path, a cross-run flow, the timeout);
+  not parse, an unclassified syscall, an unresolved path or `..`, `io_uring`, an unmodelled `clone`/`unshare`, a
+  `/proc` path, an unmapped staged path, a listing through a link, a cross-run flow, the timeout);
 - `seed_dependent`: whether the two seeds' sets differed;
 - `recorder`: `strace`, or `audit-hook` under the fallback below;
 - `rc`, the case count, both seeds, the tree's commit, and the VALIDITY KEY (§2 Store).
@@ -184,7 +203,7 @@ The staged-path provenance map is not stored per target: it is a function of R's
 **The build plan's FIRST step: prove the recorder can run (owner, 10:40).** On a GitHub-hosted `ubuntu` runner,
 in the job's own setup, install or locate `strace` and trace one suite that spawns `git`, then check that the
 log names a file the child opened. The same step MEASURES what the rest of this section left INFERRED: the
-syscalls the runner's glibc, Python, git and Node issue under `%file`/`%process`, whether `-yy` decorates
+syscall names the runner's glibc, Python, git and Node issue (the parser's table), whether `-yy` decorates
 `AT_FDCWD`, whether any suite trips `io_uring_setup` (Node 22's libuv), and `TRACE_FACTOR`. If ptrace is denied or strace is unavailable there, v1 FALLS BACK to the
 audit-hook recorder the spike used (`sys.addaudithook` on `open`, `os.listdir`, `os.scandir`, `glob.glob`,
 `os.walk` and the process-creation events, with failed opens and wrapped `os.stat` / `os.lstat` / `os.access` as
@@ -241,10 +260,10 @@ recording never saw). Either list unparseable is FULL.
 2. Mandatory: a target's own source or own manifest changed picks that target, read set or not.
 3. A target with a usable read set (§3) is picked when, over `Δ`: (a) a path, `A`, `M` or `D`, is in its
    `reads` or its `probed`, including a staged path's provenance (a size or mode change seen only through
-   `stat`/`access` is an `M`: r2 Codex F1); (b) an `A` or `D` path P lies under a directory in its `listed`,
-   meaning: the DEEPEST ancestor of P that existed at R is in `listed` (r1 Claude F8; listing a directory reveals
-   exactly its own entries, so a new file inside an existing subdirectory picks only the targets that listed that
-   subdirectory, and a new subdirectory picks those that listed its parent); (c) an `A` or `D` path is named
+   `stat`/`access` is an `M`: r2 Codex F1); (b) an `A` or `D` path P, or ANY of its ancestor
+   directories at any depth, is in its `listed` (r2 Codex F1: deleting a directory's last file removes the
+   directory from its PARENT's listing, which git reports only as the file's `D`; the any-ancestor reading needs
+   no model of which directories appear or vanish, and is the reading §5 scored); (c) an `A` or `D` path is named
    LITERALLY by the target's source OR by a module it imports, through today's import closure (`_importers`):
    its path, its file name or its import spelling (Q1 B; the directory quotes are dropped; r1 Claude F13); or
    (d) `git_membership` is true and `Δ` is not empty.
@@ -279,10 +298,12 @@ build ADDS three things:
 THAT push's own BASE (each push has its own BASE). A miss is a target in that push's `WOULD-SKIP` set for which,
 for some mutant and seed both sweeps ran, the verdicts differ, or whose control is green on one side and red on
 the other. Misses are taken over EVERY push, not the final one, and LATCH: a miss at any push stops the switch,
-even if a later push compares clean. **A seed-flaky difference** (backlog #506's class) is re-run before it
-counts: the comparator runs that one mutant 3 times on each tree under the seed each side used; if either tree
-gives two different verdicts across its runs, the pair is INCONCLUSIVE (logged as a flake, the PR not counted);
-if each tree is stable and they still differ, it is a miss. **A PR counts toward Q4's 20** only when every push
+even if a later push compares clean. **A differing verdict is re-run before it counts** (backlog #506's
+class). A PR or master-push sweep is UNSEEDED (`ci.yml` passes `--seeds` only on the schedule), so its original
+hash order cannot be replayed (r2 Codex F7). The comparator re-runs that one mutant 3 times on EACH tree under
+the SAME fixed seeds (the recorder's two): if both trees give one stable verdict and those differ under some
+seed, it is a miss; anything else (a tree whose verdict varies, or trees that agree under every replay seed, so
+the original difference did not reproduce) is INCONCLUSIVE, logged with the mutant, and the PR is not counted. **A PR counts toward Q4's 20** only when every push
 with a would-skip target compared COMPLETE (both verdict files present, both `complete: true`, a verdict for every
 would-skip target's mutants on each side) and clean.
 
@@ -293,7 +314,7 @@ A read set is used only when every condition holds; otherwise rule 4 (naming) ap
 
 | Condition | Why |
 |---|---|
-| The trace is `complete` (§2): strace ran, ptrace was allowed, the log parsed, every path resolved (kernel-labelled, through the cwd model, the link table or staging provenance), no `io_uring_setup`, no unmodelled `clone`/`unshare`, no unresolved `/proc` path, no cross-run flow, no timeout. Under the audit-hook fallback recorder only: no process-creation event fired | An incomplete trace, or a child the audit hook cannot see (spike caveat 2), has no trustworthy reads |
+| The trace is `complete` (§2): strace ran, ptrace was allowed, the log parsed, every syscall name classified, every path resolved (kernel-labelled, through the cwd model, the link table or staging provenance, never by folding `..`), no `io_uring_setup`, no unmodelled `clone`/`unshare`, no unresolved `/proc` path, no listing through a repo directory link, no cross-run flow (by path or by a listed ancestor), no timeout. Under the audit-hook fallback recorder only: no process-creation event fired | An incomplete trace, or a child the audit hook cannot see (spike caveat 2), has no trustworthy reads |
 | A read set exists, its recording green with the plain control's case count under BOTH seeds | A new, failed or recorder-disturbed suite has no trustworthy reads |
 | Rule 3 reads `Δ = (R..BASE) ∪ (BASE..HEAD)`, unioned and never netted (§2) | Master can change, add or delete a path in `reads`, `probed` or under `listed` after R, and a PR can undo it; the net `R..HEAD` diff hides both (r1 redesign Codex F1 and Claude F1, each reproduced or constructed). The old row "no path in `reads` or `probed` MODIFIED over R..BASE, else today's rule" is REPLACED: such a path is in `Δ`, so rule 3(a) PICKS the target, which is today's selection or more, where today's rule could pick fewer |
 | The payload's validity key (Python, harness hash, recorder, strace version, Node minor, runner image) matches `sweep-select`'s runner | A changed harness, interpreter, recorder, tool or image can read differently |
@@ -316,9 +337,9 @@ mutant's verdict, because a mutant runs the same suite on the same fixtures.
 3. **Reads the recorder mis-attributes or misses:** a path the normaliser resolves wrongly despite §2's rules (a
    defect, cased in §8.4), and a read the `.git` rule drops from a fixture's temp repository that a suite
    depended on. A cross-run flow (a suite reading what another suite wrote, spike caveat 8) is no longer in this
-   bound: each traced run starts in a fresh copy, and a read of another run's write is INCOMPLETE (§2). Under the
-   audit-hook fallback, spike caveats 5 and 7 also apply (a mis-resolved `dir_fd` open, a C extension's own
-   `fopen`), and cross-run flows remain bounded, since the hook records no writes by children.
+   bound: each traced run starts in a fresh copy, and a read of another run's write, or a listing of a directory
+   above it, is INCOMPLETE (§2). Under the audit-hook fallback, spike caveats 5 and 7 also apply (a mis-resolved
+   `dir_fd` open, a C extension's own `fopen`), and cross-run flows remain bounded, since the hook records no writes by children.
 4. **Drift between trees and events.** Reads recorded on master can differ from the PR head's. The recorder
    reproduces a PR shard's environment (§2), but not a PR's own refs or event payload, so a suite that reads
    those can read differently. A shard whose runner image differs from `sweep-select`'s is logged, not re-selected
@@ -344,10 +365,13 @@ trace a suite that started a child. Under strace:
 **How the figures below were scored, against this fold's rules (r1 redesign Claude F8, F13).** The scorer
 (`r3f_opts.py`, round-3 coordinator) applies rule 3(c) WITH today's import closure (`_importers`), as the rule now
 says. It applies 3(b) with the ANY-ancestor reading (an `A`/`D` path picks a target that listed any of its
-ancestors), which picks a superset of the deepest-existing-ancestor rule, so 3(b)'s share of every pick figure is
-an UPPER bound. It nets `R..HEAD` and sends a set stale over R..BASE to today's rule, where `Δ` now picks; that
-raises picks in the lag columns only (R = BASE has an empty R..BASE). The two changes move the figures in
-opposite directions and were NOT re-scored; the net is UNMEASURED, and shadow mode measures it.
+ancestors), which is rule 3(b) since the r2 fold, so 3(b)'s share is scored as the rule now reads. It nets
+`R..HEAD` and sends a set stale over R..BASE to today's rule, where `Δ` now picks; that raises picks in the lag
+columns only (R = BASE has an empty R..BASE). It does not apply the r2 fold's refusals, and every one of them
+can only LOWER the saving: an unclassified syscall, an unlabelled path with `..`, a listing through a repo
+directory link, and a cross-run flow now judged by listed ancestors and by every non-read-only call each send a
+target to today's rule. How many targets they refuse is UNMEASURED; build step 1 counts them by reason. Not
+re-scored; shadow mode measures the net.
 
 The scorer applies §3 to the spike's read sets three ways (r2 Codex F3):
 
@@ -373,8 +397,11 @@ The scorer applies §3 to the spike's read sets three ways (r2 Codex F3):
   or the workflow, and 2 change a module more than half the targets name (`codex-review`, `fixture_git`).
 - Adding a file directly under `scripts/` picks all 43 traceable targets, because the import system lists
   `scripts` for each (MEASURED); correct, since a new module can shadow an import. So one such commit picks 76,
-  against 67. Under the deepest-existing-ancestor rule (§2 Use 3(b)) a file added inside an EXISTING subdirectory
-  such as `scripts/mutations/` picks only the targets that listed that subdirectory.
+  against 67. The same holds one level down: since the r2 fold, 3(b) picks on ANY listed ancestor, so a file
+  added inside `scripts/mutations/` also picks every target that listed `scripts`. Round 1's narrower
+  deepest-existing-ancestor rule would have spared those; the r2 fold gives that saving up, because the rule
+  needed a model of which directories appear and vanish, and that model was wrong (r2 Codex F1). The size of the
+  loss is UNMEASURED; it is already inside the figures below, which were scored with the wider reading.
 - Under the audit hook the saving was capped by spawning: 33 of PR #545's 36 picks are spawners (MEASURED reads,
   INFERRED pick). strace lifts that cap by however many spawners read no changed path; UNMEASURED.
 - Wall-clock seconds are NOT estimated: the slowest control took 55 s and is a spawner.
@@ -464,16 +491,18 @@ The built feature FAILS IF any of these is observed.
    computed, non-literal name, outside any listed directory, PICKS (Claude F1), with an unprobed addition in the
    same directory as the negative; a path master deletes over R..BASE that is in `reads` PICKS; a PR that deletes
    a file master added over R..BASE under a listed directory PICKS (Codex F1's `docs/activated`), where the net
-   `R..HEAD` diff is empty; an `A` inside an existing subdirectory picks a target that listed that subdirectory and
-   not one that listed only its parent, and an `A` in a NEW subdirectory picks a target that listed the parent
-   (Claude F8); an added path named only by a module the target imports PICKS through the import closure (Claude
+   `R..HEAD` diff is empty; an `A` or `D` at any depth below a listed directory picks (Claude F8, any-ancestor since
+   the r2 fold), and a `D` of a directory's LAST file picks a target that listed only that directory's
+   GRANDPARENT (r2 Codex F1's `docs/sub/only`), with a `D` outside every listed directory as the negative; an added path named only by a module the target imports PICKS through the import closure (Claude
    F13); `git_membership` picks on any change, with an empty `Δ` as the negative; a validity-key mismatch for each
    element (strace version, Node minor, runner image) and a set `GIT_DIR` each give today's rule. Each one's
    mutation (dropping it) must go red.
 4. **A path is normalised wrongly, or a lost read reads `complete`.** Cased against recorded strace logs: a
    relative open after a `chdir`; a relative open in a `fork` child that copied its parent's cwd; a thread
    (`CLONE_FS`) that `chdir`s followed by ANOTHER thread's relative open and failed probe, which resolve against
-   the moved cwd (Codex F6); an `openat` through a directory descriptor; a `..` path; a successful open through a
+   the moved cwd (Codex F6); an `openat` through a directory descriptor; a SUCCESSFUL open of a `..` path resolved by its `-yy`
+   label, and a FAILED probe of `outside/link/../flag` with `link -> staged/docs/nested` made INCOMPLETE, never
+   folded to `outside/flag` (r2 Codex F3); a successful open through a
    temp-dir symlink into the staged tree, logged after the link was deleted, resolving by its `-yy` label to its
    staged-tree name (Claude F2, after `check-review-recorded`'s `_cli` fixture); a failed probe through a link
    created during the trace, resolved through the link table; a staged file that was a repo symlink, recorded as
@@ -481,7 +510,13 @@ The built feature FAILS IF any of these is observed.
    `readlink`, an `execve` of a staged script, an `openat2` and a failed `unlink` each recorded (Codex F3). Each
    of these makes the trace INCOMPLETE: `io_uring_setup`; `unshare(CLONE_FS)`; a failed open through
    `/proc/self/fd/N`; a path through a link the table cannot resolve; a staged link whose target leaves the
-   roots; a read of a path another target's run wrote (Claude F5's laundered dependency); the traced timeout. A
+   roots; a read of a path another target's run wrote (Claude F5's laundered dependency); a LISTING of a directory
+   that is an ancestor of a path another target's run wrote (r2 Codex F5: U creates `docs/generated/flag`, T lists
+   `docs/generated`); a listing of a staged directory under a repo directory link (r2 Codex F4: `docs/alias ->
+   real/`, a PR adding `docs/real/new`); a syscall name the parser's table does not hold; `unshare` and `setns`
+   EXECUTED by a real child under the runner's strace, not a synthetic log line (r2 Codex F2); the traced
+   timeout. A `truncate`, a `chmod`, a `utimensat` and BOTH sides of a `rename` each land in `wrote`, so a later
+   target that stats the file is refused (r2 Codex F6). A
    read inside a temp repository's `.git` does not count, while the same git process's read of a working-tree
    file under a staged root does; reads of `.github/workflows/ci.yml` and `.githooks/pre-push` DO count (Claude
    F9); a read of the real checkout's `.git/index` sets `git_membership` (Codex F4's `git -C "$GITHUB_WORKSPACE"
@@ -505,4 +540,6 @@ The built feature FAILS IF any of these is observed.
    is comparable. A PR with no usable read set has no would-skip target and is not a sample. Cased: a cancelled
    PR run, a missing base artifact and a red control give INCONCLUSIVE; a pending PR is not counted, and is
    decided by a LATER run; a miss at a non-final push followed by a clean final push is a MISS (Codex F7); a
-   difference that flips on re-run is INCONCLUSIVE, one stable on both trees is a miss (Claude F12).
+   difference that flips on re-run is INCONCLUSIVE, one stable on both trees under the same replay seed is a
+   miss (Claude F12), and an unseeded difference that does not reproduce under either replay seed is INCONCLUSIVE,
+   never a miss and never clean (r2 Codex F7).
