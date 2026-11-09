@@ -6,6 +6,11 @@
 **Status:** 📝 DRAFT, written 2026-11-09 from the approved spec at `1a6004c1`. Phase 2: dual adversarial review
 to convergence or the round cap (`docs/review-method.md` §0 Q4c) before any task is dispatched. Nothing is built.
 Round 1 (both halves, 30 findings incl. 1 BLOCKER) is folded: `docs/reviews/coordinator/plan-586-r1-coordinator.md`.
+Round 2 (Codex, 6) is folded: `docs/reviews/coordinator/plan-586-r2-coordinator.md`. Round 3 (Claude, the cap, 8)
+ARMED Phase 6 on `ledger-trust` (two consecutive fix-caused rounds). The architecture review
+(`docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`) recommends a redesign that changes one
+sentence of spec §2, which is the owner's decision. **Slices 1-5 can be built now; slices 6-8 are BLOCKED on that
+decision** (`docs/reviews/coordinator/plan-586-r3-coordinator.md`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -56,6 +61,10 @@ read the spec section each task cites; this plan does not restate its rules.
   belongs to one EPOCH (`shadow_start`). **Bound, stated:** `ci.yml` is a harness file, so a PR that edits
   it gets FULL from `shard_targets`, but the edit could stop calling `shard_targets` at all, exactly as it can
   delete the sweep today; that is review's to catch, not this plan's.
+  ⛔ **Under Phase 6 review (r3):** clause (c) and the ledger mechanics of Tasks 7.2 and 8.1 thrashed in two
+  consecutive rounds. The recommended redesign reads every input that can OPEN the switch at BASE, from a
+  committed ledger, and lets Actions storage only CLOSE it
+  (`docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md` §3 D1, §9). It waits on the owner.
 - **The sweep never stops running because selection did (r1 Codex F1).** `mutation-sweep` runs on every event
   whatever `sweep-select`'s result (skipped on master and the schedule, failed, cancelled), and a shard with no
   usable list runs today's rule (FULL on master and the schedule). Task 8.1 cases it at workflow level.
@@ -667,16 +676,26 @@ below) with its WM pins. Editing the harness makes this slice's own PR sweep run
 - `key_mismatches(payload_key: dict, own_key: dict) -> list[str]` — the differing element names.
 - `restore_check(payload: dict | None, base_sha: str, is_ancestor) -> str | None` — None when the payload parses,
   its sha is an ancestor of BASE (injected predicate) and every target appears once; else why.
-- `pick_cache(entries: list[dict] | None, prefix: str, is_ancestor, distance) -> tuple[str | None, str]` (r1 Claude
-  F12; `ci.yml`'s own rule that a `run:` block decides nothing) — from the Actions API's cache list (injected),
-  keeps the keys with `prefix` whose sha `is_ancestor` of BASE, returns the one with the smallest `distance` (commits
-  from it to BASE, injected), and why; None with the reason on an API failure (`entries is None`), no candidate, or
-  a key whose sha does not parse.
+- `pick_cache(entries: list[dict] | None, prefix: str, is_ancestor, distance, default_ref: str) -> tuple[str | None,
+  str]` (r1 Claude F12; `ci.yml`'s own rule that a `run:` block decides nothing) — from the Actions API's cache list
+  (injected), keeps the keys with `prefix` whose sha `is_ancestor` of BASE, returns the one with the smallest
+  `distance` (commits from it to BASE, injected), and why; None with the reason on an API failure (`entries is
+  None`), no candidate, or a key whose sha does not parse. **Scope (r3 Claude F1).** It keeps ONLY entries whose
+  `ref == default_ref` (`refs/heads/<default branch>`, from `gh api repos/{owner}/{repo}`, never typed; the
+  cache-list API carries `ref`, MEASURED 2026-11-09). An entry with no `ref` is skipped. It returns None with
+  `key shadowed in <ref>` when ANY listed entry with the chosen key has another ref, because a pull request's own
+  scope can hold the same key, and an exact-key restore takes the run's own scope first (from GitHub's
+  documentation, not exercised). **Bound, stated:** an entry created in the PR's own scope between the list and
+  the restore needs a workflow the PR adds, the bound *Trust and provenance* already gives to review.
 - [ ] **Failing cases (§8.3):** missing, red, short-count, wrong-key (one case per key element: strace version,
   Node minor, runner image, a `package-lock.json` blob changed over R..BASE), wrong-recorder and unvalidated sets
   each give today's rule; an unparseable cache → today's rule for all; each with an equal-key negative.
   `pick_cache`: the nearest of two ancestors is chosen, a NEARER non-ancestor (a sibling branch's sha) is skipped,
-  a key with another prefix is skipped, `None` entries → None with `cache list failed`, an empty list → None.
+  a key with another prefix is skipped, `None` entries → None with `cache list failed`, an empty list → None;
+  **(r3 F1)** a `refs/pull/7/merge` entry with a NEARER ancestor sha is skipped and the master one is chosen
+  (adjacent: the same entry on `default_ref` is chosen); the chosen master key also listed under
+  `refs/pull/7/merge` → None, `key shadowed in refs/pull/7/merge` (adjacent: listed only under master → chosen);
+  an entry with no `ref` → skipped.
 - [ ] **Steps (each of 5.1-5.3):** red, implement, green, W1-W7 (and, in 5.2, the WM pins for
   `check-plan-code.py`), mutate `--only scripts/reach_select.py`, commit.
 
@@ -687,6 +706,10 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
 ---
 
 ## Slice 6 — shadow: `sweep-select` reports, nothing skips (spec §2 Resolve, shadow data; §7 Q1, Q4)
+
+> ⛔ **BLOCKED on owner decision: approve or decline the spec §2 ledger change (architecture review §5).** Either
+> answer changes this slice only by two `selection-*` fields: `selector_blob` added, `q1_probe_delta` moved to the
+> comparator (review §6; r3 F4, F8). They are folded when the answer arrives.
 
 ### Task 6.1: `--select-only` in `reach_select.py`, `--verdicts` in `check-plan-code.py`
 
@@ -737,6 +760,10 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
 ---
 
 ## Slice 7 — the comparator (spec §2 "A MISS, precisely"; §8.6)
+
+> ⛔ **BLOCKED on owner decision: approve or decline the spec §2 ledger change (architecture review §5).** Approve:
+> rewrite to review §6 D1 (a stateless report, a committed ledger, an absorb guard). Decline: fold r3's seven
+> per-finding fixes (D0; `docs/reviews/coordinator/plan-586-r3-coordinator.md`).
 
 ### Task 7.1: `--mutant` replay
 
@@ -866,6 +893,9 @@ post_switch_events}}` (`post_switch_events` is 0 until slice 8, Task 8.2).
 ---
 
 ## Slice 8 — the switch (LAST; spec §7 Q4, §8.1)
+
+> ⛔ **BLOCKED on owner decision: approve or decline the spec §2 ledger change (architecture review §5).** Approve:
+> `switch_gate` reads the committed ledger at BASE and reports only close it (review §6). Decline: D0's fixes.
 
 **The preconditions are a MACHINE, not a paragraph (r1 Claude F2).** The spec's are: backlog #590 ✅ ("must close
 before any skip takes effect; shadow mode alone is not enough"), ≥ 20 COMPLETE clean PRs from `SHADOW_START` with 0

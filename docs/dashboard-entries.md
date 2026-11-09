@@ -19704,3 +19704,27 @@ cases, closes backlog #590; 5 `scripts/reach_select.py` (`Δ`, rule 3, validity)
 `verdicts.jsonl`; 7 `scripts/shadow-compare.py` + `--mutant` replay; 8 the switch. Each new self-tested script names
 W1-W8 wiring (declared count, manifest, pin, `EXAMINED_KEYS`, POPULATION, caller), the PR #551 lesson. Fallback 2F
 (audit hook) if strace is unavailable.
+
+## 2026-11-09 [needs-you]
+The review of the backlog #586 build plan found the same weak spot twice in a row. That weak spot is how the plan
+decides it is safe to start letting pull requests skip guards. An architecture review was run on it. The plan
+kept its running tally of trial results in files GitHub deletes after 90 days. Any test run could also upload
+files there, including one from an unmerged pull request. Each review round found a new way the tally could
+lose a recorded miss or gain a false "clean". The fix the review recommends is to keep the tally in a file
+committed to the repository and read from master, the way the backlog is read already. A check would refuse any
+change to that file that drops a recorded miss. GitHub's storage could then only turn the skipping OFF, never
+ON. This changes one sentence of the approved spec, so it is your decision. The first five of the plan's eight
+pull requests do not depend on it and can be built now.
+
+**Decide:** For backlog #586, should the trial tally become a committed file read from master (a one-sentence change to spec §2), or stay in GitHub's 90-day storage with seven more patches?
+- approve the spec change, so the tally is a committed file, guarded so that a miss can never be removed, and GitHub's storage can only turn skipping off [recommended]
+- keep the spec as written, and add seven more patches to the 90-day tally, accepting that the same kind of hole may recur
+<!--tech-->
+Branch `plan-586-observed-reach`. Phase 6 armed by THRASHING in `ledger-trust` (r2: 6 findings caused by the r1
+fold; r3: 6 caused by the r2 fold). Review: `docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`.
+Its §5 gives the exact spec diff, against spec §2 lines 353-358. Disposition:
+`docs/reviews/coordinator/plan-586-r3-coordinator.md`. r3 F1 (a PR-scope Actions cache entry poisons its own
+read sets) is fixed in plan Task 5.3: `pick_cache` keeps `ref == refs/heads/<default>` and refuses a key
+shadowed under another ref (the cache list's `ref` was MEASURED). F2-F8 are held, with both fold forms written.
+Plan slices 6-8 are marked BLOCKED, and slices 1-5 can proceed. Decision log: row 228 is `continued` (refuted),
+and a new `split` bet was appended.
