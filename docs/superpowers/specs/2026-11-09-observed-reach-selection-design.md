@@ -15,7 +15,9 @@ Round 3 (Claude, the CAP: 10 findings and 12 places an implementer had to guess)
 rule modelled something no suite reaches today, it is REPLACED by a refusal
 (`docs/reviews/coordinator/spec-586-redesign-r3-coordinator.md`). One scoped round 4 (Codex) verifies that fold
 only, and its non-BLOCKER findings are FILED, not folded. Nothing here is built. Every number is marked
-MEASURED (run) or INFERRED (reasoned, not run). The read sets on record were taken by an AUDIT-HOOK spike
+MEASURED (run) or INFERRED (reasoned, not run). **2026-11-09 14:55:** the owner approved design D1 for the
+shadow ledger (§7, last row): §2 *The comparator* and *The ledger* carry the diff of
+`docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md` §5. The read sets on record were taken by an AUDIT-HOOK spike
 (`docs/reviews/measurements/2026-11-09-observed-reads-spike.md`), not by strace; §5 says which figures that
 affects.
 
@@ -341,7 +343,7 @@ The log line keeps today's form and names the rule: `  check-features <- docs/ba
 
 **Shadow mode's data and its comparator (r1 Codex F7, Claude F3, F12).** The repository uploads no artifact
 today (`grep upload-artifact .github/workflows/*.yml`: no hits, MEASURED) and `--evidence` is retired, so the
-build ADDS three things:
+build ADDS four things (the fourth, the committed ledger, since the owner's 14:55 decision, §7):
 - **Per-mutant verdicts.** Every `mutation-sweep` shard, on a PR, a master push and the schedule, writes
   `verdicts.jsonl` (a new `check-plan-code.py` option): one line per mutant run, `{target, mutant, seed,
   verdict}` with the verdict `killed`, `survived`, `cannot-run` or `timeout`, one line per target control
@@ -351,11 +353,16 @@ build ADDS three things:
 - **The selection.** `sweep-select` uploads `selection-<run_id>-<run_attempt>`, same retention: the PR, HEAD,
   BASE, R, the validity-key check, the picks with their rules, and `WOULD-SKIP` with each target's reason.
 - **The comparator.** A new script, `scripts/shadow-compare.py`, run by a new scheduled job, `shadow-compare`
-  (daily, read-only token). It is STATELESS over its inputs: each run re-scans every PR merged since the shadow
-  start date (a constant in the script), so a comparison PENDING at one run is retried at the next and cannot
-  fall out of a time window. It uploads its result as `shadow-ledger-<run_id>` (90 days); a PR already decided in
-  the newest ledger keeps that decision, so an input artifact's expiry cannot undo it. An expired input with no
-  decided row is INCONCLUSIVE, never clean.
+  (daily, on the default branch only, read-only token). It is STATELESS over its inputs: each run re-scans every
+  PR merged since the ledger's epoch start, so a comparison PENDING at one run is retried at the next and cannot
+  fall out of a time window. It uploads its result as a REPORT, `shadow-report-<run_id>` (90 days), and reads no
+  earlier report.
+- **The ledger.** A committed file, `docs/shadow-ledger.json`, changed only by a pull request that absorbs
+  reports. A guard on every pull request refuses a change that removes or alters a decided row, lowers a count
+  of misses, adds a row no trusted report holds, or moves the epoch without recording the owner's decision. A PR
+  decided in the ledger keeps that decision, so neither an input's nor a report's expiry can undo it. An expired
+  input with no decided row is INCONCLUSIVE, never clean. The switch reads the ledger at BASE, as it reads
+  `docs/backlog.md`; a report can only CLOSE the switch, never open it.
 
 **A MISS, precisely.** For each push of a PR, the comparator pairs that push's PR sweep with the full sweep of
 THAT push's own BASE (each push has its own BASE). A miss is a target in that push's `WOULD-SKIP` set for which,
@@ -538,7 +545,8 @@ lane's next big item and that backlog #534 retires when it lands.
 
 All six questions were answered at 10:33 ("I agree all your recommendations", recorded in
 `docs/explainers/questions.md`), and the recorder at 10:40 (selection card, answer A). The goal name
-`dev-speed-first` was accepted at 10:33. **No question is open for the owner.**
+`dev-speed-first` was accepted at 10:33. The shadow ledger's design (D1) was decided at 14:55 (selection card,
+answer A), after the build plan's review armed Phase 6. **No question is open for the owner.**
 
 | # | Question | Decision (owner, 2026-11-09) |
 |---|---|---|
@@ -549,6 +557,7 @@ All six questions were answered at 10:33 ("I agree all your recommendations", re
 | Q5 | Accept §4's bound, with master's full sweep as the catch and §8.1 as the detector, and that a harness change resets the saving until the next recording lands? | **Accepted** (10:33). Revisit on the first §8.1 event |
 | Q6 | Ship before backlog #560, as its first slice, or inside it? | **Before** (10:33). It builds the infrastructure backlog #560 extends with per-mutant recording (§6) |
 | — | The recorder | **`strace -f`** in the `record-reads` job, on each master push, on Linux (10:40, card answer A). Build step 1 proves it on a GitHub-hosted runner, else the audit-hook recorder (§2) |
+| — | Where the shadow ledger lives: a committed file read at BASE, or a chain of Actions artifacts? | **A committed ledger** (owner, selection card, 2026-11-09 14:55, answer A "Committed ledger (recommend)"; design D1 of `docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`, whose §5 diff is applied in §2 *The comparator* and *The ledger*). The comparator writes stateless `shadow-report-<run_id>` reports; `docs/shadow-ledger.json` changes only through a guarded absorb PR; an input that can OPEN the switch is read at BASE, and a report can only CLOSE it. Declined: D0, seven more fixes to the artifact chain |
 
 Recording on master only (never on a PR) is not a question: a PR's unmerged code must not decide another PR's
 sweep, by the same argument §2 gives.
@@ -634,8 +643,8 @@ PICKS by 3(a) rather than falling back (§3 replaced the old stale-set fallback;
    mutant (§2, shadow mode). A cancelled run, a missing or expired artifact, a `complete: false` verdict file, a
    flaky re-run or a CANNOT RUN control on either side makes it INCONCLUSIVE, logged, never a pass; a control
    failed on one side only is a differing verdict. **Evaluated** by `shadow-compare` only after BOTH sweeps
-   finished; until then PENDING, counted neither way, and re-scanned on every run from the shadow start date, so
-   a pending PR is never dropped (Codex F7). A base with a cancelled or timed-out shard is INCONCLUSIVE; a red base with per-mutant verdicts
+   finished; until then PENDING, counted neither way, and re-scanned on every run from the ledger's epoch start,
+   so a pending PR is never dropped (Codex F7). A base with a cancelled or timed-out shard is INCONCLUSIVE; a red base with per-mutant verdicts
    is comparable. A PR with no usable read set has no would-skip target and is not a sample. Cased: a cancelled
    PR run, a missing base artifact and a red control give INCONCLUSIVE; a pending PR is not counted, and is
    decided by a LATER run; a miss at a non-final push followed by a clean final push is a MISS (Codex F7); a
@@ -643,4 +652,8 @@ PICKS by 3(a) rather than falling back (§3 replaced the old stale-set fallback;
    miss (Claude F12), and an unseeded difference that does not reproduce under either replay seed is an
    `unreproduced difference`: INCONCLUSIVE, listed in the ledger, never a miss and never clean (r2 Codex F7,
    r3 Claude F6). A difference that reproduces under only ONE of the two replay seeds LATCHES as a miss (r3
-   Claude F6), and the re-run happens inside `shadow-compare` on fresh staged trees.
+   Claude F6), and the re-run happens inside `shadow-compare` on fresh staged trees. **The ledger (§2, owner
+   2026-11-09 14:55):** a committed change to `docs/shadow-ledger.json` that removes or alters a decided row,
+   lowers a miss count, adds a row no trusted report holds, or moves the epoch without the owner's recorded
+   decision passes the guard; or the switch opens on anything but the ledger at BASE (a report, an artifact, the
+   PR's own ledger); or a trusted report holding a miss the ledger has not absorbed leaves the switch open.

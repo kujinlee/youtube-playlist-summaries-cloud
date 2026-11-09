@@ -9,8 +9,11 @@ Round 1 (both halves, 30 findings incl. 1 BLOCKER) is folded: `docs/reviews/coor
 Round 2 (Codex, 6) is folded: `docs/reviews/coordinator/plan-586-r2-coordinator.md`. Round 3 (Claude, the cap, 8)
 ARMED Phase 6 on `ledger-trust` (two consecutive fix-caused rounds). The architecture review
 (`docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`) recommends a redesign that changes one
-sentence of spec §2, which is the owner's decision. **Slices 1-5 can be built now; slices 6-8 are BLOCKED on that
-decision** (`docs/reviews/coordinator/plan-586-r3-coordinator.md`).
+sentence of spec §2, which is the owner's decision (`docs/reviews/coordinator/plan-586-r3-coordinator.md`).
+**The owner approved it (D1) on 2026-11-09 at 14:55, by selection card, answer A "Committed ledger (recommend)".**
+The spec §2 diff is applied and slices 6-8 are rewritten to review §6. Because this is a REDESIGN, review restarts
+at round 1 (`docs/review-method.md` §0 Q4c, *A REDESIGN RESTARTS THE COUNT*): `plan-586-redesign-r1`, both halves,
+scoped to the spec §2 change and slices 6-8. Slices 1-5 can be built now; slices 6-8 wait for that round.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -23,7 +26,8 @@ decision** (`docs/reviews/coordinator/plan-586-r3-coordinator.md`).
 schedule records every manifest target under two fixed seeds and saves `readsets.json` to `actions/cache`. A pure
 selector (`scripts/reach_select.py`) applies spec §2 rule 3 over `Δ = (R..BASE) ∪ (BASE..HEAD)`. A `sweep-select` job
 computes the selection once; in SHADOW it only reports `WOULD-SKIP`, and a comparator (`scripts/shadow-compare.py`)
-checks every would-skip against the base's full sweep. Only the last slice lets a shard skip a target.
+checks every would-skip against the base's full sweep and writes a stateless report, which a guarded absorb PR
+folds into the committed `docs/shadow-ledger.json` that the switch reads at BASE. Only the last slice lets a shard skip a target.
 
 **Tech Stack:** Python 3.12 (stdlib only), `strace` on GitHub-hosted `ubuntu-latest`, GitHub Actions
 (`actions/cache/save` + `restore`, `actions/upload-artifact`), read-only `gh api`.
@@ -47,24 +51,28 @@ read the spec section each task cites; this plan does not restate its rules.
   syntactic proxies (`hold_reasons`: pinned baselines, falling pins or case counts, failure-path lines, dropped gate
   invocations, scope exits, migrations, `NO-REVIEW:`, app code), and no PR-body marker forces a HOLD. So slice 8's
   preconditions are a pure `reach_select.switch_gate` that `sweep-select` runs on EVERY pull request (Task 8.1):
-  while backlog #590's row at BASE lacks ✅, or the newest TRUSTED `shadow-ledger` holds fewer than 20 consecutive
-  COMPLETE clean PRs (spec §7 Q4), or any latched miss, or Q1 (read at BASE) is undecided, it emits TODAY's
+  while backlog #590's row at BASE lacks ✅, or the committed `docs/shadow-ledger.json` AT BASE holds fewer than 20
+  consecutive COMPLETE clean PRs (spec §7 Q4), or any latched miss, or Q1 (read at BASE) is undecided, or the
+  ledger is stale, or a trusted report not yet absorbed holds a miss, it emits TODAY's
   selection and logs `SWITCH GATE: <why>`. Slice 8 merged early is therefore inert, not unsafe.
-- **Trust and provenance (r2 Codex F1-F6).** Nothing a pull request produces or edits may open the switch for that
-  PR or any other. Three refusals carry it, each falling back to today's rule: (a) the shard, which runs the
-  HARNESS (`check-plan-code.py`, whose own change already forces FULL), re-derives rules 1 and 2 itself and
-  refuses a list that omits a mandatory pick, names an unknown target, or arrives on a PR that changes a selector
-  file (Task 8.1 `shard_targets`); (b) every decision input is read at BASE (`docs/backlog.md`, `Q1_DECISION`);
-  (c) a ledger counts only if its producing run was the `ci.yml` `schedule`/`workflow_dispatch` run on the
-  default branch of this repository, checked through the run's API metadata, never the artifact's name (Task 7.2
-  `trusted_ledger`). Ledger writers are serialized (one concurrency group, no cancel-in-progress), and a ledger
-  belongs to one EPOCH (`shadow_start`). **Bound, stated:** `ci.yml` is a harness file, so a PR that edits
-  it gets FULL from `shard_targets`, but the edit could stop calling `shard_targets` at all, exactly as it can
-  delete the sweep today; that is review's to catch, not this plan's.
-  ⛔ **Under Phase 6 review (r3):** clause (c) and the ledger mechanics of Tasks 7.2 and 8.1 thrashed in two
-  consecutive rounds. The recommended redesign reads every input that can OPEN the switch at BASE, from a
-  committed ledger, and lets Actions storage only CLOSE it
-  (`docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md` §3 D1, §9). It waits on the owner.
+- **Trust and provenance: ONE rule (design D1, owner 2026-11-09 14:55; architecture review §9).** *Inputs that can
+  LOOSEN a gate come from where review lives; inputs that only TIGHTEN can come from anywhere.* So: **the switch
+  opens only on what the default branch says, read at BASE; Actions storage can only close it.** Nothing a pull
+  request produces or edits may open the switch for that PR or any other. Three clauses carry it, each falling back
+  to today's rule: (a) the shard, which runs the HARNESS (`check-plan-code.py`, whose own change already forces
+  FULL), re-derives rules 1 and 2 itself and refuses a list that omits a mandatory pick, names an unknown target,
+  or arrives on a PR that changes a selector file (Task 8.1 `shard_targets`); (b) every input that can OPEN the
+  switch is read at BASE (`docs/backlog.md`, `Q1_DECISION`, `docs/shadow-ledger.json` and the selector's blob);
+  (c) the committed ledger changes only through an absorb PR that `scripts/check-shadow-ledger.py` checks against
+  BASE's code: a report is absorbed only from a trusted run (`trusted_report_run`: the `shadow-compare.yml`
+  `schedule`/`workflow_dispatch` run on the default branch of this repository, by run API metadata, never the
+  artifact's name), whose `code_sha` is an ancestor-or-equal of BASE and whose selector and comparator blobs equal
+  BASE's, and no decided row or miss is ever lost (Task 7.3). An epoch change HOLDs in `check-merge-ready.py`.
+  Reports newer than the last absorb are read by the gate only to REFUSE (Task 8.1). **Bound, stated:** `ci.yml`
+  and `shadow-compare.yml` are workflow files, so a PR could stop calling `shard_targets`, the gate or the guard,
+  exactly as it can delete the sweep today; that is review's to catch, not this plan's. A dishonest
+  `reset_by_owner` text is put in front of the owner by the HOLD, and cannot prove it was the owner. GitHub
+  returning false run metadata is out of scope.
 - **The sweep never stops running because selection did (r1 Codex F1).** `mutation-sweep` runs on every event
   whatever `sweep-select`'s result (skipped on master and the schedule, failed, cancelled), and a shard with no
   usable list runs today's rule (FULL on master and the schedule). Task 8.1 cases it at workflow level.
@@ -111,7 +119,7 @@ Each slice is ONE pull request off fresh `origin/master`, independently mergeabl
 | 4 | `record-reads-job` / `build-586-s4-record` | `--record-reads` mode, `record-reads` job, cache save, live cases | no | — (post-merge, before slice 6 starts: Task 4.3) |
 | 5 | `reach-select` / `build-586-s5-select` | `scripts/reach_select.py`: `Δ`, rule 3, validity; `select_reasons` split out of `select_manifests` | no | — |
 | 6 | `shadow-select` / `build-586-s6-shadow` | `sweep-select` job (report-only), `verdicts.jsonl`, artifacts | **no** — shards still self-select | the first PR run uploads `selection-*` |
-| 7 | `shadow-compare` / `build-586-s7-compare` | comparator, `--mutant` replay, scheduled job, ledger | no | — |
+| 7 | `shadow-compare` / `build-586-s7-compare` | report-writing comparator + `shadow-compare.yml`, `--mutant` replay, committed `docs/shadow-ledger.json`, `--absorb`, `check-shadow-ledger.py`, the epoch HOLD | no | a dispatched master run uploads one `shadow-report-*` (Task 7.3) |
 | 8 | `observed-reach-switch` / `build-586-s8-switch` | shards take `sweep-select`'s list behind `switch_gate`; post-switch detector | **YES, once `switch_gate` passes** | none: the preconditions are `switch_gate`'s, checked on every run (Global Constraints) |
 
 "Skips a target?" is the question that matters. Slices that edit `check-plan-code.py` (4, 5, 6, 7, 8) make their
@@ -150,16 +158,18 @@ them in its file list. CI went red on PR #551 for missing the declared-count and
   parameters are varied in ≥ 2 cases.
 - **W7** a caller: a `ci.yml` `verify` step `python3 scripts/<name>.py --self-test` (or, for a library imported by
   `check-plan-code.py`, `check-selftest-counts`' run, as `coverage_verdict.py` has). That step IS the caller
-  evidence. `scripts/check-ratchet-contract.py` neither passes nor fails these three names: its population is
-  `GUARD_PATH_RE = scripts/check-[\w.-]+\.py`, which `strace_reads.py`, `reach_select.py` and `shadow-compare.py`
-  do not match (r1 Claude F15; `ci.yml` says the same of `page_markup`/`page_chrome`). Run it anyway; do not cite it.
+  evidence. `scripts/check-ratchet-contract.py` neither passes nor fails four of the new names: its population is
+  `GUARD_PATH_RE = scripts/check-[\w.-]+\.py`, which `strace_reads.py`, `reach_select.py`, `shadow-compare.py` and
+  `reach_gate.py` do not match (r1 Claude F15; `ci.yml` says the same of `page_markup`/`page_chrome`). Run it anyway;
+  do not cite it for them. **`check-shadow-ledger.py` (Task 7.3) DOES match, so the ratchet judges it; cite it there.**
 - **W8** if the script uses `fixture_git`, it enters `fixture_git.isolated()` in the exact shape
   `scripts/check-fixture-git-isolation.py` reads (PR #546 tripped it).
 
 **WM — a task that MODIFIES an existing self-tested script (r1 Codex F8, Claude F14).** W1-W8 above are for a
 script a task CREATES. A task that adds functions or cases to an existing one (`check-plan-code.py` in Tasks 4.1,
-4.2, 5.2, 6.1, 6.2, 7.1, 8.1; `strace_reads.py` in 2.2-3.2 and 4.2; `reach_select.py` in 5.2-5.3 and 8.1;
-`shadow-compare.py` in 8.2; `sweep-red-alert.py` in 8.2) does, in the same commit: **W1** the declared count
+4.2, 5.2, 6.1, 6.2, 7.1, 8.1; `strace_reads.py` in 2.2-3.2 and 4.2; `reach_select.py` in 5.2-5.3, 6.1 and 8.1;
+`shadow-compare.py` in 7.3 and 8.2; `reach_gate.py` in 8.1; `check-merge-ready.py` in 7.3; `sweep-red-alert.py` in
+8.2) does, in the same commit: **W1** the declared count
 re-copied from the suite's own pass line; **W2/W3** one manifest entry per new guard clause and the
 `EXPECTED_MUTATIONS` pin moved by that number; **W6** `EXAMINED_KEYS` re-derived with the `analyse()` command
 above. Each such task's file list names them as "WM pins". For `check-plan-code.py` the PR's own sweep runs ALL.
@@ -707,9 +717,9 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
 
 ## Slice 6 — shadow: `sweep-select` reports, nothing skips (spec §2 Resolve, shadow data; §7 Q1, Q4)
 
-> ⛔ **BLOCKED on owner decision: approve or decline the spec §2 ledger change (architecture review §5).** Either
-> answer changes this slice only by two `selection-*` fields: `selector_blob` added, `q1_probe_delta` moved to the
-> comparator (review §6; r3 F4, F8). They are folded when the answer arrives.
+**Design D1, owner 2026-11-09 14:55 (selection card, answer A).** This slice changes only by two `selection-*`
+fields: `selector_blob` is added (r3 F8: evidence is keyed to the selector that produced it) and `q1_probe_delta`
+moves to the comparator (r3 F4: a PR run's own code must not compute an input of the gate). Architecture review §6.
 
 ### Task 6.1: `--select-only` in `reach_select.py`, `--verdicts` in `check-plan-code.py`
 
@@ -717,13 +727,17 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
 
 **Interfaces:**
 - `python3 scripts/reach_select.py --select-only OUT --readsets FILE --r-base FILE --base-head FILE --image
-  "$ImageVersion"` (in `reach_select`, per the import direction of Task 5.1) → writes the selection artifact
-  `{pr, head, base, r, image, key_check, today: [...], observed: [...], would_skip: {t: why}, picks: {t: rule},
-  q1_probe_delta}` and prints the log lines. `q1_probe_delta` = picks on PR #543's diff (its two commits pinned as
-  constants) with the read sets as recorded, minus picks with each target's `probed` replaced by `probed -
-  probed_stat_only` (Task 3.2's provenance; r1 Codex F3, Claude F3) (spec §2 Q1 fallback; > 5 → report
-  `Q1 FALLBACK: revert 3(c) to option A`). It also writes `targets=<one line>` to `$GITHUB_OUTPUT` (the list, or
-  `full: <why>`), unused until slice 8.
+  "$ImageVersion" --selector-blob "$(git rev-parse HEAD:scripts/reach_select.py)"` (in `reach_select`, per the
+  import direction of Task 5.1) → writes the selection artifact `{pr, head, base, r, image, selector_blob,
+  key_check, today: [...], observed: [...], would_skip: {t: why}, picks: {t: rule}}` and prints the log lines.
+  `selector_blob` is the blob of the `reach_select.py` the PR run EXECUTED (the merge commit's), so the comparator
+  can tell which selector produced a `WOULD-SKIP` set by CONTENT, not by run metadata (r3 F8). There is no
+  `q1_probe_delta` field: the comparator computes it with default-branch code (Task 7.2; r3 F4). It also writes
+  `targets=<one line>` to `$GITHUB_OUTPUT` (the list, or `full: <why>`), unused until slice 8.
+- `q1_probe_delta(readsets, diff) -> int` is a PURE function in `reach_select.py` (no caller in this slice but its
+  self-test; Task 7.2 calls it): picks on PR #543's diff (its two commits pinned as constants) with the read sets
+  as recorded, minus picks with each target's `probed` replaced by `probed - probed_stat_only` (Task 3.2's
+  provenance; r1 Codex F3, Claude F3) (spec §2 Q1 fallback; > 5 → `Q1 FALLBACK: revert 3(c) to option A`).
 - `--verdicts FILE` → a FIRST header line `{image: <ImageVersion env>, shard, run_id}` (r1 Codex F9, Claude F16:
   the drift evidence), one JSON line per mutant run `{target, mutant, seed, verdict}` (`killed`, `survived`,
   `cannot-run`, `timeout`), one per control `{target, control: green|red}`, final `{complete: bool}` (false when
@@ -731,9 +745,10 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
 - [ ] **Failing cases:** `today` in the artifact equals `select_manifests`' result on the same inputs (the shadow
   invariant: nothing the shard runs changes); a budget-stopped run writes `complete: false`; every mutant has
   exactly one line; adjacent: a complete run writes `complete: true`; the header carries the `ImageVersion` it was
-  given, and an unset one is written `null`, never omitted; `q1_probe_delta` over a two-target fixture where one
-  target's only probe of a changed path is a `newfstatat` (stat-only) gives 1, and where that path was ALSO a failed
-  open gives 0.
+  given, and an unset one is written `null`, never omitted; the artifact carries the `--selector-blob` it was
+  given, and an absent option is CANNOT RUN rc 2, never an artifact without the field; the artifact has no
+  `q1_probe_delta` key; `q1_probe_delta` over a two-target fixture where one target's only probe of a changed path
+  is a `newfstatat` (stat-only) gives 1, and where that path was ALSO a failed open gives 0.
 
 ### Task 6.2: the jobs
 
@@ -744,26 +759,50 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
   setup-node `'22'`, setup-python `'3.12'`, the Python-pin step; then ONE step that fetches the cache list
   (`gh api repos/{owner}/{repo}/actions/caches?key=readsets-<python>-<hash>-`) to a file and passes it to
   `reach_select.py`, whose `pick_cache` decides (no ancestry or "nearest" logic in YAML); `actions/cache/restore`
-  by the exact key it printed; `reach_select.py --select-only … --image "$ImageVersion"`; upload
-  `selection-<run_id>-<run_attempt>` (`retention-days: 90`, `if: always()`). A miss or API failure is logged and
-  the artifact says `full: <why>`.
+  by the exact key it printed; `reach_select.py --select-only … --image "$ImageVersion" --selector-blob "$(git
+  rev-parse HEAD:scripts/reach_select.py)"`; upload `selection-<run_id>-<run_attempt>` (`retention-days: 90`,
+  `if: always()`). A miss or API failure is logged and the artifact says `full: <why>`.
 - `mutation-sweep`: adds `--verdicts "$RUNNER_TEMP/verdicts.jsonl"` and an upload of
   `verdicts-<run_id>-<run_attempt>-<shard>` (`if: always()`, 90 days) on every event; its `ImageVersion` is in the
   verdicts header (Task 6.1).
 - [ ] **Failing case:** a `ci.yml` read in `check-plan-code.py`'s self-test asserts `mutation-sweep` does not consume
-  `sweep-select`'s output in this slice (the shadow invariant, made mechanical); slice 8 flips this case.
+  `sweep-select`'s output in this slice (the shadow invariant, made mechanical); slice 8 flips this case. A second
+  read asserts the `--select-only` step passes `--selector-blob` from `git rev-parse HEAD:scripts/reach_select.py`.
 
 **Pre-push (slice 6):** `python3 scripts/check-python-pin.py`; `python3 scripts/check-plan-code.py --self-test`;
 `python3 scripts/reach_select.py --self-test`; WM pins for both (Tasks 6.1, 6.2).
-**Merge gate:** the PR's own run uploads one `selection-*` and every shard's `verdicts-*`.
+**Merge gate:** the PR's own run uploads one `selection-*` (with `selector_blob`) and every shard's `verdicts-*`.
 
 ---
 
-## Slice 7 — the comparator (spec §2 "A MISS, precisely"; §8.6)
+## Slice 7 — the comparator, the committed ledger and its guard (spec §2 *The comparator*, *The ledger*, "A MISS, precisely"; §8.6)
 
-> ⛔ **BLOCKED on owner decision: approve or decline the spec §2 ledger change (architecture review §5).** Approve:
-> rewrite to review §6 D1 (a stateless report, a committed ledger, an absorb guard). Decline: fold r3's seven
-> per-finding fixes (D0; `docs/reviews/coordinator/plan-586-r3-coordinator.md`).
+**Design D1, owner 2026-11-09 14:55 (selection card, answer A; spec §2 and §7, last row).** The comparator is a
+STATELESS report writer; the ledger is the committed file `docs/shadow-ledger.json`, changed only by an absorb
+pull request under a monotonic guard. Every input that can OPEN the switch is read at BASE; Actions storage can only
+CLOSE it (architecture review §3 D1, §6, §9). Removed from the r2 design, and why: `newest_trusted` (predecessor
+search), the "no trusted ledger → empty ledger" genesis rule (r3 F2: genesis is now the file's creating commit), the
+writer's schema hard-failure, the `shadow-ledger` concurrency group (r3 F6: reports cannot race), the
+epoch-by-string-equality rule (r3 F5), the per-candidate lookup on the writer path (r3 F7) and `q1_probe_delta` in
+`selection-*` (r3 F4).
+
+**One run predicate, `trusted_report_run(run, default_branch) -> str | None`** (None = trusted, else the reason),
+in `scripts/reach_gate.py` (created in Task 7.3, so the comparator, the guard and the gate share ONE definition):
+`run.event in {"schedule", "workflow_dispatch"}`, `run.path == ".github/workflows/shadow-compare.yml"`,
+`run.head_branch == default_branch` (from `gh api repos/{owner}/{repo}`, never typed), and
+`run.head_repository.id == run.repository.id` (a fork's branch may be NAMED `master`). It is the r2 `trusted_ledger`
+renamed, and every remaining use of it is fail-closed and inherits nothing. **Listing reports** (shared helper
+`list_reports(gh) -> list[dict]`, also in `reach_gate.py`): `gh api --paginate
+"repos/{owner}/{repo}/actions/artifacts?per_page=100"` (the `name` parameter is an EXACT match, r2 Codex F5, so the
+prefix `shadow-report-` is filtered locally), keep `expired == false`, then PRE-FILTER on the listing's own
+`workflow_run.{head_branch, head_repository_id, repository_id}` before any run lookup (r3 F7), and only then call
+`gh api …/actions/runs/<id>` for `trusted_report_run`. A failed listing, lookup or download RAISES; every caller
+turns that into a refusal.
+
+**Why a separate workflow file (resolves r3's Q2 note).** The job lives in a NEW workflow,
+`.github/workflows/shadow-compare.yml` (`on: schedule` daily + `workflow_dispatch`), not in `ci.yml`. Adding
+`workflow_dispatch` to `ci.yml`'s `on:` would make every `ci.yml` job dispatchable, the sweep and its `sweep-red`
+alert included, on any branch. A separate file leaves `ci.yml`'s triggers and the alert condition unchanged.
 
 ### Task 7.1: `--mutant` replay
 
@@ -779,170 +818,236 @@ cannot-run|timeout>` plus the control's, so the comparator reads a verdict, not 
   (`--mutate .` without `--mutant`) with `--seeds 5` is still CANNOT RUN, and `--mutant X --seeds 5,5` repeats a seed
   and is refused. WM pins for `check-plan-code.py` (W6: `parse_seeds.minimum` varied).
 
-### Task 7.2: `scripts/shadow-compare.py` and its job
+### Task 7.2: `scripts/shadow-compare.py --report` and its workflow
 
-**Files:** Create `scripts/shadow-compare.py`, `scripts/mutations/shadow-compare.json`; W1-W8 files;
-modify `scripts/reach_select.py` (`trusted_ledger`, below, so that `sweep-select` in slice 8 uses the SAME
-acceptance rule; its manifest and WM pins); `.github/workflows/ci.yml` (job `shadow-compare`, `schedule` daily +
-`workflow_dispatch`, `contents: read`, `actions: read`, and **`concurrency: {group: shadow-ledger,
-cancel-in-progress: false}`** at job level, r2 Codex F4).
+**Files:** Create `scripts/shadow-compare.py`, `scripts/mutations/shadow-compare.json`, and its **W1-W8**:
+**W1** docstring count; **W2** the manifest, one entry per guard clause below; **W3** `EXPECTED_MUTATIONS`
+`"scripts/shadow-compare.py"`; **W4** the declared-counts case in `check-plan-code.py`; **W5** `POPULATION` in
+`check-selftest-counts.py`; **W6** `EXAMINED_KEYS["shadow-compare.py"]` by `analyse()`; **W7** a `ci.yml` `verify`
+step `python3 scripts/shadow-compare.py --self-test` (the caller); **W8** `fixture_git.isolated()` if it uses
+`fixture_git` (the ancestry cases do). Create `.github/workflows/shadow-compare.yml`.
 
-**Why the job-level group (r2 Codex F4).** Two overlapping writers that both read ledger L0 let the later
-finisher upload a ledger built on L0, erasing the earlier one's latched miss. Today's workflow-level group
-(`ci-${{ github.workflow }}-${{ github.ref }}`, cancel only on `pull_request`) already serializes the schedule and
-a dispatch on master, but nothing in this plan depended on it by name, and a group that is changed for another
-reason would silently reopen the race. The job-level group states the dependency: one `shadow-compare` job runs at
-a time; GitHub cancels only a PENDING job that a newer one replaces, never the running one, and a pending job has
-read nothing. The predecessor is downloaded inside the job, so after the group is acquired.
+**The workflow.** One job, `shadow-compare`: `if: github.ref == format('refs/heads/{0}',
+github.event.repository.default_branch)` (r3 F6: a dispatch on a feature branch is skipped, on cost grounds; trust
+does not depend on it, the predicate does), `permissions: contents: read, actions: read`, and **no concurrency
+group** (two overlapping runs write two independent reports; neither reads the other, so neither can erase the
+other). Steps: checkout `fetch-depth: 0`; setup-node `'22'`; setup-python `'3.12'`; the Python-pin step; `npm ci`
+(a replay stages `node_modules/typescript`); the read-set cache list and `actions/cache/restore` by `pick_cache`
+(Task 5.3, default-branch entries only) for the Q1 delta; then ONE step, `python3 scripts/shadow-compare.py
+--report --out "$RUNNER_TEMP/report.json"`; then `actions/upload-artifact` named
+**`shadow-report-${{ github.run_id }}`**, `retention-days: 90`, `if: success()`.
 
-**The job, step by step (r1 Codex F5, Claude F21).** checkout `fetch-depth: 0`; setup-node `'22'`; setup-python
-`'3.12'`; the Python-pin step; `npm ci` (a replay stages `node_modules/typescript`); then ONE step,
-`python3 scripts/shadow-compare.py --run --out "$RUNNER_TEMP/ledger.json"`, which (all `gh` calls injected in the
-self-test): (1) finds the newest TRUSTED ledger (below) and downloads it; (2) lists merged PRs since
-`SHADOW_START`, their pushes' runs, and downloads each `selection-*`/`verdicts-*` pair it needs; (3) compares,
-replays, decides; (4) writes the ledger. Then `actions/upload-artifact` named exactly **`shadow-ledger`** (a FIXED
-name; the run id is inside `ledger.json`; artifact names need be unique only within one run), `retention-days: 90`,
-**`if: success()`**.
+**What `--report` does** (all `gh` calls injected in the self-test): (1) reads `docs/shadow-ledger.json` AT ITS OWN
+CHECKOUT, only for `epoch.start` and the set of PRs already decided there (it never reads an earlier report or an
+artifact ledger); (2) lists PRs merged since `epoch.start`, their pushes' runs, and downloads each
+`selection-*`/`verdicts-*` pair it needs; (3) compares, replays, decides each PR not already decided in the ledger;
+(4) computes `q1_probe_delta` ITSELF with `reach_select.q1_probe_delta` (Task 6.1) over the restored read sets
+(r3 F4: default-branch code, never a PR run's), or null when no usable read set was restored; (5) runs
+`post_switch` (Task 8.2; an empty list until slice 8); (6) writes the report. A failed listing or download exits
+nonzero and uploads nothing; a missing report is not a clean one, because the gate's staleness clause (Task 8.1)
+closes the switch when reports stop being absorbed.
 
-**Finding the ledger: exact name, every page, provenance checked (r2 Codex F3, F5).** The artifacts API's `name`
-parameter is an EXACT match, not a prefix, so a suffixed name could never be found by it; hence the fixed name.
-`gh api --paginate "repos/{owner}/{repo}/actions/artifacts?name=shadow-ledger&per_page=100"`, then locally: keep
-`name == "shadow-ledger"` and `expired == false` (the `name` filter is re-checked, never trusted). A NAME proves
-nothing, because any workflow run, a pull request's included, can upload an artifact with that name. So for each
-candidate, newest `created_at` first, `gh api repos/{owner}/{repo}/actions/runs/<workflow_run.id>` and accept it
-only if `trusted_ledger(run, default_branch)` holds: `run.event in {"schedule", "workflow_dispatch"}`, `run.path
-== ".github/workflows/ci.yml"`, `run.head_branch == default_branch` (from `gh api repos/{owner}/{repo}`, never
-typed), and `run.head_repository.id == run.repository.id` (a fork's branch may be NAMED `master`). An untrusted
-candidate is skipped and logged `LEDGER IGNORED: <artifact id> <why>`; it is not ours, so skipping it loses
-nothing. The newest TRUSTED one is the predecessor; it must then parse to the schema below (`schema == 1`, every
-`counts` value an int, `shadow_start` a string). **A trusted ledger that fails the schema is a hard failure**
-(nonzero, nothing uploaded), never "use the next one", because falling back to an older ledger could drop a miss
-the newer one latched. `trusted_ledger` and the schema check live in `reach_select.py`, and `shadow-compare.py`
-imports them, so the comparator and `sweep-select` cannot disagree on what counts.
-
-**Fail closed on the ledger itself:** "no trusted `shadow-ledger` has ever existed" (no candidate passes) starts an
-empty ledger; a FAILED listing, run lookup or download exits nonzero and uploads NOTHING, because an empty ledger
-would erase a latched miss. A daily run re-uploads every decided row, so the newest ledger is never older than a
-day while the job runs.
-
-**The epoch (r2 Codex F6).** A ledger belongs to ONE `shadow_start`. The predecessor is merged only when its
-`shadow_start` equals the running code's `SHADOW_START`; otherwise this run starts a NEW epoch: `prs` and `counts`
-are rebuilt from `SHADOW_START` alone (previous-epoch decisions, misses and post-switch events are NOT carried),
-the old epoch is kept as `previous_epoch: {shadow_start, counts}` for the record, and the run logs `EPOCH:
-<old> -> <new>`. The old ledger artifacts stay until their 90-day retention. Moving `SHADOW_START` is the ONLY way
-to clear a latch (Task 8.2). **Bound, stated:** that commit is a semantic loosening `check-merge-ready.py` cannot
-see (its `hold_reasons` are syntactic); spec §7 Q5 makes it the owner's, so the commit's PR body says
-`EPOCH RESET` and its author asks the owner before merging. That is a convention, not a machine.
-
-**The ledger artifact's schema** (one JSON file, `ledger.json`): `{schema: 1, run_id, generated_at,
-shadow_start, previous_epoch: {shadow_start, counts} | null, q1_probe_delta: <from the newest selection-* of a
-PR this ledger lists as MERGED, or null; never an unmerged PR's run, whose selector code no review has passed>, prs: {"<N>": {decision:
-"clean"|"miss"|"inconclusive"|"pending"|"not a sample", decided_at, pushes: [{head, base, result, differing:
-[...], drift: bool}]}}, counts: {clean_consecutive_from_start, miss, inconclusive, unreproduced, drift_events,
-post_switch_events}}` (`post_switch_events` is 0 until slice 8, Task 8.2).
-`clean_consecutive_from_start` counts complete clean PRs in merge order from `SHADOW_START`, ignoring
-`not a sample` PRs; an `inconclusive` PR does not reset it but is not counted (spec §7 Q4: "20 COMPLETE PRs").
+**The report's schema** (`report.json`): `{schema: 1, run_id, run_attempt, code_sha: $GITHUB_SHA, selector_blob:
+<git rev-parse $GITHUB_SHA:scripts/reach_select.py>, comparator_blob: <… :scripts/shadow-compare.py>,
+epoch_start, generated_at, q1_probe_delta: int | null, prs: {"<N>": {decision: "clean"|"miss"|"inconclusive"|
+"pending"|"not a sample", merged_at, decided_at, pushes: [{head, base, result, differing: [...], drift: bool}]}},
+post_switch_events: [{sweep_run_id, pr, targets}], counts: {miss, inconclusive, unreproduced, drift_events}}`.
+**A sample counts only when its push's `selection-*` records a `selector_blob` equal to the report's own** (r3 F8);
+otherwise that push is `not a sample` (the PR run executed a different selector). The PR run executes the merge
+commit's `reach_select.py`, so equal blobs mean the evidence was produced by the code being keyed.
 
 **Interfaces:**
-- `SHADOW_START: str` — the date slice 6 merged.
 - `pushes(pr: dict, runs: list[dict]) -> list[dict]` — every push's PR run with its own BASE.
 - `compare_push(pr_verdicts: list | None, base_verdicts: list | None, would_skip: set[str], select_image: str |
-  None) -> tuple[str, list, bool]` — `"clean"`, `"difference"` (with the differing (target, mutant, seed)),
-  `"inconclusive"` (missing, expired, `complete: false`, a CANNOT RUN control, a cancelled run), `"pending"` (either
-  sweep not finished); the third element is DRIFT (r1 Codex F9, Claude F16; spec §2 Resolve, §4.4): any PR shard's
-  verdicts-header `image` differs from the `selection-*` artifact's `image`, or either is null. Drift is COUNTED
-  in the ledger, never a verdict change.
+  None, select_blob: str | None, report_blob: str) -> tuple[str, list, bool]` — `"not a sample"` when
+  `select_blob != report_blob` (None included); `"clean"`, `"difference"` (with the differing (target, mutant,
+  seed)), `"inconclusive"` (missing, expired, `complete: false`, a CANNOT RUN control, a cancelled run), `"pending"`
+  (either sweep not finished); the third element is DRIFT (r1 Codex F9, Claude F16; spec §2 Resolve, §4.4): any PR
+  shard's verdicts-header `image` differs from the `selection-*` artifact's `image`, or either is null. Drift is
+  COUNTED in the report, never a verdict change.
 - `replay(diff, run_one) -> str` — 3 runs per side under EACH `RECORD_SEEDS` value through Task 7.1's option, in
   fresh trees: stable-and-different under any seed → `"miss"`; anything else → `"unreproduced difference"`.
 - `decide_pr(push_results: list[str]) -> str` — any `miss` LATCHES `"miss"`; any pending → `"pending"`; any
-  inconclusive or unreproduced → `"inconclusive"`; all clean and at least one would-skip target → `"clean"`.
-- `ledger(previous: dict, decided: dict) -> dict` — a PR decided in `previous` keeps its decision, when
-  `previous.shadow_start == SHADOW_START`; else a new epoch, as above.
-- In `reach_select.py`: `trusted_ledger(run: dict, default_branch: str) -> str | None` (None = trusted, else the
-  reason) and `ledger_schema_ok(doc) -> str | None`; `newest_trusted(artifacts: list[dict], get_run) -> tuple[dict
-  | None, list[str]]` (the candidate and the `LEDGER IGNORED:` lines), with `get_run` injected.
+  inconclusive or unreproduced → `"inconclusive"`; all clean and at least one would-skip target → `"clean"`;
+  every push `not a sample` → `"not a sample"`.
+- `report(ledger_doc: dict, decided: dict, meta: dict) -> dict` — builds the schema above, omitting every PR the
+  committed ledger already holds decided.
 - [ ] **Failing cases (§8.6, each adjacent):** a cancelled PR run, a missing base artifact, a red control →
   inconclusive; a pending PR not counted and decided by a later run; a miss at a non-final push then a clean final
   push → miss; a flip on re-run → inconclusive; stable on both trees under one seed → miss; reproduces under only
   one of the two seeds → miss; reproduces under neither → unreproduced, listed, never clean; a PR with no would-skip
-  target → not a sample; an expired input with no decided row → inconclusive; a decided row survives its input's
-  expiry; **(r1 Codex F5) a LATER run after the inputs expired:** run 1 (fake `gh`) decides PR 7 `miss`, writes
-  ledger L1; run 2 sees PR 7's artifacts gone and L1 as the newest ledger → PR 7 still `miss` in L2; a failed
-  artifact listing in run 2 → nonzero, no ledger written (adjacent: an empty listing at the very first run → an
-  empty ledger, rc 0); the newest of two ledgers is the one read; **(r2 Codex F3)** a NEWER ledger uploaded by a
-  `pull_request` run with fabricated clean counts is ignored and the older schedule one is read; adjacent, each
-  provenance clause alone: `workflow_dispatch` on master → trusted, on a feature branch → ignored; a fork whose
-  branch is named `master` (`head_repository.id` ≠ `repository.id`) → ignored; `path` of another workflow →
-  ignored; the newest trusted ledger with `schema: 2` → nonzero, nothing uploaded (adjacent: `schema: 1` → read);
-  **(r2 Codex F5)** the fake `gh` serves two pages and the trusted ledger is on page 2 → found, never "first run";
-  an artifact named `shadow-ledger-old` on page 1 is not a candidate; an `expired: true` one is skipped;
-  **(r2 Codex F4)** a `ci.yml` read asserts `shadow-compare` has `concurrency.group == "shadow-ledger"` and
-  `cancel-in-progress` false (never absent); **(r2 Codex F6)** L1 at epoch E1 holds `miss: 1`; with `SHADOW_START =
-  E2`, L2 has `miss: 0`, no E1 rows and `previous_epoch.counts.miss == 1`, adjacent: same epoch → `miss: 1` kept;
-  `q1_probe_delta` comes from a merged PR's `selection-*`, and an unmerged PR's newer `selection-*` with a smaller
-  delta is not read; `clean_consecutive_from_start` over
-  clean/inconclusive/not-a-sample sequences; **(drift)** a shard image ≠ the selection image → `drift: true`,
-  `drift_events` 1, the result unchanged; equal images → `drift: false`; a null image → drift.
+  target → not a sample; an expired input with no decided row → inconclusive; **a PR decided in the committed
+  ledger is absent from the report, even when its inputs have expired** (adjacent: an undecided PR whose inputs
+  expired → inconclusive); **(r3 F8)** a push whose `selection-*` `selector_blob` differs from the report's →
+  `not a sample`, a missing `selector_blob` → `not a sample`, equal → compared; **(r3 F4)** `q1_probe_delta` is
+  computed in-job: a merged PR's `selection-*` carrying a stale `q1_probe_delta: 2` (a pre-slice-6 shape) is
+  ignored and the report holds the in-job value 6; no restored read set → `null`; the report reads NO earlier
+  report (the fake `gh` serves a `shadow-report-*` with a decided row and the run never downloads it); a failed
+  artifact listing → nonzero, no report; `epoch_start` is copied from the ledger at the checkout, never a script
+  constant; `code_sha`, `selector_blob` and `comparator_blob` are the values at `GITHUB_SHA` (two fixture commits
+  with different `reach_select.py` give different blobs); **(drift)** a shard image ≠ the selection image →
+  `drift: true`, `drift_events` 1, the result unchanged; equal images → `drift: false`; a null image → drift; a
+  `shadow-compare.yml` read asserts the job's `if:` is the default-branch expression, its permissions are exactly
+  `contents: read`, `actions: read`, it has NO `concurrency` key, and the artifact name starts `shadow-report-`.
 - [ ] **Steps:** red, implement with `gh` injected, green, W1-W8, mutate `--only scripts/shadow-compare.py`, commit.
 
-**Pre-push (slice 7):** `python3 scripts/shadow-compare.py --self-test`;
-`python3 scripts/check-plan-code.py --mutate . --only scripts/shadow-compare.py`; `python3 scripts/reach_select.py
---self-test`; `python3 scripts/check-plan-code.py --mutate . --only scripts/reach_select.py`;
-`python3 scripts/check-python-pin.py`.
+### Task 7.3: the committed ledger, the absorb, the guard and the epoch HOLD
+
+**Files:** Create `docs/shadow-ledger.json`; create `scripts/reach_gate.py` (`trusted_report_run`, `list_reports`,
+`ledger_schema_ok`, `report_schema_ok`; Task 8.1 adds the gate) with `scripts/mutations/reach_gate.json`; create
+`scripts/check-shadow-ledger.py` with `scripts/mutations/check-shadow-ledger.json`; modify
+`scripts/shadow-compare.py` (`--absorb`; its manifest and WM pins), `scripts/check-merge-ready.py` (WM pins),
+`.github/workflows/ci.yml` (`verify`: two `--self-test` steps and the guard step; the job gains `actions: read`).
+**W1-W8 for `scripts/reach_gate.py` AND for `scripts/check-shadow-ledger.py`, each in full:** **W1** the docstring
+count from the suite's own pass line; **W2** the manifest, one entry per guard clause; **W3** its
+`EXPECTED_MUTATIONS` entry; **W4** the declared-counts case in `check-plan-code.py`; **W5** `POPULATION`;
+**W6** `EXAMINED_KEYS` by `analyse()`; **W7** a `ci.yml` `verify` step `python3 scripts/<name>.py --self-test`;
+**W8** `fixture_git.isolated()` (the guard's ancestry cases build a fixture repository). ⚠ Unlike the other new
+scripts, `check-shadow-ledger.py` DOES match `GUARD_PATH_RE` (`scripts/check-[\w.-]+\.py`), so
+`scripts/check-ratchet-contract.py` judges it: a `--self-test`, no fail-open handler, and a caller. Run it and cite
+it for this file.
+
+- **The file, created by this slice's PR:** `{schema: 1, epoch: {start: <the date slice 6 merged>, selector_blob:
+  <git rev-parse HEAD:scripts/reach_select.py at this commit>, reset_by_owner: null}, previous_epochs: [],
+  absorbed_through: null, rows: {}, q1_probe_delta: null, post_switch_events: []}`. `epoch.start` replaces the r2
+  `SHADOW_START` constant. GENESIS is this commit: expiry cannot empty a file (r3 F2).
+- **`shadow-compare.py --absorb docs/shadow-ledger.json`**, run LOCALLY by the coordinator with a read-only `gh`
+  (no workflow writes the repository; every job keeps a read-only token). It lists the trusted reports newer than
+  `absorbed_through` (`list_reports`, `trusted_report_run`) and merges them in `generated_at` order: a new decided
+  row is added with its `merged_at`; a decided row is never overwritten; a miss and a post-switch event are never
+  dropped; `q1_probe_delta` takes the newest absorbed report's non-null value; `absorbed_through` becomes the
+  newest absorbed report's `generated_at`. A report the guard below would refuse is skipped and logged
+  `ABSORB SKIPPED: <run_id> <why>`. **Two reports that decide the same PR differently refuse the whole absorb**
+  (nonzero, `ABSORB CONFLICT: #N`): no rule picks one, and while it stands the gate's tightening read (Task 8.1)
+  keeps the switch closed. The absorb commit rides the coordinator's ordinary docs batch, so it costs no extra PR.
+- **`scripts/check-shadow-ledger.py --base REF`.** Its rule, `ledger_change_errors(base_doc, head_doc, reports,
+  blobs_at_base, is_ancestor) -> list[str]`, is PURE; the fetch (`list_reports`, the download, `git show`,
+  `git merge-base --is-ancestor`) is injected (ADR-0014). It reads `git show REF:docs/shadow-ledger.json` and the
+  working tree's file. Unchanged → rc 0, `shadow-ledger: unchanged`, with NO API call (an ordinary PR depends on
+  nothing remote). Changed → it fetches the reports and refuses (rc 1, one line per error):
+  - a removed or altered decided row (a `miss` → `clean` change included);
+  - a drop in the miss count or in `post_switch_events`;
+  - an added row, a `q1_probe_delta` or a post-switch event that no TRUSTED report holds with identical content;
+  - a report whose `code_sha` is not an ancestor-or-equal of BASE (r3 F3; a sha absent from the clone is refused);
+  - a report whose `selector_blob` or `comparator_blob` differs from BASE's `reach_select.py` / `shadow-compare.py`
+    blob (r3 F3: old code cannot write);
+  - an `absorbed_through` that moves backward;
+  - an epoch change that does not append the old epoch VERBATIM to `previous_epochs`, does not start strictly
+    later, alters an earlier `previous_epochs` entry, or carries an empty `reset_by_owner` (r3 F5);
+  - a HEAD document that fails `ledger_schema_ok`, or a BASE that has the file and HEAD deletes it.
+  A failed listing or download while the ledger changed is rc 2, CANNOT RUN, never a pass (a report expired before
+  it was absorbed cannot be verified, so that absorb is refused; the gate's 14-day staleness keeps absorbs well
+  inside 90 days). Caller: a `verify` step `python3 scripts/check-shadow-ledger.py --base
+  "${{ github.event.pull_request.base.sha }}"` on `pull_request` (the ledger reaches master only through a PR);
+  `verify` already checks out with `fetch-depth: 0`, which the ancestry clause needs.
+- **`scripts/check-merge-ready.py`: a HOLD reason `shadow-ledger epoch changed`** when BASE's and HEAD's
+  `epoch` or `previous_epochs` differ. Spec §7 Q5 makes a revisit the owner's, and a HOLD makes that a machine
+  rather than the r2 `EPOCH RESET` PR-body convention (r3 F5's residue). WM pins.
+- [ ] **Failing cases of `ledger_change_errors`, each with its ADJACENT pass:** a removed row → refused (adjacent:
+  an added row a trusted report holds → passes); a `miss` → `clean` change → refused; a lowered miss count →
+  refused; a dropped post-switch event → refused; a row in no report → refused; a row that differs from its report
+  in one field → refused (adjacent: identical → passes); a report from a `pull_request` run → its rows refused;
+  each `trusted_report_run` clause alone (event, `path` of another workflow, a feature `head_branch`, a fork whose
+  branch is named `master`) → refused, adjacent: `schedule` on the default branch → trusted; a report whose
+  `code_sha` is not an ancestor of BASE → refused (adjacent: equal to BASE → passes); a report with an older
+  `reach_select.py` blob → refused, with an older `shadow-compare.py` blob → refused; an `absorbed_through` moved
+  back → refused; an epoch moved backward → refused; moved forward without `reset_by_owner` → refused; moved with
+  `previous_epochs` altered → refused (adjacent: forward, old epoch appended verbatim, `reset_by_owner` set →
+  passes); a deleted ledger → refused; a PR that does not touch the ledger → rc 0, `shadow-ledger: unchanged`,
+  and the injected `gh` was never called; a failed listing with a changed ledger → rc 2. `list_reports`: two pages
+  with the trusted report on page 2 → found; an artifact named `shadow-ledger` or `shadow-report` without a run id
+  suffix is not a candidate; an `expired: true` one is skipped; 150 candidates whose `workflow_run.head_branch` is
+  a PR branch → ZERO run lookups for them (r3 F7).
+- [ ] **Failing cases of `--absorb`:** two trusted reports merged in order; a decided row is not overwritten by a
+  later report saying otherwise → `ABSORB CONFLICT`, nonzero, the file unchanged (adjacent: a later report that
+  omits the row → the row kept); an untrusted report → `ABSORB SKIPPED`, its rows absent; the absorbed file passes
+  `ledger_change_errors` against the pre-absorb file (the absorb and the guard agree, case by construction).
+- [ ] **Failing cases of the HOLD:** an epoch change → HOLD `shadow-ledger epoch changed`; adjacent: rows added,
+  epoch unchanged → no HOLD; no ledger at BASE or HEAD → no HOLD.
+- [ ] **Steps:** red, implement, green, W1-W8 for both new scripts, WM pins for `shadow-compare.py` and
+  `check-merge-ready.py`, mutate `--only` each of the four, commit.
+
+**Pre-push (slice 7):** `python3 scripts/shadow-compare.py --self-test`; `python3 scripts/reach_gate.py --self-test`;
+`python3 scripts/check-shadow-ledger.py --self-test`; `python3 scripts/check-merge-ready.py --self-test`;
+`python3 scripts/check-plan-code.py --mutate . --only` each of `scripts/shadow-compare.py`, `scripts/reach_gate.py`,
+`scripts/check-shadow-ledger.py`, `scripts/check-merge-ready.py`; `python3 scripts/check-ratchet-contract.py`;
+`python3 scripts/check-python-pin.py` (the new workflow's job pins Python).
+**Merge gate:** after merge, a `workflow_dispatch` of `shadow-compare.yml` on master uploads one
+`shadow-report-<run_id>`, and a first absorb PR passes `check-shadow-ledger.py` in its own `verify`.
 
 ---
 
 ## Slice 8 — the switch (LAST; spec §7 Q4, §8.1)
 
-> ⛔ **BLOCKED on owner decision: approve or decline the spec §2 ledger change (architecture review §5).** Approve:
-> `switch_gate` reads the committed ledger at BASE and reports only close it (review §6). Decline: D0's fixes.
+**Design D1 (owner 2026-11-09 14:55).** `switch_gate` reads the committed ledger AT BASE; trusted reports newer than
+its `absorbed_through` can only close the switch (architecture review §6).
 
 **The preconditions are a MACHINE, not a paragraph (r1 Claude F2).** The spec's are: backlog #590 ✅ ("must close
-before any skip takes effect; shadow mode alone is not enough"), ≥ 20 COMPLETE clean PRs from `SHADOW_START` with 0
-latched misses (§7 Q4), and Q1 decided (§2: probe delta ≤ 5 on PR #543's diff, or 3(c) reverted to option A). The
-owner's merge-when-READY rule would merge a slice-8 PR whose prose says "do not merge yet", and
+before any skip takes effect; shadow mode alone is not enough"), ≥ 20 COMPLETE clean PRs from the ledger's epoch
+start with 0 latched misses (§7 Q4), and Q1 decided (§2: probe delta ≤ 5 on PR #543's diff, or 3(c) reverted to
+option A). The owner's merge-when-READY rule would merge a slice-8 PR whose prose says "do not merge yet", and
 `check-merge-ready.py` cannot HOLD it: `hold_reasons` reads syntactic proxies only (its own comment: "A SEMANTIC
 loosening … is outside what a diff rule can see"), and no PR-body marker forces a HOLD (the only body-driven HOLD is
 `NO-REVIEW:`, a waiver, not a precondition). So `switch_gate` (Task 8.1) checks all three on EVERY pull request, at
 run time, and a refused gate leaves the selection at today's rule. Slice 8 can then be built and merged whenever it
-is ready; it skips nothing until the evidence exists, and it STOPS skipping by itself if a miss latches later
-(spec §8.1: one case "stops the switch, or reverts it"): a shadow miss, or a post-switch event (Task 8.2), is
-counted in the ledger and closes the gate on the next PR. The PR body quotes the gate's line from its own
-`sweep-select` log (`SWITCH GATE: refused — <why>` is the expected line while shadow mode runs). A latched miss
-goes to the owner (spec §7 Q5: revisit).
+is ready; it skips nothing until the evidence exists, and it STOPS skipping by itself if a miss appears later
+(spec §8.1: one case "stops the switch, or reverts it"): a shadow miss or a post-switch event (Task 8.2) in any
+trusted report closes the gate on the next PR, before it is absorbed, and the absorb makes it permanent. The PR
+body quotes the gate's line from its own `sweep-select` log (`SWITCH GATE: refused — <why>` is the expected line
+while shadow mode runs). A latched miss goes to the owner (spec §7 Q5: revisit).
 
-### Task 8.0 (only if `q1_probe_delta` > 5): rule 3(c) reverts to option A in `reach_select.py`, with the fixture
+### Task 8.0 (only if the ledger's `q1_probe_delta` > 5): rule 3(c) reverts to option A in `reach_select.py`, with the fixture
 case updated, and `Q1_DECISION = "A"`. A separate commit, reviewed on its own. Its own PR cannot open the gate
 with the new value: `switch_gate` reads `Q1_DECISION` at BASE, and `shard_targets` refuses any list on a PR that
-changes `reach_select.py` (Task 8.1; r2 Codex F2).
+changes `reach_select.py` (Task 8.1; r2 Codex F2). **Its stated cost:** the revert changes `reach_select.py`'s
+blob, so the gate refuses `selector changed since epoch` until an epoch change records the new `selector_blob`
+(Task 7.3: owner's `reset_by_owner`, a HOLD), and the 20-PR count restarts under the new rule. That is correct,
+because the rule changed; it is stated, not avoided.
 
-### Task 8.1: `switch_gate`, and shards run `sweep-select`'s list
+### Task 8.1: `switch_gate` in `reach_gate.py`, and shards run `sweep-select`'s list
 
-**Files:** Modify `scripts/reach_select.py` (`switch_gate`, `Q1_DECISION`), `.github/workflows/ci.yml`,
-`scripts/check-plan-code.py` (`--targets FILE`, `shard_targets`), both manifests and WM pins; the slice-6 invariant
-case flipped.
+**Files:** Modify `scripts/reach_gate.py` (`switch_gate`, `q1_at_base`; its manifest and WM pins),
+`scripts/reach_select.py` (`Q1_DECISION`, `SELECTOR_FILES`; WM pins), `.github/workflows/ci.yml`,
+`scripts/check-plan-code.py` (`--targets FILE`, `shard_targets`; WM pins); the slice-6 invariant case flipped.
+`switch_gate` and `q1_at_base` live in `reach_gate.py`, NOT in `reach_select.py`, so editing the GATE does not move
+the evidence key (`reach_select.py`'s blob, r3 F8). `reach_gate.py` is in `SELECTOR_FILES`.
 
 **Interfaces:**
-- `Q1_DECISION: str` — `"B"` (the owner's choice) until Task 8.0 sets `"A"`.
+- `Q1_DECISION: str` (in `reach_select.py`) — `"B"` (the owner's choice) until Task 8.0 sets `"A"`.
 - `q1_at_base(src: str | None) -> str | None` — `Q1_DECISION`'s literal from `git show BASE:scripts/reach_select.py`
   (`ast`, the module-level assignment only), or None when the file is absent, unparseable, the name is missing, or
   its value is not exactly `"A"` or `"B"` (r2 Codex F2). Before slice 8 merges, BASE has no `Q1_DECISION`, so
   slice 8's own PR is refused here too.
-- `switch_gate(backlog_at_base: str | None, ledger: dict | None, q1_decision: str | None) -> str | None` — None = the
-  switch may take effect; else the refusal, checked in this order: `backlog_at_base` is None (`git show
-  BASE:docs/backlog.md` failed) → refused; row `| 590 |`'s status cell does not begin with `✅` → `backlog #590
-  open`; `ledger` is None (no TRUSTED `shadow-ledger`, its schema failed, or the listing, run lookup or download failed) → `no shadow ledger`;
-  `ledger.counts.miss + ledger.counts.post_switch_events > 0` → `latched miss`; `clean_consecutive_from_start < 20` → `N of 20 clean PRs`;
-  `q1_decision` is None → `Q1 decision unreadable at BASE`; `q1_decision == "B"` and `ledger.q1_probe_delta` is
-  null or > 5 → `Q1 undecided`. **The backlog AND `Q1_DECISION` are read at BASE, never at HEAD** (`q1_decision`
-  is `q1_at_base(...)`, never the running module's constant), so a PR cannot enable its own skips by ticking #590
-  or by flipping the decision in its diff.
-- `sweep-select` (now also in slice 8's `needs:` graph) finds the newest TRUSTED `shadow-ledger` by Task 7.2's
-  `newest_trusted` (exact name, every page, run provenance, schema) (`actions: read`,
-  already held), runs `switch_gate`, and when refused writes TODAY's selection (`select_manifests`) as `targets`,
-  logging `SWITCH GATE: refused — <why>`; when passed, writes the observed list and logs `SWITCH GATE: open`. It
-  also runs `git show "$BASE":scripts/reach_select.py` into a file and passes it as `--q1-base FILE` (absent file
-  → `q1_at_base(None)`).
+- `switch_gate(backlog_at_base: str | None, ledger_at_base: dict | None, q1_decision: str | None,
+  selector_blob_at_base: str, reports: list[dict] | None, today: date) -> str | None` — None = the switch may take
+  effect; else the refusal, checked in this order:
+  1. `backlog_at_base` is None (`git show BASE:docs/backlog.md` failed) → refused; row `| 590 |`'s status cell does
+     not begin with `✅` → `backlog #590 open`;
+  2. `ledger_at_base` is None, or fails `ledger_schema_ok` (`git show BASE:docs/shadow-ledger.json` absent or
+     unparseable) → `no ledger at BASE`;
+  3. `ledger_at_base.epoch.selector_blob != selector_blob_at_base` (`git rev-parse BASE:scripts/reach_select.py`)
+     → `selector changed since epoch` (r3 F8);
+  4. any `miss` row or any `post_switch_events` entry in the ledger → `latched miss`;
+  5. fewer than 20 consecutive complete clean rows, in `merged_at` order from `epoch.start`, ignoring `not a
+     sample` rows (an `inconclusive` row does not reset the run but is not counted) → `N of 20 clean PRs`;
+  6. `q1_decision` is None → `Q1 decision unreadable at BASE`; `q1_decision == "B"` and the LEDGER's
+     `q1_probe_delta` (at BASE) is null or > 5 → `Q1 undecided`;
+  7. `absorbed_through` is null or more than 14 days before `today` → `ledger stale` (a comparator or absorb that
+     stops running fails CLOSED; the inverse of r3 F2);
+  8. `reports` is None (a listing, run lookup or download failed) → `reports unreadable`;
+  9. any trusted report with `generated_at` later than `absorbed_through` holds a `miss` row or a post-switch event
+     → `unabsorbed miss`. The read is a UNION over those reports, so the newest report omitting a miss cannot hide
+     it (r3 F3, F5 in the window).
+  **Every input that can OPEN the switch (1-7) is read at BASE, never at HEAD and never from Actions storage**
+  (`q1_decision` is `q1_at_base(...)`, never the running module's constant), so a PR cannot enable its own skips
+  by ticking #590, flipping the decision or editing the ledger in its diff. **Reports (8-9) can only CLOSE it**: a
+  forged or untrusted report could at most refuse.
+- `sweep-select` (now also in slice 8's `needs:` graph; `actions: read`, already held) runs `git show
+  "$BASE":docs/backlog.md`, `git show "$BASE":docs/shadow-ledger.json`, `git show "$BASE":scripts/reach_select.py`
+  (→ `--q1-base FILE`; absent → `q1_at_base(None)`) and `git rev-parse "$BASE":scripts/reach_select.py`, lists the
+  trusted reports by `list_reports` (Task 7.3), runs `switch_gate`, and when refused writes TODAY's selection
+  (`select_manifests`) as `targets`, logging `SWITCH GATE: refused — <why>`; when passed, writes the observed list
+  and logs `SWITCH GATE: open`.
 - `shard_targets(event: str, select_result: str, output: str | None, full: str | None, reasons: dict, known:
   frozenset, changed_paths: set[str]) -> tuple[list[str] | None, str]` in `check-plan-code.py` — the list a shard
   runs, None = its own rule (today's `select_manifests`, which is FULL on a push or the schedule). **The shard does
@@ -950,18 +1055,19 @@ case flipped.
   (the call `select_manifests` already makes there), and `known` is the manifest target set. Checked in order, the
   first failure → None with that reason: `event != "pull_request"`; `select_result != "success"`; `full` is not
   None (`full: <why>`: rule 1 runs ALL whatever the list says); any `changed_paths` member in `SELECTOR_FILES`
-  (`selector changed`; `SELECTOR_FILES = frozenset({"scripts/reach_select.py"})`, so the PR that edits the selector,
-  `switch_gate` or `Q1_DECISION` runs today's rule); `output` is not a non-empty JSON list of distinct strings;
-  an element not in `known` (`unknown target <t>`); a target whose `reasons` hold `own-source` or `own-manifest`
-  missing from the list (`missing mandatory <t>`). Else the list. These checks live in the HARNESS, so a PR that
-  edits them gets FULL from `full`. `--targets FILE` reads the file the step wrote from
+  (`selector changed`; `SELECTOR_FILES = frozenset({"scripts/reach_select.py", "scripts/reach_gate.py"})`, so the PR
+  that edits the selector, `switch_gate` or `Q1_DECISION` runs today's rule); `output` is not a non-empty JSON list
+  of distinct strings; an element not in `known` (`unknown target <t>`); a target whose `reasons` hold `own-source`
+  or `own-manifest` missing from the list (`missing mandatory <t>`). Else the list. These checks live in the
+  HARNESS, so a PR that edits them gets FULL from `full`. `--targets FILE` reads the file the step wrote from
   `needs.sweep-select.outputs.targets` and calls it.
 - **`ci.yml` (r1 Codex F1, BLOCKER).** `mutation-sweep` gets `needs: sweep-select` AND `if: ${{ !cancelled() }}`.
   GitHub skips a job whose `needs:` job was skipped or failed unless its `if:` says otherwise, and `sweep-select`
   is `pull_request`-only, so without that `if:` the master push and the schedule (the FULL sweeps, the backstop of
   spec §4) and every PR whose selector failed would run NO sweep, and `mutation-sweep-complete` (`if: always()`,
-  which fails any result but `success`) would report FAILED on every master push. The shard step passes `SELECT_RESULT: ${{ needs.sweep-select.result }}` and the output to
-  `shard_targets`, so the decision is in Python, not YAML.
+  which fails any result but `success`) would report FAILED on every master push. The shard step passes
+  `SELECT_RESULT: ${{ needs.sweep-select.result }}` and the output to `shard_targets`, so the decision is in
+  Python, not YAML.
 - [ ] **Failing cases, WORKFLOW level (r1 Codex F1):** a `ci.yml` read (the `sweep_limit_pin` style) asserts
   `mutation-sweep`'s `if:` is exactly `${{ !cancelled() }}` (never `success()`, never absent while `needs:` names
   `sweep-select`), that the shard step passes `needs.sweep-select.result` and the output, and that `sweep-select`
@@ -978,16 +1084,24 @@ case flipped.
   "scripts/check-features.py"]` → that list; a change to `scripts/mutations/check-docs.json` omitted → None (the
   `own-manifest` clause alone); `[1, 2]` and a duplicated element → None; a diff that `select_reasons` calls FULL
   (a harness file) with a valid list → None; **(r2 Codex F2)** a diff touching `scripts/reach_select.py` with a
-  valid list holding every mandatory pick → None, `selector changed`; a case asserts every module
-  `reach_select.py` imports from `scripts/` (by `ast`, as `harness_files` reads imports) is in `SELECTOR_FILES` or
-  in `harness_files`, so a new selector module cannot escape the refusal. `SKIPPED:` replaces `WOULD-SKIP:` in the log.
-- [ ] **Failing cases, `switch_gate`:** each refusal above with its adjacent pass: #590's row with `🟠` → refused,
-  with `✅ (was 🟠)` → passes that clause; a ledger with 19 → refused, 20 → passes; 20 clean and one `miss` →
-  refused; no ledger → refused; `Q1_DECISION="B"` with delta 6 → refused, 5 → passes, `"A"` with delta 6 → passes;
+  valid list holding every mandatory pick → None, `selector changed`, and the same for `scripts/reach_gate.py`; a
+  case asserts every module `reach_select.py` or `reach_gate.py` imports from `scripts/` (by `ast`, as
+  `harness_files` reads imports) is in `SELECTOR_FILES` or in `harness_files`, so a new selector module cannot
+  escape the refusal. `SKIPPED:` replaces `WOULD-SKIP:` in the log.
+- [ ] **Failing cases, `switch_gate`, each refusal with its ADJACENT pass:** #590's row with `🟠` → refused, with
+  `✅ (was 🟠)` → passes that clause; no ledger at BASE → refused, while the PR's HEAD carries a valid 20-clean
+  ledger (the gate reads BASE); a ledger whose `epoch.selector_blob` ≠ BASE's blob → `selector changed since
+  epoch`, equal → passes; 19 clean → refused, 20 → passes; 20 clean and one `miss` row → refused; one post-switch
+  event → refused; 20 clean rows recorded under an earlier epoch (in `previous_epochs`) and none in the current →
+  `0 of 20`; `Q1_DECISION="B"` with the ledger's delta 6 → refused, 5 → passes, `"A"` with delta 6 → passes;
   **(r2 Codex F2)** BASE source with `"B"`, delta 6, while the RUNNING module says `"A"` → refused (the gate takes
   BASE's); `q1_at_base` of a source with `Q1_DECISION = "C"`, of one with no assignment, of `None` and of
-  unparseable text → None → refused, adjacent: `"A"` → `"A"`;
-  a HEAD backlog with ✅ and a BASE backlog without → refused (the gate reads BASE).
+  unparseable text → None → refused, adjacent: `"A"` → `"A"`; `absorbed_through` 15 days before `today` →
+  `ledger stale`, 14 → passes; `reports=None` → `reports unreadable`, `[]` → passes; a trusted report newer than
+  `absorbed_through` with a miss → `unabsorbed miss`, while the NEWEST report omits it (the union), adjacent: the
+  same report older than `absorbed_through` → passes (already absorbed); a report that claims 25 clean rows the
+  ledger lacks does NOT open a gate refused at `N of 20` (a report can only close); a HEAD backlog with ✅ and a
+  BASE backlog without → refused (the gate reads BASE).
 - [ ] **A live check before merge:** the slice-8 PR's own run shows `SWITCH GATE: refused — …` or `open`, its
   shards ran (none skipped by `needs:`), and `mutation-sweep-complete` is green. After merge, the first master
   push's sweep ran FULL with `sweep-select` skipped (the case the BLOCKER was about, observed live).
@@ -1011,14 +1125,18 @@ report file), `.github/workflows/ci.yml` (`mutation-sweep-complete`), the manife
   `POST_SWITCH_REPORT` (a path): `red_body` APPENDS the file's text when it exists, and appends
   `POST-SWITCH: NOT CHECKED — no report file` when the variable is set but the file is absent. It remains the ONE
   writer of the `sweep-red` issue.
-- **It also LATCHES.** `shadow-compare.py --run` (Task 7.2's daily job) calls `post_switch` over every red master
-  full sweep since `SHADOW_START` and records each hit in the ledger as `post_switch_events`; `switch_gate` refuses
-  on any. So the first §8.1 event turns the switch off by itself, and turning it back on is the owner's (spec §7
-  Q5: "revisit on the first §8.1 event"), by a reviewed commit that moves `SHADOW_START` forward, which starts a new EPOCH (Task 7.2: the previous
-  epoch's misses and post-switch events are not carried) and so restarts the 20-PR count.
+- **It also LATCHES, in three steps.** (1) `shadow-compare.py --report` (Task 7.2's daily job) calls `post_switch`
+  over every red master full sweep since `epoch.start` and records each hit in the REPORT's `post_switch_events`;
+  (2) the gate's tightening read (Task 8.1, clause 9) closes the switch on the next PR, before any absorb; (3) the
+  absorb copies the event into the committed ledger, where the guard forbids dropping it (Task 7.3), and clause 4
+  keeps the switch closed. Turning it back on is the owner's (spec §7 Q5: "revisit on the first §8.1 event"): a
+  reviewed absorb-style commit that starts a NEW EPOCH in `docs/shadow-ledger.json` (strictly later `start`, the
+  old epoch appended verbatim to `previous_epochs`, a non-empty `reset_by_owner`), which `check-shadow-ledger.py`
+  checks and `check-merge-ready.py` HOLDs (Task 7.3), and which restarts the 20-PR count.
 - [ ] **Failing cases:** a red target in a merged PR's SKIPPED set → reported; a red target skipped by no PR → not;
-  a missing selection artifact → reported as NOT CHECKED, never silent; the daily run records a hit as
-  `post_switch_events: 1` and a later run keeps it after the inputs expire; `sweep-red-alert.py`: with a report file
+  a missing selection artifact → reported as NOT CHECKED, never silent; the daily report records a hit as one
+  `post_switch_events` entry; a later report, after the hit's inputs expired and the hit was absorbed, omits it
+  while the ledger keeps it (the guard refuses its removal, Task 7.3); `sweep-red-alert.py`: with a report file
   the issue body (its fake `gh` state) contains the report's lines; with the variable set and no file → NOT
   CHECKED in the body; without the variable → the body is byte-identical to today's (adjacent); a `ci.yml` read
   asserts the step is in `mutation-sweep-complete`, precedes the alert step, and that the job's permissions are
@@ -1034,14 +1152,15 @@ report file), `.github/workflows/ci.yml` (`mutation-sweep-complete`), the manife
 - §2 Record, cold traced run first, two fixed seeds, env reproduction, timeout: Tasks 4.1-4.2. Recorder, classes,
   INCOMPLETE triggers, normalisation: Tasks 2.1-3.2. Record fields: Task 3.2/4.1. Store/save condition: Task 4.2.
   Validity key: Task 4.1/5.3. Resolve: Task 6.2 (report-only), 8.1 (effective). Diff + `Δ` + Use: Tasks 5.1-5.2.
-  Q1 fallback: Task 3.2 (`probed_stat_only`), 6.1, 8.0, 8.1 (`Q1_DECISION`). Shadow data + comparator + MISS +
-  ledger persistence: Tasks 6.1-7.2. Image drift (§2 Resolve, §4.4): Tasks 6.1 (headers), 7.2 (counted).
+  Q1 fallback: Task 3.2 (`probed_stat_only`), 6.1 (the pure delta), 7.2 (computed in the report), 7.3 (absorbed), 8.0, 8.1 (`Q1_DECISION`). Shadow data + comparator + MISS +
+  ledger persistence: Tasks 6.1-7.3 (the committed ledger, absorb and guard: Task 7.3; spec §2 *The ledger*). Image drift (§2 Resolve, §4.4): Tasks 6.1 (headers), 7.2 (counted).
 - §2 "backlog #590 must close before any skip takes effect" and §7 Q4: `switch_gate` (Task 8.1), at run time, so
   no merge rule can bypass it.
-- Trust in the gate's inputs (r2): the list is re-validated by the harness (`shard_targets`), every decision input
-  is read at BASE, and a ledger counts only from the default-branch comparator run (`trusted_ledger`), one writer
-  at a time, within one epoch (Global Constraints, *Trust and provenance*; Tasks 7.2, 8.1).
+- Trust in the gate's inputs (design D1, owner 2026-11-09 14:55): the list is re-validated by the harness
+  (`shard_targets`); every input that can open the switch is read at BASE, the ledger included; the ledger changes
+  only through a guarded absorb of trusted reports (`check-shadow-ledger.py`, `trusted_report_run`); reports can
+  only close the switch; an epoch change HOLDs (Global Constraints, *Trust and provenance*; Tasks 7.2, 7.3, 8.1).
 - §3 fail-closed rows: Task 5.3 (key, restore, usable), Task 4.1 (`GIT_DIR`), Tasks 2.2-3.2 (complete).
 - §4 bound 6 / backlog #590: Tasks 2.2 (R4-F1), 3.1 (R4-F2, default-deny), 4.2 (live cases), 4.3 (closure).
-- §8.1-8.6: Tasks 8.2/7.2, 5.2, 5.1-5.3, 2.2-3.2, 4.1-4.2, 7.2 respectively.
+- §8.1-8.6: Tasks 8.2/7.2, 5.2, 5.1-5.3, 2.2-3.2, 4.1-4.2, 7.2/7.3/8.1 respectively (§8.6's ledger clause: 7.3, 8.1).
 - §6 (backlog #560 reuse) needs nothing here: the record carries blob ids (Task 4.1).

@@ -19728,3 +19728,22 @@ read sets) is fixed in plan Task 5.3: `pick_cache` keeps `ref == refs/heads/<def
 shadowed under another ref (the cache list's `ref` was MEASURED). F2-F8 are held, with both fold forms written.
 Plan slices 6-8 are marked BLOCKED, and slices 1-5 can proceed. Decision log: row 228 is `continued` (refuted),
 and a new `split` bet was appended.
+
+## 2026-11-09 [resolved: 2026-11-09/9]
+You chose the committed file for the backlog #586 trial tally, at 14:55. The tally of shadow-mode results now
+lives in a file in the repository, read from master, instead of in GitHub's 90-day storage. A check refuses any
+change to that file that drops a recorded miss or adds a result no trusted run reported. GitHub's storage can now
+only turn skipping OFF, never ON. The spec's one sentence is changed, and the last three of the plan's eight pull
+requests are rewritten to match. Because this is a new design, its review starts again at round 1, with both
+reviewers, before those three are built. The first five pull requests still do not depend on it.
+<!--tech-->
+Branch `plan-586-observed-reach`. Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2
+*The comparator* / *The ledger* carry the architecture review §5 diff verbatim; §7 gains the decision row; §8.6
+gains a FAILS IF clause for the ledger and its guard. Plan slices 6-8 rewritten to review §6: `selection-*` gains
+`selector_blob` and loses `q1_probe_delta`; Task 7.2 `shadow-compare.py --report` in a new
+`.github/workflows/shadow-compare.yml` (no concurrency group); new Task 7.3: `docs/shadow-ledger.json`, `--absorb`,
+`scripts/check-shadow-ledger.py` (W1-W8; matches `GUARD_PATH_RE`), `scripts/reach_gate.py` (W1-W8), and a
+`check-merge-ready.py` HOLD on an epoch change; Task 8.1 `switch_gate` in `reach_gate.py` reads the ledger at BASE
+and reports can only refuse. r3 F2-F8 dispositioned `fixed` under D1 in
+`docs/reviews/coordinator/plan-586-r3-coordinator.md` (`REDESIGNED → plan-586-redesign`); next:
+`plan-586-redesign` round 1, both halves.
