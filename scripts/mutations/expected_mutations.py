@@ -2054,4 +2054,53 @@ EXPECTED_MUTATIONS = {
     # of work. Recorded rather than papered over: shipping a manifest whose suite cannot
     # execute would report coverage that does not exist, which is the exact failure this
     # harness was built to prevent.
+    # ⟳ 2026-11-08 (backlog #428): the push gate's DETECTION, moved out of the shell hook so it can be
+    # mutated. EIGHTEEN on arrival: the quote/backslash normalisation (3), the strict and fail-closed
+    # layers (3), the word boundaries of `git` and `push` (5), the segment's stop at a separator and a
+    # line end (2), the three `GITOPTS` branches (3), and the CLI contract the hook reads (2). Each was
+    # hand-checked in a `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case once.
+    # ⟳ 2026-11-08, PR #542 round 1 fold: 18 -> 32. FOURTEEN new — the line continuation (C-F1, 1); the
+    # non-push exemption (C-F2: stash, commit, never consulted, a later git word, a bare `git` word, 5); strict
+    # mode's segment set (C-F2: bare chunks dropped, git chunks kept, 2); redirections (glued, fd digits,
+    # separate target, 3); the deadline (X-F1: not armed, SIGALRM ignored, 2); `-c` skipping its value (1).
+    # The 18 existing entries were REBOUND to the rewritten code, intent and name unchanged (the regex
+    # `GITOPTS` became the token scan `_reach`). Each of the 32 hand-checked in a `stage_tree` copy: rc 1,
+    # and `parse_fail_names` names every expected case exactly once.
+    # ⟳ 2026-11-08, PR #542 round 2 fold: 32 -> 47. The tokenizer was REPLACED by a quote-aware lexer (`lex`),
+    # so 16 entries were REBOUND to it, name and intent unchanged (the quote/backslash removal, the separator
+    # and line end, the bare-flag and `-c` skips, the segment's leading word, the line continuation, the
+    # exemption, the later-git-word rule — now the `$(` refusal —, the command-word rule, and the three
+    # redirection rules). FIFTEEN new: the quote-aware separator (X-F1) and redirection (X-F2), the subcommand
+    # position (X-F4), judging every invocation (X-F1), the comment at a word start and only there (2), the
+    # unresolved constructs (backtick, subshell, unbalanced quote, ANSI-C, `eval`/`sh -c`, the both-words
+    # condition: 6), the assignment and reserved-word skips (2), and the loose reading's quote deletion (1).
+    # Each of the 47 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and `parse_fail_names` names
+    # every expected case exactly once.
+    # ⟳ 2026-11-08, PR #542 round 3 fold (Phase 6 design (b), level 1): 47 -> 79. ALL 47 RETIRED: every anchor was
+    # in code the fold DELETES (`normalize` as a reader, the r2 `lex`, `_command_word`, `_subcommand`, `_runs_code`,
+    # `_segment`, `_judge`, `segments`, the four modes and the loose layer), so none can bind. Lowering the
+    # ratchet to 0 before re-raising it is deliberate and written here, per `CONTEXT.md` -> *Ratchet*. 79 NEW, one
+    # per decision branch of `decide`: the trigger (3), rule 3 before the lexer (4), rule 1's switches (3), the
+    # lexer's OUTSIDE classes (15), quotes and separators (2), redirections (3), parameters (4), the command word
+    # (4), git's global options (5), unknown-valued words in git (4), subcommands (3), push's options (8),
+    # destinations (10), code runners and text commands (7), the CLI and the deadline (4).
+    # ARITHMETIC: 47 - 47 + 79 = 79. Each of the 79 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and
+    # `parse_fail_names` names every expected case exactly once.
+    # ⟳ 2026-11-08, PR #542 round 4 fold (Codex X-F1..X-F3): 79 -> 99. TWENTY new, none retired: `&>` never takes a
+    # descriptor (X-F1, 1); the branch-change composition rule, its movers (BRANCH_MOVERS, `stash branch`,
+    # `branch -m`, `gh … checkout`, an unreadable git option), its rule-1 switches, and the UNKNOWN current branch
+    # after `cd`, `-C` and `GIT_DIR=` for `HEAD`/`@` and for no refspec (X-F2, 12); push-option values, separate and
+    # `=`, naming the default branch, beginning with `-`, mentioning force, and both escapes (X-F3, 7).
+    # ARITHMETIC: 79 + 20 = 99. Each of the 20 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and
+    # `parse_fail_names` names its expected case exactly once; 16 existing entries whose code the fold touched
+    # re-checked the same way, all still killed and attributed.
+    # ⟳ 2026-11-08, PR #542 round 5 fold (Claude C-F1, C-F2, C-F5): 99 -> 107. EIGHT new, none retired: master's
+    # hook as a FLOOR (6: `verdict` runs it, `main` prints `verdict`, its bytes checked against master's blob, a
+    # missing floor, a stalled floor, master's deny read as `floor`); `NAME+=value` as an assignment prefix and
+    # `GIT_DIR+=` as a repository change (C-F5, 2). Three existing entries whose anchors `main` changed ("the
+    # deadline is not armed", "decide prints only the verdict…", "decide ignores its has_remote argument") were
+    # RE-ANCHORED on the new lines with the same mutation, not retired.
+    # ARITHMETIC: 99 + 8 = 107. Each of the 8 new and the 3 re-anchored hand-checked ONE AT A TIME in a
+    # `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case exactly once.
+    "scripts/push-command.py": 108,
 }

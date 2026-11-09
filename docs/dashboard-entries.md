@@ -19381,3 +19381,198 @@ cancelled. Backlog #583: when a master merge's conflict is resolved by hand, nob
 It proposes a scoped review of only those lines. Backlog #231 (shard headroom) records that PR #542's shard 6 hit its
 time budget and passed on a re-run. Also closed sweep-red issue #499: master's full sweep has been green on six
 pushes in a row.
+
+## 2026-11-08
+The safety check that stops a push to master no longer misses a push written with quotes around the word "push", or one
+that runs git by its full path. It now reads the command with quotes removed, and when the words "git" and "push" both
+appear in a form it does not recognise, it checks the command anyway. The cost, stated plainly: an ordinary command that
+mentions both words, such as searching the log for "push", is now refused when run from a copy that is on master, and
+a quoted sentence reading "git push origin master" is refused anywhere, as is a search of the log for "push to master"
+and a push wrapped in brackets. A commit message or a pull-request title that mentions "push" and "master" next to a
+real push is allowed, and so is git's own "stash push". Those refusals are the deliberate price of not letting a real
+push through. The first review also found it could freeze on one long command, and that a push continued onto a second
+line, "push HEAD" from master, or a "+master" slipped past it; all four are now refused.
+<!--tech-->
+Backlog #428. Detection moved out of `.claude/hooks/block-default-branch-push.sh` into `scripts/push-command.py`
+(`segments`: mode `none`/`strict`/`loose`, then one `push <args>` line per segment) so the mutation harness can reach it.
+Normalise (delete `"`, `'`, `\`, rule 3's form) → STRICT (`git [GITOPTS] push`) → LOOSE fail-closed (words `git` and
+`push` both present). Segments = every word `push` to the next `;`/`&`/`|`/line end, in both modes; the mode only adds a
+"read by the fail-closed rule" note to the refusal. A detector that cannot run REFUSES (NOT CHECKED). Bound (MEASURED by
+the suite over a fixture clone): `git log --grep push` and `echo "git push later"` are allowed on a feature branch and
+refused on the default branch. Red-before MEASURED: 9 of the new hook cases fail against origin/master's hook
+(`git -c x=y push origin master` was already refused there). push-command 39 cases (new, CI step added, pinned in
+`check-selftest-counts`, `check-fixture-variation` and check-plan-code's shipping-manifest case); hook self-test
+26 -> 33; 18 mutations (new pin), each hand-checked in a `stage_tree` copy. Cost MEASURED on a loaded machine (3 runs of
+20 calls): the hook went from 163-244 to 398-570 ms per call that contains `push`, the Python start-up of the detector.
+⟳ PR #542 round 1 fold (both halves NOT CONVERGED, 12 findings: 11 fixed, X-F2's rest and C-F6 filed as backlog #574).
+X-F1: the nested-repetition `GITOPTS` regex became a right-to-left token scan (`_reach`), O(N) per chunk, and
+`segments` arms a 3 s SIGALRM with the DEFAULT action; the hook names exit 142 as a deadline refusal. Codex's input
+(`-c ` ×60) MEASURED: the old detector timed out at 10 s, the new one answered in 0.15 s. C-F1: `\`+newline -> space
+before the deletion. C-F2: per chunk; strict mode reads strict pushes plus push words in chunks holding a git word;
+`git commit`/`git stash` chunks with no later git word are not pushes. Redirections removed from segments. C-F3 MEASURED
+(Claude Code 2.1.316, marker hooks in a `claude -p` scratch repo): `Bash(*push*)` fired for `echo git p"u"sh …`,
+`echo git pu\sh …`, `echo pu""sh`; not widened. C-F4/X-F2: `HEAD`/`@` -> current branch, `+` stripped for rule 1 and
+refused as force by rule 2. X-F3/C-F5: a push token with `(`, `)`, backtick, `$(`, `<`, `>` refused. X-F4/C-F7: invalid
+JSON, non-string command, missing `jq` refuse (NOT CHECKED); hook `--self-test` is a CI step. C-F8: `json`, `subprocess`,
+`tempfile`, `pathlib` load only in the self-test. Bound restated in the docstring and the hook comment, each case
+measured. push-command 39 -> 64 cases; hook self-test 33 -> 53; mutations 18 -> 32 (18 rebound, 14 new), each
+hand-checked in a `stage_tree` copy; hook-side fixes each reverted by hand and their cases went red.
+
+## 2026-11-08
+The second review of the push safety check found that the first round of fixes had opened three new holes. Because
+the check threw away all quote marks before splitting a command into parts, a quoted symbol such as `>` or `;` inside
+an ordinary option was read as if it were shell punctuation: it could swallow a `--force`, cut a real push in two, or
+make a push look like a harmless `git stash`. A push to master followed by a comment that mentioned a feature branch
+was also let through. The check now reads a command the way the shell does, remembering what was quoted, and judges
+every git command in it. Anything it cannot follow (a `$( … )`, backticks, brackets, an unclosed quote, `eval` or
+`sh -c`) is refused whenever the words "git" and "push" both appear. The price is stated plainly: a feature-branch push
+next to such syntax, a `git log` search for "push --force", or a quoted "git push origin master" is refused. In
+exchange, `git stash push` with a message that names a push is now always allowed.
+<!--tech-->
+Backlog #428, PR #542 round 2 fold (Codex half, NOT CONVERGED: X-F1, X-F2, X-F3 High and X-F4 Low, all four caused by
+round 1's fold, ONE cause: quotes deleted before the split). `scripts/push-command.py`: the chunk/regex tokenizer is
+REPLACED by `lex` — one left-to-right pass with quote state, `;`/`&`/`|`/newline/`<`/`>` operators only when unquoted,
+redirections dropped with their target (an fd number is not a word), a `#` at a word start is a comment, `\`+newline
+joins. `_judge` reads every command: leading assignments and reserved words skipped; `git` + global options + the
+SUBCOMMAND (`_subcommand`); `push` = strict, `commit`/`stash` = not a push, anything else = the fail-closed LOOSE
+reading over the command's words with quotes deleted. New mode `unresolved` (`$(`, backtick, `$'`, unquoted paren,
+unbalanced quote, `eval`, `sh -c`), emitted only when the words `git` and `push` both appear; the hook refuses it,
+naming the construct, NOT CHECKED. X-F4: the bound is restated in the docstring and the hook comment, with cases:
+REFUSED on any branch — a dangerous flag after a loose push word (`git log --grep "push --force"`), a command with
+both words and an unresolved construct (`cd "$(…)" && git push origin feat/x`, `bash -c 'git push origin feat/x'`, an
+unbalanced quote), a quoted `(`/`)`/`<`/`>` in a push argument, heredoc bodies lexed as command lines; ALLOWED — every
+bare `git stash`/`git commit` (`git stash push -m "git push origin master"`). Red-before MEASURED: the new self-test
+over the round 1 detector and hook fails 45 of 112, including every Codex repro through the hook (11 deny cases
+allowed, the stash case refused). FLIPPED existing cases, each explained in place: `git -C "my dir" push origin
+master` loose -> strict; `echo "git push later"` strict -> loose; `git commit -m "$(git push …)"` and `echo $(git
+stash push)` loose -> unresolved; the hook's "an unbalanced quote no longer denies a normal push" allow -> deny (the
+coordinator's round 2 rule; bash refuses to run that line). push-command 64 -> 112 cases; hook self-test 53 -> 56;
+mutations 32 -> 47 (16 rebound to `lex`/`_judge`, 15 new), each hand-checked ONE AT A TIME in a `stage_tree` copy.
+Latency MEASURED, 3 runs each, same machine, interleaved: `git push origin feat/x` 243-261 ms before, 186-196 ms after;
+`echo push` 77-83 ms before, 86-103 ms after (noise-level; the first before-run read 324-363 and 133-159 ms).
+
+## 2026-11-08
+The third review of the push safety check found the same kind of hole a third time. The round 2 fix had taught the
+check to read quotes, but it still read the text inside a `cat <<EOF … EOF` block as if it were commands. A quote
+mark in that text could hide a real push to master that came after it. Brace patterns such as `{master,}`, wildcards
+and some flag spellings also got through. Two rounds in a row had each fixed what was in front of them and opened
+something new, so an architecture review ran instead of a fourth patch. The check is rebuilt on its recommendation.
+It now reads only a small, fixed set of shell syntax, which it can read exactly as bash does: plain words, quotes,
+`;` `&&` `|`, simple redirections and simple `$NAME` variables. Any command that mentions push and uses anything
+else is refused, with a one-line remedy: run the push as its own plain command. None of the 52 bypasses found so far
+gets through. The price, measured on 1,634 real commands from past sessions: 7% more are refused than before (86 new,
+2 no longer refused), mostly a heredoc or a `$( … )` next to a push. Teaching the check to read those two safely is
+filed as backlog #579. The suite now also runs bash itself over about a thousand generated commands and checks that
+bash never runs a command the check did not see.
+<!--tech-->
+Backlog #428, PR #542 round 3 → Phase 6 (`docs/reviews/architecture-review-2026-11-08-push-detector.md`, design (b),
+level 1) → fold. DELETED: the r2 `lex`, `normalize` as a reader, `_command_word`/`_subcommand`/`_runs_code`/
+`_segment`/`_judge`/`segments`, the modes none/strict/loose/unresolved, the hook's `0:none) allow`, its rule-2 regexes
+and its rule-1 token loop. BUILT: `decide(command, current, default, has_remote)` → `allow` | `deny <rule> <reason>`.
+Trigger over three quote-blind views (a backslash-newline joined to nothing, as bash does), then rule 3 BEFORE
+lexing, then `lex` exact over the closed language or `Outside`, then `_judge` per command from closed tables (git
+global options, push-option allowlist, `+`, `refs/heads/`/`heads/`/`HEAD`/`@`, <2 positionals on the default branch,
+INERT subcommands, TEXT commands, CODE RUNNERS). The hook resolves the branches and has_remote, then maps the rule to
+its message; any other exit or output refuses (NOT CHECKED). Departures from the specification, each measured or
+reasoned in the r3 coordinator record's *Phase 6 outcome*: `&>>` is outside (bash 3.2.57 refuses it; the agreement
+check found it); an UNQUOTED parameter has an unknown word count (`SPLIT`) and is refused as a command word, at or
+before a git subcommand, as a `-C` value, or given to a runner of its arguments (9 corpus refusals beyond the
+prototype); `--verify` allowed. MEASURED: 0 of 52 bypass repros pass; corpus `feat/x` 1,250 unique / 1,383
+occurrences against round 2's 1,166 / 1,292 (86 new, 2 relieved; the prototype's 1,241 was 77 new). Bash-agreement
+check in `--self-test`: 1,018 strings (18 per-construct inputs + seeds 1, 2 × 500) through ONE `/bin/bash` process,
+0 unsafe of 240 accepted, 6 broken-lexer controls each red (7-69 unsafe); NOT RUN is a failure. push-command
+112 -> 265 cases (every r1-r3 repro kept as a matrix row; detector exit 127/137/139/142/143, empty and malformed
+output, detached HEAD added); hook self-test 56 -> 59. Mutations 47 -> 79: all 47 RETIRED (anchors in deleted code),
+79 new, one per decision branch, each hand-checked ONE AT A TIME in a `stage_tree` copy. Filed: backlog #579 (levels
+2-3); backlog #574 amended (C-F6 joins; re-scoped to rule 1 in `.githooks/pre-push`). Decision-log row: redesign,
+skipped accrete. Latency MEASURED, 3 runs each, same fixture: a plain feature-branch push 438, 323, 274 ms before (machine loaded), 147, 156, 139 ms after; `echo push` 117, 141, 134 ms before, 128, 109, 109 ms after (not interleaved, so noise-level).
+
+## 2026-11-08
+The fourth review of the push safety check found three more holes, and all three are now closed. First, in
+`push 2&>/dev/null HEAD:master` the check took the `2` for part of the redirection, but bash passes it as a normal
+word, so the check misread where the push goes. Second, a `git checkout master` or `git switch master` before a push
+in the same command was judged as if the push ran on the branch you started on. Third, a push option's value such as
+`--push-option --force` or `--push-option master` got through, though the old check refused it. Now the `2` is read as
+bash reads it. A branch change next to a push is refused, and the message names the command. After a `cd` or
+`git -C`, a push that relies on "the current branch" is refused, but one that names its branch is still allowed.
+Option values the old check refused are refused again. On 1,634 real commands from past sessions, 16 more are
+refused than before (1,266, up from 1,250). Most are a `git worktree` or `git merge` next to a push.
+<!--tech-->
+Backlog #428, PR #542 round 4 fold (Codex X-F1..X-F3, all BLOCKING; past the round cap, nothing else folded).
+X-F1: `lex` ends the open word at the `&` of `&>`, so a digit glued to `&>` is an argument; a digit names a descriptor
+only glued to `<`/`>`. Bash-agreement inputs +7 (each accepted operator `>` `<` `>>` `>|` `&>` `>&N` `<&N` with an
+adjacent digit word, an attached digit and neither), atoms +6; a 7th broken-lexer control restores the misreading and
+reddens the check (12 unsafe of 255 accepted; 1,025 strings, 0 unsafe for the real lexer). X-F2: new rule
+`branch-change` (hook message names the mover, says NOT CHECKED): `BRANCH_MOVERS` (`checkout` `switch` `rebase`
+`reset` `merge` `pull` `worktree` `update-ref` `symbolic-ref`), `stash branch`, `branch -m/-M/--move`,
+`gh … checkout` and a git command with an unreadable global option, composed with a git push in EITHER order (a loop
+can repeat the push), refuse while rule 1 is in force. `cd`/`pushd`/`popd`, `-C`, `--git-dir`, `--work-tree` and a
+`GIT_DIR=`/`GIT_WORK_TREE=` prefix make the current branch UNKNOWN: `HEAD`, `@` or no refspec refuses, a named
+refspec is judged as before. Refusing every `cd` outright was MEASURED first: +284 corpus refusals (281 `cd`),
+rejected. X-F3: `_bad_value` judges every push-option value, separate (`-o`, `--push-option`) and `=`: naming the
+default branch (split on blank `:` `/` `=`), beginning with `-`, or mentioning force or no-verify refuses (`option`);
+lifted by `ALLOW_DEFAULT_BRANCH_PUSH=1` / `ALLOW_DANGEROUS_PUSH=1` respectively. Corpus (`feat/x`, in-process):
+1,250 → 1,266 unique, 1,383 → 1,400 occurrences (+16, all `branch-change`: 9 `worktree`, 4 `merge`, 1 `checkout`,
+1 `cd` before a bare push, 1 unreadable git option; the value rule refused 0). push-command 265 → 325 cases; hook
+self-test 59/59; mutations 79 → 99, each of the 20 hand-checked alone in a `stage_tree` copy (rc 1, its case named
+once), and the 16 existing entries whose code the fold touched re-checked the same way.
+
+## 2026-11-08
+The fifth review of the push safety check found two places where the new check let through something the old check
+blocked: a redirection such as `> master`, and a `git -c core.editor='git push origin master'` setting. Rather than
+patch each case, the new check now also runs the old check itself, unchanged, and blocks anything the old check
+blocked. So it can never be weaker than the old one. A test runs the old check against every command in the test
+suite and fails if it ever blocks something the new one allows. The same review found six gaps that the old check
+also had. These were not fixed here, because blocking them by reading command text can never be complete. They are
+recorded as evidence on backlog #574, which checks the push inside git itself. On 1,634 real commands from past
+sessions, no extra commands are refused (still 1,266).
+<!--tech-->
+Backlog #428, PR #542 round 5 fold (Claude C-F1, C-F2, C-F5). Floor: `scripts/push-command.py` `verdict` = `decide`,
+then, when it allows a command holding a push word, `floor()`, which runs `scripts/push-floor-master.sh` (git blob
+`ddb129b5`, master's hook at merge base `b15e4f96`). The bytes are hashed as a git blob each run and run via
+`bash -c` from memory. The process group is killed when its budget (the deadline less 0.5 s) runs out. Missing,
+differing, stalled or malformed output gives `floor-not-run` (the hook says NOT CHECKED); master's deny gives `floor`,
+printed with master's message. `main` prints `verdict`. Equivalence case: every `(command, branch)` the suite decides,
+plus 49 r4/r5 repros, through an independent copy of master's hook (blob id written in the test) in a fixture clone.
+MEASURED: 261 compared, 58 refused by master, 0 allowed by the branch. C-F5: `ASSIGN` = `NAME+?=`; `REPO_ENV` gains
+`GIT_DIR+=`/`GIT_WORK_TREE+=`. Bash-agreement inputs +2 and atoms +2, 0 unsafe. Corpus: 1,266 → 1,266 on `feat/x`,
+1,273 → 1,273 on master (master's 26 / 107 refusals are all already refused by the reader). push-command 325 → 351
+cases; hook 59/59; mutations 99 → 107. The 8 new entries and 3 re-anchored ones were each hand-checked alone in a
+`stage_tree` copy (rc 1, case named once). R5-F3, F4, F6, F7, F8 and F9 were filed as evidence on backlog #574.
+
+## 2026-11-08
+The sixth review of the push safety check found one more input the old check refused and the new one let through: a
+hook message holding two pieces of data glued together, where the first is not a command at all. Claude Code never
+sends that, but the safety check now refuses any message that is not exactly one piece of data, so it is at least as
+strict as the old check on its input too. The same review suggested a test that the old check really is consulted for
+every kind of push the new check allows, not only the three kinds the earlier test happened to reach. That test was
+cheap (under a fiftieth of a second), so it was added.
+<!--tech-->
+Backlog #428, PR #542 round 6 fold (Claude C-F1, and C-F2's suggested test). `.claude/hooks/block-default-branch-push.sh`
+reads the payload with `jq -ser 'if length == 1 then .[0].tool_input.command | strings else empty end'`: zero or two+
+JSON documents, or a non-string command, refuse NOT CHECKED. Hook self-test 59 → 65 (the R6-F1 repro, an object
+command + bare push, two feature pushes, an empty payload, and a one-document multi-line feature push allowed as the
+control). The check lives in the shell, which the mutation harness cannot mutate; three hand mutations (round 5's read,
+`.[0]` only, `.[-1]` only) each reddened the new cases (rc 1). `scripts/push-command.py`: a floor-wiring case stubs
+`floor` to always refuse and asserts `verdict` refuses each of the 92 decide-allowed push commands (MEASURED 0.017 s).
+352 cases; mutations 107 → 108 (a floor called only for `<`, `>`, `-o`, `-c`, `=`; equivalence stays green, the new
+case reddens), hand-checked alone in a `stage_tree` copy.
+
+## 2026-11-08
+The eighth review of the push safety check found a way to make it say nothing, and saying nothing means "allow". A
+command with one enormous made-up option (about a megabyte) made the check's refusal message too large to hand to the
+tool that prints it, so the refusal was silently lost and a forced push or a push to master would have gone through.
+The old check refused all four of the reviewer's examples. Now the refusal message is shortened and handed over in a
+way that has no size limit, and if printing it fails for any reason, a fixed refusal is printed instead, so every
+refusal reaches Claude Code. An enormous ordinary push is also refused (the check cannot finish reading it in time),
+which costs nothing in practice.
+<!--tech-->
+Backlog #428, PR #542 round 8 fold (Codex X-F1, BLOCKING, not fold-induced). `.claude/hooks/block-default-branch-push.sh`
+`deny`: the reason goes to `jq -Rsc` on stdin (was `jq -nc --arg reason "$1"`, E2BIG on a ~1.1 MB `option` reason →
+empty stdout → allow), bounded to `REASON_MAX`=4000 characters with a marker; any output that is not the deny object
+is replaced by a fixed literal deny. Audit: every other payload-derived value reaches a process on stdin (`jq -ser`,
+`push-command.py decide`, the floor), `decide`'s argv is git-derived, and every message interpolation goes through the
+bounded `deny`. Hook self-test 65 → 71 (Codex's four payloads built as fixture files and run concurrently, the
+truncation marker, a stub jq that cannot serialize → literal deny); reverting `deny` reddens all six. A 1.1 MB feature
+push is refused NOT CHECKED (`decide` exit 142; the floor already misses its 2.5 s budget at 50 KB). Detector unchanged
+(352 cases).

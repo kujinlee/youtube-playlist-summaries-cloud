@@ -443,6 +443,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "uncovered.sources",
     ),
     # backlog #361 (2026-10-28): pinned in the commit that creates it; re-pinned at the PR #425 r2 REDESIGN the r3 SPLIT (`mentioned` deleted) and the r4 DEFER (`audit`, `explicit_names`, `bound_keys` deleted).
+    # backlog #428 (2026-11-08): the push gate's detection, pinned in the commit that creates it. DERIVED by running
+    # `analyse()` on the delivered source: `segments.cmd`, varied by 26 direct call sites.
+    # ⟳ 2026-11-08, PR #542 round 3 fold (Phase 6 design (b)): `segments` is DELETED with the r2 reader, so its
+    # key is removed deliberately; the fold's two public functions replace it. RE-DERIVED by running `analyse()`
+    # on the delivered source: `decide.cmd/cur/default/has_remote` and `lex.cmd`, every one varied.
+    "push-command.py": ("decide.cmd", "decide.cur", "decide.default", "decide.has_remote", "lex.cmd"),
     "compaction-state.py": (
         "main.argv",
         "main.aux_timeout",
