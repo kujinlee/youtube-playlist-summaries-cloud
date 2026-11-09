@@ -1201,7 +1201,39 @@ jobs:
         # mean 1,300s, slowest 1,499s / 1,460s / 1,459s (job wall clock) — 1.20x inside 30m, and AT the
         # 1,500s line, as predicted. PREDICTED, not measured: further manifest growth risks crossing it.
         # REOPEN #231 if any shard exceeds 1,500s.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+        #
+        # ⟳ 2026-11-09: 24 -> 38, backlog #231 — THE BUDGET RAN OUT ON MASTER WITH NO SURVIVOR. MEASURED on master
+        # push run 42634452353 (4a6f1577): shard 16 stopped at its 1,680s budget on attempts 1 AND 2 (the second with
+        # 17 re-controls not reached). Slowest shard, last seven master push runs at N=24 (`gh run view --json jobs`,
+        # job wall clock): 1683 (42634452353, censored by the kill), 1669 (42625034608), 1656 (42609802269), 1535
+        # (42592911465), 1538 (42568439765), 1474 (42561057231), 1262 (42529027472); a different shard each run
+        # (16, 19, 6, 19, 16, 7, 2). max/mean spread 1.12-1.22x (worst complete: 1.22, run 42609802269).
+        # THE COST MODEL, from all 24 logs of run 42625034608 (8e052493, 4,505 entries over 91 targets), by the
+        # `[k/M]` timestamp method above (0 name mismatches over 4,505): per shard in seconds, summed over 24,
+        #   setup (job start -> first control line)     637   (~27 a shard)
+        #   control + re-control                     11,067   (~461 a shard; DOES NOT divide by N)
+        #   mutation work                            23,014   (divides by N)
+        # Per shard, re-partitioned by `shard_slice` with each entry's measured cost and each target's median control
+        # cost: N=24 reproduces mean 1,450s (measured 1,447s). The floor barely moves with N, because a shard still
+        # touches 53-64 of the 91 targets at N=38 (65-70 at N=24): floor mean 491s at 24, 470s at 38.
+        # ⛔ WHY 38 — THE JOB COUNT, COUNTED: run 42634452353 holds 26 jobs (24 shards + `verify` +
+        # `mutation-sweep-complete`, which waits for the matrix), and its push also starts `schema-gates.yml`'s
+        # `schema-gates` (`prod-drift` is skipped on push). So 26 runner jobs contend at N=24 (24 + `verify` +
+        # `schema-gates`): already TWO WAVES under the account's 20-job limit — 18 shards start, the rest wait. Two
+        # waves hold 40, so N = 40 - 2 = 38 is the largest N that adds no third wave; `verify` (281-443s) and
+        # `schema-gates` (~2 min) leave early, so shards 19-20 start early and the other 18 take first-wave slots.
+        # PREDICTED, not measured (model above, same per-entry costs):
+        #   N=36    mean 1,112s
+        #   N=38    mean 1,075s, work 606s + floor 470s  -> slowest 1,075 x 1.22 = ~1,312s (21.9 min, 1.37x inside 30m)
+        #   N=40    mean 1,042s  (two extra jobs: a third wave)
+        # At the worst spread ever recorded here (1.45x, 10-30, a lighter manifest) N=38 would be ~1,559s — over the
+        # 1,500s line, inside the 1,680s budget. End to end, two waves of ~1,075-1,312s give ~2,150-2,620s on a quiet
+        # queue, against 2,744-3,470s MEASURED to `mutation-sweep-complete` on the six green runs above (they include
+        # other runs' queueing, so this is not a paired comparison). Runner-time rises ~18% (38 x 1,075 against
+        # 24 x 1,447); the repository is public, so that costs no money. Mutation work per shard falls 24/38, but the
+        # shard only to ~0.74x, because the floor does not divide: past ~38 the lever is per-suite cost, not N.
+        # The first master push run of this change is the measurement — REOPEN backlog #231 if any shard exceeds 1,500s.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
     steps:
       # ⛔ FIRST, BEFORE CHECKOUT — PR #538 r2 fold (backlog #558). `check-plan-code.ci_deadline` counts the
       # sweep's time budget from this epoch, so checkout, setup and `npm ci` are spent FROM the budget, not

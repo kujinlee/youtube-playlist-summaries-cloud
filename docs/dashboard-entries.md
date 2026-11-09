@@ -19622,3 +19622,16 @@ Cleaned up five backlog rows that still read as open after their work had merged
 was 68% of the mutation sweep), #534 (one full sweep per batch), #501 (the usage guard reads the meter log's tail)
 and #496 (a settled NEEDS-OWNER marker) are now ticked, each with the PR and commit that shipped it. Backlog #361 stays
 open, but its status no longer says "in review": PR #425 merged, and its remaining audit is backlog #391.
+
+## 2026-11-09
+The full mutation sweep on master now runs in 38 parallel pieces instead of 24. On master the slowest piece had been
+running out of its 30-minute time limit with no test failure, so a green commit went red. Each piece now does about a
+third less work. The run still fits in the same two batches of 20 jobs that the account allows at once, so the whole
+sweep should also finish sooner. These figures are a prediction until the next master run measures them.
+<!--tech-->
+Backlog #231, branch `reshard-sweep-38`: `.github/workflows/ci.yml` `mutation-sweep` matrix 24 -> 38, decision record
+beside it. MEASURED: run 42634452353 (`4a6f1577`) shard 16 hit the 1,680 s budget on both attempts; slowest shard
+1,262-1,683 s over seven master push runs, max/mean 1.12-1.22x; the run holds 26 jobs, and the push also starts
+`schema-gates`, so 26 runner jobs contend. A cost model from all 24 logs of run 42625034608 (each entry's own cost,
+re-partitioned by `shard_slice`) reproduces N=24's mean (1,450 s vs 1,447 s). PREDICTED at N=38: mean ~1,075 s (work
+606 s + a 470 s floor that does not divide by N), slowest ~1,312 s, 40 jobs = two waves. No script pins N.
