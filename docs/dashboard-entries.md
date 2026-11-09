@@ -19627,7 +19627,7 @@ open, but its status no longer says "in review": PR #425 merged, and its remaini
 The full mutation sweep on master now runs in 38 parallel pieces instead of 24. On master the slowest piece had been
 running out of its 30-minute time limit with no test failure, so a green commit went red. Each piece now does about a
 third less work. On an idle account the run still fits in about two batches of the 20 jobs the account allows at once, so the whole
-sweep should also finish sooner. These figures are a prediction until the next master run measures them.
+sweep should also finish sooner. PR #550's own full run measured it: all 38 pieces passed, the slowest took 22.5 minutes (it had been hitting 28).
 <!--tech-->
 Backlog #231, branch `reshard-sweep-38`: `.github/workflows/ci.yml` `mutation-sweep` matrix 24 -> 38, decision record
 beside it. MEASURED: run 42634452353 (`4a6f1577`) shard 16 hit the 1,680 s budget on both attempts; slowest shard
@@ -19637,4 +19637,10 @@ re-partitioned by `shard_slice`) gives N=24's mean as 1,446.6 s against 1,450.75
 the check is in-sample. PREDICTED at N=38: mean ~1,075 s (work 606 s + a 470 s floor that does not divide by N), slowest
 ~1,312 s; 38 shards + `verify` + `schema-gates` = 40 jobs compete for 20 shared slots that free one at a time, so 38
 against 40 is a soft choice. Control-suite runs rise ~1.37x, so flake exposure rises too. Lifespan, PREDICTED: ~5-6 days
-at ~200 entries a day, filed as backlog #588; PR #550's own run 42660040212 is the first measurement. No script pins N.
+at ~200 entries a day, filed as backlog #588; MEASURED, PR #550's run 42660040212: 38/38 green, mean 1,048 s, slowest 1,351 s, none over 1,500 s. No script pins N.
+
+## 2026-11-09
+**The CI sweep is running out of time on most master runs, not just on one unlucky shard.** Backlog #231 now records the evidence: on the last seven master runs the slowest shard took 1,262–1,669 s against a 1,800 s limit. Overnight a shard ran out of time four times, with no defect behind any of them; each needed a re-run. Choosing the fix (more shards, more time, or cheaper tests) is still open on that row.
+
+<!--tech-->
+Backlog #231 Status: seven master push-event runs at N=24 (`gh run view --json jobs`), with the slowest shard varying (19, 6, 19, 16, 7, 2, 11). Four budget stops on 11-08/09: PR #542, PR #546 twice, and master run 42634452353 (sweep-red issue #548). Docs only.
