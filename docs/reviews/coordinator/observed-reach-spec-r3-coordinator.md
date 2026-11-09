@@ -15,6 +15,10 @@ findings:
   - {id: R3-C5, severity: Low, aim: deliverable, fix_induced: true, component: observed-reach-spec, disposition: fixed}
 ```
 
+REDESIGNED → spec-586-redesign. The redesign this round introduced (the dedicated `record-reads` job, then the
+owner's `strace -f` recorder) is reviewed as its own stream from round 1:
+`docs/reviews/coordinator/spec-586-redesign-r1-coordinator.md`. That closes the REVIEW GAP below.
+
 REVIEW GAP: codex — alternation
 
 REVIEW GAP: redesign — round 3 is the last round (the round cap, `docs/review-method.md` §0 Q4c), so NO round 4
