@@ -78,19 +78,6 @@
     ]
   },
   {
-    "name": "a gone remote branch with HEAD outside origin/master no longer keeps the worktree",
-    "file": "scripts/prune-merged-worktrees.py",
-    "edits": [
-      [
-        "        if rc2 != 0:\n            r.append(\"no origin branch",
-        "        if False:\n            r.append(\"no origin branch"
-      ]
-    ],
-    "expect": [
-      "KEPT gone: no origin branch, and HEAD is not in origin/master"
-    ]
-  },
-  {
     "name": "a LOCKED worktree is not skipped",
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
@@ -195,7 +182,7 @@
     ]
   },
   {
-    "name": "an archive on a different filesystem is used anyway (a copying, non-atomic move)",
+    "name": "an archive on a different filesystem is attempted anyway (git refuses with 'Cross-device link': a FAILED instead of a clear early KEPT)",
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
       [
@@ -344,12 +331,182 @@
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
       [
-        "                 if os.path.isdir(path) else",
-        "                 if False else"
+        "    if wt[\"prunable\"]:\n        if os.path.isdir(path):\n",
+        "    if wt[\"prunable\"]:\n        if False:\n"
       ]
     ],
     "expect": [
       "a prunable worktree whose directory still exists is called half-moved, never 'directory is missing'"
+    ]
+  },
+  {
+    "name": "r2 F5: the post-move check dropped: a move git calls rc 0 that moved nothing is ARCHIVED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc == 0 and os.path.isdir(dest) and not os.path.lexists(row.path):\n",
+        "    if rc == 0:\n"
+      ]
+    ],
+    "expect": [
+      "a move git calls rc 0 that moved nothing is FAILED, never ARCHIVED (the post-move check)"
+    ]
+  },
+  {
+    "name": "r2 F5: a prunable worktree is evaluated further",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        return row\n    if wt[\"locked\"]:\n",
+        "    if wt[\"locked\"]:\n"
+      ]
+    ],
+    "expect": [
+      "a prunable worktree is not evaluated further: ONE reason, though it is also detached (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: a zone-less mergedAt is accepted",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if t.tzinfo is None:\n        raise CannotRun(",
+        "    if False:\n        raise CannotRun("
+      ]
+    ],
+    "expect": [
+      "parse_time refuses a mergedAt with no time zone (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: the archive-size line fires AT the limit",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if n <= ARCHIVE_WARN:\n",
+        "    if n < ARCHIVE_WARN:\n"
+      ]
+    ],
+    "expect": [
+      "the archive-size line: silent AT 10, printed at 11 (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: an inherited GIT_DIR is not dropped",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    for k in GIT_ENV_DROP:\n        os.environ.pop(k, None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "an inherited GIT_DIR is dropped: the dry run still sees the same seven (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F5: after a CannotRun the loop goes on evaluating and moving",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "if stopped or (not dry_run",
+        "if (not dry_run"
+      ]
+    ],
+    "expect": [
+      "a ONE-SHOT CannotRun stops the loop: rc 2, nothing moved, the next worktree DEFERRED unreached"
+    ]
+  },
+  {
+    "name": "r2 F5: the hook's line cap is not applied",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    return lines[:HOOK_MAX_LINES]\n",
+        "    return lines\n"
+      ]
+    ],
+    "expect": [
+      "hook_lines applies HOOK_MAX_LINES (4 lines of input, the cap set to 2) (r2 F5)"
+    ]
+  },
+  {
+    "name": "r2 F1: no placeholder is left at the old path, so a late write recreates the directory",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        why_not = leave_placeholder(row.path, str(dest))\n",
+        "        why_not = None\n"
+      ]
+    ],
+    "expect": [
+      "a PLACEHOLDER file is left at each archived path, naming the archive path and the undo",
+      "a late mkdir -p + write to <old>/x fails loudly (EEXIST or ENOTDIR) instead of recreating the directory"
+    ]
+  },
+  {
+    "name": "r2 F1/F10: the undo is relative and does not remove the placeholder",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    return f\"rm {o} && git worktree move {d} {o}\"\n",
+        "    return f\"git worktree move {d} .claude/worktrees/{Path(o).name}\"\n"
+      ]
+    ],
+    "expect": [
+      "the logged undo command is the documented one, ABSOLUTE both ways, and removes the placeholder"
+    ]
+  },
+  {
+    "name": "r2 F4: the repair advice does not name the logged archive path",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            to = (logged or {}).get(path)\n",
+        "            to = None\n"
+      ]
+    ],
+    "expect": [
+      "a missing directory advises `git worktree repair <the logged archive path>`, never prune (r2 F4)"
+    ]
+  },
+  {
+    "name": "r2 F6: a remembered refusal is tried and reported again at the same HEAD",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if (refused or {}).get(path) == wt[\"head\"]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "... the next run KEEPS it quietly: rc 0, a KEPT reason, and the hook prints nothing"
+    ]
+  },
+  {
+    "name": "r2 F6: a refusal is not remembered",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            refused[row.path] = row.head",
+        "            refused.get(row.path)"
+      ]
+    ],
+    "expect": [
+      "git refusing a move (a submodule): FAILED once, rc 1, remembered at this HEAD (r2 F6)"
+    ]
+  },
+  {
+    "name": "r2 F7: a worktree a concurrent run archived is reported FAILED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    elif rc != 0 and not os.path.isdir(row.path) and (peer := peer_copy(archive, row.name, link)):\n",
+        "    elif False:\n"
+      ]
+    ],
+    "expect": [
+      "a move whose source a concurrent run archived is BY-PEER 'archived by a concurrent run', rc 0"
     ]
   }
 ]

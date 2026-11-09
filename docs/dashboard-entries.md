@@ -19636,8 +19636,11 @@ session starts, every worktree under `.claude/worktrees/` whose pull request mer
 is moved to `~/.worktree-archive/youtube-playlist-summaries-cloud/`, where the editor no longer watches
 it. This morning 67 of them (11 GB) had piled up and were the likely cause of the Mac freezing. A
 worktree with an open PR, uncommitted or unpushed work, a lock, or a program still running inside it
-stays put. To bring one back: `git worktree move <archive>/<name> .claude/worktrees/<name>`. When the
-archive holds more than 10, the session start says so once; deleting them is your call, by hand
+stays put. Where a worktree was, a small placeholder file is left behind. It says where the worktree
+went and how to bring it back: `rm <old path> && git worktree move <archive>/<name> <old path>`,
+with full paths. A program that writes there late gets an error instead of quietly starting a new
+folder. A worktree git refuses to move (one with a submodule) is reported once, then left alone. When
+the archive holds more than 10, the session start says so once; deleting them is your call, by hand
 (`git worktree remove <path>`). The first version deleted, and its review found four ways it could
 destroy unique work; moving instead removes that whole class.
 <!--tech-->
@@ -19645,4 +19648,7 @@ Backlog #589. `scripts/prune-merged-worktrees.py`: one `gh pr list` (fail closed
 closed), then `git worktree move` without `--force`, same filesystem only (`st_dev`), a `-YYYYMMDDHHMM` suffix on a
 name collision, logged with its undo command to `.claude/pruned-worktrees/log.tsv` before it runs. Called from
 `.claude/hooks/session-state.sh` with `--repo` and `--deadline` = 55 s minus the seconds the in-flight block used.
-Redesigned at the PR #551 round-1 fold; 65 self-test cases, 27 mutations, all killed and attributed.
+Redesigned at the PR #551 round-1 fold. Round-2 fold: a placeholder file at the old path and an absolute undo
+(r2 F1, F10); a deleted remote branch no longer keeps a squash-merged worktree (F2); `git worktree repair` advice
+(F4); a refusal remembered in `.claude/pruned-worktrees/refused.json` (F6); a concurrent run's move reported BY-PEER
+(F7). 79 self-test cases, 39 mutations, all killed and attributed.

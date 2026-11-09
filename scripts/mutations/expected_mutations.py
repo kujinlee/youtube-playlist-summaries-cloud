@@ -2125,5 +2125,9 @@ EXPECTED_MUTATIONS = {
     # missing, cross-device, collision suffix, gh rc, truncation, dry-run, unwritable log, log before move,
     # deadline caught in the loop, CANNOT RUN wording after a move, loop stop near the deadline, archive-size
     # line, half-moved message. ARITHMETIC: 27.
-    "scripts/prune-merged-worktrees.py": 27,
+    # r2 fold: the gone-remote entry DROPPED with its rule (F2); the half-moved entry re-anchored; 13 ADDED:
+    # post-move check, prunable return, zone-less mergedAt, warn boundary, GIT_DIR drop, one-shot stop,
+    # hook cap (F5, 7: main's duplicate cap was removed, not tested); placeholder, absolute undo (F1/F10);
+    # repair advice (F4); refusal kept + refusal recorded (F6); by-peer (F7). ARITHMETIC: 27 - 1 + 13 = 39.
+    "scripts/prune-merged-worktrees.py": 39,
 }

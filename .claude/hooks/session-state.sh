@@ -14,7 +14,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 "$REPO_ROOT/scripts/session-state.py" </dev/null 2>&1 || echo "=== IN FLIGHT: CANNOT RUN — session-state.py exited $? ==="
 # backlog #589: ARCHIVE the worktrees under .claude/worktrees/ whose PR merged (67 of them, 11 GB, froze the Mac on
 # 2026-11-09). It never deletes: `git worktree move` to ~/.worktree-archive/<repo>/ keeps every file and the reflog;
-# undo is `git worktree move <archive>/<name> .claude/worktrees/<name>`. Its work is one `gh` call, one `lsof`, git
+# a placeholder FILE is left at the old path (a late write fails, ENOTDIR); undo, absolute paths as printed:
+# `rm <old> && git worktree move <archive>/<name> <old>`. Its work is one `gh` call, one `lsof`, git
 # status reads and renames, all under one deadline. It runs AFTER the in-flight block, on what is LEFT of
 # settings.json's 60 s bound for this hook: `--deadline` is 55 s minus the seconds already used ($SECONDS). With under
 # 10 s left it is NOT RUN, and says so. `--repo` is passed: the hook's cwd may be outside the repository (PR #551 r1
