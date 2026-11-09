@@ -14,9 +14,21 @@ TWO HALVES, AND THE RULE IS KEPT APART FROM THE FETCH (the repo's `separate-the-
     derived group row, `mutation-sweep [slowest shard]`: the slowest shard is what wall-clock waits
     on. The append is idempotent — a row's key is (pr, head sha, job), and a key already in the
     log is never written twice.
+  * A PR IS A SNAPSHOT, WRITTEN WHOLE (r2 R2-F2, R2-F5). Every row of one (pr, head sha) carries the
+    same `run`, `attempt`, `n_rows` and `unmeasured` (the jobs that ran but could not be timed: a
+    shard cancelled for a reason other than its timeout, a job with no timestamps, and the group
+    rows those make unknown). A snapshot is written in ONE locked write (`fcntl.flock` on a
+    sibling `.lock` file, held across read -> check -> write, so concurrent worktrees cannot both
+    append it). Only a snapshot that is whole and has nothing unmeasured is skipped by a later
+    record; any other is fetched again and REPLACED when the fetch differs. On read, a snapshot
+    whose rows disagree, or whose row count is not its `n_rows`, is TORN: the report refuses a
+    torn snapshot in the weeks it compares, and the next record repairs it.
   * WARN — group the log by the ISO week of each PR's MERGE date. For each job and job group,
     compare the evaluated week's median with the previous ISO week's, and WARN when it rose 25% or
-    more. A job with fewer than `MIN_SAMPLES` rows in EITHER week is NOT MEASURED, never "fine".
+    more. A job with fewer than `MIN_SAMPLES` rows in EITHER week is NOT MEASURED, never "fine",
+    and so is a job that ANY snapshot of either week lists as unmeasured: a missing sample could
+    move the median (r2 R2-F1, R2-F4). The week of a row is checked against its merge date on read
+    (r2 R2-F6).
     The evaluated week defaults to the last COMPLETE ISO week before today (UTC), never the latest
     week in the log: a partial week is too thin to measure, and a stale log must not be read as
     current (r1 R1-F2, R1-F3). A log with no merge in that week is CANNOT RUN, naming its latest.
@@ -51,8 +63,9 @@ conflicting on one log. `--log PATH` overrides.
 EXIT CODES (the repo's convention)
     0  no rise in the evaluated week (NOT MEASURED jobs are listed, never counted as fine)
     1  a rise of 25% or more was found
-    2  CANNOT RUN — no `gh`, no network, nothing parsed, PRs listed but none recorded, a list that
-       may be truncated, a malformed log, an invalid --week, the time budget ran out before every
+    2  CANNOT RUN — no `gh`, no network, nothing parsed, ANY listed PR not recorded (no `CI` run on
+       its head, the run not complete, or no job measurable — r2 R2-F1, R2-F3), a list that
+       may be truncated, a malformed log or a torn snapshot in the compared weeks, an invalid --week, the time budget ran out before every
        PR was read (re-run: the append is idempotent), NO job could be measured, or ANY unexpected
        error (an uncaught crash would exit 1, which is the RISE code — r1 R1-F4)
     Record + report (the default): a measured RISE is rc 1 even beside a PARTIAL record — it was
@@ -66,15 +79,18 @@ Usage:
     python3 scripts/ci-durations.py                      # record the last 21 days, then report
     python3 scripts/ci-durations.py --record --since 2026-10-26
     python3 scripts/ci-durations.py --report [--week 2026-W45]   # default: the last complete week
-    python3 scripts/ci-durations.py --self-test  # 83 cases
+    python3 scripts/ci-durations.py --self-test  # 93 cases
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
+import fcntl
 import fractions
 import json
 import math
+import os
 import pathlib
 import re
 import shutil
@@ -94,7 +110,9 @@ DEFAULT_BUDGET_S = 200   # under the 270 s cap an agent's tool call has; the app
 GH_TIMEOUT_S = 60        # each call's timeout is ALSO capped by the budget left (r1 R1-F8)
 TIMEOUT_MARK = "exceeded the maximum execution time"   # the check-run annotation of a timeout kill
 PR_LIMIT = 500           # `gh pr list --limit`; a full page may be truncated, so it is refused (R1-F9)
-LOG_FIELDS = {"pr": int, "sha": str, "merged_at": str, "week": str, "job": str, "seconds": int}
+LOG_FIELDS = {"pr": int, "sha": str, "merged_at": str, "week": str, "job": str, "seconds": int,
+              "run": int, "attempt": int, "n_rows": int, "unmeasured": list}
+SNAPSHOT_FIELDS = ("merged_at", "run", "attempt", "n_rows", "unmeasured")   # equal on every row of a PR
 
 
 class CannotRun(Exception):
@@ -145,29 +163,40 @@ def is_timeout_kill(annotations) -> bool:
     return any(TIMEOUT_MARK in (a.get("message") or "") for a in annotations)
 
 
-def job_rows(pr: int, sha: str, merged_at: str, jobs: list[dict]) -> list[dict]:
-    """PURE. The GitHub jobs list of one run -> one log row per recorded job, plus group rows.
+def job_rows(pr: int, sha: str, merged_at: str, jobs: list[dict], run: int = 0,
+             attempt: int = 1) -> list[dict]:
+    """PURE. The GitHub jobs list of one run -> the PR's SNAPSHOT: one row per recorded job, plus
+    group rows, every row stamped with the snapshot's run, attempt, row count and unmeasured jobs.
 
     A job is recorded only if it concluded `success` or `failure`, or was cancelled by its timeout
-    (`timed_out`, set by the fetch from the check run's annotations), and has both timestamps. Each
-    matrix group (`base (N)`) gains ONE derived row holding its slowest shard's seconds — unless a
-    shard was cancelled for another reason, which makes the slowest shard unknown: no group row.
+    (`timed_out`, set by the fetch from the check run's annotations), and has both timestamps. A
+    skipped job did not run and is ignored. ANY other job ran but cannot be timed: it is listed in
+    `unmeasured`. Each matrix group (`base (N)`) gains ONE derived row holding its slowest shard's
+    seconds — unless one of its shards is unmeasured, which makes the slowest shard unknown: no group
+    row, and the group is listed unmeasured too (r2 R2-F4: a shard with no timestamps counts).
     """
     rows = []
     unknown: set[str] = set()
+    unmeasured: set[str] = set()
     for j in jobs:
         concl = j.get("conclusion")
+        name = j.get("name") or ""
+        m = MATRIX.match(name)
         timed_out = concl == "cancelled" and j.get("timed_out") is True
         if concl not in RECORDED_CONCLUSIONS and not timed_out:
-            m = MATRIX.match(j.get("name") or "")
-            if concl == "cancelled" and m:
-                unknown.add(m.group("base"))
+            if concl != "skipped":
+                unmeasured.add(name)
+                if m:
+                    unknown.add(m.group("base"))
             continue
         if not j.get("started_at") or not j.get("completed_at"):
+            unmeasured.add(name)
+            if m:
+                unknown.add(m.group("base"))
             continue
         secs = int((_ts(j["completed_at"]) - _ts(j["started_at"])).total_seconds())
         rows.append({"pr": pr, "sha": sha, "merged_at": merged_at, "week": iso_week(merged_at),
-                     "job": j["name"], "seconds": secs, "derived": False, "timed_out": timed_out})
+                     "job": name, "seconds": secs, "derived": False, "timed_out": timed_out})
     groups: dict[str, int] = {}
     for r in rows:
         m = MATRIX.match(r["job"])
@@ -179,7 +208,9 @@ def job_rows(pr: int, sha: str, merged_at: str, jobs: list[dict]) -> list[dict]:
             continue
         rows.append({"pr": pr, "sha": sha, "merged_at": merged_at, "week": iso_week(merged_at),
                      "job": base + GROUP_SUFFIX, "seconds": secs, "derived": True})
-    return rows
+    unmeasured |= {base + GROUP_SUFFIX for base in unknown}
+    snap = {"run": run, "attempt": attempt, "n_rows": len(rows), "unmeasured": sorted(unmeasured)}
+    return [dict(r, **snap) for r in rows]
 
 
 def row_key(r: dict) -> tuple:
@@ -197,12 +228,45 @@ def new_rows(existing: list[dict], fetched: list[dict]) -> list[dict]:
     return out
 
 
+def snapshot_states(rows: list[dict]) -> dict[tuple, str]:
+    """PURE. {(pr, sha): "complete" | "incomplete" | "torn"} — the read-side check of a snapshot.
+
+    TORN: its rows disagree on a snapshot field, repeat a job, or number other than `n_rows` (an
+    interrupted or duplicated write). INCOMPLETE: whole, but some job ran unmeasured. Only a
+    COMPLETE snapshot is never fetched again (r2 R2-F2: one logged row no longer means "known").
+    """
+    by: dict[tuple, list[dict]] = {}
+    for r in rows:
+        by.setdefault((r["pr"], r["sha"]), []).append(r)
+    out = {}
+    for k, rs in by.items():
+        heads = {json.dumps([r[f] for f in SNAPSHOT_FIELDS]) for r in rs}
+        jobs = [r["job"] for r in rs]
+        if len(heads) != 1 or len(rs) != rs[0]["n_rows"] or len(set(jobs)) != len(jobs):
+            out[k] = "torn"
+        elif rs[0]["unmeasured"]:
+            out[k] = "incomplete"
+        else:
+            out[k] = "complete"
+    return out
+
+
 def pick_ci_run(runs: list[dict], sha: str) -> dict | None:
     """PURE. The newest `CI` run on exactly `sha`, or None. Another workflow is never chosen."""
     mine = [r for r in runs if r.get("name") == WORKFLOW and r.get("head_sha") == sha]
     if not mine:
         return None
     return max(mine, key=lambda r: (r.get("created_at") or "", r.get("id") or 0))
+
+
+def unmeasured_by_job(rows: list[dict], week: str) -> dict[str, int]:
+    """PURE. {job: a PR whose snapshot in `week` ran the job but could not time it}."""
+    out: dict[str, int] = {}
+    for r in rows:
+        if r["week"] == week:
+            for job in r["unmeasured"]:
+                out.setdefault(job, r["pr"])
+    return out
 
 
 def samples_by_job(rows: list[dict], week: str) -> dict[str, list[int]]:
@@ -225,18 +289,23 @@ def is_rise(prev_median: float, cur_median: float) -> bool:
 def compare_weeks(rows: list[dict], week: str, min_samples: int = MIN_SAMPLES) -> list[dict]:
     """PURE. One verdict per job seen in `week` or the week before it.
 
-    status is RISE, OK, or NOT MEASURED — the last whenever either week has fewer than
+    status is RISE, OK, or NOT MEASURED — the last whenever a snapshot of either week lists the job
+    unmeasured (a missing sample could move the median: r2 R2-F1, R2-F4), either week has fewer than
     `min_samples` rows for the job, or the previous median is zero (no percentage exists).
     """
     prev = previous_week(week)
     cur_s, prev_s = samples_by_job(rows, week), samples_by_job(rows, prev)
+    gaps = {**unmeasured_by_job(rows, prev), **unmeasured_by_job(rows, week)}
     out = []
-    for job in sorted(set(cur_s) | set(prev_s)):
+    for job in sorted(set(cur_s) | set(prev_s) | set(gaps)):
         c, p = cur_s.get(job, []), prev_s.get(job, [])
         v = {"job": job, "week": week, "prev_week": prev, "n_cur": len(c), "n_prev": len(p),
              "cur": statistics.median(c) if c else None,
              "prev": statistics.median(p) if p else None}
-        if len(c) < min_samples or len(p) < min_samples:
+        if job in gaps:
+            v["status"] = "NOT MEASURED"
+            v["why"] = f"PR {gaps[job]}'s run did not measure it"
+        elif len(c) < min_samples or len(p) < min_samples:
             v["status"] = "NOT MEASURED"
             v["why"] = (f"{len(p)} sample(s) in {prev} and {len(c)} in {week}; "
                         f"needs {min_samples} in each")
@@ -335,6 +404,11 @@ def parse_log(text: str) -> list[dict]:
             raise CannotRun(f"log line {i} has merged_at {r['merged_at']!r}, not an ISO time") from None
         if "week" in r and not valid_week(r["week"]):
             raise CannotRun(f"log line {i} has week {r['week']!r}, not a real ISO week")
+        if "week" in r and "merged_at" in r and r["week"] != iso_week(r["merged_at"]):
+            raise CannotRun(f"log line {i} has week {r['week']}, but its merge is in "
+                            f"{iso_week(r['merged_at'])}")   # r2 R2-F6: the bucket is the merge's
+        if any(type(x) is not str for x in r.get("unmeasured") or []):
+            raise CannotRun(f"log line {i} has an unmeasured job that is not a string")
         rows.append(r)
     return rows
 
@@ -350,14 +424,51 @@ def read_log(path: pathlib.Path) -> list[dict]:
     return parse_log(path.read_text()) if path.exists() else []
 
 
-def append_log(path: pathlib.Path, fetched: list[dict]) -> int:
-    """Append the rows not already in the log. -> how many were written."""
-    add = new_rows(read_log(path), fetched)
-    if add:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a") as fh:
-            for r in add:
-                fh.write(json.dumps(r, sort_keys=True) + "\n")
+@contextlib.contextmanager
+def _locked(path: pathlib.Path):
+    """An exclusive `flock` on `<log>.lock`, shared by every worktree (r2 R2-F5). A sibling file, not
+    the log itself: a rewrite replaces the log's inode, and a lock on the old inode would not hold."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(f"{path}.lock", "a") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def _canon(rows: list[dict]) -> list[str]:
+    return sorted(json.dumps(r, sort_keys=True) for r in rows)
+
+
+def append_log(path: pathlib.Path, fetched: list[dict], after_read=None) -> int:
+    """Write the fetched snapshots. -> how many rows were written.
+
+    Under the lock, read -> check -> write: a snapshot already logged EXACTLY is not written again; a
+    logged snapshot that differs (incomplete, torn, or a newer attempt) is REPLACED whole, by an
+    atomic rewrite. `after_read` is a test seam, called with the lock held after the read.
+    """
+    with _locked(path):
+        existing = read_log(path)
+        if after_read:
+            after_read()
+        fetched_by: dict[tuple, list[dict]] = {}
+        for r in fetched:
+            fetched_by.setdefault((r["pr"], r["sha"]), []).append(r)
+        stored_by: dict[tuple, list[dict]] = {}
+        for r in existing:
+            stored_by.setdefault((r["pr"], r["sha"]), []).append(r)
+        replace = {k for k, rs in fetched_by.items()
+                   if k in stored_by and _canon(stored_by[k]) != _canon(new_rows([], rs))}
+        kept = [r for r in existing if (r["pr"], r["sha"]) not in replace]
+        add = new_rows(kept, fetched)
+        if replace:
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in kept + add))
+            os.replace(tmp, path)
+        elif add:
+            with path.open("a") as fh:
+                fh.write("".join(json.dumps(r, sort_keys=True) + "\n" for r in add))
     return len(add)
 
 
@@ -384,6 +495,14 @@ def report_main(path: pathlib.Path, week: str | None, min_samples: int = MIN_SAM
     if not any(r["week"] == wk for r in rows):
         print(f"CANNOT RUN — the log {path} holds no merge in {wk}; its latest merge is in "
               f"{latest_week(rows)}. Run --record. TREAT THIS AS NOT MEASURED, never as no rise.")
+        return CANNOT_RUN
+    pair = {wk, previous_week(wk)}
+    torn = sorted(k for k, st in snapshot_states(rows).items()
+                  if st == "torn" and any(r["week"] in pair for r in rows if (r["pr"], r["sha"]) == k))
+    if torn:
+        print(f"CANNOT RUN — the log {path} holds a TORN snapshot in {sorted(pair)}: PR "
+              f"{', '.join(str(k[0]) for k in torn)} (rows that disagree or miscount). Run --record "
+              f"to repair it. TREAT THIS AS NOT MEASURED.")
         return CANNOT_RUN
     verdicts = compare_weeks(rows, wk, min_samples)
     print(format_report(verdicts, wk, min_samples))
@@ -459,7 +578,7 @@ def fetch(since: str, skip: set[tuple], gh=_gh, budget_s: float = DEFAULT_BUDGET
         raise CannotRun(f"`gh pr list` returned {len(prs)} PRs, its --limit, so the list may be "
                         f"truncated; use a later --since")
     stats = {"prs": len(prs), "skipped_known": 0, "no_ci_run": 0, "incomplete": 0,
-             "recorded": 0, "unread": 0}
+             "unmeasured": 0, "recorded": 0, "unread": 0}
     rows: list[dict] = []
     ordered = sorted(prs, key=lambda p: p["mergedAt"])
     for i, pr in enumerate(ordered):
@@ -492,6 +611,9 @@ def _read_pr(call, repo: str, pr: dict):
         return "no_ci_run"
     if run.get("status") != "completed":
         return "incomplete"
+    attempt = run.get("run_attempt") or 1
+    if not isinstance(run.get("id"), int) or not isinstance(attempt, int):
+        raise CannotRun(f"the CI run on {sha[:12]} has no integer id or attempt")
     jobs = call(["api", f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100"])
     if not page_is_whole(jobs, "jobs"):
         raise CannotRun(f"the jobs list of run {run['id']} is incomplete or truncated")
@@ -499,7 +621,8 @@ def _read_pr(call, repo: str, pr: dict):
         if j.get("conclusion") == "cancelled" and j.get("check_run_url"):
             path = j["check_run_url"].split("api.github.com/", 1)[-1] + "/annotations"
             j["timed_out"] = is_timeout_kill(call(["api", path]))
-    return job_rows(pr["number"], sha, pr["mergedAt"], jobs["jobs"])
+    rows = job_rows(pr["number"], sha, pr["mergedAt"], jobs["jobs"], run["id"], attempt)
+    return rows or "unmeasured"   # r2 R2-F3: a run with no timeable job recorded nothing
 
 
 def default_log() -> pathlib.Path:
@@ -520,7 +643,7 @@ def default_log() -> pathlib.Path:
 def record_main(path: pathlib.Path, since: str, gh=_gh, budget_s: float = DEFAULT_BUDGET_S,
                 clock=time.monotonic) -> int:
     try:
-        known = {(r["pr"], r["sha"]) for r in read_log(path)}
+        known = {k for k, st in snapshot_states(read_log(path)).items() if st == "complete"}
         rows, st = fetch(since, known, gh=gh, budget_s=budget_s, clock=clock)
     except CannotRun as exc:
         print(f"CANNOT RUN — {exc}. TREAT THIS AS NOT RECORDED.")
@@ -533,16 +656,22 @@ def record_main(path: pathlib.Path, since: str, gh=_gh, budget_s: float = DEFAUL
         print(f"CANNOT RUN — nothing parsed: 0 merged PRs since {since}. "
               f"TREAT THIS AS NOT RECORDED.")
         return CANNOT_RUN
+    why = (f"{st['no_ci_run']} without a `{WORKFLOW}` run on their head, {st['incomplete']} with "
+           f"the run not yet complete, {st['unmeasured']} with no job measurable")
     if st["recorded"] == 0 and st["prs"] > st["skipped_known"] + st["unread"]:
         print(f"CANNOT RUN — nothing recorded: {st['prs'] - st['skipped_known']} PR(s) needed reading "
-              f"and none was ({st['no_ci_run']} without a `{WORKFLOW}` run on their head, "
-              f"{st['incomplete']} with the run not yet complete). TREAT THIS AS NOT RECORDED.")
+              f"and none was ({why}). TREAT THIS AS NOT RECORDED.")
         return CANNOT_RUN
     added = append_log(path, rows)
     print(f"recorded {st['recorded']} PR(s), {added} new row(s) -> {path}; "
-          f"{st['skipped_known']} already in the log, {st['no_ci_run']} without a CI run on "
-          f"their head, {st['incomplete']} with the run not yet complete "
+          f"{st['skipped_known']} already in the log, {why} "
           f"({st['prs']} merged since {since}).")
+    failed = st["no_ci_run"] + st["incomplete"] + st["unmeasured"]
+    if failed:
+        # r2 R2-F1: ONE recorded PR must not hide the rest — any of them could move a median.
+        print(f"CANNOT RUN — {failed} PR(s) not recorded ({why}). Re-run once their runs complete. "
+              f"TREAT THE LOG AS INCOMPLETE.")
+        return CANNOT_RUN
     if st["unread"]:
         print(f"PARTIAL — the {budget_s:g}s budget ran out with {st['unread']} PR(s) unread. "
               f"Re-run: the append is idempotent and resumes. TREAT THE LOG AS INCOMPLETE.")
@@ -560,10 +689,12 @@ def _self_test() -> int:
 
 
 def _rows(job: str, week_day: str, secs: list[int], pr0: int = 1) -> list[dict]:
-    """Fixture: one row per duration, on distinct PRs, all merged on `week_day`."""
+    """Fixture: one row per duration, each its own one-row snapshot (the sha names the job, so two
+    calls never share a snapshot), all merged on `week_day`."""
     at = f"{week_day}T12:00:00Z"
-    return [{"pr": pr0 + i, "sha": f"s{pr0 + i}", "merged_at": at, "week": iso_week(at),
-             "job": job, "seconds": s, "derived": False} for i, s in enumerate(secs)]
+    return [{"pr": pr0 + i, "sha": f"s{pr0 + i}-{job}", "merged_at": at, "week": iso_week(at),
+             "job": job, "seconds": s, "derived": False, "run": 0, "attempt": 1, "n_rows": 1,
+             "unmeasured": []} for i, s in enumerate(secs)]
 
 
 def _job(name, start, end, conclusion="success"):
@@ -587,6 +718,12 @@ def _self_test_body() -> int:
         else:
             fail += 1
             print(f"[FAIL] {label}: got {got!r} want {want!r}")
+
+    def check_raise(thunk):
+        try:
+            return f"returned {thunk()!r}"
+        except CannotRun as exc:
+            return str(exc)
 
     def status(rows, week, job, n=MIN_SAMPLES):
         return {v["job"]: v["status"] for v in compare_weeks(rows, week, n)}.get(job)
@@ -746,10 +883,10 @@ def _self_test_body() -> int:
 
     # --- the log parser refuses, never skips (R1-F5: each input's ONLY defect is the one named)
     good = {"pr": 1, "sha": "a", "merged_at": "2026-11-04T00:00:00Z", "week": "2026-W45", "job": "j",
-            "seconds": 1}
+            "seconds": 1, "run": 5, "attempt": 1, "n_rows": 1, "unmeasured": []}
     check("a log line missing a field is CANNOT RUN, not read as data",
           lambda: parse_log('{"pr": 1}\n'),
-          "raised CannotRun: log line 1 lacks sha, merged_at, week, job, seconds")
+          "raised CannotRun: log line 1 lacks sha, merged_at, week, job, seconds, run, attempt, n_rows, unmeasured")
     check("...and a line lacking ONLY merged_at is refused too (R1-F4: it crashed the default week)",
           lambda: parse_log(json.dumps({k: v for k, v in good.items() if k != "merged_at"})),
           "raised CannotRun: log line 1 lacks merged_at")
@@ -817,9 +954,13 @@ def _self_test_body() -> int:
     # never kill the suite before the case that names it is reached.
     check("fetch reads each merged PR's CI run on its head and records its jobs",
           lambda: (fetched()[0], fetched()[1]["recorded"]), ([543], 1))
-    check("fetch asks gh only for PRs merged on or after --since",
-          lambda: (gh_calls.clear(), fetched(), [c for c in gh_calls if c[0] == "pr"][0][5])[2],
-          "merged:>=2026-11-01")
+    def searched(since):
+        gh_calls.clear()
+        fetch(since, set(), gh=gh1)
+        return [c for c in gh_calls if c[0] == "pr"][0][5]
+    check("fetch asks gh only for PRs merged on or after --since (R2-F7: at two distinct dates)",
+          lambda: (searched("2026-11-01"), searched("2026-10-20")),
+          ("merged:>=2026-11-01", "merged:>=2026-10-20"))
     check("...and a run not yet complete is counted, not recorded",
           lambda: fetched()[1]["incomplete"], 1)
     check("...and a PR already in the log is not fetched again",
@@ -901,6 +1042,132 @@ def _self_test_body() -> int:
           lambda: (lambda r: (r[0], "unexpected gh answer (KeyError" in r[1]))(
               rec(fake_gh([{"number": 1, "headRefOid": "x"}, pr543], runs543, {6: jobs1}))),
           (CANNOT_RUN, True))
+
+    # --- r2: a PR is a SNAPSHOT — recorded whole, validated on read, retried until complete
+    jobs_full = [_job("verify", "2026-11-08T21:41:42Z", "2026-11-08T21:46:29Z"),
+                 _job("mutation-sweep (1)", "2026-11-08T21:41:00Z", "2026-11-08T21:51:00Z"),
+                 _job("mutation-sweep (2)", "2026-11-08T21:41:00Z", "2026-11-08T21:56:30Z")]
+    full = job_rows(543, "abc", pr543["mergedAt"], jobs_full, 6, 2)
+    runs_a2 = {"abc": [dict(runs[2], status="completed", run_attempt=2)]}
+
+    def r4b(jobs):
+        rs = job_rows(11, "u", "2026-11-08T02:00:00Z", jobs)
+        return sorted(r["job"] for r in rs), rs[0]["unmeasured"] if rs else None
+    check("⭐ R2-F4: a timed-out shard with NO completed_at leaves its group unknown — no survivor-only "
+          "max — and both are listed unmeasured; at a second input, a success with no started_at",
+          lambda: (r4b([_job("sweep (1)", "2026-11-08T01:00:00Z", "2026-11-08T01:01:00Z"),
+                        dict(_job("sweep (2)", "2026-11-08T01:00:00Z", None, "cancelled"), timed_out=True)]),
+                   r4b([_job("b (1)", "2026-11-08T01:00:00Z", "2026-11-08T01:09:00Z"),
+                        _job("b (2)", None, "2026-11-08T01:02:00Z"), _job("lint", None, None, "skipped")])),
+          ((["sweep (1)"], ["sweep (2)", "sweep [slowest shard]"]),
+           (["b (1)"], ["b (2)", "b [slowest shard]"])))
+
+    def states():
+        inc = job_rows(1, "i", "2026-11-04T00:00:00Z", jobs4)          # a shard cancelled -> incomplete
+        dis = [dict(full[0], run=99)] + full[1:]                        # rows disagree on the run
+        dup = [dict(full[0], n_rows=2), dict(full[0], n_rows=2)]
+        dup = [dict(r, sha="dup") for r in dup]                         # a job repeated
+        return (snapshot_states(full + inc + [dict(r, sha="cut") for r in full[:1]]
+                                + [dict(r, sha="dis") for r in dis] + dup),
+                snapshot_states(full[:2]))
+    check("⭐ R2-F2: snapshot_states — whole and timed is complete, an unmeasured job is incomplete, "
+          "and a short, disagreeing or repeated snapshot is TORN (at a second input, 2 of 4 rows)",
+          states, ({(543, "abc"): "complete", (1, "i"): "incomplete", (543, "cut"): "torn",
+                    (543, "dis"): "torn", (543, "dup"): "torn"}, {(543, "abc"): "torn"}))
+
+    def retry():
+        # The log holds ONLY `verify` for PR 543 — its sweep shard was cancelled — and GitHub now
+        # offers a newer attempt with the sweep. The record must fetch it and REPLACE the snapshot.
+        with tempfile.TemporaryDirectory() as td:
+            lp = pathlib.Path(td) / "log.jsonl"
+            append_log(lp, job_rows(543, "abc", pr543["mergedAt"],
+                                    [jobs_full[0], dict(jobs_full[1], conclusion="cancelled")], 6, 1))
+            gh_calls.clear()
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = record_main(lp, "2026-11-01", gh=fake_gh([pr543], runs_a2, {6: jobs_full}))
+            rows = read_log(lp)
+            return (rc, sum(c[0] == "api" for c in gh_calls) > 0,
+                    sorted({(r["run"], r["attempt"]) for r in rows}), sorted(r["job"] for r in rows))
+    check("⭐ R2-F2: a logged snapshot with an unmeasured job is fetched again and REPLACED by the "
+          "newer attempt, never treated as known", retry,
+          (NO_RISE, True, [(6, 2)], ["mutation-sweep (1)", "mutation-sweep (2)",
+                                     "mutation-sweep [slowest shard]", "verify"]))
+
+    def torn():
+        with tempfile.TemporaryDirectory() as td:
+            lp = pathlib.Path(td) / "log.jsonl"
+            lp.write_text(json.dumps(full[0], sort_keys=True) + "\n")   # 1 of 4 rows: interrupted
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_rep = report_main(lp, "2026-W45")
+                rc_rec = record_main(lp, "2026-11-01", gh=fake_gh([pr543], runs_a2, {6: jobs_full}))
+            return (rc_rep, "holds a TORN snapshot in ['2026-W44', '2026-W45']: PR 543" in buf.getvalue(),
+                    rc_rec, _canon(read_log(lp)) == _canon(full))
+    check("⭐ R2-F2: a TORN snapshot in the compared weeks is CANNOT RUN for the report, and the next "
+          "record repairs it whole", torn, (CANNOT_RUN, True, NO_RISE, True))
+
+    def mixed():
+        nci = {"number": 545, "headRefOid": "nnn", "mergedAt": "2026-11-09T06:00:00Z"}
+        out = []
+        for g in (gh1, fake_gh([pr543, nci], dict(runs543, nnn=[]), {6: jobs1})):
+            with tempfile.TemporaryDirectory() as td:
+                lp = pathlib.Path(td) / "log.jsonl"
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc = record_main(lp, "2026-11-01", gh=g)
+                line = [ln for ln in buf.getvalue().splitlines() if ln.startswith("CANNOT RUN")]
+                out.append((rc, line[0].split(" (")[0] if line else None, len(read_log(lp))))
+        return out
+    check("⭐ R2-F1: ONE recorded PR does not hide another that was not (a run not complete; at a "
+          "second input, no CI run) — rc 2, and what WAS measured is still logged", mixed,
+          [(CANNOT_RUN, "CANNOT RUN — 1 PR(s) not recorded", len(r1))] * 2)
+
+    def gap_status(week_day):
+        gap = [dict(_rows("lint", week_day, [5], 70)[0], unmeasured=["verify"])]
+        v = {v["job"]: v for v in compare_weeks(rise1 + gap, "2026-W45")}["verify"]
+        return v["status"], v["why"]
+    check("⭐ R2-F1: a job a snapshot of either week ran but could not time is NOT MEASURED, even "
+          "over a measured rise (in the evaluated week; at a second input, the previous week)",
+          lambda: (gap_status(B), gap_status(A)),
+          (("NOT MEASURED", "PR 70's run did not measure it"),) * 2)
+
+    check("⭐ R2-F3: a completed run whose jobs list is EMPTY records nothing, and is rc 2",
+          lambda: (lambda r: (r[0], "1 with no job measurable" in r[1]))(
+              rec(fake_gh([pr543], runs_a2, {6: []}))), (CANNOT_RUN, True))
+
+    def race():
+        import threading
+        with tempfile.TemporaryDirectory() as td:
+            lp = pathlib.Path(td) / "race.jsonl"
+            read_done, go, out = threading.Event(), threading.Event(), {}
+
+            def first():
+                out["a"] = append_log(lp, r2, after_read=lambda: (read_done.set(), go.wait(10)))
+
+            def second():
+                out["b"] = append_log(lp, r2)
+            t1 = threading.Thread(target=first)
+            t1.start()
+            read_done.wait(10)
+            t2 = threading.Thread(target=second)
+            t2.start()
+            time.sleep(0.5)    # unlocked, the second writer reads the still-empty log in this window
+            go.set()
+            t1.join(20)
+            t2.join(20)
+            return out.get("a"), out.get("b"), len(read_log(lp))
+    check("⭐ R2-F5: two writers of one snapshot, the second reading while the first holds its read, "
+          "write it ONCE — the read -> check -> write is locked", race, (len(r2), 0, len(r2)))
+
+    check("⭐ R2-F6: a row whose week is not its merge's ISO week is refused, at two inputs",
+          lambda: [check_raise(lambda x=x: parse_log(json.dumps(x)))
+                   for x in (dict(good, merged_at="2026-09-01T00:00:00Z"), dict(good, week="2026-W44"))],
+          ["log line 1 has week 2026-W45, but its merge is in 2026-W36",
+           "log line 1 has week 2026-W44, but its merge is in 2026-W45"])
+    check("...and an unmeasured job that is not a string is refused",
+          lambda: check_raise(lambda: parse_log(json.dumps(dict(good, unmeasured=[1])))),
+          "log line 1 has an unmeasured job that is not a string")
 
     # --- the WIRING: report_main over a log file, the path a caller takes
     T46, T41 = _dt.date(2026, 11, 10), _dt.date(2026, 10, 6)   # in W46 and W41

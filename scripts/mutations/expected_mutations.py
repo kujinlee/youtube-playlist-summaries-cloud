@@ -1562,7 +1562,12 @@ EXPECTED_MUTATIONS = {
     # default week (R1-F3); the CLI and record_main crash wrappers, a real ISO week, field types and merged_at
     # (R1-F4); both halves of combine_rc (R1-F6); the truncated percentage (R1-F7); the per-call timeout (R1-F8);
     # and the PR / jobs / runs truncation refusals (R1-F9). Six entries re-anchored to the moved code, none retired.
-    "scripts/ci-durations.py": 44,
+    # ⟳ 44 -> 61 (r2 fold): 17 added — a PR is a snapshot written whole and checked on read: the unmeasured list,
+    # the no-timestamp shard voiding its group (R2-F4), the complete / torn classes and their three torn clauses,
+    # the retry-and-replace of an incomplete snapshot and the torn refusal (R2-F2), any unrecorded PR is rc 2 and an
+    # unmeasured job is NOT MEASURED (R2-F1), an empty jobs list (R2-F3), the lock (R2-F5), the week checked against
+    # the merge date (R2-F6), and the constant --since (R2-F7). One expect renamed with its case, none retired.
+    "scripts/ci-durations.py": 61,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real

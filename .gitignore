@@ -133,6 +133,9 @@ playwright/.auth/
 # Per-job CI durations of merged PRs (scripts/ci-durations.py, backlog #397). Local and re-derivable
 # from GitHub at any time; a tracked append-only log conflicts across parallel branches.
 .claude/ci-durations.jsonl
+# ...and its write lock and the temp file of an atomic rewrite (r2 R2-F2, R2-F5).
+.claude/ci-durations.jsonl.lock
+.claude/ci-durations.jsonl.tmp
 
 # Generated pages never belong at the repo root. MEASURED 2026-08-30: `frag.html`
 # and `rel-nested.html` — two rendered dashboards — were committed in 96ae502 by

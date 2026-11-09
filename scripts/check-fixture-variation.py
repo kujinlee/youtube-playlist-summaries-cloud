@@ -1336,15 +1336,8 @@ EXEMPT: dict[str, str] = {
     # ⟳ r1 fold: `fetch.*` and `append_log.path` exemptions deleted (now varied at direct call sites); the wrong
     # `main.argv` reason ("the record path needs the network") deleted — main takes an injected gh (R1-F6).
     "ci-durations.py:read_log.path": "a temp-file path; read_log decides on the file's content, which parse_log's own cases vary",
-    "ci-durations.py:record_main.path": "driven through ONE helper, `rec`, which makes a fresh temp-file path per call; record_main decides on the log's CONTENT and the gh answers, and the R1-F6 cases reach it via main over two different logs",
-    "ci-durations.py:record_main.since": "driven through ONE helper, `rec`; its callers vary since (the default 2026-11-01, and 2026-10-15), and since is only interpolated into the `gh pr list` query, which fetch's own case asserts",
-    "ci-durations.py:record_main.gh": "driven through ONE helper, `rec`; its callers vary gh (a broken gh, an empty gh, gh1, a renamed-workflow gh, a malformed-payload gh)",
     "ci-durations.py:record_main.budget_s": "driven through ONE helper, `rec`, which forwards **kw; its callers vary budget_s (the default, 35 with a fake clock, and -1)",
     "ci-durations.py:record_main.clock": "driven through ONE helper, `rec`, which forwards **kw; its callers vary clock (time.monotonic, and a fake clock that advances 10 s per gh call)",
-    "ci-durations.py:report_main.path": "driven through ONE helper, `rep`; its callers vary path (a log holding rows, and an absent file)",
-    "ci-durations.py:report_main.week": "driven through ONE helper, `rep`; its callers vary week (None, 2026-W40, 2026-W45)",
-    "ci-durations.py:report_main.min_samples": "driven through ONE helper, `rep`; its callers vary it (the default 3, and 4)",
-    "ci-durations.py:report_main.today": "driven through ONE helper, `rep`; its callers vary today (2026-11-10, 2026-10-06, 2026-12-01)",
     "ci-durations.py:main.gh": "driven through ONE helper, `cli`; its callers vary gh (a broken gh on the --report paths, and a fake gh whose PR is already logged on the record + report paths)",
     "ci-durations.py:main.argv": "driven through ONE helper, `cli`; its callers vary argv (--report with --week 2026-W45, with --week 2025-W53, without --week; and the default record + report, with and without --budget-s -1, over two logs)",
     "ci-durations.py:main.today": "driven through ONE helper, `cli`; its callers vary today (2026-11-10, and a non-date that must crash into rc 2)",

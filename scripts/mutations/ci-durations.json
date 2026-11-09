@@ -56,8 +56,8 @@
     "file": "scripts/ci-durations.py",
     "edits": [
       [
-        "        if len(c) < min_samples or ",
-        "        if "
+        "        elif len(c) < min_samples or ",
+        "        elif "
       ]
     ],
     "expect": [
@@ -321,7 +321,7 @@
       ]
     ],
     "expect": [
-      "fetch asks gh only for PRs merged on or after --since"
+      "fetch asks gh only for PRs merged on or after --since (R2-F7: at two distinct dates)"
     ]
   },
   {
@@ -569,6 +569,228 @@
     ],
     "expect": [
       "R1-F9: a runs page smaller than its total_count is refused"
+    ]
+  },
+  {
+    "name": "R2-F4: a shard with no timestamps no longer makes its group unknown, so the survivors' max is recorded as the slowest shard",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "            unmeasured.add(name)\n            if m:\n                unknown.add(m.group(\"base\"))\n            continue\n        secs",
+        "            unmeasured.add(name)\n            continue\n        secs"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F4: a timed-out shard with NO completed_at leaves its group unknown — no survivor-only max — and both are listed unmeasured; at a second input, a success with no started_at"
+    ]
+  },
+  {
+    "name": "R2-F4: an unknown group is no longer listed unmeasured, so the report can read a partial group as measured",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    unmeasured |= {base + GROUP_SUFFIX for base in unknown}\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F4: a timed-out shard with NO completed_at leaves its group unknown — no survivor-only max — and both are listed unmeasured; at a second input, a success with no started_at"
+    ]
+  },
+  {
+    "name": "a job that ran but was not timed (cancelled, not by its timeout) is no longer listed unmeasured",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "            if concl != \"skipped\":\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: snapshot_states — whole and timed is complete, an unmeasured job is incomplete, and a short, disagreeing or repeated snapshot is TORN (at a second input, 2 of 4 rows)"
+    ]
+  },
+  {
+    "name": "R2-F2: a snapshot with an unmeasured job is classed complete, so it is never fetched again",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        elif rs[0][\"unmeasured\"]:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: snapshot_states — whole and timed is complete, an unmeasured job is incomplete, and a short, disagreeing or repeated snapshot is TORN (at a second input, 2 of 4 rows)",
+      "⭐ R2-F2: a logged snapshot with an unmeasured job is fetched again and REPLACED by the newer attempt, never treated as known"
+    ]
+  },
+  {
+    "name": "R2-F2: a snapshot with fewer rows than n_rows (an interrupted write) is not torn",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "len(rs) != rs[0][\"n_rows\"] or ",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: snapshot_states — whole and timed is complete, an unmeasured job is incomplete, and a short, disagreeing or repeated snapshot is TORN (at a second input, 2 of 4 rows)"
+    ]
+  },
+  {
+    "name": "R2-F2: rows of one snapshot that disagree on the run are not torn",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if len(heads) != 1 or len(rs)",
+        "        if len(rs)"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: snapshot_states — whole and timed is complete, an unmeasured job is incomplete, and a short, disagreeing or repeated snapshot is TORN (at a second input, 2 of 4 rows)"
+    ]
+  },
+  {
+    "name": "R2-F2: a snapshot that repeats a job is not torn",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        " or len(set(jobs)) != len(jobs):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: snapshot_states — whole and timed is complete, an unmeasured job is incomplete, and a short, disagreeing or repeated snapshot is TORN (at a second input, 2 of 4 rows)"
+    ]
+  },
+  {
+    "name": "R2-F2: the record skips every logged snapshot again, complete or not — one row means known",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        known = {k for k, st in snapshot_states(read_log(path)).items() if st == \"complete\"}",
+        "        known = {k for k, st in snapshot_states(read_log(path)).items()}"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: a logged snapshot with an unmeasured job is fetched again and REPLACED by the newer attempt, never treated as known"
+    ]
+  },
+  {
+    "name": "R2-F2: a logged snapshot that differs from the fetch is never replaced, so the newer attempt is merged into it row by row",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "                   if k in stored_by and _canon(stored_by[k]) != _canon(new_rows([], rs))}",
+        "                   if False}"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: a logged snapshot with an unmeasured job is fetched again and REPLACED by the newer attempt, never treated as known"
+    ]
+  },
+  {
+    "name": "R2-F2: the report reads a torn snapshot in the compared weeks as data",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    if torn:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F2: a TORN snapshot in the compared weeks is CANNOT RUN for the report, and the next record repairs it whole"
+    ]
+  },
+  {
+    "name": "R2-F1: a record where some PRs were recorded and others were not is rc 0",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    if failed:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F1: ONE recorded PR does not hide another that was not (a run not complete; at a second input, no CI run) — rc 2, and what WAS measured is still logged"
+    ]
+  },
+  {
+    "name": "R2-F1: a job a snapshot ran but could not time is compared as if fully sampled",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if job in gaps:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F1: a job a snapshot of either week ran but could not time is NOT MEASURED, even over a measured rise (in the evaluated week; at a second input, the previous week)"
+    ]
+  },
+  {
+    "name": "R2-F3: a completed run with no timeable job counts as a recorded PR",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    return rows or \"unmeasured\"",
+        "    return rows"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F3: a completed run whose jobs list is EMPTY records nothing, and is rc 2"
+    ]
+  },
+  {
+    "name": "R2-F5: the read -> check -> write is no longer locked, so two worktrees both append one snapshot",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        fcntl.flock(fh, fcntl.LOCK_EX)\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F5: two writers of one snapshot, the second reading while the first holds its read, write it ONCE — the read -> check -> write is locked"
+    ]
+  },
+  {
+    "name": "R2-F6: a row whose week disagrees with its merge date is read, so it lands in the wrong week",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if \"week\" in r and \"merged_at\" in r and r[\"week\"] != iso_week(r[\"merged_at\"]):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ R2-F6: a row whose week is not its merge's ISO week is refused, at two inputs"
+    ]
+  },
+  {
+    "name": "an unmeasured job name that is not a string is read as data",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if any(type(x) is not str for x in r.get(\"unmeasured\") or []):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...and an unmeasured job that is not a string is refused"
+    ]
+  },
+  {
+    "name": "R2-F7: the --since window is replaced by a constant date, so a requested window is ignored",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "f\"merged:>={since}\",",
+        "\"merged:>=2026-11-01\","
+      ]
+    ],
+    "expect": [
+      "fetch asks gh only for PRs merged on or after --since (R2-F7: at two distinct dates)"
     ]
   }
 ]

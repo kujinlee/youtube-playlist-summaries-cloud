@@ -19391,7 +19391,9 @@ automatically yet. Backlog #584 proposes a weekly scheduled CI job for that. The
 would make the warning easy to ignore (25 of its 26 warnings), filed as backlog #585. A first review found nine
 ways it could report a wrong answer; all nine are fixed. The two most serious: a test shard killed for running too
 long was being thrown away, so the slowest shard looked faster than it was, and a run that recorded nothing could
-still report success.
+still report success. A second review found seven more; all seven are fixed by one change. Each PR's measurements
+are now saved as one complete set or not at all. If any PR in a run could not be measured, the run says so instead
+of reporting "no rise". Two copies of the script running at once no longer write the same rows twice.
 <!--tech-->
 Backlog #397 slice 1, branch `ci-duration-tripwire`. RECORD: read-only `gh` reads each merged PR's `CI` run on its
 final head and appends one JSON line per job (`started_at` -> `completed_at`, execution seconds; skipped jobs are not
@@ -19411,4 +19413,11 @@ is the last complete ISO week (R1-F3); every crash is rc 2, never 1, with a type
 mutation entry 23's case now reds on the property (R1-F5); a measured RISE is not masked by a record rc 2 (R1-F6);
 the percentage is truncated so it never contradicts the verdict (R1-F7); every `gh` call is bounded by the budget
 left (R1-F8); truncated PR / runs / jobs pages are refused (R1-F9). 55 -> 83 cases, 25 -> 44 mutations, all 44
-hand-checked caught. The +61% figure above was measured before the fold.
+hand-checked caught. The +61% figure above was measured before the fold. ⟳ r2 fold (Codex half; Claude reviews r3 by
+alternation): all seven findings fixed by one structural change. A PR is a SNAPSHOT: every row carries `run`, `attempt`,
+`n_rows` and `unmeasured`, it is written whole under an `fcntl.flock` on `<log>.lock` (R2-F5), and `snapshot_states`
+classes it complete / incomplete / torn on read. Only a complete snapshot is skipped; any other is fetched again and
+replaced (R2-F2). ANY unrecorded PR is rc 2, and an empty jobs list counts as unrecorded (R2-F1, R2-F3). A job any
+snapshot of a compared week lists unmeasured is NOT MEASURED (R2-F1), and a shard with no timestamps voids its group
+(R2-F4). A row's `week` must equal its merge's ISO week (R2-F6). The `--since` query is asserted at two dates (R2-F7).
+83 -> 93 cases, 44 -> 61 mutations, all 61 hand-checked caught.
