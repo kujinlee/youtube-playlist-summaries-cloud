@@ -19258,3 +19258,11 @@ fixed with no case weakened: the `#508 r1 m3` real-git case now also edits ANOTH
 (a docs-only edit no longer takes that round's answer off the tree, so the case had stopped testing a finding from
 another tree), and a new case pins the one thing the same-half `== not a loosening` clause still decides alone — a later
 round that answers THAT id a finding again leaves the earlier verdict named.
+
+## 2026-11-08
+Filed backlog #580 at the owner's word ("yes, file it", 20:10, in the binding explainer): a post-merge AUDIT of
+loosening answers. After each merge it lists every `not a loosening` answer the merge relied on whose flagged file's
+dependency closure changed since the answer was given. It reports and never blocks. This answers the residual that
+option A accepted, at no merge cost. Measured over 71 master merges since 11-01: binding the gate's answers to its
+file plus its 4 directly loaded scripts would have voided them on 37 (≈52%), against 8 (≈11%) for the file alone. The
+explainer page that carries the owner's three questions and their answers is committed with it.
