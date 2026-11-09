@@ -19622,3 +19622,10 @@ Cleaned up five backlog rows that still read as open after their work had merged
 was 68% of the mutation sweep), #534 (one full sweep per batch), #501 (the usage guard reads the meter log's tail)
 and #496 (a settled NEEDS-OWNER marker) are now ticked, each with the PR and commit that shipped it. Backlog #361 stays
 open, but its status no longer says "in review": PR #425 merged, and its remaining audit is backlog #391.
+
+## 2026-11-09
+
+**The CI sweep is running out of time on most master runs, not just on one unlucky shard.** Backlog #231 now records the evidence: on the last seven master runs the slowest shard took 1,262–1,669 s against a 1,800 s limit. Overnight a shard ran out of time four times, with no defect behind any of them; each needed a re-run. Choosing the fix (more shards, more time, or cheaper tests) is still open on that row.
+
+<!--tech-->
+Backlog #231 Status: seven master push-event runs at N=24 (`gh run view --json jobs`), with the slowest shard varying (19, 6, 19, 16, 7, 2, 11). Four budget stops on 11-08/09: PR #542, PR #546 twice, and master run 42634452353 (sweep-red issue #548). Docs only.
