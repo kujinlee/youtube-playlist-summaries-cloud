@@ -1,0 +1,23 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5670 chars"
+  ],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 c712bc6b3a660cd513f197788cf84c2b08e22c72"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a808ef1e74f017fec103d94d8e36382d37a944c8",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/cx-plan586-r2/log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "loosening_answers": {},
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/review-plan586-r2.md",
+  "reason": "5670 chars",
+  "refused": false,
+  "review": "plan-586-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/plan-586"
+}
