@@ -19627,7 +19627,10 @@ open, but its status no longer says "in review": PR #425 merged, and its remaini
 A design spec waits for your walkthrough: a pull request's mutation sweep would pick guards by what their tests
 were SEEN to read, instead of by every guard whose code merely mentions a changed file (backlog #586). A
 measurement run tonight found that on PR #545, which changed only the backlog and the dashboard, 64 guards were
-swept, but only 6 of them actually read either file. The proposal would sweep 36 there (an estimate). A guard
+swept, but only 6 of them actually read either file. The proposal would sweep 36 there, but only if a fresh
+recording existed at that PR's starting point: applied strictly to tonight's recording, which is older than
+those PRs, it saves nothing, so the real saving is measured over 20 PRs in a trial mode before anything
+switches (review round 2). A guard
 whose test starts other programs cannot be traced, so it is still picked exactly as today. The full sweep on
 every merge to master and on the daily schedule stays as the safety net you named. The same recording is the
 first piece of backlog #560, the verdict cache. Six questions for you are in section 7 of the spec, each with a
@@ -19635,11 +19638,12 @@ recommended answer.
 <!--tech-->
 Branch `spec-586-observed-reach`, docs only. Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md`
 (new anchor `dev-speed-first` in `docs/anchors.md`): record `reads` / `listed` / `spawned` / rc / blob SHAs on the
-master full sweep's unmutated controls under `sys.addaudithook`, merge into `readsets.json` in
+master full sweep, in a SEPARATE recording pass after the verdicts (never the control itself), merge into `readsets.json` in
 `mutation-sweep-complete`, `actions/cache` keyed by Python + harness hash + sha; a PR restores the newest entry
 whose sha is an ancestor of its base. Fallback to today's naming rule for spawners, a missing / stale / failed /
-wrong-key read set, and an unparseable cache; added and deleted paths always also go through the naming rule
-(`stat`/`exists` raise no audit event). MEASURED on `d206e066`: 43 of 90 targets traceable; PR #545 64 picked = 3
+wrong-key read set, and an unparseable cache; the rule for added and deleted paths is the owner's Q1
+(`stat`/`exists` raise no audit event). After review round 2 the §5 selections are labelled a footprint
+(recording at the PR's base assumed); strict §3 eligibility on the spike gives 0 usable read sets. MEASURED on `d206e066`: 43 of 90 targets traceable; PR #545 64 picked = 3
 traceable readers + 33 spawners + 28 traceable non-readers; PR #543 68 picked, 27 traceable non-readers. INFERRED
 selection 64 → 36 and 68 → 41; 25 and 33 if the 13 git-only spawners count as traceable (a later step). Spike
 report on record unchanged at `docs/reviews/measurements/2026-11-09-observed-reads-spike.md`. Backlog #586 and

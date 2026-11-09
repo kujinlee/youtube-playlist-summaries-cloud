@@ -3,11 +3,11 @@
 > **Anchor:** `dev-speed-first` — **ADR:** none
 > **Goal:** A change gets its verdict as fast as the evidence allows, with mutation coverage identical.
 
-**Status:** 🟠 needs-you — DRAFT, written 2026-11-09 for backlog #586, folded after review round 1
-(`docs/reviews/coordinator/observed-reach-spec-r1-coordinator.md`); waits on the owner's walkthrough (§7).
+**Status:** 🟠 needs-you — DRAFT, written 2026-11-09 for backlog #586, folded after review rounds 1 and 2
+(`docs/reviews/coordinator/observed-reach-spec-r2-coordinator.md`); waits on the owner's walkthrough (§7).
 Nothing here is built. Every number is marked MEASURED (run) or INFERRED (reasoned, not run). The read sets are on
-record in `docs/reviews/measurements/2026-11-09-observed-reads-spike.md`; the selections in §5 apply this spec's
-rules to them with a scratch scorer, so every selection figure is INFERRED.
+record in `docs/reviews/measurements/2026-11-09-observed-reads-spike.md`; §5 scores this spec's rules on them
+with a scratch scorer, once with §3's eligibility applied and once with it assumed met, and says which is which.
 
 ## In plain words
 
@@ -48,12 +48,15 @@ detection."*
 
 **Record — a separate run, never the control.** On a `push` to `refs/heads/master` and on the schedule (never a
 `batch/**` push, never a pull request), after a shard's verdicts are final, the shard runs ONE extra pass: each
-target it owns by a fixed partition (sorted target index mod N) runs `<target> --self-test` under the recording
-launcher. That pass feeds neither `control_is_green` nor `control_seconds`, so a recorder fault cannot red a
-target or move a mutant's timeout. The launcher reproduces the real control's argv, `sys.path[0]`, `cwd` and
-environment (`mutation_env(d, seed)`), once per seed the run uses; read sets from several seeds are united. A
-target gets a read set only when its recording run is green by `control_is_green` AND its case count equals the
-real control's; otherwise it has none and falls back (§3). For each target the record holds:
+target it OWNS runs `<target> --self-test` under the recording launcher. A target's owner is the LOWEST-index
+shard whose `shard_slice` holds one of its entries, so the owner always ran that target's real control in the
+same job (a fixed `index mod N` partition does not: MEASURED, 27 of 91 such owners at N=24 run no control for
+their target, r2 Codex F2). That pass feeds neither `control_is_green` nor `control_seconds`, so a recorder fault
+cannot red a target or move a mutant's timeout. The launcher reproduces the real control's argv, `sys.path[0]`,
+`cwd` and environment (`mutation_env(d, seed)`), once per seed the run uses; read sets from several seeds are
+united. A target gets a read set only when, FOR EVERY SEED, its recording run is green by `control_is_green` AND
+its case count equals that seed's real control count in the owner shard; and the merge refuses it when two shards
+that ran its control report different counts. Otherwise it has none and falls back (§3). Each target's record:
 
 - `reads`: every path under the staged roots the suite opened, tracked or not (imports arrive as `open` events
   through `io.open_code`), each tracked one with its git blob SHA;
@@ -91,7 +94,8 @@ or `D`, and a rename arrives as a `D` plus an `A`. An unparseable list is today'
 1. FULL: a harness file, a dependency manifest, a manifest whose target this tree does not load, a staged path
    no target names or quotes, a path named by more than `SHARED_FULL_FRACTION` of targets.
 2. Mandatory: a target's own source or own manifest changed picks that target, read set or not.
-3. A target with a usable read set (§3) is picked when (a) a changed path is in its `reads`, (b) an added or
+3. A target with a usable read set (§3) is picked when (a) a changed path, `A`, `M` or `D`, is in its `reads` or
+   its `probed` (a size or mode change seen only through `stat`/`access` is an `M`: r2 Codex F1), (b) an added or
    deleted path lies under a directory in its `listed`, or (c) an added or deleted path is matched by the
    existence rule the owner chooses in Q1.
 4. Any other target is picked by today's naming rule, exactly as now.
@@ -138,25 +142,38 @@ that separates them.
 
 ## 5. Expected saving
 
-Read sets MEASURED (spike, `d206e066`, local); selections INFERRED (this spec's rules applied by a scratch scorer
-on the current tree; the spike's tree is 1 commit after PR #545 and 4 after PR #543, not each PR's base).
+Read sets MEASURED (spike, `d206e066`, local). The scorer applies §3 to them three ways (r2 Codex F3):
 
-| Q1 option (§7) | PR #545 | PR #543 | this spec's PR | 15 non-FULL of the last 30 master commits: median (total) |
-|---|---|---|---|---|
-| today's selector (MEASURED) | 64 | 68 | 64 | 67 (1,014) |
-| A — the full naming rule for added/deleted paths | 36 | 65 | 61 | 65 (879) |
-| D — naming with sub-root directory quotes only | 36 | 46 | 50 | 45 (676) |
-| B — literal namers + probes + listings | 36 | 41 | 36 | 40 (637) |
+- **Strict** (R = `d206e066`, every §3 row): **0 usable read sets on every scored commit, so the saving is 0**
+  (MEASURED). 14 of the 15 commits below, PR #545 and PR #543 among them, have bases older than R (ancestry
+  fails); this spec's PR and `4a6f1577` have `check-plan-code.py` changed over R..BASE (the harness hash fails). The spike
+  cannot measure an eligible saving; only shadow mode can (Q4).
+- **Footprint** (R = BASE: a recording at the PR's own base that read what the spike read; every check passes
+  by construction). The table; INFERRED, since the reads at each historical base were not recorded.
+- **Lag 1** (R = BASE's parent; staleness, listing and R..HEAD rules applied, harness hash assumed equal):
+  INFERRED, in the last column. 4 of the 15 commits get 0 usable sets, because an addition under `scripts/`
+  over R..BASE makes every traceable set stale (all of them list `scripts`). So the saving needs a recording at,
+  or very near, nearly every master commit.
+
+| Q1 option (§7) | PR #545 | PR #543 | this spec's PR | 15 non-FULL of the last 30: median (total) | same, lag 1 |
+|---|---|---|---|---|---|
+| today's selector (MEASURED) | 64 | 68 | 64 | 67 (1,014) | 67 (1,014) |
+| A — the full naming rule for added/deleted paths | 36 | 65 | 61 | 65 (879) | 65 (988) |
+| D — naming with sub-root directory quotes only | 36 | 46 | 50 | 45 (676) | 46 (774) |
+| B — literal namers + probes + listings | 36 | 41 | 36 | 40 (637) | 41 (726) |
 
 - The other 15 of those 30 commits run ALL under every option and gain nothing (MEASURED): 13 change the harness
   or the workflow, and 2 change a module more than half the targets name (`codex-review`, `fixture_git`).
 - Observed reach can pick MORE than today: one commit that adds a module under `scripts/` picks 76 under every
-  option, against today's 67.
+  option (footprint), against today's 67.
 - The saving is capped by spawning: 33 of PR #545's 36 picks are spawners (MEASURED reads, INFERRED pick).
 - Adding any file under `scripts/` picks all 43 traceable targets, because the import system lists `scripts`
   for each of them (MEASURED). That is correct: a new module can shadow an import.
 - Wall-clock seconds are NOT estimated: the slowest control took 55 s and is a spawner that stays picked.
 - Option B's figures assume the `stat` probes add no picks; that is UNMEASURED until the launcher records them.
+  The r2 rule that a MODIFIED probed path picks (§2 Use 3a) adds 0 picks here, since the spike's probes are
+  failed opens of absent paths (MEASURED).
+- Not applied, because the spike did not record them: the Python-version check and the case-count check.
 
 **A later step: git-only spawners.** 13 targets spawn only `git`; 1,681 of `batch-ci`'s git calls ran in tmp
 fixtures (MEASURED). Counting such a spawn as traceable needs a recorded proof that it reads no repo file (`cwd`
@@ -176,10 +193,10 @@ reusable at the strict rule for PR #545, before any per-mutant recording narrows
 
 | # | Question | Recommended answer |
 |---|---|---|
-| Q1 | An added or deleted path can matter to a suite that only checked whether it EXISTS, and `stat` raises no audit event (MEASURED by probe). Which rule picks a traceable target for such a path? **A:** today's full naming rule, directory quotes included (safest; saves only on modify-only PRs). **B:** record failed opens and wrapped `os.stat` / `os.lstat` / `os.access` calls, keep the literal namers (path, file name, import spelling), drop the directory quotes. **C:** literal namers only, no probe recording. **D:** naming with directory quotes below the staged root only | **B.** It sees an existence check on a computed name, which A sees only by over-picking and C not at all. Gap: a probe made in C code or in a child (spawners already fall back). Its saving is in §5; its `stat` probes are measured in shadow mode before the switch, and B falls back to A if they add more than 5 picks on PR #543's diff |
+| Q1 | An added or deleted path can matter to a suite that only checked whether it EXISTS, and `stat` raises no audit event (MEASURED by probe). Which rule picks a traceable target for such a path? **A:** today's full naming rule, directory quotes included (safest; saves only on modify-only PRs). **B:** record failed opens and wrapped `os.stat` / `os.lstat` / `os.access` calls, keep the literal namers (path, file name, import spelling), drop the directory quotes. **C:** literal namers only, no probe recording. **D:** naming with directory quotes below the staged root only | **B.** It sees an existence check on a computed name, which A sees only by over-picking and C not at all. Gap: a probe made in C code or in a child (spawners already fall back). Its footprint is the lowest under every scoring in §5 (40 median against today's 67; 41 at lag 1), but those are INFERRED: applied strictly to the spike, every option saves 0, so the real saving is measured in shadow mode (Q4). Unchanged by r2's re-scoring: the ORDER B < D < A < today holds in both. Its `stat` probes are measured in shadow mode before the switch, and B falls back to A if they add more than 5 picks on PR #543's diff |
 | Q2 | Should git-only spawns in tmp fixtures count as traceable, for 13 more targets? | **Not in v1.** A second step, after a recorded proof per spawn (§5) |
 | Q3 | When a target cannot be traced, fall back to TODAY's naming rule, or always pick it? | **Today's rule.** Never fewer than now. Always picking raises PR #545 from 36 to 50 (47 untraceable + 3 readers; INFERRED) |
-| Q4 | Run in SHADOW mode first, logging both selections while still running today's? | **Yes, for 20 PRs.** Switch only if no would-skip target's verdicts differ between the PR's own sweep and its base's full sweep (§8.1). 0 in 20 bounds the per-PR miss rate below 14% (95%); 5 PRs would bound it only below 45% |
+| Q4 | Run in SHADOW mode first, logging both selections while still running today's? | **Yes, for 20 COMPLETE PRs** (§8.5: an incomplete comparison is inconclusive and does not count). Switch only if no would-skip target's verdicts differ between the PR's own sweep and its base's full sweep (§8.1). 0 in 20 bounds the per-PR miss rate below 14% (95%), ASSUMING the 20 are consecutive (not chosen), independent, and each has at least one would-skip target; 5 PRs would bound it only below 45%. Shadow mode also MEASURES the real saving and the fallback rate, which §5 cannot |
 | Q5 | Do you accept §4's bound, with master's full sweep as the catch and §8.1 as the detector? | **Yes.** It is your 02:45 direction. Revisit on the first §8.1 event |
 | Q6 | Ship before backlog #560, as its first slice, or inside it? | **Before.** It is target-level and smaller, and it builds the infrastructure backlog #560 extends with per-mutant recording (§6) |
 
@@ -205,7 +222,14 @@ The built feature FAILS IF any of these is observed.
    `Popen`, an `os.fork` and an `os.system` spawner; a missing, red, short-count, stale (read or probed path
    modified), wrong-key and unvalidated set; a path added after R under a listed directory, with an addition
    under an unlisted one as the negative; an addition over R..BASE that switches on a dependency (Codex's r1
-   reproduction); an unparseable cache or diff. Each one's mutation (dropping the condition) must go red.
+   reproduction); an unparseable cache or diff; a MODIFIED path in `probed` only, by size and by executable bit
+   (r2 Codex F1), with an unprobed modification as the negative. Each one's mutation (dropping it) must go red.
 4. **A partial or wrong read set is saved or used.** `readsets.json` is saved with a shard missing, a target
-   missing or doubled, a green-sweep condition unmet, or from a `batch/**` push or a PR; or a shard runs a
-   selection other than `sweep-select`'s output.
+   missing or doubled, a green-sweep condition unmet, or from a `batch/**` push or a PR; or a read set kept for a
+   target its owner shard ran no control for, or whose per-seed or cross-shard counts disagree; or a shard runs
+   a selection other than `sweep-select`'s output.
+5. **A missing comparison counts as a clean one.** A shadow PR counts toward Q4's 20 only when, for EVERY
+   would-skip target, both the PR's sweep at its final push and the base's full sweep produced a verdict per
+   mutant; a cancelled run, a missing artifact or a CANNOT RUN control on either side makes that PR
+   INCONCLUSIVE, logged, never a pass. A control that failed on one side and not the other is a differing
+   verdict. Cased: a cancelled PR run, a missing base artifact and a red control each yield INCONCLUSIVE.
