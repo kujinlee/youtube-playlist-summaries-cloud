@@ -19623,33 +19623,28 @@ was 68% of the mutation sweep), #534 (one full sweep per batch), #501 (the usage
 and #496 (a settled NEEDS-OWNER marker) are now ticked, each with the PR and commit that shipped it. Backlog #361 stays
 open, but its status no longer says "in review": PR #425 merged, and its remaining audit is backlog #391.
 
-## 2026-11-09 [needs-you]
-A design spec waits for your walkthrough: a pull request's mutation sweep would pick guards by what their tests
-were SEEN to read, instead of by every guard whose code merely mentions a changed file (backlog #586). A
-measurement run tonight found that on PR #545, which changed only the backlog and the dashboard, 64 guards were
-swept, but only 6 of them actually read either file. The proposal would sweep 36 there, but only if a fresh
-recording existed at that PR's starting point: applied strictly to tonight's recording, which is older than
-those PRs, it saves nothing, so the real saving is measured over 20 PRs in a trial mode before anything
-switches (review round 2). Review stopped at round 3, the cap. Its last fold moved the recording into one
-separate job on every merge to master, which no review round has seen yet; your walkthrough and the build plan's
-review are where it gets checked. A guard
-whose test starts other programs cannot be traced, so it is still picked exactly as today. The full sweep on
-every merge to master and on the daily schedule stays as the safety net you named. The same recording is the
-first piece of backlog #560, the verdict cache. Six questions for you are in section 7 of the spec, each with a
-recommended answer.
+## 2026-11-09
+You approved the design spec for backlog #586 at 10:33 ("I agree all your recommendations") and chose the
+recorder at 10:40, so it moves to building. A pull request's mutation sweep will pick guards by what their tests
+were SEEN to read, instead of by every guard whose code merely mentions a changed file. A measurement run found
+that on PR #545, which changed only the backlog and the dashboard, 64 guards were swept but only 6 actually read
+either file. Your 10:40 choice records each test under `strace`, which also follows every program a test starts,
+so the guards whose tests start other programs (47 of 90 in that measurement) can now be traced instead of always
+falling back; only a test whose tracing fails is picked exactly as today. The first build step proves `strace`
+works on GitHub's runners, and falls back to tonight's lighter recorder if it does not. It runs in trial mode for
+20 complete PRs before anything switches, and the full sweep on every merge to master and on the daily schedule
+stays as the safety net you named. It ships before backlog #560, the verdict cache, which reuses its recording.
 <!--tech-->
 Branch `spec-586-observed-reach`, docs only. Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md`
-(new anchor `dev-speed-first` in `docs/anchors.md`): record `reads` / `listed` / `spawned` / rc / blob SHAs on the
-master push and the schedule, in ONE dedicated unsharded job `record-reads` beside the sweep (r3 fold: plain control
-then hooked run per target and seed, same argv/env/cwd/stage tree as `mutate_delivered`'s control; replaces the
-shard-owner rule that put 68 of 91 recordings on shard 1), saved as `readsets.json` when the job finished,
-`actions/cache` keyed by Python + harness hash + sha; a PR restores the newest entry
-whose sha is an ancestor of its base. Fallback to today's naming rule for spawners, a missing / stale / failed /
-wrong-key read set, and an unparseable cache; the rule for added and deleted paths is the owner's Q1
-(`stat`/`exists` raise no audit event). INFERRED after r3: about 89% of PR runs would find a usable recording,
-since the job saves ~25 min after a push. After review round 2 the §5 selections are labelled a footprint
-(recording at the PR's base assumed); strict §3 eligibility on the spike gives 0 usable read sets. MEASURED on `d206e066`: 43 of 90 targets traceable; PR #545 64 picked = 3
-traceable readers + 33 spawners + 28 traceable non-readers; PR #543 68 picked, 27 traceable non-readers. INFERRED
-selection 64 → 36 and 68 → 41; 25 and 33 if the 13 git-only spawners count as traceable (a later step). Spike
-report on record unchanged at `docs/reviews/measurements/2026-11-09-observed-reads-spike.md`. Backlog #586 and
-backlog #560 Status cells note the spike and the spec.
+(new anchor `dev-speed-first` in `docs/anchors.md`), owner-approved 2026-11-09: Q1 B (failed opens + stat/access
+probes + literal namers; reverts to A if probes add more than 5 picks on PR #543's diff), Q3 today's rule only
+where tracing fails, Q4 shadow for 20 complete PRs, Q5 bound accepted, Q6 before backlog #560, Q2 superseded.
+Recorder: `strace -f -y` in the dedicated unsharded `record-reads` job beside the sweep on each master push
+(openat incl. failed, stat/lstat/newfstatat/statx, access/faccessat, getdents64, chdir, process tree); paths
+normalised per process cwd, dirfd and `/proc` against the staged tree; `.git` paths never count; an unresolved
+path refuses the target. Build step 1 verifies ptrace on GitHub-hosted ubuntu, else the audit-hook recorder with
+today's rule for spawners. strace overhead UNMEASURED (expected 2-5x, recording job only). The spike's figures
+(audit hook, `d206e066`: 43 of 90 traceable; PR #545 64 -> 36 INFERRED) are a LOWER bound on traceability and not
+a bound on picks either way; shadow mode measures. Saved as `readsets.json` in `actions/cache` keyed by Python +
+harness hash + sha; `sweep-select` resolves once before the matrix. Backlog #586 and backlog #560 Status cells
+note the spike and the spec.
