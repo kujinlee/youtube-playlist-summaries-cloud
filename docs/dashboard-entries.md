@@ -19656,6 +19656,33 @@ the backlog #586 walkthrough). New review id `<subject>-redesign-r1-*`; the old 
 `spec-586-redesign-r1` (both halves) on PR #552.
 
 ## 2026-11-09
+You approved the design spec for backlog #586 at 10:33 ("I agree all your recommendations") and chose the
+recorder at 10:40, so it moves to building. A pull request's mutation sweep will pick guards by what their tests
+were SEEN to read, instead of by every guard whose code merely mentions a changed file. A measurement run found
+that on PR #545, which changed only the backlog and the dashboard, 64 guards were swept but only 6 actually read
+either file. Your 10:40 choice records each test under `strace`, which also follows every program a test starts,
+so the guards whose tests start other programs (47 of 90 in that measurement) can now be traced instead of always
+falling back; only a test whose tracing fails is picked exactly as today. The first build step proves `strace`
+works on GitHub's runners, and falls back to tonight's lighter recorder if it does not. It runs in trial mode for
+20 complete PRs before anything switches, and the full sweep on every merge to master and on the daily schedule
+stays as the safety net you named. It ships before backlog #560, the verdict cache, which reuses its recording.
+<!--tech-->
+Branch `spec-586-observed-reach`, docs only. Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md`
+(new anchor `dev-speed-first` in `docs/anchors.md`), owner-approved 2026-11-09: Q1 B (failed opens + stat/access
+probes + literal namers; reverts to A if probes add more than 5 picks on PR #543's diff), Q3 today's rule only
+where tracing fails, Q4 shadow for 20 complete PRs, Q5 bound accepted, Q6 before backlog #560, Q2 superseded.
+Recorder: `strace -f -y` in the dedicated unsharded `record-reads` job beside the sweep on each master push
+(openat incl. failed, stat/lstat/newfstatat/statx, access/faccessat, getdents64, chdir, process tree); paths
+normalised per process cwd, dirfd and `/proc` against the staged tree; `.git` paths never count; an unresolved
+path refuses the target. Build step 1 verifies ptrace on GitHub-hosted ubuntu, else the audit-hook recorder with
+today's rule for spawners. strace overhead UNMEASURED (expected 2-5x, recording job only). The spike's figures
+(audit hook, `d206e066`: 43 of 90 traceable; PR #545 64 -> 36 INFERRED) are a LOWER bound on traceability and not
+a bound on picks either way; shadow mode measures. Saved as `readsets.json` in `actions/cache` keyed by Python +
+harness hash + sha; `sweep-select` resolves once before the matrix. Backlog #586 and backlog #560 Status cells
+note the spike and the spec.
+Round 4 (a scoped check past the review cap, Codex) of the redesign found two High holes caused by the round-3 fold (an external symlink unlinked mid-trace hides a probe; `ioctl` counted as read-only). They are filed as backlog #590, to close before any skip takes effect, and not folded.
+
+## 2026-11-09
 Old git worktrees are now moved out of the way automatically, and NOTHING is ever deleted. Each time a
 session starts, every worktree under `.claude/worktrees/` whose pull request merged more than 2 hours ago
 is moved to `~/.worktree-archive/youtube-playlist-summaries-cloud/`, where the editor no longer watches

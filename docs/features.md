@@ -130,6 +130,7 @@ areas: (cloud/test), (test infra)
 ### guard-and-gate-harness
 state: built
 for: Gives the rules this project works by a mechanical enforcer, instead of a reader who has to remember them.
+anchors: dev-speed-first
 areas: (tooling)
 
 ### status-pages
