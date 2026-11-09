@@ -19629,3 +19629,16 @@ open, but its status no longer says "in review": PR #425 merged, and its remaini
 
 <!--tech-->
 Backlog #231 Status: seven master push-event runs at N=24 (`gh run view --json jobs`), with the slowest shard varying (19, 6, 19, 16, 7, 2, 11). Four budget stops on 11-08/09: PR #542, PR #546 twice, and master run 42634452353 (sweep-red issue #548). Docs only.
+
+## 2026-11-09
+Old git worktrees are now cleaned up automatically. Each time a session starts, every worktree under
+`.claude/worktrees/` whose pull request has merged is removed, provided nothing in it could be lost: no
+uncommitted change, no unpushed commit, no stray file, and no newer work on a reused branch name. This
+morning 67 of them (11 GB) had piled up and were the likely cause of the Mac freezing. Anything kept is
+listed with its reason by `python3 scripts/prune-merged-worktrees.py --dry-run`, and every removal can
+be undone from `.claude/pruned-worktrees/log.tsv`.
+<!--tech-->
+Backlog #588. `scripts/prune-merged-worktrees.py` (one `gh pr list` for every PR, fail closed; `git worktree remove`
+without `--force`; branch refs kept; a non-empty `.remember/` copied first), called from
+`.claude/hooks/session-state.sh` with `--deadline` = 55 s minus the seconds the in-flight block used. 51 self-test
+cases, 18 mutations all killed.

@@ -207,3 +207,6 @@ docs/explainers/questions.md
 # backlog #408: the lock scripts/regen-pages.py holds while it builds every page from a fresh origin/master tree
 # (that tree lives in a private temp directory, never in the repository).
 .claude/regen-pages.lock
+# backlog #588: prune-merged-worktrees.py logs each removed worktree (name, branch, HEAD) and keeps a copy of its
+# `.remember/` here, in the MAIN checkout, so a removal can be undone with `git worktree add <path> <sha>`.
+.claude/pruned-worktrees/

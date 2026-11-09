@@ -1,0 +1,236 @@
+[
+  {
+    "name": "an OPEN PR no longer keeps a merged branch's worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if e[\"open\"]:\n        r.append(\"open PR\")",
+        "    if False:\n        r.append(\"open PR\")"
+      ]
+    ],
+    "expect": [
+      "KEPT openpr: open PR"
+    ]
+  },
+  {
+    "name": "a FORK's merged PR counts as a merge of this repo's branch of the same name",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        " and r[\"isCrossRepository\"] is False and r[\"headRefOid\"]",
+        " and r[\"headRefOid\"]"
+      ]
+    ],
+    "expect": [
+      "KEPT fork: no merged PR"
+    ]
+  },
+  {
+    "name": "rule 6 dropped: a reused branch name whose HEAD moved past the merged PR is removed",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if 0 not in reach:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT reuse: HEAD moved past the merged PR"
+    ]
+  },
+  {
+    "name": "rule 6 asks the ancestry BACKWARDS: an ancestor of the merged head is kept",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "\"--is-ancestor\", wt[\"head\"], oid)[0]",
+        "\"--is-ancestor\", oid, wt[\"head\"])[0]"
+      ]
+    ],
+    "expect": [
+      "REMOVED: HEAD an ANCESTOR of the merged head (older)"
+    ]
+  },
+  {
+    "name": "the untracked allowlist admits everything",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "(delete if p in UNTRACKED_ALLOWLIST else stray)",
+        "delete"
+      ]
+    ],
+    "expect": [
+      "KEPT stray: untracked notes.txt"
+    ]
+  },
+  {
+    "name": "a tracked change no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    tracked = [p for xy, p in entries if xy not in (\"??\", \"!!\")]",
+        "    tracked = [p for xy, p in entries if xy == \"XX\"]"
+      ]
+    ],
+    "expect": [
+      "KEPT dirty: tracked changes"
+    ]
+  },
+  {
+    "name": "an unknown IGNORED path (.env.local) no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            elif kind is None:\n",
+        "            elif False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT envfile: ignored .env.local is not known to be regenerable"
+    ]
+  },
+  {
+    "name": "a commit missing from origin/<branch> no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        elif n.strip() != \"0\":\n",
+        "        elif False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT unpushed: 1 commit(s) not on origin/br-unpushed"
+    ]
+  },
+  {
+    "name": "a gone remote branch with HEAD outside origin/master no longer keeps the worktree",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if rc2 != 0:\n            r.append(\"no origin branch",
+        "        if False:\n            r.append(\"no origin branch"
+      ]
+    ],
+    "expect": [
+      "KEPT gone: no origin branch, and HEAD is not in origin/master"
+    ]
+  },
+  {
+    "name": "a LOCKED worktree is not skipped",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if wt[\"locked\"]:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT locked: locked"
+    ]
+  },
+  {
+    "name": "the process's own cwd is not skipped",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if inside(cwd, path):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "KEPT cwd: it is the current working directory"
+    ]
+  },
+  {
+    "name": "gh's exit status is ignored: a failing gh whose stdout parses is trusted",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc != 0:\n        raise CannotRun(f\"gh pr list",
+        "    if False:\n        raise CannotRun(f\"gh pr list"
+      ]
+    ],
+    "expect": [
+      "gh failure: rc 2, CANNOT RUN, and NOTHING removed"
+    ]
+  },
+  {
+    "name": "a .remember holding a handoff is removed without a copy",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if remember and has_content(path / \".remember\"):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      ".remember holding a non-empty file is COPIED before removal"
+    ]
+  },
+  {
+    "name": "a removal is not logged",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        log_line(log_dir / \"log.tsv\", stamp, row.name, row.branch or \"-\", row.head, \"removing\", copied)",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "the log has one line per removal, with name, branch and HEAD SHA"
+    ]
+  },
+  {
+    "name": "--dry-run removes",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if dry_run:\n            row.verdict = \"WOULD-REMOVE\"",
+        "        if False:\n            row.verdict = \"WOULD-REMOVE\""
+      ]
+    ],
+    "expect": [
+      "--dry-run removes nothing and writes no log"
+    ]
+  },
+  {
+    "name": "a PR list AT the limit is trusted, though it may be truncated",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if len(rows) >= PR_LIMIT:",
+        "    if len(rows) > PR_LIMIT:"
+      ]
+    ],
+    "expect": [
+      "check_prs refuses a list at the limit (maybe truncated)"
+    ]
+  },
+  {
+    "name": "the allowlisted hook log is not deleted before `git worktree remove`",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            (path / rel).unlink()",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "REMOVED: only the allowlisted log untracked, regenerable ignored content (ok-log)"
+    ]
+  },
+  {
+    "name": "node_modules / __pycache__ are no longer regenerable",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if any(c in REGENERABLE_COMPONENTS for c in p.split(\"/\")):\n        return \"regen\"",
+        "    if any(c in REGENERABLE_COMPONENTS for c in p.split(\"/\")):\n        return None"
+      ]
+    ],
+    "expect": [
+      "ignored_kind: node_modules (dir or symlink), __pycache__, hook caches and logs are regenerable"
+    ]
+  }
+]
