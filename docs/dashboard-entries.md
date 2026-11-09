@@ -19327,3 +19327,39 @@ coordinator's round 2 rule; bash refuses to run that line). push-command 64 -> 1
 mutations 32 -> 47 (16 rebound to `lex`/`_judge`, 15 new), each hand-checked ONE AT A TIME in a `stage_tree` copy.
 Latency MEASURED, 3 runs each, same machine, interleaved: `git push origin feat/x` 243-261 ms before, 186-196 ms after;
 `echo push` 77-83 ms before, 86-103 ms after (noise-level; the first before-run read 324-363 and 133-159 ms).
+
+## 2026-11-08
+The third review of the push safety check found the same kind of hole a third time. The round 2 fix had taught the
+check to read quotes, but it still read the text inside a `cat <<EOF … EOF` block as if it were commands. A quote
+mark in that text could hide a real push to master that came after it. Brace patterns such as `{master,}`, wildcards
+and some flag spellings also got through. Two rounds in a row had each fixed what was in front of them and opened
+something new, so an architecture review ran instead of a fourth patch. The check is rebuilt on its recommendation.
+It now reads only a small, fixed set of shell syntax, which it can read exactly as bash does: plain words, quotes,
+`;` `&&` `|`, simple redirections and simple `$NAME` variables. Any command that mentions push and uses anything
+else is refused, with a one-line remedy: run the push as its own plain command. None of the 52 bypasses found so far
+gets through. The price, measured on 1,634 real commands from past sessions: 7% more are refused than before (86 new,
+2 no longer refused), mostly a heredoc or a `$( … )` next to a push. Teaching the check to read those two safely is
+filed as backlog #579. The suite now also runs bash itself over about a thousand generated commands and checks that
+bash never runs a command the check did not see.
+<!--tech-->
+Backlog #428, PR #542 round 3 → Phase 6 (`docs/reviews/architecture-review-2026-11-08-push-detector.md`, design (b),
+level 1) → fold. DELETED: the r2 `lex`, `normalize` as a reader, `_command_word`/`_subcommand`/`_runs_code`/
+`_segment`/`_judge`/`segments`, the modes none/strict/loose/unresolved, the hook's `0:none) allow`, its rule-2 regexes
+and its rule-1 token loop. BUILT: `decide(command, current, default, has_remote)` → `allow` | `deny <rule> <reason>`.
+Trigger over three quote-blind views (a backslash-newline joined to nothing, as bash does), then rule 3 BEFORE
+lexing, then `lex` exact over the closed language or `Outside`, then `_judge` per command from closed tables (git
+global options, push-option allowlist, `+`, `refs/heads/`/`heads/`/`HEAD`/`@`, <2 positionals on the default branch,
+INERT subcommands, TEXT commands, CODE RUNNERS). The hook resolves the branches and has_remote, then maps the rule to
+its message; any other exit or output refuses (NOT CHECKED). Departures from the specification, each measured or
+reasoned in the r3 coordinator record's *Phase 6 outcome*: `&>>` is outside (bash 3.2.57 refuses it; the agreement
+check found it); an UNQUOTED parameter has an unknown word count (`SPLIT`) and is refused as a command word, at or
+before a git subcommand, as a `-C` value, or given to a runner of its arguments (9 corpus refusals beyond the
+prototype); `--verify` allowed. MEASURED: 0 of 52 bypass repros pass; corpus `feat/x` 1,250 unique / 1,383
+occurrences against round 2's 1,166 / 1,292 (86 new, 2 relieved; the prototype's 1,241 was 77 new). Bash-agreement
+check in `--self-test`: 1,018 strings (18 per-construct inputs + seeds 1, 2 × 500) through ONE `/bin/bash` process,
+0 unsafe of 240 accepted, 6 broken-lexer controls each red (7-69 unsafe); NOT RUN is a failure. push-command
+112 -> 265 cases (every r1-r3 repro kept as a matrix row; detector exit 127/137/139/142/143, empty and malformed
+output, detached HEAD added); hook self-test 56 -> 59. Mutations 47 -> 79: all 47 RETIRED (anchors in deleted code),
+79 new, one per decision branch, each hand-checked ONE AT A TIME in a `stage_tree` copy. Filed: backlog #579 (levels
+2-3); backlog #574 amended (C-F6 joins; re-scoped to rule 1 in `.githooks/pre-push`). Decision-log row: redesign,
+skipped accrete. Latency MEASURED, 3 runs each, same fixture: a plain feature-branch push 438, 323, 274 ms before (machine loaded), 147, 156, 139 ms after; `echo push` 117, 141, 134 ms before, 128, 109, 109 ms after (not interleaved, so noise-level).

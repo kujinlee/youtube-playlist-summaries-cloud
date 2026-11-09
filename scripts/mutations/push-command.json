@@ -1,327 +1,326 @@
 [
  {
-  "name": "normalize stops deleting anything, so a quoted push is read from the raw text again (the backlog #428 defect)",
+  "name": "the trigger reads only the raw text, so a quoted push word is not seen",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and c in \"'\\\"\":\n            q = c\n",
-    "        if False:\n            q = c\n"
+    "    return [cmd, cmd.replace(\"\\\\\\n\", \"\").translate(drop), cmd.replace(\"\\\\\\n\", \" \").translate(drop)]",
+    "    return [cmd]"
    ]
   ],
-  "expect": "⭐ a DOUBLE-QUOTED push is strict once quotes are deleted"
+  "expect": "⭐ trigger: a push word spelled with quotes is seen"
  },
  {
-  "name": "normalize keeps single quotes",
+  "name": "the trigger loses the view joined to NOTHING, so `pu\\<newline>sh` is not seen",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and c in \"'\\\"\":",
-    "        if q is None and c in \"\\\"\":"
+    "cmd.replace(\"\\\\\\n\", \"\").translate(drop), ",
+    ""
    ]
   ],
-  "expect": "⭐ a SINGLE-QUOTED push is strict too"
+  "expect": "⭐ trigger: a push word split by a backslash-newline is seen (joined to NOTHING, as bash joins it)"
  },
  {
-  "name": "normalize keeps backslashes",
+  "name": "no trigger no longer allows, so a command with no push word is lexed and refused",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if c == \"\\\\\" and q != \"'\":",
+    "    if not any(PUSH_WORD.search(t) for t in v):\n        return \"allow\", \"\", \"\"\n",
+    ""
+   ]
+  ],
+  "expect": "trigger: no push word is allowed without lexing"
+ },
+ {
+  "name": "rule 3 runs AFTER the lexer, so an outside form hides core.hooksPath behind `outside`",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if not danger:\n        low = \" \".join(v).lower()\n        if \"hookspath\" in low:\n            return \"deny\", \"hookspath\", \"the command mentions core.hooksPath\"\n        if \"allow_plan_leak\" in low:\n            return \"deny\", \"plan-leak\", \"the command mentions ALLOW_PLAN_LEAK\"\n    try:\n        cmds = lex(cmd)\n    except Outside as e:\n        return \"deny\", \"outside\", str(e)\n",
+    "    try:\n        cmds = lex(cmd)\n    except Outside as e:\n        return \"deny\", \"outside\", str(e)\n    if not danger:\n        low = \" \".join(v).lower()\n        if \"hookspath\" in low:\n            return \"deny\", \"hookspath\", \"the command mentions core.hooksPath\"\n        if \"allow_plan_leak\" in low:\n            return \"deny\", \"plan-leak\", \"the command mentions ALLOW_PLAN_LEAK\"\n"
+   ]
+  ],
+  "expect": "⭐ rule 3 runs BEFORE the lexer: a heredoc with -c core.hooksPath is rule 3, not outside"
+ },
+ {
+  "name": "rule 3 ignores the owner's ALLOW_DANGEROUS_PUSH=1",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if not danger:\n        low = ",
+    "    if True:\n        low = "
+   ]
+  ],
+  "expect": "rule 3: the owner's ALLOW_DANGEROUS_PUSH=1 lifts it"
+ },
+ {
+  "name": "rule 3 no longer reads hooksPath",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if \"hookspath\" in low:",
     "        if False:"
    ]
   ],
-  "expect": "a backslash does not hide push"
+  "expect": "rule 3: quotes do not hide hooksPath"
  },
  {
-  "name": "the STRICT layer is deleted, so every push reads as loose",
+  "name": "rule 3 no longer reads ALLOW_PLAN_LEAK",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if sub == \"push\":\n            return [(_segment(\" \".join(words[s + 1:])), \"strict\")]\n",
+    "        if \"allow_plan_leak\" in low:",
+    "        if False:"
+   ]
+  ],
+  "expect": "rule 3: ALLOW_PLAN_LEAK in any form"
+ },
+ {
+  "name": "rule 1 ignores has_remote",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    rule1 = has_remote and bool(default) and ",
+    "    rule1 = bool(default) and "
+   ]
+  ],
+  "expect": "⭐ judge: no remote lifts rule 1"
+ },
+ {
+  "name": "rule 1 ignores an empty default branch",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "has_remote and bool(default) and ",
+    "has_remote and "
+   ]
+  ],
+  "expect": "judge: no default branch lifts rule 1 even when the current branch is unknown"
+ },
+ {
+  "name": "rule 1 ignores the ALLOW_DEFAULT_BRANCH_PUSH=1 escape",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    " and \"ALLOW_DEFAULT_BRANCH_PUSH=1\" not in cmd",
     ""
    ]
   ],
-  "expect": [
-   "⭐ -c x=y before push is strict",
-   "hook: a STRICT refusal does not claim the fail-closed rule"
-  ]
+  "expect": "judge: the branch escape lifts rule 1"
  },
  {
-  "name": "the FAIL-CLOSED layer is deleted, so an unrecognised push form is not a push",
+  "name": "`<<` is no longer named (it falls to two redirections in a row)",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if GIT_WORD.search(norm) and found:\n        return \"loose\", [s for s, _ in found]\n",
+    "        if cmd.startswith(\"<<\", i) or cmd.startswith(\"<>\", i):",
+    "        if cmd.startswith(\"<>\", i):"
+   ]
+  ],
+  "expect": "outside: `<<` is refused and named"
+ },
+ {
+  "name": "`<>` is no longer named",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "cmd.startswith(\"<<\", i) or cmd.startswith(\"<>\", i):",
+    "cmd.startswith(\"<<\", i):"
+   ]
+  ],
+  "expect": "outside: `<>` is refused and named"
+ },
+ {
+  "name": "`&>>` is no longer named",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if cmd.startswith(\"&>>\", i):",
+    "        if False:"
+   ]
+  ],
+  "expect": "outside: `&>>` is refused and named"
+ },
+ {
+  "name": "`{` and `}` are accepted as word characters (brace expansion, C-F3)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "SAFE_UNQUOTED = frozenset(\"abc",
+    "SAFE_UNQUOTED = frozenset(\"{}abc"
+   ]
+  ],
+  "expect": [
+   "outside: `{` `}` is refused",
+   "matrix r3-F3a"
+  ]
+ },
+ {
+  "name": "`*`, `?` and `[` are accepted as word characters (globs, C-F3)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "frozenset(\"abc",
+    "frozenset(\"*?[]abc"
+   ]
+  ],
+  "expect": [
+   "outside: `*` is refused",
+   "matrix r3-F3e"
+  ]
+ },
+ {
+  "name": "`#` is accepted as a word character (a comment, X-F1 r2)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "= frozenset(\"abc",
+    "= frozenset(\"#abc"
+   ]
+  ],
+  "expect": [
+   "outside: `#` is refused",
+   "matrix r2-F1a"
+  ]
+ },
+ {
+  "name": "an unquoted backslash is accepted as a word character",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "UNQUOTED = frozenset(\"abc",
+    "UNQUOTED = frozenset(\"\\\\abc"
+   ]
+  ],
+  "expect": "outside: a backslash is refused"
+ },
+ {
+  "name": "any unquoted character is accepted",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if c not in SAFE_UNQUOTED:\n            raise Outside(f\"an unquoted `{c}`\")\n",
     ""
    ]
   ],
-  "expect": [
-   "⭐ a PATH to git is LOOSE — strict wants a separator before git",
-   "hook: /usr/bin/git push origin master is refused"
-  ]
+  "expect": "outside: `~` is refused"
  },
  {
-  "name": "the fail-closed layer no longer needs the word git",
+  "name": "a `$` outside the parameter forms is skipped, so `$\"…\"` and `$'…'` read as their quotes (C-F4)",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if GIT_WORD.search(norm) and found:",
-    "    if found:"
-   ]
-  ],
-  "expect": "push without the word git is none"
- },
- {
-  "name": "the word git may follow a dot, so `.git` reads as git",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "GIT_WORD = re.compile(r\"(?<![\\w.-])git",
-    "GIT_WORD = re.compile(r\"(?<![\\w-])git"
-   ]
-  ],
-  "expect": "`.git` is not the word git"
- },
- {
-  "name": "the word git may follow a letter, so `legit` reads as git",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "(?<![\\w.-])git(?![\\w.-])\")",
-    "(?<![.-])git(?![\\w.-])\")"
-   ]
-  ],
-  "expect": "`legit` is not the word git"
- },
- {
-  "name": "the word push may be followed by a hyphen, so a branch named push-… is a segment",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "push(?![\\w./-])\")",
-    "push(?![\\w./])\")"
-   ]
-  ],
-  "expect": "a branch NAMED push-… is not a segment"
- },
- {
-  "name": "the word push may follow a hyphen, so a branch named …-push is a segment",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "PUSH_WORD = re.compile(r\"(?<![\\w./-])push",
-    "PUSH_WORD = re.compile(r\"(?<![\\w./])push"
-   ]
-  ],
-  "expect": "a hyphenated word ending -push is not a segment"
- },
- {
-  "name": "the word push may follow a slash, so a ref ending /push is a segment",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "(?<![\\w./-])push(?!",
-    "(?<![\\w.-])push(?!"
-   ]
-  ],
-  "expect": "a path ending /push is not a segment"
- },
- {
-  "name": "a segment runs past a command separator",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "SEPARATORS = \";&|\\n\"",
-    "SEPARATORS = \"\\n\""
-   ]
-  ],
-  "expect": "a segment stops at a separator"
- },
- {
-  "name": "a segment runs past a line end, so the next line's words are refspecs",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "|\\n\"\nREDIRECT_OP",
-    "|\"\nREDIRECT_OP"
-   ]
-  ],
-  "expect": "a segment stops at a line end"
- },
- {
-  "name": "GITOPTS forgets -c takes a separate value",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "VALUE_OPTS = frozenset({\"-c\", \"-C\",",
-    "VALUE_OPTS = frozenset({\"-C\","
-   ]
-  ],
-  "expect": "⭐ -c x=y before push is strict"
- },
- {
-  "name": "GITOPTS forgets -C takes a separate value",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "{\"-c\", \"-C\", \"--config-env\",",
-    "{\"-c\", \"--config-env\","
-   ]
-  ],
-  "expect": "-C dir before push is strict"
- },
- {
-  "name": "GITOPTS forgets a bare -flag",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "    while s < len(words) and words[s].startswith(\"-\") and len(words[s]) > 1:",
-    "    while s < len(words) and words[s] in VALUE_OPTS:"
-   ]
-  ],
-  "expect": "a bare flag before push is strict"
- },
- {
-  "name": "the CLI always reports strict, so a loose refusal never says why",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "    print(mode)\n",
-    "    print(\"strict\" if mode != \"none\" else mode)\n"
+    "            raise Outside(f\"a `$` construct outside the closed language (`{cmd[j:j + 3]}`)\")",
+    "            return j + 1"
    ]
   ],
   "expect": [
-   "segments prints the mode, then one line per segment",
-   "hook: a LOOSE refusal says it was read by the fail-closed rule"
+   "outside: `$'` is refused",
+   "matrix r3-F4a"
   ]
  },
  {
-  "name": "a segment loses its leading word, so a bare `git push` is an EMPTY line the hook skips",
+  "name": "a backtick inside double quotes is accepted",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    return \" \".join([\"push\", *rest.split()])",
-    "    return \" \".join([*rest.split()])"
+    "            if c in \"`\\\\\":",
+    "            if c in \"\\\\\":"
    ]
   ],
-  "expect": "⚠ hook: the BOUND — `git log --grep push` is REFUSED on the default branch"
+  "expect": "outside: a backtick inside double quotes is refused"
  },
  {
-  "name": "C-F1: a backslash-newline is not joined, so the refspec on the next line is never read",
+  "name": "`>&` with a non-digit is read as a redirection with a target",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "            if nxt == \"\\n\":                        # a line continuation joins the lines (C-F1)\n                i += 2\n",
-    "            if nxt == \"\\n\":                        # a line continuation joins the lines (C-F1)\n                i += 1\n"
+    "                if not m:\n                    raise Outside(f\"`{op}` not followed",
+    "                if not m:\n                    skip = True\n                    continue\n                    raise Outside(f\"`{op}` not followed"
    ]
   ],
-  "expect": [
-   "⭐ C-F1: a backslash-newline joins the refspec onto the push line",
-   "hook: C-F1 — a line continuation before master is refused"
-  ]
+  "expect": "outside: `>&` with a word is refused"
  },
  {
-  "name": "C-F2: `git stash` is no longer a non-push subcommand",
+  "name": "two redirections in a row are accepted",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "{\"commit\", \"stash\"}",
-    "{\"commit\"}"
-   ]
-  ],
-  "expect": [
-   "C-F2: `git stash push -m wip` is never a push",
-   "hook: C-F2 — `git stash push -m wip` is allowed on the default branch"
-  ]
- },
- {
-  "name": "C-F2: `git commit` is no longer a non-push subcommand",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "NON_PUSH_SUBCOMMANDS = frozenset({\"commit\", ",
-    "NON_PUSH_SUBCOMMANDS = frozenset({"
-   ]
-  ],
-  "expect": [
-   "⭐ C-F2: a commit message naming push and master is not a segment beside a real push",
-   "hook: C-F2 — a commit message naming push and master, then a feature push, is allowed"
-  ]
- },
- {
-  "name": "C-F2: the non-push exemption is never consulted",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "        if sub in NON_PUSH_SUBCOMMANDS:\n            return []\n",
+    "            if skip and not started:\n                raise Outside(\"two redirections in a row\")\n",
     ""
    ]
   ],
-  "expect": [
-   "C-F2: `git stash push` is never a push",
-   "C-F2: `git stash push -m wip` is never a push"
-  ]
+  "expect": "outside: two redirections in a row is refused"
  },
  {
-  "name": "C-F2: a git word after `git commit` no longer voids the exemption",
+  "name": "a redirection with no target at the end is accepted",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q != \"'\" and cmd.startswith(\"$(\", i):\n            return cmds, \"a substitution `$(`\"\n",
+    "    if skip and not started:\n        raise Outside(\"a redirection with no target\")\n    end_word()\n",
+    "    end_word()\n"
+   ]
+  ],
+  "expect": "outside: a redirection with no target is refused"
+ },
+ {
+  "name": "a redirection with no target before a separator is accepted",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            if skip and not started:\n                raise Outside(\"a redirection with no target\")\n            end_word()\n            if cmds[-1]:",
+    "            end_word()\n            if cmds[-1]:"
+   ]
+  ],
+  "expect": "outside: a redirection with no target before a separator is refused"
+ },
+ {
+  "name": "an unbalanced quote is accepted",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if q is not None:\n        raise Outside(\"an unbalanced quote\")\n",
     ""
    ]
   ],
-  "expect": "C-F2: a git word AFTER `git commit` voids the exemption"
+  "expect": "outside: an unbalanced quote is refused"
  },
  {
-  "name": "C-F2: the exemption accepts any token holding the git word, `$(git` included",
+  "name": "the quote state is ignored for separators: a single-quoted `;` splits",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    c = _command_word(words)   # the command word, never a wrapper's argument",
-    "    c = next((i for i, w in enumerate(words) if GIT_WORD.search(w)), len(words))"
+    "        if q == \"'\":\n            if c == \"'\":",
+    "        if q == \"'\" and c not in SEPS:\n            if c == \"'\":"
    ]
   ],
-  "expect": "C-F2: the exemption wants git as the COMMAND word, not a wrapper's argument"
+  "expect": "lex: quotes are removed and quoted separators are text"
  },
  {
-  "name": "C-F2: strict mode reads push words in chunks with no git word again",
+  "name": "a newline is not a separator",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "k != \"bare\"]",
-    "k != \"none\"]"
+    "SEPS = \";&|\\n\"",
+    "SEPS = \";&|\""
    ]
   ],
-  "expect": [
-   "C-F2: a push word in a chunk with no git word is text once a real push is recognised",
-   "hook: C-F2 — a feature push, then `--title \"Do not push to master\"`, is allowed"
-  ]
+  "expect": "lex: a newline separates commands"
  },
  {
-  "name": "C-F2: strict mode drops a loose push beside it, so `/usr/bin/git push origin master` escapes",
+  "name": "a redirection's target is kept as a word",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "[s for s, k in found if k != ",
-    "[s for s, k in found if k == \"strict\" and k != "
+    "            if skip:\n                skip = False\n            else:\n                cmds[-1].append",
+    "            if skip:\n                skip = False\n            if True:\n                cmds[-1].append"
    ]
   ],
-  "expect": "every push in a compound command is a segment"
+  "expect": "⭐ lex: a redirection's target is dropped, never a word"
  },
  {
-  "name": "a glued redirection drops the refspec it is glued to",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "                end_word()                         # `master>/dev/null` keeps `master`",
-    "                buf, started, quoted = [], False, False"
-   ]
-  ],
-  "expect": "a glued redirection leaves the refspec"
- },
- {
-  "name": "a file-descriptor number before a redirection is read as a refspec",
+  "name": "a descriptor's digits are kept as a word (`2>&1`)",
   "file": "scripts/push-command.py",
   "edits": [
    [
@@ -329,224 +328,576 @@
     "            if False:"
    ]
   ],
-  "expect": "`2>` before `&1` is not a refspec"
+  "expect": "lex: `2>&1` names descriptors, not words"
  },
  {
-  "name": "a separate redirection keeps its target as a refspec",
+  "name": "a QUOTED digit before `>` is read as a descriptor",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "            skip = True                            # the next word is the redirection's target",
-    "            pass"
+    "and not quoted and \"\".join(buf).isdigit():",
+    "and \"\".join(buf).isdigit():"
    ]
   ],
-  "expect": "a separate redirection drops its target"
+  "expect": "lex: a QUOTED digit before `>` is a word"
  },
  {
-  "name": "X-F1: `segments` arms no deadline, so a stall never ends",
+  "name": "a parameter is read as its literal name",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    _arm_deadline()\n",
-    ""
-   ]
-  ],
-  "expect": "⭐ X-F1: a stalled `segments` run is ended by its own deadline (SIGALRM)"
- },
- {
-  "name": "X-F1: the deadline's SIGALRM is ignored instead of ending the run",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "signal.signal(signal.SIGALRM, signal.SIG_DFL)",
-    "signal.signal(signal.SIGALRM, signal.SIG_IGN)"
-   ]
-  ],
-  "expect": "⭐ X-F1: a stalled `segments` run is ended by its own deadline (SIGALRM)"
- },
- {
-  "name": "a separate-value option skips only itself, so `-c push` reads as the subcommand",
-  "file": "scripts/push-command.py",
-  "edits": [
-   [
-    "        s += 2 if words[s] in VALUE_OPTS else 1",
-    "        s += 1"
+    "        buf.append(marker)\n",
+    "        buf.append(cmd[j:m.end()])\n"
    ]
   ],
   "expect": [
-   "`-c` takes its value even when the value is `push`",
-   "⭐ -c x=y before push is strict"
+   "lex: parameters are words of unknown value",
+   "⭐ judge: a parameter as a destination is refused"
   ]
  },
  {
-  "name": "r2 X-F1: a QUOTED `;` splits the command — separators are read without the quote state",
+  "name": "an UNQUOTED parameter is read as ONE word (its splitting ignored)",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and c in SEPARATORS:",
-    "        if c in SEPARATORS:"
+    "            i = param(i, SPLIT)",
+    "            i = param(i, UNKNOWN)"
    ]
   ],
-  "expect": "⭐ X-F1 r2: a quoted `;` in a `-c` value does not split the invocation"
+  "expect": "⭐ judge: an UNQUOTED -C value is refused (bash may split it into more words)"
  },
  {
-  "name": "r2 X-F2: a QUOTED `<` or `>` is a redirection that eats the next word",
+  "name": "a double-quoted parameter is read as splittable",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and (c in \"<>\" or cmd.startswith(\"&>\", i)):",
-    "        if c in \"<>\" or cmd.startswith(\"&>\", i):"
+    "                i = param(i, UNKNOWN)",
+    "                i = param(i, SPLIT)"
    ]
   ],
-  "expect": "⭐ X-F2 r2: a quoted `>` in an option value eats no destination"
+  "expect": "judge: a double-quoted -C value is allowed"
  },
  {
-  "name": "r2 X-F4: the subcommand is any later word `push`, not the word at the subcommand position",
+  "name": "only a SPLIT parameter counts as unknown",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        sub = words[s] if s < len(words) else \"\"",
-    "        sub = \"push\" if \"push\" in words[s:] else (words[s] if s < len(words) else \"\")"
+    "    return UNKNOWN in word or SPLIT in word",
+    "    return SPLIT in word"
    ]
   ],
-  "expect": "⭐ X-F4 r2: the SUBCOMMAND decides — a stash message naming a push is not a push"
+  "expect": "judge: a quoted parameter as a destination is refused"
  },
  {
-  "name": "r2 X-F1: a strict match ends the judging, so a later invocation is never read",
+  "name": "a command word of unknown value is judged by its text",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        found += _judge(words)\n",
-    "        found += _judge(words)\n        if any(k == \"strict\" for _, k in found):\n            break\n"
+    "    if _unknown(words[c]):\n        return \"unjudged\"",
+    "    if False:\n        return \"unjudged\""
+   ]
+  ],
+  "expect": "judge: a parameter as the command word is refused"
+ },
+ {
+  "name": "a path to git is not read as git",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    name = words[c].rsplit(\"/\", 1)[-1]",
+    "    name = words[c]"
+   ]
+  ],
+  "expect": "judge: a PATH to git is read as git"
+ },
+ {
+  "name": "reserved words are not skipped",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    while c < len(words) and (words[c] in RESERVED or ASSIGN.match(words[c])):",
+    "    while c < len(words) and ASSIGN.match(words[c]):"
+   ]
+  ],
+  "expect": "judge: leading assignments and reserved words are skipped"
+ },
+ {
+  "name": "leading assignments are not skipped",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(words[c] in RESERVED or ASSIGN.match(words[c])):",
+    "words[c] in RESERVED:"
+   ]
+  ],
+  "expect": "matrix 428-gitdir"
+ },
+ {
+  "name": "an unknown git global option is skipped instead of refused (C-F2)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            else:\n                if pushy:\n                    return \"option\", f\"a git option the gate does not read: `{w}`\"\n                return None\n",
+    "            else:\n                s += 1\n"
+   ]
+  ],
+  "expect": "⭐ judge: an unknown git global option in a push command is refused"
+ },
+ {
+  "name": "--attr-source does not take a value (C-F2)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "                            \"--super-prefix\", \"--attr-source\"})",
+    "                            \"--super-prefix\"})"
    ]
   ],
   "expect": [
-   "every push in a compound command is a segment",
-   "⭐ hook: X-F1 r2 — a quoted `;` in -c does not hide the second push"
+   "⭐ judge: --attr-source takes a value (C-F2)",
+   "matrix r3-F2a"
   ]
  },
  {
-  "name": "r2 X-F1: an unquoted `#` starts no comment, so a decoy push in the comment is read",
+  "name": "a value-taking global option does not skip its value",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and c == \"#\" and not started:",
+    "                s += 2\n",
+    "                s += 1\n"
+   ]
+  ],
+  "expect": "judge: `-c` takes its value even when it is `push`"
+ },
+ {
+  "name": "an `=` global option is not recognised",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            elif w in GIT_FLAG_OPTS or w.startswith(GIT_EQ_OPTS):",
+    "            elif w in GIT_FLAG_OPTS:"
+   ]
+  ],
+  "expect": "judge: an `=` global option is one word"
+ },
+ {
+  "name": "a bare global flag is not recognised",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "w in GIT_FLAG_OPTS or w.startswith(GIT_EQ_OPTS):",
+    "w.startswith(GIT_EQ_OPTS):"
+   ]
+  ],
+  "expect": "judge: a bare global flag stands alone"
+ },
+ {
+  "name": "a word of unknown value at or before the subcommand is allowed",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            if _unknown(words[k]) and not (k == quoted_c and SPLIT not in words[k]):",
+    "            if False:"
+   ]
+  ],
+  "expect": "judge: a parameter as a git subcommand is refused"
+ },
+ {
+  "name": "a double-quoted -C value is not exempt",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    " and not (k == quoted_c and SPLIT not in words[k]):",
+    ":"
+   ]
+  ],
+  "expect": "judge: a double-quoted -C value is allowed"
+ },
+ {
+  "name": "an UNQUOTED -C value is exempt too",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(k == quoted_c and SPLIT not in words[k])",
+    "k == quoted_c"
+   ]
+  ],
+  "expect": "⭐ judge: an UNQUOTED -C value is refused (bash may split it into more words)"
+ },
+ {
+  "name": "an unknown-valued word is allowed as a destination",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if pushy and any(_unknown(w) for k, w in enumerate(words) if k > s):",
     "        if False:"
    ]
   ],
-  "expect": "⭐ X-F1 r2: a real push BEFORE a `#` is judged; the comment's push is not"
+  "expect": "⭐ judge: a parameter as a destination is refused"
  },
  {
-  "name": "r2: a `#` INSIDE a word starts a comment, hiding the rest of the line",
+  "name": "`push` is INERT and the INERT check runs before the push judge",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "c == \"#\" and not started:",
-    "c == \"#\":"
+    "INERT_SUB = frozenset({\"commit\",",
+    "INERT_SUB = frozenset({\"push\", \"commit\","
+   ],
+   [
+    "        if sub == \"push\":\n            return _judge_push(words[s + 1:], cur, default, rule1, danger)\n        if sub in INERT_SUB:\n            return None\n",
+    "        if sub in INERT_SUB:\n            return None\n        if sub == \"push\":\n            return _judge_push(words[s + 1:], cur, default, rule1, danger)\n"
    ]
   ],
-  "expect": "X-F1 r2: a `#` inside a word starts no comment"
+  "expect": "⭐ judge: `push` is not inert — every push is judged"
  },
  {
-  "name": "r2 UNRESOLVED: a backtick is read as text, so a commit message's backtick push is exempt",
+  "name": "an INERT subcommand's push words are judged",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q != \"'\" and c == \"`\":\n            return cmds, \"a backtick\"\n",
+    "        if sub in INERT_SUB:\n            return None\n",
     ""
    ]
   ],
-  "expect": "⭐ UNRESOLVED: a backtick inside a commit message is never exempt"
+  "expect": "judge: an INERT subcommand's push words are text"
  },
  {
-  "name": "r2 UNRESOLVED: an unquoted paren is read as text, so a subshell push is judged as plain",
+  "name": "another git subcommand holding a push word is allowed",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and c in \"()\":\n            return cmds, \"a subshell `(`…`)`\"\n",
-    ""
+    "            return \"unjudged\", f\"git `{sub}` mentions push\"",
+    "            return None"
    ]
   ],
-  "expect": "UNRESOLVED: a subshell"
+  "expect": "judge: another subcommand holding a push word is refused"
  },
  {
-  "name": "r2 UNRESOLVED: an unbalanced quote is closed silently at the end",
+  "name": "an unknown push option is skipped instead of refused (C-F5, --all, --mirror)",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if q is not None:\n        return cmds, \"an unbalanced quote\"\n",
-    ""
+    "            return \"option\", f\"a push option the gate does not read: `{a}`\"",
+    "            i += 1\n            continue"
    ]
   ],
-  "expect": "UNRESOLVED: an unbalanced quote"
+  "expect": [
+   "⭐ judge: an unknown push option is refused, not skipped",
+   "matrix r3-F5a",
+   "matrix r1-all"
+  ]
  },
  {
-  "name": "r2 UNRESOLVED: an ANSI-C string is read as `$` and a plain quote",
+  "name": "a value-taking push option does not skip its value",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if q is None and cmd.startswith(\"$'\", i):\n            return cmds, \"an ANSI-C string `$'…'`\"\n",
-    ""
+    "            if a in PUSH_VALUE:\n                i += 2",
+    "            if a in PUSH_VALUE:\n                i += 1"
    ]
   ],
-  "expect": "UNRESOLVED: an ANSI-C string"
+  "expect": "judge: -o takes its value"
  },
  {
-  "name": "r2 UNRESOLVED: `eval` and `sh -c` are never consulted",
+  "name": "an `=` push option is not recognised",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    if unresolved is None and any(_runs_code(w) for w in cmds):",
+    "            if a in PUSH_FLAGS or a.startswith(PUSH_EQ):",
+    "            if a in PUSH_FLAGS:"
+   ]
+  ],
+  "expect": "judge: --force-with-lease=… is allowed"
+ },
+ {
+  "name": "a bare push flag is not recognised",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "a in PUSH_FLAGS or a.startswith(PUSH_EQ):",
+    "a.startswith(PUSH_EQ):"
+   ]
+  ],
+  "expect": "matrix ok-7"
+ },
+ {
+  "name": "-f / --force is not rule 2",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "                if not danger:\n                    return \"force\", f\"`{a}`\"",
+    "                if False:\n                    return \"force\", f\"`{a}`\""
+   ]
+  ],
+  "expect": "judge: -f is rule 2"
+ },
+ {
+  "name": "the force escape does not allow --force",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            if a in FORCE_OPTS:\n                if not danger:",
+    "            if a in FORCE_OPTS:\n                if True:"
+   ]
+  ],
+  "expect": "judge: the force escape allows --force"
+ },
+ {
+  "name": "--no-verify is not rule 2",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "                if not danger:\n                    return \"no-verify\"",
+    "                if False:\n                    return \"no-verify\""
+   ]
+  ],
+  "expect": "judge: --no-verify is rule 2"
+ },
+ {
+  "name": "the force escape does not allow --no-verify",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            if a == \"--no-verify\":\n                if not danger:",
+    "            if a == \"--no-verify\":\n                if True:"
+   ]
+  ],
+  "expect": "judge: the force escape allows --no-verify"
+ },
+ {
+  "name": "a `+` refspec is ignored",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if r.startswith(\"+\") and not danger:",
+    "        if False:"
+   ]
+  ],
+  "expect": "⭐ judge: a `+` refspec is a force"
+ },
+ {
+  "name": "the `+` is not stripped before the destination is compared",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        dest = r.lstrip(\"+\").rsplit(\":\", 1)[-1]",
+    "        dest = r.rsplit(\":\", 1)[-1]"
+   ]
+  ],
+  "expect": "judge: +master is rule 1 even with the force escape"
+ },
+ {
+  "name": "the destination is read BEFORE the colon",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "lstrip(\"+\").rsplit(\":\", 1)[-1]",
+    "lstrip(\"+\").split(\":\", 1)[0]"
+   ]
+  ],
+  "expect": "judge: the destination is after the LAST `:`"
+ },
+ {
+  "name": "`heads/` is not normalised (C-F6)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        for p in (\"refs/heads/\", \"heads/\"):",
+    "        for p in (\"refs/heads/\",):"
+   ]
+  ],
+  "expect": [
+   "⭐ judge: heads/ is stripped (C-F6)",
+   "matrix r3-F6b"
+  ]
+ },
+ {
+  "name": "`refs/heads/` is not normalised",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "(\"refs/heads/\", \"heads/\"):",
+    "(\"heads/\",):"
+   ]
+  ],
+  "expect": "judge: refs/heads/ is stripped"
+ },
+ {
+  "name": "`HEAD` is not read as the current branch",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if dest in (\"HEAD\", \"@\"):",
+    "        if dest in (\"@\",):"
+   ]
+  ],
+  "expect": "⭐ judge: HEAD is the current branch"
+ },
+ {
+  "name": "`@` is not read as the current branch",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "dest in (\"HEAD\", \"@\"):",
+    "dest in (\"HEAD\",):"
+   ]
+  ],
+  "expect": "judge: @ is the current branch"
+ },
+ {
+  "name": "a push with no refspec on the default branch is allowed",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if rule1 and len(pos) < 2 and cur == default:",
+    "    if False:"
+   ]
+  ],
+  "expect": "⭐ judge: a bare `git push` on the default branch is rule 1"
+ },
+ {
+  "name": "a push naming only a remote on the default branch is allowed",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "len(pos) < 2 and cur == default:",
+    "len(pos) < 1 and cur == default:"
+   ]
+  ],
+  "expect": "judge: `git push origin` on the default branch is rule 1"
+ },
+ {
+  "name": "a refspec naming the default branch ignores rule 1's switches",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        if rule1 and dest == default:",
+    "        if dest == default:"
+   ]
+  ],
+  "expect": "⭐ judge: no remote lifts rule 1"
+ },
+ {
+  "name": "the CODE RUNNER rule is dropped (C-F6 `xargs`, `| bash`)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if name in CODE_RUNNERS:",
     "    if False:"
    ]
   ],
   "expect": [
-   "UNRESOLVED: `sh -c`",
-   "UNRESOLVED: `eval`"
+   "⭐ judge: a code runner holding a push word is refused (C-F6)",
+   "matrix x-1 piping text into bash is refused"
   ]
  },
  {
-  "name": "r2 UNRESOLVED: refused even with no `git` and `push` words",
+  "name": "a code runner holding a push word is allowed",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "        if GIT_WORD.search(norm) and PUSH_WORD.search(norm):",
-    "        if True:"
+    "        if pushy or (name in ARGV_RUNNERS",
+    "        if (name in ARGV_RUNNERS"
    ]
   ],
-  "expect": "an unresolved construct with no git and push words is none"
+  "expect": "⭐ judge: a code runner holding a push word is refused (C-F6)"
  },
  {
-  "name": "r2: a leading assignment is not skipped, so `A=1 git push` reads as loose",
+  "name": "a runner of its arguments given a word of unknown value is allowed",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    while i < len(words) and (words[i] in RESERVED or ASSIGNMENT.match(words[i])):",
-    "    while i < len(words) and words[i] in RESERVED:"
+    "(name in ARGV_RUNNERS and any(_unknown(w) for w in rest))",
+    "False"
    ]
   ],
-  "expect": "X-F3 r2: an assignment before git is skipped, so the push is strict"
+  "expect": "judge: a parameter given to a runner of its arguments is refused"
  },
  {
-  "name": "r2: a leading reserved word is not skipped, so `then git push` reads as loose",
+  "name": "a code runner reading stdin is allowed",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "(words[i] in RESERVED or ",
-    "("
+    "(name in STDIN_CODE and not positional)",
+    "False"
    ]
   ],
-  "expect": "a reserved word before git is skipped, so the push is strict"
+  "expect": "judge: a code runner reading stdin is refused"
  },
  {
-  "name": "r2: the loose reading keeps the quotes inside a string, so `'master'` is not master",
+  "name": "a code runner given -c is allowed",
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    flat = normalize(\" \".join(words))",
-    "    flat = \" \".join(words)"
+    "any(w in (\"-c\", \"-e\", \"-\") for w in rest)",
+    "False"
    ]
   ],
-  "expect": "the loose reading deletes the quotes inside a string that may be code"
+  "expect": "judge: a code runner given -c is refused"
+ },
+ {
+  "name": "a TEXT command's words are judged",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if name in INERT_TEXT:\n        return None\n",
+    ""
+   ]
+  ],
+  "expect": "judge: a TEXT command's words are text"
+ },
+ {
+  "name": "an unknown command holding a push word is allowed",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if pushy:\n        return \"unjudged\", f\"`{name}` mentions push",
+    "    if False:\n        return \"unjudged\", f\"`{name}` mentions push"
+   ]
+  ],
+  "expect": "judge: an unknown command holding a push word is refused"
+ },
+ {
+  "name": "the deadline is not armed",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    _arm_deadline()\n    verdict",
+    "    verdict"
+   ]
+  ],
+  "expect": "⭐ X-F1: a stalled `decide` run is ended by its own deadline (SIGALRM)"
+ },
+ {
+  "name": "SIGALRM is ignored, so the deadline cannot end a run",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    signal.signal(signal.SIGALRM, signal.SIG_DFL)",
+    "    signal.signal(signal.SIGALRM, signal.SIG_IGN)"
+   ]
+  ],
+  "expect": "⭐ X-F1: a stalled `decide` run is ended by its own deadline (SIGALRM)"
+ },
+ {
+  "name": "decide prints only the verdict, so the hook cannot read the rule",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    print(verdict if verdict == \"allow\" else f\"deny {rule} {reason}\")",
+    "    print(verdict)"
+   ]
+  ],
+  "expect": "decide prints `deny <rule> <reason>`"
+ },
+ {
+  "name": "decide ignores its has_remote argument",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    verdict, rule, reason = decide(sys.stdin.read(), argv[1], argv[2], argv[3] == \"1\")",
+    "    verdict, rule, reason = decide(sys.stdin.read(), argv[1], argv[2], True)"
+   ]
+  ],
+  "expect": "decide reads has_remote"
  }
 ]

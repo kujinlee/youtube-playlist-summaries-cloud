@@ -2048,5 +2048,15 @@ EXPECTED_MUTATIONS = {
     # condition: 6), the assignment and reserved-word skips (2), and the loose reading's quote deletion (1).
     # Each of the 47 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and `parse_fail_names` names
     # every expected case exactly once.
-    "scripts/push-command.py": 47,
+    # ⟳ 2026-11-08, PR #542 round 3 fold (Phase 6 design (b), level 1): 47 -> 79. ALL 47 RETIRED: every anchor was
+    # in code the fold DELETES (`normalize` as a reader, the r2 `lex`, `_command_word`, `_subcommand`, `_runs_code`,
+    # `_segment`, `_judge`, `segments`, the four modes and the loose layer), so none can bind. Lowering the
+    # ratchet to 0 before re-raising it is deliberate and written here, per `CONTEXT.md` -> *Ratchet*. 79 NEW, one
+    # per decision branch of `decide`: the trigger (3), rule 3 before the lexer (4), rule 1's switches (3), the
+    # lexer's OUTSIDE classes (15), quotes and separators (2), redirections (3), parameters (4), the command word
+    # (4), git's global options (5), unknown-valued words in git (4), subcommands (3), push's options (8),
+    # destinations (10), code runners and text commands (7), the CLI and the deadline (4).
+    # ARITHMETIC: 47 - 47 + 79 = 79. Each of the 79 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and
+    # `parse_fail_names` names every expected case exactly once.
+    "scripts/push-command.py": 79,
 }
