@@ -3320,8 +3320,11 @@ def _self_test_body() -> int:
         except BaseException as exc:          # an escape is a RED case, never a dead suite
             return f"ESCAPED {exc.__class__.__name__}"
     _codex_f2 = _real_src + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n'
+    # ⟳ backlog #538: the reader is imported in the CHILD (`_head_read`), so this module body never reaches
+    # `_cross`; the child's import catch reports it, and the case names it, so a narrower catch answered only by
+    # the empty-stdout refusal is red (MEASURED: without the name, `except Exception` there survived).
     check("⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
-          _reader_says(_codex_f2, "exit.py")[:11], "CANNOT RUN:")
+          (lambda r: (r[:11], "SystemExit" in r))(_reader_says(_codex_f2, "exit.py")), ("CANNOT RUN:", True))
     check("⛔ ...and so is one whose module body raises an ordinary error",
           _reader_says(_real_src + "\nraise ValueError('boom')\n", "err.py")[:11], "CANNOT RUN:")
     check("⛔ ...and a MISSING reader",

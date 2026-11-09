@@ -1124,7 +1124,7 @@
   ]
  },
  {
-  "name": "the shared sibling import catches only Exception, so a module-level SystemExit in EITHER sibling escapes main() as rc 0 with no verdict (r4 Codex F2, r5 Claude F1) ⟳ r7: the anchor now binds `_cross`, the ONE catch every sibling import and call crosses",
+  "name": "the shared sibling import catches only Exception, so a module-level SystemExit in EITHER sibling escapes main() as rc 0 with no verdict (r4 Codex F2, r5 Claude F1) ⟳ r7: the anchor now binds `_cross`, the ONE catch every sibling import and call crosses ⟳ backlog #538: the pins reader is now imported in a CHILD (`_head_read`), so its module body no longer reaches `_cross`; the one in-process sibling IMPORT left is the dashboard gate (`_dashboard_gate` -> `_import_sibling`), and `expect` names only its case",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
@@ -1132,10 +1132,7 @@
     "    except Exception as exc:\n        raise error("
    ]
   ],
-  "expect": [
-   "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
-   "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
-  ]
+  "expect": "⭐ main() is CANNOT RUN, rc=2, when importing the dashboard gate raises SystemExit (r5 Claude F1)"
  },
  {
   "name": "pins_at bypasses `_cross` with its own `except Exception`, so a pin_display that raises SystemExit escapes as no verdict (r4 Codex F2; ⟳ r7: re-bound — the per-call catch is now `_cross`'s) ⟳ backlog #538 r2: re-bound to the child's driver, whose catch is BaseException",
@@ -1147,6 +1144,17 @@
    ]
   ],
   "expect": "⛔ ...and a reader whose pin_display itself raises SystemExit"
+ },
+ {
+  "name": "the child driver's IMPORT catches only Exception, so a reader whose module body raises SystemExit ends the child with no answer and is refused only as an empty stdout, never named (r4 Codex F2; backlog #538: the reader's import moved from `_cross` into the child)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except BaseException as exc:\n        res[\"import\"] = describe(exc)\n",
+    "    except Exception as exc:\n        res[\"import\"] = describe(exc)\n"
+   ]
+  ],
+  "expect": "⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN"
  },
  {
   "name": "the dashboard gate imports its sibling RAW, bypassing the fail-closed helper, so a module-level SystemExit there escapes main() as rc 0 (r5 Claude F1)",

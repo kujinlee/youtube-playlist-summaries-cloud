@@ -1788,7 +1788,7 @@ EXPECTED_MUTATIONS = {
     # = 181 + 6, none retired, none re-bound. A stdlib-named HEAD `scripts/` name is refused (module, package, not
     # over-broad) (3), the group kill (1), the bounded post-kill wait (1), and the duplicate-key refusal (1). The NaN
     # refusal is deleted: the schema check already refuses every non-int, so its only observable was a message.
-    "scripts/check-merge-ready.py": 187,
+    "scripts/check-merge-ready.py": 188,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
