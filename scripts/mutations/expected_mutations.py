@@ -1760,7 +1760,35 @@ EXPECTED_MUTATIONS = {
     # another id (1), the call site binding nothing (1). Four entries re-bound to the new text, same subjects.
     # ⟳ 2026-11-08, answer-binds-file r1 CLAUDE F1: 163 -> 164, none retired — `gather`'s `via` key renamed, killed
     # by the real-git case that edits a gate symlink's TARGET after the round.
-    "scripts/check-merge-ready.py": 164,
+    # ⟳ 2026-11-08, backlog #538: 156 -> 162, none retired. The held side is HEAD's, materialised: the working-tree
+    # harness read again (1), the isolation dropped at the call (1), its sys.path half (1) and its hidden-module half
+    # (1), a failing `git archive` read as an archive (1), an archive that does not unpack passed over (1).
+    # ⟳ 2026-11-08, backlog #538 r1: 162 -> 176, none retired; the two archive entries are RETARGETED to the raw-blob
+    # read that replaced `git archive` (a failing `git ls-tree`, an entry that does not parse). New: the displays
+    # parsed by the working-tree harness (C-F1) (1), materialised on every call (1), an empty listing (1), a
+    # symlink/submodule (1), a path leaving scripts/ (1), a file written over (1), a failing `git cat-file` (1), an
+    # answer that is not the blob (1), bytes not hashed against the id (X-F1) (1), more than asked (1), every
+    # fileless module trusted (X-F2) (1), and the restore's three halves (C-F2) (3).
+    # ⟳ 2026-11-08, MERGE of origin/master (backlog #544, PR #543) into held-pins-head (backlog #538): the merge-base
+    # pins 156; #544 moved it to 164 (+8, none retired) and #538 to 176 (+20, none retired), over disjoint entries,
+    # so the merged manifest holds 156 + 8 + 20 = 184 (per-entry 3-way merge: 0 missing, 0 extra, 0 duplicate names).
+    # ⟳ 2026-11-08, backlog #538 r2 (a REDESIGN: HEAD's harness is read in a CHILD process): 184 -> 181 = 184 - 8 + 5.
+    # RETIRED (8), their code deleted with `_isolated_import`, `_lib_roots`, the lazy `_head_harness` getter and the
+    # suite's compile memo — the parent now imports nothing to read the pins, so there is no isolation to weaken:
+    # the import WITHOUT isolation, its sys.path filter, its hidden-module filter (their subject, a working-tree module
+    # reaching HEAD's harness, is the new `-I` entry); "every FILELESS module trusted" (`own()` is gone); the
+    # restore's three halves (nothing to restore: the X-F3 case asserts sys.path and sys.modules UNCHANGED across a
+    # pin_pair, killed by the re-bound C-F1 entry); "materialised on EVERY call" (one child per pin_pair; the
+    # count case stays). NEW (5): the child without `-I`, committed bytecode skipped not refused, the exit code
+    # unchecked, the JSON schema unchecked, no timeout. RE-BOUND (5), same subjects: the working-tree harness read
+    # again, the displays parsed by the working-tree harness (C-F1), the held-versus-display comparison (#536,
+    # re-indented), a refused display read as nothing (`_child_pins`), and pin_display's SystemExit (the driver's
+    # BaseException catch; its case now names SystemExit).
+    # ⟳ 2026-11-08, backlog #538 Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`): 181 -> 187
+    # = 181 + 6, none retired, none re-bound. A stdlib-named HEAD `scripts/` name is refused (module, package, not
+    # over-broad) (3), the group kill (1), the bounded post-kill wait (1), and the duplicate-key refusal (1). The NaN
+    # refusal is deleted: the schema check already refuses every non-int, so its only observable was a message.
+    "scripts/check-merge-ready.py": 188,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

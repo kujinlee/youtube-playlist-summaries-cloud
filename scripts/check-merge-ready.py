@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 365 cases
+    python3 scripts/check-merge-ready.py --self-test # 400 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -47,6 +47,7 @@ readiness checker that shrugs is worse than none, because its silence reads as a
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import importlib.util
 import json
@@ -57,6 +58,7 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -585,7 +587,7 @@ def _exact_pins(got) -> dict:
         out[str.__str__(k)] = int.__int__(v)
     if not out:
         # r8 Codex F1: a reader returning {} for BOTH revisions turned a falling pin into READY. The
-        # caller reaches here only when the file EXISTS at the revision (an absent file is `{}` in `pins_at`).
+        # caller reaches here only when the file EXISTS at the revision (an absent file is `{}` in `pin_pair`).
         raise ValueError("a present check-plan-code.py with no pins is unreadable")
     return out
 
@@ -1350,18 +1352,11 @@ class PinsUnreadable(Exception):
     """One side's mutation pins could not be read. `main()` reports CANNOT RUN."""
 
 
-# The sibling whose `pin_display` reads both sides. A module global so a case can point it at a copy.
+# The working-tree harness. ⟳ backlog #538 r1 (C-F1): the pin rule NEVER reads it. Both displays are parsed
+# by HEAD's own `pin_display` and the held pins are HEAD's own `EXPECTED_MUTATIONS`, from ONE module
+# materialised from HEAD and read in a CHILD process (`_head_read`). The self-test's fakes answer HEAD's `scripts/` from the tree this
+# names, and a case points it at the working tree to prove it is not read.
 PINS_READER = Path(__file__).with_name("check-plan-code.py")
-
-
-@functools.lru_cache(maxsize=4)
-def _pins_reader(src: Path):
-    """`check-plan-code`, imported for its ONE display reader — never a second copy of the rule.
-
-    ⛔ FAILS CLOSED through `_import_sibling` (r4 Codex F2): whatever the import raises is
-    `PinsUnreadable`, i.e. CANNOT RUN. A sibling without `pin_display` is caught at the call, by
-    `pins_at`."""
-    return _import_sibling(src, "_cpc_for_merge_ready", PinsUnreadable)
 
 
 def pins_home(run, rev: str) -> "str | None":
@@ -1375,56 +1370,328 @@ def pins_home(run, rev: str) -> "str | None":
     return None
 
 
-def pins_at(run, rev: str) -> dict:
-    """The mutation pins `rev` DISPLAYS, in `pins_home`. `run(cmd, **kw)` is `_run`'s shape.
-
-    A tree with neither file — no `scripts/` at all included — pins nothing, `{}`. Every other
-    failure, and a display `pin_display` refuses, raises `PinsUnreadable`."""
+def pins_text(run, rev: str) -> "tuple[str | None, str | None]":
+    """(`pins_home`, the text `rev` holds there), or (None, None) for a tree with neither file — no `scripts/`
+    at all included — which pins nothing. `run(cmd, **kw)` is `_run`'s shape. The text is PARSED only by HEAD's
+    harness, in a child process (`_head_read`); any failure here is `PinsUnreadable`."""
     home = pins_home(run, rev)
     if home is None:
-        return {}
+        return None, None
     shown = run(["git", "show", f"{rev}:{home}"], text=True, encoding="utf-8")
     if shown.returncode != 0:
         raise PinsUnreadable(f"{rev}: `git show` exited {shown.returncode}")
-    reader = _pins_reader(PINS_READER)
-    # A refused display, a reader that misbehaves, or an answer that is not an exact {str: int} (r7 F2).
-    return _cross(lambda: reader.pin_display(shown.stdout), reduce=_exact_pins,
-                  error=lambda d: PinsUnreadable(f"{rev}: {home}: {d}"))
+    return home, shown.stdout
 
 
-def held_pins() -> dict:
-    """The pins the head harness HOLDS after import: `EXPECTED_MUTATIONS` of the module `_pins_reader` already
-    loaded for `pin_display`, as an exact, non-empty `{str: int}` (`_exact_pins`). Anything else is
-    `PinsUnreadable`."""
-    reader = _pins_reader(PINS_READER)
-    return _cross(lambda: reader.EXPECTED_MUTATIONS, reduce=_exact_pins,
-                  error=lambda d: PinsUnreadable(f"HEAD: {PINS_SCRIPT}'s EXPECTED_MUTATIONS: {d}"))
+# ⟳ backlog #538: the held side is HEAD's, from the SAME commit as the display. It imported the WORKING-TREE
+# harness (`PINS_READER`) instead, and nothing checked that the working tree was HEAD: a head harness redirected
+# to a lowered pins file, with an uncommitted older harness left in `scripts/`, held what the display showed and
+# read READY (measured, PR #526 r5 R5-F1). ⟳ r1 (C-F1): the DISPLAY was still parsed by the working tree's
+# `pin_display`, so a dirty reader that ignored its argument read the base with HEAD's values and hid an honest
+# fall (measured). Now ONE module, HEAD's harness, parses both displays and holds the pins, so no working-tree
+# code reaches the pin rule. ⟳ r1 (X-F1): HEAD's `scripts/` is materialised from RAW BLOBS — `git ls-tree -r`
+# for the paths, `git cat-file --batch` for the bytes, each blob hashed again here against its id — never
+# `git archive`, whose `export-subst` and `export-ignore` attributes rewrote the harness in the extract (measured,
+# Codex r1). Only regular files (100644, 100755) are written, each exactly once, under `scripts/`: a symlink, a
+# submodule, a path with an empty, `.` or `..` part, or two paths that land on one file are refused, CANNOT RUN.
+# ⟳ r2 (X-F1..X-F3, a REDESIGN): the harness was imported IN this process and isolated by hand (`sys.path`,
+# `sys.modules`, a restore), and each round found another route through: a module with no file, a committed
+# unchecked-hash `.pyc` that ran code its blob-verified source did not hold, a working tree under the interpreter's
+# prefix, the first call's lazy imports. Now HEAD's harness runs in a CHILD that shares no module state with this
+# script (`_head_read`): `python3 -I -B -S` (isolated: no `PYTHON*` variable, no script or current directory, no
+# user site; no bytecode written; no `site`), its cwd a temporary directory holding ONLY HEAD's `*.py` files, and
+# ANY bytecode in HEAD's `scripts/` (`__pycache__/`, `*.pyc`, `*.pyo`) refused, CANNOT RUN, never skipped. The
+# child prints one JSON document; a non-zero exit, a timeout (`CHILD_TIMEOUT`), text that is not exactly one JSON
+# document, or JSON outside the schema (`_child_answer_ok`) is CANNOT RUN. This process imports nothing.
+# ⚠ BOUND, stated: (a) a head harness that names a pins file OUTSIDE `scripts/` finds nothing in the materialised
+# tree, so `read_pins` holds {} and `_exact_pins` refuses it: CANNOT RUN, never a pass; one that names an ABSOLUTE
+# path reads that path as it stands. (b) A head with no `scripts/` (or no harness) has no reader, so any display,
+# the base's included, is CANNOT RUN rather than read by some other copy. (c) HEAD's harness is the subject, and
+# the child runs it the way `python3 scripts/check-plan-code.py` runs it, with HEAD's `scripts/` on `sys.path`. So the
+# harness AND every HEAD module its imports reach (today `coverage_verdict.py`, and `fixture_git.py` on a self-test
+# path) are trusted. Code in any of them that forges the child's answer is trusted, as `_cross`'s F4 trusts a
+# well-typed wrong answer. It is HEAD code in the reviewed diff, but not necessarily in `check-plan-code.py`.
+# Nothing here checks which sweep a sibling edit selects. A HEAD file cannot stand in for a STANDARD-LIBRARY module:
+# any materialised top-level `scripts/` name in `sys.stdlib_module_names` (`scripts/<name>.py` or `scripts/<name>/`)
+# is refused, CANNOT RUN, so no `sys.path` order, the harness's own insert included, can resolve a stdlib import to
+# HEAD. ⚠ This covers the CHILD only. The gate process, run as `python3 scripts/check-merge-ready.py`, has the
+# WORKING TREE's `scripts/` at `sys.path[0]`, so a stdlib-named file there runs before this script's first
+# statement. Master does the same: measured, 51 of 95 names (backlog #578). (d) The child is this interpreter
+# (`sys.executable`); `-S` keeps a virtual environment's site-packages out, and nothing pins `-B` or `-S` with a
+# mutation (neither changes an answer the suite can see). A process that leaves the child's session (`setsid`) is
+# not killed. The gate stops waiting for it after `CHILD_GRACE` and says so in the CANNOT RUN reason.
+# ⟳ r3 / Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`, design (c)): R3-F1 (a committed
+# `scripts/importlib/` forged the child's answer) is closed by the stdlib-name refusal in `_materialise`, not by
+# reordering the driver; R3-F2 bounds the post-kill wait; R3-F3 pins the duplicate-key refusal.
+HEAD_LS = ["git", "ls-tree", "-r", "-z", "HEAD", "--", "scripts"]
+HEAD_CAT = ["git", "cat-file", "--batch"]
+_HEAD_MODES = (b"100644", b"100755")
+
+
+def _blob_id(data: bytes, width: int) -> str:
+    """git's id for a blob holding `data`, in the object format its ids' `width` names (SHA-1 or SHA-256)."""
+    import hashlib
+    algo = {40: "sha1", 64: "sha256"}.get(width)
+    if algo is None:
+        raise ValueError(f"an object id of {width} characters is no format git writes")
+    return hashlib.new(algo, b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def _head_blobs(run) -> "list[tuple[str, bytes]]":
+    """HEAD's `scripts/` as `(path, exact bytes)`: every entry `git ls-tree -r` lists, read by `git cat-file
+    --batch`, which applies no filter or attribute, and each checked against its blob id. Anything else, an
+    entry that is not a regular file included, is `PinsUnreadable`."""
+    ls = run(HEAD_LS, text=False)
+    if ls.returncode != 0:
+        raise PinsUnreadable(f"HEAD: `git ls-tree` of scripts/ exited {ls.returncode}")
+    entries = []
+    for rec in bytes(ls.stdout).split(b"\0"):
+        if not rec:
+            continue
+        meta, tab, raw = rec.partition(b"\t")
+        fields = meta.split(b" ")
+        if not tab or len(fields) != 3 or not re.fullmatch(rb"[0-9a-f]{40}|[0-9a-f]{64}", fields[2]):
+            raise PinsUnreadable("HEAD: `git ls-tree` of scripts/ printed an entry that is not `<mode> <type> <id>\\t<path>`")
+        path = raw.decode("utf-8")
+        if fields[0] not in _HEAD_MODES or fields[1] != b"blob":
+            raise PinsUnreadable(f"HEAD: {path!r} is mode {fields[0].decode()} ({fields[1].decode()}): only a "
+                                 "regular file is materialised")
+        entries.append((path, fields[2].decode()))
+    if not entries:
+        raise PinsUnreadable("HEAD: `git ls-tree` listed nothing under scripts/")
+    cat = run(HEAD_CAT, input="".join(f"{oid}\n" for _, oid in entries).encode(), text=False)
+    if cat.returncode != 0:
+        raise PinsUnreadable(f"HEAD: `git cat-file --batch` exited {cat.returncode}")
+    out, pos, blobs = bytes(cat.stdout), 0, []
+    for path, oid in entries:
+        nl = out.find(b"\n", pos)
+        head = out[pos:nl].split(b" ") if nl >= 0 else []
+        if len(head) != 3 or head[0] != oid.encode() or head[1] != b"blob" or not head[2].isdigit():
+            raise PinsUnreadable(f"HEAD: `git cat-file --batch` did not answer {path!r} as blob {oid}")
+        end = nl + 1 + int(head[2])
+        data = out[nl + 1:end]
+        if out[end:end + 1] != b"\n" or _blob_id(data, len(oid)) != oid:
+            raise PinsUnreadable(f"HEAD: the bytes read for {path!r} are not blob {oid}")
+        blobs.append((path, data))
+        pos = end + 1
+    if pos != len(out):
+        raise PinsUnreadable("HEAD: `git cat-file --batch` answered more than it was asked")
+    return blobs
+
+
+def _materialise(blobs, dest: Path) -> None:
+    """Write each `(path, bytes)` under `dest`, as a NEW regular file, exactly once, only under `scripts/`.
+    ⟳ r2 (X-F1): only `*.py` is written, and any BYTECODE is refused, never skipped: a committed `.pyc` is code
+    the reviewed source does not show (Codex r2 measured an unchecked-hash cache holding a pin its source did not).
+    ⟳ r3 / Phase 6: a materialised TOP-LEVEL name (`scripts/<name>.py`, or a package `scripts/<name>/`) that is a
+    standard-library module is refused: it would stand in for that module in the child, whatever the `sys.path`
+    order (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`). Checked after the `*.py` filter,
+    because only a materialised file can resolve."""
+    for path, data in blobs:
+        parts = path.split("/")
+        if parts[0] != "scripts" or len(parts) < 2 or any(p in ("", ".", "..") for p in parts):
+            raise PinsUnreadable(f"HEAD: {path!r} is not a plain path under scripts/")
+        if "__pycache__" in parts or parts[-1].endswith((".pyc", ".pyo")):
+            raise PinsUnreadable(f"HEAD: {path!r} is committed Python bytecode, which can run code its source does not hold")
+        if not parts[-1].endswith(".py"):
+            continue
+        top = parts[1][:-3] if len(parts) == 2 else parts[1]
+        if top in sys.stdlib_module_names:
+            raise PinsUnreadable(f"HEAD: {path!r} is named for the standard-library module {top!r}, which it would "
+                                 "shadow in the child")
+        target = dest.joinpath(*parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "xb") as fh:      # "x": a second path landing on one file (case folding) is refused
+            fh.write(data)
+
+
+# The child's bound in seconds. A module global so a case can lower it. The real harness imports in ~0.35 s.
+CHILD_TIMEOUT = 60
+# ⟳ r3 / Phase 6 (R3-F2): how long the gate waits for the pipes after the group kill, and then for the child. A
+# module global so a case can lower it.
+CHILD_GRACE = 2
+# The module name the child imports HEAD's harness under (the name a traceback shows).
+_HEAD_MODULE = "_cpc_head_for_merge_ready"
+# The child's driver. It reads the request on stdin, imports HEAD's harness from the materialised `scripts/`, and
+# prints ONE JSON document: {"import": null | error, "base"/"head": null | answer, "held": null | answer}, where an
+# answer is {"pins": {str: int}} or {"error": text}. The exact-type check runs HERE, before any value is
+# serialised, with builtins bound before the harness runs: JSON would turn a bool or an int subclass into a plain
+# int. Every error text is `Name: message`, as `_describe` writes it.
+_DRIVER = r'''
+import json, sys
+def _main():
+    _type, _dict, _str, _int, _dumps, _out = type, dict, str, int, json.dumps, sys.stdout
+    req = json.loads(sys.stdin.read())
+    def describe(exc):
+        try:
+            name = _str.__str__(_type.__dict__["__name__"].__get__(_type(exc)))
+        except BaseException:
+            name = "<unprintable>"
+        try:
+            msg = _str.__str__(_str(exc))
+        except BaseException:
+            msg = "<unprintable>"
+        return name + ": " + msg
+    def answer(call):
+        try:
+            got = call()
+            if _type(got) is not _dict:
+                raise TypeError("pin_display did not return an exact dict")
+            pins = {}
+            for k, v in _dict.items(got):
+                if _type(k) is not _str or _type(v) is not _int:
+                    raise TypeError("pin_display returned a key that is not an exact str or a value that is not an exact int")
+                pins[_str.__str__(k)] = _int.__int__(v)
+            return {"pins": pins}
+        except BaseException as exc:
+            return {"error": describe(exc)}
+    res = {"import": None, "base": None, "head": None, "held": None}
+    sys.path.insert(0, req["scripts"])
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(req["name"], req["harness"])
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[req["name"]] = mod
+        spec.loader.exec_module(mod)
+    except BaseException as exc:
+        res["import"] = describe(exc)
+    else:
+        for side in ("base", "head"):
+            if req[side] is not None:
+                res[side] = answer(lambda: mod.pin_display(req[side]))
+        res["held"] = answer(lambda: mod.EXPECTED_MUTATIONS)
+    _out.write(_dumps(res))
+    _out.flush()
+_main()
+'''
+
+
+def _child_answer_ok(ans, base: bool, head: bool) -> bool:
+    """The child's JSON is EXACTLY the driver's schema, answering exactly the sides asked: `base` / `head` say
+    whether that display was sent. Anything else — an extra or missing key, a side answered that was not asked or
+    not answered that was, an answer that is neither `{"pins": {str: int}}` nor `{"error": str}` — is False."""
+    def answer(a):
+        if type(a) is not dict or len(a) != 1:
+            return False
+        if "error" in a:
+            return type(a["error"]) is str
+        return ("pins" in a and type(a["pins"]) is dict
+                and all(type(k) is str and type(v) is int for k, v in a["pins"].items()))
+    if type(ans) is not dict or set(ans) != {"import", "base", "head", "held"}:
+        return False
+    if ans["import"] is not None:
+        return type(ans["import"]) is str and ans["base"] is None and ans["head"] is None and ans["held"] is None
+    return all((ans[side] is None) if not asked else answer(ans[side])
+               for side, asked in (("base", base), ("head", head), ("held", True)))
+
+
+def _json_strict(text: str):
+    """`json.loads`, refusing a duplicate key, which `json.loads` would accept (the last one would win). ⟳ r3 /
+    Phase 6: a non-finite number is no longer refused here: it can land only where `_child_answer_ok` demands an
+    exact int, str or None, so it is already CANNOT RUN, and the refusal's only observable was its message."""
+    def pairs(items):
+        out = {}
+        for k, v in items:
+            if k in out:
+                raise ValueError(f"duplicate key {k!r}")
+            out[k] = v
+        return out
+    return json.loads(text, object_pairs_hook=pairs)
+
+
+def _head_read(run, base_text: "str | None", head_text: "str | None") -> dict:
+    """HEAD's harness, run in a CHILD process, parses the two display texts (None = not asked) and reports the pins
+    it HOLDS: the child's answer, checked against `_child_answer_ok`. HEAD's `scripts/` is materialised from raw
+    blobs (`_head_blobs`, `_materialise`) into a temporary directory that is the child's cwd and is removed after.
+    Every failure — the read, the materialisation, a timeout, a non-zero exit, text that is not one JSON document,
+    JSON outside the schema — is `PinsUnreadable`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        try:
+            _materialise(_head_blobs(run), root)
+        except PinsUnreadable:
+            raise
+        except Exception as exc:
+            raise PinsUnreadable(f"HEAD: scripts/ could not be materialised ({_describe(exc)})") from None
+        req = json.dumps({"scripts": str(root / "scripts"), "harness": str(root / PINS_SCRIPT), "name": _HEAD_MODULE,
+                          "base": base_text, "head": head_text}).encode("utf-8")
+        try:
+            child = subprocess.Popen([sys.executable, "-I", "-B", "-S", "-c", _DRIVER], cwd=tmp,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"), start_new_session=True)
+        except OSError as exc:
+            raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} could not start ({_describe(exc)})") from None
+        try:
+            out, err = child.communicate(req, timeout=CHILD_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                os.killpg(child.pid, 9)         # its whole session: a grandchild holding the pipes open included
+            try:
+                child.communicate(timeout=CHILD_GRACE)
+                outlived = ""
+            except subprocess.TimeoutExpired:   # a process that LEFT the session (setsid) still holds a pipe
+                for pipe in (child.stdin, child.stdout, child.stderr):
+                    with contextlib.suppress(OSError):
+                        pipe.close()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    child.wait(timeout=CHILD_GRACE)
+                outlived = "; a process it started left its session and outlived the kill"
+            raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} ran past {CHILD_TIMEOUT} s{outlived}") from None
+    if child.returncode != 0:
+        tail = err.decode("utf-8", "replace").strip().splitlines()[-1:] or ["no stderr"]
+        raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} exited {child.returncode} ({tail[0][:300]})")
+    try:
+        ans = _json_strict(out.decode("utf-8"))
+    except Exception as exc:
+        raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} printed something that is not one JSON "
+                             f"document ({_describe(exc)})") from None
+    if not _child_answer_ok(ans, base_text is not None, head_text is not None):
+        raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} answered JSON outside its schema")
+    if ans["import"] is not None:
+        raise PinsUnreadable(f"HEAD: {Path(PINS_SCRIPT).name} could not be imported ({ans['import']})")
+    return ans
+
+
+def _child_pins(answer: dict, what: str) -> dict:
+    """One answer of the child's as an exact, non-empty `{str: int}` (`_exact_pins`), or `PinsUnreadable` naming
+    `what` (`<rev>: <home>` for a display, `HEAD: <harness>'s EXPECTED_MUTATIONS` for the held pins)."""
+    if "error" in answer:
+        raise PinsUnreadable(f"{what}: {answer['error']}")
+    return _cross(lambda: answer["pins"], reduce=_exact_pins, error=lambda d: PinsUnreadable(f"{what}: {d}"))
 
 
 def pin_pair(run, base: str) -> "tuple[dict, dict]":
-    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`. HEAD's are read from its display,
-    and must equal what the head harness HOLDS, or `PinsUnreadable` (CANNOT RUN)."""
+    """(the merge base's pins, HEAD's) — what `main()` hands `hold_reasons`. Both displays are parsed by HEAD's
+    harness, in ONE child process for the pair (`_head_read`); HEAD's must equal what that harness HOLDS, or
+    `PinsUnreadable` (CANNOT RUN). A pair with no display at all asks HEAD for nothing."""
     mb = run(["git", "merge-base", base, "HEAD"], text=True)
     if mb.returncode != 0:
         raise PinsUnreadable(f"`git merge-base {base} HEAD` exited {mb.returncode}")
-    old = pins_at(run, mb.stdout.strip())
-    new = pins_at(run, "HEAD")
     # ⟳ backlog #536, replacing a static proof that three review rounds thrashed on (sweep-pin-select r1-r3,
     # `docs/reviews/architecture-review-2026-11-06-sweep-pin-select.md`). This script reads HEAD's DISPLAY;
     # the harness enforces whatever ITS module holds. A head that points the harness at another pins file
     # with a lowered pin, leaving the display stale, was READY. The old check proved the harness's SPELLING
     # ("binds `PINS_FILE` once, to this literal"), and Python binds a global in a dozen spellings. This
-    # compares the VALUE: the dict the head harness holds after the import `pins_at` already made (the
-    # working tree is the PR head: `main()` refuses any other HEAD), against the display, on BOTH sides'
-    # keys. A head with no pins at all ({}) has no harness to compare, and every pin it drops is HELD.
+    # compares the VALUE: the dict HEAD's harness holds after import (⟳ backlog #538: run from HEAD's own
+    # `scripts/`, in a child, never the working tree, which nothing checks is clean), against the display, on
+    # BOTH sides' keys. A head with no pins at all ({}) has no held pins to compare, and every pin it drops is HELD
+    # (the base's display is still parsed by HEAD's harness; a head with no harness at all is bound (b), CANNOT RUN).
     # ⚠ BOUND, stated (backlog #535's class, which master also has as its E2): harness code that acts
     # differently when IMPORTED than when RUN is not seen here. (R8) a write to `EXPECTED_MUTATIONS` inside
     # a function called at run time, such as one line in `load_manifests`; (R9) a rebinding under
     # `if __name__ == "__main__":`, or a branch on `sys.argv`; (R9b) the same through `globals()`. Each
     # edits `check-plan-code.py`, the sweep harness, so the PR sweeps FULL and the edit is in the reviewed
     # diff. ⛔ Do not add a static shape check for them: that is the treadmill this comparison replaced.
+    rev = mb.stdout.strip()
+    base_home, base_text = pins_text(run, rev)
+    head_home, head_text = pins_text(run, "HEAD")
+    if base_home is None and head_home is None:
+        return {}, {}
+    ans = _head_read(run, base_text, head_text)
+    old = {} if base_home is None else _child_pins(ans["base"], f"{rev}: {base_home}")
+    new = {} if head_home is None else _child_pins(ans["head"], f"HEAD: {head_home}")
     if new:
-        held = held_pins()
+        held = _child_pins(ans["held"], f"HEAD: {PINS_SCRIPT}'s EXPECTED_MUTATIONS")
         differ = sorted(k for k in held.keys() | new.keys() if held.get(k) != new.get(k))
         if differ:
             raise PinsUnreadable(f"HEAD: {PINS_SCRIPT} holds pins that differ from the display this script reads, "
@@ -2753,11 +3020,32 @@ def _self_test_body() -> int:
     # THE READER IS THE WORKING TREE. ⟳ backlog #536: `pin_pair` compares HEAD's display with the pins the
     # head harness HOLDS after import, so every case's reader is a tree as CI has it at the PR head: the
     # harness (`harness`, the real one by default) and, beside it, the pins file showing `display`. One
-    # directory per content, because `_pins_reader` is cached by path.
+    # directory per content, so a tree's blobs can be answered from a cache keyed by its path.
     import contextlib
     _here = Path(__file__).resolve().parent
     _real_src = (_here / "check-plan-code.py").read_text(encoding="utf-8")
     _real_pins = (_here.parent / PINS_FILE).read_text(encoding="utf-8")     # backlog #533
+    _real_cv = (_here / "coverage_verdict.py").read_text(encoding="utf-8")  # the harness's one sibling import
+    _blobs_of: dict = {}
+    def _head_git(cmd, kw):
+        """⟳ backlog #538 r1: HEAD's `scripts/` as raw blobs — `HEAD_LS`, then `HEAD_CAT` — answered from the tree
+        `PINS_READER` is in. The fakes model the working tree AS the PR head, so HEAD's `scripts/` is that tree's;
+        the cases where the two DIFFER run real git further down. None for any other command. ⟳ r2 (X-F1): EVERY file
+        is answered, a `__pycache__/` included, so a committed cache is never filtered out before the gate sees it."""
+        root = Path(PINS_READER).parent
+        if str(root) not in _blobs_of:          # every tree a case reads is written once and never changed
+            _blobs_of[str(root)] = {
+                "scripts/" + f.relative_to(root).as_posix(): f.read_bytes()
+                for f in sorted(root.rglob("*")) if f.is_file()}
+        files = _blobs_of[str(root)]
+        if cmd == HEAD_LS:
+            return subprocess.CompletedProcess(cmd, 0, b"".join(
+                b"100644 blob %s\t%s\0" % (_blob_id(d, 40).encode(), p.encode()) for p, d in files.items()), b"")
+        if cmd == HEAD_CAT:
+            by_id = {_blob_id(d, 40): d for d in files.values()}
+            return subprocess.CompletedProcess(cmd, 0, b"".join(
+                b"%s blob %d\n%s\n" % (o.encode(), len(by_id[o]), by_id[o]) for o in kw["input"].decode().split()), b"")
+        return None
     _tree_root, _trees = Path(tempfile.mkdtemp()), {}
     def _tree(display, harness=None, extra=()):
         """The head harness's path in a working tree holding `display` as its pins file (None = no file)."""
@@ -2766,8 +3054,10 @@ def _self_test_body() -> int:
             d = _tree_root / str(len(_trees))
             (d / "scripts" / "mutations").mkdir(parents=True)
             (d / PINS_SCRIPT).write_text(_real_src if harness is None else harness, encoding="utf-8")
+            (d / "scripts" / "coverage_verdict.py").write_text(_real_cv, encoding="utf-8")   # backlog #538
             for rel, text in ((PINS_FILE, display), *extra):
                 if text is not None:
+                    (d / rel).parent.mkdir(parents=True, exist_ok=True)
                     (d / rel).write_text(text, encoding="utf-8")
             _trees[key] = d / PINS_SCRIPT
         return _trees[key]
@@ -2791,6 +3081,8 @@ def _self_test_body() -> int:
             if cmd[:2] == ["git", "show"]:
                 rev, path = cmd[2].split(":", 1)
                 return subprocess.CompletedProcess(cmd, 0, trees[rev][path], "")
+            if cmd in (HEAD_LS, HEAD_CAT):
+                return _head_git(cmd, kw)
             return subprocess.CompletedProcess(cmd, 128, "", f"unexpected {cmd}")
         return run
     PCP = PINS_FILE                                  # backlog #533: where the display lives now
@@ -2814,8 +3106,17 @@ def _self_test_body() -> int:
     def PHs(*a):
         return str(PH(*a))                  # a list is not CANNOT RUN, and must not crash
     _drop = "the mutation pin for scripts/a.py drops 5 -> 4"
+    # ⟳ backlog #538 r2 (X-F3): the gate imports NOTHING to read the pins, so there is nothing to restore. The suite's
+    # FIRST `pin_pair` is taken here, so a lazy import on a first call (r2 X-F3) would show as a changed sys.modules.
+    def _state():
+        return list(sys.path), dict(sys.modules)
+    def _unchanged(before):
+        p, m = before
+        return (sys.path == p, sys.modules.keys() == m.keys() and all(sys.modules[k] is v for k, v in m.items()))
+    _first = _state()
     check("a pin LOWERED in the display is HELD",
           PH(_syn(pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')), [f"loosens a gate: {_drop}"])
+    _first = _unchanged(_first)
     check("⛔ Codex r2 H2: a real fall beside a STRING that holds the old pin line is HELD",
           PH(_syn("_audit_note = '''\n    \"scripts/a.py\": 5,\n'''\n",
                   pins='    "scripts/a.py": 4,\n    "scripts/b.py": 3,\n')), [f"loosens a gate: {_drop}"])
@@ -2837,8 +3138,9 @@ def _self_test_body() -> int:
           PHs(_syn(), "EXPECTED_MUTATIONS = dict(a=5)\n").startswith("CANNOT RUN: base:"), True)
     check("a base with no pins file (a new repository) pins nothing, {}", _pp({"base": {}, "HEAD": {PCP: _syn()}}),
           ({}, {"scripts/a.py": 5, "scripts/b.py": 3}))
-    check("a head with no pins file at all removes every pin",
-          pin_falls(*pin_pair(_prun({"base": {PCP: _syn()}, "HEAD": {}}), "m")),
+    with _reading(_tree(_syn())):                # r2: a clean tree, never the real scripts/ and its caches
+        _nopins = pin_falls(*pin_pair(_prun({"base": {PCP: _syn()}, "HEAD": {}}), "m"))
+    check("a head with no pins file at all removes every pin", _nopins,
           ["loosens a gate: the mutation pin for scripts/a.py (5) is removed",
            "loosens a gate: the mutation pin for scripts/b.py (3) is removed"])
     # ── backlog #533: the display MOVED from `PINS_SCRIPT` to `PINS_FILE` ─────────────────────────
@@ -2873,16 +3175,72 @@ def _self_test_body() -> int:
     # through to the held-versus-displayed comparison, which ALSO says CANNOT RUN (the synthetic display is not
     # the real harness's pins). A bare "CANNOT RUN" was answered by that second clause, and the full sweep
     # reported the mutation SURVIVED. So each third must be refused for ITS OWN failing command.
+    # ⟳ backlog #538 r4: and the ls-tree third was masked AGAIN, by HEAD's scripts/ listing (`HEAD_LS`), also an
+    # `ls-tree` and also failed here, whose "`git ls-tree` of scripts/ exited 128" held both old substrings. A
+    # `pins_home` that ignores its rc fell through to that listing and the sweep reported the mutation SURVIVED.
+    # So each third must name ITS OWN command's exact refusal text.
     check("⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}",
-          [(lambda r: r.startswith("CANNOT RUN") and f"`git {w}" in r and "exited 128" in r)(
+          [(lambda r: r.startswith("CANNOT RUN") and want in r)(
                str(_err(lambda c, w=w: 128 if c[1] == w else 0)))
-           for w in ("merge-base", "ls-tree", "show")], [True, True, True])
+           for w, want in (("merge-base", "`git merge-base m HEAD` exited 128"),
+                           ("ls-tree", "`git ls-tree` exited 128"), ("show", "`git show` exited 128"))],
+          [True, True, True])
+    # ⟳ backlog #538 r1 (X-F1): HEAD's `scripts/` is read as RAW BLOBS. Each way that read can fail is CANNOT RUN,
+    # named for its own step, so none is answered only by a later import failure; the control reads the same tree.
+    def _extract(ls=None, cat=None, count=None):
+        """`pin_pair` over a plain tree whose `HEAD_LS` / `HEAD_CAT` answer is `ls` / `cat` where given — an int is
+        that return code, a function rewrites the tree's own answer — or `CANNOT RUN: <reason>`."""
+        trees = {"base": {PCP: _syn()}, "HEAD": {PCP: _syn()}}
+        def run(cmd, **kw):
+            if count is not None and cmd in (HEAD_LS, HEAD_CAT):
+                count.append(cmd[1])
+            for want, got in ((HEAD_LS, ls), (HEAD_CAT, cat)):
+                if cmd == want and got is not None:
+                    if type(got) is int:
+                        return subprocess.CompletedProcess(cmd, got, b"", b"")
+                    return subprocess.CompletedProcess(cmd, 0, got(_head_git(cmd, kw).stdout), b"")
+            return _prun(trees)(cmd, **kw)
+        try:
+            with _reading(_tree(_syn())):
+                return str(pin_pair(run, "m"))
+        except PinsUnreadable as exc:
+            return f"CANNOT RUN: {exc}"
+    def _named(r, what):
+        return (r.startswith("CANNOT RUN: HEAD:"), what in r)
+    _calls: list = []
+    check("backlog #538 r1: HEAD's scripts/ read as raw blobs holds what the display shows (the control), and is "
+          "materialised ONCE for both displays and the held pins",
+          (_extract(count=_calls), _calls), (str(({"scripts/a.py": 5, "scripts/b.py": 3},) * 2), ["ls-tree", "cat-file"]))
+    check("⛔ backlog #538 r1: a failing `git ls-tree` of HEAD's scripts/ is CANNOT RUN, named for the listing",
+          _named(_extract(ls=128), "`git ls-tree` of scripts/ exited 128"), (True, True))
+    check("⛔ backlog #538 r1: ...and so is a listing it cannot parse, named for the listing",
+          _named(_extract(ls=lambda o: b"not a listing\0" + o), "printed an entry that is not"), (True, True))
+    check("⛔ backlog #538 r1: ...and an EMPTY listing, never an empty tree imported",
+          _named(_extract(ls=lambda o: b""), "listed nothing under scripts/"), (True, True))
+    check("⛔ backlog #538 r1: ...and a SYMLINK or a SUBMODULE in it: only a regular file is materialised",
+          [_named(_extract(ls=lambda o, m=m: o.replace(b"100644 blob", m, 1)), "only a regular file is materialised")
+           for m in (b"120000 blob", b"160000 commit")], [(True, True)] * 2)
+    check("⛔ backlog #538 r1: ...and a path that leaves scripts/ (`..`)",
+          _named(_extract(ls=lambda o: o.replace(b"\tscripts/coverage_verdict.py", b"\tscripts/../coverage_verdict.py")),
+                 "is not a plain path under scripts/"), (True, True))
+    check("⛔ backlog #538 r1: ...and two entries landing on ONE file (case folding), never the second over the first",
+          _named(_extract(ls=lambda o: o + o.split(b"\0")[0] + b"\0"), "could not be materialised (FileExistsError"),
+          (True, True))
+    check("⛔ backlog #538 r1: a failing `git cat-file --batch` is CANNOT RUN, named for the read",
+          _named(_extract(cat=128), "`git cat-file --batch` exited 128"), (True, True))
+    check("⛔ backlog #538 r1: ...and an answer that is not the blob asked for",
+          _named(_extract(cat=lambda o: b"x" + o), "`git cat-file --batch` did not answer"), (True, True))
+    check("⛔ backlog #538 r1: ...and BYTES that do not hash to the blob's id: nothing but HEAD's exact bytes is imported",
+          _named(_extract(cat=lambda o: o.replace(b"EXPECTED_MUTATIONS", b"EXPECTED_MUTATIONZ", 1)), "are not blob"),
+          (True, True))
+    check("⛔ backlog #538 r1: ...and an answer with MORE than was asked",
+          _named(_extract(cat=lambda o: o + b"extra"), "answered more than it was asked"), (True, True))
     # THE REAL `check-plan-code.py`: the synthetic texts above prove the rule; only the real one
     # proves its display is what `pin_display` reads.
     _k = "scripts/check-vocabulary-collisions.py"
     _base_pins: dict = {}                            # so a failed read below reds its cases, never kills the suite
     try:
-        _rdr = _pins_reader(PINS_READER)
+        _rdr = _import_sibling(PINS_READER, "_cpc_for_selftest_pins", PinsUnreadable)
         _base_pins = _cross(lambda: _rdr.pin_display(_real_pins), reduce=_exact_pins, error=PinsUnreadable)
         _hit = _real_pins.replace(f'    "{_k}": {_base_pins[_k]},', f'    "{_k}": 0,', 1)
         with _reading(_tree(_hit)):
@@ -2962,17 +3320,23 @@ def _self_test_body() -> int:
         except BaseException as exc:          # an escape is a RED case, never a dead suite
             return f"ESCAPED {exc.__class__.__name__}"
     _codex_f2 = _real_src + '\nif __name__ != "__main__":\n    raise SystemExit(0)\n'
+    # ⟳ backlog #538: the reader is imported in the CHILD (`_head_read`), so this module body never reaches
+    # `_cross`; the child's import catch reports it, and the case names it, so a narrower catch answered only by
+    # the empty-stdout refusal is red (MEASURED: without the name, `except Exception` there survived).
     check("⛔ Codex r4 F2: a reader whose module body raises SystemExit(0) is CANNOT RUN",
-          _reader_says(_codex_f2, "exit.py")[:11], "CANNOT RUN:")
+          (lambda r: (r[:11], "SystemExit" in r))(_reader_says(_codex_f2, "exit.py")), ("CANNOT RUN:", True))
     check("⛔ ...and so is one whose module body raises an ordinary error",
           _reader_says(_real_src + "\nraise ValueError('boom')\n", "err.py")[:11], "CANNOT RUN:")
     check("⛔ ...and a MISSING reader",
           _reader_says(None, "absent.py")[:11], "CANNOT RUN:")
     check("⛔ ...and a reader with no pin_display",
           _reader_says("X = 1\n", "nodisplay.py")[:11], "CANNOT RUN:")
+    # ⟳ backlog #538 r2: the read is a child, so its SystemExit cannot end THIS process; the child's catch reports
+    # it, and the case names it, so a narrower catch answered only by the empty-stdout refusal is red.
     check("⛔ ...and a reader whose pin_display itself raises SystemExit",
-          _reader_says(_real_src + "\ndef pin_display(src):\n    raise SystemExit(0)\n", "callexit.py")[:11],
-          "CANNOT RUN:")
+          (lambda r: (r[:11], "SystemExit" in r))(
+              _reader_says(_real_src + "\ndef pin_display(src):\n    raise SystemExit(0)\n", "callexit.py")),
+          ("CANNOT RUN:", True))
     check("...while a well-behaved COPY of the real reader still HOLDS the fall (the adjacent negative)",
           _reader_says(_real_src, "ok.py"), str([f"loosens a gate: {_drop}"]))
     shutil.rmtree(_rd, ignore_errors=True)
@@ -2992,6 +3356,8 @@ def _self_test_body() -> int:
         _pgrun(["git", "branch", "rootbr"], text=True)
         (_pg / PCP).parent.mkdir(parents=True)
         (_pg / PCP).write_text(_syn())
+        (_pg / PINS_SCRIPT).write_text(_real_src)       # backlog #538: the held side is HEAD's own harness
+        (_pg / "scripts" / "coverage_verdict.py").write_text(_real_cv)
         _pgrun(["git", "add", "-A"], text=True)
         _pgrun(["git", "commit", "-qm", "base"], text=True)
         _pgrun(["git", "branch", "basebr"], text=True)
@@ -3005,6 +3371,342 @@ def _self_test_body() -> int:
         shutil.rmtree(_pg, ignore_errors=True)
     check("⭐ real git: a pin lowered in the display is HELD, and a base with no scripts/ pins {}",
           _pgr, (["loosens a gate: the mutation pin for scripts/b.py drops 3 -> 2"], {}))
+    # ⛔ backlog #538, the row's three steps in a REAL repository, so HEAD's blobs and the working tree are both
+    # real: (1) commit a head whose harness redirects to a pins file lowering one pin; (2) dirty the working tree
+    # with the previous harness (or, by R3, a previous `_redir.py`, or an untracked one HEAD lacks); (3) the held
+    # side must still be HEAD's, so the redirect is CANNOT RUN. Each has a CLEAN-TREE CONTROL in the same case, so
+    # the dirty answer cannot pass vacuously; and an HONEST head under a dirty LOWERING harness is read as HEAD
+    # holds it (READY, nothing held), so the fix is "held is HEAD's", not "a dirty tree is refused".
+    # `PINS_READER` is the repository's own working-tree harness, as `main()` has it (r1 C-F1: never read by the
+    # pin rule; it is pointed there so a case would see it if it were).
+    def _dirty_case(head_files, dirt, untrack=(), prefix=False):
+        """(clean answer, dirty answer) of `pin_pair` at a head committing `head_files` over the real base. A text
+        of None in `dirt` DELETES that file; bytes are written as bytes. ⟳ r2: every read runs with `PYTHONPATH`
+        naming the working tree's scripts/, which reaches HEAD's child unless it runs isolated (`-I`); `prefix`
+        also puts the repository under the interpreter's prefixes, with the working tree's `_redir` already
+        loaded here (Codex r2 R2-F2, the virtual-environment repro)."""
+        g = Path(tempfile.mkdtemp())
+        def grun(cmd, **kw):
+            if cmd[0] == "git":
+                cmd = ["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]]
+                kw["cwd"] = g
+                kw.setdefault("env", fixture_git.env(HOME=str(g)))
+            kw.setdefault("text", True)
+            return subprocess.run(cmd, capture_output=True, **kw)
+        def put(files):
+            for rel, text in files:
+                if text is None:
+                    (g / rel).unlink()
+                    continue
+                (g / rel).parent.mkdir(parents=True, exist_ok=True)
+                if type(text) is bytes:
+                    (g / rel).write_bytes(text)
+                else:
+                    (g / rel).write_text(text, encoding="utf-8")
+        def ask():
+            # Each read as a FRESH process has it: the reader's sibling imports (R3's `_redir`) and the path it
+            # inserts are dropped after, or the dirty read reuses the clean read's modules and passes vacuously.
+            mods, path, env = dict(sys.modules), list(sys.path), os.environ.get("PYTHONPATH")
+            prefixes = (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix)
+            sys.modules.pop("_redir", None)         # the R3 cases above left THEIR `_redir` loaded (measured)
+            sys.path.insert(0, str(g / "scripts"))  # as `main()` runs: the working tree's scripts/ is sys.path[0]
+            os.environ["PYTHONPATH"] = str(g / "scripts")
+            try:
+                if prefix:
+                    sys.prefix = sys.base_prefix = sys.exec_prefix = sys.base_exec_prefix = str(g)
+                    importlib.import_module("_redir")
+                with _reading(g / PINS_SCRIPT):
+                    r = pin_pair(grun, "basebr")
+                return pin_falls(*r)
+            except PinsUnreadable as exc:
+                return f"CANNOT RUN: {exc}"
+            finally:
+                for n in [n for n in sys.modules if n not in mods]:
+                    del sys.modules[n]
+                sys.modules.update(mods)
+                sys.path[:] = path
+                sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix = prefixes
+                if env is None:
+                    os.environ.pop("PYTHONPATH", None)
+                else:
+                    os.environ["PYTHONPATH"] = env
+        try:
+            grun(["git", "init", "-q"])
+            put(((PCP, _real_pins), (PINS_SCRIPT, _real_src), ("scripts/coverage_verdict.py", _real_cv)))
+            grun(["git", "add", "-A"]); grun(["git", "commit", "-qm", "base"]); grun(["git", "branch", "basebr"])
+            put(head_files)
+            grun(["git", "add", "-A"]); grun(["git", "commit", "-qm", "head"])
+            for rel in untrack:
+                grun(["git", "rm", "-q", "--cached", rel]); grun(["git", "commit", "-qm", f"untrack {rel}"])
+            clean = ask()
+            put(dirt)
+            return clean, ask()
+        except Exception as exc:
+            return f"{exc.__class__.__name__}: {exc}", None
+        finally:
+            shutil.rmtree(g, ignore_errors=True)
+    _held_v2 = f"{_k1} (held {_k1v - 1}, displayed {_k1v})"
+    def _says(r, what=_held_v2):
+        return (str(r).startswith(_refused), what in str(r))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R1 a plain rebinding"] or ""), (_v2, _v2pins)),
+                         ((PINS_SCRIPT, _real_src),))
+    check("⛔ backlog #538: a head harness redirected to a lowered pins file is CANNOT RUN on a clean tree (the "
+          "control) AND with the previous harness left uncommitted in the working tree",
+          (_says(_c), _says(_d)), ((True, True), (True, True)))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R3 an imported PINS_FILE"] or ""), (_v2, _v2pins), *_redir),
+                         (("scripts/_redir.py", f"PINS_FILE = '{PINS_FILE}'\n"),))
+    check("⛔ backlog #538: ...and by R3, with the redirecting `_redir.py` reverted in the working tree, the head "
+          "harness's sibling import is HEAD's, never the module the working-tree reader already loaded",
+          (_says(_c), _says(_d)), ((True, True), (True, True)))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R3 an imported PINS_FILE"] or ""), (_v2, _v2pins), *_redir),
+                         (("scripts/_redir.py", f"PINS_FILE = '{PINS_FILE}'\n"),), untrack=("scripts/_redir.py",))
+    check("⛔ backlog #538: ...and a head whose harness imports a module HEAD does NOT hold is CANNOT RUN, though "
+          "an untracked copy sits in the working tree, redirecting (the first read) or not (the second)",
+          (str(_c).startswith("CANNOT RUN: HEAD:"), str(_d).startswith("CANNOT RUN: HEAD:"),
+           "could not be imported" in str(_d)), (True, True, True))
+    _c, _d = _dirty_case(((PINS_SCRIPT, _real_src),),
+                         ((PINS_SCRIPT, _routes["R1 a plain rebinding"] or ""), (_v2, _v2pins)))
+    check("backlog #538: ...while an HONEST head with a LOWERING redirect left uncommitted is read as HEAD holds it: "
+          "nothing held, clean or dirty (the adjacent negative)", (_c, _d), ([], []))
+    # ⛔ backlog #538 r1 (C-F1, Claude's repro): the DISPLAY side was parsed by the WORKING-TREE `pin_display`. An
+    # honest fall (display AND harness lower one pin) under a working-tree reader that ignores its argument read the
+    # base with HEAD's values: READY. Both displays are now parsed by HEAD's harness, so it is HELD, clean or dirty.
+    _cf1 = _real_pins.replace(f'    "{_k1}": {_k1v},', f'    "{_k1}": {_k1v - 1},', 1)
+    _c, _d = _dirty_case(((PCP, _cf1),), ((PINS_SCRIPT, _real_src + "\n_real_pd = pin_display\ndef pin_display(src):\n"
+                                           f"    return _real_pd(open(own_pins_path()).read())\n"),))
+    _cf1_fall = [f"loosens a gate: the mutation pin for {_k1} drops {_k1v} -> {_k1v - 1}"]
+    check("⛔ backlog #538 r1 (C-F1): an honest pin fall is HELD on a clean tree (the control) AND under a "
+          "working-tree pin_display that answers from the working-tree pins file: no working-tree code parses a display",
+          (_c, _d), (_cf1_fall, _cf1_fall))
+    # ⛔ backlog #538 r1 (X-F1, Codex's repro): `git archive` applied `export-subst` and `export-ignore`, so the
+    # extracted harness was not HEAD's. A harness whose PINS_FILE depends on either reads the lowered file from
+    # HEAD's raw blobs, and so is refused; through an archive it read the display and was READY.
+    _xs = _ed(_em, 'PINS_FILE = ("scripts/mutations/low.py" if "$Format:%s$" == "$" + "Format:%s$" '
+                   'else PINS_FILE)\n' + _em)
+    _xi = _ed(_em, 'PINS_FILE = ("scripts/mutations/low.py" if (pathlib.Path(__file__).parent / "mutations" / '
+                   '"low.py").exists() else PINS_FILE)\n' + _em)
+    _x1 = {}
+    for _n, _h, _attr in (("export-subst", _xs, "scripts/check-plan-code.py export-subst\n"),
+                          ("export-ignore", _xi, "scripts/mutations/low.py export-ignore\n")):
+        _x1[_n] = _dirty_case(((PINS_SCRIPT, _h or ""), ("scripts/mutations/low.py", _v2pins),
+                               (".gitattributes", _attr)), ())[0]
+    check("⛔ backlog #538 r1 (X-F1): a head harness that reads a lowered pins file only as COMMITTED — an "
+          "`export-subst` or `export-ignore` attribute would hide it from an archive — is CANNOT RUN",
+          {n: _says(r) for n, r in _x1.items()}, {n: (True, True) for n in _x1})
+    # ⛔ backlog #538 r2 (X-F1..X-F3): HEAD's harness runs in a CHILD, so this process imports nothing to read it.
+    # After a successful read and after a failing one, `sys.path` and `sys.modules` are EXACTLY as before, though the
+    # head harness adds a path and a FILELESS module (in the child, where they stay); the suite's FIRST `pin_pair`
+    # is checked the same way above (`_first`), where r2's lazy first-call imports leaked.
+    _leaky = ("import sys as _s, types as _t\n_s.path.insert(0, '/hph-not-a-dir')\n"
+              "_s.modules['_hph_fileless'] = _t.ModuleType('_hph_fileless')\n")
+    _onpath = Path(tempfile.mkdtemp())
+    (_onpath / "_hph_onpath.py").write_text("PINS_FILE = 'elsewhere.py'\n", encoding="utf-8")
+    _filed = types.ModuleType("_hph_filed")
+    _filed.__file__ = str(_onpath / "_hph_filed.py")
+    sys.modules["_hph_filed"], sys.modules["_hph_bare"] = _filed, types.ModuleType("_hph_bare")
+    sys.path.insert(0, str(_onpath))
+    _iso, _pre = {}, {}
+    try:
+        for _n, _h in (("a successful read", _real_src + "\n" + _leaky),
+                       ("a failing read", _real_src + "\n" + _leaky + "raise ValueError('boom')\n")):
+            _b = _state()
+            _r = str(PH(_syn(), harness=_h))
+            _iso[_n] = (_r.startswith("CANNOT RUN: HEAD:"), *_unchanged(_b))
+        # Codex r1's second witness, and its neighbours: a module the head harness imports and HEAD does not hold
+        # must fail to import, though one is loaded HERE already (with a file, or FILELESS) or sits on sys.path.
+        for _n in ("_hph_filed", "_hph_bare", "_hph_onpath"):
+            _r = str(PH(_syn(), harness=_real_src + f"\nimport {_n}\n"))
+            _pre[_n] = (_r.startswith("CANNOT RUN: HEAD:"), "could not be imported" in _r, _n in _r)
+    finally:
+        for _n in ("_hph_filed", "_hph_bare", "_hph_onpath", "_hph_fileless"):
+            sys.modules.pop(_n, None)
+        while str(_onpath) in sys.path:
+            sys.path.remove(str(_onpath))
+        shutil.rmtree(_onpath, ignore_errors=True)
+    check("⛔ backlog #538 r2 (X-F3): sys.path and sys.modules are UNCHANGED across the suite's first pin_pair, a "
+          "successful held read and a failing one, a path and a fileless module the head harness made included",
+          (_first, _iso), ((True, True), {"a successful read": (False, True, True), "a failing read": (True, True, True)}))
+    check("⛔ backlog #538 r1 (X-F2): a module the head harness imports but HEAD does not hold is CANNOT RUN, though one "
+          "is already loaded from outside the library (with a file, or FILELESS) or sits on a non-library sys.path entry",
+          _pre, {n: (True, True, True) for n in ("_hph_filed", "_hph_bare", "_hph_onpath")})
+    # ⛔ backlog #538 r2 (X-F1, Codex's repro): a committed unchecked-hash `.pyc` of the harness, compiled from source
+    # that does NOT redirect, beside a committed source that does. The loader ran the cache: held matched the display,
+    # READY. Bytecode is now refused by name, never materialised, clean or with the cache gone from the working tree.
+    import py_compile
+    _pyc_rel = importlib.util.cache_from_source(PINS_SCRIPT)
+    _pyc_dir = Path(tempfile.mkdtemp())
+    try:
+        (_pyc_dir / "src.py").write_text(_real_src, encoding="utf-8")
+        py_compile.compile(str(_pyc_dir / "src.py"), cfile=str(_pyc_dir / "src.pyc"), doraise=True,
+                           invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+        _pyc = (_pyc_dir / "src.pyc").read_bytes()
+    finally:
+        shutil.rmtree(_pyc_dir, ignore_errors=True)
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R1 a plain rebinding"] or ""), (_v2, _v2pins), (_pyc_rel, _pyc)),
+                         ((_pyc_rel, None),))
+    _bc = "is committed Python bytecode"
+    check("⛔ backlog #538 r2 (X-F1): a committed unchecked-hash .pyc that holds the display's pins, beside a harness "
+          "source that redirects, is CANNOT RUN for the BYTECODE, with the cache in the working tree or not",
+          (str(_c).startswith("CANNOT RUN: HEAD:"), _bc in str(_c), str(_d).startswith("CANNOT RUN: HEAD:"),
+           _bc in str(_d)), (True, True, True, True))
+    check("⛔ backlog #538 r2 (X-F1): ...and ANY committed bytecode is refused beside an HONEST source, never skipped "
+          "(a cache, a sourceless .pyc, a .pyo)",
+          [(lambda r: (r.startswith("CANNOT RUN: HEAD:"), _bc in r))(str(_pp(
+              {"base": {PCP: _real_pins}, "HEAD": {PCP: _real_pins}}, None, ((rel, "bytecode\n"),))))
+           for rel in (_pyc_rel, "scripts/stale.pyc", "scripts/stale.pyo")], [(True, True)] * 3)
+    # ⛔ backlog #538 r2 (X-F2, Codex's repro): the repository under the interpreter's prefix (as in a virtual
+    # environment), HEAD's `_redir.py` redirecting to the lowered pins, and the working tree's non-redirecting one
+    # already LOADED here and on sys.path. The in-process isolation trusted the prefix and kept it: READY.
+    _c, _d = _dirty_case(((PINS_SCRIPT, _routes["R3 an imported PINS_FILE"] or ""), (_v2, _v2pins), *_redir),
+                         (("scripts/_redir.py", f"PINS_FILE = '{PINS_FILE}'\n"),), prefix=True)
+    check("⛔ backlog #538 r2 (X-F2): with the repository under the interpreter's prefix and the working tree's "
+          "_redir already loaded, the head harness's `_redir` is HEAD's: CANNOT RUN, clean (the control) and dirty",
+          (_says(_c), _says(_d)), ((True, True), (True, True)))
+    # ⛔ backlog #538 r2: the CHILD's answer. Each way it can fail is CANNOT RUN, named for its own failure; an honest
+    # head (the real harness and its own pins file) is the control, and every bad child is that head plus one line.
+    _honest = {"base": {PCP: _real_pins}, "HEAD": {PCP: _real_pins}}
+    def _child(extra_src):
+        try:
+            return str(_pp(_honest, _real_src + extra_src))
+        except Exception as exc:              # an escape is a RED case, never a dead suite
+            return f"ESCAPED {exc.__class__.__name__}: {exc}"
+    _ok = str((_base_pins, _base_pins))
+    _forge = ("import json as _j, os as _o, sys as _s\n_p = {'pins': {'scripts/a.py': 5}}\n"
+              "_s.stdout.write(_j.dumps({'import': None, 'base': _p, 'head': _p, 'held': _p%s}))\n"
+              "_s.stdout.flush()\n_o._exit(0)\n")
+    check("backlog #538 r2: an honest head read in the child holds what its display shows (the control)",
+          _child(""), _ok)
+    check("⛔ backlog #538 r2: a child that answers and then exits NON-ZERO is CANNOT RUN, named for the exit",
+          (lambda r: (r.startswith("CANNOT RUN: HEAD: the child"), "exited 3" in r))(
+              _child("\nimport atexit as _ax, os as _ox\n_ax.register(lambda: _ox._exit(3))\n")), (True, True))
+    check("⛔ backlog #538 r2: a child that prints JSON OUTSIDE the schema is CANNOT RUN: an extra key, a value that "
+          "is not an int, a pins answer that is not a dict",
+          [(lambda r: (r.startswith("CANNOT RUN: HEAD: the child"), "outside its schema" in r))(_child(_forge % x))
+           for x in (", 'extra': 1", "} | {'held': {'pins': {'scripts/a.py': 5.0}}", "} | {'held': {'pins': []}")],
+          [(True, True)] * 3)
+    check("⛔ backlog #538 r2: ...and one that prints something that is not ONE JSON document",
+          (lambda r: (r.startswith("CANNOT RUN: HEAD: the child"), "not one JSON document" in r))(
+              _child("\nprint('noise at import')\n")), (True, True))
+    _saved_timeout = CHILD_TIMEOUT
+    globals()["CHILD_TIMEOUT"] = 0.5
+    try:
+        _slow = _child("\nimport time as _tm\n_tm.sleep(3)\n")
+    finally:
+        globals()["CHILD_TIMEOUT"] = _saved_timeout
+    check("⛔ backlog #538 r2: ...and a child that runs past its timeout",
+          (_slow.startswith("CANNOT RUN: HEAD: the child"), "ran past 0.5 s" in _slow), (True, True))
+    # ⛔ backlog #538 r3 / Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`, design (c)):
+    # a HEAD `scripts/` file named for a STANDARD-LIBRARY module stands in for it in the child (R3-F1: a committed
+    # `scripts/importlib/__init__.py` ran before the harness and forged the answer, so a fall master held read as
+    # none). It is refused at materialisation, CANNOT RUN. Each case reads a LOWERED head display; the control is the
+    # same input without the extra files, and must hold the fall.
+    _p6k = "scripts/check-vocabulary-collisions.py"
+    _p6v = _base_pins.get(_p6k) or 1
+    _p6lo = {"base": {PCP: _real_pins},
+             "HEAD": {PCP: _real_pins.replace(f'    "{_p6k}": {_p6v},', f'    "{_p6k}": {_p6v - 1},', 1)}}
+    _p6fall = [f"loosens a gate: the mutation pin for {_p6k} drops {_p6v} -> {_p6v - 1}"]
+    def _p6(extra=()):
+        try:
+            r = _pp(_p6lo, None, extra)
+            return r if isinstance(r, str) else [f for f in pin_falls(*r) if _p6k in f]
+        except Exception as exc:              # an escape is a RED case, never a dead suite
+            return f"ESCAPED {exc.__class__.__name__}: {exc}"
+    _p6forge = ("import os, json\n_std = os.path.join(os.path.dirname(os.__file__), 'importlib')\n__path__ = [_std]\n"
+                "exec(compile(open(os.path.join(_std, '__init__.py')).read(), os.path.join(_std, '__init__.py'), "
+                "'exec'), globals())\nclass _E(json.JSONEncoder):\n    def encode(self, o):\n"
+                "        if isinstance(o, dict) and 'held' in o and isinstance(o.get('base'), dict):\n"
+                "            o = dict(o); o['base'] = o['head']\n        return json.JSONEncoder.encode(self, o)\n"
+                "json._default_encoder = _E()\n")
+    _p6std = "is named for the standard-library module"
+    check("backlog #538 Phase 6: a lowered head display read in the child holds the fall (the control)", _p6(), _p6fall)
+    _p6r = str(_p6((("scripts/importlib/__init__.py", _p6forge),)))
+    check("⛔ backlog #538 Phase 6 (R3-F1): a committed scripts/importlib/ PACKAGE that forges the child's answer is "
+          "CANNOT RUN, named for the standard-library module it shadows",
+          (_p6r.startswith("CANNOT RUN: HEAD:"), f"{_p6std} 'importlib'" in _p6r), (True, True))
+    _p6r = str(_p6((("scripts/msvcrt.py", "MSVCRT_SHADOW = True\n"),)))
+    check("⛔ backlog #538 Phase 6: ...and a MODULE named for one, a name this platform may lack (scripts/msvcrt.py)",
+          (_p6r.startswith("CANNOT RUN: HEAD:"), f"{_p6std} 'msvcrt'" in _p6r), (True, True))
+    # Every top-level stdlib name the child imports (measured by an audit hook, 82) and 13 plausible lazy ones, each
+    # ALONE, read by `_materialise` itself: the refusal is there, before any child starts. The fixed core keeps the
+    # list from shrinking to nothing on another Python.
+    _p6names = (
+        "json re enum types _types _sre functools abc _abc collections _collections_abc itertools keyword operator "
+        "_operator reprlib _collections _functools copyreg _json importlib __future__ argparse os stat _stat posixpath "
+        "errno genericpath gettext ast _ast dataclasses copy weakref _weakrefset inspect annotationlib dis io opcode "
+        "_opcode _opcode_metadata tokenize token _tokenize contextlib pathlib ntpath _winapi nt glob fnmatch pwd grp "
+        "fcntl shutil zlib bz2 compression _bz2 lzma _lzma _zstd subprocess locale _locale signal threading "
+        "_contextvars warnings _py_warnings msvcrt _posixsubprocess select selectors math tempfile random bisect "
+        "_bisect _random difflib textwrap traceback hashlib string typing struct base64 codecs encodings site "
+        "sitecustomize linecache").split()
+    _p6core = {"importlib", "json", "re", "ast", "argparse", "__future__", "msvcrt", "nt", "_winapi", "inspect",
+               "tokenize", "dataclasses", "pathlib", "subprocess", "tempfile", "shutil", "contextlib"}
+    def _p6refused(rel):
+        with tempfile.TemporaryDirectory() as _d:
+            try:
+                _materialise([(rel, b"SHADOW = True\n")], Path(_d))
+                return False
+            except PinsUnreadable as exc:
+                return _p6std in str(exc)
+    _p6mods = {n for n in _p6names if _p6refused(f"scripts/{n}.py")}
+    _p6pkgs = {n for n in ("importlib", "json") if _p6refused(f"scripts/{n}/__init__.py")}
+    _p6want = {n for n in _p6names if n in sys.stdlib_module_names}
+    check("⛔ backlog #538 Phase 6: EVERY stdlib name the child imports, as scripts/<name>.py and as a package, is "
+          "refused, and the refused set holds the fixed core",
+          (len(_p6names), _p6mods == _p6want, _p6core <= _p6mods, _p6pkgs), (95, True, True, {"importlib", "json"}))
+    # The adjacent negatives: a name that is a stdlib name only CASE-FOLDED, and a stdlib name NESTED below a
+    # top-level directory, resolve to no stdlib import, so they are read as usual. Each would log if it ran.
+    _p6mark = Path(tempfile.mkdtemp())
+    try:
+        _p6log = lambda n: f"import pathlib as _pl\n_pl.Path({str(_p6mark / n)!r}).write_text('ran')\n"
+        _p6r = _p6((("scripts/Json.py", _p6log("Json")), ("scripts/tools/json.py", _p6log("tools-json"))))
+        _p6ran = sorted(f.name for f in _p6mark.iterdir())
+    finally:
+        shutil.rmtree(_p6mark, ignore_errors=True)
+    check("⛔ backlog #538 Phase 6: ...but NOT a name that is a stdlib name only case-folded (scripts/Json.py) or "
+          "nested (scripts/tools/json.py): the fall is held, and neither file ran", (_p6r, _p6ran), (_p6fall, []))
+    # ⛔ backlog #538 r3 / Phase 6 (R3-F2): the timeout KILLS the child's whole session, and the gate's wait after the
+    # kill is BOUNDED. K1: an in-session grandchild holds stdout; the group kill reaps it, so the gate returns at once
+    # and says nothing outlived it. K2: a grandchild that LEFT the session (`setsid`) is not killed; the gate stops
+    # waiting after `CHILD_GRACE` and says so.
+    _p6saved = (CHILD_TIMEOUT, CHILD_GRACE)
+    try:
+        globals()["CHILD_TIMEOUT"] = 0.5
+        _p6r = _child("\nimport subprocess as _sp, sys as _sy, time as _tm\n"
+                      "_sp.Popen([_sy.executable, '-c', 'import time; time.sleep(20)'])\n_tm.sleep(20)\n")
+    finally:
+        globals()["CHILD_TIMEOUT"], globals()["CHILD_GRACE"] = _p6saved
+    check("⛔ backlog #538 Phase 6 (R3-F2): a timed-out child and an IN-session grandchild holding its stdout are both "
+          "killed: CANNOT RUN, and nothing outlived the kill",
+          (_p6r.startswith("CANNOT RUN: HEAD: the child"), "ran past 0.5 s" in _p6r, "outlived" in _p6r),
+          (True, True, False))
+    import time
+    _p6pid = Path(tempfile.mkdtemp()) / "pid"
+    _p6gc = f"import os, time; os.setsid(); open({str(_p6pid)!r}, 'w').write(str(os.getpid())); time.sleep(20)"
+    _p6t = time.monotonic()
+    try:
+        globals()["CHILD_TIMEOUT"], globals()["CHILD_GRACE"] = 3, 1
+        _p6r = _child("\nimport os as _os, subprocess as _sp, sys as _sy, time as _tm\n"
+                      f"_sp.Popen([_sy.executable, '-c', {_p6gc!r}])\n"
+                      f"while not _os.path.exists({str(_p6pid)!r}):\n    _tm.sleep(0.02)\n_tm.sleep(20)\n")
+        _p6t = time.monotonic() - _p6t
+    finally:
+        globals()["CHILD_TIMEOUT"], globals()["CHILD_GRACE"] = _p6saved
+        with contextlib.suppress(OSError, ValueError):
+            os.kill(int(_p6pid.read_text()), 9)
+        shutil.rmtree(_p6pid.parent, ignore_errors=True)
+    check("⛔ backlog #538 Phase 6 (R3-F2): ...and a grandchild that LEFT the session holds the pipe: the gate stops "
+          "waiting after its grace, CANNOT RUN naming what outlived the kill, in under 10 s",
+          (_p6r.startswith("CANNOT RUN: HEAD: the child"), "outlived the kill" in _p6r, _p6t < 10), (True, True, True))
+    # ⛔ backlog #538 r3 / Phase 6 (R3-F3): a DUPLICATE key in the child's JSON is refused. After a last-wins parse the
+    # forge below is schema-valid: the first "held" is lowered, the last matches the display.
+    _p6r = _child("\nimport os as _o, sys as _s\n_p = '{\"pins\": {\"scripts/a.py\": 5}}'\n"
+                  "_s.stdout.write('{\"import\": null, \"base\": ' + _p + ', \"head\": ' + _p + "
+                  "', \"held\": {\"pins\": {\"scripts/a.py\": 4}}, \"held\": ' + _p + '}')\n"
+                  "_s.stdout.flush()\n_o._exit(0)\n")
+    check("⛔ backlog #538 Phase 6 (R3-F3): a child whose JSON repeats a key is CANNOT RUN, though the last value "
+          "would pass the schema",
+          (_p6r.startswith("CANNOT RUN: HEAD: the child"), "not one JSON document" in _p6r, "duplicate key" in _p6r),
+          (True, True, True))
     for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
         r = H([mig], at="abc")
         check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)
@@ -3065,6 +3767,8 @@ def _self_test_body() -> int:
                 return cp(f"{PCP}\n")
             if cmd[:2] == ["git", "show"]:
                 return cp(_syn() if cmd[2].startswith("mb:") else (pins_head or _syn()))
+            if cmd in (HEAD_LS, HEAD_CAT):                  # backlog #538: HEAD's scripts/, as raw blobs
+                return _head_git(cmd, kw)
             if cmd[:2] == ["git", "ls-tree"]:
                 return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:
