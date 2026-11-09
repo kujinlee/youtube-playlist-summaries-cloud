@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 392 cases
+    python3 scripts/check-merge-ready.py --self-test # 400 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
     python3 scripts/check-merge-ready.py --flagged-block   # the review-prompt section for this
@@ -1407,10 +1407,22 @@ def pins_text(run, rev: str) -> "tuple[str | None, str | None]":
 # tree, so `read_pins` holds {} and `_exact_pins` refuses it: CANNOT RUN, never a pass; one that names an ABSOLUTE
 # path reads that path as it stands. (b) A head with no `scripts/` (or no harness) has no reader, so any display,
 # the base's included, is CANNOT RUN rather than read by some other copy. (c) HEAD's harness is the subject, and
-# the child runs it: a harness that FORGES the child's answer (prints a well-formed JSON and exits 0) is trusted,
-# as `_cross`'s F4 trusts a well-typed wrong answer. The edit is in `check-plan-code.py`, which sweeps FULL and is
-# in the reviewed diff. (d) The child is this interpreter (`sys.executable`); `-S` keeps a virtual environment's
-# site-packages out, and nothing pins `-B` or `-S` with a mutation (neither changes an answer the suite can see).
+# the child runs it the way `python3 scripts/check-plan-code.py` runs it, with HEAD's `scripts/` on `sys.path`. So the
+# harness AND every HEAD module its imports reach (today `coverage_verdict.py`, and `fixture_git.py` on a self-test
+# path) are trusted. Code in any of them that forges the child's answer is trusted, as `_cross`'s F4 trusts a
+# well-typed wrong answer. It is HEAD code in the reviewed diff, but not necessarily in `check-plan-code.py`.
+# Nothing here checks which sweep a sibling edit selects. A HEAD file cannot stand in for a STANDARD-LIBRARY module:
+# any materialised top-level `scripts/` name in `sys.stdlib_module_names` (`scripts/<name>.py` or `scripts/<name>/`)
+# is refused, CANNOT RUN, so no `sys.path` order, the harness's own insert included, can resolve a stdlib import to
+# HEAD. ⚠ This covers the CHILD only. The gate process, run as `python3 scripts/check-merge-ready.py`, has the
+# WORKING TREE's `scripts/` at `sys.path[0]`, so a stdlib-named file there runs before this script's first
+# statement. Master does the same: measured, 51 of 95 names (backlog #578). (d) The child is this interpreter
+# (`sys.executable`); `-S` keeps a virtual environment's site-packages out, and nothing pins `-B` or `-S` with a
+# mutation (neither changes an answer the suite can see). A process that leaves the child's session (`setsid`) is
+# not killed. The gate stops waiting for it after `CHILD_GRACE` and says so in the CANNOT RUN reason.
+# ⟳ r3 / Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`, design (c)): R3-F1 (a committed
+# `scripts/importlib/` forged the child's answer) is closed by the stdlib-name refusal in `_materialise`, not by
+# reordering the driver; R3-F2 bounds the post-kill wait; R3-F3 pins the duplicate-key refusal.
 HEAD_LS = ["git", "ls-tree", "-r", "-z", "HEAD", "--", "scripts"]
 HEAD_CAT = ["git", "cat-file", "--batch"]
 _HEAD_MODES = (b"100644", b"100755")
@@ -1470,7 +1482,11 @@ def _head_blobs(run) -> "list[tuple[str, bytes]]":
 def _materialise(blobs, dest: Path) -> None:
     """Write each `(path, bytes)` under `dest`, as a NEW regular file, exactly once, only under `scripts/`.
     ⟳ r2 (X-F1): only `*.py` is written, and any BYTECODE is refused, never skipped: a committed `.pyc` is code
-    the reviewed source does not show (Codex r2 measured an unchecked-hash cache holding a pin its source did not)."""
+    the reviewed source does not show (Codex r2 measured an unchecked-hash cache holding a pin its source did not).
+    ⟳ r3 / Phase 6: a materialised TOP-LEVEL name (`scripts/<name>.py`, or a package `scripts/<name>/`) that is a
+    standard-library module is refused: it would stand in for that module in the child, whatever the `sys.path`
+    order (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`). Checked after the `*.py` filter,
+    because only a materialised file can resolve."""
     for path, data in blobs:
         parts = path.split("/")
         if parts[0] != "scripts" or len(parts) < 2 or any(p in ("", ".", "..") for p in parts):
@@ -1479,6 +1495,10 @@ def _materialise(blobs, dest: Path) -> None:
             raise PinsUnreadable(f"HEAD: {path!r} is committed Python bytecode, which can run code its source does not hold")
         if not parts[-1].endswith(".py"):
             continue
+        top = parts[1][:-3] if len(parts) == 2 else parts[1]
+        if top in sys.stdlib_module_names:
+            raise PinsUnreadable(f"HEAD: {path!r} is named for the standard-library module {top!r}, which it would "
+                                 "shadow in the child")
         target = dest.joinpath(*parts)
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "xb") as fh:      # "x": a second path landing on one file (case folding) is refused
@@ -1487,6 +1507,9 @@ def _materialise(blobs, dest: Path) -> None:
 
 # The child's bound in seconds. A module global so a case can lower it. The real harness imports in ~0.35 s.
 CHILD_TIMEOUT = 60
+# ⟳ r3 / Phase 6 (R3-F2): how long the gate waits for the pipes after the group kill, and then for the child. A
+# module global so a case can lower it.
+CHILD_GRACE = 2
 # The module name the child imports HEAD's harness under (the name a traceback shows).
 _HEAD_MODULE = "_cpc_head_for_merge_ready"
 # The child's driver. It reads the request on stdin, imports HEAD's harness from the materialised `scripts/`, and
@@ -1563,7 +1586,9 @@ def _child_answer_ok(ans, base: bool, head: bool) -> bool:
 
 
 def _json_strict(text: str):
-    """`json.loads`, refusing a duplicate key and a non-finite number, which `json.loads` would accept."""
+    """`json.loads`, refusing a duplicate key, which `json.loads` would accept (the last one would win). ⟳ r3 /
+    Phase 6: a non-finite number is no longer refused here: it can land only where `_child_answer_ok` demands an
+    exact int, str or None, so it is already CANNOT RUN, and the refusal's only observable was its message."""
     def pairs(items):
         out = {}
         for k, v in items:
@@ -1571,9 +1596,7 @@ def _json_strict(text: str):
                 raise ValueError(f"duplicate key {k!r}")
             out[k] = v
         return out
-    def constant(name):
-        raise ValueError(f"{name} is not JSON")
-    return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
+    return json.loads(text, object_pairs_hook=pairs)
 
 
 def _head_read(run, base_text: "str | None", head_text: "str | None") -> dict:
@@ -1603,8 +1626,17 @@ def _head_read(run, base_text: "str | None", head_text: "str | None") -> dict:
         except subprocess.TimeoutExpired:
             with contextlib.suppress(OSError):
                 os.killpg(child.pid, 9)         # its whole session: a grandchild holding the pipes open included
-            child.communicate()
-            raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} ran past {CHILD_TIMEOUT} s") from None
+            try:
+                child.communicate(timeout=CHILD_GRACE)
+                outlived = ""
+            except subprocess.TimeoutExpired:   # a process that LEFT the session (setsid) still holds a pipe
+                for pipe in (child.stdin, child.stdout, child.stderr):
+                    with contextlib.suppress(OSError):
+                        pipe.close()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    child.wait(timeout=CHILD_GRACE)
+                outlived = "; a process it started left its session and outlived the kill"
+            raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} ran past {CHILD_TIMEOUT} s{outlived}") from None
     if child.returncode != 0:
         tail = err.decode("utf-8", "replace").strip().splitlines()[-1:] or ["no stderr"]
         raise PinsUnreadable(f"HEAD: the child that reads {PINS_SCRIPT} exited {child.returncode} ({tail[0][:300]})")
@@ -3554,6 +3586,118 @@ def _self_test_body() -> int:
         globals()["CHILD_TIMEOUT"] = _saved_timeout
     check("⛔ backlog #538 r2: ...and a child that runs past its timeout",
           (_slow.startswith("CANNOT RUN: HEAD: the child"), "ran past 0.5 s" in _slow), (True, True))
+    # ⛔ backlog #538 r3 / Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`, design (c)):
+    # a HEAD `scripts/` file named for a STANDARD-LIBRARY module stands in for it in the child (R3-F1: a committed
+    # `scripts/importlib/__init__.py` ran before the harness and forged the answer, so a fall master held read as
+    # none). It is refused at materialisation, CANNOT RUN. Each case reads a LOWERED head display; the control is the
+    # same input without the extra files, and must hold the fall.
+    _p6k = "scripts/check-vocabulary-collisions.py"
+    _p6v = _base_pins.get(_p6k) or 1
+    _p6lo = {"base": {PCP: _real_pins},
+             "HEAD": {PCP: _real_pins.replace(f'    "{_p6k}": {_p6v},', f'    "{_p6k}": {_p6v - 1},', 1)}}
+    _p6fall = [f"loosens a gate: the mutation pin for {_p6k} drops {_p6v} -> {_p6v - 1}"]
+    def _p6(extra=()):
+        try:
+            r = _pp(_p6lo, None, extra)
+            return r if isinstance(r, str) else [f for f in pin_falls(*r) if _p6k in f]
+        except Exception as exc:              # an escape is a RED case, never a dead suite
+            return f"ESCAPED {exc.__class__.__name__}: {exc}"
+    _p6forge = ("import os, json\n_std = os.path.join(os.path.dirname(os.__file__), 'importlib')\n__path__ = [_std]\n"
+                "exec(compile(open(os.path.join(_std, '__init__.py')).read(), os.path.join(_std, '__init__.py'), "
+                "'exec'), globals())\nclass _E(json.JSONEncoder):\n    def encode(self, o):\n"
+                "        if isinstance(o, dict) and 'held' in o and isinstance(o.get('base'), dict):\n"
+                "            o = dict(o); o['base'] = o['head']\n        return json.JSONEncoder.encode(self, o)\n"
+                "json._default_encoder = _E()\n")
+    _p6std = "is named for the standard-library module"
+    check("backlog #538 Phase 6: a lowered head display read in the child holds the fall (the control)", _p6(), _p6fall)
+    _p6r = str(_p6((("scripts/importlib/__init__.py", _p6forge),)))
+    check("⛔ backlog #538 Phase 6 (R3-F1): a committed scripts/importlib/ PACKAGE that forges the child's answer is "
+          "CANNOT RUN, named for the standard-library module it shadows",
+          (_p6r.startswith("CANNOT RUN: HEAD:"), f"{_p6std} 'importlib'" in _p6r), (True, True))
+    _p6r = str(_p6((("scripts/msvcrt.py", "MSVCRT_SHADOW = True\n"),)))
+    check("⛔ backlog #538 Phase 6: ...and a MODULE named for one, a name this platform may lack (scripts/msvcrt.py)",
+          (_p6r.startswith("CANNOT RUN: HEAD:"), f"{_p6std} 'msvcrt'" in _p6r), (True, True))
+    # Every top-level stdlib name the child imports (measured by an audit hook, 82) and 13 plausible lazy ones, each
+    # ALONE, read by `_materialise` itself: the refusal is there, before any child starts. The fixed core keeps the
+    # list from shrinking to nothing on another Python.
+    _p6names = (
+        "json re enum types _types _sre functools abc _abc collections _collections_abc itertools keyword operator "
+        "_operator reprlib _collections _functools copyreg _json importlib __future__ argparse os stat _stat posixpath "
+        "errno genericpath gettext ast _ast dataclasses copy weakref _weakrefset inspect annotationlib dis io opcode "
+        "_opcode _opcode_metadata tokenize token _tokenize contextlib pathlib ntpath _winapi nt glob fnmatch pwd grp "
+        "fcntl shutil zlib bz2 compression _bz2 lzma _lzma _zstd subprocess locale _locale signal threading "
+        "_contextvars warnings _py_warnings msvcrt _posixsubprocess select selectors math tempfile random bisect "
+        "_bisect _random difflib textwrap traceback hashlib string typing struct base64 codecs encodings site "
+        "sitecustomize linecache").split()
+    _p6core = {"importlib", "json", "re", "ast", "argparse", "__future__", "msvcrt", "nt", "_winapi", "inspect",
+               "tokenize", "dataclasses", "pathlib", "subprocess", "tempfile", "shutil", "contextlib"}
+    def _p6refused(rel):
+        with tempfile.TemporaryDirectory() as _d:
+            try:
+                _materialise([(rel, b"SHADOW = True\n")], Path(_d))
+                return False
+            except PinsUnreadable as exc:
+                return _p6std in str(exc)
+    _p6mods = {n for n in _p6names if _p6refused(f"scripts/{n}.py")}
+    _p6pkgs = {n for n in ("importlib", "json") if _p6refused(f"scripts/{n}/__init__.py")}
+    _p6want = {n for n in _p6names if n in sys.stdlib_module_names}
+    check("⛔ backlog #538 Phase 6: EVERY stdlib name the child imports, as scripts/<name>.py and as a package, is "
+          "refused, and the refused set holds the fixed core",
+          (len(_p6names), _p6mods == _p6want, _p6core <= _p6mods, _p6pkgs), (95, True, True, {"importlib", "json"}))
+    # The adjacent negatives: a name that is a stdlib name only CASE-FOLDED, and a stdlib name NESTED below a
+    # top-level directory, resolve to no stdlib import, so they are read as usual. Each would log if it ran.
+    _p6mark = Path(tempfile.mkdtemp())
+    try:
+        _p6log = lambda n: f"import pathlib as _pl\n_pl.Path({str(_p6mark / n)!r}).write_text('ran')\n"
+        _p6r = _p6((("scripts/Json.py", _p6log("Json")), ("scripts/tools/json.py", _p6log("tools-json"))))
+        _p6ran = sorted(f.name for f in _p6mark.iterdir())
+    finally:
+        shutil.rmtree(_p6mark, ignore_errors=True)
+    check("⛔ backlog #538 Phase 6: ...but NOT a name that is a stdlib name only case-folded (scripts/Json.py) or "
+          "nested (scripts/tools/json.py): the fall is held, and neither file ran", (_p6r, _p6ran), (_p6fall, []))
+    # ⛔ backlog #538 r3 / Phase 6 (R3-F2): the timeout KILLS the child's whole session, and the gate's wait after the
+    # kill is BOUNDED. K1: an in-session grandchild holds stdout; the group kill reaps it, so the gate returns at once
+    # and says nothing outlived it. K2: a grandchild that LEFT the session (`setsid`) is not killed; the gate stops
+    # waiting after `CHILD_GRACE` and says so.
+    _p6saved = (CHILD_TIMEOUT, CHILD_GRACE)
+    try:
+        globals()["CHILD_TIMEOUT"] = 0.5
+        _p6r = _child("\nimport subprocess as _sp, sys as _sy, time as _tm\n"
+                      "_sp.Popen([_sy.executable, '-c', 'import time; time.sleep(20)'])\n_tm.sleep(20)\n")
+    finally:
+        globals()["CHILD_TIMEOUT"], globals()["CHILD_GRACE"] = _p6saved
+    check("⛔ backlog #538 Phase 6 (R3-F2): a timed-out child and an IN-session grandchild holding its stdout are both "
+          "killed: CANNOT RUN, and nothing outlived the kill",
+          (_p6r.startswith("CANNOT RUN: HEAD: the child"), "ran past 0.5 s" in _p6r, "outlived" in _p6r),
+          (True, True, False))
+    import time
+    _p6pid = Path(tempfile.mkdtemp()) / "pid"
+    _p6gc = f"import os, time; os.setsid(); open({str(_p6pid)!r}, 'w').write(str(os.getpid())); time.sleep(20)"
+    _p6t = time.monotonic()
+    try:
+        globals()["CHILD_TIMEOUT"], globals()["CHILD_GRACE"] = 3, 1
+        _p6r = _child("\nimport os as _os, subprocess as _sp, sys as _sy, time as _tm\n"
+                      f"_sp.Popen([_sy.executable, '-c', {_p6gc!r}])\n"
+                      f"while not _os.path.exists({str(_p6pid)!r}):\n    _tm.sleep(0.02)\n_tm.sleep(20)\n")
+        _p6t = time.monotonic() - _p6t
+    finally:
+        globals()["CHILD_TIMEOUT"], globals()["CHILD_GRACE"] = _p6saved
+        with contextlib.suppress(OSError, ValueError):
+            os.kill(int(_p6pid.read_text()), 9)
+        shutil.rmtree(_p6pid.parent, ignore_errors=True)
+    check("⛔ backlog #538 Phase 6 (R3-F2): ...and a grandchild that LEFT the session holds the pipe: the gate stops "
+          "waiting after its grace, CANNOT RUN naming what outlived the kill, in under 10 s",
+          (_p6r.startswith("CANNOT RUN: HEAD: the child"), "outlived the kill" in _p6r, _p6t < 10), (True, True, True))
+    # ⛔ backlog #538 r3 / Phase 6 (R3-F3): a DUPLICATE key in the child's JSON is refused. After a last-wins parse the
+    # forge below is schema-valid: the first "held" is lowered, the last matches the display.
+    _p6r = _child("\nimport os as _o, sys as _s\n_p = '{\"pins\": {\"scripts/a.py\": 5}}'\n"
+                  "_s.stdout.write('{\"import\": null, \"base\": ' + _p + ', \"head\": ' + _p + "
+                  "', \"held\": {\"pins\": {\"scripts/a.py\": 4}}, \"held\": ' + _p + '}')\n"
+                  "_s.stdout.flush()\n_o._exit(0)\n")
+    check("⛔ backlog #538 Phase 6 (R3-F3): a child whose JSON repeats a key is CANNOT RUN, though the last value "
+          "would pass the schema",
+          (_p6r.startswith("CANNOT RUN: HEAD: the child"), "not one JSON document" in _p6r, "duplicate key" in _p6r),
+          (True, True, True))
     for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
         r = H([mig], at="abc")
         check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)

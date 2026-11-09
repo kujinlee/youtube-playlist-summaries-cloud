@@ -1784,7 +1784,11 @@ EXPECTED_MUTATIONS = {
     # again, the displays parsed by the working-tree harness (C-F1), the held-versus-display comparison (#536,
     # re-indented), a refused display read as nothing (`_child_pins`), and pin_display's SystemExit (the driver's
     # BaseException catch; its case now names SystemExit).
-    "scripts/check-merge-ready.py": 181,
+    # ⟳ 2026-11-08, backlog #538 Phase 6 (`docs/reviews/architecture-review-2026-11-08-held-pins-child.md`): 181 -> 187
+    # = 181 + 6, none retired, none re-bound. A stdlib-named HEAD `scripts/` name is refused (module, package, not
+    # over-broad) (3), the group kill (1), the bounded post-kill wait (1), and the duplicate-key refusal (1). The NaN
+    # refusal is deleted: the schema check already refuses every non-int, so its only observable was a message.
+    "scripts/check-merge-ready.py": 187,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that

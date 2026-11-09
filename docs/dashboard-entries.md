@@ -19322,3 +19322,26 @@ first `pin_pair` and a successful and a failing read; the child's control, a non
 violations, non-JSON output and a timeout. Every `_dirty_case` read now runs with `PYTHONPATH` naming the working tree's
 `scripts/`. check-merge-ready 384 -> 392 cases; mutations 184 -> 181 (8 retired with their code, 5 new, 5 re-bound; each
 listed at the pin in `scripts/mutations/expected_mutations.py`).
+
+## 2026-11-08
+The third review round found that a file in the pull request named like one of Python's own built-in modules (for
+example `importlib`) could quietly take that module's place in the sealed run that reads the test tool's pins, and
+fake its answer. A design review settled the fix: the merge check now refuses, as "cannot run", any such file in the
+pull request's `scripts/` folder. It also stops waiting, with a clear reason, for a stray process that escapes the
+kill after a timeout. The same review measured that the merge check's OWN process has always run such a file if one is
+committed, on master too; that is filed separately as backlog #578.
+<!--tech-->
+Backlog #538, PR #541, round 3 fold after the Phase 6 review `docs/reviews/architecture-review-2026-11-08-held-pins-child.md`
+(design (c)). `scripts/check-merge-ready.py`: `_materialise` refuses any `*.py` whose top-level name
+(`scripts/<name>.py`, or `scripts/<name>/` for a package) is in `sys.stdlib_module_names` (`PinsUnreadable`); `_DRIVER`
+is unchanged. `_head_read`'s timeout path: `killpg`, then `communicate(timeout=CHILD_GRACE)` (new global, 2 s); on a
+second timeout the pipes are closed, the child is waited for `CHILD_GRACE`, and the reason says a process left its
+session and outlived the kill. `_json_strict` drops `parse_constant` (the NaN refusal was masked by
+`_child_answer_ok`). Bound (c) reworded (HEAD's harness and every HEAD module its imports reach are trusted; the
+gate process itself is not covered, backlog #578), bound (d) gains the `setsid` sentence. New cases: a lowered-display
+control; R3's `scripts/importlib/` forge (package) and `scripts/msvcrt.py` (module), CANNOT RUN; 95 names, each alone,
+plus two packages, refused by `_materialise` with a fixed 17-name core; `Json.py` and `tools/json.py` not refused and
+not run; an in-session grandchild killed by the group kill; a `setsid` grandchild bounded (under 10 s); a duplicated
+`"held"` key. check-merge-ready 392 -> 400 cases; mutations 181 -> 187 (M1, M1b, M1c, M2, M3, M4; none retired or
+re-bound), each hand-checked alone in a `stage_tree` copy (rc 1, `parse_fail_names` naming its expect). Measured:
+0 stdlib-named top-level `scripts/` names on master `b15e4f96` and on HEAD.
