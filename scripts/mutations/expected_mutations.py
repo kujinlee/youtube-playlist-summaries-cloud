@@ -2066,5 +2066,13 @@ EXPECTED_MUTATIONS = {
     # ARITHMETIC: 79 + 20 = 99. Each of the 20 hand-checked ONE AT A TIME in a `stage_tree` copy: rc 1, and
     # `parse_fail_names` names its expected case exactly once; 16 existing entries whose code the fold touched
     # re-checked the same way, all still killed and attributed.
-    "scripts/push-command.py": 99,
+    # ⟳ 2026-11-08, PR #542 round 5 fold (Claude C-F1, C-F2, C-F5): 99 -> 107. EIGHT new, none retired: master's
+    # hook as a FLOOR (6: `verdict` runs it, `main` prints `verdict`, its bytes checked against master's blob, a
+    # missing floor, a stalled floor, master's deny read as `floor`); `NAME+=value` as an assignment prefix and
+    # `GIT_DIR+=` as a repository change (C-F5, 2). Three existing entries whose anchors `main` changed ("the
+    # deadline is not armed", "decide prints only the verdict…", "decide ignores its has_remote argument") were
+    # RE-ANCHORED on the new lines with the same mutation, not retired.
+    # ARITHMETIC: 99 + 8 = 107. Each of the 8 new and the 3 re-anchored hand-checked ONE AT A TIME in a
+    # `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case exactly once.
+    "scripts/push-command.py": 107,
 }

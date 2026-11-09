@@ -19393,3 +19393,26 @@ lifted by `ALLOW_DEFAULT_BRANCH_PUSH=1` / `ALLOW_DANGEROUS_PUSH=1` respectively.
 1 `cd` before a bare push, 1 unreadable git option; the value rule refused 0). push-command 265 → 325 cases; hook
 self-test 59/59; mutations 79 → 99, each of the 20 hand-checked alone in a `stage_tree` copy (rc 1, its case named
 once), and the 16 existing entries whose code the fold touched re-checked the same way.
+
+## 2026-11-08
+The fifth review of the push safety check found two places where the new check let through something the old check
+blocked: a redirection such as `> master`, and a `git -c core.editor='git push origin master'` setting. Rather than
+patch each case, the new check now also runs the old check itself, unchanged, and blocks anything the old check
+blocked. So it can never be weaker than the old one. A test runs the old check against every command in the test
+suite and fails if it ever blocks something the new one allows. The same review found six gaps that the old check
+also had. These were not fixed here, because blocking them by reading command text can never be complete. They are
+recorded as evidence on backlog #574, which checks the push inside git itself. On 1,634 real commands from past
+sessions, no extra commands are refused (still 1,266).
+<!--tech-->
+Backlog #428, PR #542 round 5 fold (Claude C-F1, C-F2, C-F5). Floor: `scripts/push-command.py` `verdict` = `decide`,
+then, when it allows a command holding a push word, `floor()`, which runs `scripts/push-floor-master.sh` (git blob
+`ddb129b5`, master's hook at merge base `b15e4f96`). The bytes are hashed as a git blob each run and run via
+`bash -c` from memory. The process group is killed when its budget (the deadline less 0.5 s) runs out. Missing,
+differing, stalled or malformed output gives `floor-not-run` (the hook says NOT CHECKED); master's deny gives `floor`,
+printed with master's message. `main` prints `verdict`. Equivalence case: every `(command, branch)` the suite decides,
+plus 49 r4/r5 repros, through an independent copy of master's hook (blob id written in the test) in a fixture clone.
+MEASURED: 261 compared, 58 refused by master, 0 allowed by the branch. C-F5: `ASSIGN` = `NAME+?=`; `REPO_ENV` gains
+`GIT_DIR+=`/`GIT_WORK_TREE+=`. Bash-agreement inputs +2 and atoms +2, 0 unsafe. Corpus: 1,266 → 1,266 on `feat/x`,
+1,273 → 1,273 on master (master's 26 / 107 refusals are all already refused by the reader). push-command 325 → 351
+cases; hook 59/59; mutations 99 → 107. The 8 new entries and 3 re-anchored ones were each hand-checked alone in a
+`stage_tree` copy (rc 1, case named once). R5-F3, F4, F6, F7, F8 and F9 were filed as evidence on backlog #574.

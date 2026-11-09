@@ -861,8 +861,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    _arm_deadline()\n    verdict",
-    "    verdict"
+    "    _arm_deadline()\n    import time",
+    "    import time"
    ]
   ],
   "expect": "⭐ X-F1: a stalled `decide` run is ended by its own deadline (SIGALRM)"
@@ -883,8 +883,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    print(verdict if verdict == \"allow\" else f\"deny {rule} {reason}\")",
-    "    print(verdict)"
+    "    print(v if v == \"allow\" else f\"deny {rule} {reason}\")",
+    "    print(v)"
    ]
   ],
   "expect": "decide prints `deny <rule> <reason>`"
@@ -894,8 +894,8 @@
   "file": "scripts/push-command.py",
   "edits": [
    [
-    "    verdict, rule, reason = decide(sys.stdin.read(), argv[1], argv[2], argv[3] == \"1\")",
-    "    verdict, rule, reason = decide(sys.stdin.read(), argv[1], argv[2], True)"
+    "    v, rule, reason = verdict(cmd, argv[1], argv[2], argv[3] == \"1\",",
+    "    v, rule, reason = verdict(cmd, argv[1], argv[2], True,"
    ]
   ],
   "expect": "decide reads has_remote"
@@ -1119,5 +1119,93 @@
    ]
   ],
   "expect": "judge: the branch escape lifts a value naming the default branch"
+ },
+ {
+  "name": "r5: the floor is removed — `verdict` never runs master's hook, so master's refusal of a redirection target naming master returns as an allow",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    why = floor(cmd, cwd, budget)\n",
+    "    why = None\n"
+   ]
+  ],
+  "expect": "⭐ equivalence: the branch refuses every command master's hook refuses (r5: no worse than master)"
+ },
+ {
+  "name": "r5: `main` prints `decide`, not `verdict`, so the delivered hook never consults the floor",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    v, rule, reason = verdict(cmd, argv[1], argv[2], argv[3] == \"1\",\n                              budget=max(0.1, DEADLINE_S - 0.5 - (time.monotonic() - t0)))",
+    "    v, rule, reason = decide(cmd, argv[1], argv[2], argv[3] == \"1\")"
+   ]
+  ],
+  "expect": "⭐ hook: R5-F1 — a redirection target naming master is refused (master's floor)"
+ },
+ {
+  "name": "r5: the floor's bytes are not checked against master's blob, so any file there is run as the floor",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if hashlib.sha1(b\"blob %d\\0\" % len(data) + data).hexdigest() != MASTER_FLOOR_BLOB:",
+    "    if False:"
+   ]
+  ],
+  "expect": "⭐ floor: a floor file that is not master's bytes REFUSES (floor-not-run), never allows"
+ },
+ {
+  "name": "r5: a floor file that cannot be read ALLOWS",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        return \"floor-not-run\", f\"master's rules (`scripts/{FLOOR_NAME}`) could not be read: {e}\"",
+    "        return None"
+   ]
+  ],
+  "expect": "⭐ floor: a floor file that is missing REFUSES (floor-not-run), never allows"
+ },
+ {
+  "name": "r5: a floor that does not finish in its budget ALLOWS",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "        return \"floor-not-run\", f\"master's rules did not finish in {budget:.1f} s\"",
+    "        return None"
+   ]
+  ],
+  "expect": "floor: a floor that does not finish in its budget REFUSES (floor-not-run)"
+ },
+ {
+  "name": "r5: master's deny is not read as `floor`, so the refusal loses master's message (it falls to floor-not-run)",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "            return \"floor\", hso[\"permissionDecisionReason\"]\n",
+    "            pass\n"
+   ]
+  ],
+  "expect": "hook: a FLOOR refusal prints master's own message and says it is the floor (r5)"
+ },
+ {
+  "name": "r5 C-F5: `NAME+=value` is a command word again, as before the fold",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "ASSIGN = re.compile(r\"[A-Za-z_][A-Za-z0-9_]*\\+?=\")",
+    "ASSIGN = re.compile(r\"[A-Za-z_][A-Za-z0-9_]*=\")"
+   ]
+  ],
+  "expect": "agreement: an append-assignment prefix (r5 C-F5) is accepted, bash ran something, and the lexer reported all of it"
+ },
+ {
+  "name": "r5 C-F5: a `GIT_DIR+=` prefix does not change the repository",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    ", \"GIT_DIR+=\", \"GIT_WORK_TREE+=\")",
+    ")"
+   ]
+  ],
+  "expect": "matrix r5-F5c a `GIT_DIR+=` prefix changes the repository"
  }
 ]

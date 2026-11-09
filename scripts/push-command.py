@@ -53,9 +53,21 @@ THE RULE — `decide(command, current_branch, default_branch, has_remote)`:
          refspec is judged as usual. Off with rule 1's switches (no remote, `ALLOW_DEFAULT_BRANCH_PUSH=1`).
        - a word of unknown value refuses as a command word; at or before a git command's subcommand (except a
          double-quoted `-C` value); and anywhere in a git command holding a push word.
-  `decide` prints `allow`, or `deny <rule> <reason>` with rule one of `default-branch`, `force`, `no-verify`,
-  `hookspath`, `plan-leak`, `outside`, `option`, `code-runner`, `unjudged`, `branch-change`. Exit 0. The hook refuses any other
-  exit or output.
+  5. THE FLOOR — NO WORSE THAN MASTER (PR #542 round 5). When `decide` allows, `verdict` runs MASTER'S OWN HOOK,
+     byte for byte: `push-floor-master.sh` beside this file is git blob `MASTER_FLOOR_BLOB` (`ddb129b5`, the hook
+     on master when this branch began). Its bytes are hashed as a git blob before every run and run from memory;
+     a file that is missing, differs, fails, stalls or prints anything but silence or a deny REFUSES
+     (`floor-not-run`, NOT CHECKED). A deny is `floor`, with master's own message. So the branch refuses every
+     command master's text rules refused (the bare `--force`/`-f` and `--no-verify` rules, the `hookspath`/
+     `allow_plan_leak` mention, the default-branch target rule, with `ALLOW_DANGEROUS_PUSH=1` and
+     `ALLOW_DEFAULT_BRANCH_PUSH=1` exactly as master scoped them) BY CONSTRUCTION, not case by case. Rounds 4 and 5
+     found three loosenings one at a time (an option value, a redirection target, a `-c core.editor` value), each
+     a word master's crude match saw and the exact reader correctly called text. `--self-test`'s equivalence case
+     runs an INDEPENDENT copy of master's hook (checked against the blob id written in the test, not this
+     constant) over every command the suite decides, and fails if master refuses one the branch allows.
+  `main` prints `allow`, or `deny <rule> <reason>` with rule one of `default-branch`, `force`, `no-verify`,
+  `hookspath`, `plan-leak`, `outside`, `option`, `code-runner`, `unjudged`, `branch-change`, `floor`,
+  `floor-not-run`. Exit 0. The hook refuses any other exit or output.
   ⏱ A DEADLINE: `main` arms SIGALRM at `DEADLINE_S` with the DEFAULT action, so a run that stalls, even inside C
   code, is killed (the hook sees exit 142 and REFUSES, saying so). Never a pass.
 
@@ -89,9 +101,10 @@ feature branch of a repository whose default branch is master; or the bash-agree
 runs that the lexer did not report; or a feature-branch push refused.
 
     python3 scripts/push-command.py decide <current> <default> <has_remote 0|1> < command.txt
-    python3 scripts/push-command.py --self-test  # 325 cases
+    python3 scripts/push-command.py --self-test  # 351 cases
 
-⚡ Only `re` and `sys` load on the `decide` path (PR #542 round 1, C-F8): the self-test's imports are lazy.
+⚡ Only `re` and `sys` load on the `decide` path (PR #542 round 1, C-F8): the self-test's imports are lazy, and the
+floor's (`hashlib`, `json`, `os`, `subprocess`) load only when `decide` has allowed a command holding a push word.
 """
 from __future__ import annotations
 
@@ -113,7 +126,9 @@ PARAM = re.compile(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*|[?$!
 UNKNOWN = "\x00"   # in a word: a double-quoted parameter, one word of unknown value
 SPLIT = "\x01"     # in a word: an UNQUOTED parameter, unknown value AND unknown word count
 # ── judging ──
-ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# `NAME+=value` is an assignment to bash too (PR #542 round 5, C-F5): read as a command word, it hid the git
+# command behind it from the branch-change rule (`A+=1 git checkout master && git push origin HEAD`).
+ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
 RESERVED = frozenset({"if", "then", "else", "elif", "do", "while", "until"})
 GIT_VALUE_OPTS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env",
                             "--super-prefix", "--attr-source"})
@@ -155,7 +170,7 @@ DIR_MOVERS = frozenset({"cd", "pushd", "popd"})
 # r4 X-F2: options and environment that point `git` at ANOTHER repository, whose current branch is unknown here.
 REPO_OPTS = frozenset({"-C", "--git-dir", "--work-tree"})
 REPO_EQ = ("--git-dir=", "--work-tree=")
-REPO_ENV = ("GIT_DIR=", "GIT_WORK_TREE=")
+REPO_ENV = ("GIT_DIR=", "GIT_WORK_TREE=", "GIT_DIR+=", "GIT_WORK_TREE+=")
 
 
 class Outside(Exception):
@@ -465,6 +480,60 @@ def decide(cmd: str, cur: str, default: str, has_remote: bool) -> tuple[str, str
     return "allow", "", ""
 
 
+# PR #542 round 5: master's hook, byte for byte, kept as a floor. The id is `git hash-object` of the file: the blob
+# of `.claude/hooks/block-default-branch-push.sh` on master when this branch began (merge base `b15e4f96`).
+MASTER_FLOOR_BLOB = "ddb129b5d049daf6f0943b79b40883f4a5243f94"
+FLOOR_NAME = "push-floor-master.sh"
+
+
+def floor(cmd: str, cwd: str | None = None, budget: float = 2.0) -> tuple[str, str] | None:
+    """Master's hook over `cmd`, run in `cwd` (it resolves the branches itself, as master did): `(rule, reason)`
+    to refuse, else None. Anything but a clean silence or a clean deny is `floor-not-run`: never a pass."""
+    import hashlib
+    import json
+    import os
+    import signal
+    import subprocess
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), FLOOR_NAME)
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        return "floor-not-run", f"master's rules (`scripts/{FLOOR_NAME}`) could not be read: {e}"
+    if hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest() != MASTER_FLOOR_BLOB:
+        return "floor-not-run", f"`scripts/{FLOOR_NAME}` is not master's hook (git blob {MASTER_FLOOR_BLOB[:8]})"
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}})
+    # The VERIFIED bytes are what runs (`bash -c`), so the file cannot change between the hash and the run.
+    p = subprocess.Popen(["bash", "-c", data.decode(), FLOOR_NAME], cwd=cwd, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)
+    try:
+        out, _ = p.communicate(payload, timeout=budget)
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.communicate()
+        return "floor-not-run", f"master's rules did not finish in {budget:.1f} s"
+    if p.returncode == 0 and not out.strip():
+        return None
+    try:
+        hso = json.loads(out)["hookSpecificOutput"]
+        if p.returncode == 0 and hso["permissionDecision"] == "deny" and isinstance(
+                hso["permissionDecisionReason"], str):
+            return "floor", hso["permissionDecisionReason"]
+    except (ValueError, KeyError, TypeError):
+        pass
+    return "floor-not-run", f"master's rules exited {p.returncode} and printed {out.strip()[:80]!r}"
+
+
+def verdict(cmd: str, cur: str, default: str, has_remote: bool, cwd: str | None = None,
+            budget: float = 2.0) -> tuple[str, str, str]:
+    """What the hook enforces: `decide`, then, when it allows a command holding a push word, master's floor."""
+    v = decide(cmd, cur, default, has_remote)
+    if v[0] == "deny" or not any(PUSH_WORD.search(t) for t in views(cmd)):
+        return v
+    why = floor(cmd, cwd, budget)
+    return ("deny", why[0], why[1]) if why else v
+
+
 def _arm_deadline() -> None:
     """SIGALRM with its DEFAULT action at `DEADLINE_S`: the kernel ends a stalled run, even in C code."""
     import signal
@@ -480,8 +549,14 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 2
     _arm_deadline()
-    verdict, rule, reason = decide(sys.stdin.read(), argv[1], argv[2], argv[3] == "1")
-    print(verdict if verdict == "allow" else f"deny {rule} {reason}")
+    import time
+    t0 = time.monotonic()
+    cmd = sys.stdin.read()
+    # The floor gets what is left of the deadline, less a margin, so IT is stopped (and its process group killed)
+    # before SIGALRM ends this process and orphans it.
+    v, rule, reason = verdict(cmd, argv[1], argv[2], argv[3] == "1",
+                              budget=max(0.1, DEADLINE_S - 0.5 - (time.monotonic() - t0)))
+    print(v if v == "allow" else f"deny {rule} {reason}")
     return 0
 
 
@@ -532,6 +607,8 @@ ORACLE_ATOMS = (
     "2&>f", "2&>", "2>>f", "2>|f", "0<f", "0<&0",
     # parameters
     "$X", '"$X"', "${X}", "$?", "$1", "a$X", '"a $X b"', "$X$X",
+    # r5 C-F5: an append-assignment, where bash reads it (a prefix) and where it does not (an argument)
+    "A+=1", "B+=x",
     # outside the language (the lexer must refuse them; listed so a refusal is exercised)
     "$(git push o m)", "`git push b t`", "{", "*", "\\", "#", "$'x'", '$"y"', "${X:-z}", "<<<", "~", "(", ")",
 )
@@ -562,6 +639,9 @@ ORACLE_INPUTS = (
     ("`<&N` with a digit word, an attached digit, and neither", "git push o 0 <&0 m 0<&0 n <&0 k"),
     ("parameters", 'git push $X "$X" ${X} a$X "a $X b" $? $1'),
     ("an assignment prefix", "A=1 git push o m"),
+    # PR #542 round 5, C-F5: `NAME+=value` is an assignment prefix to bash, and the check's own oracle said UNSAFE
+    ("an append-assignment prefix (r5 C-F5)", "A+=1 git push o m"),
+    ("two append-assignment prefixes, then a plain one", "A+=1 B+=x C=2 git push o m"),
     ("reserved words", "if git push o m; then git push p q; fi"),
 )
 # Each control breaks the lexer for one construct; the check must find an unsafe string for every one of them.
@@ -701,8 +781,13 @@ def _self_test_body() -> int:
             failures += 1
             print(f"[FAIL] {name}: got {got!r} want {want!r}")
 
+    # PR #542 round 5: every command string the suite decides, with the branch it was decided on, is RECORDED here;
+    # the equivalence case at the end runs master's hook over all of them.
+    seen: list[tuple[str, str]] = []
+
     def d(cmd: str, cur: str = "feat/x", default: str = "master", has_remote: bool = True) -> str:
         """The decision and its rule: `allow`, or `deny <rule>`."""
+        seen.append((cmd, "master" if cur == "master" else "feat/x"))
         v, rule, _ = decide(cmd, cur, default, has_remote)
         return v if v == "allow" else f"deny {rule}"
 
@@ -800,6 +885,11 @@ def _self_test_body() -> int:
         ("r4-ok-1 a push alone is allowed", "git push origin feat/x", F, "allow"),
         ("r4-ok-2 a non-moving git command beside a push is allowed", "git status && git push origin feat/x", F,
          "allow"),
+        # round 5 (Claude C-F5): `NAME+=value` is an assignment prefix, so the git command behind it is seen
+        ("r5-F5a", "A+=1 git checkout master && git push origin HEAD", F, "deny branch-change"),
+        ("r5-F5b", "A+=1 git switch master && git push", F, "deny branch-change"),
+        ("r5-F5c a `GIT_DIR+=` prefix changes the repository", "GIT_DIR+=/wt/.git git push", F, "deny branch-change"),
+        ("r5-F5d a push behind `A+=1` is still judged", "A+=1 git push origin master", F, "deny default-branch"),
     ]
     for name, cmd, cur, want in matrix:
         case(f"matrix {name}", d(cmd, cur), want)
@@ -811,6 +901,7 @@ def _self_test_body() -> int:
     case("trigger: a push word spelled with a backslash is seen", d("git pu\\sh origin master"), "deny outside")
     case("⭐ trigger: a push word split by a backslash-newline is seen (joined to NOTHING, as bash joins it)",
          decide("git pu\\\nsh origin master", F, M, True)[0], "deny")
+    seen.append(("git pu\\\nsh origin master", F))
     case("trigger: `--push-option` alone is not the word push", d("git log --push-option"), "allow")
     case("trigger: a branch NAMED push-… is not the word push", d("git checkout push-hook-quoted"), "allow")
     # rule 3, before lexing
@@ -829,6 +920,7 @@ def _self_test_body() -> int:
     for name, cmd, says in [("`<<`", "cat <<E\nx\nE\ngit push origin feat/x", "heredoc"),
                             ("`<>`", "git push origin feat/x <>f", "read-write"),
                             ("`&>>`", "git push origin feat/x &>>f", "bash 3.2")]:
+        seen.append((cmd, F))
         v, rule, why = decide(cmd, F, M, True)
         case(f"outside: {name} is refused and named", (v, rule, says in why), ("deny", "outside", True))
     for name, cmd in [("`<<<`", "cat <<<x; git push origin feat/x"),
@@ -1004,15 +1096,57 @@ def _self_test_body() -> int:
          d("ALLOW_DEFAULT_BRANCH_PUSH=1 git push -o master origin feat/x"), "allow")
 
     # ── the CLI contract the hook reads ──
-    r = subprocess.run([sys.executable, __file__, "decide", "feat/x", "master", "1"],
-                       input="git push origin master", capture_output=True, text=True)
+    # r5: `decide` now runs master's hook as a floor when the reader allows, and that hook resolves the branches from
+    # its CWD. These cases pass the branches as ARGUMENTS, so they run where there is no repository at all.
+    import os
+    nogit = Path(tempfile.mkdtemp())
+    clienv = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    clienv["GIT_CEILING_DIRECTORIES"] = str(nogit.parent)
+
+    def cli(inp: str, *args: str, script: str = __file__):
+        return subprocess.run([sys.executable, script, *args], input=inp, capture_output=True, text=True,
+                              cwd=nogit, env=clienv)
+    r = cli("git push origin master", "decide", "feat/x", "master", "1")
     case("decide prints `deny <rule> <reason>`", (r.returncode, r.stdout.split(" ", 2)[:2]), (0, ["deny", "default-branch"]))
-    r = subprocess.run([sys.executable, __file__, "decide", "feat/x", "master", "1"],
-                       input="git push origin feat/x", capture_output=True, text=True)
+    r = cli("git push origin feat/x", "decide", "feat/x", "master", "1")
     case("decide prints exactly `allow`", (r.returncode, r.stdout), (0, "allow\n"))
-    r = subprocess.run([sys.executable, __file__, "decide", "feat/x", "master", "0"],
-                       input="git push origin master", capture_output=True, text=True)
+    r = cli("git push origin master", "decide", "feat/x", "master", "0")
     case("decide reads has_remote", r.stdout, "allow\n")
+    # ── r5: the floor fails CLOSED — a floor file that is missing, or is not master's bytes, refuses ──
+    here = Path(__file__).resolve()
+    for label, body in [("is missing", None), ("is not master's bytes", (here.parent / "push-floor-master.sh")
+                                                .read_bytes() + b"\n")]:
+        stub = Path(tempfile.mkdtemp()) / "scripts"
+        stub.mkdir()
+        (stub / here.name).write_text(here.read_text())
+        if body is not None:
+            (stub / "push-floor-master.sh").write_bytes(body)
+        r = cli("git push origin feat/x", "decide", "feat/x", "master", "1", script=str(stub / here.name))
+        case(f"⭐ floor: a floor file that {label} REFUSES (floor-not-run), never allows",
+             (r.returncode, r.stdout.split(" ", 2)[:2]), (0, ["deny", "floor-not-run"]))
+    case("floor: a floor that does not finish in its budget REFUSES (floor-not-run)",
+         (floor("git push origin feat/x", str(nogit), budget=0.001) or ("none",))[0], "floor-not-run")
+    case("floor: master's hook allows a feature push where there is no repository (the floor is not a blanket deny)",
+         floor("git push origin feat/x", str(nogit)), None)
+    # The floor and `verdict` in a repository whose default branch is master, and where there is none.
+    with tempfile.TemporaryDirectory() as ftd:
+        fw = _world(Path(ftd))
+        _git(fw, "checkout", "-q", "-b", "feat/x")
+        case("floor: master's rule 1 refuses a push to master in a repository whose default branch is master",
+             (floor("git push origin master", str(fw)) or ("none",))[0], "floor")
+        case("floor: ... and allows it where there is no repository (master's own no-remote switch)",
+             floor("git push origin master", str(nogit)), None)
+        case("floor: master's force rule refuses with or without a repository",
+             (floor("git push --force origin feat/x", str(nogit)) or ("none",))[0], "floor")
+        case("verdict: the reader's refusal stands (the floor is not consulted)",
+             verdict("git push origin {master,}", "feat/x", "master", True, cwd=str(fw))[:2], ("deny", "outside"))
+        case("⭐ verdict: a reader ALLOW that master refuses is the floor's refusal (R5-F1)",
+             verdict("git push origin feat/x > master", "feat/x", "master", True, cwd=str(fw), budget=2.5)[:2],
+             ("deny", "floor"))
+        case("verdict: a push of HEAD on the default branch is the reader's rule 1",
+             verdict("git push origin HEAD", "master", "master", True, cwd=str(fw))[:2], ("deny", "default-branch"))
+        case("verdict: no remote and no default branch, where master's hook also finds none, is allowed",
+             verdict("git push origin master", "feat/x", "", False, cwd=str(nogit)), ("allow", "", ""))
     r = subprocess.run([sys.executable, __file__, "bogus"], capture_output=True, text=True)
     case("an unknown mode is a usage error", r.returncode, 2)
     # X-F1 (Codex's input): `-c ` sixty times. The read must finish well inside the deadline, with the right answer.
@@ -1146,7 +1280,19 @@ def _self_test_body() -> int:
              "git push origin feat/x --push-option --no-verify", "deny"),
             ("hook: X-F2 r4 — `git status` beside a feature push is allowed", "git status && git push origin feat/x",
              "allow"),
+            # round 5: each loosening against master, through the delivered hook — refused by master's floor
+            ("⭐ hook: R5-F1 — a redirection target naming master is refused (master's floor)",
+             "git push origin feat/x > master", "deny"),
+            ("hook: R5-F1 — a redirection target `--force` is refused (master's floor)",
+             "git push origin feat/x > --force", "deny"),
+            ("hook: R5-F1 — a redirection target `--no-verify` is refused (master's floor)",
+             "git push origin feat/x > --no-verify", "deny"),
+            ("⭐ hook: R5-F2 — a `-c core.editor` value pushing master is refused (master's floor)",
+             "git -c core.editor='git push origin master ' commit", "deny"),
+            ("hook: R5-F5 — `A+=1` before a checkout, then a push of HEAD, is refused",
+             "A+=1 git checkout master && git push origin HEAD", "deny"),
         ]:
+            seen.append((cmd, F))
             case(name, _hook(work, cmd)[0], want)
         dd, why = _hook(work, 'cd "$(pwd)" && git push origin feat/x')
         case("hook: an OUTSIDE refusal names the construct, says NOT CHECKED and gives the remedy",
@@ -1161,6 +1307,9 @@ def _self_test_body() -> int:
         dd, why = _hook(work, "git checkout master && git push origin HEAD")
         case("hook: a BRANCH-CHANGE refusal names the command and says NOT CHECKED (r4 X-F2)",
              (dd, "`git checkout master`" in why, "NOT CHECKED" in why), ("deny", True, True))
+        dd, why = _hook(work, "git push origin feat/x > master")
+        case("hook: a FLOOR refusal prints master's own message and says it is the floor (r5)",
+             (dd, "pushes to 'master'" in why, "kept as a floor" in why), ("deny", True, True))
         _git(work, "checkout", "-q", "master")
         for name, cmd, want in [
             ("hook: `git log --grep push` is allowed on the default branch", "git log --grep push", "allow"),
@@ -1172,6 +1321,7 @@ def _self_test_body() -> int:
             ("hook: a bare `git push` on the default branch is refused", "git push", "deny"),
             ("hook: `git push origin HEAD` on the default branch is refused", "git push origin HEAD", "deny"),
         ]:
+            seen.append((cmd, M))
             case(name, _hook(work, cmd)[0], want)
         _git(work, "checkout", "-q", "--detach")
         case("hook: a detached HEAD pushing HEAD to a feature branch is allowed",
@@ -1203,6 +1353,95 @@ def _self_test_body() -> int:
             dd, why = _hook(work, "git push origin feat/x", hook=stub / ".claude" / "hooks" / HOOK.name)
             case(f"hook: a detector {label} REFUSES and says so", (dd, "NOT CHECKED" in why, rc in why),
                  ("deny", True, True))
+
+    # ── PR #542 round 5: NO WORSE THAN MASTER — the equivalence case ──
+    # PROPERTY: over every command string this suite decides (recorded in `seen`, on the branch it was decided on)
+    # plus the round 4 and round 5 repros, the branch refuses whenever MASTER'S HOOK refuses. Master's verdict comes
+    # from RUNNING master's hook: the bytes of `push-floor-master.sh`, accepted only if they are git blob
+    # `ddb129b5` — an id WRITTEN HERE, independent of the floor's own `MASTER_FLOOR_BLOB` — in a fixture clone whose
+    # default branch is master. The branch's verdict is `verdict`, the function `main` prints, run in that clone.
+    r4_r5 = [
+        # round 4 (Codex)
+        "git -c remote.2.url=https://github.com/kujinlee/youtube-playlist-summaries-cloud.git push 2&>/dev/null "
+        "HEAD:master", "git checkout master && git push origin HEAD", "git switch master && git push",
+        "git push origin feat/x --push-option master", "git push origin feat/x --push-option --force",
+        "git push origin feat/x --push-option --no-verify",
+        # round 5 (Claude) F1: a redirection target
+        "git push origin feat/x > master", "git push origin feat/x 2> master", "git push origin feat/x >> master",
+        "git push origin feat/x < master", "git push origin feat/x > --force", "git push origin feat/x > -f",
+        "git push origin feat/x > --no-verify", "git push origin feat/x -o x > master",
+        "git push origin feat/x --push-option=x > master",
+        # F2: a value git runs
+        "git -c core.editor='git push origin master ' commit", "git -c core.pager='git push origin HEAD:master;:' log",
+        "GIT_EDITOR='git push origin HEAD:master;:' git commit --allow-empty",
+        "GIT_EXTERNAL_DIFF='git push origin HEAD:master;:' git diff",
+        # F3: argv from stdin
+        "echo push origin HEAD:master | xargs git", "printf 'push origin HEAD:master' | xargs git",
+        "echo push origin master | xargs git", "echo push origin master | parallel git",
+        # F4: a branch mover behind a wrapper or an alias
+        "nice git checkout master && git push origin HEAD", "command git checkout master && git push origin HEAD",
+        "env git switch master && git push", "timeout 9 git switch master && git push",
+        "nohup git switch master && git push", "time git switch master && git push",
+        "git -c alias.co=checkout co master && git push origin HEAD", "git -c alias.sw=switch sw master && git push",
+        "git co master && git push origin HEAD",
+        # F5: an append-assignment
+        "A+=1 git checkout master && git push origin HEAD", "A+=1 git switch master && git push",
+        # F6: the destination reconfigured in the same text
+        "git -c remote.origin.push=HEAD:master push", "git -c remote.origin.push=HEAD:master push origin",
+        "git -c remote.origin.push=refs/heads/feat/x:refs/heads/master push origin feat/x",
+        "git config remote.origin.push HEAD:master && git push",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.push GIT_CONFIG_VALUE_0=HEAD:master git push",
+        "git -c push.default=matching push", "git -c remote.origin.mirror=true push origin",
+        "git config push.default matching && git push origin",
+        "git branch -u origin/master && git -c push.default=upstream push",
+        # F7: matching and glob refspecs
+        "git push origin :", "git push origin 'refs/heads/*:refs/heads/*'", "git push origin 'refs/heads/m*:refs/heads/m*'",
+        # F8: an exported repository
+        "export GIT_DIR=/elsewhere/.git && git push origin HEAD", "export GIT_DIR=/elsewhere/.git; git push",
+        "declare -x GIT_DIR=/elsewhere/.git; git push",
+    ]
+    import hashlib
+    ref = (Path(__file__).resolve().parent / "push-floor-master.sh")
+    ref_bytes = ref.read_bytes() if ref.is_file() else b""
+    blob = hashlib.sha1(b"blob %d\0" % len(ref_bytes) + ref_bytes).hexdigest()
+    case("equivalence: the reference is master's hook, git blob ddb129b5 (an id written in the test)", blob,
+         "ddb129b5d049daf6f0943b79b40883f4a5243f94")
+    todo: dict[str, list[str]] = {"feat/x": [], "master": []}
+    for c, b in seen + [(c, "feat/x") for c in r4_r5]:
+        if c not in todo[b]:
+            todo[b].append(c)
+    violations, refused, compared = [], 0, 0
+    if blob == "ddb129b5d049daf6f0943b79b40883f4a5243f94":
+        # ONE bash runs master's hook once per command (a fresh `bash` each), one JSON payload per line.
+        drv = 'while IFS= read -r p; do printf "%s" "$p" | bash "$1" 2>/dev/null | tr -d "\\n"; printf "\\n"; done'
+        with tempfile.TemporaryDirectory() as td:
+            work = _world(Path(td))
+            refp = Path(td) / "master-hook.sh"
+            refp.write_bytes(ref_bytes)
+            _git(work, "branch", "-q", "feat/x")
+            for b, cmds in todo.items():
+                _git(work, "checkout", "-q", b)
+                feed = "".join(json.dumps({"tool_name": "Bash", "tool_input": {"command": c}}) + "\n" for c in cmds)
+                r = subprocess.run(["bash", "-c", drv, "drv", str(refp)], cwd=work, input=feed, capture_output=True,
+                                   text=True, timeout=600)
+                said = r.stdout.split("\n")[:-1]
+                if len(said) != len(cmds):
+                    violations.append(f"NOT RUN on {b}: {len(said)} verdicts for {len(cmds)} commands")
+                    continue
+                for c, out in zip(cmds, said):
+                    compared += 1
+                    if '"permissionDecision":"deny"' not in out:
+                        continue
+                    refused += 1
+                    if verdict(c, b, "master", True, cwd=str(work))[0] != "deny":
+                        violations.append(f"{b}: {c!r}")
+    else:
+        violations.append("NOT RUN: the reference is not master's hook")
+    case("⭐ equivalence: the branch refuses every command master's hook refuses (r5: no worse than master)",
+         violations, [])
+    print(f"equivalence: {compared} compared, {refused} refused by master", flush=True)
+    case("equivalence: not vacuous — over 250 commands compared, over 50 of them refused by master",
+         (compared > 250, refused > 50), (True, True))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0

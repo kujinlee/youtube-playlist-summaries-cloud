@@ -244,6 +244,9 @@ A gate that cannot read its input refuses; it never passes."
 # gap between two readers. Now the detector reads the command ONCE, over a closed language it reads exactly
 # (anything outside it is refused), and judges all three rules; this hook only resolves the branches and prints
 # the refusal. The rules, the bound and what is out of scope are in that file's docstring, not restated here.
+# ⟳ PR #542 round 5: NO WORSE THAN MASTER, by construction. When the reader allows, the detector runs MASTER'S OWN
+# HOOK (`scripts/push-floor-master.sh`, git blob `ddb129b5`, verified before each run) as a floor: rule `floor` is
+# master's refusal with master's message; `floor-not-run` is the floor failing, and refuses.
 #
 # Resolve the default branch rather than hardcoding "master": prefer the remote HEAD, fall back to whichever of
 # main/master exists. No remote -> a PR is impossible, so rule 1 does not apply (the detector is told).
@@ -336,6 +339,12 @@ as the push (${reason}). The push gate resolved the current branch before any of
 cannot tell where that push would land — NOT CHECKED (backlog #428).
 
 Run the branch change first, then the push as its own plain command: git push -u origin <branch>" ;;
+  # ── PR #542 round 5: master's own hook, kept as a floor — the branch refuses whatever master refused ──
+  floor) deny "${reason}
+
+(This is the previous push hook's rule, kept as a floor: PR #542 round 5, backlog #428.)" ;;
+  floor-not-run) deny "Blocked: the push gate's floor (master's own push hook, \`scripts/push-floor-master.sh\`) did not
+run cleanly: ${reason} — NOT CHECKED. A gate that cannot run refuses; it never passes (PR #542 round 5)." ;;
   # ── the reading itself: a command the push gate cannot read exactly ──
   outside) deny "Blocked: this command mentions push and uses shell syntax outside what the push gate reads exactly
 (${reason}) — NOT CHECKED. Bash could run a push this gate cannot see, so it refuses rather than guess
