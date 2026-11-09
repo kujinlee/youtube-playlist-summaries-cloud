@@ -11,7 +11,7 @@ halves:
   claude: ran
 findings:
   - {id: C-F1, severity: Low, aim: deliverable, fix_induced: false, component: hook-adapter, disposition: fixed}
-  - {id: C-F2, severity: Low, aim: deliverable, fix_induced: false, component: detector-judge, disposition: filed}
+  - {id: C-F2, severity: Low, aim: deliverable, fix_induced: false, component: detector-judge, disposition: fixed}
 ```
 
 The Claude adversarial fallback (`docs/reviews/claude/push-hook-quoted-r6-claude.md`) reviewed `ffcdb4b1`: the
@@ -29,7 +29,7 @@ loosening, and the reviewer correctly answered flagged id `2d51171ccc52` as `fin
 the hook refuses any payload that is not exactly one JSON document. That makes the adapter strictly at least as strict
 as master on its input path, with a case and a mutation, and a scoped round 7 re-answers the id.
 
-**C-F2 (Low): filed.** The equivalence case exercises the floor through only three kinds of command. A floor bypass
+**C-F2 (Low): fixed in the fold (it cost 0.017 s), not filed.** The equivalence case exercises the floor through only three kinds of command. A floor bypass
 limited to another kind would leave it green. The guarantee rests on `verdict`'s four lines, which two mutations
 pin. The suggested follow-up is a test where the floor always refuses, checked against every command `decide`
 allows. It goes to backlog #428's status as a follow-up.
