@@ -19381,3 +19381,9 @@ cancelled. Backlog #583: when a master merge's conflict is resolved by hand, nob
 It proposes a scoped review of only those lines. Backlog #231 (shard headroom) records that PR #542's shard 6 hit its
 time budget and passed on a re-run. Also closed sweep-red issue #499: master's full sweep has been green on six
 pushes in a row.
+
+## 2026-11-09
+Cleaned up five backlog rows that still read as open after their work had merged. Backlog #401 (the one guard that
+was 68% of the mutation sweep), #534 (one full sweep per batch), #501 (the usage guard reads the meter log's tail)
+and #496 (a settled NEEDS-OWNER marker) are now ticked, each with the PR and commit that shipped it. Backlog #361 stays
+open, but its status no longer says "in review": PR #425 merged, and its remaining audit is backlog #391.
