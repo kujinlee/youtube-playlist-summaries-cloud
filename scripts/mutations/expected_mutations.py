@@ -2129,5 +2129,9 @@ EXPECTED_MUTATIONS = {
     # post-move check, prunable return, zone-less mergedAt, warn boundary, GIT_DIR drop, one-shot stop,
     # hook cap (F5, 7: main's duplicate cap was removed, not tested); placeholder, absolute undo (F1/F10);
     # repair advice (F4); refusal kept + refusal recorded (F6); by-peer (F7). ARITHMETIC: 27 - 1 + 13 = 39.
-    "scripts/prune-merged-worktrees.py": 39,
+    # r3 fold (the cap): 4 RE-ANCHORED (post-move check, refusal kept, refusal recorded, by-peer: their code
+    # changed), 13 ADDED: F1 old-path absence, F1 verdict, F1 rc, F1/F4 hook line, F6 O_EXCL, F4 write catch,
+    # F2 live HEAD x2, F3 registration + its HEAD, F5 expiry, F7 quoting + non-printable withheld.
+    # ARITHMETIC: 39 + 13 = 52.
+    "scripts/prune-merged-worktrees.py": 52,
 }

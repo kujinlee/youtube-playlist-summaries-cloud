@@ -23,9 +23,12 @@ command. An agent that still writes `<old>/x` after the move then fails loudly (
 recreating the directory: inside `.claude/worktrees/` git walks up to the MAIN checkout, so a recreated
 directory would silently fork the work there (measured). The placeholder is not a worktree (git does
 not list it), so the next run never sees it. It also blocks a NEW `git worktree add` at that exact
-path until it is removed.
+path until it is removed. If it cannot be left (something is ALREADY at the old path, e.g. a late
+write between git's rename and the placeholder, or writing it fails), the row is
+ARCHIVED-WITHOUT-PLACEHOLDER: rc 1, printed by the hook with its undo, and what is there is never
+overwritten (`O_EXCL`; r3 F1, F4, F6).
 
-    UNDO ONE (absolute paths, as printed and logged):
+    UNDO ONE (absolute, shell-quoted paths, as printed and logged; run inside the repository; r3 F7):
         rm <main>/.claude/worktrees/<name> && git worktree move <archive>/<name> <main>/.claude/worktrees/<name>
 
 A WORKTREE IS ARCHIVED ONLY WHEN ALL OF THESE HOLD (anything else is KEPT, with its reasons). They no
@@ -39,7 +42,8 @@ longer prevent LOSS (a move loses nothing); they prevent DISRUPTING work that is
      someone is still working on it. Untracked and ignored files do NOT block. A remote branch that is
      GONE is not a reason to keep (r2 F2): rule 2 already established that HEAD is a merged PR's head or
      an ancestor of it, so every commit of HEAD is on GitHub, and under squash merges (the house method)
-     HEAD is never in `origin/master`;
+     HEAD is never in `origin/master`. But then the LIVE `HEAD`, read after `git status`, must still be
+     at or under a merged PR's head (r3 F2): a commit made after the listing is on no remote;
   5. not locked, not (an ancestor of) this process's cwd, and no running process has its cwd inside
      it (ONE `lsof -d cwd -Fn`; if `lsof` fails, NOTHING is archived). ⚠ `lsof` sees only a CWD. Agents
      in this harness have their Bash cwd reset between calls and address worktrees by ABSOLUTE path,
@@ -48,13 +52,15 @@ longer prevent LOSS (a move loses nothing); they prevent DISRUPTING work that is
   6. the archive is on the same filesystem as the worktree (`st_dev`): git cannot move a worktree
      across filesystems (it refuses with "Cross-device link", rc 128, and nothing moves), so this is a
      clear early refusal rather than a FAILED. Otherwise KEPT, and said;
-  7. git has not already REFUSED to move it at this HEAD (r2 F6). A worktree git refuses (a submodule
-     dir) is reported FAILED ONCE and remembered in `.claude/pruned-worktrees/refused.json`
-     (path -> HEAD); after that it is a quiet KEPT until its HEAD changes.
+  7. git has not already REFUSED to move it at this HEAD in the last 24 h (r2 F6, r3 F5). A worktree
+     git refuses (a submodule dir) is reported FAILED ONCE and remembered in
+     `.claude/pruned-worktrees/refused.json` (path -> {head, at}); after that it is a quiet KEPT until
+     its HEAD changes or 24 h pass, so a transient failure is retried, not remembered for ever.
 
 TWO RUNS AT ONCE (two sessions starting together, r2 F7). A move that fails because its source is
 already gone (or is a placeholder), while the archive holds a directory linked to the same git admin
-dir, is reported BY-PEER, "archived by a concurrent run", and does not fail the run.
+dir AND git registers that archive path at the HEAD this run evaluated (r3 F3), is reported BY-PEER,
+"archived by a concurrent run", and does not fail the run. A half-finished peer move is FAILED.
 
 Each move is logged BEFORE it runs, with its undo command (a log that cannot be written keeps the
 worktree), to `.claude/pruned-worktrees/log.tsv` in the MAIN checkout (git-ignored). When the archive
@@ -66,7 +72,7 @@ review them, then `git worktree remove <path>` per entry. This script never runs
     python3 scripts/prune-merged-worktrees.py --hook --repo <root> --deadline 30   # SessionStart
     python3 scripts/prune-merged-worktrees.py --self-test
 
-EXIT CODES: 0 = done · 1 = a move was attempted and FAILED · 2 = CANNOT RUN (gh, git or lsof failed, a
+EXIT CODES: 0 = done · 1 = a move FAILED, or archived WITHOUT a placeholder · 2 = CANNOT RUN (gh, git or lsof failed, a
 malformed or truncated PR list, the deadline). A CANNOT RUN line is printed LAST, after every worktree
 that WAS archived; it says "NOTHING was archived" only when no move had started. `--hook` always exits
 0 and prints at most `HOOK_MAX_LINES` lines; any exception becomes a CANNOT RUN line.
@@ -99,6 +105,7 @@ import importlib.util
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -124,6 +131,8 @@ DU_MIN_S = 5.0
 DEFAULT_DEADLINE_S = 120.0
 HOOK_MAX_LINES = 4
 REFUSED_FILE = "refused.json"
+REFUSED_TTL_S = 24 * 3600
+NO_PLACEHOLDER = "ARCHIVED-WITHOUT-PLACEHOLDER"
 GIT_ENV_DROP = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY")
 
 
@@ -133,7 +142,7 @@ class Row:
     branch: "str | None"
     head: str
     path: str = ""
-    verdict: str = "KEPT"          # KEPT · ARCHIVED · WOULD-ARCHIVE · DEFERRED · FAILED · BY-PEER
+    verdict: str = "KEPT"          # KEPT · ARCHIVED · NO_PLACEHOLDER · WOULD-ARCHIVE · DEFERRED · FAILED · BY-PEER
     reasons: list = field(default_factory=list)
     dest: "str | None" = None
 
@@ -315,8 +324,8 @@ def evaluate(b: Budget, wt: dict, idx: dict, cwd: str, cwds: list, now: datetime
         r.append("its PR merged under 2 h ago (an agent may still be working there)")
     if r:
         return row
-    if (refused or {}).get(path) == wt["head"]:
-        r.append("git refused to move it before, at this HEAD (reported once; KEPT until its HEAD changes)")
+    if refused_now((refused or {}).get(path), wt["head"], now):
+        r.append("git refused to move it before, at this HEAD (reported once; KEPT for 24 h or until its HEAD changes)")
         return row
     rc, out, _err = git(b, path, "status", "--porcelain=v1", "-z", "--untracked-files=no")
     if rc != 0:
@@ -331,8 +340,13 @@ def evaluate(b: Budget, wt: dict, idx: dict, cwd: str, cwds: list, now: datetime
             r.append(f"git rev-list exited {rc2}")
         elif n.strip() != "0":
             r.append(f"{n.strip()} commit(s) not on origin/{shape(br, 'ref name')}")
-    # No `origin/<branch>`: NOT a reason to keep (r2 F2). Rule 2 put HEAD at or under a merged PR's head,
-    # so GitHub has every commit of it; under squash merges HEAD is never in origin/master.
+    else:
+        # No `origin/<branch>`: NOT a reason to keep by itself (r2 F2), but rule 2 is asked AGAIN of the LIVE
+        # `HEAD` (r3 F2): the listed head is from before `git status`, and a commit made since then is on
+        # no remote. At or under a merged PR's head, GitHub has every commit of it.
+        live = [git(b, path, "merge-base", "--is-ancestor", "HEAD", oid)[0] for oid in sorted(e["merged"])]
+        if 0 not in live:
+            r.append("its remote branch is gone and HEAD is not at or under a merged PR's head (a new commit?)")
     return row
 
 
@@ -342,10 +356,18 @@ def log_line(log: Path, *fields: str) -> None:
         f.write("\t".join(fields) + "\n")
 
 
+def qpath(p: str) -> str:
+    """A path as ONE shell word (r3 F7: `shape` withholds a path with a space, which is not a word). A
+    path with a non-printable character (a newline, a tab, an escape) is still withheld: it is not
+    printed raw to a terminal or into the tab-separated log."""
+    return shlex.quote(p) if p.isprintable() else shape(p, "path", 300)
+
+
 def undo_cmd(dest: str, old: str) -> str:
     """ABSOLUTE both ways (r2 F10): run from inside another worktree, a relative target would nest the
-    restored worktree there. The `rm` removes the placeholder FILE left at the old path (r2 F1)."""
-    o, d = shape(old, "path", 300), shape(dest, "path", 300)
+    restored worktree there. The `rm` removes the placeholder FILE left at the old path (r2 F1). Each
+    path is shell-quoted (r3 F7)."""
+    o, d = qpath(old), qpath(dest)
     return f"rm {o} && git worktree move {d} {o}"
 
 
@@ -353,14 +375,28 @@ def leave_placeholder(old: str, dest: str) -> "str | None":
     """A regular FILE at the old worktree path, named as the old directory, naming the archive and the
     undo (r2 F1): a late `<old>/x` write then fails with ENOTDIR instead of recreating the directory
     (which git would resolve to the MAIN checkout). O_EXCL: something already there is left alone.
-    -> None, or why no placeholder was left (reported on the row)."""
+    -> None, or why there is no placeholder: the row is then NO_PLACEHOLDER, rc 1, printed by the hook.
+    r3 F1: something already at the old path (a late write recreated the directory: git there resolves
+    to the MAIN checkout) is NOT overwritten and is reported. r3 F4: a failure while WRITING is caught
+    too: the move has happened, and an exception here would hide it."""
     try:
         fd = os.open(old, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        return ("something is ALREADY at the old path (a late write after the move?): it was left alone; "
+                "git there resolves to the MAIN checkout, so move what it holds into the archive by hand, "
+                "and look at it before running the undo's `rm`")
     except OSError as exc:
         return f"no placeholder left at the old path: {shape(exc, 'error', 120, free=True)}"
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(f"archived to {dest}; undo: {undo_cmd(dest, old)}\n")
+    try:
+        with _fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"archived to {dest}; undo: {undo_cmd(dest, old)}\n")
+    except (OSError, ValueError) as exc:
+        return (f"the placeholder at the old path could not be written ({shape(exc, 'error', 120, free=True)}): "
+                "it may be empty")
     return None
+
+
+_fdopen = os.fdopen   # the self-test swaps this to inject a write failure (r3 F4)
 
 
 def git_link(path: str) -> "str | None":
@@ -387,13 +423,22 @@ def peer_copy(archive: Path, name: str, link: "str | None") -> "str | None":
 
 
 def load_refused(p: Path) -> dict:
-    """path -> HEAD that git refused to move (rule 7). Unreadable or malformed reads as empty: the cost
-    is one more FAILED report, never a move."""
+    """path -> {"head", "at" (epoch s)} git refused to move (rule 7). Unreadable or malformed entries,
+    the r2 format (a bare HEAD) included, read as absent: the cost is one more FAILED report, never a move."""
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(d, dict) else {}
+    if not isinstance(d, dict):
+        return {}
+    return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, dict)
+            and isinstance(v.get("head"), str) and isinstance(v.get("at"), (int, float))}
+
+
+def refused_now(ent: "dict | None", head: str, now: datetime.datetime) -> bool:
+    """PURE. Rule 7: a remembered refusal holds at the same HEAD for REFUSED_TTL_S (r3 F5): a failure
+    that was transient (a full disk, a lock) is tried again a day later, not never."""
+    return bool(ent) and ent["head"] == head and now.timestamp() - ent["at"] < REFUSED_TTL_S
 
 
 def save_refused(p: Path, d: dict) -> None:
@@ -418,6 +463,20 @@ def logged_moves(log: Path) -> dict:
         if len(f) >= 7 and f[4] == "archiving":
             out[f[5]] = f[6]
     return out
+
+
+def registered_at(b: Budget, main: Path, path: str, head: str) -> bool:
+    """r3 F3: git lists `path` as a worktree at `head`. A peer interrupted between its rename and git's
+    admin update has the directory in the archive but git still registers the OLD path: that is not a
+    finished archive. A git call that fails (the deadline included) is False."""
+    try:
+        rc, out, _e = git(b, str(main), "worktree", "list", "--porcelain", "-z")
+    except CannotRun:
+        return False
+    if rc != 0:
+        return False
+    real = os.path.realpath(path)
+    return any(os.path.realpath(t["path"]) == real and t["head"] == head for t in parse_worktrees(out))
 
 
 def both_sides(src: str, dst: str) -> str:
@@ -457,14 +516,19 @@ def archive_one(b: Budget, main: Path, row: Row, archive: Path, log: Path, now: 
         row.reasons = ["interrupted at the deadline during git worktree move: " + both_sides(row.path, str(dest))]
         raise
     peer = None
-    if rc == 0 and os.path.isdir(dest) and not os.path.lexists(row.path):
+    if rc == 0 and os.path.isdir(dest):
+        # r3 F1: NOT `and the old path is gone`: a late write may recreate it after git's rename, and the
+        # move has happened all the same. The placeholder then fails, and the row says so (rc 1).
         row.verdict = "ARCHIVED"
         outcome = "archived"
         why_not = leave_placeholder(row.path, str(dest))
         if why_not:
-            row.reasons = [why_not]
-    elif rc != 0 and not os.path.isdir(row.path) and (peer := peer_copy(archive, row.name, link)):
-        # r2 F7: the source is gone (or is a peer's placeholder) and the archive holds THIS worktree
+            row.verdict, row.reasons = NO_PLACEHOLDER, [why_not]
+            outcome = "archived, NO placeholder"
+    elif (rc != 0 and not os.path.isdir(row.path) and (peer := peer_copy(archive, row.name, link))
+          and registered_at(b, main, peer, row.head)):
+        # r2 F7: the source is gone (or is a peer's placeholder) and the archive holds THIS worktree;
+        # r3 F3: and git registers it there, at this HEAD (a half-finished peer move is FAILED below)
         row.verdict, row.dest, row.reasons = "BY-PEER", peer, ["archived by a concurrent run"]
         outcome = "archived by a concurrent run"
     else:
@@ -473,8 +537,8 @@ def archive_one(b: Budget, main: Path, row: Row, archive: Path, log: Path, now: 
                        + both_sides(row.path, str(dest))]
         outcome = f"failed rc={rc}"
         if rc != 0 and refused is not None and os.path.isdir(row.path) and not os.path.lexists(dest):
-            refused[row.path] = row.head   # rule 7: git refused; reported now, KEPT quietly after
-            row.reasons.append("remembered: reported this once, then KEPT quietly until its HEAD changes")
+            refused[row.path] = {"head": row.head, "at": now.timestamp()}   # rule 7: KEPT quietly for 24 h
+            row.reasons.append("remembered: reported this once, then KEPT quietly for 24 h or until its HEAD changes")
     try:
         log_line(log, stamp, row.name, row.branch or "-", row.head, outcome, row.path, str(dest), "-")
     except OSError:
@@ -546,7 +610,7 @@ def archive_note(b: Budget, archive: Path) -> "str | None":
 # ── OUTPUT ─────────────────────────────────────────────────────────────────────────────────────────
 
 def stop_line(stopped: str, rows: list[Row]) -> str:
-    n = sum(r.verdict == "ARCHIVED" for r in rows)
+    n = sum(r.verdict in ("ARCHIVED", NO_PLACEHOLDER) for r in rows)
     failed = any(r.verdict == "FAILED" for r in rows)
     if n or failed:
         done = f"archived {n} worktree(s) before it stopped (named above); the rest NOT RUN"
@@ -561,11 +625,11 @@ def cli_lines(rows: list[Row], note: "str | None", stopped: "str | None") -> lis
         name, br = shape(r.name, "worktree name"), shape(r.branch, "ref name") if r.branch else "(detached)"
         tail = "; ".join(r.reasons)
         extra = ""
-        if r.dest and r.verdict in ("ARCHIVED", "WOULD-ARCHIVE"):
-            extra = f" -> {shape(r.dest, 'path', 300)} (undo: {undo_cmd(r.dest, r.path)})"
+        if r.dest and r.verdict in ("ARCHIVED", NO_PLACEHOLDER, "WOULD-ARCHIVE"):
+            extra = f" -> {qpath(r.dest)} (undo: {undo_cmd(r.dest, r.path)})"
         out.append(f"{r.verdict:<13} {name} ({br}) {r.head[:12]}" + (f": {tail}" if tail else "") + extra)
     n = {v: sum(r.verdict == v for r in rows)
-         for v in ("ARCHIVED", "WOULD-ARCHIVE", "KEPT", "DEFERRED", "FAILED", "BY-PEER")}
+         for v in ("ARCHIVED", NO_PLACEHOLDER, "WOULD-ARCHIVE", "KEPT", "DEFERRED", "FAILED", "BY-PEER")}
     out.append("prune-merged-worktrees: " + ", ".join(f"{v} {c}" for v, c in n.items() if c or v == "KEPT"))
     if note:
         out.append(note)
@@ -579,18 +643,22 @@ def hook_lines(rows: list[Row], archive: Path, note: "str | None", stopped: "str
     """At most HOOK_MAX_LINES (the ONE cap; `main` does not cut again): what was archived FIRST, then
     failures, then CANNOT RUN or deferrals, then the archive-size note. Silent when there is none of
     these. BY-PEER rows are silent here: the run that moved them reports them."""
-    gone = [r for r in rows if r.verdict == "ARCHIVED"]
+    gone = [r for r in rows if r.verdict in ("ARCHIVED", NO_PLACEHOLDER)]
+    bare = [r for r in rows if r.verdict == NO_PLACEHOLDER]
     failed = [r for r in rows if r.verdict == "FAILED"]
     deferred = sum(r.verdict == "DEFERRED" for r in rows)
     kept = sum(r.verdict == "KEPT" for r in rows)
     lines = []
-    rt = shape(str(root), "path", 300) if root else "<main>/.claude/worktrees"
+    rt = qpath(str(root)) if root else "<main>/.claude/worktrees"
     if gone:
         names = [shape(r.name, "worktree name") for r in gone]
         lines.append(f"=== WORKTREE ARCHIVE (backlog #589): moved {len(gone)} merged worktree(s) to "
-                     f"{shape(str(archive), 'path', 300)}: {', '.join(names[:6])}{' ...' if len(names) > 6 else ''}"
+                     f"{qpath(str(archive))}: {', '.join(names[:6])}{' ...' if len(names) > 6 else ''}"
                      f"; kept {kept}. Undo one: rm {rt}/<name> && git worktree move "
-                     f"{shape(str(archive), 'path', 300)}/<name> {rt}/<name> ===")
+                     f"{qpath(str(archive))}/<name> {rt}/<name> ===")
+    if bare:   # r3 F1/F4: loud, with ITS undo, before the failures
+        lines.append(f"ARCHIVED WITHOUT A PLACEHOLDER {len(bare)}: {shape(bare[0].name, 'worktree name')} — "
+                     f"{'; '.join(bare[0].reasons)}; undo: {undo_cmd(bare[0].dest or '', bare[0].path)}")
     if failed:
         lines.append(f"FAILED to archive {len(failed)}: {shape(failed[0].name, 'worktree name')} — "
                      f"{'; '.join(failed[0].reasons)}")
@@ -627,7 +695,8 @@ def run(argv: list[str], *, now: "datetime.datetime | None" = None, devf=None,
     except CannotRun as exc:
         return CANNOT_RUN_RC, [stop_line(str(exc), [])]
     note = archive_note(b, archive)
-    rc = CANNOT_RUN_RC if stopped else FAILED_RC if any(r.verdict == "FAILED" for r in rows) else OK_RC
+    rc = (CANNOT_RUN_RC if stopped else FAILED_RC if any(r.verdict in ("FAILED", NO_PLACEHOLDER) for r in rows)
+          else OK_RC)
     return rc, hook_lines(rows, archive, note, stopped, root) if a.hook else cli_lines(rows, note, stopped)
 
 
@@ -746,6 +815,7 @@ def _self_test_body() -> int:
         _deadline_world(tmp / "w2", case, now)
         _fault_world(tmp / "w3", case, now)
         _refused_world(tmp / "w4", case, now)
+        _r3_world(tmp / "w5", case, now)
     except Exception as exc:  # noqa: BLE001 - a crash in the world is a named red case, never a silent stop
         case(f"the git worlds ran to the end (it raised {type(exc).__name__}: {exc})", False, True)
     finally:
@@ -1139,17 +1209,190 @@ def _refused_world(tmp: Path, case, now) -> None:
     rc, lines = run(args, now=now)
     state = load_refused(logs / REFUSED_FILE)
     case("git refusing a move (a submodule): FAILED once, rc 1, remembered at this HEAD (r2 F6)",
-         (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]], list(state.values())),
+         (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]], [v["head"] for v in state.values()]),
          (1, ["FAILED"], [head]))
     rc, lines = run(args, now=now)
     rc_h, hl = run(args + ["--hook"], now=now)
     case("... the next run KEEPS it quietly: rc 0, a KEPT reason, and the hook prints nothing",
          (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]],
           any("git refused to move it before" in ln for ln in lines), rc_h, hl), (0, ["KEPT"], True, 0, []))
-    (logs / REFUSED_FILE).write_text(json.dumps({os.path.realpath(p): "0" * 40}))
+    (logs / REFUSED_FILE).write_text(json.dumps({os.path.realpath(p): {"head": "0" * 40, "at": now.timestamp()}}))
     rc, lines = run(args, now=now)
     case("... and once its HEAD differs from the remembered one, it is tried (and reported) again",
          (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]]), (1, ["FAILED"]))
+    for hours, want in ((23, (0, ["KEPT"])), (25, (1, ["FAILED"]))):
+        (logs / REFUSED_FILE).write_text(json.dumps(
+            {os.path.realpath(p): {"head": head, "at": (now - datetime.timedelta(hours=hours)).timestamp()}}))
+        rc, lines = run(args, now=now)
+        case(f"r3 F5: a refusal remembered {hours} h ago at this HEAD is "
+             + ("still KEPT quietly" if want[0] == 0 else "EXPIRED: tried and reported again"),
+             (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]]), want)
+    (logs / REFUSED_FILE).write_text(json.dumps({os.path.realpath(p): head}))
+    rc, lines = run(args, now=now)
+    case("r3 F5: an r2-format entry (a bare HEAD, no time) is not trusted: tried and reported again",
+         (rc, [ln.split()[0] for ln in lines if ln.split()[1:2] == ["sm"]]), (1, ["FAILED"]))
+
+
+class _AfterMove(Budget):
+    """Fault injection (r3 F1/F6): right after git's successful `git worktree move`, before the
+    placeholder, something appears at the old path: `put(src)` makes it."""
+
+    def __init__(self, seconds: float, put):
+        super().__init__(seconds)
+        self.put = put
+
+    def call(self, what, argv, cwd=None, stdin=None):
+        rc, out, err = super().call(what, argv, cwd, stdin)
+        if rc == 0 and "move" in argv and "worktree" in argv:
+            self.put(Path(argv[-2]))
+        return rc, out, err
+
+
+class _CommitBeforeStatus(Budget):
+    """Fault injection (r3 F2): a commit lands in the worktree after the listing, just before its `git
+    status`: the listed HEAD is the merged PR's head, the LIVE one is a new commit on top."""
+
+    def call(self, what, argv, cwd=None, stdin=None):
+        if "status" in argv:
+            wt = Path(argv[2])
+            (wt / "after-listing.txt").write_text("new work\n")
+            _g(wt, "add", ".")
+            _g(wt, "commit", "-q", "-m", "after the listing")
+        return super().call(what, argv, cwd, stdin)
+
+
+class _HalfPeer(Budget):
+    """Fault injection (r3 F3): a concurrent run renamed the directory into the archive and was killed
+    before git's admin update: git still registers the OLD path (prunable). This run's move then fails."""
+
+    def call(self, what, argv, cwd=None, stdin=None):
+        if "move" in argv and "worktree" in argv:
+            os.rename(argv[-2], argv[-1] + "-peer")
+        return super().call(what, argv, cwd, stdin)
+
+
+class _PeerMovedOn(Budget):
+    """Fault injection (r3 F3): a concurrent run archived the worktree, and a commit then landed there:
+    git registers the archive path, at a HEAD this run did not evaluate."""
+
+    def call(self, what, argv, cwd=None, stdin=None):
+        if "move" in argv and "worktree" in argv:
+            src, dst = argv[-2], argv[-1]
+            super().call("peer", ["git", "-C", argv[2], "worktree", "move", src, dst + "-peer"])
+            (Path(dst + "-peer") / "moved-on.txt").write_text("x\n")
+            _g(dst + "-peer", "add", ".")
+            _g(dst + "-peer", "commit", "-q", "-m", "moved on")
+        return super().call(what, argv, cwd, stdin)
+
+
+def _r3_world(tmp: Path, case, now) -> None:
+    """PR #551 review round 3: F1-F4, F6, F7, each in its own repository."""
+    old = now - datetime.timedelta(hours=3)
+
+    def one(sub: str, name: str, *, archive_name: str = "archive"):
+        mrepo, root, wt = _repo(tmp / sub)
+        p, h = wt(name)
+        bins = _bins(tmp / sub, [_merged(f"br-{name}", h, old)], "/nonexistent")
+        archive = tmp / sub / archive_name
+        args = ["--repo", str(mrepo), "--archive-dir", str(archive), "--lsof", bins["lsof-good"],
+                "--gh", bins["gh-good"], "--log-dir", str(tmp / sub / "logs")]
+        return mrepo, root, p, archive, args
+
+    def verdicts(lines, name):
+        return [ln.split()[0] for ln in lines if ln.split()[1:2] == [name]]
+
+    # F1: a late write recreates the directory between git's rename and the placeholder
+    def late_dir(src: Path):
+        src.mkdir()
+        (src / "late.txt").write_text("late\n")
+    mrepo, root, p, archive, args = one("f1", "late")
+    rc, lines = run(args, now=now, budget=_AfterMove(120, late_dir))
+    case("r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, "
+         "rc 1, the late file left alone, the archive in place",
+         (rc, verdicts(lines, "late"), (p / "late.txt").read_text() if (p / "late.txt").is_file() else None,
+          (archive / "late" / "late.txt").is_file()),
+         (1, [NO_PLACEHOLDER], "late\n", True))
+
+    # F1 in the hook: the row is printed, with its undo
+    mrepo, root, p, archive, args = one("f1h", "lateh")
+    rc, hl = run(args + ["--hook"], now=now, budget=_AfterMove(120, late_dir))
+    case("r3 F1: the hook PRINTS an archive without a placeholder, with its reason and its undo",
+         any(ln.startswith("ARCHIVED WITHOUT A PLACEHOLDER 1: lateh") and "ALREADY at the old path" in ln
+             and f"undo: rm {os.path.realpath(p)} && git worktree move" in ln for ln in hl), True)
+
+    # F6: a FILE already at the old path is never overwritten (O_EXCL)
+    def sentinel(src: Path):
+        src.write_bytes(b"SENTINEL-ORIGINAL-BYTES\n")
+    mrepo, root, p, archive, args = one("f6", "sent")
+    rc, lines = run(args, now=now, budget=_AfterMove(120, sentinel))
+    case("r3 F6: a file racing into the old path keeps its bytes, and the collision is reported (rc 1)",
+         (rc, verdicts(lines, "sent"), p.read_bytes() if p.is_file() else None,
+          any("ALREADY at the old path" in ln for ln in lines)),
+         (1, [NO_PLACEHOLDER], b"SENTINEL-ORIGINAL-BYTES\n", True))
+
+    # F4: writing the placeholder fails after the move
+    def no_space(*_a, **_k):
+        raise OSError(28, "No space left on device")
+    mrepo, root, p, archive, args = one("f4", "nospace")
+    globals()["_fdopen"] = no_space
+    try:
+        try:   # an escaping OSError is this case going RED, not the world crashing
+            rc, lines = run(args, now=now)
+        except OSError as exc:
+            rc, lines = f"raised {type(exc).__name__}", []
+        old_out = sys.stdout
+        sys.stdout = buf = io.StringIO()
+        try:
+            mrepo2, root2, p2, archive2, args2 = one("f4h", "nospaceh")
+            rc_h = main(args2 + ["--hook"])
+        finally:
+            sys.stdout = old_out
+    finally:
+        globals()["_fdopen"] = os.fdopen
+    hl = buf.getvalue().splitlines()
+    case("r3 F4: a placeholder WRITE failure after the move: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the undo "
+         "printed, the archive in place",
+         (rc, verdicts(lines, "nospace"), any("could not be written" in ln and "undo: rm " in ln for ln in lines),
+          (archive / "nospace" / "nospace.txt").is_file()),
+         (1, [NO_PLACEHOLDER], True, True))
+    case("r3 F4: ... and the hook names that move (no CANNOT RUN that hides it)",
+         (rc_h, any(ln.startswith("=== WORKTREE ARCHIVE") and "nospaceh" in ln for ln in hl),
+          any(ln.startswith("ARCHIVED WITHOUT A PLACEHOLDER 1: nospaceh") for ln in hl),
+          any("CANNOT RUN" in ln for ln in hl)),
+         (0, True, True, False))
+
+    # F2: remote branch deleted, a new commit on top of the merged head lands after the listing
+    mrepo, root, p, archive, args = one("f2", "ontop")
+    _g(mrepo, "push", "-q", "origin", "--delete", "br-ontop")
+    rc, lines = run(args, now=now, budget=_CommitBeforeStatus(120))
+    case("r3 F2: a GONE remote branch and a new commit on top of the merged head (after the listing): KEPT",
+         (rc, verdicts(lines, "ontop"), any("HEAD is not at or under a merged PR's head" in ln for ln in lines),
+          p.is_dir()),
+         (0, ["KEPT"], True, True))
+
+    # F3: a half-finished peer move (directory renamed, git not updated) is FAILED, never BY-PEER
+    mrepo, root, p, archive, args = one("f3", "half")
+    rc, lines = run(args, now=now, budget=_HalfPeer(120))
+    case("r3 F3: a peer killed between its rename and git's update: FAILED rc 1, never BY-PEER",
+         (rc, verdicts(lines, "half")), (1, ["FAILED"]))
+    mrepo, root, p, archive, args = one("f3b", "movedon")
+    rc, lines = run(args, now=now, budget=_PeerMovedOn(120))
+    case("r3 F3: a peer's archive registered at a DIFFERENT HEAD than the one evaluated: FAILED rc 1, never BY-PEER",
+         (rc, verdicts(lines, "movedon")), (1, ["FAILED"]))
+
+    # F7: the undo with spaces in every path is ONE shell word per path, and it RUNS
+    mrepo, root, p, archive, args = one("f7 sp", "spaced", archive_name="arch ive")
+    rc, lines = run(args, now=now)
+    undo = [ln.split("(undo: ", 1)[1][:-1] for ln in lines if ln.startswith("ARCHIVED ") and "(undo: " in ln]
+    ran = subprocess.run(["sh", "-c", undo[0]], cwd=str(mrepo), capture_output=True, text=True) if undo else None
+    case("r3 F7: with spaces in the paths the printed undo is shell-quoted, and running it restores the worktree",
+         (rc, len(undo), ran.returncode if ran else None, (root / "spaced" / "spaced.txt").is_file(),
+          str(os.path.realpath(root / "spaced")) in [os.path.realpath(t["path"]) for t in
+                                                     parse_worktrees(_g(mrepo, "worktree", "list", "--porcelain", "-z"))]),
+         (0, 1, 0, True, True))
+    case("r3 F7: undo_cmd keeps each path ONE shell word and withholds a non-printable one",
+         (shlex.split(undo_cmd("/a b/x", "/c d/y")), "\n" in undo_cmd("/a\nb", "/c")),
+         (["rm", "/c d/y", "&&", "git", "worktree", "move", "/a b/x", "/c d/y"], False))
 
 
 class _Short(Budget):

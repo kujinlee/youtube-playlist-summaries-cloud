@@ -344,7 +344,7 @@
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
       [
-        "    if rc == 0 and os.path.isdir(dest) and not os.path.lexists(row.path):\n",
+        "    if rc == 0 and os.path.isdir(dest):\n",
         "    if rc == 0:\n"
       ]
     ],
@@ -475,7 +475,7 @@
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
       [
-        "    if (refused or {}).get(path) == wt[\"head\"]:\n",
+        "    if refused_now((refused or {}).get(path), wt[\"head\"], now):\n",
         "    if False:\n"
       ]
     ],
@@ -488,7 +488,7 @@
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
       [
-        "            refused[row.path] = row.head",
+        "            refused[row.path] = {\"head\": row.head, \"at\": now.timestamp()}",
         "            refused.get(row.path)"
       ]
     ],
@@ -501,12 +501,185 @@
     "file": "scripts/prune-merged-worktrees.py",
     "edits": [
       [
-        "    elif rc != 0 and not os.path.isdir(row.path) and (peer := peer_copy(archive, row.name, link)):\n",
-        "    elif False:\n"
+        "    elif (rc != 0 and not os.path.isdir(row.path) and (peer := peer_copy(archive, row.name, link))\n",
+        "    elif (False\n"
       ]
     ],
     "expect": [
       "a move whose source a concurrent run archived is BY-PEER 'archived by a concurrent run', rc 0"
+    ]
+  },
+  {
+    "name": "r3 F1: the old path's absence is required again: a move with a late write at the old path is FAILED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if rc == 0 and os.path.isdir(dest):\n        # r3 F1: NOT",
+        "    if rc == 0 and os.path.isdir(dest) and not os.path.lexists(row.path):\n        # r3 F1: NOT"
+      ]
+    ],
+    "expect": [
+      "r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the late file left alone, the archive in place"
+    ]
+  },
+  {
+    "name": "r3 F1: a missing placeholder no longer changes the verdict: it stays a quiet ARCHIVED",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "            row.verdict, row.reasons = NO_PLACEHOLDER, [why_not]\n",
+        "            row.reasons = [why_not]\n"
+      ]
+    ],
+    "expect": [
+      "r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the late file left alone, the archive in place",
+      "r3 F6: a file racing into the old path keeps its bytes, and the collision is reported (rc 1)"
+    ]
+  },
+  {
+    "name": "r3 F1: an archive without a placeholder does not fail the run",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "FAILED_RC if any(r.verdict in (\"FAILED\", NO_PLACEHOLDER) for r in rows)",
+        "FAILED_RC if any(r.verdict in (\"FAILED\",) for r in rows)"
+      ]
+    ],
+    "expect": [
+      "r3 F1: a directory recreated at the old path before the placeholder: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the late file left alone, the archive in place"
+    ]
+  },
+  {
+    "name": "r3 F1/F4: the hook does not print an archive without a placeholder",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    if bare:   # r3 F1/F4",
+        "    if False:   # r3 F1/F4"
+      ]
+    ],
+    "expect": [
+      "r3 F1: the hook PRINTS an archive without a placeholder, with its reason and its undo",
+      "r3 F4: ... and the hook names that move (no CANNOT RUN that hides it)"
+    ]
+  },
+  {
+    "name": "r3 F6: the placeholder is created without O_EXCL: a file already at the old path is overwritten",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644",
+        "os.O_WRONLY | os.O_CREAT, 0o644"
+      ]
+    ],
+    "expect": [
+      "r3 F6: a file racing into the old path keeps its bytes, and the collision is reported (rc 1)"
+    ]
+  },
+  {
+    "name": "r3 F4: a failure WRITING the placeholder is not caught",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    except (OSError, ValueError) as exc:\n        return (f\"the placeholder at the old path could not be written",
+        "    except ZeroDivisionError as exc:\n        return (f\"the placeholder at the old path could not be written"
+      ]
+    ],
+    "expect": [
+      "r3 F4: a placeholder WRITE failure after the move: ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, the undo printed, the archive in place",
+      "r3 F4: ... and the hook names that move (no CANNOT RUN that hides it)"
+    ]
+  },
+  {
+    "name": "r3 F2: with the remote branch gone, the LISTED head is asked instead of the live HEAD",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "\"--is-ancestor\", \"HEAD\", oid)[0]",
+        "\"--is-ancestor\", wt[\"head\"], oid)[0]"
+      ]
+    ],
+    "expect": [
+      "r3 F2: a GONE remote branch and a new commit on top of the merged head (after the listing): KEPT"
+    ]
+  },
+  {
+    "name": "r3 F2: with the remote branch gone, HEAD is not asked about at all",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "        if 0 not in live:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "r3 F2: a GONE remote branch and a new commit on top of the merged head (after the listing): KEPT"
+    ]
+  },
+  {
+    "name": "r3 F3: BY-PEER without asking git where the worktree is registered",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "          and registered_at(b, main, peer, row.head)):\n",
+        "          ):\n"
+      ]
+    ],
+    "expect": [
+      "r3 F3: a peer killed between its rename and git's update: FAILED rc 1, never BY-PEER"
+    ]
+  },
+  {
+    "name": "r3 F3: BY-PEER accepts a registration at any HEAD",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "t[\"path\"]) == real and t[\"head\"] == head for t",
+        "t[\"path\"]) == real for t"
+      ]
+    ],
+    "expect": [
+      "r3 F3: a peer's archive registered at a DIFFERENT HEAD than the one evaluated: FAILED rc 1, never BY-PEER"
+    ]
+  },
+  {
+    "name": "r3 F5: a remembered refusal never expires",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "and now.timestamp() - ent[\"at\"] < REFUSED_TTL_S",
+        "and True"
+      ]
+    ],
+    "expect": [
+      "r3 F5: a refusal remembered 25 h ago at this HEAD is EXPIRED: tried and reported again"
+    ]
+  },
+  {
+    "name": "r3 F7: the undo's paths are not shell-quoted (a space withholds them)",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "    return shlex.quote(p) if p.isprintable() else shape(p, \"path\", 300)\n",
+        "    return shape(p, \"path\", 300)\n"
+      ]
+    ],
+    "expect": [
+      "r3 F7: with spaces in the paths the printed undo is shell-quoted, and running it restores the worktree",
+      "r3 F7: undo_cmd keeps each path ONE shell word and withholds a non-printable one"
+    ]
+  },
+  {
+    "name": "r3 F7: a non-printable path is quoted raw instead of withheld",
+    "file": "scripts/prune-merged-worktrees.py",
+    "edits": [
+      [
+        "shlex.quote(p) if p.isprintable() else",
+        "shlex.quote(p) if True else"
+      ]
+    ],
+    "expect": [
+      "r3 F7: undo_cmd keeps each path ONE shell word and withholds a non-printable one"
     ]
   }
 ]

@@ -19651,4 +19651,8 @@ name collision, logged with its undo command to `.claude/pruned-worktrees/log.ts
 Redesigned at the PR #551 round-1 fold. Round-2 fold: a placeholder file at the old path and an absolute undo
 (r2 F1, F10); a deleted remote branch no longer keeps a squash-merged worktree (F2); `git worktree repair` advice
 (F4); a refusal remembered in `.claude/pruned-worktrees/refused.json` (F6); a concurrent run's move reported BY-PEER
-(F7). 79 self-test cases, 39 mutations, all killed and attributed.
+(F7). Round-3 fold (the cap): a placeholder that cannot be left is ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, printed by
+the hook with its undo, never overwriting what is there (r3 F1, F4, F6); with the remote branch gone the LIVE HEAD
+must be at or under the merged head (F2); BY-PEER only when git registers the archive path at this HEAD (F3); a
+remembered refusal expires after 24 h (F5); the undo is shell-quoted (F7). 92 self-test cases, 52 mutations, all
+killed and attributed.
