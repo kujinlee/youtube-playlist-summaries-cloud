@@ -19549,3 +19549,22 @@ control). The check lives in the shell, which the mutation harness cannot mutate
 `floor` to always refuse and asserts `verdict` refuses each of the 92 decide-allowed push commands (MEASURED 0.017 s).
 352 cases; mutations 107 → 108 (a floor called only for `<`, `>`, `-o`, `-c`, `=`; equivalence stays green, the new
 case reddens), hand-checked alone in a `stage_tree` copy.
+
+## 2026-11-08
+The eighth review of the push safety check found a way to make it say nothing, and saying nothing means "allow". A
+command with one enormous made-up option (about a megabyte) made the check's refusal message too large to hand to the
+tool that prints it, so the refusal was silently lost and a forced push or a push to master would have gone through.
+The old check refused all four of the reviewer's examples. Now the refusal message is shortened and handed over in a
+way that has no size limit, and if printing it fails for any reason, a fixed refusal is printed instead, so every
+refusal reaches Claude Code. An enormous ordinary push is also refused (the check cannot finish reading it in time),
+which costs nothing in practice.
+<!--tech-->
+Backlog #428, PR #542 round 8 fold (Codex X-F1, BLOCKING, not fold-induced). `.claude/hooks/block-default-branch-push.sh`
+`deny`: the reason goes to `jq -Rsc` on stdin (was `jq -nc --arg reason "$1"`, E2BIG on a ~1.1 MB `option` reason →
+empty stdout → allow), bounded to `REASON_MAX`=4000 characters with a marker; any output that is not the deny object
+is replaced by a fixed literal deny. Audit: every other payload-derived value reaches a process on stdin (`jq -ser`,
+`push-command.py decide`, the floor), `decide`'s argv is git-derived, and every message interpolation goes through the
+bounded `deny`. Hook self-test 65 → 71 (Codex's four payloads built as fixture files and run concurrently, the
+truncation marker, a stub jq that cannot serialize → literal deny); reverting `deny` reddens all six. A 1.1 MB feature
+push is refused NOT CHECKED (`decide` exit 142; the floor already misses its 2.5 s budget at 50 KB). Detector unchanged
+(352 cases).

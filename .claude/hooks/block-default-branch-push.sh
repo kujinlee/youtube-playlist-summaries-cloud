@@ -221,6 +221,40 @@ git push origin master # '"                                                     
   if printf '%s' "$got" | grep -q '"permissionDecision":"deny"' && printf '%s' "$got" | grep -q 'NOT CHECKED'; then
     pass=$((pass+1)); printf '  PASS  %s\n' "⭐ no jq on PATH is refused, NOT CHECKED (C-F7)"
   else fail=$((fail+1)); printf '  FAIL  %s  (got %s)\n' "⭐ no jq on PATH is refused, NOT CHECKED (C-F7)" "${got:-allow}"; fi
+  # ── PR #542 round 8, X-F1: an OVERSIZED reason. Codex's four repro payloads, ~1.1 MB each, built as FILES (an argv
+  # would hit the very limit under test). The detector refuses each (`option`, quoting the unknown option in full);
+  # the old `deny` put that reason in jq's argv, jq never ran, and the hook printed NOTHING — an allow.
+  # `git push origin feat/x --zzz…` then the tail, through the delivered hook. A hook run over 1.1 MB costs ~1.7 s
+  # (bash copies the string several times), so the four run CONCURRENTLY: ~2 s of wall time, not ~7.
+  python3 -c 'import json,sys
+for i,t in enumerate(sys.argv[2:]):
+    c="git push origin feat/x --"+"z"*1100000+" "+t
+    open("%s/big%d.json"%(sys.argv[1],i),"w").write(json.dumps({"tool_name":"Bash","tool_input":{"command":c}}))' \
+    "$fx" "--force" "--no-verify" "master" "HEAD:master" \
+    || { echo "  FAIL  could not build the ~1.1 MB payloads — NOT RUN"; exit 1; }
+  for i in 0 1 2 3; do bash "$self" < "$fx/big$i.json" > "$fx/big$i.out" 2>/dev/null & done; wait
+  i=0
+  for t in "--force" "--no-verify" "master" "HEAD:master"; do
+    got="$(cat "$fx/big$i.out")"; i=$((i+1))
+    if printf '%s' "$got" | grep -q '"permissionDecision":"deny"'; then
+      pass=$((pass+1)); printf '  PASS  %s\n' "⭐ a ~1.1 MB unknown option, then $t, is refused (r8 X-F1)"
+    else fail=$((fail+1)); printf '  FAIL  %s  (wanted deny, got %s)\n' "⭐ a ~1.1 MB unknown option, then $t, is refused (r8 X-F1)" "${got:-allow}"; fi
+  done
+  # The refusal is still READABLE: bounded to REASON_MAX characters with a marker, not the 1.1 MB option.
+  if [ "${#got}" -lt 6000 ] && printf '%s' "$got" | grep -q 'reason truncated by the push gate'; then
+    pass=$((pass+1)); printf '  PASS  %s\n' "the oversized reason is truncated with a marker (r8 X-F1)"
+  else fail=$((fail+1)); printf '  FAIL  %s  (got %s characters)\n' "the oversized reason is truncated with a marker (r8 X-F1)" "${#got}"; fi
+  # ⚠ A ~1.1 MB FEATURE push with NO unknown option is REFUSED, and that is accepted, not wanted: MASTER'S hook (the
+  # floor, run when the reader allows) does not finish a 50 KB push line inside its 2.5 s budget (`floor-not-run`,
+  # measured 2026-11-08), and at 1.1 MB `decide` itself passes its 3 s deadline (exit 142). Either way NOT CHECKED.
+  # Not cased here: it costs the full 3 s deadline. `push-command.py --self-test` cases the deadline and the floor
+  # budget. What IS cased: serialization itself failing — a jq that reads the payload but cannot print — still denies.
+  fakejq="$fx/fakejq"; mkdir -p "$fakejq"
+  printf '#!/bin/sh\ncase "$1" in -Rsc) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v jq)" > "$fakejq/jq" && chmod +x "$fakejq/jq"
+  got="$(printf '{"tool_input":{"command":"git push --force origin feat/x"}}' | PATH="$fakejq:$PATH" bash "$self" 2>/dev/null)"
+  if printf '%s' "$got" | grep -q '"permissionDecision":"deny"' && printf '%s' "$got" | grep -q 'could not print its reason'; then
+    pass=$((pass+1)); printf '  PASS  %s\n' "⭐ a jq that cannot serialize the reason still yields the literal deny (r8 X-F1)"
+  else fail=$((fail+1)); printf '  FAIL  %s  (got %s)\n' "⭐ a jq that cannot serialize the reason still yields the literal deny (r8 X-F1)" "${got:-allow}"; fi
 
   printf '\nself-test: %s/%s passed\n' "$pass" "$((pass+fail))"
   [ "$fail" -eq 0 ] && exit 0 || exit 1
@@ -237,14 +271,28 @@ command -v jq >/dev/null 2>&1 || {
 
 allow() { exit 0; }   # silence = allow
 
+# ⛔ EVERY EXIT FROM deny EMITS A DENY (PR #542 round 8, X-F1). It was `jq -nc --arg reason "$1"`: a reason that
+# quotes a ~1.1 MB unknown option put the reason in jq's ARGUMENT LIST, past the OS limit, so jq never ran, deny
+# exited 0 with empty stdout, and empty stdout is ALLOW (Codex's repro: master refused all four payloads). So:
+#   1. the reason never goes in an argv — it reaches jq on STDIN (`-R` raw, `-s` one string), and it is bounded
+#      first, to REASON_MAX characters with a marker, so the message stays readable as well as deliverable;
+#   2. whatever jq does — fails, is killed, prints nothing or prints something else — if its output is not a deny,
+#      a FIXED LITERAL deny is printed instead, the same shape as the no-jq refusal above. Printing is `printf`, a
+#      builtin: no argv limit applies to it.
+REASON_MAX=4000
 deny() {
-  jq -nc --arg reason "$1" '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: $reason
-    }
-  }'
+  local r="$1" out len
+  len="${#r}"
+  if [ "$len" -gt "$REASON_MAX" ]; then
+    r="${r:0:$REASON_MAX}
+… [reason truncated by the push gate: $len characters, the first $REASON_MAX shown]"
+  fi
+  out="$(printf '%s' "$r" | jq -Rsc '{hookSpecificOutput: {hookEventName: "PreToolUse",
+          permissionDecision: "deny", permissionDecisionReason: .}}' 2>/dev/null)"
+  case "$out" in
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",'*) printf '%s\n' "$out" ;;
+    *) printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: the push gate refused this command but could not print its reason (serializing it failed) — NOT CHECKED. A refusal that cannot be explained is still a refusal (PR #542 round 8). Shorten or split the command, then re-run."}}' ;;
+  esac
   exit 0
 }
 
