@@ -19631,14 +19631,18 @@ open, but its status no longer says "in review": PR #425 merged, and its remaini
 Backlog #231 Status: seven master push-event runs at N=24 (`gh run view --json jobs`), with the slowest shard varying (19, 6, 19, 16, 7, 2, 11). Four budget stops on 11-08/09: PR #542, PR #546 twice, and master run 42634452353 (sweep-red issue #548). Docs only.
 
 ## 2026-11-09
-Old git worktrees are now cleaned up automatically. Each time a session starts, every worktree under
-`.claude/worktrees/` whose pull request has merged is removed, provided nothing in it could be lost: no
-uncommitted change, no unpushed commit, no stray file, and no newer work on a reused branch name. This
-morning 67 of them (11 GB) had piled up and were the likely cause of the Mac freezing. Anything kept is
-listed with its reason by `python3 scripts/prune-merged-worktrees.py --dry-run`, and every removal can
-be undone from `.claude/pruned-worktrees/log.tsv`.
+Old git worktrees are now moved out of the way automatically, and NOTHING is ever deleted. Each time a
+session starts, every worktree under `.claude/worktrees/` whose pull request merged more than 2 hours ago
+is moved to `~/.worktree-archive/youtube-playlist-summaries-cloud/`, where the editor no longer watches
+it. This morning 67 of them (11 GB) had piled up and were the likely cause of the Mac freezing. A
+worktree with an open PR, uncommitted or unpushed work, a lock, or a program still running inside it
+stays put. To bring one back: `git worktree move <archive>/<name> .claude/worktrees/<name>`. When the
+archive holds more than 10, the session start says so once; deleting them is your call, by hand
+(`git worktree remove <path>`). The first version deleted, and its review found four ways it could
+destroy unique work; moving instead removes that whole class.
 <!--tech-->
-Backlog #589. `scripts/prune-merged-worktrees.py` (one `gh pr list` for every PR, fail closed; `git worktree remove`
-without `--force`; branch refs kept; a non-empty `.remember/` copied first), called from
-`.claude/hooks/session-state.sh` with `--deadline` = 55 s minus the seconds the in-flight block used. 51 self-test
-cases, 18 mutations all killed.
+Backlog #589. `scripts/prune-merged-worktrees.py`: one `gh pr list` (fail closed), one `lsof -d cwd -Fn` (fail
+closed), then `git worktree move` without `--force`, same filesystem only (`st_dev`), a `-YYYYMMDDHHMM` suffix on a
+name collision, logged with its undo command to `.claude/pruned-worktrees/log.tsv` before it runs. Called from
+`.claude/hooks/session-state.sh` with `--repo` and `--deadline` = 55 s minus the seconds the in-flight block used.
+Redesigned at the PR #551 round-1 fold; 65 self-test cases, 27 mutations, all killed and attributed.

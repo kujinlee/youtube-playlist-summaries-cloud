@@ -2118,8 +2118,12 @@ EXPECTED_MUTATIONS = {
     # ARITHMETIC: 99 + 8 = 107. Each of the 8 new and the 3 re-anchored hand-checked ONE AT A TIME in a
     # `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case exactly once.
     "scripts/push-command.py": 108,
-    # backlog #589 (2026-11-09): prune-merged-worktrees.py, NEW. One mutation per removal rule that a case can
-    # turn red (open PR, fork, reuse x2, untracked, tracked, ignored, unpushed, gone remote, locked, cwd, gh rc,
-    # .remember copy, log, dry-run, truncation, allowlist delete, regenerable).
-    "scripts/prune-merged-worktrees.py": 18,
+    # backlog #589 (2026-11-09): prune-merged-worktrees.py, NEW; REWRITTEN at the r1 fold (archive, never
+    # delete). The 18 deletion-era entries are replaced, not re-anchored: their allowlist, ignored-content and
+    # .remember rules no longer exist. One mutation per rule a case turns red: open PR, fork, reuse x2, tracked,
+    # unpushed, gone remote, locked, cwd, lsof busy, detached, lsof rc, lsof empty, merged < 2 h, mergedAt
+    # missing, cross-device, collision suffix, gh rc, truncation, dry-run, unwritable log, log before move,
+    # deadline caught in the loop, CANNOT RUN wording after a move, loop stop near the deadline, archive-size
+    # line, half-moved message. ARITHMETIC: 27.
+    "scripts/prune-merged-worktrees.py": 27,
 }
