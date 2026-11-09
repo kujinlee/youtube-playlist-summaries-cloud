@@ -2102,5 +2102,5 @@ EXPECTED_MUTATIONS = {
     # RE-ANCHORED on the new lines with the same mutation, not retired.
     # ARITHMETIC: 99 + 8 = 107. Each of the 8 new and the 3 re-anchored hand-checked ONE AT A TIME in a
     # `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case exactly once.
-    "scripts/push-command.py": 107,
+    "scripts/push-command.py": 108,
 }

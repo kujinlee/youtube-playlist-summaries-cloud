@@ -33,3 +33,12 @@ as master on its input path, with a case and a mutation, and a scoped round 7 re
 limited to another kind would leave it green. The guarantee rests on `verdict`'s four lines, which two mutations
 pin. The suggested follow-up is a test where the floor always refuses, checked against every command `decide`
 allows. It goes to backlog #428's status as a follow-up.
+
+**Fold.** C-F1: the hook reads the payload with `jq -s` and refuses NOT CHECKED unless it is exactly one JSON
+document with a string command (`.claude/hooks/block-default-branch-push.sh`); the reviewer's two repros now refuse
+on the branch (master: deny and allow). Hook self-test 59 → 65, with a one-document multi-line feature push as the
+allowed control. The check is shell, which the mutation harness cannot mutate, so it is pinned by those cases in CI's
+hook self-test step; three hand mutations of the read each reddened them. C-F2's suggested test cost 0.017 s, so it
+was added rather than filed: `floor` stubbed to always refuse, every one of the 92 commands `decide` allows with a
+push word must come back refused (detector 351 → 352 cases), and a mutation that calls the floor only for `<`, `>`,
+`-o`, `-c` or `=` — which leaves the equivalence case green — reddens it (mutations 107 → 108).

@@ -180,6 +180,13 @@ git push origin master # '"                                                     
   probe "⭐ a quoted ';git stash' does not exempt a push to master (X-F3 r2)" \
                               "git -c alias.x=';git stash' push origin master"                            deny
   probe "⭐ a push before a # decoy is judged (X-F1 r2)"              "/usr/bin/git push origin master # git push origin feat/x" deny
+  # PR #542 round 6, C-F1 control: ONE document stays allowed however it is laid out — spread over lines, with a
+  # trailing newline — so the one-document rule cannot pass by refusing every payload.
+  got="$(printf '{\n  "tool_name": "Bash",\n  "tool_input": {\n    "command": "git push origin feat/x"\n  }\n}\n' \
+          | bash "$self" 2>/dev/null)"
+  if [ -z "$got" ]; then pass=$((pass+1)); printf '  PASS  %s\n' "r6 control: ONE multi-line document, a feature push, is allowed"
+  else fail=$((fail+1)); printf '  FAIL  %s  (got %s)\n' "r6 control: ONE multi-line document, a feature push, is allowed" "$got"; fi
+  probe "...while a one-document push to master is still refused" "git push origin master"             deny
   # The default branch itself: HEAD and @ name the current branch.
   fxgit -C "$fx/work" checkout -q master || { echo "  FAIL  could not check out master — NOT RUN"; exit 1; }
   probe "⭐ git push origin HEAD on master is refused (C-F4)"         "git push origin HEAD"               deny
@@ -197,6 +204,17 @@ git push origin master # '"                                                     
   raw "⭐ invalid JSON is refused, NOT CHECKED (X-F4)"                '{'
   raw "a null payload is refused"                                    'null'
   raw "a non-string command is refused"                              '{"tool_input":{"command":42}}'
+  # PR #542 round 6, C-F1: TWO documents. Master's `jq -r` judged both commands' text and refused the first pair
+  # (hookspath); the round 5 read dropped the non-string first command and ALLOWED the feature push after it.
+  raw "⭐ two JSON documents (a non-string hookspath, then a feature push) are refused (r6 C-F1)" \
+'{"tool_input":{"command":["hookspath"]}}
+{"tool_name":"Bash","tool_input":{"command":"git push origin feat/x"}}'
+  raw "two JSON documents (an object command, then a bare git push) are refused" \
+'{"tool_input":{"command":{"a":"origin master"}}}
+{"tool_name":"Bash","tool_input":{"command":"git push"}}'
+  raw "two documents that are BOTH plain feature pushes are refused too (one document, exactly)" \
+'{"tool_name":"Bash","tool_input":{"command":"git push origin feat/x"}}{"tool_name":"Bash","tool_input":{"command":"git push origin feat/x"}}'
+  raw "an empty payload (zero documents) is refused"                 ''
   # jq missing: the hook must refuse with no jq at all — only `cat` on PATH, bash by absolute path.
   nojq="$fx/nojq"; mkdir -p "$nojq" && ln -s "$(command -v cat)" "$nojq/cat"
   got="$(printf '{"tool_input":{"command":"git push origin master"}}' | PATH="$nojq" "$BASH" "$self" 2>/dev/null)"
@@ -232,8 +250,14 @@ deny() {
 
 # ⛔ A payload this cannot read is REFUSED (PR #542 round 1, X-F4): invalid JSON, or a command that is not a
 # string, used to become `""` and an allow. `strings` yields nothing for a non-string, so `-e` exits non-zero.
-cmd="$(printf '%s' "$payload" | jq -er '.tool_input.command | strings' 2>/dev/null)" \
-  || deny "Blocked: the push gate could not read a string command from the hook payload — NOT CHECKED.
+# ⟳ PR #542 round 6 (C-F1): the payload must be EXACTLY ONE JSON document. `jq -r` reads a stream, so on two
+# documents master's hook printed both commands into one string, while `strings` dropped a non-string first one
+# and judged only the second: master refused `{"tool_input":{"command":["hookspath"]}}` + a feature push, and this
+# allowed it. `-s` slurps the stream into an array, and anything but one document yields nothing: refused. Claude
+# Code sends one object per call, so this refuses only input it never sends — stricter than both readers.
+cmd="$(printf '%s' "$payload" | jq -ser 'if length == 1 then .[0].tool_input.command | strings else empty end' \
+        2>/dev/null)" \
+  || deny "Blocked: the push gate could not read a string command from the hook payload (exactly one JSON document) — NOT CHECKED.
 A gate that cannot read its input refuses; it never passes."
 
 

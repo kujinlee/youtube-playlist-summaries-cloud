@@ -1207,5 +1207,16 @@
    ]
   ],
   "expect": "matrix r5-F5c a `GIT_DIR+=` prefix changes the repository"
+ },
+ {
+  "name": "r6: `verdict` sends only a redirection, an option value or an assignment to the floor — a bypass keyed to the three classes the equivalence case reaches, which leaves that case green",
+  "file": "scripts/push-command.py",
+  "edits": [
+   [
+    "    if v[0] == \"deny\" or not any(PUSH_WORD.search(t) for t in views(cmd)):\n",
+    "    if v[0] == \"deny\" or not any(PUSH_WORD.search(t) for t in views(cmd)) or not any(\n            k in cmd for k in (\"<\", \">\", \"-o\", \"-c\", \"=\")):\n"
+   ]
+  ],
+  "expect": "⭐ floor wiring: every command decide allows that holds a push word reaches the floor (r6 C-F2)"
  }
 ]

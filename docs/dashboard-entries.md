@@ -19523,3 +19523,21 @@ MEASURED: 261 compared, 58 refused by master, 0 allowed by the branch. C-F5: `AS
 1,273 → 1,273 on master (master's 26 / 107 refusals are all already refused by the reader). push-command 325 → 351
 cases; hook 59/59; mutations 99 → 107. The 8 new entries and 3 re-anchored ones were each hand-checked alone in a
 `stage_tree` copy (rc 1, case named once). R5-F3, F4, F6, F7, F8 and F9 were filed as evidence on backlog #574.
+
+## 2026-11-08
+The sixth review of the push safety check found one more input the old check refused and the new one let through: a
+hook message holding two pieces of data glued together, where the first is not a command at all. Claude Code never
+sends that, but the safety check now refuses any message that is not exactly one piece of data, so it is at least as
+strict as the old check on its input too. The same review suggested a test that the old check really is consulted for
+every kind of push the new check allows, not only the three kinds the earlier test happened to reach. That test was
+cheap (under a fiftieth of a second), so it was added.
+<!--tech-->
+Backlog #428, PR #542 round 6 fold (Claude C-F1, and C-F2's suggested test). `.claude/hooks/block-default-branch-push.sh`
+reads the payload with `jq -ser 'if length == 1 then .[0].tool_input.command | strings else empty end'`: zero or two+
+JSON documents, or a non-string command, refuse NOT CHECKED. Hook self-test 59 → 65 (the R6-F1 repro, an object
+command + bare push, two feature pushes, an empty payload, and a one-document multi-line feature push allowed as the
+control). The check lives in the shell, which the mutation harness cannot mutate; three hand mutations (round 5's read,
+`.[0]` only, `.[-1]` only) each reddened the new cases (rc 1). `scripts/push-command.py`: a floor-wiring case stubs
+`floor` to always refuse and asserts `verdict` refuses each of the 92 decide-allowed push commands (MEASURED 0.017 s).
+352 cases; mutations 107 → 108 (a floor called only for `<`, `>`, `-o`, `-c`, `=`; equivalence stays green, the new
+case reddens), hand-checked alone in a `stage_tree` copy.

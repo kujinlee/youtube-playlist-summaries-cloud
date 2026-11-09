@@ -101,7 +101,7 @@ feature branch of a repository whose default branch is master; or the bash-agree
 runs that the lexer did not report; or a feature-branch push refused.
 
     python3 scripts/push-command.py decide <current> <default> <has_remote 0|1> < command.txt
-    python3 scripts/push-command.py --self-test  # 351 cases
+    python3 scripts/push-command.py --self-test  # 352 cases
 
 ⚡ Only `re` and `sys` load on the `decide` path (PR #542 round 1, C-F8): the self-test's imports are lazy, and the
 floor's (`hashlib`, `json`, `os`, `subprocess`) load only when `decide` has allowed a command holding a push word.
@@ -1442,6 +1442,32 @@ def _self_test_body() -> int:
     print(f"equivalence: {compared} compared, {refused} refused by master", flush=True)
     case("equivalence: not vacuous — over 250 commands compared, over 50 of them refused by master",
          (compared > 250, refused > 50), (True, True))
+
+    # ── PR #542 round 6 (C-F2): the floor's WIRING, for every command class, not only the ones master refuses ──
+    # The equivalence case reaches the floor through three classes (a redirection target, an option value, a `-c`
+    # value git runs), so a bypass keyed to any OTHER class stays green there. Here the floor is a stub that always
+    # refuses: every command `decide` allows that holds a push word must come back from `verdict` as that refusal.
+    # Which commands hold a push word is read by an INDEPENDENT copy of `views`' reading (raw; quotes and backslashes
+    # deleted, a backslash-newline joined to nothing or to a space), so the case does not call the code it pins.
+    def push_text(c: str) -> bool:
+        return bool(PUSH_WORD.search(c)) or any(
+            PUSH_WORD.search(re.sub(r"[\"'\\]", "", c.replace("\\\n", j))) for j in ("", " "))
+
+    real_floor = globals()["floor"]
+    globals()["floor"] = lambda cmd, cwd=None, budget=2.0: ("floor", "stub")
+    leaks, wired = [], 0
+    try:
+        for b, cmds in todo.items():
+            for c in cmds:
+                if decide(c, b, "master", True)[0] == "allow" and push_text(c):
+                    wired += 1
+                    if verdict(c, b, "master", True) != ("deny", "floor", "stub"):
+                        leaks.append(f"{b}: {c!r}")
+    finally:
+        globals()["floor"] = real_floor
+    print(f"floor wiring: {wired} decide-allowed push commands, each sent to a refusing floor", flush=True)
+    case("⭐ floor wiring: every command decide allows that holds a push word reaches the floor (r6 C-F2)",
+         (leaks, wired > 50), ([], True))
 
     print(f"\n{ran - failures}/{ran} self-test cases passed")
     return 1 if failures else 0
