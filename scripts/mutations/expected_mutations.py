@@ -1568,9 +1568,6 @@ EXPECTED_MUTATIONS = {
     # unmeasured job is NOT MEASURED (R2-F1), an empty jobs list (R2-F3), the lock (R2-F5), the week checked against
     # the merge date (R2-F6), and the constant --since (R2-F7). One expect renamed with its case, none retired.
     "scripts/ci-durations.py": 61,
-    # backlog #589 (2026-11-09): the merged-worktree archiver, pinned at the manifest's count after the round-3
-    # fold (the cap); the declared count was missing, so check-plan-code's "every manifest that ships" case was red.
-    "scripts/prune-merged-worktrees.py": 52,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real
