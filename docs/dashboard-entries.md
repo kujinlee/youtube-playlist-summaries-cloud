@@ -19373,3 +19373,11 @@ dependency closure changed since the answer was given. It reports and never bloc
 option A accepted, at no merge cost. Measured over 71 master merges since 11-01: binding the gate's answers to its
 file plus its 4 directly loaded scripts would have voided them on 37 (≈52%), against 8 (≈11%) for the file alone. The
 explainer page that carries the owner's three questions and their answers is committed with it.
+
+## 2026-11-09
+Filed two backlog rows from the 11-08 night run, and added new evidence to a third. Backlog #582: pushing a fix to a PR cancels
+its in-flight CI run, and with it every mutation-sweep shard already finished. On PR #542, 5 of 12 runs ended
+cancelled. Backlog #583: when a master merge's conflict is resolved by hand, nobody reviews the hand-written lines.
+It proposes a scoped review of only those lines. Backlog #231 (shard headroom) records that PR #542's shard 6 hit its
+time budget and passed on a re-run. Also closed sweep-red issue #499: master's full sweep has been green on six
+pushes in a row.
