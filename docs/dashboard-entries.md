@@ -19655,3 +19655,4 @@ today's rule for spawners. strace overhead UNMEASURED (expected 2-5x, recording 
 a bound on picks either way; shadow mode measures. Saved as `readsets.json` in `actions/cache` keyed by Python +
 harness hash + sha; `sweep-select` resolves once before the matrix. Backlog #586 and backlog #560 Status cells
 note the spike and the spec.
+Round 4 (a scoped check past the review cap, Codex) of the redesign found two High holes caused by the round-3 fold (an external symlink unlinked mid-trace hides a probe; `ioctl` counted as read-only). They are filed as backlog #590, to close before any skip takes effect, and not folded.

@@ -141,6 +141,7 @@ wrapper. How each call counts:
     `O_TMPFILE`; `stat`, `lstat`, `newfstatat`, `statx`, `statfs`; `access`, `faccessat`, `faccessat2`;
     `readlink`, `readlinkat`; `execve`, `execveat`; `chdir`; `getxattr`, `lgetxattr`, `listxattr`, `llistxattr`;
     `inotify_add_watch`;
+  - (Round 4: the allowlist is default-deny; see backlog #590.)
   - descriptor calls, whose `-yy` label supplies a path that is NOT written: `read`, `readv`, `pread64`,
     `preadv`, `preadv2`, `lseek`, `close`, `close_range`, `dup`, `dup2`, `dup3`, `fcntl` (every command,
     locks included: a lock is not content), `flock`, `ioctl`, `mmap` (except a `MAP_SHARED` mapping with
@@ -422,6 +423,13 @@ mutant's verdict, because a mutant runs the same suite on the same fixtures.
    comment above `SEED_MAX` measured a seed-dependent outcome at about 1 in 120 seeds. The comparator replays
    under the same two seeds, so such a miss shows as an `unreproduced difference` (§2): INCONCLUSIVE and listed,
    never a latched miss. UNMEASURED how many targets read this way.
+
+6. **Two open holes from round 4, filed as backlog #590 (r4 Codex F1, F2).** (a) A pre-existing external symlink
+   unlinked during the trace hides a probe made through it, because the parse-time link test cannot resolve it
+   afterwards. (b) `ioctl` is classed read-only, but `FS_IOC_SETFLAGS` and kin modify an inode, so a cross-run
+   write goes unseen. Round 4 is past the cap, so they are FILED, not folded. The fix is a change to how events are
+   classified (a default-deny allowlist measured from our own suites), not to the approach, and **backlog #590 must
+   close before any skip takes effect; shadow mode alone is not enough.**
 
 **Why that is acceptable (owner, Q5, 2026-11-09: accepted; revisit on the first §8.1 event).** Every miss is a
 mutant left unchecked on the PR. No mutant, case or pin is removed, so master's coverage is IDENTICAL, and
