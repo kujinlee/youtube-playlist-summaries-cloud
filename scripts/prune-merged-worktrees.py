@@ -810,16 +810,16 @@ def _self_test_body() -> int:
     old_idx = {"br": {"open": False, "merged": {"d" * 40: now - datetime.timedelta(hours=3)}}}
     new_idx = {"br": {"open": False, "merged": {"d" * 40: now - datetime.timedelta(hours=1)}}}
     case("evaluate: a cwd INSIDE the worktree keeps it",
-         evaluate(None, live, old_idx, str(plain / "sub"), [], now).reasons, ["it is the current working directory"])
+         evaluate(Budget(30.0), live, old_idx, str(plain / "sub"), [], now).reasons, ["it is the current working directory"])
     case("evaluate: a process whose cwd is inside keeps it, naming its pid",
-         evaluate(None, live, old_idx, "/", [("7", os.path.realpath(plain))], now).reasons,
+         evaluate(Budget(30.0), live, old_idx, "/", [("7", os.path.realpath(plain))], now).reasons,
          ["a running process has its cwd inside (pid 7)"])
-    case("evaluate: an OPEN PR keeps it", evaluate(None, live, {"br": {"open": True, "merged": {}}}, "/", [], now).reasons,
+    case("evaluate: an OPEN PR keeps it", evaluate(Budget(30.0), live, {"br": {"open": True, "merged": {}}}, "/", [], now).reasons,
          ["open PR", "no merged PR"])
     case("evaluate: a merge 1 h before `now` keeps it",
-         evaluate(None, live, new_idx, "/", [], now).reasons, ["its PR merged under 2 h ago (an agent may still be working there)"])
+         evaluate(Budget(30.0), live, new_idx, "/", [], now).reasons, ["its PR merged under 2 h ago (an agent may still be working there)"])
     case("evaluate: the same merge 3 h before a later `now`, with a refusal at this HEAD, is KEPT for the refusal",
-         evaluate(None, live, new_idx, "/", [], now + datetime.timedelta(hours=2),
+         evaluate(Budget(30.0), live, new_idx, "/", [], now + datetime.timedelta(hours=2),
                   refused={str(plain): {"head": "d" * 40, "at": now.timestamp()}}).reasons[0].startswith(
                       "git refused to move it before"), True)
     case("evaluate: past every rule, a directory git cannot read is KEPT on git's own rc",
