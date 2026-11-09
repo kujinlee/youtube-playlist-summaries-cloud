@@ -1,0 +1,37 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/held-pins-head-r3-claude.md": "100644 b3f3c7a4f08934c14a97caa3faf19a03441ae7ca"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "9f12aea5275516c53e0d9dff566016cb39e9e6ab",
+  "intrusions": [],
+  "loosening_answers": {
+    "1ae2b3e74a4b": "not a loosening",
+    "3e8b51e50547": "finding",
+    "46da71649200": "finding",
+    "7514eca741d1": "not a loosening",
+    "7987d773f208": "not a loosening",
+    "90f61d5b450f": "not a loosening",
+    "a3675a17d265": "not a loosening",
+    "aeac2f13505f": "not a loosening",
+    "bb9bf96e21f2": "not a loosening",
+    "be450713bce4": "finding",
+    "c47564441466": "finding",
+    "c65bf04c5a84": "not a loosening",
+    "d2d3b8498823": "not a loosening",
+    "e36f8dfa2eb5": "not a loosening",
+    "ed1d0f2f0938": "finding"
+  },
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 13602 chars, names 9f12aea52755",
+  "refused": false,
+  "review": "held-pins-head-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/hph",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

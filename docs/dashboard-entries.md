@@ -19260,6 +19260,113 @@ another tree), and a new case pins the one thing the same-half `== not a looseni
 round that answers THAT id a finding again leaves the earlier verdict named.
 
 ## 2026-11-08
+The merge check compares two copies of the mutation-test settings: the one the pull request shows, and the one its test
+tool actually uses. It read the first from the committed pull request but the second from whatever files happened to be on
+disk, so an old uncommitted copy could hide a lowered setting and let the pull request read as ready. Both now come from the
+committed pull request, and a test reproduces the old mistake step by step.
+<!--tech-->
+Backlog #538 (filed from PR #526 r5 R5-F1). `scripts/check-merge-ready.py`: `held_pins(run)` runs
+`git archive --format=tar HEAD -- scripts` (`HEAD_ARCHIVE`), unpacks it (`filter="data"`) into a temporary directory and
+imports `PINS_SCRIPT` from there under `_isolated_import` (`sys.path` = the interpreter's library directories; every
+non-library module hidden for the import, restored after), instead of `_pins_reader(PINS_READER)` from the working tree. A
+failed archive, an archive that does not unpack, and a harness that will not import are `PinsUnreadable` (CANNOT RUN). New
+cases: the row's three steps in a real repository (clean-tree control + dirty previous harness; R3 with a reverted
+`_redir.py`; an untracked module HEAD lacks), an honest head under a dirty lowering harness (READY, nothing held), a failing
+archive, a junk archive. check-merge-ready 348 -> 354 cases, 156 -> 162 mutations (each hand-checked in a `stage_tree` copy:
+rc 1, `parse_fail_names` equal to its `expect`). Bound: a head harness naming a pins file outside `scripts/` is CANNOT RUN; an
+absolute path is read as it stands.
+
+## 2026-11-08
+Round 1 of the review found two more ways an old or altered copy could stand in for the pull request's own files, and
+both are closed. The settings the pull request SHOWS were still read by whatever copy of the test tool sat on disk, and
+the way the committed files were unpacked could be told to rewrite them. Now one copy, unpacked byte for byte from the
+pull request itself, reads both sides, and the check puts everything it touched back exactly as it was.
+<!--tech-->
+Backlog #538, PR #541, round 1 fold (C-F1, X-F1, X-F2, C-F2, C-F3). `scripts/check-merge-ready.py`: `pin_pair` opens
+`_head_harness(run)`, a getter that on first use materialises HEAD's `scripts/` from raw blobs (`HEAD_LS` =
+`git ls-tree -r -z HEAD -- scripts`, `HEAD_CAT` = `git cat-file --batch`; each blob re-hashed by `_blob_id`, only modes
+100644/100755, each path written once with `open(..., "xb")` under `scripts/`) and imports `PINS_SCRIPT` under
+`_isolated_import`, held until the pair is read. `pins_at(run, rev, harness)` parses BOTH displays with that module's
+`pin_display`; `held_pins(harness)` reads its `EXPECTED_MUTATIONS`. `_pins_reader` and `git archive` are gone.
+`_isolated_import` keeps a fileless module only if it is a builtin or frozen by name, and its restore drops EVERY entry
+the block added before putting the saved ones back. New cases: Claude's dirty `pin_display` repro (clean control +
+dirty, both HELD); Codex's `export-subst` and an `export-ignore` variant (CANNOT RUN); exact `sys.path`/`sys.modules`
+after a successful and a failing read, outside `_dirty_case`'s own snapshot; a preloaded fileless module hidden; ten
+named failure paths of the raw-blob read, and a materialise-once count. C-F3: `_compile_memo` (suite only) memoises
+`SourceFileLoader.source_to_code` by source SHA-256 (module bodies still execute per import): measured 41-61 s without
+it and 22-26 s with it, 3 runs each, same code. check-merge-ready 354 -> 367 cases, 162 -> 176 mutations (the two
+archive entries retargeted to the raw-blob read, one backlog #536 anchor rebound after a re-indent, none retired).
+Bound: a head with no harness has no reader, so its pins are CANNOT RUN.
+
+## 2026-11-08
+Round 2 of the review found three more ways the merge check's own process could be fooled while reading the pull
+request's copy of the test tool: a committed compiled file standing in for the source, a project kept inside a Python
+environment folder, and leftovers from the first read. Rather than patch a fourth hole, the check no longer loads that
+tool into itself at all. It starts a separate, sealed Python run on a clean copy of the pull request's own source files,
+and accepts only a well-formed answer from it; any compiled file in the pull request, a crash, a hang or a garbled
+answer means "cannot run", never "ready".
+<!--tech-->
+Backlog #538, PR #541, round 2 fold (Codex r2 R2-F1/X-F1, R2-F2/X-F2, R2-F3/X-F3). `scripts/check-merge-ready.py`:
+`pin_pair` reads both display texts (`pins_text`), then `_head_read` materialises HEAD's `scripts/` from raw blobs (as r1)
+writing ONLY `*.py`, refusing any `__pycache__/`, `*.pyc` or `*.pyo` (`PinsUnreadable`), and runs
+`sys.executable -I -B -S -c _DRIVER` in that temporary directory (`PYTHONDONTWRITEBYTECODE=1`, own session, killed by
+process group after `CHILD_TIMEOUT` = 60 s). The driver imports the harness, calls `pin_display` on each text and reads
+`EXPECTED_MUTATIONS`, type-checks each answer exactly before serialising, and prints one JSON document;
+`_child_answer_ok` requires exactly the schema and the sides asked, `_json_strict` refuses duplicate keys and non-finite
+numbers, and a non-zero exit is CANNOT RUN. Deleted: `_isolated_import`, `_lib_roots`, `_in_lib`, `_head_harness`,
+`held_pins`, `pins_at`, `_compile_memo` (and `import sysconfig`). New cases: Codex's committed unchecked-hash `.pyc` in a
+real repository (clean, and with the cache deleted from the working tree); any bytecode beside an honest source (a
+cache, a sourceless `.pyc`, a `.pyo`), with the fake HEAD no longer filtering `__pycache__`; Codex's prefix repro (the
+repository as `sys.prefix`, the working tree's `_redir` preloaded); `sys.path`/`sys.modules` unchanged across the suite's
+first `pin_pair` and a successful and a failing read; the child's control, a non-zero exit after answering, three schema
+violations, non-JSON output and a timeout. Every `_dirty_case` read now runs with `PYTHONPATH` naming the working tree's
+`scripts/`. check-merge-ready 384 -> 392 cases; mutations 184 -> 181 (8 retired with their code, 5 new, 5 re-bound; each
+listed at the pin in `scripts/mutations/expected_mutations.py`).
+
+## 2026-11-08
+The third review round found that a file in the pull request named like one of Python's own built-in modules (for
+example `importlib`) could quietly take that module's place in the sealed run that reads the test tool's pins, and
+fake its answer. A design review settled the fix: the merge check now refuses, as "cannot run", any such file in the
+pull request's `scripts/` folder. It also stops waiting, with a clear reason, for a stray process that escapes the
+kill after a timeout. The same review measured that the merge check's OWN process has always run such a file if one is
+committed, on master too; that is filed separately as backlog #578.
+<!--tech-->
+Backlog #538, PR #541, round 3 fold after the Phase 6 review `docs/reviews/architecture-review-2026-11-08-held-pins-child.md`
+(design (c)). `scripts/check-merge-ready.py`: `_materialise` refuses any `*.py` whose top-level name
+(`scripts/<name>.py`, or `scripts/<name>/` for a package) is in `sys.stdlib_module_names` (`PinsUnreadable`); `_DRIVER`
+is unchanged. `_head_read`'s timeout path: `killpg`, then `communicate(timeout=CHILD_GRACE)` (new global, 2 s); on a
+second timeout the pipes are closed, the child is waited for `CHILD_GRACE`, and the reason says a process left its
+session and outlived the kill. `_json_strict` drops `parse_constant` (the NaN refusal was masked by
+`_child_answer_ok`). Bound (c) reworded (HEAD's harness and every HEAD module its imports reach are trusted; the
+gate process itself is not covered, backlog #578), bound (d) gains the `setsid` sentence. New cases: a lowered-display
+control; R3's `scripts/importlib/` forge (package) and `scripts/msvcrt.py` (module), CANNOT RUN; 95 names, each alone,
+plus two packages, refused by `_materialise` with a fixed 17-name core; `Json.py` and `tools/json.py` not refused and
+not run; an in-session grandchild killed by the group kill; a `setsid` grandchild bounded (under 10 s); a duplicated
+`"held"` key. check-merge-ready 392 -> 400 cases; mutations 181 -> 187 (M1, M1b, M1c, M2, M3, M4; none retired or
+re-bound), each hand-checked alone in a `stage_tree` copy (rc 1, `parse_fail_names` naming its expect). Measured:
+0 stdlib-named top-level `scripts/` names on master `b15e4f96` and on HEAD.
+
+## 2026-11-08
+The automatic check that tries small deliberate breakages of the merge checker found three breakages its tests no
+longer noticed, all because this pull request moved the pin reading into a separate sealed process. One test was
+being answered by a different, later failure that happened to print similar words; it now demands the exact message
+of the step it is about. The other two broke a type check that the sealed process now always makes first, so
+breaking the old copy changed nothing; they now break the sealed process's own check instead. Coverage is unchanged:
+the same number of breakages, all of them caught.
+<!--tech-->
+Backlog #538, PR #541, CI diff-scoped sweep survivors. (1) "a failing `git ls-tree` is read as an answer" (backlog #359
+r3): defence load-bearing (a base whose `pins_home` ignores a failing `ls-tree` reads as no pins, so a fall is not
+held), case masked by `HEAD_LS`, whose "`git ls-tree` of scripts/ exited 128" held both old substrings. Case
+"⛔ a failing `git merge-base`, `ls-tree` or `show` is CANNOT RUN, never {}" now requires each command's exact text
+(`git merge-base m HEAD` / `git ls-tree` / `git show` ... `exited 128`). (2) and (3), both r7 Claude F2: `_exact_pins`'s
+`type(...)` checks became equivalent mutants. `_child_pins` calls it only on an answer `_child_answer_ok` has
+already passed (`type(a["pins"]) is dict and all(type(k) is str and type(v) is int ...)`, over JSON that only decodes
+to exact builtins), and the `_DRIVER` refuses a bool before that. Both entries were re-anchored, manifest only, to the
+`_DRIVER`'s `_type(got) is not _dict` / `_type(k) is not _str or _type(v) is not _int` with the same expect. The
+key/value entry was a third survivor, found by hand-check and not in the CI report. Mutations stay at 187 (0 added,
+0 retired, 2 re-anchored); `check-merge-ready.py` changed only in that one self-test case.
+
+## 2026-11-08
 The safety check that stops a push to master no longer misses a push written with quotes around the word "push", or one
 that runs git by its full path. It now reads the command with quotes removed, and when the words "git" and "push" both
 appear in a form it does not recognise, it checks the command anyway. The cost, stated plainly: an ordinary command that
