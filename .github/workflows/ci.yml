@@ -1220,8 +1220,9 @@ jobs:
         # model predicts. The floor barely moves with N, because a shard still touches 53-64 of the 91 targets at N=38
         # (65-70 at N=24): floor mean 491s at 24, 470s at 38.
         # COST OF MORE SHARDS, MEASURED by `shard_slice` over the 4,505 entries: control-suite runs rise ~1.37x (1,620
-        # target-shard pairs at N=24, 2,218 at N=38), so every flaky suite has ~37% more chances to turn a green sweep
-        # into CANNOT RUN at the after-control check — the failure this change fixes, by a different route.
+        # target-shard pairs at N=24, 2,218 at N=38): in aggregate ~37% more control runs that a flaky suite could turn
+        # into CANNOT RUN at the after-control check (per target the rise ranges from 0 to ~58%) — the failure this
+        # change fixes, by a different route.
         # ⛔ WHY 38 — THE JOB COUNT, COUNTED: run 42634452353 holds 26 jobs (24 shards + `verify` +
         # `mutation-sweep-complete`, which waits for the matrix), and its push also starts `schema-gates.yml`'s
         # `schema-gates` (`prod-drift` is skipped on push). So 38 shards + `verify` + `schema-gates` = 40 jobs compete

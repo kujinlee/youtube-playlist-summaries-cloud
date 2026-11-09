@@ -19637,7 +19637,7 @@ re-partitioned by `shard_slice`) gives N=24's mean as 1,446.6 s against 1,450.75
 the check is in-sample. PREDICTED at N=38: mean ~1,075 s (work 606 s + a 470 s floor that does not divide by N), slowest
 ~1,312 s; 38 shards + `verify` + `schema-gates` = 40 jobs compete for 20 shared slots that free one at a time, so 38
 against 40 is a soft choice. Control-suite runs rise ~1.37x, so flake exposure rises too. Lifespan, PREDICTED: ~5-6 days
-at ~200 entries a day, filed as backlog #588; MEASURED, PR #550's run 42660040212: 38/38 green, mean 1,048 s, slowest 1,351 s, none over 1,500 s. No script pins N.
+at ~200 entries a day, filed as backlog #588; MEASURED, PR #550's run 42660040212: 38/38 green, mean 1,049 s, slowest 1,351 s, none over 1,500 s. No script pins N.
 
 ## 2026-11-09
 **The CI sweep is running out of time on most master runs, not just on one unlucky shard.** Backlog #231 now records the evidence: on the last seven master runs the slowest shard took 1,262–1,669 s against a 1,800 s limit. Overnight a shard ran out of time four times, with no defect behind any of them; each needed a re-run. Choosing the fix (more shards, more time, or cheaper tests) is still open on that row.
