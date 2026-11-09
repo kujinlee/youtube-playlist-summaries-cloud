@@ -4668,6 +4668,8 @@ def _self_test_body() -> int:
                                       "scripts/check-transcript-references.py",
                                       "scripts/check-usage-pace.py",
                                       "scripts/check-vocabulary-collisions.py",
+                                      # backlog #397: the CI-duration tripwire, with its manifest.
+                                      "scripts/ci-durations.py",
                                       # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
                                       # manifest — and it is NOT a `check-*` guard, so this list is
                                       # the only place that names it. Its R4 debt is dropped from

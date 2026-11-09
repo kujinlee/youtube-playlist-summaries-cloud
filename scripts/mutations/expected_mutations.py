@@ -1553,6 +1553,11 @@ EXPECTED_MUTATIONS = {
     # bases (1), and the worktree created inside plan's clean-up (R3-F3, 1). Not added: the review's "cut = n",
     # which is EQUIVALENT — dropping the shared heading relabels its section to None in all four lists alike.
     "scripts/batch-ci.py": 95,
+    # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. 25: the 25%
+    # threshold in three directions, both sample minimums, the median, the zero baseline, the slowest-shard group
+    # row and its derivation, the skipped-job filter, the idempotent append, the run picker, the week step, the
+    # fetch's skip / budget / incomplete-run branches, the two CANNOT RUN exits, and the report and CLI wiring.
+    "scripts/ci-durations.py": 25,
     # backlog #361 (2026-10-28): the compaction snapshot/audit/print, pinned in the commit that creates it.
     # ⟳ 18 -> 21 (the automated review of a13f0b8f, MEDIUM): the prefix-only answer fallback RETIRES with its subject
     # (the behaviour is now forbidden), and four are added — the fallback restored, pasted content shown, the real

@@ -19381,3 +19381,24 @@ cancelled. Backlog #583: when a master merge's conflict is resolved by hand, nob
 It proposes a scoped review of only those lines. Backlog #231 (shard headroom) records that PR #542's shard 6 hit its
 time budget and passed on a re-run. Also closed sweep-red issue #499: master's full sweep has been green on six
 pushes in a row.
+
+## 2026-11-09
+A new script, `scripts/ci-durations.py`, now measures how long each CI job takes on every merged PR. It warns when a
+job's typical (median) time in one week is 25% or more above the week before. Its first real run, over the 142 PRs
+merged since 2026-10-26, found a rise nobody had reported: the slowest mutation-sweep shard went from about 12
+minutes to about 20 minutes (+61%) between the week of 10-26 and the week of 11-02. Nothing runs the script
+automatically yet. Backlog #584 proposes a weekly scheduled CI job for that. The same run also showed noise that
+would make the warning easy to ignore (25 of its 26 warnings), filed as backlog #585.
+<!--tech-->
+Backlog #397 slice 1, branch `ci-duration-tripwire`. RECORD: read-only `gh` reads each merged PR's `CI` run on its
+final head and appends one JSON line per job (`started_at` -> `completed_at`, execution seconds; skipped and cancelled
+jobs are not recorded), plus a derived `<group> [slowest shard]` row per matrix group, to
+`<main checkout>/.claude/ci-durations.jsonl` (git-ignored, resolved through `--git-common-dir`; it is not tracked
+because every row can be re-derived and a tracked append-only log conflicts across parallel branches). The append is
+keyed on (pr, sha, job) and skips PRs already logged. A 200 s budget per call ends the call as PARTIAL (rc 2); a
+re-run resumes. WARN: merge-date ISO weeks, the evaluated week's median against the previous calendar week's, RISE
+when `4*cur >= 5*prev`, NOT MEASURED below 3 samples in either week or on a 0 s baseline, rc 2 when nothing is
+measured. 55 self-test cases (the FAILS IF, 24%/25% adjacent pairs at two baselines); 25 mutations, 25/25 killed and
+attributed by `check-plan-code.py --mutate . --only scripts/ci-durations.py`. MEASURED real run: W45 vs W44:
+`[slowest shard]` 739.5 s -> 1188 s (n=68 -> 71, +61%), `verify` 355.5 s -> 381 s (+7%), `mutation-sweep-complete`
+4 s -> 6 s (+50%). The script declares `NO-CALLER:` until backlog #584.

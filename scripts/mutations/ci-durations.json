@@ -1,0 +1,327 @@
+[
+  {
+    "name": "the rise test goes strict (>), so a rise of exactly 25% no longer warns",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "4 * cur_median >= 5",
+        "4 * cur_median > 5"
+      ]
+    ],
+    "expect": [
+      "a 25% rise (100 -> 125) is a rise"
+    ]
+  },
+  {
+    "name": "the threshold drifts to 50%, so a real 25-33% weekly rise goes unreported — the row's FAILS IF",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        ">= 5 * prev_median",
+        ">= 6 * prev_median"
+      ]
+    ],
+    "expect": [
+      "⭐ FAILS IF: a 25% rise in the median is reported as RISE in that week"
+    ]
+  },
+  {
+    "name": "the threshold drifts down to 0%, so a 24% rise warns",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    return 4 * cur_median",
+        "    return 5 * cur_median"
+      ]
+    ],
+    "expect": [
+      "a 24% rise (100 -> 124) is not a rise"
+    ]
+  },
+  {
+    "name": "the previous week's sample minimum is dropped, so 2 samples read as a measured RISE",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        " or len(p) < min_samples:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "2 samples in the previous week is NOT MEASURED, even over a 9x rise"
+    ]
+  },
+  {
+    "name": "the evaluated week's sample minimum is dropped",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if len(c) < min_samples or ",
+        "        if "
+      ]
+    ],
+    "expect": [
+      "2 samples in the evaluated week is NOT MEASURED"
+    ]
+  },
+  {
+    "name": "the weekly figure becomes the MEAN, so one outlier PR warns",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "             \"cur\": statistics.median(c) if c else None,",
+        "             \"cur\": statistics.mean(c) if c else None,"
+      ]
+    ],
+    "expect": [
+      "one slow outlier does not move the median into a RISE"
+    ]
+  },
+  {
+    "name": "nothing measured at all reads as rc 0 — a NOT MEASURED week passes as 'no rise'",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    if not any(v[\"status\"] == \"OK\" for v in verdicts):\n        return CANNOT_RUN",
+        "    if False:\n        return CANNOT_RUN"
+      ]
+    ],
+    "expect": [
+      "nothing measured at all is rc 2, never rc 0"
+    ]
+  },
+  {
+    "name": "the zero-baseline guard is dropped, so a 0 s median makes any value a RISE",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        elif v[\"prev\"] <= 0:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "a 0 s previous median is NOT MEASURED (no percentage exists)"
+    ]
+  },
+  {
+    "name": "the group row takes the LAST shard, not the slowest — wall-clock is under-recorded",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "            groups[base] = max(groups.get(base, -1), r[\"seconds\"])",
+        "            groups[base] = r[\"seconds\"]"
+      ]
+    ],
+    "expect": [
+      "...at a second input: the slowest shard is not the last listed, and a red job counts"
+    ]
+  },
+  {
+    "name": "matrix groups are never derived, so the comparable sweep row disappears",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if m:\n            base = m.group(\"base\")",
+        "        if False:\n            base = m.group(\"base\")"
+      ]
+    ],
+    "expect": [
+      "a matrix group gains ONE derived row holding its SLOWEST shard"
+    ]
+  },
+  {
+    "name": "skipped jobs are recorded, dragging medians down for a reason that is not speed",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "RECORDED_CONCLUSIONS = (\"success\", \"failure\")",
+        "RECORDED_CONCLUSIONS = (\"success\", \"failure\", \"skipped\")"
+      ]
+    ],
+    "expect": [
+      "a skipped job and a job with no completed_at are not recorded"
+    ]
+  },
+  {
+    "name": "the append stops being idempotent: a re-run duplicates every row",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if row_key(r) not in seen:\n            seen.add(row_key(r))\n            out.append(r)",
+        "        if True:\n            seen.add(row_key(r))\n            out.append(r)"
+      ]
+    ],
+    "expect": [
+      "appending the same rows twice writes them once (re-running never duplicates)"
+    ]
+  },
+  {
+    "name": "the run picker stops filtering by workflow, so the Schema gates run is read as CI",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    mine = [r for r in runs if r.get(\"name\") == WORKFLOW and r.get(\"head_sha\") == sha]",
+        "    mine = [r for r in runs if r.get(\"head_sha\") == sha]"
+      ]
+    ],
+    "expect": [
+      "pick_ci_run takes the newest CI run on exactly that sha, never another workflow"
+    ]
+  },
+  {
+    "name": "the previous week is two weeks back, so the comparison skips a week",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    py, pw, _ = (monday - _dt.timedelta(days=7)).isocalendar()",
+        "    py, pw, _ = (monday - _dt.timedelta(days=14)).isocalendar()"
+      ]
+    ],
+    "expect": [
+      "previous_week steps back one calendar week"
+    ]
+  },
+  {
+    "name": "a PR already in the log is fetched again (the skip is dropped)",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if (pr[\"number\"], pr[\"headRefOid\"]) in skip:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...and a PR already in the log is not fetched again"
+    ]
+  },
+  {
+    "name": "the time budget is ignored, so an agent's call runs past the 270 s cap",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if clock() - t0 > budget_s:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an exhausted time budget leaves PRs counted as unread, never silently dropped"
+    ]
+  },
+  {
+    "name": "an in-progress run is recorded, freezing a partial PR as done",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if run.get(\"status\") != \"completed\":",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...and a run not yet complete is counted, not recorded"
+    ]
+  },
+  {
+    "name": "zero merged PRs reads as a quiet success",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    if st[\"prs\"] == 0:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "0 merged PRs parsed is rc 2 (nothing parsed), never a quiet success"
+    ]
+  },
+  {
+    "name": "a PARTIAL record exits 0, so the report runs on an incomplete log unannounced",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    if st[\"unread\"]:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a record cut short by the budget is rc 2 and says PARTIAL"
+    ]
+  },
+  {
+    "name": "--week is ignored and the latest week always evaluated",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    wk = week or latest_week(rows)",
+        "    wk = latest_week(rows)"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and with --week it evaluates THAT week: W40's 24% is no rise, rc 0"
+    ]
+  },
+  {
+    "name": "report_main always exits 0, so a printed WARN never reaches a caller's exit code",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    print(format_report(verdicts, wk, min_samples))\n    return verdict_rc(verdicts)",
+        "    print(format_report(verdicts, wk, min_samples))\n    return NO_RISE"
+      ]
+    ],
+    "expect": [
+      "⭐ report_main over a logged rise exits 1 and WARNs for the LATEST week (W45)"
+    ]
+  },
+  {
+    "name": "the default week is the EARLIEST merge, so the tripwire reads an old week",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    return iso_week(max(r[\"merged_at\"] for r in rows))",
+        "    return iso_week(min(r[\"merged_at\"] for r in rows))"
+      ]
+    ],
+    "expect": [
+      "⭐ report_main over a logged rise exits 1 and WARNs for the LATEST week (W45)"
+    ]
+  },
+  {
+    "name": "a log line missing a field is accepted, so a corrupt log is read as data",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "        if missing:\n            raise CannotRun",
+        "        if False:\n            raise CannotRun"
+      ]
+    ],
+    "expect": [
+      "a malformed log line is CANNOT RUN, not skipped"
+    ]
+  },
+  {
+    "name": "the CLI's --report path drops the rule's exit code",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "    return CANNOT_RUN if CANNOT_RUN in (rc_rec, rc_rep) else rc_rep",
+        "    return CANNOT_RUN if CANNOT_RUN in (rc_rec, rc_rep) else NO_RISE"
+      ]
+    ],
+    "expect": [
+      "⭐ the CLI's --report path reaches the rule: rc 1 and the WARN line"
+    ]
+  },
+  {
+    "name": "the PR query drops --since, so every merged PR ever is fetched and the budget is spent on old weeks",
+    "file": "scripts/ci-durations.py",
+    "edits": [
+      [
+        "\"--search\", f\"merged:>={since}\",",
+        "\"--search\", \"is:merged\","
+      ]
+    ],
+    "expect": [
+      "fetch asks gh only for PRs merged on or after --since"
+    ]
+  }
+]

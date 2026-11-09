@@ -138,6 +138,8 @@ POPULATION: frozenset[str] = frozenset({
     "sweep-red-alert.py",
     # ⟳ 2026-11-06 (backlog #534): the batch full sweep, pinned in the commit that creates it.
     "batch-ci.py",
+    # ⟳ 2026-11-09 (backlog #397): the CI-duration tripwire, pinned in the commit that creates it.
+    "ci-durations.py",
     # ⟳ 2026-10-30 (backlog #410): pinned in the commit that creates it.
     "check-stalled-work.py",
     # ⟳ 2026-11-01 (backlog #440): pinned in the commit that creates it.
