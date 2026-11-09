@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 63a0a17237a60114affb1df9e952bdcfd400ac41",
+    "docs/reviews/claude/reshard-sweep-38-r1-claude.md": "100644 aa45d2bf4f6cc83b7b3a852fffcac7b5e15ca036",
+    "docs/reviews/codex/reshard-sweep-38-r1-codex.md": "100644 1c1231ac5026e9c11c2319bec775d6f627906f1a",
+    "docs/reviews/verdicts/reshard-sweep-38-r1-codex.verdict.json": "100644 cd3968897cb90ed1d76d862fc5ce2bc1ae392f0a"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b619b8f01a996b21e87fe7091ea88d80f8f52a88",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/review-reshard-r1.md",
+  "reason": "claude half filed: 9601 chars, names b619b8f01a99",
+  "refused": false,
+  "review": "reshard-sweep-38-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/reshard-38",
+  "verdict": "CONVERGED",
+  "writer": "claude"
+}
