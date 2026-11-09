@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/prune-merged-worktrees-r1-claude.md": "100644 d212cbdce4f3c34051c636e64cbd1b7e1244175f",
+    "docs/reviews/codex/prune-merged-worktrees-r1-codex.md": "100644 0e92d560a0cff585bd6d202b4cbf44d946bfc104",
+    "docs/reviews/verdicts/prune-merged-worktrees-r1-codex.verdict.json": "100644 42ffbbc8a71e0bf6f1e44db42784b54faa139553"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "1fc9e7bf0b61285f76c0e99dee26f1937416357f",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/f7c144b8-1b6c-4db3-8ef1-932d4e701b12/scratchpad/prompts/review-prune-r1.md",
+  "reason": "claude half filed: 10226 chars, names 1fc9e7bf0b61",
+  "refused": false,
+  "review": "prune-merged-worktrees-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/prune-wt",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
