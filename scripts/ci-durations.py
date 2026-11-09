@@ -398,7 +398,6 @@ def record_main(path: pathlib.Path, since: str, gh=_gh, budget_s: float = DEFAUL
 
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import fixture_git
     with fixture_git.isolated():
         return _self_test_body()
@@ -419,7 +418,6 @@ def _self_test_body() -> int:
     import contextlib
     import io
     import tempfile
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     ok = fail = 0
 
     def check(label, thunk, want):
