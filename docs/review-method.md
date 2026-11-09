@@ -208,6 +208,16 @@ before any finding exists, so it is never decided mid-loop.
 | **5** | round 4 folded a BLOCKER | one half, scoped to that fix — the **last** round | **all FILED**; a BLOCKER is also notified to the human **and HOLDS the PR** until they answer |
 | **6+** | never | — | — |
 
+**⟳ A REDESIGN RESTARTS THE COUNT** (the owner, 2026-11-09 10:41: *"simply because some arbitrary cap prevent review doesn't
+sound correct"*). The cap bounds the rounds spent on **one design**. When a round's answer is REDESIGN (*The stop
+condition*, below), the redesigned artifact is **new material**: its next round is a **design review at round 1**, with
+both halves. It is never a round past the cap, and never skipped because the cap was reached. Record it as a new
+review id (`<subject>-redesign-r1-*`), and give the old design's last coordinator document a `REDESIGNED → <new id>`
+line. **What it does NOT reopen:** findings on the old design stay disposed; the new round reviews the mechanism that
+replaced them. A second redesign of the same subject goes to the human: two redesigns mean the problem is not yet
+understood, and a third cap would only hide that. *Measured case:* the backlog #586 spec reached r3, was redesigned
+at the cap (a dedicated recording job), and the redesign shipped unreviewed until the owner asked why.
+
 A **BLOCKER** is a finding that passes **all three** tests, each checkable from the finding's own
 text — anything else is filed, however it is graded:
 
