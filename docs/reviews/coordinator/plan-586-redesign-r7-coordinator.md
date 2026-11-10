@@ -62,3 +62,36 @@ the minimal BLOCKER fix. The class is FILED as a backlog row: a ledger whose fre
 the bound and its evidence from one clock, and Task 7's implementation review must re-attack it on the built
 code. Round 8 is Codex, on the final tree, BLOCKER-only. If it converges, the plan PR opens; if it does not, the
 owner is asked.
+
+## Fold
+
+Applied 2026-11-10 to the plan (Task 7.2: `github_time`, `clock_errors`, `CLOCK_ALARM`, `CannotRun`, the
+`observed_at` step of the report, the `settled` prose and the cases; Task 7.3: the `final_runs` schema prose and the
+absorb comment), spec §2 / §8.6, and backlog #596. The YAML above is unchanged: all three dispositions held.
+
+- **F1 (fixed; class filed as backlog #596):** `observed_at` is GitHub's clock, the `Date` header of the report's
+  repository call (`github_time`), a call the report already makes, so no call and no predicate deciding not to look
+  is added. It is that call and not the listing's response because it is made BEFORE the listing (keeping
+  `observe_final`'s ordering) and `--include` would put headers in front of `--slurp`'s array; both are GitHub's
+  clock. The report is CANNOT RUN when the runner's clock differs from the header by more than 1 hour
+  (`clock_errors`), an alarm. `SKEW_DAYS = 1` stays. The "from any cause" sentence is replaced: a recorded run is
+  out of the listing's reach, its safety is the server-clock comparison, and the unfreeze clause is kept,
+  fail-closed, reaching only a run a re-decision adds. Pinned by: the reviewer's construction A (2-days-fast runner
+  → CANNOT RUN; with the header, `final_runs` empty, the capped listing leaves #620 unsettled at +2, +10, +37 days,
+  the re-decided miss latches; this case goes RED on the r6 code: `final_runs` records 55 from the runner's clock and
+  `settled` returns True); a divergence of 1 h 0 min 1 s fast and slow → CANNOT RUN, exactly 1 h → none; the
+  adjacent pass (runner 59 min fast, header past +31 days → recorded at the HEADER's time, frozen with 55 absent);
+  the header parser (none, two, unparseable, no blank line → `CannotRun`; lower case, LF, `+0100` → parsed).
+- **F2 (fixed):** the r6 B1 cases are rewritten against a listing that honours the cap: Codex's 2 s reproduction
+  with the run ABSENT (no record → not settled → re-decided miss latches), and the absent-run path pinned (record +
+  capped listing → settled; the same archived → settled; a record at exactly +31 days → not settled). The
+  contradiction case stays only as a labelled direct unit case of the kept clause; the r6 "agreeing listing at
+  attempt 1" adjacent pass now uses the capped (empty) listing.
+- **F3 (fixed):** moot under F1 (every `observed_at` is a header time); one case orders records by header time
+  (`newest_finals` reads the later archived record; the absorb keeps the record against an earlier header time and
+  replaces it with a later one).
+
+Extracted Task 7.2 + 7.3 blocks run under `python3 -I` with the r5, r6 and r7 cases: 110 assertions, all pass. The
+F1 case run against the r6 blocks (02f7e18d) fails: `F1 A: nothing freezes early (final_runs
+empty): got {'55': {'attempts': 1, 'observed_at': '2027-02-01T10:00:01Z'}}`, and with that check softened, `F1 A: +2d,
+55 absent from the capped listing -> NOT settled: got True`.

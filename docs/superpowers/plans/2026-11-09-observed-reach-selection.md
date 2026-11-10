@@ -921,8 +921,10 @@ CHECKOUT, for the ACTIVE `epoch.start`, the GENESIS start (the first epoch's: `p
 reads an earlier report or an artifact ledger** (r4 M1: the r3 text said it never read an archived epoch, while
 `report()` needed one to omit held events); (2) lists PRs merged since the GENESIS start (r4 class search: under r3
 it listed since the ACTIVE start, so a PR still `pending` when an owner's reset merged, merged before the new
-start and decided in no epoch, was never compared again and its miss could not latch), takes `observed_at` (UTC
-now) and THEN lists the CI workflow's runs ONCE into `runs_now` (r5 F1; `runs_now_from_listing` below), omits
+start and decided in no epoch, was never compared again and its miss could not latch), takes `observed_at` from
+GITHUB's clock, the `Date` header of its repository call (`github_time`, r7 F1; never the runner's clock), fails
+CANNOT RUN (nonzero, nothing written or uploaded) when `clock_errors` finds the runner's clock more than an hour from
+it, and THEN lists the CI workflow's runs ONCE into `runs_now` (r5 F1; `runs_now_from_listing` below), omits
 every PR `settled` (code below) finds, lists the remaining PRs' pushes' runs WHATEVER their current status (the class of r2
 redesign Codex C2), and downloads each
 `selection-*`/`verdicts-*` pair it needs, for EVERY attempt of a run (both names carry `<run_attempt>`): an
@@ -997,15 +999,22 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
   records its run: a report OBSERVED that run `completed`, with no attempt in progress, at the attempt count a
   decided row compared, at an `observed_at` later than `run_created_at` + `RERUN_DAYS` + `SKEW_DAYS` (GitHub's
   re-run page: a run can be re-run "up to 30 days after its initial run", already cited for the 120-day window),
-  and the absorb recorded it (Task 7.3). **`SKEW_DAYS` = 1 is the clock margin (r6 B1):** `observed_at` is the
-  report runner's clock and `created_at` is GitHub's, and under r5 a runner two seconds fast recorded run 55 final
-  at GitHub's 09:59:59 on day 30, after which a legal re-run's miss was never compared (Codex's executed
-  reproduction). A runner clock a whole day wrong is a broken runner; the margin costs one more day of
-  comparison. **A later disagreement always wins (r6 B1):** a frozen push is UNFROZEN whenever `runs_now` lists its
-  run at an attempt count other than the recorded one, so a premature observation, from any cause, is overruled by
-  the next listing that contradicts it, in an archived epoch as in the active one. `settled` reads, per run, the
-  NEWEST recorded observation across every epoch, and the absorb keeps the first observation only while a later
-  one AGREES with it: a later observation at another count replaces it (Task 7.3). The row's own `attempts` may be LOWER than the recorded count: a run that gained an
+  and the absorb recorded it (Task 7.3). **`observed_at` is GitHub's clock (r7 F1):** the `Date` header of the
+  report's repository call, made before the runs listing (`github_time`), so it and `run_created_at` come from one
+  clock. Under r5 and r6 it was the report runner's clock: under r5 a runner two seconds fast recorded run 55 final
+  at GitHub's 09:59:59 on day 30 (Codex's executed reproduction), and under r6 a runner two days fast still froze it
+  on GitHub's day 29, after which a legal re-run's miss was never compared (the r7 reviewer's construction A). The
+  report fails CANNOT RUN when the runner's clock and that header differ by more than an hour (`clock_errors`); that
+  is an ALARM for a broken runner, not the defence, because no time the report records is the runner's.
+  **`SKEW_DAYS` = 1 stays (r6 B1):** a record therefore proves GitHub's own clock was more than a day past the
+  re-run deadline. **A recorded run is out of the listing's reach:** the listing returns about 10 days (backlog
+  #595) and a record needs more than 31, so `runs_now` never lists a frozen run, and its safety is the server-clock
+  comparison against GitHub's documented 30-day re-run limit, not a later listing. The clause that UNFREEZES a push
+  whose run `runs_now` lists at an attempt count other than the recorded one is kept (fail-closed), but it reaches
+  only a run that a re-decision of the same PR adds to `runs_now`; it is not the defence, and the r6 claim that it
+  overrules a premature observation "from any cause" was wrong (r7 F1). `settled` reads, per run, the NEWEST
+  recorded observation across every epoch by GitHub's time (r7 F3), and the absorb keeps the first observation only
+  while a later one AGREES with it: a later observation at another count replaces it (Task 7.3). The row's own `attempts` may be LOWER than the recorded count: a run that gained an
   attempt is re-decided, and a non-miss re-decision leaves the old row in place, but that later decision compared
   every attempt (a miss latched or was held exactly by an archive), so nothing it saw is lost. `settled` re-checks the time against the push's own `run_created_at`, with the margin, so a record
   that does not prove the deadline had passed freezes nothing. Under r4 a run older than 30 days was frozen by
@@ -1031,8 +1040,17 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
   report that observes it, **for a run the listing returns: GitHub caps it (r6 M1, below).**
   For a PR the report re-decides, the runs it lists for that PR's pushes are added to `runs_now` with the same
   three fields, so a run older than the listing is observed by its own re-decision. A failed listing RAISES.
+- `github_time(include_stdout) -> tuple[str, dict]` — (r7 F1) `observed_at` from the `Date` header of `gh api
+  --include "repos/{owner}/{repo}"` (the repository call the report already makes, so no call is added), and the
+  body; no single parseable, zoned `Date` header → `CannotRun`. **Why the repository call and not the listing's
+  response** (the coordinator's text named the listing): it is made BEFORE the listing, which keeps
+  `observe_final`'s ordering (the listing's state is at least as recent as `observed_at`), and `--include` would
+  put header text in front of `--slurp`'s one JSON array. Both are GitHub's clock, the property F1 asks for.
+- `clock_errors(runner_now, observed_at) -> list[str]` — (r7 F1) one `CANNOT RUN` line when the runner's clock and
+  GitHub's `Date` differ by more than `CLOCK_ALARM` (1 hour); the report then exits nonzero and writes nothing.
 - `observe_final(run, observed_at) -> bool` — the run is `completed` and `observed_at` is LATER than its
-  `created_at` + `RERUN_DAYS` + `SKEW_DAYS` (r6 B1: exactly +31 days is not final). `observed_at` is taken BEFORE the first listing call, so the state each listing
+  `created_at` + `RERUN_DAYS` + `SKEW_DAYS` (r6 B1: exactly +31 days is not final). `observed_at` is GitHub's
+  `Date` from the repository call made BEFORE the first listing call (r7 F1), so the state each listing
   returns is at least as recent as `observed_at`: a re-run started before the deadline shows as a higher
   `run_attempt` or a status other than `completed`. A missing or null field → False, never a raise.
 - `final_runs(ledger_doc, decided, runs_now, observed_at) -> dict` — the report's `final_runs`: for each DECIDED
@@ -1069,6 +1087,7 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
 ```python
 import json
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 DECIDED = frozenset({"clean", "miss", "inconclusive", "not a sample"})  # built: `from reach_gate import DECIDED`
 
@@ -1104,15 +1123,45 @@ def decide_pr(pushes):
     return "clean" if "clean" in rest else "not a sample"
 
 RERUN_DAYS = 30    # GitHub's re-run page: a run can be re-run "up to 30 days after its initial run"
-SKEW_DAYS = 1      # r6 B1: observed_at is the runner's clock, created_at GitHub's; a day wrong is a broken runner
+SKEW_DAYS = 1      # r6 B1, kept by r7: both times are GitHub's now (r7 F1); the margin outlasts any re-run request
 FINAL_AFTER = timedelta(days=RERUN_DAYS + SKEW_DAYS)
 LISTING_DAYS = RERUN_DAYS + SKEW_DAYS + 15  # 14 failed reports (gate clause 7 closes the switch) still leave one
 RUN_FIELDS = ("run_id", "run_created_at", "attempts")
+CLOCK_ALARM = timedelta(hours=1)  # r7 F1: the runner's clock this far from GitHub's -> CANNOT RUN (an alarm only)
+
+class CannotRun(Exception):
+    """The report cannot run: it exits nonzero, writes nothing and uploads nothing."""
 
 def as_utc(s):  # built: `from reach_gate import as_utc` (Task 7.3's block)
     if len(s) == 10:
         return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+def github_time(include_stdout):
+    """r7 F1: `observed_at` is GITHUB's clock, never the runner's: the `Date` header of the report's repository call,
+    `gh api --include "repos/{owner}/{repo}"`, a call the report already makes (the call bound's 1), made BEFORE the
+    runs listing. `--include` prints the status line, the headers, a blank line, then the body. Returns
+    (observed_at, body). No single parseable, zoned `Date` header -> CannotRun."""
+    head, sep, body = include_stdout.replace("\r\n", "\n").partition("\n\n")
+    dates = [line.split(":", 1)[1].strip() for line in head.split("\n")[1:]
+             if ":" in line and line.split(":", 1)[0].strip().lower() == "date"]
+    if not sep or len(dates) != 1:
+        raise CannotRun(f"repository call: {len(dates)} Date headers, want 1")
+    try:
+        t = parsedate_to_datetime(dates[0])
+    except (TypeError, ValueError) as e:
+        raise CannotRun(f"repository call: unparseable Date header {dates[0]!r}") from e
+    if t is None or t.tzinfo is None:
+        raise CannotRun(f"repository call: Date header {dates[0]!r} has no zone")
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), json.loads(body)
+
+def clock_errors(runner_now, observed_at):
+    """r7 F1: the runner's clock more than CLOCK_ALARM from GitHub's `Date` -> the report is CANNOT RUN. An ALARM for
+    a broken runner, NOT the defence: no time the report records is the runner's."""
+    gap = abs(runner_now - as_utc(observed_at))
+    if gap > CLOCK_ALARM:
+        return [f"CANNOT RUN: runner clock {runner_now:%Y-%m-%dT%H:%M:%SZ} is {gap} from GitHub's {observed_at}"]
+    return []
 
 def runs_now_from_listing(stdout):
     """r5 F1: ONE paginated listing of the CI workflow's runs, never a call per run."""
@@ -1120,8 +1169,9 @@ def runs_now_from_listing(stdout):
             for r in runs_from_listing(stdout)}
 
 def observe_final(run, observed_at):
-    """r5 F1: the run's attempt count is FINAL only when OBSERVED completed after its re-run deadline plus the clock
-    margin (r6 B1). `observed_at` is taken BEFORE the listing call, so the listing's state is at least that recent."""
+    """r5 F1: the run's attempt count is FINAL only when OBSERVED completed after its re-run deadline plus the
+    margin (r6 B1). `observed_at` is GitHub's `Date` from the call BEFORE the listing (r7 F1), so both times are
+    GitHub's and the listing's state is at least that recent."""
     if run is None or any(run.get(k) is None for k in ("attempts", "status", "created_at")):
         return False
     return run["status"] == "completed" and as_utc(observed_at) > as_utc(run["created_at"]) + FINAL_AFTER
@@ -1145,7 +1195,8 @@ def final_runs(ledger_doc, decided, runs_now, observed_at):
     return out
 
 def newest_finals(ledger_doc):
-    """r6 B1: per run, the NEWEST recorded observation in any epoch (r5's `update` let an archive's older one win)."""
+    """r6 B1: per run, the NEWEST recorded observation in any epoch (r5's `update` let an archive's older one win).
+    r7 F3: newest by GitHub's time, since every `observed_at` is a `Date` header (r7 F1)."""
     finals = {}
     for ep in _epochs(ledger_doc):
         for run_id, fin in ep.get("final_runs", {}).items():
@@ -1159,7 +1210,9 @@ def newest_finals(ledger_doc):
 def settled(pr, ledger_doc, runs_now):
     """r4 class search: a PR the report may OMIT, by the identity of what was decided, never by PR number alone.
     r5 F1: a push is frozen by a recorded OBSERVATION (`final_runs`), never by its age.
-    r6 B1: an observation counts only past the clock margin, and a listing at another count unfreezes it."""
+    r6 B1: an observation counts only past the margin. r7 F1: a recorded run is ABSENT from the capped listing, so
+    the record alone freezes it, safe because its `observed_at` is GitHub's time; the unfreeze clause is kept,
+    fail-closed, and reaches only a run a re-decision of this PR adds to `runs_now`."""
     finals = newest_finals(ledger_doc)
     for ep in _epochs(ledger_doc):
         row = ep["rows"].get(pr)
@@ -1172,7 +1225,7 @@ def settled(pr, ledger_doc, runs_now):
             now = runs_now.get(p["run_id"])
             if (fin is not None and as_utc(fin["observed_at"]) > as_utc(p["run_created_at"]) + FINAL_AFTER
                     and (now is None or now["attempts"] == fin["attempts"])):
-                return True                            # r5 F1: frozen, OBSERVED final; r6 B1: unless a listing disagrees
+                return True                            # r5 F1: frozen, OBSERVED final (GitHub's clock, r7 F1)
             return now is not None and now["attempts"] == p["attempts"]
         if row["pushes"] and all(frozen_or_equal(p) for p in row["pushes"]):   # r5 F2: [] is never settled
             return True
@@ -1211,24 +1264,43 @@ loosens: a `miss` latches before either is read.
   one second after the margin, run 55 is `completed` at attempt 2 and the only decided row compared 1 (a count no
   decision compared is never recorded); a `final_runs` record whose `observed_at` is not later than
   `run_created_at` + 31 days → freezes nothing;
-  **(r6 B1, the clock margin and a later disagreement; each FAILS on the r5 code)** (Codex's reproduction, a runner
-  2 s fast) GitHub's time 2027-01-31T09:59:59Z, `observed_at` 2027-01-31T10:00:01Z, run 55 `completed` at attempt
-  1 → `final_runs` is EMPTY (r5 recorded `{"55": {attempts 1, …}}`); attempt 2 is then requested before GitHub's
-  deadline and completes with a stable difference → with `runs_now {55: attempt 2}` #620 is NOT settled,
-  `decide_pr([["clean", "miss"]])` → `miss`, and the absorb replaces the `clean` row with the `miss` (r5: settled,
-  never compared); (a recorded observation contradicted) the active epoch already records `{"55": {attempts 1,
-  observed_at 2027-02-02T07:00:00Z}}` and a listing shows run 55 at attempt 2 → NOT settled, re-decided (r5:
-  frozen), and a later report's `{"55": {attempts 2, observed_at 2027-02-03T07:00:00Z}}` REPLACES the record in
-  the absorb (r5 kept the first), after which `runs_now {55: attempt 2}` and an EMPTY `runs_now` both settle;
-  (the same in an ARCHIVED epoch) the attempt-1 record and #620's `clean` row are archived, the new epoch is empty,
-  and the listing shows attempt 2 → NOT settled (r5: settled by the archive's record), the re-decided `miss`
-  latches in the new epoch (no archive holds a miss), and once the active epoch records attempt 2 at a later
-  `observed_at` it is the one `settled` reads; an archived record NEWER than the active one at another count is
-  the one read (`newest_finals`);
+  **(r7 F1, GitHub's clock; each FAILS on the r6 code, which took `observed_at` from the runner)** (the reviewer's
+  construction A, a runner 2 days fast) run 55 created 2027-01-01T10:00:00Z, #620 `clean` at attempt 1, no record;
+  the repository call's `Date` is `Sat, 30 Jan 2027 10:00:00 GMT` (GitHub's day 29) and the runner reads
+  2027-02-01T10:00:01Z → `clock_errors` gives one `CANNOT RUN` line (nonzero, nothing written), and, with that alarm
+  set aside, `github_time` gives `observed_at` 2027-01-30T10:00:00Z, so `final_runs` over run 55 `completed` at
+  attempt 1 is EMPTY (r6 recorded `{"55": {attempts 1, observed_at 2027-02-01T10:00:01Z}}`); the owner re-runs 55 on
+  GitHub's day 29.5, attempt 2 replays a stable difference, and on every later report the CAPPED listing omits 55 →
+  #620 is NOT settled (r6: settled for ever), its re-decision lists run 55 at attempt 2, `decide_pr([["clean",
+  "miss"]])` → `miss`, and the absorb latches it over the `clean`; (the divergence) a runner 1 h 0 min 1 s from the
+  header → `CANNOT RUN`; exactly 1 h → no error (the boundary); (adjacent pass) a runner 59 min fast and a `Date` of
+  `Tue, 02 Feb 2027 07:00:00 GMT` (past +31 days), run 55 `completed` at attempt 1 → no clock error, `final_runs`
+  holds `{"55": {attempts 1, observed_at "2027-02-02T07:00:00Z"}}` (the HEADER's time, not the runner's), the absorb
+  records it, and the capped listing omitting 55 → settled (frozen); (the header) no `Date` header, two of them, an
+  unparseable one, a body with no blank line before it → `CannotRun`; `date:` in lower case and CRLF line ends →
+  parsed;
+  **(r6 B1, the clock margin; rewritten by r7 F2 against a listing that honours the cap: a final run is ABSENT)**
+  (Codex's reproduction, a runner 2 s fast) the `Date` is 2027-01-31T09:59:59Z and the runner reads 10:00:01 →
+  `observed_at` is the header's 09:59:59 and `final_runs` over run 55 `completed` at attempt 1 is EMPTY (r5
+  recorded `{"55": {attempts 1, …}}`); attempt 2 is then requested before GitHub's deadline and completes with a
+  stable difference → with the capped listing (run 55, 30 days old, ABSENT) #620 has no record and is NOT settled,
+  its re-decision compares attempt 2, `decide_pr([["clean", "miss"]])` → `miss`, and the absorb replaces the
+  `clean` row with the `miss`; **(the absent-run path, the production shape)** the active epoch records `{"55":
+  {attempts 1, observed_at 2027-02-02T07:00:00Z}}` (a header time past +31 days) and the capped listing omits 55 →
+  SETTLED, frozen by the record alone, NO artifact call; the same record and #620's `clean` row ARCHIVED under an
+  empty new epoch → settled; a record at exactly +31 days with 55 absent → NOT settled; (the kept unfreeze clause,
+  a direct unit case: production reaches it only when a re-decision of #620 adds run 55 to `runs_now`) that record
+  and `runs_now {55: attempt 2}` → NOT settled, and a later report's `{"55": {attempts 2, observed_at
+  2027-02-03T07:00:00Z}}` REPLACES the record in the absorb (r5 kept the first; the guard refuses a HEAD keeping it);
+  **(r7 F3, newest by GitHub's time)** the active epoch's `{"55": {attempts 1, observed_at 2027-02-02T07:00:00Z}}`
+  and an archived `{"55": {attempts 2, observed_at 2027-02-05T07:00:00Z}}`, both header times → `newest_finals`
+  reads the archived one; in the absorb, over the record at 1 observed 2027-02-02T07:00:00Z, a report at attempts 2
+  whose header time is EARLIER (2027-02-01T07:00:00Z) leaves the record, and one whose header time is LATER
+  (2027-02-03T07:00:00Z) replaces it;
   **adjacent passes:** on 2027-02-02T07:00Z run 55 at attempt 1 `completed` → settled by its equal count, NO
   artifact call, and the report's `final_runs` holds `{"55": {attempts: 1, observed_at: "2027-02-02T07:00:00Z"}}`;
-  after the absorb records it, with `runs_now` EMPTY → settled (frozen), with `runs_now` at attempt 1 → settled
-  (r6 B1: an agreeing listing does not unfreeze), and the next day's report repeating the entry leaves the ledger
+  after the absorb records it, with `runs_now` EMPTY (the capped listing, r7 F2) → settled (frozen), and the next
+  day's report repeating the entry leaves the ledger
   byte-identical (no churn: the row is not touched and the first `observed_at` stays);
   the same record frozen for a row in an ARCHIVED epoch (the record is in the active one); a run re-run to
   attempt 2 and re-decided `clean` (the old `clean` row stays at `attempts: 1`) → `final_runs` records 55 at 2
@@ -1331,10 +1403,10 @@ it for this file.
   merged>, selector_blob: <git rev-parse HEAD:scripts/reach_select.py at this commit>, reset_by_owner: null,
   absorbed_reports: {}, absorbed_through: null, rows: {}, post_switch_events: [], q1_probe_delta: null,
   final_runs: {}}, previous_epochs: []}`. `final_runs` maps a PR CI run id to `{attempts, observed_at}`, the
-  OBSERVATION that froze its pushes (r5 F1, Task 7.2 `settled`); it LOOSENS (a frozen push is not compared again
-  while the listing agrees), so it is taken only from a report that `may_loosen`, and a new epoch starts it empty.
-  A later observation of the same run at the same count leaves the first; one at ANOTHER count, observed later,
-  replaces it (r6 B1). A row is `{decision, merged_at, decided_at, pushes, selector_blob}`, the last copied from
+  OBSERVATION that froze its pushes (r5 F1, Task 7.2 `settled`), timed by GitHub's `Date` header (r7 F1); it
+  LOOSENS (a frozen push is not compared again), so it is taken only from a report that `may_loosen`, and a new epoch starts it empty.
+  A later observation of the same run at the same count leaves the first; one at ANOTHER count, observed later by
+  GitHub's time, replaces it (r6 B1, r7 F3). A row is `{decision, merged_at, decided_at, pushes, selector_blob}`, the last copied from
   the report that wrote it (r1 redesign Claude F5); `absorbed_reports` maps each absorbed report's `report_id`
   (`<run_id>.<run_attempt>`, Task 7.2) to its `generated_at` (its IDENTITY, r1 redesign Codex X1, X2, r2 C2), or
   to `null` for a NO-REPORT stub (an attempt that completed without a report, r3 F4); `q1_probe_delta` is `{value, generated_at}` or null
@@ -1437,7 +1509,8 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor, archived=()):
         if not why:  # r5 F1: an OBSERVED final attempt count; it loosens, so only from a report that may_loosen
             for run_id, fin in sorted(rep.get("final_runs", {}).items()):
                 old = out["final_runs"].get(run_id)
-                # an AGREEING repeat keeps the first (no churn); r6 B1: a NEWER one at another count wins
+                # an AGREEING repeat keeps the first (no churn); r6 B1: a NEWER one at another count wins,
+                # newer by GitHub's time, since every observed_at is a Date header (r7 F3)
                 if old is None or (fin["attempts"] != old["attempts"]
                                    and as_utc(fin["observed_at"]) > as_utc(old["observed_at"])):
                     out["final_runs"][run_id] = fin
