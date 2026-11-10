@@ -1354,11 +1354,11 @@ EXEMPT: dict[str, str] = {
     # backlog #586 slice 1 (2026-11-10): strace-measure.py — its two entry points are driven through ONE helper each
     # (`_read` for analyse_log, `_merge` for merge), which forward their arguments; the helpers' CALLERS vary them.
     "strace-measure.py:analyse_log.copies": "driven through ONE helper, `_read`; its callers vary copies (`/t` alone, and `/t` with a second root `/real/t`, where the same unlink flips inside/outside)",
-    "strace-measure.py:analyse_log.samples": "driven through ONE helper, `_read`; its callers vary samples (an empty store, and one already holding a key, which must keep its first owner)",
+    "strace-measure.py:analyse_log.samples": "driven through ONE helper, `_read`; its callers vary samples: an EMPTY store, which must gain the line credited to `who` (case `r2 X3`, red under both of review round 2's mutations: no insert, a wrong owner), and one already holding a key, which must keep its first owner",
     "strace-measure.py:analyse_log.shapes": "driven through ONE helper, `_read`; its callers vary shapes (an empty store per case, and the store `_stores` reads back to check each shape's owner)",
     "strace-measure.py:analyse_log.who": "driven through ONE helper, `_read`; its callers vary who (`case`, and `second.py`, whose lines must be credited to it and not to the store's earlier owner)",
     "strace-measure.py:analyse_log.log": "a temp-file path written by `_read`; analyse_log decides on the file's CONTENT, which every case varies",
-    "strace-measure.py:merge.dirs": "driven through ONE helper, `_merge`; its callers vary dirs (one directory, and two directories each holding one shard)",
+    "strace-measure.py:merge.dirs": "driven through ONE helper, `_merge`; its callers vary dirs: one directory, and two directories each holding one shard, where BOTH targets and BOTH shards must be merged (cases `r2 X4`, red under review round 2's mutation that reads only the last directory)",
     "strace-measure.py:merge.jobs": "driven through ONE helper, `_merge`; its callers vary jobs (None, and a `gh run view --json jobs` view with a job that has no completedAt)",
     "strace-measure.py:merge.out": "a temp-file path `_merge` reads back; merge writes the same document wherever it goes",
     # backlog #397 (2026-11-09): ci-durations.py — temp-file paths, and the three entry points driven through ONE
