@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/pace-band-r1-claude.md": "100644 da45247bc49c3d0811ad29d5edc84ef6e5400ba5",
+    "docs/reviews/codex/pace-band-r1-codex.md": "100644 ecdd0a98446afa713cc5806edd22d88ee5c28d08",
+    "docs/reviews/coordinator/pace-band-r1-coordinator.md": "100644 37abfa8b3970cf1627a91925b906c5155addef09",
+    "docs/reviews/verdicts/pace-band-r1-codex.verdict.json": "100644 6c5a2f4da4e75026a829f24422bdcd94a01f7b56"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d7efd2eb5fbe17ae6fd35d2f9e4ec2e5a4dafae3",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 8792 chars, names d7efd2eb5fbe",
+  "refused": false,
+  "review": "pace-band-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/agent-ada817c384f5ec41e",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
