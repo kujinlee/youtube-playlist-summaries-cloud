@@ -2803,5 +2803,247 @@
    "target": "scripts/check-plan-leak.py seed 0",
    "shard": 1
   }
+ ],
+ "shapes_source": "strace-measure run 42893595762, the `shapes` key of raw-<shard>/lines.json of all 6 shards: the first line per (kind, shape) of every signal (`--- SIG`), exit (`+++ exited`/`+++ killed`) and spawn (`clone`/`clone3`/`vfork`) line, in shard order; paths shortened as above",
+ "shapes": [
+  {
+   "kind": "exit",
+   "shape": "exit: +++ exited with N +++",
+   "line": "2547  +++ exited with 0 +++",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "exit",
+   "shape": "exit: +++ killed by SIGALRM +++",
+   "line": "23092 +++ killed by SIGALRM +++",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "exit",
+   "shape": "exit: +++ killed by SIGKILL +++",
+   "line": "3549  +++ killed by SIGKILL +++",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "exit",
+   "shape": "exit: +++ killed by SIGSEGV (core dumped) +++",
+   "line": "26668 +++ killed by SIGSEGV (core dumped) +++",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "exit",
+   "shape": "exit: +++ killed by SIGTERM +++",
+   "line": "46587 +++ killed by SIGTERM +++",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGALRM {si_signo=SIGALRM, si_code=SI_KERNEL} ---",
+   "line": "23092 --- SIGALRM {si_signo=SIGALRM, si_code=SI_KERNEL} ---",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGALRM {si_signo=SIGALRM, si_code=SI_USER, si_pid=N, si_uid=N} ---",
+   "line": "26608 --- SIGALRM {si_signo=SIGALRM, si_code=SI_USER, si_pid=26608, si_uid=1001} ---",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=N, si_uid=N, si_status=N, si_utime=N /* N.N s */, si_stime=N /* N.N s */} ---",
+   "line": "3227  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3242, si_uid=1001, si_status=0, si_utime=4 /* 0.04 s */, si_stime=2 /* 0.02 s */} ---",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=N, si_uid=N, si_status=N, si_utime=N /* N.N s */, si_stime=N} ---",
+   "line": "3228  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3293, si_uid=1001, si_status=0, si_utime=5 /* 0.05 s */, si_stime=0} ---",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=N, si_uid=N, si_status=N, si_utime=N, si_stime=N /* N.N s */} ---",
+   "line": "2712  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2713, si_uid=1001, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---",
+   "target": "scripts/check-decision-scheme.py seed 1109",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=N, si_uid=N, si_status=N, si_utime=N, si_stime=N} ---",
+   "line": "2619  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2620, si_uid=1001, si_status=0, si_utime=0, si_stime=0} ---",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGALRM, si_utime=N /* N.N s */, si_stime=N /* N.N s */} ---",
+   "line": "22793 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=23092, si_uid=1001, si_status=SIGALRM, si_utime=2 /* 0.02 s */, si_stime=1 /* 0.01 s */} ---",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGALRM, si_utime=N /* N.N s */, si_stime=N} ---",
+   "line": "52738 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=53021, si_uid=1001, si_status=SIGALRM, si_utime=3 /* 0.03 s */, si_stime=0} ---",
+   "target": "scripts/push-command.py seed 1109",
+   "shard": 3
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGKILL, si_utime=N /* N.N s */, si_stime=N /* N.N s */} ---",
+   "line": "3548  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=3549, si_uid=1001, si_status=SIGKILL, si_utime=2 /* 0.02 s */, si_stime=1 /* 0.01 s */} ---",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGKILL, si_utime=N /* N.N s */, si_stime=N} ---",
+   "line": "46940 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=46967, si_uid=1001, si_status=SIGKILL, si_utime=1 /* 0.01 s */, si_stime=0} ---",
+   "target": "scripts/session-state.py seed 1109",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGKILL, si_utime=N, si_stime=N /* N.N s */} ---",
+   "line": "4475  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=4476, si_uid=1001, si_status=SIGKILL, si_utime=0, si_stime=1 /* 0.01 s */} ---",
+   "target": "scripts/check-fixture-git-isolation.py seed 1109",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGKILL, si_utime=N, si_stime=N} ---",
+   "line": "43592 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=43778, si_uid=1001, si_status=SIGKILL, si_utime=0, si_stime=0} ---",
+   "target": "scripts/check-run-hook.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGTERM, si_utime=N /* N.N s */, si_stime=N /* N.N s */} ---",
+   "line": "46585 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=46588, si_uid=1001, si_status=SIGTERM, si_utime=1 /* 0.01 s */, si_stime=1 /* 0.01 s */} ---",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGTERM, si_utime=N /* N.N s */, si_stime=N} ---",
+   "line": "7026  --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=7093, si_uid=1001, si_status=SIGTERM, si_utime=1 /* 0.01 s */, si_stime=0} ---",
+   "target": "scripts/check-selftest-counts.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGTERM, si_utime=N, si_stime=N /* N.N s */} ---",
+   "line": "12080 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=12078, si_uid=1001, si_status=SIGTERM, si_utime=0, si_stime=1 /* 0.01 s */} ---",
+   "target": "scripts/regen-pages.py seed 1109",
+   "shard": 6
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=N, si_uid=N, si_status=SIGTERM, si_utime=N, si_stime=N} ---",
+   "line": "46586 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_KILLED, si_pid=46587, si_uid=1001, si_status=SIGTERM, si_utime=0, si_stime=0} ---",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGPIPE {si_signo=SIGPIPE, si_code=SI_USER, si_pid=N, si_uid=N} ---",
+   "line": "7078  --- SIGPIPE {si_signo=SIGPIPE, si_code=SI_USER, si_pid=7078, si_uid=1001} ---",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGSEGV {si_signo=SIGSEGV, si_code=SI_USER, si_pid=N, si_uid=N} ---",
+   "line": "26668 --- SIGSEGV {si_signo=SIGSEGV, si_code=SI_USER, si_pid=26668, si_uid=1001} ---",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=N, si_uid=N} ---",
+   "line": "46587 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=46585, si_uid=1001} ---",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "signal",
+   "shape": "signal: --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=N, si_uid=N} ---",
+   "line": "7199  --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=7199, si_uid=1001} ---",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD <L>",
+   "line": "2622  clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=X) = N",
+   "line": "2647  clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7b9b01bf0e50) = 2648",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: clone(child_stack=X, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS <L>",
+   "line": "7199  clone(child_stack=0x13e4ea340000, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: cloneN({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=X, parent_tid=X, exit_signal=N, stack=X, stack_size=X, tls=X} <L>",
+   "line": "3347  clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e66faffece8, parent_tid=0x7e66faffe990, exit_signal=0, stack=0x7e66f9ffe000, stack_size=0xffff40, tls=0x7e66faffe6c0} <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: cloneN({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=X, parent_tid=X, exit_signal=N, stack=X, stack_size=X, tls=X} => {parent_tid=[N]}, N) = N",
+   "line": "3220  clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e672604ace8, parent_tid=0x7e672604a990, exit_signal=0, stack=0x7e672504a000, stack_size=0xffff40, tls=0x7e672604a6c0} => {parent_tid=[3221]}, 88) = 3221",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: cloneN({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=X, stack_size=X}, N <L>",
+   "line": "3241  clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x743c83b73000, stack_size=0x9000}, 88 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "kind": "spawn",
+   "shape": "spawn: vfork( <L>",
+   "line": "2619  vfork( <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  }
+ ],
+ "unnamed_syscall_source": "strace-measure run 42901768433, shard 5, scripts/compaction-state.py seed 0: `unparsed_lines` of its traced run. strace prints `???` when it cannot read the syscall number; the first reader left both halves unparsed (review round 1, Claude F2)",
+ "unnamed_syscall": [
+  {
+   "line": "7044  ???( <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5,
+   "run_id": "42901768433"
+  },
+  {
+   "line": "7044  <... ??? resumed>)                = ?",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5,
+   "run_id": "42901768433"
+  }
  ]
 }

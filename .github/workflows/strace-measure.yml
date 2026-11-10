@@ -61,8 +61,14 @@ jobs:
       - name: ptrace probe (trace git, find its execve)
         run: |
           strace -V
-          strace -f -o /tmp/p.log git --version && grep -q execve /tmp/p.log
+          # Two commands, not `a && b`: under `bash -e` a failing NON-final command of an && list does not stop
+          # the step, so a denied ptrace would have left it green (review round 1, Claude F6).
+          strace -f -o /tmp/p.log git --version
+          grep -q execve /tmp/p.log
           echo "probe: $(grep -c execve /tmp/p.log) execve line(s)"
+
+      - name: The log reader's own cases
+        run: python3 scripts/strace-measure.py --self-test
 
       - name: Measure this shard
         env:

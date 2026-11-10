@@ -1,7 +1,12 @@
-> **Source:** GitHub Actions run **42893595762** (workflow `strace-measure`, attempt 1, head `be0f552f`, PR #557),
+> **Source:** GitHub Actions run **42893595762** (workflow `strace-measure`, attempt 1, PR #557 head `7aac29e1`; `be0f552f` is that run's `pull_request` merge ref),
 > six shards, merged by `python3 scripts/strace-measure.py --merge … --jobs …` into
 > [`2026-11-10-strace-on-runner.json`](2026-11-10-strace-on-runner.json). Every figure below is from that run unless it
 > says otherwise; each is marked **MEASURED** (read from the JSON or the run's artifacts) or **INFERRED**.
+>
+> **Confirming run:** **42901768433** (head `5fd14032`, the tree with both broken suites fixed), merged by the same
+> command into [`2026-11-10-strace-on-runner-run2.json`](2026-11-10-strace-on-runner-run2.json). Its syscall union
+> (118 names) and ioctl tokens (the same 7) are IDENTICAL to run 42893595762's (MEASURED). Where it differs, both are
+> given below.
 
 # Backlog #586, slice 1: strace on a GitHub-hosted runner
 
@@ -14,7 +19,10 @@ recorder can run"). Each of the 92 manifest targets ran its `--self-test` twice 
 - **MEASURED (run 42893595762):** the ptrace probe step (`strace -f -o /tmp/p.log git --version`, then an `execve` line
   found in the log) succeeded on all 6 shards; strace was already installed on the image.
 - **MEASURED (run 42893595762):** strace wrote nothing to stderr in any traced run (`strace_stderr` is empty), and the
-  driver left no line unparsed (`unparsed_line_samples` is empty).
+  driver left no line unparsed (`unparsed_line_samples` is empty). ⚠ That is true of THIS run only: in run
+  **42901768433** (shard 5, `scripts/compaction-state.py`, seed 0) the driver left two lines unparsed,
+  `7044  ???( <unfinished ...>` and `7044  <... ??? resumed>)                = ?` — strace prints `???` when it cannot
+  read the syscall number. The reader now accepts `???` as a name and records it as `???` (review round 1, Claude F2).
 
 ## The constants the later slices pin
 
@@ -25,11 +33,30 @@ recorder can run"). Each of the 92 manifest targets ran its `--self-test` twice 
 | `RECORD_SEEDS` | `0,1109` (slice 4 reuses them verbatim) | 42893595762 | MEASURED |
 | targets | 92, shards present 6 of 6 | 42893595762 | MEASURED |
 | `-yy` decorates `AT_FDCWD` | **yes** — in all 92 targets (e.g. `openat(AT_FDCWD</t>, …)`) | 42893595762 | MEASURED |
-| `TRACE_FACTOR` | **20** — the largest traced/plain wall-clock ratio over spawner targets is 19.94 (`scripts/batch-ci.py`, seed 1109: 3.26 s plain, 64.99 s traced), rounded up | 42893595762 | MEASURED |
+| `TRACE_FACTOR` | **20** — the MAX over both runs of the ceiling of the largest UNROUNDED traced/plain ratio over spawner targets (see *`TRACE_FACTOR` is noise-dominated* below) | 42893595762: **20**; 42901768433: **12** | MEASURED |
 | largest ratio over ALL targets | 19.94 (the same run; the largest non-spawner ratio is 7.23) | 42893595762 | MEASURED |
 | spawner targets (forked at least once) | 48 of 92 | 42893595762 | MEASURED |
 | targets whose traced and plain case counts differ | **none** | 42893595762 | MEASURED |
 | timeouts (limit `SUITE_TIMEOUT` × 10 = 1,200 s) | none | 42893595762 | MEASURED |
+
+### `TRACE_FACTOR` is noise-dominated — why the constant is the MAX over runs
+
+| run | worst spawner target | seed | plain s | traced s | unrounded ratio | ceiling |
+|---|---|---|---|---|---|---|
+| 42893595762 | `scripts/batch-ci.py` | 1109 | 3.26 | 64.99 | 19.936 | **20** |
+| 42893595762 | `scripts/batch-ci.py` (same target, other seed) | 0 | 6.34 | 65.94 | 10.40 | 11 |
+| 42901768433 | `scripts/prune-merged-worktrees.py` | 1109 | 2.47 | 29.02 | 11.749 | **12** |
+| 42901768433 | `scripts/batch-ci.py` | 0 | 5.04 | 59.21 | 11.748 | 12 |
+
+(all MEASURED, from each run's JSON.) The ratio's NUMERATOR is stable — `batch-ci.py` traced is 64.99 / 65.94 / 59.21 s
+across the three samples — while its DENOMINATOR is a few seconds of plain time that halves between two seeds of one
+run (6.34 → 3.26 s). So the worst ratio is set by whichever plain run happened to be fast, and one re-run of the same
+tree on the same image moved the constant 20 → 12. **INFERRED:** it is not reproducible as a point value. The
+committed constant is the MAX over the measured runs, **20**, because the error is one-sided: a factor too large
+only lengthens a traced run's timeout, while one too small kills a healthy traced suite. In run 42901768433 the two
+leaders differ only in the 4th digit (11.749 vs 11.748); the driver now takes the max over UNROUNDED ratios (review
+round 1, Codex #5) — the committed JSON of run 42893595762 was merged before that fix, and re-merging its shards with
+the fixed `--merge` gives the same `trace_factor` 20 (MEASURED).
 
 ### `MEASURED_SYSCALLS` — the union, 118 names, with the number of targets (of 92) that made each (run 42893595762, MEASURED)
 
@@ -58,7 +85,16 @@ Fewer than 92: `alarm` 3, `capget` 4, `chdir` 41, `chmod` 41, `clock_nanosleep` 
 | `io_uring_setup` | `scripts/check-page-links.py`, `scripts/check-paid-caller-arrival.py`, `scripts/explainer-serve.py`, `scripts/page_chrome.py` |
 | `unshare`, `setns`, `chroot`, `pivot_root`, the mount family (`mount`, `umount2`, `open_tree`, `move_mount`, `fsopen`, `fsmount`, `fspick`, `mount_setattr`) | **none** |
 | a ` (deleted)` fd label | `scripts/batch-ci.py` (12 lines), `scripts/check-stalled-work.py` (97 lines) |
-| an unlink/rename/rmdir of a pre-existing path OUTSIDE the copy | **none** |
+| an unlink/rename/rmdir of a pre-existing path OUTSIDE the copy | **none** — ⚠ see the caveat below |
+
+⚠ **The "none" above was computed on the runner by the FIRST reader**, which (a) counted any successful `O_CREAT`
+open as "created by the log", so a truncate-then-delete of a pre-existing file outside the copy was missed; (b) read a
+call's result before joining its `<unfinished ...>` / `<... resumed>` halves; (c) could read a `= N` from inside a
+quoted argument (review round 1: Codex #1-#4, Claude F4). The full logs were not kept, so the "none" cannot be
+recomputed from the artifacts. What CAN be: re-reading the 12 retained whole logs of run 42893595762 (two per shard)
+with the corrected reader gives the same removals, unresolved lines and syscall names as the first reader (MEASURED,
+0 differences). **The corrected rule applies from the next run**; until then this row is a lower bound on what
+slice 2's parser must refuse.
 
 ⚠ **Unresolved removals (MEASURED, run 42893595762): 28 targets** made a removal the driver could not place — e.g.
 `scripts/batch-ci.py` 2,833 lines, `scripts/check-merge-ready.py` 951, `scripts/check-plan-leak.py` 702 (all 28 in
@@ -91,9 +127,18 @@ Case COUNTS are identical plain vs traced for all three, so the case-count row a
 | **sum** | **2,796** | **2,626.3** |
 | max | 656 | 628.8 |
 
-Task 4.2's unsharded `record-reads` budget comes from the SUM. ⚠ This run did each target FOUR times (plain and traced,
-two seeds); a recorder that only traces does half of that. **INFERRED**, not measured: about 1,300-1,400 s traced
-work per full recording.
+Task 4.2's unsharded `record-reads` budget comes from the measured TRACED time, not the shard elapsed (which also holds
+the plain runs and the staging). Over the 184 (target, seed) records:
+
+| run | traced s (sum) | plain s (sum) | driver elapsed s (sum) | staging and overhead s (elapsed − traced − plain) |
+|---|---|---|---|---|
+| 42893595762 | **1,595.36** | 472.84 | 2,626.3 | 558.1 |
+| 42901768433 | **1,452.13** | 498.04 | 2,544.7 | 594.5 |
+
+(the first three columns MEASURED from each JSON's `ratios` and `shard_elapsed_secs`; the last is their difference.)
+A recording of both seeds that only traces needs the traced sum plus one staging per traced run — 184 of the 368 runs
+the overhead column covers, about 280-300 s. **INFERRED:** about 1,750-1,900 s per full recording of both seeds, before
+any sharding.
 
 The ten largest traced/plain ratios (run 42893595762, MEASURED):
 
@@ -114,10 +159,13 @@ The ten largest traced/plain ratios (run 42893595762, MEASURED):
 `scripts/regen-pages.py` traced took 145.23 s, over `SUITE_TIMEOUT` (120 s): a traced run's timeout must be
 `SUITE_TIMEOUT × TRACE_FACTOR`, as the plan already says.
 
-## Shapes slice 2's parser meets (fixtures in `scripts/fixtures/strace-lines/`, all from run 42893595762)
+## Shapes slice 2's parser meets (fixtures in `scripts/fixtures/strace-lines/`, from run 42893595762 unless marked)
 
-- `samples.json` — 400 raw lines, the first per (syscall, shape) over the six shards' `lines.json`; shapes are
-  `unfinished`, `resumed`, `= -1 E`, `= N`, `-yy label`, `AT_FDCWD<`, `other`, plus signal, exit and spawn lines.
+- `samples.json` — `samples`: 400 raw lines, the first per (syscall, shape) over the six shards' `lines.json`; shapes
+  are `unfinished`, `resumed`, `= -1 E`, `= N`, `-yy label`, `AT_FDCWD<`, `other`. `shapes`: 32 recorded signal, exit
+  and spawn lines (20 `--- SIG…`, 5 `+++ exited`/`+++ killed`, among them `+++ killed by` SIGKILL, SIGTERM, SIGALRM and
+  SIGSEGV; 7 `clone`/`clone3`/`vfork`), the first per (kind, shape) from the `shapes` key of the same six files.
+  `unnamed_syscall`: the two `???` lines of run **42901768433** (the only lines in this file from that run).
 - `whole-git.log` — `scripts/peer-sites.py`, seed 0 (shard 1): a target whose suite runs `git`, 1,808 lines.
 - `whole-threaded.log` — `scripts/ci-durations.py`, seed 1109 (shard 2): a target that starts a thread
   (`clone3` with `CLONE_THREAD`), 2,430 lines.
