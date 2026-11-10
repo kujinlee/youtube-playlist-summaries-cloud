@@ -79,8 +79,9 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #508 · filed 2026-11-05 from the owner's card A: a rising self-test count is cleared by the gate; every other flagged line is answered by the final reviewer, not the PR's author
 > 2026-11-05 08:19 "If the agenda list shows larger goat that the line item belongs to, I can see the current focus or which area you are working on"
 > 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
+> 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-10-15-brief-marketplace-inventory-walkthrough.html let's add this initiative to current focus."
 - fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
-- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this · waits on the owner's walkthrough
+- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; walked through 11-09, D1-D4 and section 7.1 answered · waits on three spec folds (D1 cost checkpoint, cheapest publish route, phased publishing), then the owner walks the changed sections
 - fix · backlog #504 · the agenda log's record check refuses a step whose refs are not (kind, number) pairs
 - fix · backlog #514 · in-flight work is added with a goal, or says why it has none
 - fix · backlog #515 · an agenda step for a partly-done row is not ticked by its PR's merge
@@ -153,6 +154,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-02 16:35 "Now we move our focus on dev speed improvement. we have http://127.0.0.1:7391/2026-10-29-topic-dev-speed-monitor.html#remedies Can we have a list of task items in higher impact to lower impact order?"
 > 2026-11-05 00:30 "we had backlog for formating backlog prose for human reader (newline, indenting etc) Have you implemented it?"
 > 2026-11-05 00:42 "this backlog #40 shows that (1) filed entry -> formatted (2) STATUS CELL, what changed in this entry -> not formatted"
+> 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-11-09-brief-observed-reach-spec-walkthrough.html let's add this initiative to current focus."
 > 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 - fix · backlog #384, PR #474 · direction lane: the comprehensibility suite's overarching design; the spec merged and its rows are filed as backlog #470 to backlog #479
 - fix · backlog #405, PR #476 · early stop's METHOD proven wrong in five review rounds and discarded; the same goal moves to backlog #481 (the suite exits at its own first named failure). PR #476 shipped only two CI fixes (a running master run is not cancelled, the changed-file diff sees renames)
@@ -190,6 +192,8 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #512, PR #535 · fixture_git.isolated() gives each self-test block its own TMPDIR and removes it
 - fix · backlog #231, backlog #406, PR #537 · the self-tests of check-usage-pace, goal-tree and check-main-drivable cost less; a timing case an lru_cache masked is now a spy case
 - fix · backlog #558, PR #538 · a mutant's suite timeout scales with its own control, min(600, max(120, 20×control)); master's full sweep is green again
+- fix · backlog #586, PR #552 · spec approved 11-09: a PR's mutation sweep picks the guards whose tests were SEEN to read a changed file (strace -f), so a docs-only PR stops sweeping 67 of 89 manifests
+- fix · backlog #586 · the plan: a committed shadow ledger read at BASE (owner 11-09 14:55, card A); redesign review round 1, then the plan PR and slices 1-5 (slice 1 measures strace on the CI runner)
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"
