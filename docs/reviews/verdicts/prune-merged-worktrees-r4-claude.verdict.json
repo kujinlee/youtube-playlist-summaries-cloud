@@ -1,0 +1,21 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/prune-merged-worktrees-r4-claude.md": "100644 743b3967ab3b74fae1d34fa4c21b0ee6baa932ba"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f3b3e68759d7c87f82639f91488147fc14cb3733",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "scoped r4 Claude half over the r3 fold f3b3e687 (backlog #589); BLOCKER test only, non-BLOCKERs filed",
+  "reason": "claude half filed: 7270 chars, names f3b3e68759d7",
+  "refused": false,
+  "review": "prune-merged-worktrees-r4-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/prune-wt",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

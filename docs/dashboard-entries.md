@@ -19747,3 +19747,28 @@ gains a FAILS IF clause for the ledger and its guard. Plan slices 6-8 rewritten 
 and reports can only refuse. r3 F2-F8 dispositioned `fixed` under D1 in
 `docs/reviews/coordinator/plan-586-r3-coordinator.md` (`REDESIGNED → plan-586-redesign`); next:
 `plan-586-redesign` round 1, both halves.
+Old git worktrees are now moved out of the way automatically, and NOTHING is ever deleted. Each time a
+session starts, every worktree under `.claude/worktrees/` whose pull request merged more than 2 hours ago
+is moved to `~/.worktree-archive/youtube-playlist-summaries-cloud/`, where the editor no longer watches
+it. This morning 67 of them (11 GB) had piled up and were the likely cause of the Mac freezing. A
+worktree with an open PR, uncommitted or unpushed work, a lock, or a program still running inside it
+stays put. Where a worktree was, a small placeholder file is left behind. It says where the worktree
+went and how to bring it back: `rm <old path> && git worktree move <archive>/<name> <old path>`,
+with full paths. A program that writes there late gets an error instead of quietly starting a new
+folder. A worktree git refuses to move (one with a submodule) is reported once, then left alone. When
+the archive holds more than 10, the session start says so once; deleting them is your call, by hand
+(`git worktree remove <path>`). The first version deleted, and its review found four ways it could
+destroy unique work; moving instead removes that whole class.
+<!--tech-->
+Backlog #589. `scripts/prune-merged-worktrees.py`: one `gh pr list` (fail closed), one `lsof -d cwd -Fn` (fail
+closed), then `git worktree move` without `--force`, same filesystem only (`st_dev`), a `-YYYYMMDDHHMM` suffix on a
+name collision, logged with its undo command to `.claude/pruned-worktrees/log.tsv` before it runs. Called from
+`.claude/hooks/session-state.sh` with `--repo` and `--deadline` = 55 s minus the seconds the in-flight block used.
+Redesigned at the PR #551 round-1 fold. Round-2 fold: a placeholder file at the old path and an absolute undo
+(r2 F1, F10); a deleted remote branch no longer keeps a squash-merged worktree (F2); `git worktree repair` advice
+(F4); a refusal remembered in `.claude/pruned-worktrees/refused.json` (F6); a concurrent run's move reported BY-PEER
+(F7). Round-3 fold (the cap): a placeholder that cannot be left is ARCHIVED-WITHOUT-PLACEHOLDER, rc 1, printed by
+the hook with its undo, never overwriting what is there (r3 F1, F4, F6); with the remote branch gone the LIVE HEAD
+must be at or under the merged head (F2); BY-PEER only when git registers the archive path at this HEAD (F3); a
+remembered refusal expires after 24 h (F5); the undo is shell-quoted (F7). 92 self-test cases, 52 mutations, all
+killed and attributed.

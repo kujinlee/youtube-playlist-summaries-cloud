@@ -326,6 +326,15 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
                         "pick_ci_run.runs", "pick_ci_run.sha", "previous_week.week", "read_log.path", "record_main.budget_s",
                         "record_main.clock", "record_main.gh", "record_main.path", "record_main.since", "report_main.min_samples",
                         "report_main.path", "report_main.today", "report_main.week", "valid_week.week", "verdict_rc.verdicts"),
+    # backlog #589 (2026-11-09): the merged-worktree archiver. DERIVED by running `analyse()` on the delivered source:
+    # 30 keys; the 17 single-value parameters CI found were each VARIED by a new or adjusted case, none EXEMPT.
+    "prune-merged-worktrees.py": ("archive_note.archive", "archive_note.b", "check_prs.rows", "dev_of.p", "evaluate.b",
+                                  "evaluate.cwd", "evaluate.cwds", "evaluate.idx", "evaluate.logged", "evaluate.now",
+                                  "evaluate.refused", "evaluate.wt", "git_link.path", "hook_lines.archive",
+                                  "hook_lines.note", "hook_lines.root", "hook_lines.rows", "hook_lines.stopped",
+                                  "load_refused.p", "main.argv", "parse_lsof.text", "parse_time.s",
+                                  "parse_worktrees.porcelain", "pr_index.rows", "run.argv", "run.budget", "run.devf",
+                                  "run.now", "undo_cmd.dest", "undo_cmd.old"),
     # backlog #534 (2026-11-06): the batch full sweep, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source; every parameter varied by a case except `main.root`, EXEMPT with its reason.
     # ⟳ batch-ci r1 fold: re-derived — 25 -> 41 keys, none lost: `classify`, `import_closure`, `latest_run`,

@@ -4696,6 +4696,8 @@ def _self_test_body() -> int:
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
                                       "scripts/peer-sites.py",
+                                      # backlog #589: the merged-worktree archiver, with its manifest.
+                                      "scripts/prune-merged-worktrees.py",
                                       # ⟳ 2026-11-08, backlog #428: the push gate's detection.
                                       "scripts/push-command.py",
                                       # ⟳ 2026-09-29, backlog #191: the LLM recall

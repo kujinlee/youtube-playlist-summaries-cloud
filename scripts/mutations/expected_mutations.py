@@ -2118,4 +2118,20 @@ EXPECTED_MUTATIONS = {
     # ARITHMETIC: 99 + 8 = 107. Each of the 8 new and the 3 re-anchored hand-checked ONE AT A TIME in a
     # `stage_tree` copy: rc 1, and `parse_fail_names` names its expected case exactly once.
     "scripts/push-command.py": 108,
+    # backlog #589 (2026-11-09): prune-merged-worktrees.py, NEW; REWRITTEN at the r1 fold (archive, never
+    # delete). The 18 deletion-era entries are replaced, not re-anchored: their allowlist, ignored-content and
+    # .remember rules no longer exist. One mutation per rule a case turns red: open PR, fork, reuse x2, tracked,
+    # unpushed, gone remote, locked, cwd, lsof busy, detached, lsof rc, lsof empty, merged < 2 h, mergedAt
+    # missing, cross-device, collision suffix, gh rc, truncation, dry-run, unwritable log, log before move,
+    # deadline caught in the loop, CANNOT RUN wording after a move, loop stop near the deadline, archive-size
+    # line, half-moved message. ARITHMETIC: 27.
+    # r2 fold: the gone-remote entry DROPPED with its rule (F2); the half-moved entry re-anchored; 13 ADDED:
+    # post-move check, prunable return, zone-less mergedAt, warn boundary, GIT_DIR drop, one-shot stop,
+    # hook cap (F5, 7: main's duplicate cap was removed, not tested); placeholder, absolute undo (F1/F10);
+    # repair advice (F4); refusal kept + refusal recorded (F6); by-peer (F7). ARITHMETIC: 27 - 1 + 13 = 39.
+    # r3 fold (the cap): 4 RE-ANCHORED (post-move check, refusal kept, refusal recorded, by-peer: their code
+    # changed), 13 ADDED: F1 old-path absence, F1 verdict, F1 rc, F1/F4 hook line, F6 O_EXCL, F4 write catch,
+    # F2 live HEAD x2, F3 registration + its HEAD, F5 expiry, F7 quoting + non-printable withheld.
+    # ARITHMETIC: 39 + 13 = 52.
+    "scripts/prune-merged-worktrees.py": 52,
 }

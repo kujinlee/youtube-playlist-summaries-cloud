@@ -207,3 +207,8 @@ docs/explainers/questions.md
 # backlog #408: the lock scripts/regen-pages.py holds while it builds every page from a fresh origin/master tree
 # (that tree lives in a private temp directory, never in the repository).
 .claude/regen-pages.lock
+# backlog #589: prune-merged-worktrees.py logs each ARCHIVED worktree (name, branch, HEAD, undo command) and keeps
+# `refused.json` (worktrees git refused to move) here, in the MAIN checkout.
+.claude/pruned-worktrees/
+# A hook writes this log in every checkout; ignored so a worktree it appears in can still be removed (backlog #589).
+.claude/transcript-reference-warnings.log
