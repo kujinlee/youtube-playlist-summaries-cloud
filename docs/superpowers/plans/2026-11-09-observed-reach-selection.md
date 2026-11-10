@@ -15,6 +15,12 @@ The spec §2 diff is applied and slices 6-8 are rewritten to review §6. Because
 at round 1 (`docs/review-method.md` §0 Q4c, *A REDESIGN RESTARTS THE COUNT*): `plan-586-redesign-r1`, both halves,
 scoped to the spec §2 change and slices 6-8. Slices 1-5 can be built now; slices 6-8 wait for that round.
 
+**SPLIT (owner, 2026-11-10, selection card A):** slices 1-5 (strace measurement, parser, classifier, the `record-reads`
+job, the pure selector) are the scope of this plan PR and get built. Slices 6-8 (shadow reports, the committed ledger
+and its guard, the switch) are SUSPENDED pending a spec revision, backlog #599, after round 8 found two BLOCKERs in
+the shadow ledger and the review ladder was spent (`docs/reviews/coordinator/plan-586-redesign-r8-coordinator.md`).
+Their text below is kept intact as input to that revision.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -722,6 +728,8 @@ PR's own sweep runs ALL (Task 5.2 edits `check-plan-code.py`).
 
 ## Slice 6 — shadow: `sweep-select` reports, nothing skips (spec §2 Resolve, shadow data; §7 Q1, Q4)
 
+**SUSPENDED (owner 2026-11-10): returns to a spec revision; see backlog #599.**
+
 **Design D1, owner 2026-11-09 14:55 (selection card, answer A).** This slice changes only by two `selection-*`
 fields: `selector_blob` is added (r3 F8: evidence is keyed to the selector that produced it) and `q1_probe_delta`
 moves to the comparator (r3 F4: a PR run's own code must not compute an input of the gate). Architecture review §6.
@@ -784,6 +792,8 @@ moves to the comparator (r3 F4: a PR run's own code must not compute an input of
 ---
 
 ## Slice 7 — the comparator, the committed ledger and its guard (spec §2 *The comparator*, *The ledger*, "A MISS, precisely"; §8.6)
+
+**SUSPENDED (owner 2026-11-10): returns to a spec revision; see backlog #599.**
 
 **Design D1, owner 2026-11-09 14:55 (selection card, answer A; spec §2 and §7, last row).** The comparator is a
 STATELESS report writer; the ledger is the committed file `docs/shadow-ledger.json`, changed only by an absorb
@@ -1746,6 +1756,8 @@ rerun is not a surprise.
 ---
 
 ## Slice 8 — the switch (LAST; spec §7 Q4, §8.1)
+
+**SUSPENDED (owner 2026-11-10): returns to a spec revision; see backlog #599.**
 
 **Design D1 (owner 2026-11-09 14:55).** `switch_gate` reads the committed ledger's ACTIVE epoch AT BASE; trusted
 reports whose identity that ledger has not absorbed can only close the switch (architecture review §6; r1 redesign

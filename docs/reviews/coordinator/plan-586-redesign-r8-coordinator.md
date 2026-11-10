@@ -14,8 +14,8 @@ halves:
   claude: "GAP: alternation, one reviewer per round in rounds 2+ (backlog #339)"
   codex: ran
 findings:
-  - {id: B1, severity: High, aim: deliverable, fix_induced: false, component: ledger-trust, disposition: deferred}
-  - {id: B2, severity: High, aim: deliverable, fix_induced: false, component: ledger-trust, disposition: deferred}
+  - {id: B1, severity: High, aim: deliverable, fix_induced: false, component: ledger-trust, disposition: filed}
+  - {id: B2, severity: High, aim: deliverable, fix_induced: false, component: ledger-trust, disposition: filed}
 ```
 
 ## What held
@@ -47,3 +47,9 @@ listing, an absorb that keeps the first row). They are marked `fix_induced: fals
 The defer row (r7) bet that r8 would find no BLOCKER. It is refuted. Every route on the ladder (accrete,
 redesign, split, defer) has been used, so the next step is the owner's. Both findings stay `deferred` until the owner
 answers. The defer row's outcome is left open until then.
+
+## Owner decision
+
+2026-11-10, selection card A: the plan is SPLIT. Slices 1-5 go forward in the plan PR and get built; slices 6-8 return
+to a spec revision before they are planned again. B1 is filed as backlog #597, B2 as backlog #598, and the spec
+revision as backlog #599 (inputs: #592-#596, #597, #598; trigger: slice 4's first master runs, Task 4.3).
