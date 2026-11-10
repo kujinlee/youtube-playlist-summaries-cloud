@@ -314,6 +314,11 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #586 slice 1 (2026-11-10): the strace measurement instrument, which joined this population when its
+    # review-round-1 fold gave it a `--self-test`. DERIVED by running `analyse()` on the delivered source: 8 keys,
+    # every one reached through ONE forwarding helper (`_read`, `_merge`) and EXEMPT below naming the cases that vary it.
+    "strace-measure.py": ("analyse_log.copies", "analyse_log.log", "analyse_log.samples", "analyse_log.shapes",
+                          "analyse_log.who", "merge.dirs", "merge.jobs", "merge.out"),
     # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source. ⟳ r1 fold: re-derived, 36 -> 47 keys, none lost — combine_rc, is_timeout_kill,
     # last_complete_week, pct_text and valid_week are new, and main / record_main / report_main gained gh, today, clock.
@@ -1346,6 +1351,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # backlog #586 slice 1 (2026-11-10): strace-measure.py — its two entry points are driven through ONE helper each
+    # (`_read` for analyse_log, `_merge` for merge), which forward their arguments; the helpers' CALLERS vary them.
+    "strace-measure.py:analyse_log.copies": "driven through ONE helper, `_read`; its callers vary copies (`/t` alone, and `/t` with a second root `/real/t`, where the same unlink flips inside/outside)",
+    "strace-measure.py:analyse_log.samples": "driven through ONE helper, `_read`; its callers vary samples (an empty store, and one already holding a key, which must keep its first owner)",
+    "strace-measure.py:analyse_log.shapes": "driven through ONE helper, `_read`; its callers vary shapes (an empty store per case, and the store `_stores` reads back to check each shape's owner)",
+    "strace-measure.py:analyse_log.who": "driven through ONE helper, `_read`; its callers vary who (`case`, and `second.py`, whose lines must be credited to it and not to the store's earlier owner)",
+    "strace-measure.py:analyse_log.log": "a temp-file path written by `_read`; analyse_log decides on the file's CONTENT, which every case varies",
+    "strace-measure.py:merge.dirs": "driven through ONE helper, `_merge`; its callers vary dirs (one directory, and two directories each holding one shard)",
+    "strace-measure.py:merge.jobs": "driven through ONE helper, `_merge`; its callers vary jobs (None, and a `gh run view --json jobs` view with a job that has no completedAt)",
+    "strace-measure.py:merge.out": "a temp-file path `_merge` reads back; merge writes the same document wherever it goes",
     # backlog #397 (2026-11-09): ci-durations.py — temp-file paths, and the three entry points driven through ONE
     # helper each (`rec`, `rep`, `cli`), so their parameters have one call site; the helpers' CALLERS vary them.
     # ⟳ r1 fold: `fetch.*` and `append_log.path` exemptions deleted (now varied at direct call sites); the wrong

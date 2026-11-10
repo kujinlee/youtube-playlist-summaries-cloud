@@ -598,32 +598,57 @@ FIXTURES = ROOT / "scripts" / "fixtures" / "strace-lines"
 
 def _self_test() -> int:
     """The suite, inside `fixture_git.isolated()`: every `--self-test` runs isolated (backlog #382)."""
-    sys.path.insert(0, str(ROOT / "scripts"))
     import fixture_git
     with fixture_git.isolated():
         return _self_test_body()
 
 
-def _read(text: str) -> dict:
-    """`analyse_log` over `text`, the copy being `/t`."""
+def _read(text: str, copies: "list[str] | None" = None, samples: "dict | None" = None,
+          shapes: "dict | None" = None, who: str = "case") -> dict:
+    """`analyse_log` over `text`, the copy being `/t` unless `copies` says otherwise."""
     with tempfile.TemporaryDirectory() as d:
         p = pathlib.Path(d) / "trace.log"
         p.write_text(text)
-        return analyse_log(p, ["/t"], {}, {}, "case")
+        return analyse_log(p, ["/t"] if copies is None else copies, {} if samples is None else samples,
+                           {} if shapes is None else shapes, who)
+
+
+def _stores(text: str, samples: dict, shapes: dict, who: str):
+    """The shard's two raw-line stores after `analyse_log` filled them from `text` as `who`."""
+    _read(text, samples=samples, shapes=shapes, who=who)
+    return ({k: v["target"] for k, v in samples.items()}, {k: v["target"] for k, v in shapes.items()})
+
+
+def _shard(index: int, of: int, target: str, plain: float, traced: float, traced_extra: "dict | None" = None) -> dict:
+    return {"header": {}, "shard": [index, of], "seeds": [0], "elapsed_secs": 1.0, "whole_logs": {},
+            "targets": {target: {"0": {"plain": {"secs": plain, "cases": 1, "green": True},
+                                       "traced": {"secs": traced, "cases": 1, "green": True,
+                                                  "spawner": True, **(traced_extra or {})}}}}}
+
+
+def _merge(shards: "list[list[dict]]", key: str, jobs: "dict | None" = None):
+    """`merge`'s `key` over `shards`, one DIRECTORY per inner list, and a `gh run view --json jobs` view if given."""
+    with tempfile.TemporaryDirectory() as d:
+        dirs = []
+        for i, group in enumerate(shards):
+            sub = pathlib.Path(d) / f"dir-{i}"
+            sub.mkdir()
+            for sh in group:
+                (sub / f"shard-{sh['shard'][0]}.json").write_text(json.dumps(sh))
+            dirs.append(sub)
+        jobs_file = None
+        if jobs is not None:
+            jobs_file = pathlib.Path(d) / "jobs.json"
+            jobs_file.write_text(json.dumps(jobs))
+        out = pathlib.Path(d) / "merged.json"
+        with contextlib.redirect_stdout(open(os.devnull, "w")):
+            merge(dirs, out, jobs_file)
+        return json.loads(out.read_text())[key]
 
 
 def _merge_ratio(plain: float, traced: float, key: str = "trace_factor", traced_extra: "dict | None" = None):
     """`merge`'s `key` (default `trace_factor`) over one spawner target with these wall times."""
-    with tempfile.TemporaryDirectory() as d:
-        shard = {"header": {}, "shard": [1, 1], "seeds": [0], "elapsed_secs": 1.0, "whole_logs": {},
-                 "targets": {"t.py": {"0": {"plain": {"secs": plain, "cases": 1, "green": True},
-                                            "traced": {"secs": traced, "cases": 1, "green": True,
-                                                       "spawner": True, **(traced_extra or {})}}}}}
-        (pathlib.Path(d) / "shard-1.json").write_text(json.dumps(shard))
-        out = pathlib.Path(d) / "merged.json"
-        with contextlib.redirect_stdout(open(os.devnull, "w")):
-            merge([pathlib.Path(d)], out, None)
-        return json.loads(out.read_text())[key]
+    return _merge([[_shard(1, 1, "t.py", plain, traced, traced_extra)]], key)
 
 
 def _self_test_body() -> int:
@@ -720,6 +745,27 @@ def _self_test_body() -> int:
           lambda: _merge_ratio(10, 200, key="unpaired_halves"), None)
     check("X4 merge: a shard that counted them reports the count",
           lambda: _merge_ratio(10, 200, key="unpaired_halves", traced_extra={"unpaired_halves": 3}), {"t.py": 3})
+    # The parameters every case above holds constant (check-fixture-variation), each varied where it decides.
+    check("copies: an unlink under the SECOND copy root (the driver passes the copy and its realpath) is inside",
+          lambda: sorted(r["path"] for r in _read('1 unlink("/real/t/x") = 0\n', copies=["/t", "/real/t"])
+                         ["external_removals"]), [])
+    check("copies: the same unlink with only the first root is outside",
+          lambda: sorted(r["path"] for r in _read('1 unlink("/real/t/x") = 0\n', copies=["/t"])
+                         ["external_removals"]), ["/real/t/x"])
+    check("samples/shapes/who: the shard's stores are filled first-come, each line credited to the target that "
+          "logged it; a store already holding a key keeps its first owner",
+          lambda: _stores('1 unlink("/t/x") = 0\n1 --- SIGCHLD {si_signo=SIGCHLD} ---\n',
+                          {("unlink", "= N"): {"line": "earlier", "target": "first.py"}}, {}, "second.py"),
+          ({("unlink", "= N"): "first.py"}, {"signal: --- SIGCHLD {si_signo=SIGCHLD} ---": "second.py"}))
+    check("dirs: shards split across TWO directories are both read",
+          lambda: _merge([[_shard(1, 2, "a.py", 1, 5)], [_shard(2, 2, "b.py", 1, 7)]], "trace_factor"), 7)
+    check("jobs: a `gh run view --json jobs` view gives each job's wall seconds and their sum",
+          lambda: _merge([[_shard(1, 1, "t.py", 1, 2)]], "jobs",
+                         {"jobs": [{"name": "s (1)", "startedAt": "2026-11-10T00:00:00Z", "completedAt": "2026-11-10T00:01:40Z"},
+                                   {"name": "s (2)", "startedAt": "2026-11-10T00:00:00Z", "completedAt": "2026-11-10T00:00:30Z"},
+                                   {"name": "s (3)", "startedAt": "2026-11-10T00:00:00Z", "completedAt": None}]}),
+          {"per_job_secs": {"s (1)": 100.0, "s (2)": 30.0}, "sum_secs": 130.0, "max_secs": 100.0})
+
     # Low findings.
     check("F5 a REMOVER line the splitter cannot balance is unresolved, never dropped",
           lambda: _read('100 unlinkat(3</home/runner/a<b>, "f", 0) = 0\n')["unresolved_removal_count"], 1)

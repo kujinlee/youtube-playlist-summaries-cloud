@@ -34,8 +34,14 @@ findings:
 `scripts/strace-measure.py` had no self-test. It now has `--self-test` (inside `fixture_git.isolated()`, as
 `check-fixture-git-isolation` requires of every file carrying the flag) and a `NO-MUTATIONS:` reason, as
 `check-ratchet-contract` R4W requires of a self-tested non-guard. Each reviewer's constructed input became a case
-FIRST: on the pre-fix reader the self-test passed **6 of 30** cases; after the rewrite, **32 of 32** (the last two
-cover the new `unpaired_halves` merge field). The workflow runs the self-test before measuring.
+FIRST: on the pre-fix reader the self-test passed **6 of 30** cases; after the rewrite, **37 of 37** (two cover the
+new `unpaired_halves` merge field; five vary the parameters every other case held constant — two copy roots, a sample
+store that already has an owner, two shard directories, a jobs view). The workflow runs the self-test before measuring.
+
+A `--self-test` also put the file in `check-fixture-variation`'s population. Its 8 parameter keys are pinned in
+`EXAMINED_KEYS`; each is reached through one forwarding helper (`_read`, `_merge`), so each has an `EXEMPT` row naming
+the cases that vary it (the precedent of `ci-durations.py` and `batch-ci.py`). That guard's own mutation sweep is
+over the 10-minute local budget and runs on the PR's CI shards.
 
 Control: the corrected reader re-read the 12 retained whole logs of run 42893595762 (two per shard) and gave the SAME
 removals, unresolved lines, ioctls and syscall names as the first reader — 0 differences. The fixes change what the
