@@ -355,17 +355,20 @@ build ADDS four things (the fourth, the committed ledger, since the owner's 14:5
 - **The comparator.** A new script, `scripts/shadow-compare.py`, run by a new scheduled job, `shadow-compare`
   (daily, on the default branch only, read-only token). It is STATELESS over its inputs: each run re-scans every
   PR merged since the ledger's epoch start, so a comparison PENDING at one run is retried at the next and cannot
-  fall out of a time window. It uploads its result as a REPORT, `shadow-report-<run_id>` (90 days), and reads no
-  earlier report.
+  fall out of a time window. It uploads its result as a REPORT, `shadow-report-<run_id>-<run_attempt>` (90 days),
+  and reads no earlier report. Every ATTEMPT of a run is its own report, read whatever the run's current status, so
+  re-running a run cannot hide an earlier attempt's miss (r2 redesign Codex C2).
 - **The ledger.** A committed file, `docs/shadow-ledger.json`, changed only by a pull request that absorbs
-  reports. It records WHICH reports it absorbed, by identity (the run id), never by a timestamp: one report can be
-  published after a later one was absorbed (r1 redesign Codex X1, X2). A miss or a post-switch event only
+  reports. It records WHICH reports it absorbed, by identity (the run id and attempt), never by a timestamp: one
+  report can be published after a later one was absorbed (r1 redesign Codex X1, X2). An absorb takes EVERY trusted
+  report the ledger has not absorbed, never a subset (r2 redesign Codex C1: a subset let unrelated absorbs keep the
+  ledger fresh while a report contradicting an existing row aged out unread). A miss or a post-switch event only
   tightens, so it is absorbed from any trusted report; a clean row and Q1's probe delta only loosen, so they are
   absorbed only from a report written by BASE's code for the current epoch. A decided row is never replaced,
-  except by a miss. A guard on every pull request REBUILDS the absorb from the ledger at BASE and the reports the
-  change names, and refuses any other result, so a change that removes or alters a decided row, drops a miss or
-  an event, adds a row no trusted report holds, or advances the ledger past a report it did not absorb cannot
-  pass. Everything the switch counts lives inside the current EPOCH; moving the epoch requires the owner's
+  except by a miss. A guard on every pull request REBUILDS the absorb from the ledger at BASE and EVERY trusted
+  report the ledger at BASE has not absorbed, and refuses any other result, so a change that removes or alters a
+  decided row, leaves a listed report out, keeps a row a listed miss contradicts, drops a miss or an event, adds
+  a row no trusted report holds, or advances the ledger past a report it did not absorb cannot pass. Everything the switch counts lives inside the current EPOCH; moving the epoch requires the owner's
   recorded decision and archives the old epoch, its misses included, verbatim (r1 redesign Codex X3). A row
   counts only under the selector that decided it (r1 redesign Claude F5). A PR decided in the ledger keeps that
   decision, so neither an input's nor a report's expiry can undo it. An expired input with no decided row is
@@ -664,7 +667,8 @@ PICKS by 3(a) rather than falling back (§3 replaced the old stale-set fallback;
    Claude F6), and the re-run happens inside `shadow-compare` on fresh staged trees. **The ledger (§2, owner
    2026-11-09 14:55):** a committed change to `docs/shadow-ledger.json` that removes or alters a decided row,
    lowers a miss count, adds a row no trusted report holds, records a report as absorbed without absorbing its
-   misses, or moves the epoch without the owner's recorded decision or without archiving the old epoch verbatim
-   passes the guard; or the switch opens on anything but the ledger's current epoch at BASE (a report, an
+   misses, absorbs some listed trusted reports while leaving another out, or moves the epoch without the owner's
+   recorded decision or without archiving the old epoch verbatim passes the guard; or the switch opens on anything but the ledger's current epoch at BASE (a report, an
    artifact, the PR's own ledger, an archived epoch's rows, a row decided under another selector); or a trusted
-   report holding a miss the ledger has not absorbed leaves the switch open, whenever it was published.
+   report holding a miss the ledger has not absorbed leaves the switch open, whenever it was published and
+   whatever the current status of its run (a rerun in progress included).

@@ -762,7 +762,8 @@ moves to the comparator (r3 F4: a PR run's own code must not compute an input of
   read, actions: read`. Steps (r1 Claude F12; spec §2 Resolve: it "runs the shards' `setup-node` step", since
   `node -v` is a key element): checkout `fetch-depth: 0` (the ancestor test and the R..BASE diff need history),
   setup-node `'22'`, setup-python `'3.12'`, the Python-pin step; then ONE step that fetches the cache list
-  (`gh api repos/{owner}/{repo}/actions/caches?key=readsets-<python>-<hash>-`) to a file and passes it to
+  (`gh api repos/{owner}/{repo}/actions/caches?key=readsets-<python>-<hash>-`, with `env: GH_TOKEN: ${{
+  github.token }}`, r2 redesign Codex C3's class: no `ci.yml` job exports a token to `gh` today) to a file and passes it to
   `reach_select.py`, whose `pick_cache` decides (no ancestry or "nearest" logic in YAML); `actions/cache/restore`
   by the exact key it printed; `reach_select.py --select-only … --image "$ImageVersion" --selector-blob "$(git
   rev-parse HEAD:scripts/reach_select.py)"`; upload `selection-<run_id>-<run_attempt>` (`retention-days: 90`,
@@ -773,6 +774,8 @@ moves to the comparator (r3 F4: a PR run's own code must not compute an input of
 - [ ] **Failing case:** a `ci.yml` read in `check-plan-code.py`'s self-test asserts `mutation-sweep` does not consume
   `sweep-select`'s output in this slice (the shadow invariant, made mechanical); slice 8 flips this case. A second
   read asserts the `--select-only` step passes `--selector-blob` from `git rev-parse HEAD:scripts/reach_select.py`.
+  A third (r2 C3) asserts the cache-list step's `env.GH_TOKEN` is exactly `${{ github.token }}` (Task 7.2 turns
+  this into the general `GH_CALLERS` read).
 
 **Pre-push (slice 6):** `python3 scripts/check-python-pin.py`; `python3 scripts/check-plan-code.py --self-test`;
 `python3 scripts/reach_select.py --self-test`; WM pins for both (Tasks 6.1, 6.2).
@@ -802,16 +805,32 @@ lists the RUNS of one workflow, never the repository's artifacts, which after sl
 (INFERRED: 8 `verdicts-*` + 1 `selection-*`; MEASURED 710 runs in 7 days) to tens of thousands of artifacts and
 hundreds of pages per listing against `GITHUB_TOKEN`'s 1,000 requests per hour:
 1. `gh api "repos/{owner}/{repo}"` → `default_branch` (never typed) and the repository `id`;
-2. `gh api --paginate "repos/{owner}/{repo}/actions/workflows/shadow-compare.yml/runs?branch=<default>&status=success&created=>=<today − 90 days>&per_page=100"`
-   (about 90 daily runs plus dispatches: one or two pages). Each run object already carries `event`, `path`,
-   `head_branch`, `head_repository.id` and `repository.id`, so `trusted_report_run` needs NO per-run lookup;
-3. for each trusted run whose id is NOT in `skip` (the identities the ledger at BASE already absorbed, Task 7.3):
-   `gh api "repos/{owner}/{repo}/actions/runs/<id>/artifacts?name=shadow-report-<id>"` (the `name` parameter is an
-   EXACT match, r2 Codex F5, so the run id is part of the name), which must return exactly one artifact with
-   `expired == false`, then its download, which must pass `report_schema_ok`.
-A failed call, a trusted successful run with no report, or a report failing its schema RAISES; every caller turns
-that into a refusal. The cost is 1 + pages + 2 per UNABSORBED trusted run, about 2 + 2 × (days since the last
-absorb), at most about 30 calls while the gate's 14-day staleness clause holds.
+2. `gh api --paginate "repos/{owner}/{repo}/actions/workflows/shadow-compare.yml/runs?branch=<default>&created=>=<today − 120 days>&per_page=100"`
+   (about 120 daily runs plus dispatches: two pages). **No `status` parameter** (r2 redesign Codex C2): GitHub's
+   `status` "Returns workflow runs with the check run status or conclusion that you specify", which is the run's
+   CURRENT state, and a rerun of a run that already published a miss is `queued` or `in_progress` until it ends,
+   so `status=success` dropped the run and the miss with it. **120 days, not 90** (found by the class search
+   after C2, by simulation): GitHub's re-run page says a run can be re-run "up to 30 days after its initial run",
+   and `created` filters on the RUN's creation, so a rerun attempt's report can be uploaded 30 days after its
+   run was created and still live 90 days after that. Each run object carries `event`, `path`, `head_branch`,
+   `head_repository.id`, `repository.id`, `run_attempt`, `status` and `conclusion`, so `trusted_report_run` needs
+   NO per-run lookup;
+3. **every ATTEMPT of every trusted run is its own report** (r2 redesign Codex C2: a rerun must never remove an
+   earlier attempt's tightening evidence; GitHub's docs do NOT state whether an earlier attempt's artifacts
+   survive a rerun, so the rule below fails closed either way). A report's identity is `report_id = "<run_id>.<run_attempt>"`,
+   and `skip` holds the identities the ledger at BASE already absorbed (Task 7.3). For each trusted run and each
+   attempt `n` in `1..run.run_attempt` whose identity is NOT in `skip`: its state is the run object's for the
+   latest attempt, else `gh api "repos/{owner}/{repo}/actions/runs/<id>/attempts/<n>"` (documented: "Gets a
+   specific workflow run attempt"); then `gh api "repos/{owner}/{repo}/actions/runs/<id>/artifacts?name=shadow-report-<id>-<n>"`
+   (the `name` parameter is an EXACT match, r2 Codex F5, so the run id and attempt are in the name). An attempt
+   that concluded `success` must have exactly one artifact with `expired == false`, whose download must pass
+   `report_schema_ok`; an attempt still `queued`, `in_progress` or `waiting` contributes nothing YET (it is not
+   absorbed, so the next listing reads it); an attempt that ended otherwise contributes its report if one exists
+   (a report only tightens what it adds beyond `may_loosen`) and nothing if not.
+A failed call, a successful attempt with no unexpired report (absent, or deleted by a rerun), or a report failing
+its schema RAISES; every caller turns that into a refusal. The cost is 1 + pages + 2 per UNABSORBED attempt
+(+ 1 per earlier attempt of a rerun run), about 3 + 2 × (days since the last absorb), at most about 31 calls while
+the gate's 14-day staleness clause holds.
 
 **Why a separate workflow file (resolves r3's Q2 note).** The job lives in a NEW workflow,
 `.github/workflows/shadow-compare.yml` (`on: schedule` daily + `workflow_dispatch`), not in `ci.yml`. Adding
@@ -874,13 +893,20 @@ predicate does), `permissions: contents: read, actions: read`. Steps: checkout `
 (a replay stages `node_modules/typescript`); the read-set cache list and `actions/cache/restore` by `pick_cache`
 (Task 5.3, default-branch entries only) for the Q1 delta; then ONE step, `python3 scripts/shadow-compare.py
 --report --out "$RUNNER_TEMP/report.json"`; then `actions/upload-artifact` named
-**`shadow-report-${{ github.run_id }}`**, `retention-days: 90`, `if: success()`.
+**`shadow-report-${{ github.run_id }}-${{ github.run_attempt }}`** (one report per attempt, r2 redesign Codex
+C2), `retention-days: 90`, `if: success()`. **Every step that runs `gh`, directly or through a script, carries
+`env: GH_TOKEN: ${{ github.token }}`** (r2 redesign Codex C3: GitHub's CLI page requires the variable in a
+workflow step, and a job's `permissions:` exports no token to `gh`): here the cache-list step and the `--report`
+step; `on-default-branch` already does.
 
 **What `--report` does** (all `gh` calls injected in the self-test): (1) reads `docs/shadow-ledger.json` AT ITS OWN
 CHECKOUT, only for the ACTIVE `epoch.start` and the PRs already decided in the active epoch's `rows` (it never
 reads an earlier report, an archived epoch or an artifact ledger); (2) lists PRs merged since `epoch.start`, their
-pushes' runs, and downloads each `selection-*`/`verdicts-*` pair it needs; (3) compares, replays, decides each PR
-not already decided in the active epoch;
+pushes' runs WHATEVER their current status (the class of r2 redesign Codex C2), and downloads each
+`selection-*`/`verdicts-*` pair it needs, for EVERY attempt of a run (both names carry `<run_attempt>`): an
+attempt still running makes that push `pending`, and each completed attempt is compared on its own, so a rerun
+that compares clean cannot replace an earlier attempt's difference (`decide_pr` latches a miss from any of them);
+(3) compares, replays, decides each PR not already decided in the active epoch;
 (4) computes `q1_probe_delta` ITSELF with `reach_select.q1_probe_delta` (Task 6.1) over the restored read sets
 (r3 F4: default-branch code, never a PR run's), or null when no usable read set was restored; (5) runs
 `post_switch` (Task 8.2; an empty list until slice 8); (6) writes the report. A failed listing or download exits
@@ -893,8 +919,8 @@ epoch_start, generated_at, q1_probe_delta: int | null, prs: {"<N>": {decision: "
 "pending"|"not a sample", merged_at, decided_at, pushes: [{head, base, result, differing: [...], drift: bool}]}},
 post_switch_events: [{sweep_run_id, pr, targets}], counts: {miss, inconclusive, unreproduced, drift_events}}`.
 `generated_at` is the UTC time the report is WRITTEN (step 6), stated so it is not taken for the run's start; it
-orders reports for Q1's value and measures freshness, and nothing else (a report's absorption is by `run_id`,
-Task 7.3; r1 redesign Claude F1c). **DECIDED** means one of `clean`, `miss`, `inconclusive` or `not a sample`;
+orders reports for Q1's value and measures freshness, and nothing else (a report's absorption is by its identity
+`report_id` = `<run_id>.<run_attempt>`, Task 7.3; r1 redesign Claude F1c, r2 redesign Codex C2). **DECIDED** means one of `clean`, `miss`, `inconclusive` or `not a sample`;
 `pending` is NEVER decided, is never written to the ledger, and is re-scanned by every later report (r1 redesign
 Claude F9). `DECIDED = frozenset({"clean", "miss", "inconclusive", "not a sample"})` lives in `reach_gate.py`,
 and the comparator, the absorb and the guard all import it.
@@ -938,17 +964,34 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
   `drift: true`, `drift_events` 1, the result unchanged; equal images → `drift: false`; a null image → drift; a
   `shadow-compare.yml` read asserts `shadow-compare`'s `needs:` is `on-default-branch` and its `if:` is exactly
   `needs.on-default-branch.outputs.on_default == 'true'`, its permissions are exactly `contents: read`, `actions:
-  read`, it has NO `concurrency` key, and the artifact name starts `shadow-report-`; **(F3, the scheduled run)**
+  read`, it has NO `concurrency` key, and the artifact name is exactly
+  `shadow-report-${{ github.run_id }}-${{ github.run_attempt }}`; **(r2 C3, every `gh` caller is authenticated)**
+  a read of `shadow-compare.yml` AND `ci.yml` asserts that every step whose `run:` contains `gh ` or invokes a
+  script in `GH_CALLERS` (`scripts/shadow-compare.py`, `scripts/check-shadow-ledger.py`, and from slice 8 the
+  `--select-only` step that runs `switch_gate`) has `env.GH_TOKEN` exactly `${{ github.token }}` (it fails on
+  the r1 guard step, which had none; adjacent: a step with it passes, and a step that runs neither passes
+  without it); **(F3, the scheduled run)**
   the same read REFUSES any `if:` in the file that contains `github.event.` (it fails on the r1 expression
   `github.ref == format('refs/heads/{0}', github.event.repository.default_branch)`, the one that skipped every
   `schedule` run), and the `on-default-branch` step, run under `bash -e` against a fake `gh` (stdout `master`),
   writes `on_default=true` for `GITHUB_REF=refs/heads/master` (the scheduled run's ref) and `on_default=false` for
   `refs/heads/feature`, and exits nonzero, writing nothing, when the fake `gh` fails or prints an empty line;
   **(F4)** `list_reports` over a fake `gh` serving 150 trusted runs of which 140 are in `skip` makes exactly
-  1 + 2 + 2 × 10 calls (repository, two run pages, artifact list and download per unabsorbed run) and NEVER calls
-  `repos/{owner}/{repo}/actions/artifacts` (the repository-wide listing), adjacent: a trusted successful run with
-  no `shadow-report-<id>` → RAISES; a run with `event: pull_request` in the listing is not trusted and costs no
-  call; an `expired: true` report RAISES (never silently dropped).
+  1 + 2 + 2 × 10 calls (repository, two run pages, artifact list and download per unabsorbed attempt) and NEVER
+  calls `repos/{owner}/{repo}/actions/artifacts` (the repository-wide listing), adjacent: a successful attempt
+  with no `shadow-report-<id>-<n>` → RAISES; a run with `event: pull_request` in the listing is not trusted and
+  costs no call; an `expired: true` report RAISES (never silently dropped); **(r2 C2, a rerun in progress)** run
+  9 with `run_attempt: 2`, `status: in_progress`, whose attempt 1 concluded `success` with a report holding #650
+  `miss` → `list_reports` returns attempt 1's report (identity `9.1`) and the gate's clause 9 refuses
+  `unabsorbed miss` (under r1 the `status=success` query never returned run 9, and the gate opened); the listing
+  URL holds no `status=` parameter and `created=>=` today − 120 days; adjacent: attempt 2 completes `success`
+  with a report saying #650 `clean` → BOTH `9.1` and `9.2` are listed and the absorb keeps `miss`; attempt 1
+  concluded `success` but its artifact is gone (a rerun deleted it) → RAISES, never skipped; attempt 1 concluded
+  `failure` with no artifact → contributes nothing, no raise; an attempt `9.1` in `skip` costs no call while
+  `9.2` is read; **(the 120-day window)** a run created 100 days ago whose attempt 2 (uploaded 70 days ago, a
+  rerun 30 days after its run) holds a miss → listed (a 90-day `created` window drops it); **(comparator, the
+  same class)** a PR push whose CI run has attempt 1 with a difference that replays as a miss and attempt 2
+  comparing clean → the PR is `miss`; an attempt still running → `pending`.
 - [ ] **Steps:** red, implement with `gh` injected, green, W1-W8, mutate `--only scripts/shadow-compare.py`, commit.
 
 ### Task 7.3: the committed ledger, the absorb, the guard and the epoch HOLD
@@ -972,18 +1015,21 @@ it for this file.
   merged>, selector_blob: <git rev-parse HEAD:scripts/reach_select.py at this commit>, reset_by_owner: null,
   absorbed_reports: {}, absorbed_through: null, rows: {}, post_switch_events: [], q1_probe_delta: null},
   previous_epochs: []}`. A row is `{decision, merged_at, decided_at, pushes, selector_blob}`, the last copied from
-  the report that wrote it (r1 redesign Claude F5); `absorbed_reports` maps each absorbed report's `run_id` to its
-  `generated_at` (its IDENTITY, r1 redesign Codex X1, X2); `q1_probe_delta` is `{value, generated_at}` or null
+  the report that wrote it (r1 redesign Claude F5); `absorbed_reports` maps each absorbed report's `report_id`
+  (`<run_id>.<run_attempt>`, Task 7.2) to its `generated_at` (its IDENTITY, r1 redesign Codex X1, X2, r2 C2); `q1_probe_delta` is `{value, generated_at}` or null
   (r1 redesign Claude F6); `absorbed_through` is the newest absorbed `generated_at` and serves FRESHNESS only
   (Task 8.1 clause 7), never which reports are absorbed. `epoch.start` replaces the r2 `SHADOW_START` constant.
   GENESIS is this commit: expiry cannot empty a file (r3 F2).
 - **`shadow-compare.py --absorb docs/shadow-ledger.json`**, run LOCALLY by the coordinator with a read-only `gh`
   (no workflow writes the repository; every job keeps a read-only token). It absorbs EVERY trusted report whose
-  `run_id` is not yet in the ledger (`list_reports(gh, skip=<every absorbed id, active and archived>)`), by the ONE
-  rule `absorb_epoch` below, which the guard also runs. A miss or a post-switch event only TIGHTENS, so it is taken
+  `report_id` is not yet in the ledger (`list_reports(gh, skip=<every absorbed id, active and archived>)`), by the
+  ONE rule `absorb_epoch` below, which the guard also runs. **EVERY, never a subset, and the guard enforces it**
+  (r2 redesign Codex C1): under r1 an absorb could take reports of its choosing, so fourteen weekly absorbs of
+  unrelated reports kept the watermark fresh while a report contradicting an EXISTING `clean` row aged out of the
+  listing; a subset also lets the absorber choose which of two non-miss rows lands first. A miss or a post-switch event only TIGHTENS, so it is taken
   from any trusted report; a non-miss row and Q1's value only LOOSEN, so they are taken only from a report that
   `may_loosen` (ancestor `code_sha`, BASE's two blobs, the active epoch), and any other report is logged
-  `ABSORB MISSES ONLY: <run_id> <why>` (r1 redesign Claude F1a: under r1, a comparator change SKIPPED an older
+  `ABSORB MISSES ONLY: <report_id> <why>` (r1 redesign Claude F1a: under r1, a comparator change SKIPPED an older
   report's miss whole). A decided row is never overwritten, except that a `miss` replaces a non-miss: **the r1
   `ABSORB CONFLICT` refusal is removed** (r1 redesign Claude F1b) because its resolution was a hand edit choosing a
   side, and the guard (rebuild, below) now refuses every hand edit; "a miss always wins" is the only resolution
@@ -993,6 +1039,10 @@ it for this file.
 import copy
 
 DECIDED = frozenset({"clean", "miss", "inconclusive", "not a sample"})  # "pending" is never written (F9)
+
+def report_id(rep):
+    """A report's IDENTITY: one per run ATTEMPT, so a rerun never replaces an earlier attempt's report (r2 C2)."""
+    return f"{rep['run_id']}.{rep['run_attempt']}"
 
 def may_loosen(rep, epoch, blobs, is_ancestor):
     """None when this report may add non-miss rows and Q1's value; else why not (it still adds misses)."""
@@ -1007,10 +1057,10 @@ def may_loosen(rep, epoch, blobs, is_ancestor):
 def absorb_epoch(epoch, reports, blobs, is_ancestor):
     """The ONE absorb rule: --absorb writes it, the guard recomputes it. Never removes anything."""
     out, log = copy.deepcopy(epoch), []
-    for rep in sorted(reports, key=lambda r: (r["generated_at"], str(r["run_id"]))):
+    for rep in sorted(reports, key=lambda r: (r["generated_at"], report_id(r))):
         why = may_loosen(rep, epoch, blobs, is_ancestor)
         if why:
-            log.append(f"ABSORB MISSES ONLY: {rep['run_id']} {why}")
+            log.append(f"ABSORB MISSES ONLY: {report_id(rep)} {why}")
         for pr, row in sorted(rep["prs"].items()):
             if row["decision"] not in DECIDED or (why and row["decision"] != "miss"):
                 continue
@@ -1023,9 +1073,23 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
         q1 = out["q1_probe_delta"]
         if not why and rep["q1_probe_delta"] is not None and (q1 is None or rep["generated_at"] > q1["generated_at"]):
             out["q1_probe_delta"] = {"value": rep["q1_probe_delta"], "generated_at": rep["generated_at"]}
-        out["absorbed_reports"][str(rep["run_id"])] = rep["generated_at"]
+        out["absorbed_reports"][report_id(rep)] = rep["generated_at"]
     out["absorbed_through"] = max(out["absorbed_reports"].values(), default=None)
     return out, log
+
+def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor):
+    """The guard's absorb clause. `listed` is EVERY trusted report not absorbed at BASE (list_reports with
+    skip = every id BASE absorbed, active and archived). The absorb takes ALL of them, never a subset (r2 C1)."""
+    base_ids, head_ids = set(base_epoch["absorbed_reports"]), set(head_epoch["absorbed_reports"])
+    listed_ids = {report_id(r) for r in listed}
+    errs = [f"absorbed id removed: {i}" for i in sorted(base_ids - head_ids)]
+    errs += [f"absorbed id is no listed trusted report: {i}" for i in sorted(head_ids - base_ids - listed_ids)]
+    errs += [f"listed report not absorbed: {i} (re-run --absorb)" for i in sorted(listed_ids - head_ids)]
+    if errs:
+        return errs
+    expected, _ = absorb_epoch(base_epoch, listed, blobs, is_ancestor)
+    return [f"{k} differs from the rebuilt absorb" for k in sorted(set(expected) | set(head_epoch))
+            if expected.get(k) != head_epoch.get(k)]
 ```
 - **`scripts/check-shadow-ledger.py --base REF`.** Its rule, `ledger_change_errors(base_doc, head_doc, reports,
   blobs_at_base, is_ancestor, today) -> list[str]`, is PURE; the fetch (`list_reports`, the download, `git show`,
@@ -1035,20 +1099,41 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
   (rc 1, one line per error). **The r1 guard enumerated forbidden EDITS and so passed a watermark-only advance past
   an omitted miss (r1 redesign Codex X1); this one REBUILDS the expected result and refuses everything else:**
   - **an absorb** (the epoch's identity `start`, `selector_blob`, `reset_by_owner` and `previous_epochs`
-    unchanged): a removed absorbed id; a new id that is not among `reports` (untrusted, expired, or invented); and
-    then HEAD's epoch must EQUAL `absorb_epoch(BASE's epoch, <the reports of the new ids>)` field by field, rows,
-    events, Q1, `absorbed_reports` and `absorbed_through` included, so a removed or altered row, a `miss` →
-    `clean` change, a dropped event, a row no report holds, an older Q1 and a moved watermark are all one
-    clause; and a non-miss row ADDED for a PR that a listed, still-unabsorbed report decides `miss` (a hand-picked
-    subset of the reports, r1 redesign Claude F1b);
-  - **an absorb gap**: BASE's `absorbed_through` (or `epoch.start`) more than 76 days before today → refused, since
-    a report may have expired unabsorbed (90-day retention less a 14-day margin); only an epoch reset clears it.
-    This is the stated bound: a miss is lost only if NO absorb runs for 76 days, and then the ledger cannot
-    advance at all;
+    unchanged): `absorb_errors` above. HEAD's absorbed ids must be BASE's plus EXACTLY the identities of
+    `reports` (every listed trusted report BASE has not absorbed, in any epoch): a removed id, an id that is not
+    among `reports` (untrusted, expired, or invented) and a listed report LEFT OUT are each refused; then HEAD's
+    epoch must EQUAL `absorb_epoch(BASE's epoch, reports)` field by field, rows, events, Q1, `absorbed_reports`
+    and `absorbed_through` included, so a removed or altered row, a `miss` → `clean` change, an EXISTING `clean`
+    row a listed report contradicts left `clean` (the rebuild replaces it: a miss always wins), a dropped event, a
+    row no report holds, an older Q1 and a moved watermark are all one clause (r2 redesign Codex C1: the r1 fold
+    rebuilt from the ids HEAD CHOSE, and its extra check covered only rows HEAD ADDED, so an absorb that left out
+    the report contradicting an existing row passed). **Its cost, stated:** a report published between the
+    local `--absorb` and the PR's `verify` run is listed by the guard and not absorbed, so that `verify` is red
+    with `listed report not absorbed: <id> (re-run --absorb)` until the absorb is re-run; a daily report makes
+    this at most one re-run per absorb PR that stays open across the schedule, and it fails closed;
+  - **an absorb gap**: BASE's `absorbed_through` (or `epoch.start`) more than 76 days before today → refused; only
+    an epoch reset clears it. This and gate clause 7 are the only reads of the timestamp watermark, and both can
+    only REFUSE. **The bound, restated from what the C1 fix makes true and attacked before it was written:** every
+    admitted absorb takes every listed report, and `absorbed_through` is never later than the previous absorb, so
+    at the next admitted absorb (at most 76 days after `absorbed_through`) every report uploaded after the
+    previous one is at least 14 days from its 90-day expiry, and the 120-day `created` window (Task 7.2) still
+    lists its run even when it is a rerun attempt uploaded 30 days after its run began. A trusted report is
+    therefore lost unabsorbed only if NO absorb is admitted during its whole life, and then the ledger cannot
+    advance at all and gate clause 7 has closed the switch since day 14. **ASSUMED, not stated by GitHub:** an
+    artifact expires 90 days after its UPLOAD (the docs give `expires_at`, not its start); a shorter life is
+    still caught for a successful attempt in the window, because its missing or `expired` report RAISES (Task
+    7.2). Simulated over the extracted `absorb_epoch`/`absorb_errors` rule's listing model (3,000 random absorb
+    schedules × 3 seeds, uploads up to 30 days after run creation): no report expired unabsorbed before the last
+    admitted absorb; the same simulation with a 90-day `created` window, or a 92-day gap, LOSES reports (the
+    controls);
   - **an epoch change** (any identity field or `previous_epochs` differs): `previous_epochs` must be BASE's with
     BASE's active epoch appended VERBATIM (its rows, misses, events and absorbed ids with it); the new epoch must
     be EMPTY (`fresh_epoch`: no rows, events, ids or Q1 carried); `start` strictly later; `reset_by_owner` a
-    non-empty string; `selector_blob` equal to BASE's `reach_select.py` blob (r3 F5; r1 redesign Codex X3);
+    non-empty string; `selector_blob` equal to BASE's `reach_select.py` blob (r3 F5; r1 redesign Codex X3). A
+    report written for the OLD epoch and absorbed only after the reset is absorbed into the NEW epoch for its
+    misses and events only (`may_loosen`: `report from another epoch`), so a miss the owner had not yet seen
+    when resetting latches the new epoch (found by the class search: rows from outside the active epoch can
+    only tighten it, never count toward it);
   - **genesis**: no file at BASE → HEAD must be an empty epoch keyed to BASE's selector, `previous_epochs: []`;
   - a HEAD document that fails `ledger_schema_ok`, or a BASE that has the file and HEAD deletes it.
   A failed listing or download while the ledger changed is rc 2, CANNOT RUN, never a pass. Caller: a `verify` step
@@ -1057,7 +1142,10 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
   clause needs. **`verify` has no `permissions:` block today, so it gains the WHOLE block `permissions: {contents:
   read, actions: read}`** (r1 redesign Claude F7: a job-level block sets every unlisted scope to `none`, so adding
   `actions: read` alone would revoke `contents` and break every checkout); `verify` makes no write call today
-  (no `gh`, no `GH_TOKEN`), so the explicit block loses nothing.
+  (no `gh`, no `GH_TOKEN`), so the explicit block loses nothing. **The guard step carries `env: GH_TOKEN: ${{
+  github.token }}`** (r2 redesign Codex C3: `verify` exports no token today, and Codex measured `gh api` with no
+  token and an empty config exit 4 before any request; a `permissions:` block grants scopes, it exports nothing);
+  the Task 7.2 `GH_CALLERS` case reads it.
 - **`scripts/check-merge-ready.py`: a HOLD reason `shadow-ledger epoch changed`** when BASE's and HEAD's
   `epoch.start`, `epoch.selector_blob`, `epoch.reset_by_owner` or `previous_epochs` differ (an absorb changes
   only the active epoch's contents and does not HOLD). Spec §7 Q5 makes a revisit the owner's, and a HOLD makes that
@@ -1067,8 +1155,19 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
   only `absorbed_through` to T2 ≥ T1 → refused (adjacent: HEAD = the absorb of that report → passes); **(X1,
   dropped evidence)** HEAD absorbs the miss report's id but omits its miss row → refused, and the same with the
   row turned `clean` → refused; **(F1b, hand-picked subset)** reports R1 (#600 `miss`) and R2 (#600
-  `inconclusive`, #601 `clean`) both listed, HEAD absorbs only R2 → refused, `#600 added as inconclusive while
-  unabsorbed report R1 decides it miss` (adjacent: HEAD absorbs both → #600 `miss`, passes); **(F6)** HEAD's
+  `inconclusive`, #601 `clean`) both listed, HEAD absorbs only R2 → refused, `listed report not absorbed: <R1>`
+  (adjacent: HEAD absorbs both → #600 `miss`, passes); **(r2 C1, a selective absorb against an EXISTING row —
+  the Codex scenario, which PASSED the r1 fold's guard)** BASE holds #600 `clean`; listed R1 decides #600 `miss`
+  and R2 decides only #601; HEAD = `absorb_epoch(BASE, [R2])` → refused, `listed report not absorbed: <R1>` (the
+  r1 rebuild over the CHOSEN ids equals HEAD, and its ADDED-rows check never looked at #600); fourteen such weekly
+  absorbs, each of one unrelated report while R1 stays listed → each refused at the first; adjacent: HEAD =
+  `absorb_epoch(BASE, [R1, R2])` → #600 `miss`, passes; **(r2 C1, the contradiction kept by hand)** HEAD carries
+  both ids but keeps #600 `clean` → refused, `rows differs from the rebuilt absorb`; **(r2 C1, a subset choosing
+  which non-miss row lands)** R_a (earlier) #601 `inconclusive`, R_b #601 `clean`, HEAD absorbs only R_b →
+  refused (adjacent: both → `inconclusive`, the earlier report's row, in either input order); **(r2 C1, the race,
+  its stated cost)** a report published after the local absorb is listed at `verify` → refused, `re-run
+  --absorb`, and the re-run absorb passes; **(r2 C2)** run 9's attempts `9.1` (#650 `miss`) and `9.2` (#650
+  `clean`) both listed, HEAD absorbs only `9.2` → refused; both → `miss`, two identities; **(F6)** HEAD's
   `q1_probe_delta` `{value: 4}` from the older of two absorbed reports when the newer says 7 → refused (adjacent:
   7 → passes); an absorbed id no listed report has → refused; a removed absorbed id → refused; a removed row, a
   dropped post-switch event → refused; a report from a `pull_request` run → not listed, so its id is refused;
@@ -1078,7 +1177,9 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
   with `reset_by_owner` set and `start` later → passes, and the gate's clause 4 then sees no miss (under r1 the
   rows sat outside `epoch`: keeping them refused forever, dropping them was refused by the guard); adjacent: the
   archive drops the miss row → refused; an empty `reset_by_owner` → refused; the new epoch carries the old rows →
-  refused; `start` moved backward → refused; an earlier `previous_epochs` entry altered → refused; **(gap)** BASE
+  refused; `start` moved backward → refused; an earlier `previous_epochs` entry altered → refused; **(a report
+  from the old epoch, absorbed after a reset)** its #610 `miss` and #611 `clean` → the new epoch holds #610 `miss`
+  and no #611 (adjacent: the same report with the new epoch's `epoch_start` → both rows); **(gap)** BASE
   absorbed 77 days ago → refused (adjacent: 75 → passes); genesis with a row → refused (adjacent: empty →
   passes); a deleted ledger → refused; a PR that does not touch the ledger → rc 0, `shadow-ledger: unchanged`,
   and the injected `gh` was never called; a failed listing with a changed ledger → rc 2.
@@ -1094,7 +1195,9 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
 - [ ] **Failing cases of the HOLD:** an epoch change → HOLD `shadow-ledger epoch changed`; adjacent: rows added by
   an absorb, epoch identity unchanged → no HOLD; no ledger at BASE or HEAD → no HOLD.
 - [ ] **(F7) A `ci.yml` read case:** the `verify` job's `permissions` is exactly `{contents: read, actions: read}`
-  (it fails on a block holding `actions: read` alone, the one-line edit that would revoke `contents`).
+  (it fails on a block holding `actions: read` alone, the one-line edit that would revoke `contents`); and its
+  guard step's `env.GH_TOKEN` is exactly `${{ github.token }}` (r2 C3; the step is in Task 7.2's `GH_CALLERS`
+  read, which fails on the r1 fold's step without it).
 - [ ] **Steps:** red, implement, green, W1-W8 for both new scripts, WM pins for `shadow-compare.py` and
   `check-merge-ready.py`, mutate `--only` each of the four, commit.
 
@@ -1104,9 +1207,15 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor):
 `scripts/check-shadow-ledger.py`, `scripts/check-merge-ready.py`; `python3 scripts/check-ratchet-contract.py`;
 `python3 scripts/check-python-pin.py` (the new workflow's job pins Python).
 **Merge gate:** after merge, a `workflow_dispatch` of `shadow-compare.yml` on master uploads one
-`shadow-report-<run_id>`, the FIRST SCHEDULED run uploads one too (r1 redesign Claude F3: the r1 `if:` skipped
-every scheduled run, which no dispatch could reveal), and a first absorb PR passes `check-shadow-ledger.py` in its
-own `verify`.
+`shadow-report-<run_id>-<run_attempt>`, the FIRST SCHEDULED run uploads one too (r1 redesign Claude F3: the r1
+`if:` skipped every scheduled run, which no dispatch could reveal), and a first absorb PR passes
+`check-shadow-ledger.py` in its own `verify` (with `GH_TOKEN`, r2 C3). **Two live reads GitHub's docs do not
+settle (r2 C2):** while a dispatch is `in_progress`, the runs listing WITHOUT `status` returns it (the docs do
+not say what an omitted `status` includes); and after re-running a completed dispatch, the run's artifacts
+listing still returns attempt 1's `shadow-report-<id>-1` (the docs do not say whether a rerun keeps an earlier
+attempt's artifacts). Either answer is fail-closed by Task 7.2's rule (a successful attempt without its report
+RAISES); the reads record WHICH, in the measurement doc, so a gate refusing `reports unreadable` after every
+rerun is not a surprise.
 
 ---
 
@@ -1179,7 +1288,8 @@ the evidence key (`reach_select.py`'s blob, r3 F8). `reach_gate.py` is in `SELEC
      comparator or absorb that stops running fails CLOSED; the inverse of r3 F2). This is the ONLY use of the
      timestamp watermark;
   8. `fetch_reports(skip)` returns None (a listing, artifact lookup or download failed) → `reports unreadable`;
-  9. any listed trusted report whose `run_id` is NOT absorbed in the BASE ledger (in no epoch) holds a `miss` row
+  9. any listed trusted report whose `report_id` (`<run_id>.<run_attempt>`, every attempt of every run whatever
+     its current status, Task 7.2; r2 C2) is NOT absorbed in the BASE ledger (in no epoch) holds a `miss` row
      or a post-switch event → `unabsorbed miss`, whatever its `generated_at` (r1 redesign Codex X2, Claude F1c: a
      report uploaded after a later one was absorbed is still read). The read is a UNION over those reports, so the
      newest report omitting a miss cannot hide it (r3 F3, F5 in the window). A report absorbed in an ARCHIVED epoch
@@ -1188,7 +1298,9 @@ the evidence key (`reach_select.py`'s blob, r3 F8). `reach_gate.py` is in `SELEC
   (`q1_decision` is `q1_at_base(...)`, never the running module's constant), so a PR cannot enable its own skips
   by ticking #590, flipping the decision or editing the ledger in its diff. **Reports (8-9) can only CLOSE it**: a
   forged or untrusted report could at most refuse.
-- `sweep-select` (now also in slice 8's `needs:` graph; `actions: read`, already held) runs `git show
+- `sweep-select` (now also in slice 8's `needs:` graph; `actions: read`, already held; its `--select-only` step,
+  which now runs `switch_gate` and so `list_reports`, carries `env: GH_TOKEN: ${{ github.token }}` as its
+  cache-list step does, r2 C3) runs `git show
   "$BASE":docs/backlog.md`, `git show "$BASE":docs/shadow-ledger.json`, `git show "$BASE":scripts/reach_select.py`
   (→ `--q1-base FILE`; absent → `q1_at_base(None)`) and `git rev-parse "$BASE":scripts/reach_select.py`, lists the
   trusted reports by `list_reports` (Task 7.2) only when `switch_gate` asks, runs `switch_gate`, and when refused writes TODAY's selection
@@ -1271,7 +1383,8 @@ report file), `.github/workflows/ci.yml` (`mutation-sweep-complete`), the manife
 - **Where it runs.** A new step in the EXISTING `mutation-sweep-complete` job, before the alert step, with the
   same condition as the alert (`!cancelled() && github.event_name != 'pull_request' && !startsWith(github.ref,
   'refs/heads/batch/')`) plus `needs.mutation-sweep.result != 'success'`: `python3 scripts/shadow-compare.py
-  --post-switch --out "$RUNNER_TEMP/post-switch.md"`. The job gains `actions: read` (to list and download
+  --post-switch --out "$RUNNER_TEMP/post-switch.md"`, with `env: GH_TOKEN: ${{ github.token }}` (r2 C3; a
+  missing token would make every result `NOT CHECKED`). The job gains `actions: read` (to list and download
   artifacts); it already holds `issues: write` for `sweep-red-alert.py` (backlog #330). No new job, and no new
   write permission.
 - **Its output contract.** The file is Markdown: `POST-SWITCH: <N> merged PR(s) skipped a now-red target` and one
