@@ -52,7 +52,7 @@ recorder can run"). Each of the 92 manifest targets ran its `--self-test` twice 
 | 42893595762 | `scripts/batch-ci.py` (same target, other seed) | 0 | 6.34 | 65.94 | 10.40 | 11 |
 | 42901768433 | `scripts/prune-merged-worktrees.py` | 1109 | 2.47 | 29.02 | 11.749 | **12** |
 | 42901768433 | `scripts/batch-ci.py` | 0 | 5.04 | 59.21 | 11.748 | 12 |
-| 42915171820 | `scripts/regen-pages.py` | 0 | 10.30 | 146.04 | 14.179 | **15** |
+| 42915171820 | `scripts/regen-pages.py` (⚠ this traced run was RED, see below) | 0 | 10.30 | 146.04 | 14.179 | **15** |
 | 42915171820 | `scripts/batch-ci.py` | 1109 | 4.38 | 49.57 | 11.32 | 12 |
 
 (all MEASURED, from each run's JSON.) The ratio's NUMERATOR is stable — `batch-ci.py` traced is 64.99 / 65.94 / 59.21 s
@@ -92,16 +92,34 @@ Fewer than 92: `alarm` 3, `capget` 4, `chdir` 41, `chmod` 41, `clock_nanosleep` 
 | `io_uring_setup` | `scripts/check-page-links.py`, `scripts/check-paid-caller-arrival.py`, `scripts/explainer-serve.py`, `scripts/page_chrome.py` |
 | `unshare`, `setns`, `chroot`, `pivot_root`, the mount family (`mount`, `umount2`, `open_tree`, `move_mount`, `fsopen`, `fsmount`, `fspick`, `mount_setattr`) | **none** |
 | a ` (deleted)` fd label | `scripts/batch-ci.py` (12 lines), `scripts/check-stalled-work.py` (97 lines) |
-| an unlink/rename/rmdir OUTSIDE the copy — every one is LISTED, annotated `created_in_log` | run **42915171820**: **0** annotated not-created (in 0 of 92 targets); **63,720** annotated created (in all 92 targets; most: `scripts/check-rc-contract.py` 9,622, `scripts/batch-ci.py` 6,316); every one of 184 (target, seed) records annotated — MEASURED |
+| an unlink/rename/rmdir whose path TEXT resolves outside the copy — LISTED, annotated `created_in_log`; a LOWER BOUND (see below) | run **42915171820**: **0** annotated not-created that this reader can see (in 0 of 92 targets); **63,720** annotated created (removal ATTEMPTS: summed over targets of the max over each target's two seeds, not a count of calls; succeeded vs failed is NOT AVAILABLE for this run) (in all 92 targets; most: `scripts/check-rc-contract.py` 9,622, `scripts/batch-ci.py` 6,316); every one of 184 (target, seed) records annotated — MEASURED |
 
-**The removal row is a LIST, not a verdict (review round 2, the redesign).** From run 42915171820 on, the reader
-EXEMPTS nothing outside the copy: every successful `unlink*`, `rmdir` and `rename*` (source and replaced destination)
-there is listed, per target and annotation, in the JSON's `external_removals`, with whole counts in
-`external_removal_counts` / `external_removal_totals`. `created_in_log` is only an ANNOTATION (the log showed the path
-being created, and no later removal or rename cleared that evidence); a wrong annotation mislabels a removal and can
-no longer hide one. **Slice 2 decides its refusal rule from this list.** The earlier runs' "none" (42893595762, the
-FIRST reader, which exempted any `O_CREAT` path and read results before joining `<unfinished ...>` halves) is
-superseded and not used.
+**The removal row is a LIST and a LOWER BOUND, not a verdict (review round 2, the redesign; round 3, the split).**
+From run 42915171820 on, the reader EXEMPTS nothing it can place outside the copy: every `unlink*`, `rmdir` and
+`rename*` (source and replaced destination) whose path TEXT resolves there is listed, per target and annotation, in
+the JSON's `external_removals`, with counts in `external_removal_counts` / `external_removal_totals`.
+`created_in_log` is only an ANNOTATION (the log showed the path being created, and no later removal or rename
+cleared that evidence).
+
+⚠ **What this list does NOT show (review round 3, Claude F1 and F2).** Resolution is by TEXT (`os.path.normpath`),
+so it is symlink-blind: `symlink("/home/runner", "/t/ln")` then `unlink("/t/ln/.gitconfig")` resolves inside the
+copy and is never listed, nor is `unlink("/t/ln/../x")` (F1). A symlink inside a created directory inherits the
+directory's "created", so a pre-existing file deleted through `/tmp/d/s/…` is annotated created (F2). `symlink` is in
+31 of 92 targets (run 42893595762, MEASURED), and every `mkdtemp` is a created directory. So **"0 not created" means
+0 that this reader can see; the guarantee that no pre-existing path outside the copy was removed is NOT made here**,
+and is not to be proved from strace text: backlog #600 enforces it by isolation or by slice 2's refusal rule. The
+reader gains no symlink rules (that class is split off). The earlier runs' "none" (42893595762, the FIRST reader,
+which exempted any `O_CREAT` path and read results before joining `<unfinished ...>` halves) is superseded and not
+used.
+
+**How the figures are made (r3 F4, F5).** A listed removal is an ATTEMPT: a failed call (`= -1 ENOENT`) is listed and
+counted too (conservative). From review round 3 each record also splits them (`external_removal_outcomes`,
+succeeded/failed) and `--merge` totals the split (`external_removal_outcome_totals`), but run 42915171820's reader
+predates the split and its merged JSON keeps paths only, so the split is **not available** for it; no run was made to
+get it. Each total (63,720, 0, the per-target 9,622 and 6,316) is the SUM over targets of the MAX over that target's
+two seeds, not the number of calls in the run. That run's `TRACE_FACTOR` witness above, `scripts/regen-pages.py`
+seed 0, FAILED under strace (it is in the run's `not_green`, traced, both seeds, as in run 42893595762): its 14.18 is
+the ratio of a red suite. It does not move the committed 20.
 
 ⚠ **Unresolved removals (MEASURED, run 42893595762): 28 targets** made a removal the driver could not place — e.g.
 `scripts/batch-ci.py` 2,833 lines, `scripts/check-merge-ready.py` 951, `scripts/check-plan-leak.py` 702 (all 28 in

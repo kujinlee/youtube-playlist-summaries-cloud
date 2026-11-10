@@ -392,6 +392,8 @@ If this branch is taken, re-plan slices 2-3 as one slice before building; do not
   path outside the copy that no earlier call in the log created, or a `rename*` EITHER of whose sides is such a
   path (the source is removed; a destination that pre-exists is REPLACED, backlog #590's "unlink, rename or
   replace"; r1 Claude F18) → `external path removed`.
+  ⚠ **Backlog #600:** this rule cannot PROVE no external path was removed (slice 1 r3: text resolution is
+  symlink-blind); before slice 4's `record-reads` runs on master, #600 enforces it by isolation or by this refusal.
 - `.git` (spec §2): a path with a `.git` component outside `ctx.workspace` is dropped; `.github/…`, `.githooks/…`
   are ordinary.
 

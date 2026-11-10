@@ -20,8 +20,8 @@ staged tree, the environment and the green test are exactly the ones `--mutate` 
 
 ⚠ WHAT IT DOES NOT DO. It does not parse paths into read sets (slice 2 does, from the raw lines kept here),
 and it tracks no cwd: a relative unlink/rename/rmdir whose directory it cannot name from a `-yy` label is listed
-as UNRESOLVED, never guessed to be inside or outside the copy. EVERY unlink/rename (both sides)/rmdir whose path
-resolves outside the copy is LISTED; nothing is exempted (review round 2, Codex X1: twice, creation-provenance
+as UNRESOLVED, never guessed to be inside or outside the copy. Every unlink/rename (both sides)/rmdir whose path
+resolves outside the copy BY TEXT (`os.path.normpath`, LEXICAL) is LISTED; nothing is exempted (review round 2, Codex X1: twice, creation-provenance
 EXEMPTION hid an external removal, so the exemption is gone, not patched). Each listed removal carries
 `created_in_log`, an ANNOTATION from creation EVIDENCE (`removed_and_created`): a successful `O_CREAT|O_EXCL` open,
 `mkdir*`, `mknod*`, `link*`, `symlink*`, or a successful `rename*` whose source was itself created; a path under a
@@ -30,6 +30,15 @@ evidence for that path and its subtree, so the annotation is not stale; correctn
 2 decides its refusal rule from the list. An `<unfinished ...>` half is JOINED with its pid's `<... resumed>` half
 before its arguments and result are read; an unpaired half (including one still pending at its pid's `+++ exited`
 or `+++ killed`) is counted (`unpaired_halves`), never dropped.
+
+⚠ THE REMOVAL LIST IS A LOWER BOUND, NOT A PROOF (review round 3, the split). Resolution is LEXICAL and therefore
+symlink-blind: a removal through a symlink the suite made (`/t/ln/.gitconfig`, `ln` -> `/home/runner`) or a `..`
+after one resolves INSIDE the copy and is never listed (r3 F1), and a pre-existing file reached through a symlink
+inside a created directory is annotated `created_in_log` (r3 F2). So "0 not created" means 0 THIS READER CAN SEE.
+That no pre-existing path outside the copy is removed is NOT claimed here and is not to be proved from strace text;
+it is enforced by isolation or a refusal rule (backlog #600). This reader deliberately gains no symlink rules.
+Each listed removal carries `ok`; the counts are split by it too (`external_removal_outcomes`: a FAILED call is an
+attempt, listed conservatively, r3 F4).
 """
 from __future__ import annotations
 
@@ -256,6 +265,7 @@ def analyse_log(log: pathlib.Path, copies: "list[str]", samples: dict, shapes: d
     syscalls, ioctls, family_counts = {}, {}, {}
     family_lines, removals, unresolved, unparsed, unpaired = [], [], [], [], []
     by_note = {"created_in_log": 0, "not_created_in_log": 0}     # EVERY listed removal, counted by annotation
+    by_ok = {"succeeded": 0, "failed": 0}                         # ... and by whether the call succeeded (r3 F4)
     created: dict = {}           # path -> "dir" | "file", in the order the log proves them
     pending: dict = {}           # pid -> (name, the unfinished half's argument text, its line)
     root_pid = None
@@ -322,11 +332,12 @@ def analyse_log(log: pathlib.Path, copies: "list[str]", samples: dict, shapes: d
             if p is None:
                 unresolved.append(line)
             elif not inside(p):
-                # LISTED, never exempted (review round 2, Codex X1): the evidence only ANNOTATES, so a stale or
-                # incomplete provenance rule can mislabel a removal but can no longer hide one.
+                # LISTED, never exempted (review round 2, Codex X1): the evidence only ANNOTATES. Only a path whose
+                # TEXT resolves outside is examined at all; one reached through a symlink is not (r3 F1, backlog #600).
                 note = kind_of(p) is not None
                 key = "created_in_log" if note else "not_created_in_log"
                 by_note[key] += 1
+                by_ok["succeeded" if ok else "failed"] += 1
                 if by_note[key] <= KEEP_REMOVALS[key]:
                     removals.append({"path": p, "line": line, "created_in_log": note, "ok": ok})
         if ok:      # a removed path, a rename's source and its replaced destination no longer name what was created
@@ -393,7 +404,7 @@ def analyse_log(log: pathlib.Path, copies: "list[str]", samples: dict, shapes: d
     return {"syscalls": syscalls, "ioctls": ioctls, "at_fdcwd_decorated_lines": at_fdcwd,
             "deleted_labels": deleted, "family_counts": family_counts, "family_lines": family_lines,
             "external_removals": removals, "external_removal_count": sum(by_note.values()),
-            "external_removal_counts": dict(by_note),
+            "external_removal_counts": dict(by_note), "external_removal_outcomes": dict(by_ok),
             "unresolved_removals": unresolved[:20], "unresolved_removal_count": len(unresolved),
             "unpaired_halves": len(unpaired), "unpaired_samples": unpaired[:20],
             "unparsed_lines": unparsed, "forks": forks, "threads": threads, "spawner": forks > 0,
@@ -530,13 +541,22 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
     targets = {}
     # COVERAGE per (target, seed) record (review round 2, Codex X2): a field a record lacks was NOT MEASURED there, and
     # one measured record must not make the whole merge read as measured. A total is null unless EVERY record has it.
-    records = paired_records = annotated_records = 0
+    records = paired_records = annotated_records = outcome_records = analysed_records = 0
     removal_counts: dict = {}   # target -> annotation -> the max over its seeds
+    removal_outcomes: dict = {}  # target -> succeeded/failed -> the max over its seeds (review round 3, F4)
+    log_missing = []            # (target, seed) records whose traced run left no log: nothing was analysed (r3 F6)
     for s in shards:
         for t, by_seed in s["targets"].items():
             targets[t] = s["shard"][0]
             for seed, r in by_seed.items():
                 pl, tr = r["plain"], r["traced"]
+                # A record is ANALYSED when analyse_log ran on it (it always emits `syscalls`). Every table below that
+                # comes from analyse_log is null unless EVERY record was analysed (review round 3, F6: the r2 X2 rule
+                # applied to the class, not to two fields).
+                if "syscalls" in tr:
+                    analysed_records += 1
+                if tr.get("log_missing"):
+                    log_missing.append([t, seed])
                 for name in tr.get("syscalls", {}):
                     syscalls.setdefault(name, set()).add(t)
                 for tok in tr.get("ioctls", {}):
@@ -557,6 +577,11 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
                     for note, n in tr["external_removal_counts"].items():
                         per = removal_counts.setdefault(t, {})
                         per[note] = max(per.get(note, 0), n)
+                if "external_removal_outcomes" in tr:
+                    outcome_records += 1
+                    for how, n in tr["external_removal_outcomes"].items():
+                        per = removal_outcomes.setdefault(t, {})
+                        per[how] = max(per.get(how, 0), n)
                 if tr.get("unresolved_removal_count"):
                     unresolved[t] = max(unresolved.get(t, 0), tr["unresolved_removal_count"])
                 if "unpaired_halves" in tr:
@@ -587,17 +612,22 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
     trace_factor = None if worst is None else math.ceil(worst["_exact"])
     for r in ratios:
         del r["_exact"]
+    whole = records > 0 and analysed_records == records      # else each analysed table is NOT MEASURED: null
     doc = {
         "headers": [json.loads(h) for h in sorted(headers)],
         "shards_present": [s["shard"][0] for s in shards], "shards_expected": total,
         "seeds": shards[0]["seeds"], "target_count": len(targets),
-        "syscalls": {k: len(v) for k, v in sorted(syscalls.items())},
-        "ioctls": {k: len(v) for k, v in sorted(ioctls.items())},
-        "at_fdcwd_decorated": bool(at_fdcwd_targets), "at_fdcwd_decorated_targets": len(at_fdcwd_targets),
-        "refusal_triggers": {k: sorted(v) for k, v in sorted(family.items())},
-        "deleted_labels": dict(sorted(deleted.items())),
+        "syscalls": {k: len(v) for k, v in sorted(syscalls.items())} if whole else None,
+        "ioctls": {k: len(v) for k, v in sorted(ioctls.items())} if whole else None,
+        "at_fdcwd_decorated": bool(at_fdcwd_targets) if whole else None,
+        "at_fdcwd_decorated_targets": len(at_fdcwd_targets) if whole else None,
+        "refusal_triggers": {k: sorted(v) for k, v in sorted(family.items())} if whole else None,
+        "deleted_labels": dict(sorted(deleted.items())) if whole else None,
+        "analysis_coverage": {"analysed": analysed_records, "records": records, "log_missing": log_missing},
         # Every listed removal outside the copy, by its `created_in_log` annotation; nothing is exempted. The created
-        # ones are mostly temp files, so only 20 paths per target are kept; the counts are whole.
+        # ones are mostly temp files, so only 20 paths per target are kept; the counts are whole. A LOWER BOUND: the
+        # reader's resolution is lexical (see the module docstring, r3 F1/F2). Each total is the SUM over targets of
+        # the MAX over that target's seeds (r3 F5), not the number of removal calls in the run.
         "external_removals": {t: {note: sorted(paths)[:20] if note == "created_in_log" else sorted(paths)
                                   for note, paths in sorted(by.items())} for t, by in sorted(removals.items())},
         "external_removal_counts": {t: dict(sorted(c.items())) for t, c in sorted(removal_counts.items())
@@ -608,7 +638,10 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
             "targets_with_not_created": sum(1 for c in removal_counts.values() if c.get("not_created_in_log")),
             "records": records},
         "external_removal_coverage": {"annotated": annotated_records, "records": records},
-        "unresolved_removals": dict(sorted(unresolved.items())),
+        "external_removal_outcome_totals": None if not records or outcome_records < records else {
+            "succeeded": sum(c.get("succeeded", 0) for c in removal_outcomes.values()),
+            "failed": sum(c.get("failed", 0) for c in removal_outcomes.values()), "records": records},
+        "unresolved_removals": dict(sorted(unresolved.items())) if whole else None,
         "unpaired_halves": dict(sorted(unpaired.items())) if records and paired_records == records else None,
         "unpaired_halves_coverage": {"measured": paired_records, "records": records},
         "unparsed_line_samples": dict(sorted(unparsed.items())),
@@ -888,6 +921,60 @@ def _self_test_body() -> int:
     check("r2 X4 shards split across TWO directories: BOTH targets are merged",
           lambda: _merge(two_dirs, "spawner_targets"), ["a.py", "b.py"])
     check("r2 X4 ... and both shards are present", lambda: _merge(two_dirs, "shards_present"), [1, 2])
+
+    # ── review round 3 (docs/reviews/claude/586-slice1-r3-claude.md) ──
+    # F3: three r2 behaviours survived mutation. Each case below is red on its mutation, green on this reader.
+    # (a) `forget` clears the SUBTREE (mutation: `c == p` only): d/e's evidence must not outlive d's move.
+    check("r3 F3 a created directory MOVED away takes its created subdirectory's evidence with it",
+          lambda: listed('1 mkdir("/external/d", 0700) = 0\n1 mkdir("/external/d/e", 0700) = 0\n'
+                         '1 rename("/external/d", "/external/z") = 0\n1 rename("/t/pre", "/external/d") = 0\n'
+                         '1 unlink("/external/d/e/f") = 0\n')[-1], ("/external/d/e/f", False))
+    # (b) a target's count is the MAX over its seeds (mutation: the sum). Two seeds, different counts.
+    def _two_seeds(a: int, b: int) -> dict:
+        sh = _shard(1, 1, "t.py", 1, 2)
+        sh["seeds"] = [0, 1]
+        sh["targets"]["t.py"] = {str(seed): {"plain": {"secs": 1, "cases": 1, "green": True},
+                                             "traced": {"secs": 2, "cases": 1, "green": True, "spawner": True,
+                                                        "external_removal_counts": {"created_in_log": n,
+                                                                                    "not_created_in_log": 0}}}
+                                 for seed, n in ((0, a), (1, b))}
+        return sh
+    check("r3 F3 a target's removal count is the MAX over its seeds, not their sum",
+          lambda: _merge([[_two_seeds(3, 5)]], "external_removal_totals")["created_in_log"], 5)
+    # (c) `targets_with_not_created` counts only targets WITH one (mutation: every target). Two targets, one has one.
+    clean = {"external_removal_counts": {"created_in_log": 4, "not_created_in_log": 0}}
+    check("r3 F3 two targets, only ONE with a not-created removal: targets_with_not_created is 1, not 2",
+          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, ann), _shard(2, 2, "u.py", 1, 2, clean)]],
+                         "external_removal_totals")["targets_with_not_created"], 1)
+    # F4: a FAILED removal is an attempt — listed (conservative), and counted apart from the ones that happened.
+    check("r3 F4 the record splits its listed removals by outcome",
+          lambda: _read('1 unlink("/home/runner/absent") = -1 ENOENT (No such file or directory)\n'
+                        '1 unlink("/external/x") = 0\n')["external_removal_outcomes"], {"succeeded": 1, "failed": 1})
+    check("r3 F4 ... and each listed removal keeps `ok`",
+          lambda: [r["ok"] for r in _read('1 unlink("/home/runner/absent") = -1 ENOENT (No such file or directory)\n')
+                   ["external_removals"]], [False])
+    outc = lambda s, f: {"external_removal_outcomes": {"succeeded": s, "failed": f}}
+    check("r3 F4 merge totals the outcomes (sum over targets of the max over seeds)",
+          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, outc(2, 1)), _shard(2, 2, "u.py", 1, 2, outc(3, 0))]],
+                         "external_removal_outcome_totals"), {"succeeded": 5, "failed": 1, "records": 2})
+    check("r3 F4 merge outcome totals are null when a record never split them (e.g. run 42915171820's reader)",
+          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, outc(2, 1)), _shard(2, 2, "u.py", 1, 2)]],
+                         "external_removal_outcome_totals"), None)
+    # F6: the r2 X2 rule over the CLASS: every analyse_log table is null unless every record was analysed.
+    seen = {"syscalls": {"unlink": 1}, "family_counts": {"io_uring_setup": 1}, "deleted_labels": 2,
+            "unresolved_removal_count": 3}
+    nolog = {"log_missing": True}
+    half = [[_shard(1, 2, "t.py", 1, 2, seen), _shard(2, 2, "u.py", 1, 2, nolog)]]
+    for key in ("refusal_triggers", "deleted_labels", "unresolved_removals", "syscalls"):
+        check(f"r3 F6 a record with no log makes `{key}` null (NOT MEASURED), not a silent absence",
+              lambda k=key: _merge(half, k), None)
+    check("r3 F6 ... and the merge names the record whose log is missing",
+          lambda: _merge(half, "analysis_coverage"), {"analysed": 1, "records": 2, "log_missing": [["u.py", "0"]]})
+    whole = [[_shard(1, 2, "t.py", 1, 2, seen), _shard(2, 2, "u.py", 1, 2, {"syscalls": {"read": 1}})]]
+    check("r3 F6 every record analysed: the tables are read (refusal triggers)",
+          lambda: _merge(whole, "refusal_triggers"), {"io_uring_setup": ["t.py"]})
+    check("r3 F6 every record analysed: unresolved removals",
+          lambda: _merge(whole, "unresolved_removals"), {"t.py": 3})
 
     # Low findings.
     check("F5 a REMOVER line the splitter cannot balance is unresolved, never dropped",
