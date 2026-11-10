@@ -1,4 +1,4 @@
-# Round 5 — `plan-586-redesign` — coordinator — Claude NOT CONVERGED: one BLOCKER in `settled`; the omission predicate is removed, not patched
+# Round 5 — `plan-586-redesign` — coordinator — Claude NOT CONVERGED: one BLOCKER in `settled`; the age assumption becomes an observation (a removal was measured unworkable)
 
 REVIEW GAP: codex — alternation; one reviewer per round in rounds 2+, the owner's 2026-10-28 answer to backlog #339.
 
@@ -30,22 +30,47 @@ push, another mutant or seed, empty evidence, and the conflation and canonicalis
 
 r2 C1, r3 F1, r4 B1, r5 F1. Every one of them was a predicate that decides **not to look**: a status filter, a subset
 absorb, an archive hold by PR number, and now `settled`, which freezes a run by its age (older than 30 days, GitHub's
-re-run limit) without ever having observed its final attempt count. *Can a redesign remove it?* **Yes, for this
-one.** `settled` exists only to save API calls. Removing it costs calls, not correctness: the report re-decides every
-PR in its scan window on every run. That is the r4 coordinator's pre-committed retreat applied to the mechanism that
-failed. `held_by_archive` keeps its place, because it held.
+re-run limit) without ever having observed its final attempt count. *Can a redesign remove it?* The common cause
+is not the predicates themselves. Each one stood on an **assumption** about what it was skipping. The redesign
+replaces that assumption with an **observation**. `held_by_archive` keeps its place, because it held.
 
-Decision-log row: route `redesign` (the plan-586-redesign accrete bet scored `continued`).
+⚠ **Corrected before the fold, and kept here rather than rewritten.** This document first said: delete `settled`,
+because "removing it costs calls, not correctness". That claim was never measured, and it was wrong. The fold agent
+stopped on it, as its brief required. Re-deciding a PR downloads every attempt's artifacts, about 100 calls per PR.
+The scan window is every PR merged since GENESIS: 505 in 120 days. That is about 50,000 calls per daily report
+against `GITHUB_TOKEN`'s 1,000 an hour. The report could never finish, its staleness clause would close the switch
+every day, and the deliverable would be gone. It fails closed, but it is useless.
 
-## The fold (round cap: only the BLOCKER, plus what its removal makes moot)
+Decision-log row: route `redesign` (the plan-586-redesign accrete bet scored `continued`). Its prediction was
+amended for the same reason, before any review of it.
 
-- **F1:** delete `settled` and every call site and prose reference. `report()` re-decides every PR the scan window
-  lists, every run. State the call bound **from the code** (runs listed × attempts in the window), and keep the
-  120-day window bound. Cases: the reviewer's run-55 re-run at day 30, and an attempt still running at the last
-  report before day 31. Both must now be compared. Adjacent pass: an unchanged PR is re-decided to the same result
-  and absorbs to an identical row (no churn in the committed ledger).
-- **F2, F4:** moot once `settled` is gone. The fold confirms no other `all(...)` over a possibly-empty push list
-  decides an omission.
+## The fold (round cap: only the BLOCKER, plus what its fix makes moot)
+
+- **F1: freeze on an OBSERVATION, never on age.** This is the reviewer's own statement of when freezing is safe.
+  - A push is frozen only when a report has **observed** its run with these three facts, and the push row records
+    that observation (`final_observed_at`):
+    - `status: completed`, with no attempt in progress;
+    - the recorded attempt count;
+    - an observation time later than `run_created_at` + 30 days.
+  - Until then, the push is compared against the run's current attempt count.
+  - Attempt counts and status come from **one paginated listing** of the CI workflow's runs (`run_attempt`, `status`),
+    created within the last 31 days. They never come from a call per run.
+  - Cite GitHub's documented 30-day re-run limit in the plan.
+  - State the daily call bound **from the code**. It must fit the 1,000-per-hour budget with room for the rest of
+    the report.
+  - Also bound the PR scan window by a stated fact (artifact retention, the re-run limit), or explain why the
+    frozen rows already bound the work.
+  - Cases:
+    - the run-55 re-run at day 30 (compared, not frozen);
+    - an attempt still running at the last report before day 31 (not frozen while running);
+    - a run aged 31 days never observed after day 30 (not frozen until observed);
+    - the adjacent pass: a run observed completed at day 31 with an unchanged count is frozen, and the row absorbs
+      without churn.
+- **F2:** an empty push list is never frozen. This is the same vacuous-`all` class the r4 fold fixed in
+  `held_by_archive`. Add a case.
+- **F4:** a null run field is not frozen and does not raise. Add a case.
+- **The fold agent's check, kept:** the only other `all(` over a possibly-empty list is in `decide_pr`. With no
+  pushes it decides `not a sample`, which clause 5 ignores, so it decides no omission or hold.
 - **F3 (filed):** `miss_evidence` counts a `differing` item that did not replay as a miss, so a later stable miss on
   it is held. A per-item replay record is a schema change past the cap. The reviewer rates it MINOR: the item was in
   a miss row the owner reset. File as a backlog row.
