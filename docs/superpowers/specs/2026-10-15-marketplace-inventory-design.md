@@ -4,7 +4,8 @@
 > **Anchor:** `harness-ships-elsewhere` — **ADR:** none
 > **Goal:** The harness this project built can be installed and used by someone who has never seen this repository.
 
-**Status: SPEC, awaiting review. Nothing here is implemented.** This document is the Phase 1 artifact
+**Status: SPEC, walked through by the owner 2026-11-09; four answers folded in as §2b, awaiting the owner's
+walkthrough of the changed sections. Nothing here is implemented.** This document is the Phase 1 artifact
 for a milestone whose deliverable is a *decision*, not a published plugin.
 
 ⭐ **It is also the claiming document `docs/backlog.md` row 290 asked for.** That row recorded that
@@ -37,7 +38,7 @@ answered only informally, for one file, once.
 
 | # | Decision | What it rules out |
 |---|---|---|
-| **D1** | **Audience: public strangers, full support bar.** Works in any repo, documented for a newcomer, failure modes handled without the author | Rules out "good enough for my next project". Coupling becomes a **release blocker**, not a tidiness note |
+| **D1** | **Audience: public strangers, full support bar.** Works in any repo, documented for a newcomer, failure modes handled without the author. ⟳ 11-09: a working target that measured cost can overturn, through the D1 checkpoint (§2b) | Rules out "good enough for my next project" unless the D1 checkpoint brings it back. Coupling becomes a **release blocker**, not a tidiness note |
 | **D2** | **Decomposition: one evaluation spec across all three efforts, then a spec per publishable unit** | Rules out going straight at the comprehensibility suite and deferring the other two with a shallow verdict |
 | **D3** | **Route: a self-published marketplace repo**, installed with `/plugin marketplace add <repo>` | Rules out aiming at `claude-plugins-official`, whose acceptance gate would make "done" undefinable. Official submission may become a *later, separate* milestone |
 | **D4** | **Method: a mechanical scan across all components, plus one real install experiment** on the comprehensibility suite (effort 3), where the experiment calibrates the scan | Rules out verdicts resting on reading the code and judging it |
@@ -62,12 +63,104 @@ counting rule, the per-effort enumeration and the mapping step that makes 24 a *
 than a total** are all in §3). Judgement alone will miss things, and the misses are precisely the ones
 a stranger meets first.
 
+## 2b. The 11-09 walkthrough: what the owner changed
+
+The owner walked this spec through on 2026-11-09, 19:15 to 19:45, on
+`docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.html`. D1 to D4 were all confirmed.
+Four answers change what this milestone does. Each is quoted, then stated as the rule it becomes.
+
+**This is an exploration milestone.** 19:21: *"We have to find out how far we can go first. So for now we
+explore, experiment, then find the cost."* Nothing is softened up front. The output is how far each effort
+can go and at what price, not a final ship list. If a bar comes down later, it comes down on measured cost.
+
+### D1 becomes a working target, with a checkpoint
+
+19:15: *"Let's aim for this. If we hit significant barriers we will change course, but for now we have to
+find out the real cost."*
+
+- D1 stays "public strangers, full support bar". It is now a target that measured cost can overturn.
+- **The cost record.** For every component, the inventory records two estimates side by side: the work to
+  reach D1's public bar (documentation, failure handling, decoupling), and the work to reach "install
+  into my own next project". The inventory then shows the price of the bar, not only a verdict.
+- **The D1 checkpoint.** It runs after the install experiment (§6) and before the inventory is final. If,
+  for most components, the public bar costs far more than the softer target, the inventory stops and
+  goes to the owner as a selection card: keep D1, or drop to "my next project". It never continues on
+  its own past that point.
+- §9 already sends D4 back to the owner when the experiment cannot run. Before this change, nothing did
+  the same for D1, and an expensive public bar would simply have been paid.
+
+### D10. Every component that is not SHIP records its cheapest publishing route
+
+19:18, on D2: *"This may well be the case, but we have to explore ways to publish (1) and (2), then find
+the cost."*
+
+- A verdict says whether a component travels as it is. D10 adds what it would take to make it travel.
+- For every component whose verdict is `NEEDS-WORK` or `DON'T-SHIP`, the inventory records its cheapest
+  route and that route's estimated cost. The routes are: decouple it behind a config file; ship it as a
+  template repository rather than a plugin; ship only its portable core; or publish it as a practice
+  (D6's `harvest: practice`).
+- **A route never upgrades a verdict.** It sits beside the verdict, under the same rule D6 applies to a
+  harvest. The inventory then lists three things: what is publishable now, what could be published at a
+  known price, and what is not worth that price.
+- A route's cost is an estimate, and it is graded like evidence (D5): `argued` unless something was run.
+
+### D11. Publishing is phased
+
+19:29: *"It can be phased. First publish the easier part (comprehensibility, plus memory recall if
+feasible), then evaluate the rest. The aim is to get at least some useful part to the public, then
+publish more later."*
+
+| Phase | Efforts | What this milestone does for them |
+|---|---|---|
+| **1** | (3) comprehensibility | the full treatment: scan, install experiment, verdict, cost record, route |
+| **1, if feasible** | (1) recall | scan, verdict, cost record, route. "Feasible" is a question the route answers: can recall be useful to a stranger whose memory corpus starts empty, and is its own corpus clear of C5 (§7 item 11)? |
+| **later** | (2) development velocity | scan and a first estimate of its cheapest route only; its deep evaluation is a later phase and its own milestone |
+
+- D2 still holds: there is one evaluation across all three efforts. Only the depth now differs by phase.
+- **The milestone's definition of done moves.** It was "every component has a final verdict". It is now
+  "a first useful subset is installable from the marketplace repository by a stranger". Later phases are
+  their own milestones.
+- This milestone still does not publish (§7, "what PR 1 explicitly does NOT do"). It produces the phase-1
+  subset, its shipping set and its cost. Publishing that subset is the next milestone's first step.
+
+### The lopsided evidence is accepted for this milestone
+
+19:45, the question the walkthrough raised about §6's bound (§8's risk "efforts (1) and (2) get weaker
+verdicts than (3)"), answered by selection card A: accept it now, evaluate deeper later.
+
+- Effort (3) keeps its real install experiment. Efforts (1) and (2) get a scan, a cost record and a
+  cheapest route, not an experiment each.
+- Their verdicts rest on argument until their later phase, and the inventory says so: their evidence
+  field reads `argued` (D5), never `measured`.
+
 ---
 
 ## 3. Scope — the components, derived from disk rather than recalled
 
 ⚠ **Derived 2026-10-15 by enumeration, membership corrected 2026-10-16 (round 1).** The counts
 below are a dated measurement, not a live number.
+
+**Re-measured 2026-11-09 at master `cfad72b3`, at the owner's request** (walkthrough, 19:23: *"This part
+needs to be updated"*). Line counts by `wc -l`; the component count was not re-derived, because only the
+mapping step below can produce it.
+
+| Measure | 10-15 / 10-16 | 11-09 (`cfad72b3`) |
+|---|---|---|
+| the nine files `portable-practices.md` enumerates | 6,542 | 11,237 (1.72x) |
+| effort (3) Python, six files | 10,373 | 15,222 (1.47x): brief-compose 2,648, explainer-serve 3,526, page_chrome 2,759, page_markup 1,307, gen-dashboard 3,588, gen-goals-page 1,394 |
+| effort (3) skills, four `SKILL.md` | 604 | 604 |
+| effort (3) total with shared contracts | 11,624 | 16,503 (1.42x); the shared contracts are now explainer-delivery 393, handoff-path 211, corpus-search 73 = 677, not checked to be the same three as the 647 |
+| effort (1): `recall-llm.py` / `check-surface-recall.py` / hook | 2,550 / not counted / not counted | 2,557 / 827 / 113 |
+| effort (1): memory files in `docs/memory/` | 157 | 182 |
+| effort (2): `check-plan-code.py` / `ci.yml` | not measured | 7,349 / 1,444 |
+
+Effort (2) also changed in kind. Since 10-15 it gained selection by diff (PR #496), 38 shards (PR #550),
+batch CI (PR #529, built, never run) and an approved observed-reach selection (backlog #586, PR #552). Its
+generic part (shard planning, selection, verdict reuse, tracing) is now distinct from its wiring into this
+repository's `ci.yml`, which is what D10's "portable core" route would price.
+
+⚠ The scope grew 42% in 3½ weeks. So the inventory measures it at the moment it runs, and every figure
+below that carries the 10-15 date is stale for that reason, not wrong.
 
 ⛔ **THE COUNTING RULE, stated once because round 1 found the addends unobtainable from the prose
 (CLAUDE M1, CODEX 1).** **One component = one shippable unit**: a script, a skill, a shared contract,
@@ -1001,8 +1094,15 @@ and is a candidate follow-up if either survives.
    touched"*, which is the exhaustive requirement **§6 explicitly retired** as *"an
    aspiration with no implementation"*; restoring it here made the two sections impossible to
    satisfy at once. ⚠ An unobservable access is **declared unobservable**, never counted as absent.
+4b. **The cost record and the cheapest route (§2b, D1 and D10).** For every component: the work to reach
+   D1's public bar beside the work to reach "my next project". For every component that is not `SHIP`:
+   its cheapest publishing route and that route's cost. Both are estimates graded like evidence (D5).
+4c. **The D1 checkpoint (§2b).** After item 4 and before item 5 is final: if the public bar costs far more
+   than the softer target for most components, the owner gets a selection card (keep D1, or drop to "my
+   next project") and the inventory waits for the answer.
 5. **The inventory** — every component of all three efforts with its **role**, its `SHIP` /
-   `NEEDS-WORK` / `DON'T-SHIP` verdict, and its evidence. ⚠ Components whose C4 rests on argument
+   `NEEDS-WORK` / `DON'T-SHIP` verdict, its evidence, and its phase (D11). The phase-1 subset is named,
+   with its shipping set (item 2). ⚠ Components whose C4 rests on argument
    rather than the experiment are labelled as such (§6's bound).
 6. A roadmap milestone, and a `docs/backlog.md` row per `NEEDS-WORK` component — **and only those**.
    ⚠ Under D5 (§4b) `NEEDS-WORK` means *a named defect*, so neither a `library` that inherits a C4
@@ -1093,7 +1193,7 @@ specifically to keep evaluation independent of repair.
 | The inventory is written from recall and drifts | Every count derived by command, dated, and the derivation recorded beside it |
 | A derived count DECAYS as its subject grows — the actual 9-files failure (r1 CLAUDE H1) | Every count carries its date and its file set, so a stale figure is visibly stale rather than wrong; §3's banner states this |
 | A count is taken over the wrong set, and reproduces | §3's counting rule fixes membership before arithmetic; §5 asserts a non-zero expected file count per component. ⚠ This spec reached a correct total over a wrong set twice in round 1 |
-| Efforts (1) and (2) get weaker verdicts than (3) | Stated as a bound in §6 rather than hidden; their verdicts are explicitly labelled argument-based |
+| Efforts (1) and (2) get weaker verdicts than (3) | Stated as a bound in §6 rather than hidden; their verdicts are explicitly labelled argument-based. ⟳ Accepted by the owner for this milestone, 11-09 19:45 (§2b); a deeper evaluation is a later phase |
 | The milestone becomes "publish everything" by momentum | `DON'T-SHIP` is a first-class verdict; a component that fails C1–C4 is recorded as such, and that is a successful outcome of this work |
 | **11,624 lines** — the 17 components of effort (3), per §3's derivation at `a4f6d4b5` — is too much to assess per line | Assessment is per component against five criteria (§4), not per line. ⟳ This row said *"~11,000"* until r3 CLAUDE M1: the same subject carried two figures 5.2% apart, and §3's own closing warning — *that is a different and larger set, and the two must not be compared without saying so* — is exactly what this row was then doing silently |
 
@@ -1109,6 +1209,13 @@ specifically to keep evaluation independent of repair.
   that **this artifact** can travel it (r1 CLAUDE M5, r1 CODEX 10).
 - **For this spec:** if the install experiment cannot be made to run at all, D4 is unachievable and the
   method must be re-decided with the owner rather than silently downgraded to paper scoring.
+- **For the D1 checkpoint (§2b):** an inventory marked final whose cost record shows the public bar
+  costing far more than the softer target for most components, with no owner answer to the checkpoint's
+  selection card.
+- **For D10:** a component that is not `SHIP` and whose inventory row has no cheapest route, or a row
+  whose verdict was raised because a route exists.
+- **For D11:** the milestone closed with no phase-1 subset named, or with a named subset that has no
+  shipping set.
 - **For D9's support bar (§4d):** a release of the published package with **no version tag**, a tag
   with **no `CHANGELOG` entry**, or ⟳ **a breaking change with no major-version bump** (r3 CODEX M1
   — the third promise, missing from the first version of this bullet). ⚠ **All three are
@@ -1133,5 +1240,6 @@ Official-marketplace submission (D3); creating the **published** marketplace rep
 the throwaway local marketplace §6 and §7 item 0 require, which is a different artifact (r1 CLAUDE
 H2, r1 CODEX 7); fixing any coupling; building Q0; merging the two recall branches
 (`c5-recall-matcher`, `backlog-117-parser-substrate`); and an install experiment for efforts (1) and
-(2). ⚠ **And the release mechanics D9 (§4d) requires — the version tag and the `CHANGELOG` — land
+(2). ⟳ 11-09 (D11): these are deferred to a later phase, not dropped. The deep evaluation of effort (2),
+an experiment for effort (1), and publishing the phase-1 subset are each a later milestone. ⚠ **And the release mechanics D9 (§4d) requires — the version tag and the `CHANGELOG` — land
 with that deferred repository, not with PR 1**; what PR 1 owes is the stated bar, nothing more.
