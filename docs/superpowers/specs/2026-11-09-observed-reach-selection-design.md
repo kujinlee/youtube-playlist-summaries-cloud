@@ -358,11 +358,20 @@ build ADDS four things (the fourth, the committed ledger, since the owner's 14:5
   fall out of a time window. It uploads its result as a REPORT, `shadow-report-<run_id>` (90 days), and reads no
   earlier report.
 - **The ledger.** A committed file, `docs/shadow-ledger.json`, changed only by a pull request that absorbs
-  reports. A guard on every pull request refuses a change that removes or alters a decided row, lowers a count
-  of misses, adds a row no trusted report holds, or moves the epoch without recording the owner's decision. A PR
-  decided in the ledger keeps that decision, so neither an input's nor a report's expiry can undo it. An expired
-  input with no decided row is INCONCLUSIVE, never clean. The switch reads the ledger at BASE, as it reads
-  `docs/backlog.md`; a report can only CLOSE the switch, never open it.
+  reports. It records WHICH reports it absorbed, by identity (the run id), never by a timestamp: one report can be
+  published after a later one was absorbed (r1 redesign Codex X1, X2). A miss or a post-switch event only
+  tightens, so it is absorbed from any trusted report; a clean row and Q1's probe delta only loosen, so they are
+  absorbed only from a report written by BASE's code for the current epoch. A decided row is never replaced,
+  except by a miss. A guard on every pull request REBUILDS the absorb from the ledger at BASE and the reports the
+  change names, and refuses any other result, so a change that removes or alters a decided row, drops a miss or
+  an event, adds a row no trusted report holds, or advances the ledger past a report it did not absorb cannot
+  pass. Everything the switch counts lives inside the current EPOCH; moving the epoch requires the owner's
+  recorded decision and archives the old epoch, its misses included, verbatim (r1 redesign Codex X3). A row
+  counts only under the selector that decided it (r1 redesign Claude F5). A PR decided in the ledger keeps that
+  decision, so neither an input's nor a report's expiry can undo it. An expired input with no decided row is
+  INCONCLUSIVE, never clean. The switch reads the ledger's current epoch at BASE, as it reads `docs/backlog.md`;
+  a report can only CLOSE the switch, never open it, and a trusted report the ledger has not absorbed that holds
+  a miss closes it.
 
 **A MISS, precisely.** For each push of a PR, the comparator pairs that push's PR sweep with the full sweep of
 THAT push's own BASE (each push has its own BASE). A miss is a target in that push's `WOULD-SKIP` set for which,
@@ -654,6 +663,8 @@ PICKS by 3(a) rather than falling back (§3 replaced the old stale-set fallback;
    r3 Claude F6). A difference that reproduces under only ONE of the two replay seeds LATCHES as a miss (r3
    Claude F6), and the re-run happens inside `shadow-compare` on fresh staged trees. **The ledger (§2, owner
    2026-11-09 14:55):** a committed change to `docs/shadow-ledger.json` that removes or alters a decided row,
-   lowers a miss count, adds a row no trusted report holds, or moves the epoch without the owner's recorded
-   decision passes the guard; or the switch opens on anything but the ledger at BASE (a report, an artifact, the
-   PR's own ledger); or a trusted report holding a miss the ledger has not absorbed leaves the switch open.
+   lowers a miss count, adds a row no trusted report holds, records a report as absorbed without absorbing its
+   misses, or moves the epoch without the owner's recorded decision or without archiving the old epoch verbatim
+   passes the guard; or the switch opens on anything but the ledger's current epoch at BASE (a report, an
+   artifact, the PR's own ledger, an archived epoch's rows, a row decided under another selector); or a trusted
+   report holding a miss the ledger has not absorbed leaves the switch open, whenever it was published.
