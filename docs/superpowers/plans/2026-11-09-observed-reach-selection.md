@@ -65,8 +65,8 @@ read the spec section each task cites; this plan does not restate its rules.
   BASE's code: a report is absorbed only from a trusted run (`trusted_report_run`: the `shadow-compare.yml`
   `schedule`/`workflow_dispatch` run on the default branch of this repository, by run API metadata, never the
   artifact's name), and the guard REBUILDS the absorb from BASE plus the reports and refuses any other ledger, so
-  no decided row or miss is ever lost (Task 7.3). A report is absorbed by its IDENTITY (its run id, listed in the
-  ledger), never by a timestamp: publication order is not generation order (r1 redesign Codex X1, X2). A miss or
+  no decided row or miss is ever lost (Task 7.3). A report is absorbed by its IDENTITY (`<run_id>.<run_attempt>`,
+  listed in the ledger; r3 F7), never by a timestamp: publication order is not generation order (r1 redesign Codex X1, X2). A miss or
   post-switch event only tightens, so it is absorbed from ANY trusted report; a clean, inconclusive or
   not-a-sample row and Q1's value only from a report whose `code_sha` is an ancestor-or-equal of BASE, whose
   selector and comparator blobs equal BASE's, and whose epoch is the active one. An epoch change archives the old
@@ -805,8 +805,12 @@ lists the RUNS of one workflow, never the repository's artifacts, which after sl
 (INFERRED: 8 `verdicts-*` + 1 `selection-*`; MEASURED 710 runs in 7 days) to tens of thousands of artifacts and
 hundreds of pages per listing against `GITHUB_TOKEN`'s 1,000 requests per hour:
 1. `gh api "repos/{owner}/{repo}"` → `default_branch` (never typed) and the repository `id`;
-2. `gh api --paginate "repos/{owner}/{repo}/actions/workflows/shadow-compare.yml/runs?branch=<default>&created=>=<today − 120 days>&per_page=100"`
-   (about 120 daily runs plus dispatches: two pages). **No `status` parameter** (r2 redesign Codex C2): GitHub's
+2. `gh api --paginate --slurp "repos/{owner}/{repo}/actions/workflows/shadow-compare.yml/runs?branch=<default>&created=>=<today − 120 days>&per_page=100"`
+   (about 120 daily runs plus dispatches: two pages), parsed by `runs_from_listing` below. **`--slurp`, r3 F6:**
+   gh's own manual (`gh api --help`, read 2026-11-10): in `--paginate` mode "Each page is a separate JSON array
+   or object. Pass `--slurp` to wrap all pages of JSON arrays or objects into an outer JSON array." Without it the
+   output is two concatenated objects, which `json.loads` refuses (fail closed) and a first-object parser
+   (`raw_decode`) silently reads as page 1 alone, dropping the OLDEST runs, a late rerun's report among them. **No `status` parameter** (r2 redesign Codex C2): GitHub's
    `status` "Returns workflow runs with the check run status or conclusion that you specify", which is the run's
    CURRENT state, and a rerun of a run that already published a miss is `queued` or `in_progress` until it ends,
    so `status=success` dropped the run and the miss with it. **120 days, not 90** (found by the class search
@@ -824,13 +828,24 @@ hundreds of pages per listing against `GITHUB_TOKEN`'s 1,000 requests per hour:
    specific workflow run attempt"); then `gh api "repos/{owner}/{repo}/actions/runs/<id>/artifacts?name=shadow-report-<id>-<n>"`
    (the `name` parameter is an EXACT match, r2 Codex F5, so the run id and attempt are in the name). An attempt
    that concluded `success` must have exactly one artifact with `expired == false`, whose download must pass
-   `report_schema_ok`; an attempt still `queued`, `in_progress` or `waiting` contributes nothing YET (it is not
-   absorbed, so the next listing reads it); an attempt that ended otherwise contributes its report if one exists
-   (a report only tightens what it adds beyond `may_loosen`) and nothing if not.
+   `report_schema_ok` AND `report_identity_ok(rep, <run id>, <n>)` (r3 F5: the body's `run_id`/`run_attempt`
+   must be the attempt it was downloaded from, so `skip`, keyed by the listing, and `report_id`, keyed by the
+   body, cannot disagree and hide another run's report); an attempt still `queued`, `in_progress` or `waiting`
+   contributes nothing YET (it is not absorbed, so the next listing reads it); an attempt that COMPLETED otherwise
+   contributes its report if one exists (the upload is `if: success()`, but a cancel in a post step can leave one;
+   a report only tightens what it adds beyond `may_loosen`), and if none exists it contributes a NO-REPORT STUB
+   `{run_id, run_attempt, no_report: <conclusion>}` (r3 F4). A completed attempt can never upload an artifact
+   later, so the absorb records the stub's identity (`absorbed_reports[<id>] = null`, Task 7.3) and no later
+   listing re-queries it; without the stub, every failed or cancelled attempt was re-queried on every listing for
+   the whole 120-day window.
 A failed call, a successful attempt with no unexpired report (absent, or deleted by a rerun), or a report failing
-its schema RAISES; every caller turns that into a refusal. The cost is 1 + pages + 2 per UNABSORBED attempt
-(+ 1 per earlier attempt of a rerun run), about 3 + 2 × (days since the last absorb), at most about 31 calls while
-the gate's 14-day staleness clause holds.
+its schema or its identity RAISES; every caller turns that into a refusal. **The cost, restated from the steps
+above (r3 F4):** 1 (repository) + P (run pages, ⌈runs in the window / 100⌉, 2 at one run a day) + for each
+UNABSORBED attempt: 1 artifacts call, + 1 download when a report exists, + 1 attempt-state call when it is not
+its run's latest attempt. Every listed attempt, stubs included, enters `skip` at the next absorb, so the
+unabsorbed set is what ran since the last absorb: at one scheduled run a day and the gate's 14-day staleness
+clause (Task 8.1 clause 7; the gate fetches only when clauses 1-7 pass), about 3 + 2 × 14 = 31 calls, plus 2 per
+extra dispatch or rerun attempt in those 14 days.
 
 **Why a separate workflow file (resolves r3's Q2 note).** The job lives in a NEW workflow,
 `.github/workflows/shadow-compare.yml` (`on: schedule` daily + `workflow_dispatch`), not in `ci.yml`. Adding
@@ -904,8 +919,13 @@ CHECKOUT, only for the ACTIVE `epoch.start` and the PRs already decided in the a
 reads an earlier report, an archived epoch or an artifact ledger); (2) lists PRs merged since `epoch.start`, their
 pushes' runs WHATEVER their current status (the class of r2 redesign Codex C2), and downloads each
 `selection-*`/`verdicts-*` pair it needs, for EVERY attempt of a run (both names carry `<run_attempt>`): an
-attempt still running makes that push `pending`, and each completed attempt is compared on its own, so a rerun
-that compares clean cannot replace an earlier attempt's difference (`decide_pr` latches a miss from any of them);
+attempt still running makes that push `pending`, and each completed attempt's VIEW is compared on its own, so a
+rerun that compares clean cannot replace an earlier attempt's difference (`decide_pr` latches a miss from any of
+them). **An attempt's VIEW (r3 F3)** is, per artifact (the `selection-*` and each shard's `verdicts-*`), that
+attempt's own artifact, else the latest EARLIER attempt's: "Re-run failed jobs" re-runs only the failed shard,
+so attempt 2 has `verdicts-<id>-2-3` and no `selection-<id>-2` (`sweep-select` did not re-run, so attempt 1's
+selection is the one that attempt executed). Under r2 that attempt had no `selector_blob` and was `not a
+sample`, so a difference in the re-run shard was never compared; the view compares it;
 (3) compares, replays, decides each PR not already decided in the active epoch;
 (4) computes `q1_probe_delta` ITSELF with `reach_select.q1_probe_delta` (Task 6.1) over the restored read sets
 (r3 F4: default-branch code, never a PR run's), or null when no usable read set was restored; (5) runs
@@ -939,11 +959,54 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
   COUNTED in the report, never a verdict change.
 - `replay(diff, run_one) -> str` — 3 runs per side under EACH `RECORD_SEEDS` value through Task 7.1's option, in
   fresh trees: stable-and-different under any seed → `"miss"`; anything else → `"unreproduced difference"`.
-- `decide_pr(push_results: list[str]) -> str` — any `miss` LATCHES `"miss"`; any pending → `"pending"`; any
-  inconclusive or unreproduced → `"inconclusive"`; all clean and at least one would-skip target → `"clean"`;
-  every push `not a sample` → `"not a sample"`.
+  A push compared with an EMPTY would-skip set returns `"no would-skip"` (compared, nothing to miss; r3 F3
+  names it so `decide_pr` can tell it from a push never compared).
+- `decide_pr(pushes: list[list[str]]) -> str` — one inner list per push, one result per completed attempt VIEW
+  (r3 F3: r2's flat list had no rule for `clean` beside `not a sample`). Code below, run against the F3 cases.
 - `report(ledger_doc: dict, decided: dict, meta: dict) -> dict` — builds the schema above, omitting every PR the
-  committed ledger's ACTIVE epoch holds with a DECIDED row (a `pending` PR is never omitted).
+  committed ledger's ACTIVE epoch holds with a DECIDED row (a `pending` PR is never omitted), and every
+  post-switch event that `held_by_archive` (Task 7.3) finds in an archived epoch at the checkout, or that the
+  active epoch already holds (r3 F1 class: a red master that stays red after the owner's reset re-blames the same
+  PR on every sweep; the absorb drops it either way, and omitting it here keeps gate clause 9 from refusing on
+  it every day until the absorb).
+```python
+import json
+
+def runs_from_listing(stdout):
+    """`gh api --paginate --slurp` prints ONE JSON array holding every page (gh's manual: without `--slurp`
+    "each page is a separate JSON array or object", concatenated, which `json.loads` refuses; r3 F6)."""
+    pages = json.loads(stdout)
+    if not isinstance(pages, list):
+        raise ValueError("runs listing is not a --slurp array of pages")
+    return [run for page in pages for run in page["workflow_runs"]]
+
+def report_identity_ok(rep, run_id, attempt):
+    """r3 F5: the body's identity must be the run attempt it was downloaded from, or `skip` (keyed by the
+    listing) and `report_id` (keyed by the body) could disagree and hide another run's report."""
+    return rep.get("run_id") == run_id and rep.get("run_attempt") == attempt
+
+def decide_pr(pushes):
+    """`pushes`: one list per push, one result per completed ATTEMPT VIEW of that push's PR run (r3 F3).
+    `no would-skip` = compared, nothing skipped (neutral); `not a sample` = not compared under this selector."""
+    flat = [r for push in pushes for r in push]
+    if "miss" in flat:
+        return "miss"                                  # latches, from any attempt of any push
+    if "pending" in flat:
+        return "pending"
+    per_push = [[r for r in push if r != "not a sample"] for push in pushes]
+    if all(not p for p in per_push):
+        return "not a sample"                          # no push compared under this selector
+    if any(not p for p in per_push):
+        return "inconclusive"                          # one push was never compared under this selector
+    rest = [r for p in per_push for r in p]
+    if any(r != "clean" and r != "no would-skip" for r in rest):
+        return "inconclusive"                          # inconclusive, unreproduced difference
+    return "clean" if "clean" in rest else "not a sample"
+```
+`not a sample` ATTEMPTS of a push that has another compared attempt are ignored (the ledger's clause 5 ignores
+`not a sample` ROWS the same way); a PUSH with no compared attempt among compared pushes makes the PR
+`inconclusive`, never `clean`, because spec §8.6 item 6 counts a PR only when every push compared. Neither rule
+loosens: a `miss` latches before either is read.
 - [ ] **Failing cases (§8.6, each adjacent):** a cancelled PR run, a missing base artifact, a red control →
   inconclusive; a pending PR not counted and decided by a later run; a miss at a non-final push then a clean final
   push → miss; a flip on re-run → inconclusive; stable on both trees under one seed → miss; reproduces under only
@@ -991,7 +1054,33 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
   `9.2` is read; **(the 120-day window)** a run created 100 days ago whose attempt 2 (uploaded 70 days ago, a
   rerun 30 days after its run) holds a miss → listed (a 90-day `created` window drops it); **(comparator, the
   same class)** a PR push whose CI run has attempt 1 with a difference that replays as a miss and attempt 2
-  comparing clean → the PR is `miss`; an attempt still running → `pending`.
+  comparing clean → the PR is `miss`; an attempt still running → `pending`;
+  **(r3 F3, "Re-run failed jobs")** run 70's attempt 1 has `selection-70-1` and shards 1-8, shard 3
+  `complete: false`; attempt 2 has ONLY `verdicts-70-2-3` → attempt 2's view is `selection-70-1` + shards
+  1, 2, 4-8 of attempt 1 + shard 3 of attempt 2; with that shard differing and the replay stable → the PR is
+  `miss` (under r2 attempt 2 had no `selector_blob`, was `not a sample`, and the difference was never compared);
+  adjacent: the re-run shard agrees → attempt 2 `clean`, attempt 1 `inconclusive`, PR `inconclusive` (spec §8.6
+  item 6: a flaky re-run is inconclusive); `decide_pr([["clean", "not a sample"]])` → `clean`;
+  `decide_pr([["clean"], ["not a sample"]])` → `inconclusive` (r2: undefined); every push `not a sample` →
+  `not a sample`; `[["clean"], ["no would-skip"]]` → `clean`, `[["no would-skip"]]` → `not a sample`;
+  `[["not a sample", "miss"]]` → `miss`;
+  **(r3 F4, no-report attempts)** run 41's attempt 1 concluded `failure` with no artifact → `list_reports` returns
+  the stub `41.1` (`no_report: failure`) after ONE artifacts call and no download; with `41.1` in `skip` it
+  costs ZERO calls (under r2 it cost a call on every listing for 120 days); a `cancelled` attempt WITH a
+  `shadow-report-41-1` holding a miss → the report is returned, not a stub (adjacent); an attempt `in_progress`
+  → nothing, no stub; a `success` attempt with no artifact → still RAISES, never a stub. The call count of the
+  F4 case above becomes 1 + 2 + 10 × (1 + 1), plus 1 for each of two failed attempts added to its window, and
+  the case asserts that exact number;
+  **(r3 F5, a body naming another run)** the artifact `shadow-report-5-1` downloaded from run 5 attempt 1 whose
+  body says `run_id: 6` → RAISES (`report identity 6.1 is not 5.1`); with `run_attempt: 2` → RAISES; under r2 it
+  was absorbed as `6.1`, and run 6's real report, holding #650 `miss`, was filtered out by `skip` from then on;
+  adjacent: a body saying `5`, `1` → returned;
+  **(r3 F6, the real page shape)** the fake `gh` serves 150 trusted runs as TWO pages: invoked without
+  `--slurp` it prints gh's documented default, `{page 1}{page 2}` concatenated, and with `--slurp` the array
+  `[{page 1}, {page 2}]` → `list_reports` sees all 150 (the case asserts run 149, on page 2, is read), and its
+  call log shows `--paginate --slurp`; a parser reading the first object only (`raw_decode`) sees 100 and goes
+  red on run 149; dropping `--slurp` from the command makes the fake's output unparseable and the listing
+  RAISES (`json.loads` refuses `}{`).
 - [ ] **Steps:** red, implement with `gh` injected, green, W1-W8, mutate `--only scripts/shadow-compare.py`, commit.
 
 ### Task 7.3: the committed ledger, the absorb, the guard and the epoch HOLD
@@ -1016,7 +1105,8 @@ it for this file.
   absorbed_reports: {}, absorbed_through: null, rows: {}, post_switch_events: [], q1_probe_delta: null},
   previous_epochs: []}`. A row is `{decision, merged_at, decided_at, pushes, selector_blob}`, the last copied from
   the report that wrote it (r1 redesign Claude F5); `absorbed_reports` maps each absorbed report's `report_id`
-  (`<run_id>.<run_attempt>`, Task 7.2) to its `generated_at` (its IDENTITY, r1 redesign Codex X1, X2, r2 C2); `q1_probe_delta` is `{value, generated_at}` or null
+  (`<run_id>.<run_attempt>`, Task 7.2) to its `generated_at` (its IDENTITY, r1 redesign Codex X1, X2, r2 C2), or
+  to `null` for a NO-REPORT stub (an attempt that completed without a report, r3 F4); `q1_probe_delta` is `{value, generated_at}` or null
   (r1 redesign Claude F6); `absorbed_through` is the newest absorbed `generated_at` and serves FRESHNESS only
   (Task 8.1 clause 7), never which reports are absorbed. `epoch.start` replaces the r2 `SHADOW_START` constant.
   GENESIS is this commit: expiry cannot empty a file (r3 F2).
@@ -1037,12 +1127,32 @@ it for this file.
   ordinary docs batch, so it costs no extra PR.
 ```python
 import copy
+from datetime import date, datetime, timezone
 
 DECIDED = frozenset({"clean", "miss", "inconclusive", "not a sample"})  # "pending" is never written (F9)
 
 def report_id(rep):
-    """A report's IDENTITY: one per run ATTEMPT, so a rerun never replaces an earlier attempt's report (r2 C2)."""
+    """A report's IDENTITY: one per run ATTEMPT, so a rerun never replaces an earlier attempt's report (r2 C2).
+    A NO-REPORT stub (an attempt that concluded without `success` and uploaded nothing, r3 F4) has one too."""
     return f"{rep['run_id']}.{rep['run_attempt']}"
+
+def as_utc(s):
+    """An `epoch.start` (a date, or an ISO-8601 UTC timestamp) or a `generated_at`, as an aware datetime."""
+    if len(s) == 10:
+        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+def held_by_archive(archived, pr=None, event=None):
+    """True when an ARCHIVED epoch already holds this tightening evidence: a `miss` row for `pr`, or a post-switch
+    event for the same PR whose targets cover `event`'s. The owner's reset archived it, so it is not re-latched
+    (r3 F1). Evidence NO archive holds is not covered, whenever it was generated: it latches the active epoch."""
+    for ep in archived:
+        if pr is not None and ep["rows"].get(pr, {}).get("decision") == "miss":
+            return True
+        if event is not None and any(e["pr"] == event["pr"] and set(event["targets"]) <= set(e["targets"])
+                                     for e in ep["post_switch_events"]):
+            return True
+    return False
 
 def may_loosen(rep, epoch, blobs, is_ancestor):
     """None when this report may add non-miss rows and Q1's value; else why not (it still adds misses)."""
@@ -1054,30 +1164,39 @@ def may_loosen(rep, epoch, blobs, is_ancestor):
         return "report from another epoch"
     return None
 
-def absorb_epoch(epoch, reports, blobs, is_ancestor):
-    """The ONE absorb rule: --absorb writes it, the guard recomputes it. Never removes anything."""
+def absorb_epoch(epoch, reports, blobs, is_ancestor, archived=()):
+    """The ONE absorb rule: --absorb writes it, the guard recomputes it. Never removes anything.
+    `archived` is the ledger's `previous_epochs` at BASE."""
     out, log = copy.deepcopy(epoch), []
-    for rep in sorted(reports, key=lambda r: (r["generated_at"], report_id(r))):
+    for rep in sorted(reports, key=lambda r: (r.get("generated_at") or "", report_id(r))):
+        if rep.get("no_report"):  # concluded without a report: absorbed so no listing re-queries it (r3 F4)
+            out["absorbed_reports"][report_id(rep)] = None
+            continue
         why = may_loosen(rep, epoch, blobs, is_ancestor)
         if why:
             log.append(f"ABSORB MISSES ONLY: {report_id(rep)} {why}")
         for pr, row in sorted(rep["prs"].items()):
             if row["decision"] not in DECIDED or (why and row["decision"] != "miss"):
                 continue
+            if row["decision"] == "miss" and held_by_archive(archived, pr=pr):
+                log.append(f"HELD BY ARCHIVE: {report_id(rep)} #{pr} miss")
+                continue
             old = out["rows"].get(pr)
             if old is None or (row["decision"] == "miss" and old["decision"] != "miss"):
                 out["rows"][pr] = dict(row, selector_blob=rep["selector_blob"])
         for ev in rep["post_switch_events"]:
-            if ev not in out["post_switch_events"]:
+            if held_by_archive(archived, event=ev):
+                log.append(f"HELD BY ARCHIVE: {report_id(rep)} event #{ev['pr']}")
+            elif ev not in out["post_switch_events"]:
                 out["post_switch_events"].append(ev)
         q1 = out["q1_probe_delta"]
         if not why and rep["q1_probe_delta"] is not None and (q1 is None or rep["generated_at"] > q1["generated_at"]):
             out["q1_probe_delta"] = {"value": rep["q1_probe_delta"], "generated_at": rep["generated_at"]}
         out["absorbed_reports"][report_id(rep)] = rep["generated_at"]
-    out["absorbed_through"] = max(out["absorbed_reports"].values(), default=None)
+    out["absorbed_through"] = max((t for t in out["absorbed_reports"].values() if t), default=None)
     return out, log
 
-def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor):
+def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor, archived=()):
     """The guard's absorb clause. `listed` is EVERY trusted report not absorbed at BASE (list_reports with
     skip = every id BASE absorbed, active and archived). The absorb takes ALL of them, never a subset (r2 C1)."""
     base_ids, head_ids = set(base_epoch["absorbed_reports"]), set(head_epoch["absorbed_reports"])
@@ -1087,9 +1206,23 @@ def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor):
     errs += [f"listed report not absorbed: {i} (re-run --absorb)" for i in sorted(listed_ids - head_ids)]
     if errs:
         return errs
-    expected, _ = absorb_epoch(base_epoch, listed, blobs, is_ancestor)
+    expected, _ = absorb_epoch(base_epoch, listed, blobs, is_ancestor, archived)
     return [f"{k} differs from the rebuilt absorb" for k in sorted(set(expected) | set(head_epoch))
             if expected.get(k) != head_epoch.get(k)]
+
+def new_start_errors(base_doc, head_start, today):
+    """The epoch-change clause's bound on the new `start` (r3 F2: no backdating). A reports' re-scan reaches back
+    to `start`, so a start before the newest absorbed report would re-decide what the archive already decided."""
+    ts = [t for ep in [base_doc["epoch"], *base_doc["previous_epochs"]]
+          for t in ep["absorbed_reports"].values() if t]
+    errs = []
+    if as_utc(head_start) <= as_utc(base_doc["epoch"]["start"]):
+        errs.append("new epoch start not later than the old")
+    if ts and as_utc(head_start) < max(as_utc(t) for t in ts):
+        errs.append(f"new epoch start {head_start} before the newest absorbed report {max(ts)}")
+    if as_utc(head_start).date() > today:
+        errs.append(f"new epoch start {head_start} after today {today}")
+    return errs
 ```
 - **`scripts/check-shadow-ledger.py --base REF`.** Its rule, `ledger_change_errors(base_doc, head_doc, reports,
   blobs_at_base, is_ancestor, today) -> list[str]`, is PURE; the fetch (`list_reports`, the download, `git show`,
@@ -1107,10 +1240,14 @@ def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor):
     row a listed report contradicts left `clean` (the rebuild replaces it: a miss always wins), a dropped event, a
     row no report holds, an older Q1 and a moved watermark are all one clause (r2 redesign Codex C1: the r1 fold
     rebuilt from the ids HEAD CHOSE, and its extra check covered only rows HEAD ADDED, so an absorb that left out
-    the report contradicting an existing row passed). **Its cost, stated:** a report published between the
-    local `--absorb` and the PR's `verify` run is listed by the guard and not absorbed, so that `verify` is red
-    with `listed report not absorbed: <id> (re-run --absorb)` until the absorb is re-run; a daily report makes
-    this at most one re-run per absorb PR that stays open across the schedule, and it fails closed;
+    the report contradicting an existing row passed). The rebuild passes BASE's `previous_epochs` as
+    `archived`, so `held_by_archive` is part of what HEAD must equal (r3 F1). **Its cost, stated (r3 F7):** a
+    report published between the local `--absorb` and a `verify` run is listed by the guard and not absorbed, so
+    that `verify` is red with `listed report not absorbed: <id> (re-run --absorb)` until the absorb is re-run.
+    Every push to the PR re-runs `verify` and re-lists, so the cost is one re-absorb per PUSH whose `verify`
+    follows a schedule the local absorb did not see, not one per PR (the absorb rides the ordinary docs batch,
+    which may take several pushes). The absorber therefore runs `--absorb` immediately before EACH push of a PR
+    that carries an absorb. It fails closed;
   - **an absorb gap**: BASE's `absorbed_through` (or `epoch.start`) more than 76 days before today → refused; only
     an epoch reset clears it. This and gate clause 7 are the only reads of the timestamp watermark, and both can
     only REFUSE. **The bound, restated from what the C1 fix makes true and attacked before it was written:** every
@@ -1128,12 +1265,29 @@ def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor):
     controls);
   - **an epoch change** (any identity field or `previous_epochs` differs): `previous_epochs` must be BASE's with
     BASE's active epoch appended VERBATIM (its rows, misses, events and absorbed ids with it); the new epoch must
-    be EMPTY (`fresh_epoch`: no rows, events, ids or Q1 carried); `start` strictly later; `reset_by_owner` a
-    non-empty string; `selector_blob` equal to BASE's `reach_select.py` blob (r3 F5; r1 redesign Codex X3). A
-    report written for the OLD epoch and absorbed only after the reset is absorbed into the NEW epoch for its
-    misses and events only (`may_loosen`: `report from another epoch`), so a miss the owner had not yet seen
-    when resetting latches the new epoch (found by the class search: rows from outside the active epoch can
-    only tighten it, never count toward it);
+    be EMPTY (`fresh_epoch`: no rows, events, ids or Q1 carried); `new_start_errors` (code above) empty;
+    `reset_by_owner` a non-empty string; `selector_blob` equal to BASE's `reach_select.py` blob (r3 F5; r1
+    redesign Codex X3). **The new `start` (r3 F2: no backdating)** is strictly later than the old, NO EARLIER than
+    the newest `generated_at` absorbed in ANY epoch, and no later than `today`; it may be a date or an ISO-8601
+    UTC timestamp (`as_utc`). Every report re-scans PRs merged since `start` and re-runs `post_switch` over red
+    sweeps since `start`, and every PR or sweep an absorbed report decided happened before that report's
+    `generated_at`, so a start at or after it cannot re-decide what the archive holds; under r2 a start of
+    2027-01-02 on a 2027-03-01 reset re-recorded the archived #600 miss in the new epoch every day.
+    **What a reset clears, precisely (r3 F1).** A report written for the OLD epoch and absorbed only after the reset
+    (it is near-certain: the daily report between the absorb and the reset's merge repeats every miss and event
+    the old epoch latched) is absorbed into the NEW epoch for its misses and events only (`may_loosen`: `report
+    from another epoch`), and of those, `absorb_epoch` drops each one `held_by_archive` finds in an archived
+    epoch (a `miss` row for that PR; an event for that PR whose targets an archived event covers), logging
+    `HELD BY ARCHIVE`. **A reset clears exactly what it archived:** evidence the owner saw is not re-latched, and
+    evidence NO archive holds, whenever it was generated, latches the new epoch, because the owner has not seen it.
+    The same predicate applies to every report, so a red master that stays red after the reset and re-blames the
+    archived PR's target in a NEW sweep does not re-latch either, while a NEW target for it does. **Not taken,
+    and why:** the coordinator's first form, "evidence counts only if its event happened at or after `start`",
+    would drop a pre-reset miss the owner never saw (one in a report published after the reset PR's `verify`)
+    while recording the report as absorbed, which spec §8.6 lists as a failure ("records a report as absorbed
+    without absorbing its misses") and which loosens the latch; and the reviewer's option (a), refusing a reset
+    while any report is unabsorbed, leaves that same window between the reset PR's `verify` and its merge, so it
+    needs this rule anyway. The archive rule alone closes both;
   - **genesis**: no file at BASE → HEAD must be an empty epoch keyed to BASE's selector, `previous_epochs: []`;
   - a HEAD document that fails `ledger_schema_ok`, or a BASE that has the file and HEAD deletes it.
   A failed listing or download while the ledger changed is rc 2, CANNOT RUN, never a pass. Caller: a `verify` step
@@ -1179,7 +1333,24 @@ def absorb_errors(base_epoch, head_epoch, listed, blobs, is_ancestor):
   archive drops the miss row → refused; an empty `reset_by_owner` → refused; the new epoch carries the old rows →
   refused; `start` moved backward → refused; an earlier `previous_epochs` entry altered → refused; **(a report
   from the old epoch, absorbed after a reset)** its #610 `miss` and #611 `clean` → the new epoch holds #610 `miss`
-  and no #611 (adjacent: the same report with the new epoch's `epoch_start` → both rows); **(gap)** BASE
+  and no #611 (adjacent: the same report with the new epoch's `epoch_start` → both rows); **(r3 F1, the
+  reviewer's `reset.py`: a reset re-closed by an old-epoch report)** R10 (old epoch d0) holds post-switch event
+  E `{sweep 77, #600, [scripts/x.py]}` and is absorbed; R11, written the next day before the reset merges,
+  repeats E with `epoch_start` d0; the owner's reset (archive verbatim, empty epoch, `start` d12) passes; the
+  next absorb MUST take R11 (leaving it out → `listed report not absorbed: 11.1`) → the new epoch holds NO event,
+  `HELD BY ARCHIVE: 11.1 event #600` logged, and gate clause 4 does not refuse (under r2 the new epoch held E and
+  clause 4 refused `latched miss`, undoing the reset); a HEAD carrying E in the new epoch (the r2 absorb) →
+  refused, `post_switch_events differs from the rebuilt absorb`; the same with a repeated `miss` row for #600
+  the archive holds → no row; adjacent (the latch still works): an old-epoch report's UNSEEN #610 `miss` (no
+  archive holds it) → latches the new epoch; a new-epoch report's event for #600 on a NEW target
+  `scripts/y.py` → latches; a later red sweep (sweep 91) re-blaming #600 on `scripts/x.py` → held, not latched;
+  **(r3 F2, a backdated epoch start)** BASE's newest absorbed `generated_at` 2027-01-10T06:00:00Z, a reset on
+  2027-03-01 with `start` 2027-01-02 → refused, `new epoch start 2027-01-02 before the newest absorbed report
+  2027-01-10T06:00:00Z` (r2's "strictly later" passed it, and every later report re-recorded #600's archived
+  miss); a newest `generated_at` in an ARCHIVED epoch counts too; `start` after `today` → refused; adjacent:
+  `start` equal to the newest `generated_at`, or `today`, → passes; **(r3 F4)** an absorb taking a no-report stub
+  `40.1` → `absorbed_reports["40.1"]` is `null`, `absorbed_through` ignores it, the guard passes; leaving the
+  stub out → `listed report not absorbed: 40.1`; **(gap)** BASE
   absorbed 77 days ago → refused (adjacent: 75 → passes); genesis with a row → refused (adjacent: empty →
   passes); a deleted ledger → refused; a PR that does not touch the ledger → rc 0, `shadow-ledger: unchanged`,
   and the injected `gh` was never called; a failed listing with a changed ledger → rc 2.
@@ -1293,7 +1464,11 @@ the evidence key (`reach_select.py`'s blob, r3 F8). `reach_gate.py` is in `SELEC
      or a post-switch event → `unabsorbed miss`, whatever its `generated_at` (r1 redesign Codex X2, Claude F1c: a
      report uploaded after a later one was absorbed is still read). The read is a UNION over those reports, so the
      newest report omitting a miss cannot hide it (r3 F3, F5 in the window). A report absorbed in an ARCHIVED epoch
-     is not re-read, so an owner's reset is not undone by the reports it archived.
+     is not re-read. An OLD-epoch report still unabsorbed when the reset merged IS read here, and refuses until
+     the next absorb; that absorb latches only what no archived epoch holds (Task 7.3, `held_by_archive`), so an
+     owner's reset is not undone by it either (r3 F1: the r2 text claimed this while the absorb re-latched). This
+     clause stays a plain union, NOT filtered by `held_by_archive`: it can only close, and its cost is one refusal
+     window per such report, bounded by the next absorb.
   **Every input that can OPEN the switch (1-7) is read at BASE, never at HEAD and never from Actions storage**
   (`q1_decision` is `q1_at_base(...)`, never the running module's constant), so a PR cannot enable its own skips
   by ticking #590, flipping the decision or editing the ledger in its diff. **Reports (8-9) can only CLOSE it**: a
@@ -1360,7 +1535,10 @@ the evidence key (`reach_select.py`'s blob, r3 F8). `reach_gate.py` is in `SELEC
   **(X2, a late upload across an absorb)** the BASE ledger absorbed R2 (`generated_at` 10:01, no miss) so its
   `absorbed_through` is 10:01, and R1 (`generated_at` 10:00, a miss, uploaded after that absorb) is listed →
   `unabsorbed miss` (r1 compared 10:00 with 10:01 and passed), adjacent: R1's id in `absorbed_reports` → passes;
-  a report absorbed in an ARCHIVED epoch with a miss → passes clause 9 (the owner's reset holds); **(F5, a row
+  a report absorbed in an ARCHIVED epoch with a miss → passes clause 9 (the owner's reset holds); **(r3 F1)**
+  right after a reset, an OLD-epoch report `11.1` absorbed in no epoch repeats the archived event → `unabsorbed
+  miss` (closes, never opens), and after the absorb of `11.1` (Task 7.3: held by the archive, nothing latched)
+  the same ledger passes clauses 4 and 9, refusing only at clause 5 (`0 of 20`); **(F5, a row
   decided by the previous selector)** 20 clean rows whose `selector_blob` is X in an epoch keyed to Y → `0 of 20`
   (r1 rows carried no blob and counted 20), adjacent: the same rows with blob Y → passes; **(X3)** a `miss` in
   `previous_epochs` with 20 clean active rows → passes clause 4 (r1 had no archive of rows to read); **(F6)** the active epoch's `q1_probe_delta.value` 7 while an older absorbed
@@ -1397,9 +1575,12 @@ report file), `.github/workflows/ci.yml` (`mutation-sweep-complete`), the manife
   over every red master full sweep since `epoch.start` and records each hit in the REPORT's `post_switch_events`;
   (2) the gate's tightening read (Task 8.1, clause 9) closes the switch on the next PR, before any absorb, because
   the report's id is unabsorbed; (3) the absorb copies the event into the active epoch, where the guard's rebuild
-  forbids dropping it (Task 7.3), and clause 4 keeps the switch closed. Turning it back on is the owner's (spec §7
+  forbids dropping it (Task 7.3), and clause 4 keeps the switch closed, UNLESS an archived epoch already holds it
+  (`held_by_archive`, Task 7.3: the owner's reset archived it, so it is logged `HELD BY ARCHIVE` and not re-latched;
+  r3 F1). Turning it back on is the owner's (spec §7
   Q5: "revisit on the first §8.1 event"): a reviewed commit that starts a NEW EPOCH in `docs/shadow-ledger.json`
-  (strictly later `start`, the old epoch, its rows, misses, events and absorbed ids WITH it, appended verbatim to
+  (a `start` bounded by `new_start_errors`, Task 7.3: later than the old, not before the newest absorbed
+  report, not after today; the old epoch, its rows, misses, events and absorbed ids WITH it, appended verbatim to
   `previous_epochs`, an EMPTY new epoch, a non-empty `reset_by_owner`), which `check-shadow-ledger.py` checks and
   `check-merge-ready.py` HOLDs (Task 7.3). The gate reads only the active epoch, so the latch no longer refuses and
   the 20-PR count restarts at zero; the archived miss stays in the file, unalterable (r1 redesign Codex X3: under
@@ -1409,7 +1590,11 @@ report file), `.github/workflows/ci.yml` (`mutation-sweep-complete`), the manife
   `post_switch_events` entry; a later report, after the hit's inputs expired and the hit was absorbed, omits it
   while the ledger keeps it (the guard refuses its removal, Task 7.3); **(X3)** from a ledger whose active epoch
   holds that event, an owner's epoch reset passes `check-shadow-ledger.py` and `switch_gate` no longer refuses at
-  clause 4 (adjacent: the same reset with the event deleted from the archive → refused by the guard); `sweep-red-alert.py`: with a report file
+  clause 4 (adjacent: the same reset with the event deleted from the archive → refused by the guard); **(r3 F1,
+  live loop)** master stays red after that reset: the next daily report (new epoch) re-blames #600 for the same
+  target in a NEW sweep → `report()` omits it (held by the archive at the checkout), the absorb holds it, and
+  clauses 4 and 9 do not refuse (under r2 it re-latched every day and the reset never held); the same sweep
+  blaming a DIFFERENT merged PR, or #600 for a NEW target → recorded and latched (adjacent); `sweep-red-alert.py`: with a report file
   the issue body (its fake `gh` state) contains the report's lines; with the variable set and no file → NOT
   CHECKED in the body; without the variable → the body is byte-identical to today's (adjacent); a `ci.yml` read
   asserts the step is in `mutation-sweep-complete`, precedes the alert step, and that the job's permissions are

@@ -363,13 +363,19 @@ build ADDS four things (the fourth, the committed ledger, since the owner's 14:5
   report can be published after a later one was absorbed (r1 redesign Codex X1, X2). An absorb takes EVERY trusted
   report the ledger has not absorbed, never a subset (r2 redesign Codex C1: a subset let unrelated absorbs keep the
   ledger fresh while a report contradicting an existing row aged out unread). A miss or a post-switch event only
-  tightens, so it is absorbed from any trusted report; a clean row and Q1's probe delta only loosen, so they are
+  tightens, so it is absorbed from any trusted report, except one an ARCHIVED epoch already holds (a miss for the
+  same PR, an event for the same PR and targets): the owner's reset cleared it, and a report written before the
+  reset, or a red master that stays red after it, must not re-latch it (r3 redesign F1). Evidence no archived epoch
+  holds latches, whenever it was generated, because the owner has not seen it; a clean row and Q1's probe delta only loosen, so they are
   absorbed only from a report written by BASE's code for the current epoch. A decided row is never replaced,
   except by a miss. A guard on every pull request REBUILDS the absorb from the ledger at BASE and EVERY trusted
   report the ledger at BASE has not absorbed, and refuses any other result, so a change that removes or alters a
   decided row, leaves a listed report out, keeps a row a listed miss contradicts, drops a miss or an event, adds
   a row no trusted report holds, or advances the ledger past a report it did not absorb cannot pass. Everything the switch counts lives inside the current EPOCH; moving the epoch requires the owner's
-  recorded decision and archives the old epoch, its misses included, verbatim (r1 redesign Codex X3). A row
+  recorded decision and archives the old epoch, its misses included, verbatim (r1 redesign Codex X3), and the new
+  epoch's start is no earlier than the newest report the ledger absorbed and no later than the day of the change
+  (r3 redesign F2: a backdated start re-decided what the archive holds). A report attempt that completed without a
+  report is absorbed as a no-report entry, so it is listed once, not on every absorb (r3 redesign F4). A row
   counts only under the selector that decided it (r1 redesign Claude F5). A PR decided in the ledger keeps that
   decision, so neither an input's nor a report's expiry can undo it. An expired input with no decided row is
   INCONCLUSIVE, never clean. The switch reads the ledger's current epoch at BASE, as it reads `docs/backlog.md`;
@@ -569,7 +575,7 @@ answer A), after the build plan's review armed Phase 6. **No question is open fo
 | Q5 | Accept §4's bound, with master's full sweep as the catch and §8.1 as the detector, and that a harness change resets the saving until the next recording lands? | **Accepted** (10:33). Revisit on the first §8.1 event |
 | Q6 | Ship before backlog #560, as its first slice, or inside it? | **Before** (10:33). It builds the infrastructure backlog #560 extends with per-mutant recording (§6) |
 | — | The recorder | **`strace -f`** in the `record-reads` job, on each master push, on Linux (10:40, card answer A). Build step 1 proves it on a GitHub-hosted runner, else the audit-hook recorder (§2) |
-| — | Where the shadow ledger lives: a committed file read at BASE, or a chain of Actions artifacts? | **A committed ledger** (owner, selection card, 2026-11-09 14:55, answer A "Committed ledger (recommend)"; design D1 of `docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`, whose §5 diff is applied in §2 *The comparator* and *The ledger*). The comparator writes stateless `shadow-report-<run_id>` reports; `docs/shadow-ledger.json` changes only through a guarded absorb PR; an input that can OPEN the switch is read at BASE, and a report can only CLOSE it. Declined: D0, seven more fixes to the artifact chain |
+| — | Where the shadow ledger lives: a committed file read at BASE, or a chain of Actions artifacts? | **A committed ledger** (owner, selection card, 2026-11-09 14:55, answer A "Committed ledger (recommend)"; design D1 of `docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`, whose §5 diff is applied in §2 *The comparator* and *The ledger*). The comparator writes stateless `shadow-report-<run_id>-<run_attempt>` reports (r3 redesign F7); `docs/shadow-ledger.json` changes only through a guarded absorb PR; an input that can OPEN the switch is read at BASE, and a report can only CLOSE it. Declined: D0, seven more fixes to the artifact chain |
 
 Recording on master only (never on a PR) is not a question: a PR's unmerged code must not decide another PR's
 sweep, by the same argument §2 gives.
@@ -668,7 +674,8 @@ PICKS by 3(a) rather than falling back (§3 replaced the old stale-set fallback;
    2026-11-09 14:55):** a committed change to `docs/shadow-ledger.json` that removes or alters a decided row,
    lowers a miss count, adds a row no trusted report holds, records a report as absorbed without absorbing its
    misses, absorbs some listed trusted reports while leaving another out, or moves the epoch without the owner's
-   recorded decision or without archiving the old epoch verbatim passes the guard; or the switch opens on anything but the ledger's current epoch at BASE (a report, an
+   recorded decision or without archiving the old epoch verbatim, or to a start before the newest absorbed report,
+   or re-latches in the new epoch evidence an archived epoch holds, passes the guard; or the switch opens on anything but the ledger's current epoch at BASE (a report, an
    artifact, the PR's own ledger, an archived epoch's rows, a row decided under another selector); or a trusted
    report holding a miss the ledger has not absorbed leaves the switch open, whenever it was published and
    whatever the current status of its run (a rerun in progress included).

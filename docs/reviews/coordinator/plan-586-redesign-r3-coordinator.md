@@ -56,3 +56,41 @@ So no second Phase 6 is convened, and the redesign is not re-litigated. **The de
   cost as one re-absorb per branch update that crosses a schedule.
 
 After round 3 the cap governs: a further round FILES anything that is not a BLOCKER.
+
+## Fold
+
+Plan code extracted and run (`absorb_epoch`, `absorb_errors`, `held_by_archive`, `new_start_errors`, `decide_pr`,
+`runs_from_listing`, `report_identity_ok`): every case below passes, the r2 regression scripts still pass, and the
+reviewer's `reset.py` scenario now ends with an empty new epoch.
+
+- **F1** — Task 7.3 (`held_by_archive`; `absorb_epoch`/`absorb_errors` take `archived` = BASE's `previous_epochs`;
+  the epoch-change clause "What a reset clears, precisely"), Task 7.2 (`report()` omits held events), Task 8.1
+  clause 9 text, Task 8.2 latch step (3); spec §2 *The ledger* and §8.6. Pinned by Task 7.3 "(r3 F1, the reviewer's
+  `reset.py`)" (R11 → no event, HEAD carrying E refused; adjacent: unseen #610 miss latches, new target latches,
+  sweep 91 re-blame held), Task 8.1 "(r3 F1)", Task 8.2 "(r3 F1, live loop)". ⚠ **Not the property above as
+  worded:** "evidence counts only if its event happened at or after `start`" would absorb-and-drop an UNSEEN
+  pre-reset miss (a report published after the reset PR's `verify`), which §8.6 lists as a failure and which
+  loosens the latch, so that form was declined (STOP rule). The fold reaches the property's intent precisely: a
+  reset clears exactly what it ARCHIVED. The reviewer's option (a) was declined too: it leaves the window between
+  the reset PR's `verify` and its merge.
+- **F2** — Task 7.3 `new_start_errors` (later than the old start, not before the newest absorbed `generated_at` in
+  any epoch, not after today); spec §2. Pinned by Task 7.3 "(r3 F2, a backdated epoch start)".
+- **F3** — Task 7.2 the attempt VIEW (own artifact, else the latest earlier attempt's), `no would-skip`,
+  `decide_pr(pushes)` code. Pinned by Task 7.2 "(r3 F3, Re-run failed jobs)" and the `decide_pr` table cases.
+- **F4** — Task 7.2 step 3 NO-REPORT STUB; Task 7.3 schema (`null` value) and `absorb_epoch`; spec §2. Pinned by
+  Task 7.2 "(r3 F4, no-report attempts)" (zero calls once absorbed) and Task 7.3 "(r3 F4)". Same property as the
+  coordinator's "goes to `skip`": an absorbed stub IS in `skip`.
+- **F5** — Task 7.2 step 3 `report_identity_ok`, a mismatch RAISES. Pinned by Task 7.2 "(r3 F5, a body naming
+  another run)".
+- **F6** — Task 7.2 listing step 2 `--paginate --slurp` + `runs_from_listing` (chosen over `--jq`: one parse, and
+  a dropped `--slurp` fails LOUDLY on `}{`). Pinned by Task 7.2 "(r3 F6, the real page shape)".
+- **F7** — Global Constraints identity; spec §7 row (`shadow-report-<run_id>-<run_attempt>`); Task 7.3 cost
+  restated as one re-absorb per PUSH whose `verify` follows an unseen schedule, `--absorb` before each push.
+  Prose; checked by `check-docs.py`.
+
+**Class search (evidence from before an epoch start counting in it), slices 6-8 and spec §2:** (1) an old-epoch
+report absorbed after a reset → F1; (2) a backdated start → F2; (3) a post-reset sweep re-blaming a pre-reset PR →
+`held_by_archive` by PR + targets (Task 8.2 live-loop case); (4) rows of a PR merged after `start` whose pushes ran
+before it → bounded by `selector_blob` equality, not time; no change; (5) `q1_probe_delta` → only from `may_loosen`
+reports of the active epoch; no change; (6) clause 9 reading a pre-reset unabsorbed report → closes only, cost
+stated; (7) the absorb-gap clause after a reset reads `epoch.start`, sound given F2.
