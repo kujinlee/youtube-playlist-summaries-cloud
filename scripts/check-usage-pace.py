@@ -41,7 +41,8 @@ after today keeps 8% (100 − 8 × the days after today), or this window's owner
 band is NORMAL (start whole items that fit under its top); inside it WIND-DOWN (finish running work and its review
 rounds, no new build or review loop); at its top or over, NO NEW STARTS. The last day is USE IT ALL. A meter at over
 14.3%/day since the window began + 8 adds a trend note. WIND-DOWN and NO NEW STARTS are WARN, because the prompt hook
-speaks only on WARN; NORMAL and an UNKNOWN band (no start%, no override — said as NOT RUN) leave the verdict alone.
+speaks only on WARN; so is an UNKNOWN band (no start%, or one from before yesterday, and no override — said as NOT
+RUN), since an unknown start% never reads as fine (pace-band r1 U1). NORMAL leaves the verdict alone.
 
 ⟳ PR #446 r1 (X1/M3): a bad FIVE-HOUR window no longer disables the weekly verdict. It was CANNOT RUN, so a
 valid weekly 95% beside a five-hour `resets_at` of 1e300 let a spawn through — the row's own FAILS IF. Now
@@ -157,7 +158,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 403 cases
+    python3 scripts/check-usage-pace.py --self-test  # 409 cases
 """
 from __future__ import annotations
 
@@ -210,16 +211,17 @@ DAY_FLOOR = 8.0
 # note, not a verdict.
 TREND_PER_DAY = 14.3
 TREND_BASE = 8.0
-USE_ALL = "all"
 # THIS WEEK ONLY, the owner's explicit CUMULATIVE bands (2026-11-09 15:27: "Mon 70–72, Tue 78–80, Wed 88–90, Thu until
 # the Fri 02:00 reset: use all"). Keyed by the window's `resets_at` LOCAL DATE (measured in ~/.claude/meter/log.jsonl:
 # resets_at 1794564000 = Fri 2026-11-13 02:00 PST), then by today's local date, so it expires by itself when the window
-# changes: any other window falls back to BAND_LOW/BAND_HIGH from start%.
+# changes: any other window falls back to BAND_LOW/BAND_HIGH from start%. The owner's "Thu ... use all" is the
+# LAST-DAY rule (`on_last_day`: from Thu 00:00 for a Fri 02:00 reset), not an entry here (pace-band r1 L3: the entries
+# that said it were dead, so no case could tell them from the rule).
 BAND_OVERRIDES: dict = {
-    "2026-11-13": {"2026-11-09": (70.0, 72.0), "2026-11-10": (78.0, 80.0), "2026-11-11": (88.0, 90.0),
-                   "2026-11-12": USE_ALL, "2026-11-13": USE_ALL},
+    "2026-11-13": {"2026-11-09": (70.0, 72.0), "2026-11-10": (78.0, 80.0), "2026-11-11": (88.0, 90.0)},
 }
 NORMAL, WIND_DOWN, NO_NEW_STARTS, USE_IT_ALL = "NORMAL", "WIND-DOWN", "NO NEW STARTS", "USE IT ALL"
+BAND_UNKNOWN = "UNKNOWN"   # the zone when the band cannot be known: a WARN, never fine (pace-band r1 U1)
 METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
 # backlog #501: the bound is on the TAIL read, never the file — the log grows ~100 rows a day, and a whole-file bound
 # refused every read after ~9 months. Today's start% needs only the newest row at or before local midnight.
@@ -421,6 +423,12 @@ def day_start(text: str | None, now: float, resets: float, why: str = "", cut: b
         needed = before[0] if before else resets - SEVEN_DAY_S - HORIZON_SLACK_S
         if min_at is None or not min_at < needed - METER_SKEW_S:
             return None, TAIL_TOO_SHORT
+    # pace-band r1 L5: a row from before YESTERDAY's local midnight does not stand for today's start (the statusline
+    # was off for days), and a stale base fires NO NEW STARTS early. Not a fall-through to a later row: that base is
+    # higher, so it would loosen the band.
+    if before is not None and before[0] < local_midnight(midnight - 1):
+        return None, (f"the newest reading at or before midnight is from {safe_time(before[0])}, before yesterday, so "
+                      f"it is not today's start")
     start = before or after
     if start is None:
         return None, "the meter log has no reading of this week's window"
@@ -442,6 +450,13 @@ def rise_start(resets: float) -> float:
     will lose (backlog #521). One definition, so the two cannot disagree — across a DST change too, where #510 r1 M1
     ruled the rise starts at the midnight before `resets − 24 h`."""
     return local_midnight(resets - 86400)
+
+
+def on_last_day(now: float, resets: float) -> bool:
+    """Is `now` on the LAST DAY — from `rise_start` INCLUSIVE (pace-band r1 C2: at 00:00:00 itself the band was still a
+    band, and a millisecond later USE IT ALL)? One definition for the day band and the USE IT message, so the two
+    cannot disagree. A guide's boundary only: the stop reads `cap_at`, which is STOP_CAP at that instant either way."""
+    return now >= rise_start(resets)
 
 
 def cap_at(now: float, resets: float) -> float:
@@ -481,10 +496,10 @@ def band_cap(now: float, resets: float) -> float:
 def day_band(start: float | None, now: float, resets: float) -> tuple[float, float, str, bool] | None:
     """Today's band as ABSOLUTE weekly %: (low, high, source, use_all), or None when it is unknown (no start% and
     no override). The owner's override for this window wins over BAND_LOW/BAND_HIGH; both edges are capped by
-    `band_cap`. The last day (from `rise_start`) or an override of USE_ALL is "use it all": (cap, cap, ..., True)."""
+    `band_cap`. The last day (`on_last_day`) is "use it all": (cap, cap, ..., True)."""
     cap = band_cap(now, resets)
     over = BAND_OVERRIDES.get(local_date(resets), {}).get(local_date(now))
-    if over == USE_ALL or now > rise_start(resets):
+    if on_last_day(now, resets):
         return cap, cap, "the last day: use it all", True
     if over is not None:
         low, high, source = over[0], over[1], "this week's owner override"
@@ -524,7 +539,7 @@ ZONE_TEXT = {
 
 def band_note(meter: str | None, now: float, resets: float, weekly: float, why: str = "",
               cut: bool = False) -> tuple[str, str | None]:
-    """(the message's band text, the zone or None when the band is unknown). A GUIDE, never a stop."""
+    """(the message's band text, the zone — BAND_UNKNOWN when the band is unknown). A GUIDE, never a stop."""
     start, start_why = day_start(meter, now, resets, why, cut)
     band = day_band(start, now, resets)
     trend = trend_at(now, resets)
@@ -532,7 +547,7 @@ def band_note(meter: str | None, now: float, resets: float, weekly: float, why: 
                   f"not a verdict." if weekly > trend else "")
     if band is None:
         return (f" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, "
-                f"never as fine.{trend_note}", None)
+                f"never as fine.{trend_note}", BAND_UNKNOWN)
     zone = band_zone(weekly, band)
     spent = "" if start is None else f" · started {pct(start)}, spent {edge(weekly - start)}"
     shown = f"{edge(band[0])}%" if band[3] else f"{edge(band[0])}–{edge(band[1])}%"
@@ -611,13 +626,14 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                  else f" The stop rises over the last day, {pct_up(stop)} now and {next_stop} from "
                       f"{local_time(next_at, exact=True)}: what is left under it is lost at the reset.")
     # `meter` False = the band was not consulted; None or text = the meter log's read. Either way it is a GUIDE: it
-    # never moves the stop, but a WIND-DOWN or NO NEW STARTS zone is a WARN, since the prompt hook speaks only then.
+    # never moves the stop, but a WIND-DOWN, NO NEW STARTS or UNKNOWN zone is a WARN, since the prompt hook speaks
+    # only then (an unknown band must never read as fine: pace-band r1 U1).
     line_note, zone = ("", None) if meter is False else band_note(meter, now, resets, weekly, meter_why, meter_cut)
     # owner 2026-11-05 19:44 ("fix token management logic so that remaining capacity will not be wasted"): on the LAST
     # day the room under the stop is lost at the reset. Every note above says HOLD BACK, so at 97% with a stale meter
     # the session went idle for an hour with room left. The room is said FIRST; the day band then says "use it all"
     # (it once showed the 11-01 pace line here, and "97% — a guide" next to 97% read as a stop).
-    last_day = now > rise_start(resets)   # the same instant the stop starts rising (use-it-or-lose-it r1 P2)
+    last_day = on_last_day(now, resets)   # the same instant the stop starts rising (use-it-or-lose-it r1 P2; r1 C2)
     # r1 P2: a positive room under 0.1 floors to "0%", which reads as NOTHING left; it is "<0.1%"
     use_it = (f"⏳ USE IT — {pct(stop - weekly) if stop - weekly >= 0.1 else '<0.1%'} is left {'before the hard limit' if stop == HARD_LIMIT else 'under the stop'} and is LOST at the reset "
               f"({local_time(resets)}): idling is waste. "
@@ -637,7 +653,7 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                       f"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if use_it:   # below the WARN line on the last day is the MOST room to lose: it is said, never silent
         return WARN, f"{use_it}Weekly usage is {pct(weekly)}; the stop is {pct_up(stop)}.{stop_note}{line_note}{five_note}"
-    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS):
+    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):
         return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{line_note}{five_note}"
     return OK, line_note.strip()
 
@@ -1329,6 +1345,12 @@ def _self_test_body() -> int:
         check("⭐ day band: each zone boundary on both sides — 21.9 NORMAL, 22 WIND-DOWN, 29.9 WIND-DOWN, 30 NO NEW STARTS",
               [band_zone(w, day_band(10.0, NOW, R7)) for w in (21.9, 22.0, 29.9, 30.0)],
               [NORMAL, WIND_DOWN, WIND_DOWN, NO_NEW_STARTS])
+        # pace-band r1 fold (check-fixture-variation): each of band_cap's and band_zone's parameters at a second value.
+        check("day band: band_cap and band_zone at second values — a day later 4 days 2 h follow (100 − 8 × 4.083); a "
+              "Mon 00:00 reset leaves 2 (84); start 30's band 42–50 puts 45 in WIND-DOWN and 41.9 in NORMAL",
+              (round(band_cap(NOW + 86400, R7), 4), band_cap(NOW, WEEK_RESET),
+               band_zone(45.0, day_band(30.0, NOW, R7)), band_zone(41.9, day_band(30.0, NOW, R7))),
+              (round(100 - 8 * (4 + 2 / 24), 4), 84.0, WIND_DOWN, NORMAL))
         check("⭐ day band: the zone sets the verdict below WARN — NORMAL is OK, WIND-DOWN and NO NEW STARTS are WARN",
               [evm(cache(w, week_reset=R7), m10)[0] for w in (21.0, 22.0, 30.0)], [OK, WARN, WARN])
         check("⭐ day band: the message names the band, start%, spend and zone — and its zone's instruction",
@@ -1339,19 +1361,26 @@ def _self_test_body() -> int:
                "build or review loop." in evm(cache(43.0, week_reset=R7), m30)[1],
                "→ zone NO NEW STARTS: no new starts; running work still finishes" in evm(cache(50.0, week_reset=R7), m30)[1]),
               (True, True, True))
-        check("⭐ day band: the trend guard — 21.0 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.2 is over and "
-              "says so, and the verdict stays OK (a guide, not a verdict)",
-              ("weekly trend" in evm(cache(21.0, week_reset=R7), m10)[1],
+        # pace-band r1 L2: the edges sit 0.008 and 0.002 from the line, so moving TREND_BASE by ±0.05 fails here.
+        check("⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over "
+              "and says so, and the verdict stays OK (a guide, not a verdict)",
+              ("weekly trend" in evm(cache(21.10, week_reset=R7), m10)[1],
                "Above the weekly trend (21.1% now: 14.3%/day + 8) — a guide, not a verdict."
-               in evm(cache(21.2, week_reset=R7), m10)[1], evm(cache(21.2, week_reset=R7), m10)[0]),
+               in evm(cache(21.11, week_reset=R7), m10)[1], evm(cache(21.11, week_reset=R7), m10)[0]),
               (False, True, OK))
         check("⭐ day band: the LAST day (from rise_start) is USE IT ALL at the 100 cap; the day before it (Wed 23:00) is a band",
               (day_band(10.0, NOW + 3600, NOW + 20 * 3600), day_band(10.0, NOW - 86400 - 3600, NOW + 20 * 3600)[3]),
               ((100.0, 100.0, "the last day: use it all", True), False))
-        check("day band: an unknown start% with no override is UNKNOWN — said, and never a WARN by itself",
-              (day_band(None, NOW, R7), evm(cache(21.0, week_reset=R7), None)),
-              (None, (OK, "pace: today's band is UNKNOWN — start% cannot be read (the meter log is missing or "
-                          "unreadable): treat it as NOT RUN, never as fine.")))
+        # pace-band r1 U1 (both halves): an UNKNOWN band was OK, and the prompt hook speaks only on WARN, so losing the
+        # meter log turned a NO NEW STARTS warning into silence. Unknown never reads as fine: it is a WARN that says why.
+        _u1 = evm(cache(21.0, week_reset=R7), None)
+        check("⭐ pace-band r1 U1: an unknown start% with no override is a WARN that says the band is UNKNOWN and why, "
+              "and the prompt hook speaks it",
+              (day_band(None, NOW, R7), _u1, prompt_output(*_u1) is not None),
+              (None, (WARN, "⚠ usage pace: weekly usage is 21%. pace: today's band is UNKNOWN — start% cannot be read "
+                            "(the meter log is missing or unreadable): treat it as NOT RUN, never as fine."), True))
+        check("pace-band r1 U1: ...while the same 21% with a known start% (10 → 22–30) is NORMAL, OK and silent",
+              (lambda r: (r[0], prompt_output(*r)))(evm(cache(21.0, week_reset=R7), m10)), (OK, None))
         # The owner's override for the window resetting Fri 2026-11-13 02:00 PST (resets_at 1794564000, the log's own
         # value). Tue 11-10 08:00 is 78–80 whatever start% is; a window one day later is a MISS and falls back to 12/20.
         _ow, _tue = 1794564000.0, lt(2026, 11, 10, 8)
@@ -1359,15 +1388,53 @@ def _self_test_body() -> int:
               "another window (start 50 → 62–70)",
               (day_band(50.0, _tue, _ow), (day_band(None, _tue, _ow) or (None, None))[:2], day_band(50.0, _tue, _ow + 86400)),
               ((78.0, 80.0, "this week's owner override", False), (78.0, 80.0), (62.0, 70.0, "12–20% a day", False)))
-        check("day band: the override's other days — Mon 70–72, Wed 88–90, Thu use it all",
+        # pace-band r1 L3: the owner's "Thu until the reset: use all" is the LAST-DAY rule (rise_start is Thu 00:00 for
+        # a Fri 02:00 reset), not an override entry; the entries that said it were dead and are gone.
+        check("day band: the override's other days — Mon 70–72, Wed 88–90; Thu is use it all through the last-day rule, "
+              "and the override has no entry for it",
               (day_band(50.0, lt(2026, 11, 9, 12), _ow)[:2], day_band(50.0, lt(2026, 11, 11, 12), _ow)[:2],
-               day_band(50.0, lt(2026, 11, 12, 12), _ow)[3]), ((70.0, 72.0), (88.0, 90.0), True))
+               day_band(50.0, lt(2026, 11, 12, 12), _ow)[2:], sorted(BAND_OVERRIDES["2026-11-13"])),
+              ((70.0, 72.0), (88.0, 90.0), ("the last day: use it all", True), ["2026-11-09", "2026-11-10", "2026-11-11"]))
+        # pace-band r1 L1: the override is keyed by LOCAL dates. Tue 17:00 PST is already Wed 01:00 UTC, so a UTC key
+        # for today gives Wed's 88–90; a reset at Thu 11-12 17:00 PST is Fri 11-13 in UTC, so a UTC key for the window
+        # hits this week's override, where the local key misses it.
+        check("⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at "
+              "Thu 17:00 PST is not the Fri 11-13 window",
+              (day_band(50.0, lt(2026, 11, 10, 17), _ow)[:2], day_band(50.0, _tue, lt(2026, 11, 12, 17))[:3]),
+              ((78.0, 80.0), (62.0, 70.0, "12–20% a day")))
+        # pace-band r1 C2 (Codex): the last day starts AT midnight, inclusive — 00:00:00 was still a band (NO NEW STARTS
+        # at start 10, weekly 31) and a millisecond later USE IT ALL with 66% under the stop. One definition
+        # (`on_last_day`) serves the band and the USE IT message, so the two cannot disagree at the instant either.
+        _c2r = NOW + 86400 + 7200                  # Sat 02:00: rise_start is NOW, Fri 00:00
+        _c2m = meter((NOW - 60, 10, _c2r))
+        _c2at, _c2before = evm(cache(31, week_reset=_c2r), _c2m), evm(cache(31, week_reset=_c2r), _c2m, NOW - 1)
+        check("⭐ pace-band r1 C2: AT the last day's midnight the band is USE IT ALL and the room is said; one second "
+              "before it is still the band (NO NEW STARTS)",
+              (day_band(10.0, NOW, _c2r)[3], day_band(10.0, NOW - 1, _c2r)[3], _c2at[0], _c2at[1].startswith("⏳ USE IT"),
+               "zone USE IT ALL" in _c2at[1], _c2before[0], "zone NO NEW STARTS" in _c2before[1],
+               "USE IT —" in _c2before[1]),
+              (True, False, WARN, True, True, WARN, True, False))
         check("⭐ #500: start% is the value AT midnight, not the latest reading (83 at midnight, 88 now)",
               day_start(meter((NOW - 900, 80, WEEK_RESET), (NOW - 100, 83, WEEK_RESET),
                               (NOW + 3000, 88, WEEK_RESET)), NOW + 3600, WEEK_RESET)[0], 83.0)
         check("#500: a window that began after midnight starts at its FIRST row",
               day_start(meter((NOW + 7200, 4, WEEK_RESET), (NOW + 9000, 9, WEEK_RESET)), NOW + 9999,
                         WEEK_RESET)[0], 4.0)
+        # pace-band r1 L5: start% has an AGE bound. A row from before yesterday's local midnight does not stand for
+        # today's start (the statusline was off for days); it would set a stale, low base and an early NO NEW STARTS.
+        # The band is then UNKNOWN, a WARN (U1). Yesterday's midnight itself, and any later row, still counts.
+        _yday = NOW - 86400                         # Thu 01-14 00:00 PST
+        check("⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); "
+              "one AT yesterday's midnight and one an hour before today's still set start%",
+              (day_start(meter((_yday - 1, 40, WEEK_RESET)), NOW + 60, WEEK_RESET),
+               day_start(meter((_yday, 40, WEEK_RESET)), NOW + 60, WEEK_RESET),
+               day_start(meter((NOW - 3600, 41, WEEK_RESET)), NOW + 60, WEEK_RESET)),
+              ((None, "the newest reading at or before midnight is from Wed 01-13 23:59 PST, before yesterday, so it "
+                      "is not today's start"), (40.0, ""), (41.0, "")))
+        check("pace-band r1 L5: ...and evaluate() says that band is UNKNOWN, as a WARN",
+              (lambda r: (r[0], "today's band is UNKNOWN — start% cannot be read (the newest reading at or before "
+                                "midnight is from Wed 01-13 23:59 PST" in r[1]))(
+                  evm(cache(45), meter((_yday - 1, 40, WEEK_RESET)), NOW + 60)), (WARN, True))
         check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%",
               (day_start(meter((NOW - 60, -100, WEEK_RESET)), NOW, WEEK_RESET)[0],
                day_start(meter((NOW - 60, 150, WEEK_RESET)), NOW, WEEK_RESET)[0],
@@ -1554,7 +1621,7 @@ def _self_test_body() -> int:
 
             # r1 F3 (Claude): the week reset falls between local midnight and the first row read. The part holds the
             # LAST window's rows written after midnight, then this window's; under append order an earlier window's row
-            # ANYWHERE in the part proves this window's first row is in it too. Start 2 → 2 + 1.5 × 98 ÷ 3 = 51.
+            # ANYWHERE in the part proves this window's first row is in it too.
             OLD_AFTER = NOW + 100
             f3_tail = meter((NOW + 60, 99, OLD_AFTER), (NOW + 120, 2, WR), (NOW + 180, 3, WR))
             f3 = meter((NOW - 3600, 97, OLD_AFTER)) + f3_tail
@@ -2304,8 +2371,13 @@ def _self_test_body() -> int:
                 except ValueError:
                     return {}
 
-            check("main: the verdict's exit codes", [drive(cache(t))[0] for t in (10, 85, 98.5)] + [drive(None)[0]],
-                  [0, 1, 3, 2])
+            # pace-band r1 U1: with no meter the band is UNKNOWN, a WARN; these cases are about the cache's verdict, so
+            # they read a meter whose band (start 45 → 57–65) leaves 10% and 50% NORMAL.
+            mpath = os.path.join(tmp, "meter.jsonl")
+            with open(mpath, "w") as fh:
+                fh.write(meter((NOW - 60, 45, WEEK_RESET)))
+            check("main: the verdict's exit codes",
+                  [drive(cache(t), "--meter", mpath)[0] for t in (10, 85, 98.5)] + [drive(None)[0]], [0, 1, 3, 2])
             rc, out = drive(cache(98.5), "--hook", "spawn")
             check("main: spawn hook at 98.5% denies, rc 0",
                   (rc, hso(out).get("hookSpecificOutput", {}).get("permissionDecision")), (0, "deny"))
@@ -2314,7 +2386,7 @@ def _self_test_body() -> int:
                   (0, ""))
             rc, out = drive(None, "--hook", "prompt")
             check("main: prompt hook with a missing cache is LOUD", (rc, "CANNOT RUN" in out), (0, True))
-            check("main: prompt hook at 50% is silent", drive(cache(50), "--hook", "prompt"), (0, ""))
+            check("main: prompt hook at 50% is silent", drive(cache(50), "--hook", "prompt", "--meter", mpath), (0, ""))
             rc, out = drive(cache(98.5), "--hook", "prompt", env={OVERRIDE_ENV: "1"})
             check("main: an ACTIVE override is named in the prompt notice at REFUSE",
                   ACTIVE_NOTE in hso(out).get("hookSpecificOutput", {}).get("additionalContext", ""), True)

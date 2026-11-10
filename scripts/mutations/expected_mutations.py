@@ -2061,7 +2061,12 @@ EXPECTED_MUTATIONS = {
     # WARN anchor). 13 new: A/B swapped, a constant base, BAND_LOW, BAND_HIGH, the override ignored and read for any
     # window, both zone boundaries inclusive, the zone WARN dropped and NORMAL warning, TREND_BASE, TREND_PER_DAY, and
     # USE IT ALL said beside a refusal.
-    "scripts/check-usage-pace.py": 188,
+    # ⟳ 2026-11-10, pace-band r1 fold: 188 -> 196, none retired. 7 re-bound by the fold's own edits (the zone WARN set
+    # gained BAND_UNKNOWN: 3 anchors; the unknown band's return value; the last-day test is now `on_last_day`: 3
+    # anchors) and 2 expects renamed (the trend case's tighter edges). 8 new: U1 (UNKNOWN back to OK), C2 (the last
+    # day exclusive again), L5 (no age bound; the bound two midnights back), L1 (today's key and the window's key in
+    # UTC: Claude r1's surviving mutation and its twin), L2 (the trend line ±0.05: Claude r1's survivor and its twin).
+    "scripts/check-usage-pace.py": 196,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree

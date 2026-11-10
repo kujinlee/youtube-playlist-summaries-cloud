@@ -447,8 +447,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS):\n        return WARN",
-        "    if zone in (WIND_DOWN, NO_NEW_STARTS):\n        return WARN"
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN",
+        "    if zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN"
       ]
     ],
     "expect": [
@@ -1477,8 +1477,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "        return (f\" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, \"\n                f\"never as fine.{trend_note}\", None)",
-        "        return \"\", None"
+        "        return (f\" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, \"\n                f\"never as fine.{trend_note}\", BAND_UNKNOWN)",
+        "        return \"\", BAND_UNKNOWN"
       ]
     ],
     "expect": [
@@ -1789,8 +1789,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if over == USE_ALL or now > rise_start(resets):",
-        "    if over == USE_ALL:"
+        "    if on_last_day(now, resets):\n        return cap, cap, \"the last day: use it all\", True",
+        "    if False:\n        return cap, cap, \"the last day: use it all\", True"
       ]
     ],
     "expect": [
@@ -1816,7 +1816,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    last_day = now > rise_start(resets)",
+        "    last_day = on_last_day(now, resets)",
         "    last_day = True"
       ]
     ],
@@ -1855,8 +1855,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "rise_start(resets)   # the same instant the stop starts rising",
-        "rise_start(resets) + 3600   # the same instant the stop starts rising"
+        "    last_day = on_last_day(now, resets)   # the same instant",
+        "    last_day = on_last_day(now - 3600, resets)   # the same instant"
       ]
     ],
     "expect": [
@@ -2407,8 +2407,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS):",
-        "    if five_note:"
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):",
+        "    if five_note or zone in (BAND_UNKNOWN,):"
       ]
     ],
     "expect": [
@@ -2420,8 +2420,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "zone in (WIND_DOWN, NO_NEW_STARTS)",
-        "zone in (NORMAL, WIND_DOWN, NO_NEW_STARTS)"
+        "zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)",
+        "zone in (NORMAL, WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)"
       ]
     ],
     "expect": [
@@ -2438,7 +2438,7 @@
       ]
     ],
     "expect": [
-      "⭐ day band: the trend guard — 21.0 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.2 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
     ]
   },
   {
@@ -2451,7 +2451,7 @@
       ]
     ],
     "expect": [
-      "⭐ day band: the trend guard — 21.0 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.2 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
     ]
   },
   {
@@ -2491,6 +2491,111 @@
     ],
     "expect": [
       "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "pace-band r1 U1: an UNKNOWN band is OK again, so the prompt hook is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ", BAND_UNKNOWN):\n        return WARN, f\"⚠ usage pace",
+        "):\n        return WARN, f\"⚠ usage pace"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 U1: an unknown start% with no override is a WARN that says the band is UNKNOWN and why, and the prompt hook speaks it"
+    ]
+  },
+  {
+    "name": "pace-band r1 C2: the last day excludes its own midnight again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return now >= rise_start(resets)",
+        "    return now > rise_start(resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 C2: AT the last day's midnight the band is USE IT ALL and the room is said; one second before it is still the band (NO NEW STARTS)"
+    ]
+  },
+  {
+    "name": "pace-band r1 L5: start% has no age bound",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if before is not None and before[0] < local_midnight(midnight - 1):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); one AT yesterday's midnight and one an hour before today's still set start%",
+      "pace-band r1 L5: ...and evaluate() says that band is UNKNOWN, as a WARN"
+    ]
+  },
+  {
+    "name": "pace-band r1 L5: the age bound counts back two midnights, not one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "before[0] < local_midnight(midnight - 1):",
+        "before[0] < local_midnight(local_midnight(midnight - 1) - 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); one AT yesterday's midnight and one an hour before today's still set start%"
+    ]
+  },
+  {
+    "name": "pace-band r1 L1: today's override key is the UTC date (Claude's surviving mutation)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ".get(local_date(now))",
+        ".get(time.strftime(\"%Y-%m-%d\", time.gmtime(now)))"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at Thu 17:00 PST is not the Fri 11-13 window"
+    ]
+  },
+  {
+    "name": "pace-band r1 L1: the window's override key is the UTC date",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_OVERRIDES.get(local_date(resets)",
+        "BAND_OVERRIDES.get(time.strftime(\"%Y-%m-%d\", time.gmtime(resets))"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at Thu 17:00 PST is not the Fri 11-13 window"
+    ]
+  },
+  {
+    "name": "pace-band r1 L2: the trend line moves up by 0.05 (Claude's surviving mutation)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE",
+        "(now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE + 0.05"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "pace-band r1 L2: the trend line moves down by 0.05",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "/ 86400 + TREND_BASE",
+        "/ 86400 + TREND_BASE - 0.05"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
     ]
   }
 ]
