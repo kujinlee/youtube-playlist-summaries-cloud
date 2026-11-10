@@ -1,0 +1,24 @@
+{
+  "attempts": [],
+  "dirty": {
+    ".claude/transcript-reference-warnings.log": "100644 a4be79845df3a66bc28e1741f4cdc0c4cbeb3047",
+    "docs/reviews/claude/plan-586-redesign-r5-claude.md": "100644 80bb4eeae5bf4aba37ad2d007261b8592898f503",
+    "docs/reviews/coordinator/plan-586-redesign-r5-coordinator.md": "100644 35213d89bbb72b32fbb1787b9c7f2d7e7d130b60",
+    "docs/reviews/decision-scheme/decision-log.jsonl": "100644 e535e9808a011f55eb31ce49ddca94a7e6f6f928"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "442fcc1b1feddde26904a2b61189b25b0aa3bc05",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": null,
+  "reason": "claude half filed: 9418 chars, names 442fcc1b1fed",
+  "refused": false,
+  "review": "plan-586-redesign-r5-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/plan-586",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
