@@ -56,4 +56,6 @@ fold's coverage claim and its ~63-call steady state are both wrong as stated. Fi
 this review, together with backlog #594 (both are about the report's API budget). The fold must at least
 correct the plan's call-bound sentence to say that the listing is capped and what happens past the cap.
 
+Decision-log: the r5 `redesign` bet scored `continued` (refuted by B1); next route `split` — the held parts stay, only the freeze boundary continues.
+
 Round 7 is the Claude half, scoped to this fold, BLOCKER-only.
