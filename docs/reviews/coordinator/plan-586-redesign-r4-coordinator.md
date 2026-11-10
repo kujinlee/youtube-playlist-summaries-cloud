@@ -44,3 +44,21 @@ accepting its race as a stated liveness cost.
 - **M1:** Task 7.2's `--report` input description permits the archive read that `report()` needs.
 
 Round 5 is scoped to this fold only and FILES anything that is not a BLOCKER.
+
+## Fold
+
+- **B1** — fixed in plan Task 7.3 (`miss_evidence`, `event_evidence`, `held_by_archive`, and the `absorb_epoch`
+  call site now passing the row), prose "What a reset clears", Task 8.2's wording, spec §2 *The ledger* and §8.6.
+  Pinned by Task 7.3's **(r4 B1)** cases: Codex's reproduction (#600 archived on `scripts/x.py`, report 11.2's #600
+  miss on `scripts/y.py` → latches; a HEAD equal to the r3 absorb → `rows differs from the rebuilt absorb`), the
+  same PR at h2/b2 → latches, and the adjacent pass (the identical archived row repeated → held).
+- **M1** — fixed in plan Task 7.2 step (1): `--report` reads archived epochs only to OMIT what they hold exactly,
+  never an earlier report or artifact ledger. Pinned by Task 7.2's **(r4 M1)** case (`report()` omits the held
+  event `{#600, [scripts/x.py]}` and reports `[x.py, y.py]` whole).
+- **Class search** (matching coarser than full identity when deciding NOT to latch) — three more, fixed: an empty
+  evidence set was vacuously held (Task 7.3, cases: empty `differing` / empty `targets` → latch); `report()`
+  omitted any PR the active epoch decided by PR number alone, so a later re-run attempt was never compared (Task
+  7.2 `settled`, five #620/run 55 cases); the PR scan used the active `epoch.start` as a time window, so a PR
+  pending at a reset was never compared (Task 7.2 step (2) genesis scan + Task 8.1 clause 5 counting only rows
+  merged at or after `epoch.start`; cases #630 and `19 of 20`). Spec §2 comparator and §8.6 updated. None
+  loosens: each change latches or refuses more. The YAML dispositions are unchanged (both correct).
