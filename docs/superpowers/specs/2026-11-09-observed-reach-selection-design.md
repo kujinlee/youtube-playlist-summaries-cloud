@@ -357,8 +357,10 @@ build ADDS four things (the fourth, the committed ledger, since the owner's 14:5
   PR merged since the ledger's FIRST epoch's start, so a comparison PENDING at one run is retried at the next and
   cannot fall out of a time window, nor out of an epoch a reset closed while it was pending (r4 redesign class
   search). It omits only a PR the ledger holds decided by the identity of what was compared (each push's run and
-  its attempt count, or a run too old to be re-run), never by the PR number alone: a later attempt of a decided
-  push is compared again and can only latch (r4 redesign class search). It uploads its result as a REPORT, `shadow-report-<run_id>-<run_attempt>` (90 days),
+  its attempt count), never by the PR number alone: a later attempt of a decided push is compared again and can
+  only latch (r4 redesign class search). A run's attempt count is FINAL only when a report OBSERVED the run
+  completed after GitHub's 30-day re-run limit and the ledger recorded that observation; a run's age alone never
+  freezes it (r5 redesign F1). It uploads its result as a REPORT, `shadow-report-<run_id>-<run_attempt>` (90 days),
   and reads no earlier report. Every ATTEMPT of a run is its own report, read whatever the run's current status, so
   re-running a run cannot hide an earlier attempt's miss (r2 redesign Codex C2).
 - **The ledger.** A committed file, `docs/shadow-ledger.json`, changed only by a pull request that absorbs
@@ -684,7 +686,8 @@ PICKS by 3(a) rather than falling back (§3 replaced the old stale-set fallback;
    recorded decision or without archiving the old epoch verbatim, or to a start before the newest absorbed report,
    or re-latches in the new epoch evidence an archived epoch holds, or holds back evidence the archived epochs do
    not hold exactly (another target, mutant, seed or push of an archived PR, or empty evidence), passes the guard;
-   or a report omits a PR whose decided row does not cover a later attempt of its run, or a PR pending at a reset;
+   or a report omits a PR whose decided row does not cover a later attempt of its run (a run frozen by its age, with
+   no recorded observation of its final attempt count, among them), or a PR pending at a reset;
    or a row whose PR merged before the current epoch's start counts toward opening it; or the switch opens on anything but the ledger's current epoch at BASE (a report, an
    artifact, the PR's own ledger, an archived epoch's rows, a row decided under another selector); or a trusted
    report holding a miss the ledger has not absorbed leaves the switch open, whenever it was published and

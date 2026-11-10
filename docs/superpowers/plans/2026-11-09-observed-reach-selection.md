@@ -921,8 +921,9 @@ CHECKOUT, for the ACTIVE `epoch.start`, the GENESIS start (the first epoch's: `p
 reads an earlier report or an artifact ledger** (r4 M1: the r3 text said it never read an archived epoch, while
 `report()` needed one to omit held events); (2) lists PRs merged since the GENESIS start (r4 class search: under r3
 it listed since the ACTIVE start, so a PR still `pending` when an owner's reset merged, merged before the new
-start and decided in no epoch, was never compared again and its miss could not latch), omits every PR `settled`
-(code below) finds, lists the remaining PRs' pushes' runs WHATEVER their current status (the class of r2
+start and decided in no epoch, was never compared again and its miss could not latch), takes `observed_at` (UTC
+now) and THEN lists the CI workflow's runs ONCE into `runs_now` (r5 F1; `runs_now_from_listing` below), omits
+every PR `settled` (code below) finds, lists the remaining PRs' pushes' runs WHATEVER their current status (the class of r2
 redesign Codex C2), and downloads each
 `selection-*`/`verdicts-*` pair it needs, for EVERY attempt of a run (both names carry `<run_attempt>`): an
 attempt still running makes that push `pending`, and each completed attempt's VIEW is compared on its own, so a
@@ -935,7 +936,7 @@ sample`, so a difference in the re-run shard was never compared; the view compar
 (3) compares, replays, decides each PR not `settled`;
 (4) computes `q1_probe_delta` ITSELF with `reach_select.q1_probe_delta` (Task 6.1) over the restored read sets
 (r3 F4: default-branch code, never a PR run's), or null when no usable read set was restored; (5) runs
-`post_switch` (Task 8.2; an empty list until slice 8); (6) writes the report. A failed listing or download exits
+`post_switch` (Task 8.2; an empty list until slice 8); (6) writes the report, `final_runs` included. A failed listing or download exits
 nonzero and uploads nothing; a missing report is not a clean one, because the gate's staleness clause (Task 8.1)
 closes the switch when reports stop being absorbed.
 
@@ -944,7 +945,10 @@ closes the switch when reports stop being absorbed.
 epoch_start, generated_at, q1_probe_delta: int | null, prs: {"<N>": {decision: "clean"|"miss"|"inconclusive"|
 "pending"|"not a sample", merged_at, decided_at, pushes: [{head, base, run_id, run_created_at, attempts, result,
 differing: [...], drift: bool}]}},
+final_runs: {"<run_id>": {attempts, observed_at}},
 post_switch_events: [{sweep_run_id, pr, targets}], counts: {miss, inconclusive, unreproduced, drift_events}}`.
+`final_runs` (r5 F1) is `final_runs()` below: each PR CI run whose attempt count this report OBSERVED final and
+which a DECIDED row compared at that count; the absorb records it, and only it freezes a push (`settled`).
 A push's `run_id`, `run_created_at` and `attempts` name its PR CI run, when that run was created, and how many of
 its attempts the decision compared (r4 class search: `settled` needs them); its `result` is `miss` when a
 difference at that push replayed as a miss (`replay`), and its `differing` lists each differing `{target, mutant,
@@ -983,22 +987,70 @@ commit's `reach_select.py`, so equal blobs mean the evidence was produced by the
   absorb). An event with any item no epoch holds, a new target for an archived PR among them, is reported whole.
   A PR merged before the ACTIVE `epoch.start` (a PR pending at a reset) is reported like any other; it can only
   latch, because gate clause 5 counts no row merged before the active start (Task 8.1).
-- `settled(pr, ledger_doc, runs_now, today) -> bool` — **the omission rule, by IDENTITY, never by PR number alone**
+- `settled(pr, ledger_doc, runs_now) -> bool` — **the omission rule, by IDENTITY, never by PR number alone**
   (r4 class search: under r3 any DECIDED row for the PR omitted it, so a re-run attempt of one of its push runs,
   made after the decision, was never compared, and a miss in it could not latch, though `decide_pr` latches a
-  miss from ANY attempt). Settled means: some epoch (active or archived) holds a DECIDED row for the PR, and
-  every push of that row records its run, and each such run either was created more than `RERUN_DAYS` (30) days
-  before `today` (GitHub's re-run page: a run can be re-run "up to 30 days after its initial run", already cited
-  for the 120-day window) or still has exactly the `attempts` the row compared (`runs_now`: run id → current
-  `run_attempt`, one `gh api repos/{owner}/{repo}/actions/runs/<id>` per push of a decided PR whose run is
-  younger than 30 days; a failed call RAISES, as every listing failure does). A row without those fields, or a
-  run that gained an attempt, is not settled: the PR is re-decided over every attempt view, and the absorb keeps
-  the old row unless the new decision is a `miss` (a decided row is replaced only by a miss, Task 7.3), so a
-  re-decision can only tighten. **Its cost, stated:** one call per push of every PR whose decided row has a run
-  younger than 30 days; a PR whose runs are all older costs nothing beyond its line on the PR listing's page.
+  miss from ANY attempt). Settled means: some epoch (active or archived) holds a DECIDED row for the PR whose
+  `pushes` is NON-EMPTY (r5 F2: `all` over `[]` is True, the vacuous class the r4 fold fixed in
+  `held_by_archive`), and every push of it is FROZEN or still has exactly the `attempts` the row compared.
+  **Frozen is an OBSERVATION, never an age (r5 F1).** A push is frozen only when some epoch's `final_runs`
+  records its run: a report OBSERVED that run `completed`, with no attempt in progress, at the attempt count a
+  decided row compared, at an `observed_at` later than `run_created_at` + `RERUN_DAYS` (GitHub's re-run page: a
+  run can be re-run "up to 30 days after its initial run", already cited for the 120-day window), and the absorb
+  recorded it (Task 7.3). The row's own `attempts` may be LOWER than the recorded count: a run that gained an
+  attempt is re-decided, and a non-miss re-decision leaves the old row in place, but that later decision compared
+  every attempt (a miss latched or was held exactly by an archive), so nothing it saw is lost. `settled` re-checks the time against the push's own `run_created_at`, so a record
+  that does not prove the deadline had passed freezes nothing. Under r4 a run older than 30 days was frozen by
+  its AGE, though no report had seen its final count: a re-run made on day 30 after that day's report, or an
+  attempt still running at the last report before day 31, was never compared, and its miss was dropped (the
+  r5 reviewer ran both). Until a push is frozen it is compared against its run's CURRENT attempt count in
+  `runs_now`; a run absent from `runs_now`, a push with any run field missing OR null (r5 F4: the r4 code
+  checked the keys and raised on a null), and a run that gained an attempt are not settled: the PR is
+  re-decided over every attempt view, and the absorb keeps the old row unless the new decision is a `miss` (a
+  decided row is replaced only by a miss, Task 7.3), so a re-decision can only tighten. **`final_runs` lives in
+  the EPOCH, keyed by run id, and not on the push row** (the coordinator's text said the row; this is a
+  deviation, and why): an absorb may not touch an archived epoch (it must stay verbatim, Task 7.3), and a reset
+  usually follows a FRESH miss, so a miss row archived before its run's day 31 could never be marked; its
+  re-decision is HELD BY ARCHIVE and writes nothing, so it would be re-decided, at about 100 calls, every day for
+  ever. An observation in the active epoch's map freezes the archived row's push as well.
+- `runs_now_from_listing(stdout) -> dict` — ONE paginated listing, `gh api --paginate --slurp
+  "repos/{owner}/{repo}/actions/workflows/ci.yml/runs?created=>=<observed_at − LISTING_DAYS>&per_page=100"`, with
+  no `status` or `event` parameter (a filter can only drop a run, which then cannot settle: liveness, never a
+  loosening), parsed by `runs_from_listing` into run id → `{attempts: run_attempt, status, created_at}`. NEVER a
+  call per run (r5 F1). `LISTING_DAYS` is `RERUN_DAYS` + 15: a decided run whose final count is not yet recorded
+  stays in the listing for 15 days after its re-run deadline, so up to 14 consecutive failed reports (the gate's
+  staleness clause, Task 8.1 clause 7, has closed the switch by then) still leave a report that observes it.
+  For a PR the report re-decides, the runs it lists for that PR's pushes are added to `runs_now` with the same
+  three fields, so a run older than the listing is observed by its own re-decision. A failed listing RAISES.
+- `observe_final(run, observed_at) -> bool` — the run is `completed` and `observed_at` is LATER than its
+  `created_at` + `RERUN_DAYS`. `observed_at` is taken BEFORE the first listing call, so the state each listing
+  returns is at least as recent as `observed_at`: a re-run started before the deadline shows as a higher
+  `run_attempt` or a status other than `completed`. A missing or null field → False, never a raise.
+- `final_runs(ledger_doc, decided, runs_now, observed_at) -> dict` — the report's `final_runs`: for each DECIDED
+  row (the ledger's, in any epoch, and this report's own `decided`), each push whose run is in `runs_now` at
+  exactly the push's `attempts` and `observe_final` → `{"<run_id>": {attempts, observed_at}}`. A `pending` row
+  contributes nothing, so a run still running is never recorded final.
+- **The report's call bound, from the code above (r5 F1; `GITHUB_TOKEN` allows 1,000 requests an hour).** Every
+  report pays 1 (the repository) + ⌈N / 100⌉ (the PR listing, N = PRs merged since GENESIS) + ⌈R / 100⌉ (the CI
+  runs listing, R = CI runs created in the last `LISTING_DAYS`). A frozen or equal-count PR costs nothing beyond
+  its line on a PR listing page, so the frozen rows bound the scan without a window on N. MEASURED inputs: R
+  from the 710 CI runs in 7 days above, about 101 a day, so 45 days give about 4,560 runs, 46 pages; N from
+  `git log origin/master --first-parent` (493 squash-merged PRs from 2026-07-13 to 2026-11-10, about 4.1 a day),
+  so 6 pages at 120 days and about 16 after a year. That is about 1 + 16 + 46 = **63 calls a day after a year**,
+  which leaves about 937 of the hour for deciding PRs. Under r4 the same work was one `runs/<id>` call per push
+  of every PR decided in the last 30 days. Re-decisions this rule causes, beyond deciding new PRs: (a) a decided
+  PR whose run gained an attempt is re-decided, at about 100 calls (the coordinator's measure: every attempt's
+  artifacts), on each report until its new count is observed final, at most 31 days; how often a MERGED PR's run
+  is re-run is NOT measured, and each one costs about 100 calls a day while it lasts; (b) a decided run whose
+  final count no report observed inside `LISTING_DAYS` (15 or more consecutive failed reports) is re-decided
+  once, by the first report after it, and that re-decision records it. **The rest of the report is not bounded
+  by this fold:** deciding each NEWLY merged PR costs about 100 calls, so the 937 left cover about 9 PRs a
+  report. `git log` shows 21 PRs merged on 2026-09-07, and an outage leaves its whole backlog undecided; a
+  report that exceeds the hour fails, uploads nothing, and the next one faces the same set. That predates this
+  fold and is filed as backlog #594.
 ```python
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 DECIDED = frozenset({"clean", "miss", "inconclusive", "not a sample"})  # built: `from reach_gate import DECIDED`
 
@@ -1033,21 +1085,65 @@ def decide_pr(pushes):
         return "inconclusive"                          # inconclusive, unreproduced difference
     return "clean" if "clean" in rest else "not a sample"
 
-RERUN_DAYS = 30  # GitHub's re-run page: "up to 30 days after its initial run"
+RERUN_DAYS = 30    # GitHub's re-run page: a run can be re-run "up to 30 days after its initial run"
+LISTING_DAYS = RERUN_DAYS + 15  # 14 failed reports (gate clause 7 closes the switch) still leave one that observes
+RUN_FIELDS = ("run_id", "run_created_at", "attempts")
 
-def settled(pr, ledger_doc, runs_now, today):
+def as_utc(s):  # built: `from reach_gate import as_utc` (Task 7.3's block)
+    if len(s) == 10:
+        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+def runs_now_from_listing(stdout):
+    """r5 F1: ONE paginated listing of the CI workflow's runs, never a call per run."""
+    return {r["id"]: {"attempts": r.get("run_attempt"), "status": r.get("status"), "created_at": r.get("created_at")}
+            for r in runs_from_listing(stdout)}
+
+def observe_final(run, observed_at):
+    """r5 F1: the run's attempt count is FINAL only when OBSERVED completed after its re-run deadline.
+    `observed_at` is taken BEFORE the listing call, so the listing's state is at least that recent."""
+    if run is None or any(run.get(k) is None for k in ("attempts", "status", "created_at")):
+        return False
+    return run["status"] == "completed" and as_utc(observed_at) > as_utc(run["created_at"]) + timedelta(days=RERUN_DAYS)
+
+def _epochs(ledger_doc):
+    return [ledger_doc["epoch"], *ledger_doc["previous_epochs"]]
+
+def final_runs(ledger_doc, decided, runs_now, observed_at):
+    """The report's `final_runs`: each run a DECIDED row compared at the count OBSERVED final."""
+    rows = [r for ep in _epochs(ledger_doc) for r in ep["rows"].values()] + list(decided.values())
+    out = {}
+    for row in rows:
+        if row.get("decision") not in DECIDED:
+            continue                                   # a pending row: its run may still be running
+        for p in row.get("pushes") or []:
+            if any(p.get(k) is None for k in RUN_FIELDS):
+                continue
+            run = runs_now.get(p["run_id"])
+            if run is not None and run["attempts"] == p["attempts"] and observe_final(run, observed_at):
+                out[str(p["run_id"])] = {"attempts": p["attempts"], "observed_at": observed_at}
+    return out
+
+def settled(pr, ledger_doc, runs_now):
     """r4 class search: a PR the report may OMIT, by the identity of what was decided, never by PR number alone.
-    `runs_now`: run id -> that run's CURRENT run_attempt, for runs younger than RERUN_DAYS; `today`: a date."""
-    for ep in [ledger_doc["epoch"], *ledger_doc["previous_epochs"]]:
+    r5 F1: a push is frozen by a recorded OBSERVATION (`final_runs`), never by its age."""
+    finals = {}
+    for ep in _epochs(ledger_doc):
+        finals.update(ep.get("final_runs", {}))
+    for ep in _epochs(ledger_doc):
         row = ep["rows"].get(pr)
         if row is None or row["decision"] not in DECIDED:
             continue
-        def frozen(p):
-            if not {"run_id", "run_created_at", "attempts"} <= set(p):
-                return False                           # an older row shape: re-decide (it can only tighten)
-            age = today - datetime.fromisoformat(p["run_created_at"].replace("Z", "+00:00")).date()
-            return age.days > RERUN_DAYS or runs_now.get(p["run_id"]) == p["attempts"]
-        if all(frozen(p) for p in row["pushes"]):
+        def frozen_or_equal(p):
+            if any(p.get(k) is None for k in RUN_FIELDS):
+                return False                           # r5 F4: a missing OR null run field: re-decide, never raise
+            fin = finals.get(str(p["run_id"]))
+            if (fin is not None and fin.get("observed_at") is not None
+                    and as_utc(fin["observed_at"]) > as_utc(p["run_created_at"]) + timedelta(days=RERUN_DAYS)):
+                return True                            # r5 F1: frozen, OBSERVED final after the re-run deadline
+            now = runs_now.get(p["run_id"])
+            return now is not None and now["attempts"] == p["attempts"]
+        if row["pushes"] and all(frozen_or_equal(p) for p in row["pushes"]):   # r5 F2: [] is never settled
             return True
     return False
 ```
@@ -1067,9 +1163,31 @@ loosens: a `miss` latches before either is read.
   `clean` with its push run 55 compared at `attempts: 1`, created 10 days ago, and run 55 now at `run_attempt: 2`
   whose attempt-2 view differs and replays stable → #620 is re-decided and reported `miss` (r3 omitted it), and
   the absorb replaces the `clean` row with the `miss`; adjacent: run 55 still at attempt 1 → omitted, and NO
-  artifact call is made for #620; the same row with run 55 created 31 days ago → omitted with NO `runs/55` call
-  (it cannot be re-run); a row whose pushes lack `attempts` → re-decided; a failed `runs/55` call → nonzero, no
-  report; **(a PR pending at a reset)** #630 merged d10, `pending` in the last report the old epoch absorbed,
+  artifact call is made for #620; a row whose pushes lack `attempts` → re-decided; a failed CI runs listing →
+  nonzero, no report; NO `runs/<id>` call is made for any push (one listing, `--paginate --slurp`, whose URL
+  holds `created=>=` `observed_at` − 45 days and no `status=` or `event=`);
+  **(r5 F1, frozen on an OBSERVATION, never an age; each FAILS on the r4 age rule)** #620 `clean`, push run 55
+  `run_created_at 2027-01-01T10:00:00Z`, `attempts: 1`, no `final_runs` entry: (the re-run at day 30) the
+  report at 2027-02-01T07:00Z sees run 55 at attempt 2 `completed` → NOT settled, re-decided, attempt 2's stable
+  difference → `miss`, absorbed over the `clean` (r4 froze it by age); (an attempt still running) at
+  2027-01-31T07:00Z run 55 at attempt 2 `in_progress` → not settled, `pending`, `final_runs` holds no 55; at
+  2027-02-01 attempt 2 `completed` → not settled, compared, `miss` (r4 froze it on 02-01); (never observed) on
+  2027-02-01 run 55 absent from `runs_now` → not settled (r4: settled by age); (the observation itself)
+  `observe_final` is False at `observed_at` exactly 2027-01-31T10:00:00Z (not LATER than the deadline), False
+  for `in_progress`; `final_runs` holds no 55 when, one second after the deadline, run 55 is `completed` at
+  attempt 2 and the only decided row compared 1 (a count no decision compared is never recorded); a
+  `final_runs` record whose `observed_at` is not later than `run_created_at` + 30 days → freezes nothing;
+  **adjacent passes:** on 2027-02-01T07:00Z run 55 at attempt 1 `completed` → settled by its equal count, NO
+  artifact call, and the report's `final_runs` holds `{"55": {attempts: 1, observed_at: "2027-02-01T07:00:00Z"}}`;
+  after the absorb records it, with `runs_now` EMPTY → settled (frozen), and the next day's report repeating the
+  entry leaves the ledger byte-identical (no churn: the row is not touched and the first `observed_at` stays);
+  the same record frozen for a row in an ARCHIVED epoch (the record is in the active one); a run re-run to
+  attempt 2 and re-decided `clean` (the old `clean` row stays at `attempts: 1`) → `final_runs` records 55 at 2
+  from the report's own row, and the row is then frozen (without it, it was re-decided every day for ever);
+  **(r5 F2)** a decided row with `pushes: []` → NOT settled for each of `not a sample`, `inconclusive`, `clean`
+  (r4: settled); adjacent: one frozen push → settled; **(r5 F4)** a push with `run_created_at: null`, with
+  `attempts: null`, with `run_id: null` → not settled and NO exception (r4 raised `AttributeError`), and
+  `observe_final` over a run with a null field → False; **(a PR pending at a reset)** #630 merged d10, `pending` in the last report the old epoch absorbed,
   decided in NO epoch; the owner's reset starts the new epoch at d12 → the next report lists #630 (merged since
   GENESIS) and, its comparison now complete with a stable difference, reports it `miss`, which the absorb latches
   in the new epoch (no archive holds it); under r3 the listing started at d12 and #630 was never compared again;
@@ -1162,8 +1280,10 @@ it for this file.
 - **The file, created by this slice's PR** (r1 redesign Codex X3: everything the gate reads lives INSIDE the epoch,
   so archiving an epoch archives its decisions and events with it): `{schema: 1, epoch: {start: <the date slice 6
   merged>, selector_blob: <git rev-parse HEAD:scripts/reach_select.py at this commit>, reset_by_owner: null,
-  absorbed_reports: {}, absorbed_through: null, rows: {}, post_switch_events: [], q1_probe_delta: null},
-  previous_epochs: []}`. A row is `{decision, merged_at, decided_at, pushes, selector_blob}`, the last copied from
+  absorbed_reports: {}, absorbed_through: null, rows: {}, post_switch_events: [], q1_probe_delta: null,
+  final_runs: {}}, previous_epochs: []}`. `final_runs` maps a PR CI run id to `{attempts, observed_at}`, the
+  OBSERVATION that froze its pushes (r5 F1, Task 7.2 `settled`); it LOOSENS (a frozen push is never compared
+  again), so it is taken only from a report that `may_loosen`, and a new epoch starts it empty. A row is `{decision, merged_at, decided_at, pushes, selector_blob}`, the last copied from
   the report that wrote it (r1 redesign Claude F5); `absorbed_reports` maps each absorbed report's `report_id`
   (`<run_id>.<run_attempt>`, Task 7.2) to its `generated_at` (its IDENTITY, r1 redesign Codex X1, X2, r2 C2), or
   to `null` for a NO-REPORT stub (an attempt that completed without a report, r3 F4); `q1_probe_delta` is `{value, generated_at}` or null
@@ -1263,6 +1383,9 @@ def absorb_epoch(epoch, reports, blobs, is_ancestor, archived=()):
                 log.append(f"HELD BY ARCHIVE: {report_id(rep)} event #{ev['pr']}")
             elif ev not in out["post_switch_events"]:
                 out["post_switch_events"].append(ev)
+        if not why:  # r5 F1: an OBSERVED final attempt count; it loosens, so only from a report that may_loosen
+            for run_id, fin in sorted(rep.get("final_runs", {}).items()):
+                out["final_runs"].setdefault(run_id, fin)   # the first observation stays: no churn
         q1 = out["q1_probe_delta"]
         if not why and rep["q1_probe_delta"] is not None and (q1 is None or rep["generated_at"] > q1["generated_at"]):
             out["q1_probe_delta"] = {"value": rep["q1_probe_delta"], "generated_at": rep["generated_at"]}
@@ -1339,7 +1462,7 @@ def new_start_errors(base_doc, head_start, today):
     controls);
   - **an epoch change** (any identity field or `previous_epochs` differs): `previous_epochs` must be BASE's with
     BASE's active epoch appended VERBATIM (its rows, misses, events and absorbed ids with it); the new epoch must
-    be EMPTY (`fresh_epoch`: no rows, events, ids or Q1 carried); `new_start_errors` (code above) empty;
+    be EMPTY (`fresh_epoch`: no rows, events, ids, Q1 or `final_runs` carried; the archived epoch keeps its own `final_runs`, which `settled` still reads); `new_start_errors` (code above) empty;
     `reset_by_owner` a non-empty string; `selector_blob` equal to BASE's `reach_select.py` blob (r3 F5; r1
     redesign Codex X3). **The new `start` (r3 F2: no backdating)** is strictly later than the old, NO EARLIER than
     the newest `generated_at` absorbed in ANY epoch, and no later than `today`; it may be a date or an ISO-8601
@@ -1441,6 +1564,12 @@ def new_start_errors(base_doc, head_start, today):
   miss`, guard passes; the same row with an EXTRA non-miss push (`result: clean`) → still held (only `miss`
   pushes are evidence); an event `{sweep 91, #600, [scripts/x.py]}` when the archive holds x.py and y.py in two
   separate events of #600 → held (identity is per (PR, target));
+  **(r5 F1, the observation the absorb records)** a report that `may_loosen` with `final_runs {"55": {attempts 1,
+  observed_at 2027-02-01T07:00:00Z}}` → the active epoch's `final_runs` holds it, and a HEAD without it → refused,
+  `final_runs differs from the rebuilt absorb`; a second report repeating 55 with a later `observed_at` → the
+  first stays (no churn); the same entry in a report that may NOT loosen (`report from another epoch`) → not
+  recorded, `ABSORB MISSES ONLY` logged; a HEAD that adds a `final_runs` entry no listed report holds → refused;
+  an epoch reset whose new epoch carries `final_runs` → refused (the archive keeps its own);
   **(r3 F2, a backdated epoch start)** BASE's newest absorbed `generated_at` 2027-01-10T06:00:00Z, a reset on
   2027-03-01 with `start` 2027-01-02 → refused, `new epoch start 2027-01-02 before the newest absorbed report
   2027-01-10T06:00:00Z` (r2's "strictly later" passed it, and every later report re-recorded #600's archived

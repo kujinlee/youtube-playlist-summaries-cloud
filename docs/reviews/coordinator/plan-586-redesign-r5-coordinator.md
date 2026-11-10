@@ -78,3 +78,33 @@ amended for the same reason, before any review of it.
   question of whether that delta is per-epoch evidence at all.
 
 Round 6 is Codex, scoped to this fold only, BLOCKER-only.
+
+## Fold
+
+Applied 2026-11-10 to the plan (Task 7.2 `settled`/`final_runs`/`observe_final`/`runs_now_from_listing`, Task 7.3
+`absorb_epoch` + epoch schema) and spec §2 / §8.6. The YAML above is unchanged: every disposition held.
+
+- **F1 (fixed):** a push is frozen only by an OBSERVATION — a report that listed its run `completed` at the push's
+  attempt count after `run_created_at` + 30 days records `final_runs[run_id] = {attempts, observed_at}`; age alone
+  never freezes. Two deviations from the fold as written, both stated in the plan: (a) the observation lives in the
+  EPOCH's `final_runs`, not on the push row, because archived epochs are verbatim and an archived row could
+  otherwise never be marked (it would be re-decided at ~100 calls a day for ever); it loosens, so `absorb_epoch`
+  takes it only from a report that `may_loosen`, first observation kept; (b) the one listing reaches back
+  `LISTING_DAYS = 45` (30 + 15), not 31, so 14 failed reports in a row still leave one that observes. No other
+  predicate decides not to look. Call bound, from the code: 1 + ⌈N/100⌉ + ⌈R/100⌉ ≈ 1 + 16 + 46 = **~63 calls a
+  day after a year** (R from 710 CI runs in 7 days × 45 days; N from 493 merged PRs in 120 days), ~937 to spare
+  under 1,000/hour. Pinned by the Task 7.2 cases A2 (re-run at day 30 → miss), B1 (in_progress at day 30 →
+  pending, then compared), never-observed (absent → not settled), the `observe_final` boundary at exactly
+  +30 d, the adjacent passes (frozen with an empty listing; next day byte-identical; archived row frozen by the
+  active record; re-decided clean at attempt 2 then frozen), and the Task 7.3 absorb cases (recorded only from a
+  `may_loosen` report; guard rebuild refuses a dropped or invented entry; a new epoch carries none).
+- **F2 (fixed):** `settled` requires `row["pushes"]` non-empty before `all(...)`; pinned by pushes `[]` → not
+  settled for not a sample / inconclusive / clean, adjacent one frozen push → settled.
+- **F3 (filed):** backlog #592.
+- **F4 (fixed):** a null `run_id`, `run_created_at` or `attempts` is not frozen and raises nothing (`settled`,
+  `final_runs`, `observe_final`); pinned by the three null cases, a missing key, and `observe_final` with a null.
+- **F5 (filed):** backlog #593, with the question of whether `q1_probe_delta` is per-epoch evidence.
+- **Found while stating the bound, not a review finding:** deciding NEW PRs costs ~100 calls each, so a peak day or an
+  outage backlog exceeds 1,000/hour and the report saves nothing (predates this fold; fail-closed) — backlog #594.
+
+Extracted Task 7.2 + 7.3 blocks run with these cases under `python3 -I`: 40 assertions, all pass.
