@@ -19683,6 +19683,70 @@ note the spike and the spec.
 Round 4 (a scoped check past the review cap, Codex) of the redesign found two High holes caused by the round-3 fold (an external symlink unlinked mid-trace hides a probe; `ioctl` counted as read-only). They are filed as backlog #590, to close before any skip takes effect, and not folded.
 
 ## 2026-11-09
+The build plan for backlog #586 is written: picking a pull request's mutation sweep by what each guard's tests were
+seen to read. It is eight small pull requests, in order. The first one only measures. It runs every guard's tests
+under `strace` on GitHub's own machines, to prove tracing works there and to record exactly which system calls the
+tests make. Those recorded calls become the allowlist that backlog #590 asked for, so anything outside them is
+refused instead of guessed at. The next four build the parts, and none of them change which guards a pull request
+runs. The sixth and seventh run in trial mode: they report what would have been skipped and check it against
+master's full sweep, again changing nothing. Only the eighth lets a pull request skip a guard. It waits until
+backlog #590 is closed and 20 complete trial pull requests have shown no miss. Nothing needs you; the plan goes to
+review next.
+<!--tech-->
+Branch `plan-586-observed-reach`, docs only. Plan `docs/superpowers/plans/2026-11-09-observed-reach-selection.md`
+(anchor `dev-speed-first`) for spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md`. Slices:
+1 measure (`scripts/strace-measure.py` + `.github/workflows/strace-measure.yml`; preserves the spike's read sets as
+`scripts/fixtures/observed-reach-spike-pr545.json`, reduction re-run 2026-11-09: 47 untraced, readers
+check-canonical-source / check-dashboard-entry / check-features); 2 `scripts/strace_reads.py` parse + cwd/path
+refusals (incl. backlog #590 R4-F1, an external path removed); 3 default-deny classifier (allowlist a subset of the
+measured set; `FS_IOC_SETFLAGS` denied); 4 `--record-reads` + `record-reads` job + cache save + live unshare/setns
+cases, closes backlog #590; 5 `scripts/reach_select.py` (`Δ`, rule 3, validity); 6 `sweep-select` report-only +
+`verdicts.jsonl`; 7 `scripts/shadow-compare.py` + `--mutant` replay; 8 the switch. Each new self-tested script names
+W1-W8 wiring (declared count, manifest, pin, `EXAMINED_KEYS`, POPULATION, caller), the PR #551 lesson. Fallback 2F
+(audit hook) if strace is unavailable.
+
+## 2026-11-09 [needs-you]
+The review of the backlog #586 build plan found the same weak spot twice in a row. That weak spot is how the plan
+decides it is safe to start letting pull requests skip guards. An architecture review was run on it. The plan
+kept its running tally of trial results in files GitHub deletes after 90 days. Any test run could also upload
+files there, including one from an unmerged pull request. Each review round found a new way the tally could
+lose a recorded miss or gain a false "clean". The fix the review recommends is to keep the tally in a file
+committed to the repository and read from master, the way the backlog is read already. A check would refuse any
+change to that file that drops a recorded miss. GitHub's storage could then only turn the skipping OFF, never
+ON. This changes one sentence of the approved spec, so it is your decision. The first five of the plan's eight
+pull requests do not depend on it and can be built now.
+
+**Decide:** For backlog #586, should the trial tally become a committed file read from master (a one-sentence change to spec §2), or stay in GitHub's 90-day storage with seven more patches?
+- approve the spec change, so the tally is a committed file, guarded so that a miss can never be removed, and GitHub's storage can only turn skipping off [recommended]
+- keep the spec as written, and add seven more patches to the 90-day tally, accepting that the same kind of hole may recur
+<!--tech-->
+Branch `plan-586-observed-reach`. Phase 6 armed by THRASHING in `ledger-trust` (r2: 6 findings caused by the r1
+fold; r3: 6 caused by the r2 fold). Review: `docs/reviews/architecture-review-2026-11-09-plan-586-ledger-trust.md`.
+Its §5 gives the exact spec diff, against spec §2 lines 353-358. Disposition:
+`docs/reviews/coordinator/plan-586-r3-coordinator.md`. r3 F1 (a PR-scope Actions cache entry poisons its own
+read sets) is fixed in plan Task 5.3: `pick_cache` keeps `ref == refs/heads/<default>` and refuses a key
+shadowed under another ref (the cache list's `ref` was MEASURED). F2-F8 are held, with both fold forms written.
+Plan slices 6-8 are marked BLOCKED, and slices 1-5 can proceed. Decision log: row 228 is `continued` (refuted),
+and a new `split` bet was appended.
+
+## 2026-11-09 [resolved: 2026-11-09/9]
+You chose the committed file for the backlog #586 trial tally, at 14:55. The tally of shadow-mode results now
+lives in a file in the repository, read from master, instead of in GitHub's 90-day storage. A check refuses any
+change to that file that drops a recorded miss or adds a result no trusted run reported. GitHub's storage can now
+only turn skipping OFF, never ON. The spec's one sentence is changed, and the last three of the plan's eight pull
+requests are rewritten to match. Because this is a new design, its review starts again at round 1, with both
+reviewers, before those three are built. The first five pull requests still do not depend on it.
+<!--tech-->
+Branch `plan-586-observed-reach`. Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §2
+*The comparator* / *The ledger* carry the architecture review §5 diff verbatim; §7 gains the decision row; §8.6
+gains a FAILS IF clause for the ledger and its guard. Plan slices 6-8 rewritten to review §6: `selection-*` gains
+`selector_blob` and loses `q1_probe_delta`; Task 7.2 `shadow-compare.py --report` in a new
+`.github/workflows/shadow-compare.yml` (no concurrency group); new Task 7.3: `docs/shadow-ledger.json`, `--absorb`,
+`scripts/check-shadow-ledger.py` (W1-W8; matches `GUARD_PATH_RE`), `scripts/reach_gate.py` (W1-W8), and a
+`check-merge-ready.py` HOLD on an epoch change; Task 8.1 `switch_gate` in `reach_gate.py` reads the ledger at BASE
+and reports can only refuse. r3 F2-F8 dispositioned `fixed` under D1 in
+`docs/reviews/coordinator/plan-586-r3-coordinator.md` (`REDESIGNED → plan-586-redesign`); next:
+`plan-586-redesign` round 1, both halves.
 Old git worktrees are now moved out of the way automatically, and NOTHING is ever deleted. Each time a
 session starts, every worktree under `.claude/worktrees/` whose pull request merged more than 2 hours ago
 is moved to `~/.worktree-archive/youtube-playlist-summaries-cloud/`, where the editor no longer watches
