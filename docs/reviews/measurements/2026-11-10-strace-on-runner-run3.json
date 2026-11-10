@@ -1,0 +1,4114 @@
+{
+ "at_fdcwd_decorated": true,
+ "at_fdcwd_decorated_targets": 92,
+ "case_count_differs": [],
+ "deleted_labels": {
+  "scripts/batch-ci.py": 15,
+  "scripts/check-stalled-work.py": 97
+ },
+ "external_removal_counts": {
+  "scripts/backfill-work-lines.py": {
+   "created_in_log": 507,
+   "not_created_in_log": 0
+  },
+  "scripts/batch-ci.py": {
+   "created_in_log": 6316,
+   "not_created_in_log": 0
+  },
+  "scripts/begin-plan.py": {
+   "created_in_log": 688,
+   "not_created_in_log": 0
+  },
+  "scripts/bounded_read.py": {
+   "created_in_log": 42,
+   "not_created_in_log": 0
+  },
+  "scripts/brief-compose.py": {
+   "created_in_log": 17,
+   "not_created_in_log": 0
+  },
+  "scripts/check-agent-large-read.py": {
+   "created_in_log": 31,
+   "not_created_in_log": 0
+  },
+  "scripts/check-agent-long-call.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-anchors.py": {
+   "created_in_log": 131,
+   "not_created_in_log": 0
+  },
+  "scripts/check-anon-exposure.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-arch-findings.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-backlog-closure.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-banner-armed.py": {
+   "created_in_log": 476,
+   "not_created_in_log": 0
+  },
+  "scripts/check-canonical-source.py": {
+   "created_in_log": 234,
+   "not_created_in_log": 0
+  },
+  "scripts/check-catalog-coverage.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-ci-watched.py": {
+   "created_in_log": 88,
+   "not_created_in_log": 0
+  },
+  "scripts/check-closing-table.py": {
+   "created_in_log": 31,
+   "not_created_in_log": 0
+  },
+  "scripts/check-compaction-boundary.py": {
+   "created_in_log": 208,
+   "not_created_in_log": 0
+  },
+  "scripts/check-dashboard-entry.py": {
+   "created_in_log": 6,
+   "not_created_in_log": 0
+  },
+  "scripts/check-decision-scheme.py": {
+   "created_in_log": 277,
+   "not_created_in_log": 0
+  },
+  "scripts/check-diff-coverage.py": {
+   "created_in_log": 2407,
+   "not_created_in_log": 0
+  },
+  "scripts/check-doc-citations.py": {
+   "created_in_log": 1802,
+   "not_created_in_log": 0
+  },
+  "scripts/check-docs.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-explainer-delivery.py": {
+   "created_in_log": 56,
+   "not_created_in_log": 0
+  },
+  "scripts/check-features.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-fixture-git-isolation.py": {
+   "created_in_log": 4073,
+   "not_created_in_log": 0
+  },
+  "scripts/check-fixture-variation.py": {
+   "created_in_log": 19,
+   "not_created_in_log": 0
+  },
+  "scripts/check-function-revokes.py": {
+   "created_in_log": 34,
+   "not_created_in_log": 0
+  },
+  "scripts/check-gate-falsifiability.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-goal-status.py": {
+   "created_in_log": 17,
+   "not_created_in_log": 0
+  },
+  "scripts/check-group-claims.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-guard-coverage.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-handoff-path.py": {
+   "created_in_log": 154,
+   "not_created_in_log": 0
+  },
+  "scripts/check-hook-commands.py": {
+   "created_in_log": 18,
+   "not_created_in_log": 0
+  },
+  "scripts/check-live-schema.py": {
+   "created_in_log": 10,
+   "not_created_in_log": 0
+  },
+  "scripts/check-main-drivable.py": {
+   "created_in_log": 11,
+   "not_created_in_log": 0
+  },
+  "scripts/check-memory-index-budget.py": {
+   "created_in_log": 16,
+   "not_created_in_log": 0
+  },
+  "scripts/check-memory-link.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-merge-ready.py": {
+   "created_in_log": 3637,
+   "not_created_in_log": 0
+  },
+  "scripts/check-page-links.py": {
+   "created_in_log": 121,
+   "not_created_in_log": 0
+  },
+  "scripts/check-paid-caller-arrival.py": {
+   "created_in_log": 21,
+   "not_created_in_log": 0
+  },
+  "scripts/check-plan-code.py": {
+   "created_in_log": 6163,
+   "not_created_in_log": 0
+  },
+  "scripts/check-plan-file-tags.py": {
+   "created_in_log": 117,
+   "not_created_in_log": 0
+  },
+  "scripts/check-plan-leak.py": {
+   "created_in_log": 3614,
+   "not_created_in_log": 0
+  },
+  "scripts/check-plan-progress.py": {
+   "created_in_log": 161,
+   "not_created_in_log": 0
+  },
+  "scripts/check-plan-task-order.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-producer-enumeration.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-python-pin.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-ratchet-contract.py": {
+   "created_in_log": 41,
+   "not_created_in_log": 0
+  },
+  "scripts/check-rc-contract.py": {
+   "created_in_log": 9622,
+   "not_created_in_log": 0
+  },
+  "scripts/check-reference-namespace.py": {
+   "created_in_log": 682,
+   "not_created_in_log": 0
+  },
+  "scripts/check-review-decision.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-review-recorded.py": {
+   "created_in_log": 1890,
+   "not_created_in_log": 0
+  },
+  "scripts/check-review-rounds.py": {
+   "created_in_log": 82,
+   "not_created_in_log": 0
+  },
+  "scripts/check-roadmap-consistency.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-run-hook.py": {
+   "created_in_log": 3526,
+   "not_created_in_log": 0
+  },
+  "scripts/check-selection-card.py": {
+   "created_in_log": 16,
+   "not_created_in_log": 0
+  },
+  "scripts/check-selftest-counts.py": {
+   "created_in_log": 212,
+   "not_created_in_log": 0
+  },
+  "scripts/check-sentinel-meanings.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-stalled-work.py": {
+   "created_in_log": 2427,
+   "not_created_in_log": 0
+  },
+  "scripts/check-storage-grant-pin.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-storage-independence.py": {
+   "created_in_log": 32,
+   "not_created_in_log": 0
+  },
+  "scripts/check-surface-recall.py": {
+   "created_in_log": 403,
+   "not_created_in_log": 0
+  },
+  "scripts/check-test-counts.py": {
+   "created_in_log": 31,
+   "not_created_in_log": 0
+  },
+  "scripts/check-theme-token-coverage.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/check-transcript-references.py": {
+   "created_in_log": 31,
+   "not_created_in_log": 0
+  },
+  "scripts/check-usage-pace.py": {
+   "created_in_log": 470,
+   "not_created_in_log": 0
+  },
+  "scripts/check-vocabulary-collisions.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/ci-durations.py": {
+   "created_in_log": 42,
+   "not_created_in_log": 0
+  },
+  "scripts/codex-frontier-model.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/codex-review.py": {
+   "created_in_log": 699,
+   "not_created_in_log": 0
+  },
+  "scripts/compaction-state.py": {
+   "created_in_log": 380,
+   "not_created_in_log": 0
+  },
+  "scripts/coverage_verdict.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/explainer-serve.py": {
+   "created_in_log": 140,
+   "not_created_in_log": 0
+  },
+  "scripts/fixture_git.py": {
+   "created_in_log": 227,
+   "not_created_in_log": 0
+  },
+  "scripts/gates-for-pr.py": {
+   "created_in_log": 290,
+   "not_created_in_log": 0
+  },
+  "scripts/gen-backlog-page.py": {
+   "created_in_log": 11,
+   "not_created_in_log": 0
+  },
+  "scripts/gen-dashboard.py": {
+   "created_in_log": 30,
+   "not_created_in_log": 0
+  },
+  "scripts/gen-features-page.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/gen-goals-page.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/gen-work-lines.py": {
+   "created_in_log": 335,
+   "not_created_in_log": 0
+  },
+  "scripts/goal-tree.py": {
+   "created_in_log": 163,
+   "not_created_in_log": 0
+  },
+  "scripts/observer_log.py": {
+   "created_in_log": 16,
+   "not_created_in_log": 0
+  },
+  "scripts/page_chrome.py": {
+   "created_in_log": 81,
+   "not_created_in_log": 0
+  },
+  "scripts/page_markup.py": {
+   "created_in_log": 3,
+   "not_created_in_log": 0
+  },
+  "scripts/peer-sites.py": {
+   "created_in_log": 11,
+   "not_created_in_log": 0
+  },
+  "scripts/prune-merged-worktrees.py": {
+   "created_in_log": 5524,
+   "not_created_in_log": 0
+  },
+  "scripts/push-command.py": {
+   "created_in_log": 807,
+   "not_created_in_log": 0
+  },
+  "scripts/recall-llm.py": {
+   "created_in_log": 281,
+   "not_created_in_log": 0
+  },
+  "scripts/record-review-verdict.py": {
+   "created_in_log": 617,
+   "not_created_in_log": 0
+  },
+  "scripts/regen-pages.py": {
+   "created_in_log": 2525,
+   "not_created_in_log": 0
+  },
+  "scripts/session-state.py": {
+   "created_in_log": 416,
+   "not_created_in_log": 0
+  },
+  "scripts/sweep-red-alert.py": {
+   "created_in_log": 82,
+   "not_created_in_log": 0
+  }
+ },
+ "external_removal_coverage": {
+  "annotated": 184,
+  "records": 184
+ },
+ "external_removal_totals": {
+  "created_in_log": 63720,
+  "not_created_in_log": 0,
+  "records": 184,
+  "targets_with_not_created": 0
+ },
+ "external_removals": {
+  "scripts/backfill-work-lines.py": {
+   "created_in_log": [
+    "/tmp/bcip4ibn",
+    "/tmp/fixture-tmp-ijjggc71/tmp0s1i9kgp",
+    "/tmp/fixture-tmp-ijjggc71/tmp0s1i9kgp/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp0w9dvfdv",
+    "/tmp/fixture-tmp-ijjggc71/tmp0w9dvfdv/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp1onj1f6i",
+    "/tmp/fixture-tmp-ijjggc71/tmp1onj1f6i/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp1ubijlwl",
+    "/tmp/fixture-tmp-ijjggc71/tmp1ubijlwl/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp5a6z_wum",
+    "/tmp/fixture-tmp-ijjggc71/tmp5a6z_wum/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp751g09ta",
+    "/tmp/fixture-tmp-ijjggc71/tmp751g09ta/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp78zft0hh",
+    "/tmp/fixture-tmp-ijjggc71/tmp78zft0hh/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmp7y5xuqjp",
+    "/tmp/fixture-tmp-ijjggc71/tmp7y5xuqjp/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmpbq3lwzyd",
+    "/tmp/fixture-tmp-ijjggc71/tmpbq3lwzyd/sess-aaaa1111.jsonl",
+    "/tmp/fixture-tmp-ijjggc71/tmpd2g5s8d8"
+   ]
+  },
+  "scripts/batch-ci.py": {
+   "created_in_log": [
+    "/tmp/9p_zuo07",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/HEAD",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/HEAD.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/config",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/config.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/index",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/index.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/refs/heads/master",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/dev/.git/tYxXAYL",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/origin.git/HEAD",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/origin.git/HEAD.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/origin.git/config",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/origin.git/config.lock",
+    "/tmp/fixture-tmp-87vbd3jc/batch-ci-381k5xne/origin.git/tajxHd7",
+    "/tmp/fixture-tmp-ef78xrzt/batch-ci-bwi8w8ft/dev/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-ef78xrzt/batch-ci-bwi8w8ft/dev/.git/HEAD"
+   ]
+  },
+  "scripts/begin-plan.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/HEAD",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/HEAD.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/config",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/config.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/index",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/index.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/refs/heads/master",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/refs/heads/side",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/refs/heads/side.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/refs/heads/side2",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/refs/heads/side2.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/t59OpvW",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/worktrees/linked/AUTO_MERGE",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/worktrees/linked/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/worktrees/linked/HEAD",
+    "/tmp/fixture-tmp-ji18me7h/tmp7hjhw05w/main/.git/worktrees/linked/HEAD.lock"
+   ]
+  },
+  "scripts/bounded_read.py": {
+   "created_in_log": [
+    "/tmp/_mujt98a",
+    "/tmp/fixture-tmp-7oznd280",
+    "/tmp/fixture-tmp-7oznd280/fixture-home-qn4ybjhe",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/bad.md",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/.claude",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/.claude/hooks",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/.claude/hooks/block-idle-stop.sh",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/bounded_read.py",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-banner-armed.py",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-banner-armed.py.in",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-ci-watched.py",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-ci-watched.py.in",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-closing-table.py",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-closing-table.py.in",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-plan-progress.py",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-transcript-references.py",
+    "/tmp/fixture-tmp-7oznd280/tmpal6div8e/checkout/scripts/check-transcript-references.py.in"
+   ]
+  },
+  "scripts/brief-compose.py": {
+   "created_in_log": [
+    "/tmp/0evgsx3u",
+    "/tmp/fixture-tmp-km2xh8t9",
+    "/tmp/fixture-tmp-km2xh8t9/fixture-home-q7la4p5x",
+    "/tmp/fixture-tmp-km2xh8t9/tmp_83nk16g",
+    "/tmp/fixture-tmp-km2xh8t9/tmp_83nk16g/f.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmp_83nk16g/other.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmp_83nk16g/page.fragment.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmp_83nk16g/page.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmphdut2tfh",
+    "/tmp/fixture-tmp-km2xh8t9/tmphdut2tfh/explainers",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1/2026-09-04-brief-x.fragment.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1/2026-09-04-brief-x.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1/again.fragment.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1/again.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1/frag.html",
+    "/tmp/fixture-tmp-km2xh8t9/tmpycu8dvs1/src.html",
+    "/tmp/fixture-tmp-p0ht_ddv",
+    "/tmp/fixture-tmp-p0ht_ddv/fixture-home-2ma6dkb5",
+    "/tmp/fixture-tmp-p0ht_ddv/tmp62hva2eo"
+   ]
+  },
+  "scripts/check-agent-large-read.py": {
+   "created_in_log": [
+    "/tmp/44knujzc",
+    "/tmp/fixture-tmp-jx_x9xsd",
+    "/tmp/fixture-tmp-jx_x9xsd/fixture-home-vcflgnkb",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/  (big)",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/ 2>x(big)",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/-",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/-n",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/a.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/b.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/b300.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/b301.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/big.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/dash",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/dash/-",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/dash/-/big.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/img.bin",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/logical",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/logical/big.txt",
+    "/tmp/fixture-tmp-jx_x9xsd/large-read-yv8qccao/logical/link"
+   ]
+  },
+  "scripts/check-agent-long-call.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-bkmv3bn7",
+    "/tmp/fixture-tmp-bkmv3bn7/fixture-home-e594rz30",
+    "/tmp/fixture-tmp-dl4tkkur",
+    "/tmp/fixture-tmp-dl4tkkur/fixture-home-fn1m4jtd",
+    "/tmp/vwjx5tii",
+    "/tmp/w7_nbd97"
+   ]
+  },
+  "scripts/check-anchors.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/adr",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/adr/0001-a.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/anchors.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/superpowers",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/superpowers/plans",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/superpowers/specs",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/superpowers/specs/2026-01-01-old.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/c/docs/superpowers/specs/2026-09-01-x.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/adr",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/adr/0001-a.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/anchors.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/superpowers",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/superpowers/plans",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/superpowers/specs",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/d/docs/superpowers/specs/2026-09-01-x.md",
+    "/tmp/fixture-tmp-dh3k9tea/tmprplfv20f/e"
+   ]
+  },
+  "scripts/check-anon-exposure.py": {
+   "created_in_log": [
+    "/tmp/_cvtb5l0",
+    "/tmp/fixture-tmp-8di1zuqg",
+    "/tmp/fixture-tmp-8di1zuqg/fixture-home-jncphyj0",
+    "/tmp/fixture-tmp-8j0aqsfz",
+    "/tmp/fixture-tmp-8j0aqsfz/fixture-home-zs_cvf35",
+    "/tmp/wfodc8dk"
+   ]
+  },
+  "scripts/check-arch-findings.py": {
+   "created_in_log": [
+    "/tmp/auvv6wik",
+    "/tmp/fixture-tmp-wjqzaj7l",
+    "/tmp/fixture-tmp-wjqzaj7l/fixture-home-p6ngo_fu",
+    "/tmp/fixture-tmp-z29_jj55",
+    "/tmp/fixture-tmp-z29_jj55/fixture-home-d8rjsj3d",
+    "/tmp/fsqkko61"
+   ]
+  },
+  "scripts/check-backlog-closure.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-2fn415un",
+    "/tmp/fixture-tmp-2fn415un/fixture-home-yeqf91gl",
+    "/tmp/fixture-tmp-t84j14k_",
+    "/tmp/fixture-tmp-t84j14k_/fixture-home-myjz2amc",
+    "/tmp/fpw7_day",
+    "/tmp/rx_4n_dn"
+   ]
+  },
+  "scripts/check-banner-armed.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-1fjfq4j5/tmp1fj8u8e3",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp1fj8u8e3/t.jsonl",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/HEAD",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/HEAD.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/config",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/config.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/index",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/index.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/refs/heads/chrome",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/refs/heads/chrome.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/refs/heads/master",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp8pcylgk1/repo/.git/tTXaAe2",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp_6778v3v",
+    "/tmp/fixture-tmp-1fjfq4j5/tmp_6778v3v/t.jsonl",
+    "/tmp/fixture-tmp-1fjfq4j5/tmpay1ys_3_",
+    "/tmp/fixture-tmp-1fjfq4j5/tmpay1ys_3_/hostile.fifo"
+   ]
+  },
+  "scripts/check-canonical-source.py": {
+   "created_in_log": [
+    "/tmp/4z2d22em",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dangle/.agents",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dangle/.agents/skills",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dangle/.agents/skills/shared",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dangle/.agents/skills/shared/c.md",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dangle/docs",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dangle/docs/site.md",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/.agents",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/.agents/skills",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/.agents/skills/shared",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/.agents/skills/shared/c.md",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/docs",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/docs/notreviews",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/docs/notreviews/r9.md",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/dupreal/docs/site.md",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/missingsite",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/missingsite/.agents",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/missingsite/.agents/skills",
+    "/tmp/fixture-tmp-82z11l1u/tmptwso_u9w/missingsite/.agents/skills/shared"
+   ]
+  },
+  "scripts/check-catalog-coverage.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-hb5h_4ws",
+    "/tmp/fixture-tmp-hb5h_4ws/fixture-home-wo_ru96v",
+    "/tmp/fixture-tmp-ysh5nrdh",
+    "/tmp/fixture-tmp-ysh5nrdh/fixture-home-nndwn11v",
+    "/tmp/nzb0y1q9",
+    "/tmp/rs5retxp"
+   ]
+  },
+  "scripts/check-ci-watched.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-7g1r6i4v/tmp0nb7onbh",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp0nb7onbh/ci-watching.d",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/.claude",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/.claude/ci-unwatched.log",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/answer.json",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/scripts",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/scripts/bounded_read.py",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/scripts/check-ci-watched.py",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/scripts/observer_log.py",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/shim",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/shim/gh",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp34nucrfz/shim/git",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp8o_bfhfm/ci-watching.d",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp9n3zb_ft",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp9n3zb_ft/ci-watching.d",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp9n3zb_ft/ci-watching.d/0000111122223333",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp9n3zb_ft/sub",
+    "/tmp/fixture-tmp-7g1r6i4v/tmp9n3zb_ft/sub/ci-unwatched.log",
+    "/tmp/fixture-tmp-7g1r6i4v/tmpfwvwylp5"
+   ]
+  },
+  "scripts/check-closing-table.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-hu_lpa5l",
+    "/tmp/fixture-tmp-hu_lpa5l/fixture-home-l0ciesq2",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp19h88tf1",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp19h88tf1/hostile.fifo",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp19h88tf1/not-json.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp19h88tf1/truncated.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp19h88tf1/undecodable.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp8f9df4xe",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp8f9df4xe/scripts",
+    "/tmp/fixture-tmp-hu_lpa5l/tmp8f9df4xe/scripts/check-banner-armed.py",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/corrupt-mid.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/empty.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/live.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/no_uuid.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/noacts.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/prose.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/split.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/split_prose.jsonl",
+    "/tmp/fixture-tmp-hu_lpa5l/tmppkl005hq/tabled.jsonl"
+   ]
+  },
+  "scripts/check-compaction-boundary.py": {
+   "created_in_log": [
+    "/tmp/0g1_03xf",
+    "/tmp/4fdkfsch",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/.claude",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/.claude/compaction-boundary.log",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/.claude/executing-plan",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/.git",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/snap.got",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/snap.sh",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/t.jsonl",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/user-home",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/user-home/.claude",
+    "/tmp/fixture-tmp-jz_drhvt/cb-34dzjzur/user-home/.claude/settings.json",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y/.claude",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y/.claude/compaction-boundary.log",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y/.claude/executing-plan",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y/.claude/settings.local.json",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y/.git",
+    "/tmp/fixture-tmp-jz_drhvt/cb-_tey8_3y/snap.sh"
+   ]
+  },
+  "scripts/check-dashboard-entry.py": {
+   "created_in_log": [
+    "/tmp/3p139lql",
+    "/tmp/av4lflt0",
+    "/tmp/fixture-tmp-9qxzke6w",
+    "/tmp/fixture-tmp-9qxzke6w/fixture-home-j5u63ha8",
+    "/tmp/fixture-tmp-e0di85pf",
+    "/tmp/fixture-tmp-e0di85pf/fixture-home-ns83vkcs",
+    "/tmp/fixture-tmp-up6adjpa",
+    "/tmp/fixture-tmp-up6adjpa/fixture-home-zt66eqnr",
+    "/tmp/fixture-tmp-wp1o_aec",
+    "/tmp/fixture-tmp-wp1o_aec/fixture-home-d9yks1go",
+    "/tmp/u0n67bw0",
+    "/tmp/y8erbu19"
+   ]
+  },
+  "scripts/check-decision-scheme.py": {
+   "created_in_log": [
+    "/tmp/6nh33f_6",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/HEAD",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/HEAD.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/config",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/config.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/index",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/index.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/refs/heads/main",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/refs/heads/main.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp3xprejx7/.git/tXRJVaE",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/HEAD",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/HEAD.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/config",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/config.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/index",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/index.lock",
+    "/tmp/fixture-tmp-c1gq3zwu/tmp8ganccis/.git/refs/heads/main.lock"
+   ]
+  },
+  "scripts/check-diff-coverage.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-74fa62hz/tmp089x2a0f",
+    "/tmp/fixture-tmp-74fa62hz/tmp089x2a0f/scripts",
+    "/tmp/fixture-tmp-74fa62hz/tmp089x2a0f/scripts/check-plan-code.py",
+    "/tmp/fixture-tmp-74fa62hz/tmp089x2a0f/scripts/mutations",
+    "/tmp/fixture-tmp-74fa62hz/tmpa6v1ov6_",
+    "/tmp/fixture-tmp-74fa62hz/tmpa6v1ov6_/scripts",
+    "/tmp/fixture-tmp-74fa62hz/tmpa6v1ov6_/scripts/mutations",
+    "/tmp/fixture-tmp-74fa62hz/tmpdflg_9y1",
+    "/tmp/fixture-tmp-74fa62hz/tmplmiih610",
+    "/tmp/fixture-tmp-74fa62hz/tmplmiih610/scripts",
+    "/tmp/fixture-tmp-74fa62hz/tmplmiih610/scripts/mutations",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/backfill-work-lines.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/begin-plan.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-agent-long-call.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-anchors.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-anon-exposure.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-backlog-closure.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-banner-armed.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-canonical-source.py",
+    "/tmp/fixture-tmp-74fa62hz/tmpuvvfdad8/scripts/check-catalog-coverage.py"
+   ]
+  },
+  "scripts/check-doc-citations.py": {
+   "created_in_log": [
+    "/tmp/2xz08sf8",
+    "/tmp/fi5rwoz5",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/COMMIT_EDITMSG",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/HEAD",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/HEAD.lock",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/config",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/config.lock",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/index",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/index.lock",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/logs",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/logs/HEAD",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/logs/refs",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/logs/refs/heads",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/logs/refs/heads/master",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/objects",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/objects/15",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/objects/15/587c8d6ad8e073e7178240a8117246bdfba4eb",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/objects/1d",
+    "/tmp/fixture-tmp-2vmask99/tmp3r5v7kfw/.git/objects/1d/ba8969fd91e58c8e4c91d13f70574d75c65a6b"
+   ]
+  },
+  "scripts/check-docs.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-matal3ku",
+    "/tmp/fixture-tmp-matal3ku/fixture-home-t5zhrlsr",
+    "/tmp/fixture-tmp-pysl4j9w",
+    "/tmp/fixture-tmp-pysl4j9w/fixture-home-k34vukxy",
+    "/tmp/jenb1lgc",
+    "/tmp/l6p_fufs"
+   ]
+  },
+  "scripts/check-explainer-delivery.py": {
+   "created_in_log": [
+    "/tmp/4edg3dxe",
+    "/tmp/f6q8x7o1",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/a/skills/brief/SKILL.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/a/skills/explain-diff",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/a/skills/explain-diff/SKILL.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/a/skills/shared",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/a/skills/shared/explainer-delivery.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills/brief",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills/brief/SKILL.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills/explain-diff",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills/explain-diff/SKILL.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills/shared",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/b/skills/shared/explainer-delivery.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/c",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/c/skills",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/c/skills/explain-diff",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/c/skills/explain-diff/SKILL.md",
+    "/tmp/fixture-tmp-c37nlfrn/tmp8hpfq1zg/d"
+   ]
+  },
+  "scripts/check-features.py": {
+   "created_in_log": [
+    "/tmp/603_7m3a",
+    "/tmp/fixture-tmp-upy36r4f",
+    "/tmp/fixture-tmp-upy36r4f/fixture-home-azfc16tm",
+    "/tmp/fixture-tmp-xf3i1gy7",
+    "/tmp/fixture-tmp-xf3i1gy7/fixture-home-lcah0nhk",
+    "/tmp/zhvdihd5"
+   ]
+  },
+  "scripts/check-fixture-git-isolation.py": {
+   "created_in_log": [
+    "/tmp/f3vvkt_e",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp4r_8p301/victim/.git/config",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp4r_8p301/victim/.git/config.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp5n7q2xph/victim/.git/HEAD",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp5n7q2xph/victim/.git/HEAD.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp5n7q2xph/victim/.git/config",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp5n7q2xph/victim/.git/config.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp5n7q2xph/victim/.git/t70BkQh",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp9q14qyo1/victim/.git/HEAD",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp9q14qyo1/victim/.git/HEAD.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp9q14qyo1/victim/.git/config",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp9q14qyo1/victim/.git/config.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmp9q14qyo1/victim/.git/tMZRonk",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpa8hxdv_k/victim/.git/config",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpa8hxdv_k/victim/.git/config.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpa8hxdv_k/victim/.git/t1oDzIq",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpckotq3y9/victim/.git/config",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpckotq3y9/victim/.git/config.lock",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpq7nnj08i/victim/.git/config",
+    "/tmp/fixture-tmp-a3uh3wkl/tmpq7nnj08i/victim/.git/config.lock"
+   ]
+  },
+  "scripts/check-fixture-variation.py": {
+   "created_in_log": [
+    "/tmp/9vp85_8b",
+    "/tmp/fixture-tmp-pub2fd3n",
+    "/tmp/fixture-tmp-pub2fd3n/fixture-home-h0tssdi3",
+    "/tmp/fixture-tmp-pub2fd3n/tmp2r0r6rfh",
+    "/tmp/fixture-tmp-pub2fd3n/tmp2r0r6rfh/pindir.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpb7ge_6k7",
+    "/tmp/fixture-tmp-pub2fd3n/tmpb7ge_6k7/lost.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpb7ge_6k7/paid.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpd_ijajym",
+    "/tmp/fixture-tmp-pub2fd3n/tmpd_ijajym/exempt-and-ratcheted.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpfha_j9pg",
+    "/tmp/fixture-tmp-pub2fd3n/tmpqsjcrbji",
+    "/tmp/fixture-tmp-pub2fd3n/tmpqsjcrbji/clean.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpqsjcrbji/t.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpyjghksph",
+    "/tmp/fixture-tmp-pub2fd3n/tmpyjghksph/brand-new.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpyjghksph/broken.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpyjghksph/check-plan-code.py",
+    "/tmp/fixture-tmp-pub2fd3n/tmpyjghksph/unpinned.py",
+    "/tmp/fixture-tmp-tiknku8f"
+   ]
+  },
+  "scripts/check-function-revokes.py": {
+   "created_in_log": [
+    "/tmp/6siwuvys",
+    "/tmp/au2io7y8",
+    "/tmp/fixture-tmp-ems_wb8l",
+    "/tmp/fixture-tmp-ems_wb8l/fixture-home-bq_hlt8h",
+    "/tmp/fixture-tmp-ems_wb8l/tmp27a8cpp2",
+    "/tmp/fixture-tmp-ems_wb8l/tmp27a8cpp2/0001_a.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmp27a8cpp2/0002_b.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmp7uy4c80b",
+    "/tmp/fixture-tmp-ems_wb8l/tmp7uy4c80b/0001_a.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmp9r_kj2cs",
+    "/tmp/fixture-tmp-ems_wb8l/tmp9r_kj2cs/0001_a.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmp9r_kj2cs/0002_b.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmpa30s5sk_",
+    "/tmp/fixture-tmp-ems_wb8l/tmpa30s5sk_/0001_a.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmpbbhwhwce",
+    "/tmp/fixture-tmp-ems_wb8l/tmpbbhwhwce/0001_a.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmpbeykh7ox",
+    "/tmp/fixture-tmp-ems_wb8l/tmpbeykh7ox/0001_a.sql",
+    "/tmp/fixture-tmp-ems_wb8l/tmpbm8rhvkw",
+    "/tmp/fixture-tmp-ems_wb8l/tmpbm8rhvkw/0001_a.sql"
+   ]
+  },
+  "scripts/check-gate-falsifiability.py": {
+   "created_in_log": [
+    "/tmp/434dk6sc",
+    "/tmp/fixture-tmp-fji62ved",
+    "/tmp/fixture-tmp-fji62ved/fixture-home-wo28j1wv",
+    "/tmp/fixture-tmp-oycvph8p",
+    "/tmp/fixture-tmp-oycvph8p/fixture-home-qaoh29v3",
+    "/tmp/m1kv8se2"
+   ]
+  },
+  "scripts/check-goal-status.py": {
+   "created_in_log": [
+    "/tmp/0li6coui",
+    "/tmp/fixture-tmp-7smxo5fx",
+    "/tmp/fixture-tmp-7smxo5fx/fixture-home-ckj75nz0",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r/docs",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r/docs/superpowers",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r/docs/superpowers/plans",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r/docs/superpowers/plans/2026-01-01-x.md",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r/docs/superpowers/specs",
+    "/tmp/fixture-tmp-7smxo5fx/tmpemub2u3r/docs/superpowers/specs/2026-01-01-x-design.md",
+    "/tmp/fixture-tmp-7smxo5fx/tmpnj29hfpl",
+    "/tmp/fixture-tmp-7smxo5fx/tmpnj29hfpl/docs",
+    "/tmp/fixture-tmp-7smxo5fx/tmpnj29hfpl/docs/superpowers",
+    "/tmp/fixture-tmp-7smxo5fx/tmpnj29hfpl/docs/superpowers/specs",
+    "/tmp/fixture-tmp-7smxo5fx/tmpnj29hfpl/docs/superpowers/specs/2026-01-01-ok-design.md",
+    "/tmp/fixture-tmp-7smxo5fx/tmpnj29hfpl/docs/superpowers/specs/2026-01-01-y-design.md",
+    "/tmp/fixture-tmp-7smxo5fx/tmpxo4nf9iw",
+    "/tmp/fixture-tmp-okbiacz7",
+    "/tmp/fixture-tmp-okbiacz7/fixture-home-jcub55tl",
+    "/tmp/fixture-tmp-okbiacz7/tmpbndiy9o8"
+   ]
+  },
+  "scripts/check-group-claims.py": {
+   "created_in_log": [
+    "/tmp/1mp58utl",
+    "/tmp/8vqb8k3p",
+    "/tmp/fixture-tmp-9x2o8c86",
+    "/tmp/fixture-tmp-9x2o8c86/fixture-home-iu7f83jr",
+    "/tmp/fixture-tmp-y5ve64xr",
+    "/tmp/fixture-tmp-y5ve64xr/fixture-home-9a781ogr"
+   ]
+  },
+  "scripts/check-guard-coverage.py": {
+   "created_in_log": [
+    "/tmp/7hpf1q56",
+    "/tmp/fixture-tmp-t_w3l2xd",
+    "/tmp/fixture-tmp-t_w3l2xd/fixture-home-o7tra88n",
+    "/tmp/fixture-tmp-vxpca1ln",
+    "/tmp/fixture-tmp-vxpca1ln/fixture-home-pa18lvo7",
+    "/tmp/gntw4lml"
+   ]
+  },
+  "scripts/check-handoff-path.py": {
+   "created_in_log": [
+    "/tmp/6bpwdtr2",
+    "/tmp/fixture-tmp-35yhcten/tmp.D4OVhA5s3B",
+    "/tmp/fixture-tmp-35yhcten/tmp.cqQ21aqNCb",
+    "/tmp/fixture-tmp-35yhcten/tmp.hdX2sAHXXg",
+    "/tmp/fixture-tmp-35yhcten/tmp.mkbEPYyOPu",
+    "/tmp/fixture-tmp-35yhcten/tmp.qhrT2GexVW",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/.agents",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/.agents/skills",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/.agents/skills/handoff",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/.agents/skills/handoff/SKILL.md",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/scripts",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/scripts/bounded_read.py",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/cli/scripts/check-handoff-path.py",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/empty.md",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/good.md",
+    "/tmp/fixture-tmp-35yhcten/tmp6bagmmwu/undecodable.md",
+    "/tmp/fixture-tmp-35yhcten/tmpdlhjhich",
+    "/tmp/fixture-tmp-35yhcten/tmpdlhjhich/.agents"
+   ]
+  },
+  "scripts/check-hook-commands.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-_w6yjapd",
+    "/tmp/fixture-tmp-_w6yjapd/fixture-home-ije9ess5",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/alt-settings.json",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/empty-root",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w/.claude",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w/.claude/hooks",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w/.claude/hooks/extra.sh",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w/.claude/hooks/run-hook.sh",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w/.claude/hooks/x.sh",
+    "/tmp/fixture-tmp-_w6yjapd/tmp_q6d6bfa/w/.claude/settings.json",
+    "/tmp/fixture-tmp-_w6yjapd/tmpg744b3ar",
+    "/tmp/fixture-tmp-_w6yjapd/tmpg744b3ar/.claude",
+    "/tmp/fixture-tmp-_w6yjapd/tmpg744b3ar/.claude/hooks",
+    "/tmp/fixture-tmp-_w6yjapd/tmpg744b3ar/.claude/hooks/x.sh",
+    "/tmp/fixture-tmp-_w6yjapd/tmpg744b3ar/settings.json",
+    "/tmp/fixture-tmp-bu7cjmrd",
+    "/tmp/fixture-tmp-bu7cjmrd/fixture-home-7b0ra1xt",
+    "/tmp/fixture-tmp-bu7cjmrd/tmp5mk1ayx8"
+   ]
+  },
+  "scripts/check-live-schema.py": {
+   "created_in_log": [
+    "/tmp/94r6mora",
+    "/tmp/fixture-tmp-_j0fjg65",
+    "/tmp/fixture-tmp-_j0fjg65/fixture-home-2tqn2bga",
+    "/tmp/fixture-tmp-_j0fjg65/tmp01_7r8k8.txt",
+    "/tmp/fixture-tmp-_j0fjg65/tmp6w4izhdq.txt",
+    "/tmp/fixture-tmp-_j0fjg65/tmpajea7lc3.txt",
+    "/tmp/fixture-tmp-_j0fjg65/tmplge3i329.txt",
+    "/tmp/fixture-tmp-_j0fjg65/tmpo0cekkrj.txt",
+    "/tmp/fixture-tmp-_j0fjg65/tmpvnp15snp.txt",
+    "/tmp/fixture-tmp-_j0fjg65/tmpw3h56c9i.txt",
+    "/tmp/fixture-tmp-qcnigkiw",
+    "/tmp/fixture-tmp-qcnigkiw/fixture-home-8uxpi1m4",
+    "/tmp/fixture-tmp-qcnigkiw/tmp_l900r18.txt",
+    "/tmp/fixture-tmp-qcnigkiw/tmpffvqx5xe.txt",
+    "/tmp/fixture-tmp-qcnigkiw/tmph8kq5qs_.txt",
+    "/tmp/fixture-tmp-qcnigkiw/tmpmf32nck7.txt",
+    "/tmp/fixture-tmp-qcnigkiw/tmpt4dmek2d.txt",
+    "/tmp/fixture-tmp-qcnigkiw/tmpuub2l79q.txt",
+    "/tmp/fixture-tmp-qcnigkiw/tmpw642xdgi.txt",
+    "/tmp/mp10gbvk"
+   ]
+  },
+  "scripts/check-main-drivable.py": {
+   "created_in_log": [
+    "/tmp/2ql8lajr",
+    "/tmp/fixture-tmp-6sevd2td",
+    "/tmp/fixture-tmp-6sevd2td/fixture-home-6kd8jirs",
+    "/tmp/fixture-tmp-6sevd2td/tmp9fr2gm7r",
+    "/tmp/fixture-tmp-6sevd2td/tmp9fr2gm7r/nothing",
+    "/tmp/fixture-tmp-6sevd2td/tmp9fr2gm7r/scripts",
+    "/tmp/fixture-tmp-6sevd2td/tmp9fr2gm7r/scripts/check-a.py",
+    "/tmp/fixture-tmp-6sevd2td/tmp9fr2gm7r/scripts/check-b.py",
+    "/tmp/fixture-tmp-6sevd2td/tmpgi84ufps",
+    "/tmp/fixture-tmp-6sevd2td/tmpgi84ufps/scripts",
+    "/tmp/fixture-tmp-6sevd2td/tmpgi84ufps/scripts/check-locked.py",
+    "/tmp/fixture-tmp-swutit2o",
+    "/tmp/fixture-tmp-swutit2o/fixture-home-0aqkkfqn",
+    "/tmp/fixture-tmp-swutit2o/tmp_pzfmnrb",
+    "/tmp/fixture-tmp-swutit2o/tmp_pzfmnrb/nothing",
+    "/tmp/fixture-tmp-swutit2o/tmp_pzfmnrb/scripts",
+    "/tmp/fixture-tmp-swutit2o/tmp_pzfmnrb/scripts/check-a.py",
+    "/tmp/fixture-tmp-swutit2o/tmp_pzfmnrb/scripts/check-b.py",
+    "/tmp/fixture-tmp-swutit2o/tmprsn39te8",
+    "/tmp/fixture-tmp-swutit2o/tmprsn39te8/scripts"
+   ]
+  },
+  "scripts/check-memory-index-budget.py": {
+   "created_in_log": [
+    "/tmp/2szuh9wx",
+    "/tmp/fixture-tmp-6vebj_1t",
+    "/tmp/fixture-tmp-6vebj_1t/fixture-home-481_v6kv",
+    "/tmp/fixture-tmp-6vebj_1t/tmp8xpi7e2d",
+    "/tmp/fixture-tmp-6vebj_1t/tmp8xpi7e2d/crlf.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmp8xpi7e2d/glyphs.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmp8xpi7e2d/invalid.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmp_d0snjk_",
+    "/tmp/fixture-tmp-6vebj_1t/tmp_d0snjk_/locked.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmpd1l9ihdo",
+    "/tmp/fixture-tmp-6vebj_1t/tmpd1l9ihdo/over.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmpd1l9ihdo/under.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmpfpy0sdd1",
+    "/tmp/fixture-tmp-6vebj_1t/tmpj5pswpxx",
+    "/tmp/fixture-tmp-6vebj_1t/tmpj5pswpxx/at.md",
+    "/tmp/fixture-tmp-6vebj_1t/tmpj5pswpxx/over1.md",
+    "/tmp/fixture-tmp-vpraduwf",
+    "/tmp/fixture-tmp-vpraduwf/fixture-home-w9eh4zkc",
+    "/tmp/fixture-tmp-vpraduwf/tmp72h3pacc",
+    "/tmp/fixture-tmp-vpraduwf/tmpapv3mh1e"
+   ]
+  },
+  "scripts/check-memory-link.py": {
+   "created_in_log": [
+    "/tmp/1enl9_ys",
+    "/tmp/fixture-tmp-u7s6_ium",
+    "/tmp/fixture-tmp-u7s6_ium/fixture-home-8ksqv3jl",
+    "/tmp/fixture-tmp-xzy44n37",
+    "/tmp/fixture-tmp-xzy44n37/fixture-home-8kv7bjrv",
+    "/tmp/gdwj8uza"
+   ]
+  },
+  "scripts/check-merge-ready.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-6_3e0ss9/tmp50128ley",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp50128ley/ci.yml",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp50128ley/notes.md",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp50128ley/release.yaml",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/HEAD",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/HEAD.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/config",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/config.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/index",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/index.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/refs/heads/master",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/.git/tHnoauF",
+    "/tmp/fixture-tmp-6_3e0ss9/tmp94b5jspu/docs/t",
+    "/tmp/fixture-tmp-q2_2pp6b/tmpmyiw879e",
+    "/tmp/fixture-tmp-q2_2pp6b/tmpmyiw879e/ci.yml",
+    "/tmp/fixture-tmp-q2_2pp6b/tmpmyiw879e/notes.md"
+   ]
+  },
+  "scripts/check-page-links.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-50xppdpo/tmp3tl7ungf",
+    "/tmp/fixture-tmp-50xppdpo/tmp4yy8dlxi",
+    "/tmp/fixture-tmp-50xppdpo/tmp4yy8dlxi/s0.js",
+    "/tmp/fixture-tmp-50xppdpo/tmp4yy8dlxi/s1.js",
+    "/tmp/fixture-tmp-50xppdpo/tmp4yy8dlxi/s2.js",
+    "/tmp/fixture-tmp-50xppdpo/tmp4yy8dlxi/s3.js",
+    "/tmp/fixture-tmp-50xppdpo/tmp6c24ro_s",
+    "/tmp/fixture-tmp-50xppdpo/tmp6c24ro_s/s0.js",
+    "/tmp/fixture-tmp-50xppdpo/tmp6c24ro_s/s1.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpah0gzjtw",
+    "/tmp/fixture-tmp-50xppdpo/tmpah0gzjtw/s0.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpah0gzjtw/s1.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpah0gzjtw/s2.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpah0gzjtw/s3.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpc22mlttw",
+    "/tmp/fixture-tmp-50xppdpo/tmpc22mlttw/s0.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpc22mlttw/s1.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpc22mlttw/s2.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpc22mlttw/s3.js",
+    "/tmp/fixture-tmp-50xppdpo/tmpc22mlttw/s4.js"
+   ]
+  },
+  "scripts/check-paid-caller-arrival.py": {
+   "created_in_log": [
+    "/tmp/d_n55254",
+    "/tmp/fixture-tmp-prjhm5hf",
+    "/tmp/fixture-tmp-prjhm5hf/fixture-home-2to8tvdv",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/app",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/components",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/lib",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/lib/x.ts",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/scripts",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/scripts/backfill.ts",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/supabase",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/supabase/migrations",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/supabase/migrations/0027_x.sql",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/supabase/migrations/0028_rename.sql",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/supabase/migrations/0029_restore.sql",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/tests",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/tests/c.test.ts",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/types",
+    "/tmp/fixture-tmp-prjhm5hf/tmpqlcfvltg/worker",
+    "/tmp/fixture-tmp-vzq17tbh"
+   ]
+  },
+  "scripts/check-plan-code.py": {
+   "created_in_log": [
+    "/tmp/5jyx7sd5",
+    "/tmp/a43_3pag",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-1sz56isj",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-1sz56isj/t",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-1sz56isj/t/probe.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-1sz56isj/t/s.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-2m_82p76",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-2m_82p76/t",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-2m_82p76/t/m.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-g4ea_9_y/t/m.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-g4ea_9_y/t/s.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-j6hw5_ec",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-j6hw5_ec/t",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-j6hw5_ec/t/m.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-jk5clmty",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-jk5clmty/t",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-jk5clmty/t/probe.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-jk5clmty/t/s.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-jk5clmty/t/x.py",
+    "/tmp/fixture-tmp-3uqno2hv/seed-5-osuyb3le"
+   ]
+  },
+  "scripts/check-plan-file-tags.py": {
+   "created_in_log": [
+    "/tmp/31q4x0fe",
+    "/tmp/7ztgtw41",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/c",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/c/docs",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/c/docs/p.md",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/d",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/d/docs",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/d/docs/p.md",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/e",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/e/docs",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/e/docs/deep",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/e/docs/deep/nested",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/e/docs/deep/nested/plans",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/e/docs/deep/nested/plans/p.md",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/g",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/g/docs",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/g/docs/p.md",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/h",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/h/docs",
+    "/tmp/fixture-tmp-ife4xn7z/tmppcu4ls3d/h/docs/p.md"
+   ]
+  },
+  "scripts/check-plan-leak.py": {
+   "created_in_log": [
+    "/tmp/6sxcu_yf",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain.git/HEAD",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain.git/HEAD.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain.git/config",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain.git/config.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain.git/toN0rxF",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/HEAD",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/HEAD.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/config",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/config.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/index",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/index.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/refs/heads/master",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-8bq20ccn/plan-leak-71yec_xr/plain/.git/tV0xTyy",
+    "/tmp/fixture-tmp-oijszgb8/plan-leak-4scqrwko/plain.git/HEAD",
+    "/tmp/fixture-tmp-oijszgb8/plan-leak-4scqrwko/plain.git/HEAD.lock",
+    "/tmp/fixture-tmp-oijszgb8/plan-leak-4scqrwko/plain.git/config",
+    "/tmp/fixture-tmp-oijszgb8/plan-leak-4scqrwko/plain.git/config.lock"
+   ]
+  },
+  "scripts/check-plan-progress.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/HEAD",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/HEAD.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/config",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/config.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/description",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/index",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/index.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/refs/heads/cpp/a-second-repo",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/refs/heads/cpp/a-second-repo.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp70kqg25t/.git/tRXn9lV",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/HEAD",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/HEAD.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/config",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/config.lock",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/index",
+    "/tmp/fixture-tmp-p8z_hob2/tmp7gweerr8/.git/index.lock"
+   ]
+  },
+  "scripts/check-plan-task-order.py": {
+   "created_in_log": [
+    "/tmp/bfb7unpt",
+    "/tmp/fixture-tmp-oksxu_e7",
+    "/tmp/fixture-tmp-oksxu_e7/fixture-home-hsg_kzrw",
+    "/tmp/fixture-tmp-uza6l_ou",
+    "/tmp/fixture-tmp-uza6l_ou/fixture-home-0j3n81qw",
+    "/tmp/z3dzzguv"
+   ]
+  },
+  "scripts/check-producer-enumeration.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-7pue9v9o",
+    "/tmp/fixture-tmp-7pue9v9o/fixture-home-2jf1uy9u",
+    "/tmp/fixture-tmp-g8lpii5f",
+    "/tmp/fixture-tmp-g8lpii5f/fixture-home-7b2dsrj7",
+    "/tmp/gwnge4uo",
+    "/tmp/tv_1p18a"
+   ]
+  },
+  "scripts/check-python-pin.py": {
+   "created_in_log": [
+    "/tmp/61wsawpx",
+    "/tmp/bl2lkc7b",
+    "/tmp/fixture-tmp-g4yvt2ga",
+    "/tmp/fixture-tmp-g4yvt2ga/fixture-home-uufalxhp",
+    "/tmp/fixture-tmp-gh8cnrre",
+    "/tmp/fixture-tmp-gh8cnrre/fixture-home-jha1diuq"
+   ]
+  },
+  "scripts/check-ratchet-contract.py": {
+   "created_in_log": [
+    "/tmp/_eslu4h8",
+    "/tmp/fixture-tmp-1pfawi78",
+    "/tmp/fixture-tmp-1pfawi78/fixture-home-mkplpgol",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/.claude",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/.claude/hooks",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/.claude/hooks/_selftest-999999.sh",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/.github",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/.github/workflows",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/.github/workflows/ci.yml",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts/called.sh",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts/check-called.py",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts/check-orphan.py",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts/mutations",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts/mutations/check-called.json",
+    "/tmp/fixture-tmp-1pfawi78/tmp3vextpv0/scripts/mutations/check-orphan.json",
+    "/tmp/fixture-tmp-1pfawi78/tmp893jvt3l",
+    "/tmp/fixture-tmp-1pfawi78/tmpg_ekztvl",
+    "/tmp/fixture-tmp-1pfawi78/tmpg_ekztvl/scripts"
+   ]
+  },
+  "scripts/check-rc-contract.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-h834hb2k/tmp1n3908e2",
+    "/tmp/fixture-tmp-h834hb2k/tmp1n3908e2/.claude",
+    "/tmp/fixture-tmp-h834hb2k/tmp1n3908e2/.claude/hooks",
+    "/tmp/fixture-tmp-h834hb2k/tmp1n3908e2/.claude/hooks/surface-recall.sh",
+    "/tmp/fixture-tmp-h834hb2k/tmp1n3908e2/scripts",
+    "/tmp/fixture-tmp-h834hb2k/tmp1n3908e2/scripts/recall-llm.py",
+    "/tmp/fixture-tmp-h834hb2k/tmp8sjiqt7n",
+    "/tmp/fixture-tmp-h834hb2k/tmp8sjiqt7n/.claude",
+    "/tmp/fixture-tmp-h834hb2k/tmp8sjiqt7n/.claude/hooks",
+    "/tmp/fixture-tmp-h834hb2k/tmp8sjiqt7n/.claude/hooks/surface-recall.sh",
+    "/tmp/fixture-tmp-h834hb2k/tmp8sjiqt7n/scripts",
+    "/tmp/fixture-tmp-h834hb2k/tmp8sjiqt7n/scripts/recall-llm.py",
+    "/tmp/fixture-tmp-h834hb2k/tmp_u3t__vp",
+    "/tmp/fixture-tmp-h834hb2k/tmp_u3t__vp/.claude",
+    "/tmp/fixture-tmp-h834hb2k/tmp_u3t__vp/.claude/hooks",
+    "/tmp/fixture-tmp-h834hb2k/tmp_u3t__vp/.claude/hooks/surface-recall.sh",
+    "/tmp/fixture-tmp-h834hb2k/tmp_u3t__vp/scripts",
+    "/tmp/fixture-tmp-h834hb2k/tmp_u3t__vp/scripts/recall-llm.py",
+    "/tmp/fixture-tmp-h834hb2k/tmpf_riomlp",
+    "/tmp/fixture-tmp-h834hb2k/tmpf_riomlp/.claude"
+   ]
+  },
+  "scripts/check-reference-namespace.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/HEAD",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/HEAD.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/config",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/config.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/index",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/index.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/refs/heads/master",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/bad/.git/tIsy6yV",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/COMMIT_EDITMSG",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/HEAD",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/HEAD.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/config",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/config.lock",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/description",
+    "/tmp/fixture-tmp-8qjxktvk/tmpa6jtbv17/hookworld/.git/index"
+   ]
+  },
+  "scripts/check-review-decision.py": {
+   "created_in_log": [
+    "/tmp/7ukic9nz",
+    "/tmp/ek136sgx",
+    "/tmp/fixture-tmp-nivvg96f",
+    "/tmp/fixture-tmp-nivvg96f/fixture-home-p5t8ykqo",
+    "/tmp/fixture-tmp-yb_4zwi9",
+    "/tmp/fixture-tmp-yb_4zwi9/fixture-home-4ik6_6dz"
+   ]
+  },
+  "scripts/check-review-recorded.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/HEAD",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/HEAD.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/config",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/config.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/index",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/index.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/refs/heads/br",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/refs/heads/br.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/refs/heads/master",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-8p1f45qf/crr426-d5z6zodb/.git/tGkPOpt",
+    "/tmp/fixture-tmp-s_t2zl8g/crr426-sauzifrv/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-s_t2zl8g/crr426-sauzifrv/.git/HEAD",
+    "/tmp/fixture-tmp-s_t2zl8g/crr426-sauzifrv/.git/HEAD.lock",
+    "/tmp/fixture-tmp-s_t2zl8g/crr426-sauzifrv/.git/config",
+    "/tmp/fixture-tmp-s_t2zl8g/crr426-sauzifrv/.git/config.lock",
+    "/tmp/fixture-tmp-s_t2zl8g/crr426-sauzifrv/.git/index"
+   ]
+  },
+  "scripts/check-review-rounds.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/claude",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/claude/nested-r2-claude.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/coordinator",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/coordinator/nested-r2-coordinator.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/flat-r1-coordinator.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/notes.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/unrelated",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c0/unrelated/also-r9-codex.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c1",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c1/claude",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c1/claude/hidden-r1-claude.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c1/claude/hidden-r2-claude.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp5mpcex69/c1/seen-r1-coordinator.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp8ho9dqlu/t0",
+    "/tmp/fixture-tmp-4b8_ufse/tmp8ho9dqlu/t0/p-r1-claude.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp8ho9dqlu/t0/p-r1-codex.md",
+    "/tmp/fixture-tmp-4b8_ufse/tmp8ho9dqlu/t1",
+    "/tmp/fixture-tmp-4b8_ufse/tmp8ho9dqlu/t1/p-r1-codex.md"
+   ]
+  },
+  "scripts/check-roadmap-consistency.py": {
+   "created_in_log": [
+    "/tmp/6sxj1qrw",
+    "/tmp/fixture-tmp-3o__3iid",
+    "/tmp/fixture-tmp-3o__3iid/fixture-home-4yopot39",
+    "/tmp/fixture-tmp-6pzo544j",
+    "/tmp/fixture-tmp-6pzo544j/fixture-home-qzknzi2e",
+    "/tmp/h0k92v21"
+   ]
+  },
+  "scripts/check-run-hook.py": {
+   "created_in_log": [
+    "/tmp/3eq0a231",
+    "/tmp/9zpxcni8",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/crowded",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/crowded/e0",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/crowded/e0/child",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/crowded/e1",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/crowded/e2",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/crowded/e3",
+    "/tmp/fixture-tmp-0tl6epuy/tmp3j5di7si/sparse",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/HEAD",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/HEAD.lock",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/config",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/config.lock",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/index",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/index.lock",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-0tl6epuy/tmp_0gh34bz/w/main/.git/refs/heads/main"
+   ]
+  },
+  "scripts/check-selection-card.py": {
+   "created_in_log": [
+    "/tmp/26dp1lg9",
+    "/tmp/_zk1pihy",
+    "/tmp/fixture-tmp-amibo048",
+    "/tmp/fixture-tmp-amibo048/fixture-home-h3l8zzpm",
+    "/tmp/fixture-tmp-amibo048/tmp.09psyXCNic",
+    "/tmp/fixture-tmp-amibo048/tmp.89PB3lDX75",
+    "/tmp/fixture-tmp-amibo048/tmp.B6jhyHz9eg",
+    "/tmp/fixture-tmp-amibo048/tmp.BVaNVQT4kY",
+    "/tmp/fixture-tmp-amibo048/tmp.Mm1lTT7P8e",
+    "/tmp/fixture-tmp-amibo048/tmp.NQbDb5zvnJ",
+    "/tmp/fixture-tmp-amibo048/tmp.QRnLSbngF4",
+    "/tmp/fixture-tmp-amibo048/tmp.eKGEz52qff",
+    "/tmp/fixture-tmp-amibo048/tmp.ujjRZuHwd2",
+    "/tmp/fixture-tmp-amibo048/tmpx58ujxti",
+    "/tmp/fixture-tmp-amibo048/tmpx58ujxti/python3",
+    "/tmp/fixture-tmp-amibo048/tmpyaypfcmj",
+    "/tmp/fixture-tmp-amibo048/tmpyaypfcmj/python3",
+    "/tmp/fixture-tmp-haft45xi",
+    "/tmp/fixture-tmp-haft45xi/fixture-home-n8a7zxbf",
+    "/tmp/fixture-tmp-haft45xi/tmp.B7BuBDPAn3"
+   ]
+  },
+  "scripts/check-selftest-counts.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/HEAD",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/HEAD.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/config",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/config.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/index",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/index.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/refs/heads/base",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/refs/heads/base.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/refs/heads/master",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-2_c7cvx8/tmpeov3tkh7/.git/trwZT9h",
+    "/tmp/fixture-tmp-aq14dbez/tmp1sq7qyhi/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-aq14dbez/tmp1sq7qyhi/.git/HEAD",
+    "/tmp/fixture-tmp-aq14dbez/tmp1sq7qyhi/.git/HEAD.lock",
+    "/tmp/fixture-tmp-aq14dbez/tmp1sq7qyhi/.git/config",
+    "/tmp/fixture-tmp-aq14dbez/tmp1sq7qyhi/.git/config.lock",
+    "/tmp/fixture-tmp-aq14dbez/tmp1sq7qyhi/.git/index"
+   ]
+  },
+  "scripts/check-sentinel-meanings.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-j3ssyx9c",
+    "/tmp/fixture-tmp-j3ssyx9c/fixture-home-lto915jl",
+    "/tmp/fixture-tmp-zmuwucea",
+    "/tmp/fixture-tmp-zmuwucea/fixture-home-chu605ez",
+    "/tmp/geco2k4z",
+    "/tmp/htvyfb5l"
+   ]
+  },
+  "scripts/check-stalled-work.py": {
+   "created_in_log": [
+    "/tmp/elvy727a",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/HEAD",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/HEAD.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/config",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/config.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/index",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/index.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/refs/heads/master",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/main/.git/txwj9Si",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/HEAD",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/HEAD.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/config",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/config.lock",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/objects/tmp_objdir-incoming-JxfB9B/4b/tmp_obj_guBys2",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/objects/tmp_objdir-incoming-JxfB9B/73/tmp_obj_oO3IxW",
+    "/tmp/fixture-tmp-2yxscsho/stalled-work-zm8wezm_/remote.git/tMEj0xP"
+   ]
+  },
+  "scripts/check-storage-grant-pin.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-1no19c_1",
+    "/tmp/fixture-tmp-1no19c_1/fixture-home-qlfp_46c",
+    "/tmp/fixture-tmp-8kg022h4",
+    "/tmp/fixture-tmp-8kg022h4/fixture-home-5u97co0t",
+    "/tmp/wz37ozm1",
+    "/tmp/zue67f6i"
+   ]
+  },
+  "scripts/check-storage-independence.py": {
+   "created_in_log": [
+    "/tmp/5192u9lm",
+    "/tmp/fixture-tmp-cw5kxid_",
+    "/tmp/fixture-tmp-cw5kxid_/fixture-home-7f93qtmr",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/decoy.sql",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/elsewhere",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/elsewhere/seed.sql",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/elsewhere/seed2.sql",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/elsewhere/seed3.sql",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/helper.sh",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/helper2.sh",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/helper3.sh",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/helper4.sh",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/schema",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/schema/05_assert.sql",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/docs/spec/verify-schema.sh",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/scripts",
+    "/tmp/fixture-tmp-cw5kxid_/tmp7wrrel0z/scripts/check-schema-gates.sh"
+   ]
+  },
+  "scripts/check-surface-recall.py": {
+   "created_in_log": [
+    "/tmp/cj9yrcm9",
+    "/tmp/fixture-tmp-oe82e52e/tmp21xz_g8w",
+    "/tmp/fixture-tmp-oe82e52e/tmp21xz_g8w/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmp2z0odc__",
+    "/tmp/fixture-tmp-oe82e52e/tmp2z0odc__/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmp3_hhezsp",
+    "/tmp/fixture-tmp-oe82e52e/tmp3_hhezsp/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmp6jk9512t",
+    "/tmp/fixture-tmp-oe82e52e/tmp6jk9512t/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmp7eki7nlq",
+    "/tmp/fixture-tmp-oe82e52e/tmp7eki7nlq/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmpa34isfcb",
+    "/tmp/fixture-tmp-oe82e52e/tmpa34isfcb/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmpdxgamnxb",
+    "/tmp/fixture-tmp-oe82e52e/tmpdxgamnxb/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmphfo8b6c8",
+    "/tmp/fixture-tmp-oe82e52e/tmphfo8b6c8/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmpil2t70iz/stub_matcher.py",
+    "/tmp/fixture-tmp-oe82e52e/tmpj52sqh65",
+    "/tmp/fixture-tmp-oe82e52e/tmpj52sqh65/stub_matcher.py"
+   ]
+  },
+  "scripts/check-test-counts.py": {
+   "created_in_log": [
+    "/tmp/e8zge0sc",
+    "/tmp/fixture-tmp-iyu2foe4",
+    "/tmp/fixture-tmp-iyu2foe4/fixture-home-t73xr2j2",
+    "/tmp/fixture-tmp-iyu2foe4/tmp2x2k7n6e",
+    "/tmp/fixture-tmp-iyu2foe4/tmp2x2k7n6e/jest.config.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpkoer15yp",
+    "/tmp/fixture-tmp-iyu2foe4/tmpkoer15yp/jest.config.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpkoer15yp/tests",
+    "/tmp/fixture-tmp-iyu2foe4/tmpkoer15yp/tests/a.test.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn58icf_8",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn58icf_8/jest.config.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn58icf_8/tests",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn58icf_8/tests/a.test.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn9z_69wx",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn9z_69wx/jest.config.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn9z_69wx/tests",
+    "/tmp/fixture-tmp-iyu2foe4/tmpn9z_69wx/tests/a.test.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpnjb834tl",
+    "/tmp/fixture-tmp-iyu2foe4/tmpnjb834tl/jest.config.ts",
+    "/tmp/fixture-tmp-iyu2foe4/tmpnjb834tl/tests"
+   ]
+  },
+  "scripts/check-theme-token-coverage.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-7vraorip",
+    "/tmp/fixture-tmp-7vraorip/fixture-home-2wg_qzlv",
+    "/tmp/fixture-tmp-sfryvmcu",
+    "/tmp/fixture-tmp-sfryvmcu/fixture-home-91o6nkdu",
+    "/tmp/klnugal6",
+    "/tmp/t1kagoel"
+   ]
+  },
+  "scripts/check-transcript-references.py": {
+   "created_in_log": [
+    "/tmp/745a81kh",
+    "/tmp/fixture-tmp-isvc3m8g",
+    "/tmp/fixture-tmp-isvc3m8g/fixture-home-zxlbcvcv",
+    "/tmp/fixture-tmp-isvc3m8g/tmp1acm6rnf",
+    "/tmp/fixture-tmp-isvc3m8g/tmp1acm6rnf/c7d3b20c55c24f188c2a2396c3fffa05.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmp1acm6rnf/warn.log",
+    "/tmp/fixture-tmp-isvc3m8g/tmp2fo89hmq",
+    "/tmp/fixture-tmp-isvc3m8g/tmp2fo89hmq/b5f1b746f2a747d6a688ef978da242f5.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmp9uspti4_",
+    "/tmp/fixture-tmp-isvc3m8g/tmp9uspti4_/hostile.fifo",
+    "/tmp/fixture-tmp-isvc3m8g/tmp9uspti4_/not-json.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmp9uspti4_/truncated.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmp9uspti4_/undecodable.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w/corrupt.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w/cut-judged.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w/partial.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w/t0.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w/t1.jsonl",
+    "/tmp/fixture-tmp-isvc3m8g/tmpcqdzna5w/t4.jsonl"
+   ]
+  },
+  "scripts/check-usage-pace.py": {
+   "created_in_log": [
+    "/tmp/1k_az3tr",
+    "/tmp/fixture-tmp-_tzl_wwh/tmp7ho0qa07",
+    "/tmp/fixture-tmp-_tzl_wwh/tmp7ho0qa07/c.json",
+    "/tmp/fixture-tmp-_tzl_wwh/tmp7ho0qa07/m.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/bad.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/big.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/c.json",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/c1.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/c2.json",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/c95.json",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/exact.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/f3.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/fifo.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/fresh.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/late.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/late_big.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/mid.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/r2f1.jsonl",
+    "/tmp/fixture-tmp-_tzl_wwh/tmpggqqmxix/r2f2.jsonl"
+   ]
+  },
+  "scripts/check-vocabulary-collisions.py": {
+   "created_in_log": [
+    "/tmp/293avg4l",
+    "/tmp/6e40wwzb",
+    "/tmp/fixture-tmp-4nlca_h0",
+    "/tmp/fixture-tmp-4nlca_h0/fixture-home-2bgu3_ks",
+    "/tmp/fixture-tmp-k25_gvn_",
+    "/tmp/fixture-tmp-k25_gvn_/fixture-home-1yx5o_le"
+   ]
+  },
+  "scripts/ci-durations.py": {
+   "created_in_log": [
+    "/tmp/4xl3djbh",
+    "/tmp/awkbzp9a",
+    "/tmp/fixture-tmp-7l6ng3xt",
+    "/tmp/fixture-tmp-7l6ng3xt/fixture-home-frquluox",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp16kxp5z0",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp2eeft2bd",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp2eeft2bd/log.jsonl",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp2eeft2bd/log.jsonl.lock",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp54gcblok",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp54gcblok/log.jsonl",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp54gcblok/log.jsonl.lock",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp84287i7h",
+    "/tmp/fixture-tmp-7l6ng3xt/tmp8qpl8g3r",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpcfrb296r",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpcfrb296r/log.jsonl",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpcfrb296r/log.jsonl.lock",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpdgad0j_1",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpdgad0j_1/log.jsonl",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpdgad0j_1/log.jsonl.lock",
+    "/tmp/fixture-tmp-7l6ng3xt/tmpdgad0j_1/log.jsonl.tmp"
+   ]
+  },
+  "scripts/codex-frontier-model.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-1ddou4of",
+    "/tmp/fixture-tmp-1ddou4of/fixture-home-fhqib_w7",
+    "/tmp/fixture-tmp-hlx7erdp",
+    "/tmp/fixture-tmp-hlx7erdp/fixture-home-vb6w4ypj",
+    "/tmp/o6v5ucnb",
+    "/tmp/oinuej61"
+   ]
+  },
+  "scripts/codex-review.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-qxp7jb9f/tmp91yzwtpq",
+    "/tmp/fixture-tmp-qxp7jb9f/tmp91yzwtpq/adir",
+    "/tmp/fixture-tmp-qxp7jb9f/tmp91yzwtpq/reviews",
+    "/tmp/fixture-tmp-qxp7jb9f/tmp91yzwtpq/reviews/codex",
+    "/tmp/fixture-tmp-qxp7jb9f/tmp91yzwtpq/reviews/codex/p-r1-codex.md",
+    "/tmp/fixture-tmp-qxp7jb9f/tmp_2x8kd2r",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpdnzvxnm9/.git/HEAD",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpdnzvxnm9/.git/HEAD.lock",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpdnzvxnm9/.git/config",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpdnzvxnm9/.git/config.lock",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpdnzvxnm9/.git/tei6ais",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/bin",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/bin/codex",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/docs",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/docs/reviews",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/docs/reviews/codex",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/docs/reviews/codex/cap.md",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/docs/reviews/codex/sandbox-r1-codex.md",
+    "/tmp/fixture-tmp-qxp7jb9f/tmpmpx5v22b/docs/reviews/verdicts"
+   ]
+  },
+  "scripts/compaction-state.py": {
+   "created_in_log": [
+    "/tmp/112ojq_5",
+    "/tmp/fixture-tmp-6tt5ysuo/compaction-dx7xekpa",
+    "/tmp/fixture-tmp-6tt5ysuo/compaction-dx7xekpa/payload.json",
+    "/tmp/fixture-tmp-6tt5ysuo/compaction-n3cl0ihu",
+    "/tmp/fixture-tmp-6tt5ysuo/compaction-n3cl0ihu/out.txt",
+    "/tmp/fixture-tmp-6tt5ysuo/compaction-n3cl0ihu/payload.json",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/boom/.remember/compaction/S-boom/.receipt.json.6812.d06f4f6d",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/boom/.remember/compaction/S-boom/.snapshot.md.6812.3a7d06b9",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/boom/.remember/compaction/S-boom/receipt.json",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/boom/.remember/compaction/S-boom/snapshot.md",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/grandchild.pid",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/killed/.remember/compaction/S-kill/.receipt.json.6812.828c7cd7",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/killed/.remember/compaction/S-kill/.snapshot.md.6812.b4bc9657",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/killed/.remember/compaction/S-kill/receipt.json",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/killed/.remember/compaction/S-kill/snapshot.md",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/realrepo/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/realrepo/.git/HEAD",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/realrepo/.git/HEAD.lock",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/realrepo/.git/config",
+    "/tmp/fixture-tmp-6tt5ysuo/tmp7l9mwdex/realrepo/.git/config.lock"
+   ]
+  },
+  "scripts/coverage_verdict.py": {
+   "created_in_log": [
+    "/tmp/29irafhh",
+    "/tmp/fixture-tmp-7ipw2zqh",
+    "/tmp/fixture-tmp-7ipw2zqh/fixture-home-lcd5tnnk",
+    "/tmp/fixture-tmp-szp6q3df",
+    "/tmp/fixture-tmp-szp6q3df/fixture-home-skycsm6l",
+    "/tmp/xf4t4thi"
+   ]
+  },
+  "scripts/explainer-serve.py": {
+   "created_in_log": [
+    "/tmp/14bb5qtq",
+    "/tmp/26uv7azu",
+    "/tmp/fixture-tmp-2r2vqmho/serve-group-0ap3kwx4",
+    "/tmp/fixture-tmp-2r2vqmho/serve-group-0ap3kwx4/escaped.pid",
+    "/tmp/fixture-tmp-2r2vqmho/serve-group-0ap3kwx4/escaper.py",
+    "/tmp/fixture-tmp-2r2vqmho/serve-group-0ap3kwx4/runner.py",
+    "/tmp/fixture-tmp-2r2vqmho/serve-group-0ap3kwx4/started",
+    "/tmp/fixture-tmp-2r2vqmho/serve-group-0ap3kwx4/termed",
+    "/tmp/fixture-tmp-2r2vqmho/tmp0b2o7ehs",
+    "/tmp/fixture-tmp-2r2vqmho/tmp0b2o7ehs/2026-10-01-topic-live.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp0b2o7ehs/2026-10-28-work-lines.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp0b2o7ehs/work-lines.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp27d_j_wy",
+    "/tmp/fixture-tmp-2r2vqmho/tmp27d_j_wy/2026-10-01-topic-live.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp27d_j_wy/work-lines.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp51cf43hm",
+    "/tmp/fixture-tmp-2r2vqmho/tmp51cf43hm/live.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp51cf43hm/work-lines.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp54ncnyx6/2026-10-28-chain.html",
+    "/tmp/fixture-tmp-2r2vqmho/tmp54ncnyx6/live.html"
+   ]
+  },
+  "scripts/fixture_git.py": {
+   "created_in_log": [
+    "/tmp/8kihe6f_",
+    "/tmp/fixture-tmp-56nuuu4d/6ouu9e0d",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-27n4l7_9",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-27n4l7_9/failed-case-pxg_hipk",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-27n4l7_9/fixture-home-d78eu3s5",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-43teai65",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-43teai65/fixture-home-lneccsqf",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-6b6vkyc7",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-6b6vkyc7/fixture-home-265umohr",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk/fixture-home-f7brrnjm",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk/fixture-tmp-x_a3z60t",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk/kid-MaDZDC",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk/leak-6yz_5j21",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk/tmpuih92p9t",
+    "/tmp/fixture-tmp-56nuuu4d/fixture-tmp-hjqrihyk/uqh6xcpf",
+    "/tmp/fixture-tmp-56nuuu4d/tmptzlhwaxh/victim/.git/HEAD",
+    "/tmp/fixture-tmp-56nuuu4d/tmptzlhwaxh/victim/.git/HEAD.lock",
+    "/tmp/fixture-tmp-56nuuu4d/tmptzlhwaxh/victim/.git/config",
+    "/tmp/fixture-tmp-56nuuu4d/tmptzlhwaxh/victim/.git/config.lock"
+   ]
+  },
+  "scripts/gates-for-pr.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/empty",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/h.log",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/m.log",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/COMMIT_EDITMSG",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/HEAD",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/HEAD.lock",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/config",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/config.lock",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/description",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/index",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/index.lock",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/01",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/01/f8996026793c814fb7058ab68edc07eeb140a6",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/24",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/24/487a5cca0e9832636cac59dbe1a36e22b1ff92",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/33",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/33/ddf90ecbf6fd65209c72f2d24ea83f8c97503e",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/59",
+    "/tmp/fixture-tmp-6hqlptk5/gates-for-pr-st-5kyrr0rh/repo/.git/objects/59/4a5e58ab4407863d10e6050b1846ffce87ba2e"
+   ]
+  },
+  "scripts/gen-backlog-page.py": {
+   "created_in_log": [
+    "/tmp/4086338f",
+    "/tmp/fixture-tmp-ehv56py5",
+    "/tmp/fixture-tmp-ehv56py5/fixture-home-475dli28",
+    "/tmp/fixture-tmp-ehv56py5/tmphcqt0ht8.html",
+    "/tmp/fixture-tmp-ehv56py5/tmpn0i84oty",
+    "/tmp/fixture-tmp-ehv56py5/tmpn0i84oty/docs",
+    "/tmp/fixture-tmp-ehv56py5/tmpn0i84oty/docs/backlog.md",
+    "/tmp/fixture-tmp-ehv56py5/tmpqlibs52r",
+    "/tmp/fixture-tmp-ehv56py5/tmpx6575j4t",
+    "/tmp/fixture-tmp-ehv56py5/tmpx6575j4t/backlog.md",
+    "/tmp/fixture-tmp-ehv56py5/tmpx6575j4t/page.html",
+    "/tmp/fixture-tmp-oxfncimf",
+    "/tmp/fixture-tmp-oxfncimf/fixture-home-7tqxqo3q",
+    "/tmp/fixture-tmp-oxfncimf/tmp2lfbfd04",
+    "/tmp/fixture-tmp-oxfncimf/tmp2lfbfd04/docs",
+    "/tmp/fixture-tmp-oxfncimf/tmp2lfbfd04/docs/backlog.md",
+    "/tmp/fixture-tmp-oxfncimf/tmp3gxxl80k",
+    "/tmp/fixture-tmp-oxfncimf/tmplpbqsprg",
+    "/tmp/fixture-tmp-oxfncimf/tmplpbqsprg/backlog.md",
+    "/tmp/fixture-tmp-oxfncimf/tmplpbqsprg/page.html"
+   ]
+  },
+  "scripts/gen-dashboard.py": {
+   "created_in_log": [
+    "/tmp/0zkzt4ck",
+    "/tmp/80js7p75",
+    "/tmp/fixture-tmp-9166u2p8",
+    "/tmp/fixture-tmp-9166u2p8/fixture-home-a7usyjmn",
+    "/tmp/fixture-tmp-9166u2p8/fixture-home-a7usyjmn/.local",
+    "/tmp/fixture-tmp-9166u2p8/fixture-home-a7usyjmn/.local/state",
+    "/tmp/fixture-tmp-9166u2p8/fixture-home-a7usyjmn/.local/state/gh",
+    "/tmp/fixture-tmp-9166u2p8/fixture-home-a7usyjmn/.local/state/gh/device-id",
+    "/tmp/fixture-tmp-9166u2p8/fixture-home-a7usyjmn/.local/state/gh/device-id.tmp.3601951205",
+    "/tmp/fixture-tmp-9166u2p8/gen-dashboard-selftest-ljmqx6rs",
+    "/tmp/fixture-tmp-9166u2p8/gen-dashboard-selftest-vg17vqwq",
+    "/tmp/fixture-tmp-9166u2p8/tmp23qth1my",
+    "/tmp/fixture-tmp-9166u2p8/tmp23qth1my/dashboard-fragment.html",
+    "/tmp/fixture-tmp-9166u2p8/tmp4_gvjtcj",
+    "/tmp/fixture-tmp-9166u2p8/tmp4_gvjtcj/docs",
+    "/tmp/fixture-tmp-9166u2p8/tmp4_gvjtcj/docs/dashboard-entries.md",
+    "/tmp/fixture-tmp-9166u2p8/tmp4_gvjtcj/frag.html",
+    "/tmp/fixture-tmp-9166u2p8/tmp761o1008",
+    "/tmp/fixture-tmp-9166u2p8/tmp761o1008/dashboard-fragment.html",
+    "/tmp/fixture-tmp-9166u2p8/tmpgwbnwldo"
+   ]
+  },
+  "scripts/gen-features-page.py": {
+   "created_in_log": [
+    "/tmp/_4z7z26e",
+    "/tmp/fixture-tmp-102es4pt",
+    "/tmp/fixture-tmp-102es4pt/fixture-home-y6_yupjz",
+    "/tmp/fixture-tmp-xk89da_j",
+    "/tmp/fixture-tmp-xk89da_j/fixture-home-olvgs6ay",
+    "/tmp/g8m5u8ay"
+   ]
+  },
+  "scripts/gen-goals-page.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-idnatu9g",
+    "/tmp/fixture-tmp-idnatu9g/fixture-home-prc3h14w",
+    "/tmp/fixture-tmp-u9ljh9f4",
+    "/tmp/fixture-tmp-u9ljh9f4/fixture-home-mi708sdx",
+    "/tmp/m0ela7r6",
+    "/tmp/m3wlemys"
+   ]
+  },
+  "scripts/gen-work-lines.py": {
+   "created_in_log": [
+    "/tmp/8qrxe8d1",
+    "/tmp/fixture-tmp-5tdkeamv/tmp1146ufh5",
+    "/tmp/fixture-tmp-5tdkeamv/tmp1146ufh5/other",
+    "/tmp/fixture-tmp-5tdkeamv/tmp1146ufh5/other/elsewhere.md",
+    "/tmp/fixture-tmp-5tdkeamv/tmp1146ufh5/plans",
+    "/tmp/fixture-tmp-5tdkeamv/tmp1146ufh5/plans/real.md",
+    "/tmp/fixture-tmp-5tdkeamv/tmp1146ufh5/plans/stray.md",
+    "/tmp/fixture-tmp-5tdkeamv/tmpi305ih55",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/HEAD",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/HEAD.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/config",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/config.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/index",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/index.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/refs/heads/master",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-5tdkeamv/tmpoaw2cyev/main/.git/refs/heads/side"
+   ]
+  },
+  "scripts/goal-tree.py": {
+   "created_in_log": [
+    "/tmp/76j560ri",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/agenda.txt",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/agenda2.txt",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/crlf.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/docs/backlog.md",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/docs/dashboard-entries.md",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/docs/goal-threads.md",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/docs/moved.md",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/lone-cr.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/main/.claude/agenda-log.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/main/.claude/agenda-other.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/main/.claude/goal-tree-log.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/main/.claude/plans",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/nl.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/nn.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/page.html",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/tw.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/unfinished.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp6opvy2ff/ws.jsonl",
+    "/tmp/fixture-tmp-935pq3ek/tmp7ulhuwfx"
+   ]
+  },
+  "scripts/observer_log.py": {
+   "created_in_log": [
+    "/tmp/du0p1wn0",
+    "/tmp/fixture-tmp-07m0e551",
+    "/tmp/fixture-tmp-07m0e551/fixture-home-diuv00fj",
+    "/tmp/fixture-tmp-07m0e551/tmp1bwc3_u3",
+    "/tmp/fixture-tmp-07m0e551/tmp1bwc3_u3/adir",
+    "/tmp/fixture-tmp-07m0e551/tmpdhir5dii",
+    "/tmp/fixture-tmp-07m0e551/tmpdhir5dii/deep",
+    "/tmp/fixture-tmp-07m0e551/tmpdhir5dii/deep/sub",
+    "/tmp/fixture-tmp-07m0e551/tmpdhir5dii/deep/sub/y.log",
+    "/tmp/fixture-tmp-07m0e551/tmpgi_jwfht",
+    "/tmp/fixture-tmp-07m0e551/tmpgi_jwfht/sub",
+    "/tmp/fixture-tmp-07m0e551/tmpgi_jwfht/sub/x.log",
+    "/tmp/fixture-tmp-07m0e551/tmppk65mef0",
+    "/tmp/fixture-tmp-07m0e551/tmppk65mef0/enc.log",
+    "/tmp/fixture-tmp-07m0e551/tmptawx9mh0",
+    "/tmp/fixture-tmp-07m0e551/tmptawx9mh0/adir",
+    "/tmp/fixture-tmp-1rczjgvq",
+    "/tmp/fixture-tmp-1rczjgvq/fixture-home-w1eol4ni",
+    "/tmp/fixture-tmp-1rczjgvq/tmp13h_4h7d",
+    "/tmp/fixture-tmp-1rczjgvq/tmp13h_4h7d/adir"
+   ]
+  },
+  "scripts/page_chrome.py": {
+   "created_in_log": [
+    "/tmp/_xjqa5vb",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/COMMIT_EDITMSG",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/HEAD",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/HEAD.lock",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/config",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/config.lock",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/description",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/hooks/pre-push.sample",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/hooks/pre-rebase.sample",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/hooks/push-to-checkout.sample",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/hooks/sendemail-validate.sample",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/index",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/index.lock",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/logs",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/logs/HEAD",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/logs/refs",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/logs/refs/heads",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/logs/refs/heads/master",
+    "/tmp/fixture-tmp-514hk23s/tmpszm5ylmu/.git/objects"
+   ]
+  },
+  "scripts/page_markup.py": {
+   "created_in_log": [
+    "/tmp/09m7dbqw",
+    "/tmp/fixture-tmp-ep2qetm1",
+    "/tmp/fixture-tmp-ep2qetm1/fixture-home-83p5w7od",
+    "/tmp/fixture-tmp-sas6ey6k",
+    "/tmp/fixture-tmp-sas6ey6k/fixture-home-ahe0b1sm",
+    "/tmp/ril94o97"
+   ]
+  },
+  "scripts/peer-sites.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-7d2b5dtg",
+    "/tmp/fixture-tmp-7d2b5dtg/fixture-home-94n53b8o",
+    "/tmp/fixture-tmp-7d2b5dtg/tmp0n_z6xxy",
+    "/tmp/fixture-tmp-7d2b5dtg/tmp0n_z6xxy/a.py",
+    "/tmp/fixture-tmp-7d2b5dtg/tmp4niykm62",
+    "/tmp/fixture-tmp-7d2b5dtg/tmp4niykm62/a.py",
+    "/tmp/fixture-tmp-7d2b5dtg/tmpl5zkydmc",
+    "/tmp/fixture-tmp-7d2b5dtg/tmpl5zkydmc/bad.py",
+    "/tmp/fixture-tmp-7d2b5dtg/tmpwsyg66am",
+    "/tmp/fixture-tmp-7d2b5dtg/tmpwsyg66am/s.py",
+    "/tmp/fixture-tmp-xl73fe08",
+    "/tmp/fixture-tmp-xl73fe08/fixture-home-_lj1srn7",
+    "/tmp/fixture-tmp-xl73fe08/tmp43iv53h4",
+    "/tmp/fixture-tmp-xl73fe08/tmp43iv53h4/s.py",
+    "/tmp/fixture-tmp-xl73fe08/tmpgm9qw1tp",
+    "/tmp/fixture-tmp-xl73fe08/tmpgm9qw1tp/bad.py",
+    "/tmp/fixture-tmp-xl73fe08/tmpt8w7eykj",
+    "/tmp/fixture-tmp-xl73fe08/tmpt8w7eykj/a.py",
+    "/tmp/fixture-tmp-xl73fe08/tmpzv0gs18i",
+    "/tmp/fixture-tmp-xl73fe08/tmpzv0gs18i/a.py"
+   ]
+  },
+  "scripts/prune-merged-worktrees.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/HEAD",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/HEAD.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/config",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/config.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/index",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/index.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/refs/heads/master",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/refs/heads/master.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/m/.git/tUXpEfQ",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/o.git/HEAD",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/o.git/HEAD.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/o.git/config",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/o.git/config.lock",
+    "/tmp/fixture-tmp-ybkmga87/prune-wt-selftest-48ial565/w1/o.git/tnS7CTm",
+    "/tmp/fixture-tmp-yo178m33/prune-wt-selftest-_fvcg8bj/w1/m/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-yo178m33/prune-wt-selftest-_fvcg8bj/w1/m/.git/HEAD",
+    "/tmp/fixture-tmp-yo178m33/prune-wt-selftest-_fvcg8bj/w1/m/.git/HEAD.lock"
+   ]
+  },
+  "scripts/push-command.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/HEAD",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/HEAD.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/config",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/config.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/objects/a4/c3f550c0e97bfe68d3950cd734c58c13511d66",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/packed-refs",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/packed-refs.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/packed-refs.new",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/origin.git/tK3ZxOf",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/HEAD",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/HEAD.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/config",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/config.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/index",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/index.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-3ppm9g3o/tmp_itqhgre/seed/.git/refs/heads/master"
+   ]
+  },
+  "scripts/recall-llm.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-3r23fmxz/tmp1w_9dl0l",
+    "/tmp/fixture-tmp-3r23fmxz/tmp1w_9dl0l/e.md",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/home",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/home/.claude",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/home/.claude/projects",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/home/.claude/projects/-tmp-fixture-tmp-3r23fmxz-tmp3zes8vyq-repo",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/home/.claude/projects/-tmp-fixture-tmp-3r23fmxz-tmp3zes8vyq-repo/memory",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/home/.claude/projects/-tmp-fixture-tmp-3r23fmxz-tmp3zes8vyq-repo/memory/some-other-entry.md",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude/executing-plan",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude/plans",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude/plans/w.md",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude/recall-cache",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude/recall-cache/.last-said",
+    "/tmp/fixture-tmp-3r23fmxz/tmp3zes8vyq/repo/.claude/recall-cache/w.json",
+    "/tmp/fixture-tmp-3r23fmxz/tmp47r_9t6j/repo/.claude/executing-plan",
+    "/tmp/fixture-tmp-3r23fmxz/tmp47r_9t6j/repo/.claude/plans",
+    "/tmp/fixture-tmp-3r23fmxz/tmp47r_9t6j/repo/.claude/plans/w.md"
+   ]
+  },
+  "scripts/record-review-verdict.py": {
+   "created_in_log": [
+    "/tmp/ae0qz64x",
+    "/tmp/e1mm8rvz",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/HEAD",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/HEAD.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/config",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/config.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/index",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/index.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/objects/maintenance.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/packed-refs.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/refs/heads/base",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/refs/heads/base.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/refs/heads/main",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/refs/heads/main.lock",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/.git/tiLfIhC",
+    "/tmp/fixture-tmp-5oi9fgaj/tmp42t90opp/repo/docs/reviews/claude/x-r1-codex.md",
+    "/tmp/fixture-tmp-5oi9fgaj/tmpkm396bqh",
+    "/tmp/fixture-tmp-5oi9fgaj/tmpkm396bqh/index",
+    "/tmp/fixture-tmp-5oi9fgaj/tmpkm396bqh/index.lock"
+   ]
+  },
+  "scripts/regen-pages.py": {
+   "created_in_log": [
+    "/tmp/e6srdo8_",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/fakegit-ready",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/aside",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/aside/tree",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/aside/tree/.git",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/aside/tree/made-by-this-run",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-1lqc3lch",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-1lqc3lch/tree",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-1lqc3lch/tree/.git",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-4iqvxzu2",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-4iqvxzu2/tree",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-4iqvxzu2/tree/.git",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-bgezkg70",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-bgezkg70/tree",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-bgezkg70/tree/.git",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-gwcda7qv",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-gwcda7qv/tree",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-gwcda7qv/tree/.git",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-l4dcywr2",
+    "/tmp/fixture-tmp-qit6bz87/regen-fresh-7k8p0gf_/scratch/regen-pages-l4dcywr2/tree"
+   ]
+  },
+  "scripts/session-state.py": {
+   "created_in_log": [
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57",
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57/.inflight.094laao7",
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57/.inflight.539td7rj",
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57/.inflight._t29hrrk",
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57/.inflight.q0g99tpl",
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57/inflight.jsonl",
+    "/tmp/fixture-tmp-aophmhaf/ss-kind-deruux57/inflight.jsonl.lock",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax/.inflight.a24j2ts2",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax/inflight.jsonl",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax/inflight.jsonl.bak-kinds",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax/inflight.jsonl.lock",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax/second.jsonl",
+    "/tmp/fixture-tmp-aophmhaf/ss-mig-6v9uyiax/second.jsonl.lock",
+    "/tmp/fixture-tmp-aophmhaf/ss-norm-6nagi92b/.inflight.2kzgmfhm",
+    "/tmp/fixture-tmp-aophmhaf/ss-norm-6nagi92b/.inflight.45ekvl2q",
+    "/tmp/fixture-tmp-aophmhaf/ss-norm-6nagi92b/.inflight.fcwhqmiy",
+    "/tmp/fixture-tmp-aophmhaf/ss-norm-6nagi92b/.inflight.ry28s4sd",
+    "/tmp/fixture-tmp-aophmhaf/ss-norm-6nagi92b/inflight.jsonl",
+    "/tmp/fixture-tmp-aophmhaf/ss-norm-6nagi92b/inflight.jsonl.lock"
+   ]
+  },
+  "scripts/sweep-red-alert.py": {
+   "created_in_log": [
+    "/tmp/dvdsx5r7",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/bin",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/bin/gh",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/gh.json",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/AUTO_MERGE.lock",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/COMMIT_EDITMSG",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/HEAD",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/HEAD.lock",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/config",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/config.lock",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/description",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/index",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/index.lock",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/logs/HEAD",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/objects",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/objects/2c",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/objects/2c/8d66c0fc5181388faf4e8f49b4441a863dd40d",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/objects/4b",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "/tmp/fixture-tmp-217xjmft/tmpg6t6krl_/repo/.git/objects/8b"
+   ]
+  }
+ },
+ "headers": [
+  {
+   "ImageOS": "ubuntu26",
+   "ImageVersion": "20261101.186.1",
+   "node": "v22.23.4",
+   "python": "Python 3.12.16",
+   "run_attempt": "1",
+   "run_id": "42915171820",
+   "sha": "207e67f2186443e22c67f9f95c49efa3f4e44022",
+   "strace_version": "strace -- version 6.19",
+   "uname_r": "7.0.0-1019-azure"
+  }
+ ],
+ "ioctls": {
+  "BTRFS_IOC_CLONE or FICLONE": 1,
+  "FIOCLEX": 92,
+  "FIONBIO": 5,
+  "TCGETS": 2,
+  "TCGETS2": 92,
+  "TIOCGPGRP": 15,
+  "TIOCGWINSZ": 60
+ },
+ "jobs": {
+  "max_secs": 737.0,
+  "per_job_secs": {
+   "strace-measure (1)": 737.0,
+   "strace-measure (2)": 597.0,
+   "strace-measure (3)": 598.0,
+   "strace-measure (4)": 299.0,
+   "strace-measure (5)": 241.0,
+   "strace-measure (6)": 455.0
+  },
+  "sum_secs": 2927.0
+ },
+ "not_green": [
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "0",
+   "staging": null,
+   "target": "scripts/regen-pages.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "1109",
+   "staging": null,
+   "target": "scripts/regen-pages.py",
+   "timeout": false
+  }
+ ],
+ "ratio_all_targets_max": 14.18,
+ "ratios": [
+  {
+   "plain": 0.68,
+   "ratio": 3.49,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/backfill-work-lines.py",
+   "traced": 2.37
+  },
+  {
+   "plain": 0.63,
+   "ratio": 3.51,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/backfill-work-lines.py",
+   "traced": 2.21
+  },
+  {
+   "plain": 0.09,
+   "ratio": 1.89,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-agent-long-call.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.09,
+   "ratio": 2.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-agent-long-call.py",
+   "traced": 0.18
+  },
+  {
+   "plain": 0.82,
+   "ratio": 7.16,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-canonical-source.py",
+   "traced": 5.87
+  },
+  {
+   "plain": 0.82,
+   "ratio": 7.04,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-canonical-source.py",
+   "traced": 5.77
+  },
+  {
+   "plain": 0.36,
+   "ratio": 4.03,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-decision-scheme.py",
+   "traced": 1.45
+  },
+  {
+   "plain": 0.34,
+   "ratio": 4.06,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-decision-scheme.py",
+   "traced": 1.38
+  },
+  {
+   "plain": 16.51,
+   "ratio": 1.88,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "traced": 31.01
+  },
+  {
+   "plain": 16.51,
+   "ratio": 1.86,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "traced": 30.78
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-guard-coverage.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-guard-coverage.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.12,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-memory-link.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.38,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-memory-link.py",
+   "traced": 0.19
+  },
+  {
+   "plain": 6.06,
+   "ratio": 5.39,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-plan-leak.py",
+   "traced": 32.65
+  },
+  {
+   "plain": 6.14,
+   "ratio": 5.32,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-plan-leak.py",
+   "traced": 32.69
+  },
+  {
+   "plain": 13.05,
+   "ratio": 5.31,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-rc-contract.py",
+   "traced": 69.31
+  },
+  {
+   "plain": 13.0,
+   "ratio": 5.13,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-rc-contract.py",
+   "traced": 66.65
+  },
+  {
+   "plain": 2.33,
+   "ratio": 7.63,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-run-hook.py",
+   "traced": 17.78
+  },
+  {
+   "plain": 2.36,
+   "ratio": 7.43,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-run-hook.py",
+   "traced": 17.53
+  },
+  {
+   "plain": 0.88,
+   "ratio": 1.61,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-storage-independence.py",
+   "traced": 1.42
+  },
+  {
+   "plain": 0.86,
+   "ratio": 1.59,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-storage-independence.py",
+   "traced": 1.37
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-vocabulary-collisions.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-vocabulary-collisions.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 5.18,
+   "ratio": 1.12,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/explainer-serve.py",
+   "traced": 5.82
+  },
+  {
+   "plain": 5.18,
+   "ratio": 1.14,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/explainer-serve.py",
+   "traced": 5.88
+  },
+  {
+   "plain": 0.1,
+   "ratio": 1.9,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/gen-goals-page.py",
+   "traced": 0.19
+  },
+  {
+   "plain": 0.1,
+   "ratio": 2.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/gen-goals-page.py",
+   "traced": 0.2
+  },
+  {
+   "plain": 0.09,
+   "ratio": 2.44,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/peer-sites.py",
+   "traced": 0.22
+  },
+  {
+   "plain": 0.09,
+   "ratio": 2.22,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/peer-sites.py",
+   "traced": 0.2
+  },
+  {
+   "plain": 7.01,
+   "ratio": 1.16,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/session-state.py",
+   "traced": 8.15
+  },
+  {
+   "plain": 7.1,
+   "ratio": 1.16,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/session-state.py",
+   "traced": 8.21
+  },
+  {
+   "plain": 5.49,
+   "ratio": 8.98,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/batch-ci.py",
+   "traced": 49.28
+  },
+  {
+   "plain": 4.38,
+   "ratio": 11.32,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/batch-ci.py",
+   "traced": 49.57
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.8,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-anchors.py",
+   "traced": 0.19
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.8,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-anchors.py",
+   "traced": 0.19
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.2,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-catalog-coverage.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.2,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-catalog-coverage.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 1.64,
+   "ratio": 3.04,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-diff-coverage.py",
+   "traced": 4.99
+  },
+  {
+   "plain": 1.69,
+   "ratio": 2.98,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-diff-coverage.py",
+   "traced": 5.04
+  },
+  {
+   "plain": 14.89,
+   "ratio": 1.01,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-fixture-variation.py",
+   "traced": 14.99
+  },
+  {
+   "plain": 14.59,
+   "ratio": 1.04,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-fixture-variation.py",
+   "traced": 15.21
+  },
+  {
+   "plain": 0.66,
+   "ratio": 3.44,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-handoff-path.py",
+   "traced": 2.27
+  },
+  {
+   "plain": 0.67,
+   "ratio": 3.34,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-handoff-path.py",
+   "traced": 2.24
+  },
+  {
+   "plain": 19.23,
+   "ratio": 2.17,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-merge-ready.py",
+   "traced": 41.72
+  },
+  {
+   "plain": 19.19,
+   "ratio": 2.17,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-merge-ready.py",
+   "traced": 41.71
+  },
+  {
+   "plain": 0.08,
+   "ratio": 4.88,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-plan-progress.py",
+   "traced": 0.39
+  },
+  {
+   "plain": 0.25,
+   "ratio": 1.96,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-plan-progress.py",
+   "traced": 0.49
+  },
+  {
+   "plain": 0.3,
+   "ratio": 7.13,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-reference-namespace.py",
+   "traced": 2.14
+  },
+  {
+   "plain": 0.57,
+   "ratio": 4.0,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-reference-namespace.py",
+   "traced": 2.28
+  },
+  {
+   "plain": 0.89,
+   "ratio": 2.9,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-selection-card.py",
+   "traced": 2.58
+  },
+  {
+   "plain": 0.89,
+   "ratio": 2.85,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-selection-card.py",
+   "traced": 2.54
+  },
+  {
+   "plain": 5.62,
+   "ratio": 3.21,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-surface-recall.py",
+   "traced": 18.05
+  },
+  {
+   "plain": 5.62,
+   "ratio": 3.22,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-surface-recall.py",
+   "traced": 18.08
+  },
+  {
+   "plain": 0.64,
+   "ratio": 1.08,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/ci-durations.py",
+   "traced": 0.69
+  },
+  {
+   "plain": 0.59,
+   "ratio": 1.17,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/ci-durations.py",
+   "traced": 0.69
+  },
+  {
+   "plain": 0.13,
+   "ratio": 5.15,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/fixture_git.py",
+   "traced": 0.67
+  },
+  {
+   "plain": 0.13,
+   "ratio": 6.46,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/fixture_git.py",
+   "traced": 0.84
+  },
+  {
+   "plain": 0.28,
+   "ratio": 3.71,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-work-lines.py",
+   "traced": 1.04
+  },
+  {
+   "plain": 0.13,
+   "ratio": 7.46,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-work-lines.py",
+   "traced": 0.97
+  },
+  {
+   "plain": 2.59,
+   "ratio": 9.26,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/prune-merged-worktrees.py",
+   "traced": 23.99
+  },
+  {
+   "plain": 2.29,
+   "ratio": 10.45,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/prune-merged-worktrees.py",
+   "traced": 23.92
+  },
+  {
+   "plain": 0.68,
+   "ratio": 2.84,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/sweep-red-alert.py",
+   "traced": 1.93
+  },
+  {
+   "plain": 0.65,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/sweep-red-alert.py",
+   "traced": 1.95
+  },
+  {
+   "plain": 2.06,
+   "ratio": 2.75,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/begin-plan.py",
+   "traced": 5.66
+  },
+  {
+   "plain": 2.0,
+   "ratio": 2.87,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/begin-plan.py",
+   "traced": 5.74
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-anon-exposure.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-anon-exposure.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.36,
+   "ratio": 2.78,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-ci-watched.py",
+   "traced": 1.0
+  },
+  {
+   "plain": 0.36,
+   "ratio": 2.89,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-ci-watched.py",
+   "traced": 1.04
+  },
+  {
+   "plain": 0.7,
+   "ratio": 9.99,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-doc-citations.py",
+   "traced": 6.99
+  },
+  {
+   "plain": 0.68,
+   "ratio": 10.34,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-doc-citations.py",
+   "traced": 7.03
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-function-revokes.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-function-revokes.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.06,
+   "ratio": 3.17,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-hook-commands.py",
+   "traced": 0.19
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.67,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-hook-commands.py",
+   "traced": 0.16
+  },
+  {
+   "plain": 11.96,
+   "ratio": 1.33,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-page-links.py",
+   "traced": 15.86
+  },
+  {
+   "plain": 12.26,
+   "ratio": 1.31,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-page-links.py",
+   "traced": 16.11
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.2,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-plan-task-order.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.2,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-plan-task-order.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.09,
+   "ratio": 2.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-review-decision.py",
+   "traced": 0.18
+  },
+  {
+   "plain": 0.09,
+   "ratio": 1.89,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-review-decision.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 3.91,
+   "ratio": 1.35,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-selftest-counts.py",
+   "traced": 5.26
+  },
+  {
+   "plain": 3.95,
+   "ratio": 1.33,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-selftest-counts.py",
+   "traced": 5.27
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-test-counts.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.4,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-test-counts.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/codex-frontier-model.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/codex-frontier-model.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 10.84,
+   "ratio": 1.32,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gates-for-pr.py",
+   "traced": 14.3
+  },
+  {
+   "plain": 10.84,
+   "ratio": 1.38,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gates-for-pr.py",
+   "traced": 14.92
+  },
+  {
+   "plain": 0.62,
+   "ratio": 2.45,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/goal-tree.py",
+   "traced": 1.52
+  },
+  {
+   "plain": 0.62,
+   "ratio": 2.45,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/goal-tree.py",
+   "traced": 1.52
+  },
+  {
+   "plain": 21.83,
+   "ratio": 4.9,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/push-command.py",
+   "traced": 106.9
+  },
+  {
+   "plain": 20.14,
+   "ratio": 5.36,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/push-command.py",
+   "traced": 107.86
+  },
+  {
+   "plain": 3.51,
+   "ratio": 1.31,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/bounded_read.py",
+   "traced": 4.6
+  },
+  {
+   "plain": 3.5,
+   "ratio": 1.3,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/bounded_read.py",
+   "traced": 4.55
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-arch-findings.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.17,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-arch-findings.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 2.08,
+   "ratio": 1.75,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-closing-table.py",
+   "traced": 3.64
+  },
+  {
+   "plain": 2.09,
+   "ratio": 1.73,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-closing-table.py",
+   "traced": 3.62
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-docs.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-docs.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-gate-falsifiability.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-gate-falsifiability.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-live-schema.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-live-schema.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 7.94,
+   "ratio": 1.24,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-paid-caller-arrival.py",
+   "traced": 9.88
+  },
+  {
+   "plain": 8.02,
+   "ratio": 1.24,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-paid-caller-arrival.py",
+   "traced": 9.91
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-producer-enumeration.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-producer-enumeration.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 1.45,
+   "ratio": 8.72,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-review-recorded.py",
+   "traced": 12.64
+  },
+  {
+   "plain": 1.45,
+   "ratio": 8.65,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-review-recorded.py",
+   "traced": 12.54
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-sentinel-meanings.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-sentinel-meanings.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-theme-token-coverage.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-theme-token-coverage.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 2.18,
+   "ratio": 3.83,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/codex-review.py",
+   "traced": 8.36
+  },
+  {
+   "plain": 2.16,
+   "ratio": 3.81,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/codex-review.py",
+   "traced": 8.22
+  },
+  {
+   "plain": 23.54,
+   "ratio": 1.02,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-backlog-page.py",
+   "traced": 23.98
+  },
+  {
+   "plain": 23.61,
+   "ratio": 1.02,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-backlog-page.py",
+   "traced": 23.97
+  },
+  {
+   "plain": 0.07,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/observer_log.py",
+   "traced": 0.21
+  },
+  {
+   "plain": 0.07,
+   "ratio": 2.86,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/observer_log.py",
+   "traced": 0.2
+  },
+  {
+   "plain": 0.11,
+   "ratio": 4.64,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/recall-llm.py",
+   "traced": 0.51
+  },
+  {
+   "plain": 0.12,
+   "ratio": 4.17,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/recall-llm.py",
+   "traced": 0.5
+  },
+  {
+   "plain": 2.42,
+   "ratio": 1.04,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/brief-compose.py",
+   "traced": 2.52
+  },
+  {
+   "plain": 2.35,
+   "ratio": 1.08,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/brief-compose.py",
+   "traced": 2.54
+  },
+  {
+   "plain": 0.03,
+   "ratio": 2.67,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-backlog-closure.py",
+   "traced": 0.08
+  },
+  {
+   "plain": 0.03,
+   "ratio": 2.67,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-backlog-closure.py",
+   "traced": 0.08
+  },
+  {
+   "plain": 0.22,
+   "ratio": 3.55,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-compaction-boundary.py",
+   "traced": 0.78
+  },
+  {
+   "plain": 0.2,
+   "ratio": 4.1,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-compaction-boundary.py",
+   "traced": 0.82
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.67,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-explainer-delivery.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.03,
+   "ratio": 4.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-explainer-delivery.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.03,
+   "ratio": 2.67,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-goal-status.py",
+   "traced": 0.08
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-goal-status.py",
+   "traced": 0.09
+  },
+  {
+   "plain": 5.12,
+   "ratio": 1.03,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-main-drivable.py",
+   "traced": 5.28
+  },
+  {
+   "plain": 5.09,
+   "ratio": 1.06,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-main-drivable.py",
+   "traced": 5.38
+  },
+  {
+   "plain": 6.05,
+   "ratio": 2.56,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-plan-code.py",
+   "traced": 15.46
+  },
+  {
+   "plain": 6.14,
+   "ratio": 2.54,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-plan-code.py",
+   "traced": 15.62
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-python-pin.py",
+   "traced": 0.08
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-python-pin.py",
+   "traced": 0.08
+  },
+  {
+   "plain": 0.04,
+   "ratio": 5.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-review-rounds.py",
+   "traced": 0.2
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.75,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-review-rounds.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 10.08,
+   "ratio": 1.72,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-stalled-work.py",
+   "traced": 17.32
+  },
+  {
+   "plain": 9.96,
+   "ratio": 1.74,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-stalled-work.py",
+   "traced": 17.34
+  },
+  {
+   "plain": 1.31,
+   "ratio": 1.74,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-transcript-references.py",
+   "traced": 2.28
+  },
+  {
+   "plain": 1.3,
+   "ratio": 1.75,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-transcript-references.py",
+   "traced": 2.28
+  },
+  {
+   "plain": 6.93,
+   "ratio": 1.0,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/compaction-state.py",
+   "traced": 6.92
+  },
+  {
+   "plain": 5.09,
+   "ratio": 1.35,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/compaction-state.py",
+   "traced": 6.86
+  },
+  {
+   "plain": 1.54,
+   "ratio": 1.14,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-dashboard.py",
+   "traced": 1.76
+  },
+  {
+   "plain": 1.55,
+   "ratio": 1.09,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-dashboard.py",
+   "traced": 1.69
+  },
+  {
+   "plain": 0.24,
+   "ratio": 2.88,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/page_chrome.py",
+   "traced": 0.69
+  },
+  {
+   "plain": 0.25,
+   "ratio": 2.76,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/page_chrome.py",
+   "traced": 0.69
+  },
+  {
+   "plain": 0.4,
+   "ratio": 7.5,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/record-review-verdict.py",
+   "traced": 3.0
+  },
+  {
+   "plain": 0.38,
+   "ratio": 7.87,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/record-review-verdict.py",
+   "traced": 2.99
+  },
+  {
+   "plain": 0.14,
+   "ratio": 2.29,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-agent-large-read.py",
+   "traced": 0.32
+  },
+  {
+   "plain": 0.14,
+   "ratio": 2.29,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-agent-large-read.py",
+   "traced": 0.32
+  },
+  {
+   "plain": 2.58,
+   "ratio": 2.29,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-banner-armed.py",
+   "traced": 5.9
+  },
+  {
+   "plain": 2.64,
+   "ratio": 2.23,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-banner-armed.py",
+   "traced": 5.9
+  },
+  {
+   "plain": 0.17,
+   "ratio": 1.59,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-dashboard-entry.py",
+   "traced": 0.27
+  },
+  {
+   "plain": 0.18,
+   "ratio": 1.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-dashboard-entry.py",
+   "traced": 0.27
+  },
+  {
+   "plain": 0.22,
+   "ratio": 1.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-features.py",
+   "traced": 0.33
+  },
+  {
+   "plain": 0.22,
+   "ratio": 1.45,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-features.py",
+   "traced": 0.32
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-group-claims.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-group-claims.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-memory-index-budget.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-memory-index-budget.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.07,
+   "ratio": 4.43,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-plan-file-tags.py",
+   "traced": 0.31
+  },
+  {
+   "plain": 0.07,
+   "ratio": 4.43,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-plan-file-tags.py",
+   "traced": 0.31
+  },
+  {
+   "plain": 0.09,
+   "ratio": 2.78,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-ratchet-contract.py",
+   "traced": 0.25
+  },
+  {
+   "plain": 0.09,
+   "ratio": 2.44,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-ratchet-contract.py",
+   "traced": 0.22
+  },
+  {
+   "plain": 0.07,
+   "ratio": 2.14,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-roadmap-consistency.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-roadmap-consistency.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-storage-grant-pin.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.25,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-storage-grant-pin.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 10.8,
+   "ratio": 2.2,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-usage-pace.py",
+   "traced": 23.8
+  },
+  {
+   "plain": 10.7,
+   "ratio": 2.2,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-usage-pace.py",
+   "traced": 23.56
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.2,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/coverage_verdict.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/coverage_verdict.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.63,
+   "ratio": 1.97,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-features-page.py",
+   "traced": 1.24
+  },
+  {
+   "plain": 0.62,
+   "ratio": 2.03,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-features-page.py",
+   "traced": 1.26
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/page_markup.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/page_markup.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 10.3,
+   "ratio": 14.18,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/regen-pages.py",
+   "traced": 146.04
+  },
+  {
+   "plain": 10.33,
+   "ratio": 8.32,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/regen-pages.py",
+   "traced": 85.95
+  }
+ ],
+ "refusal_triggers": {
+  "io_uring_setup": [
+   "scripts/check-page-links.py",
+   "scripts/check-paid-caller-arrival.py",
+   "scripts/explainer-serve.py",
+   "scripts/page_chrome.py"
+  ]
+ },
+ "seeds": [
+  0,
+  1109
+ ],
+ "shard_elapsed_secs": {
+  "1": 703.9,
+  "2": 568.9,
+  "3": 565.1,
+  "4": 266.5,
+  "5": 219.1,
+  "6": 425.0
+ },
+ "shard_elapsed_sum_secs": 2748.5,
+ "shards_expected": 6,
+ "shards_present": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6
+ ],
+ "spawner_targets": [
+  "scripts/batch-ci.py",
+  "scripts/begin-plan.py",
+  "scripts/bounded_read.py",
+  "scripts/brief-compose.py",
+  "scripts/check-banner-armed.py",
+  "scripts/check-ci-watched.py",
+  "scripts/check-closing-table.py",
+  "scripts/check-compaction-boundary.py",
+  "scripts/check-decision-scheme.py",
+  "scripts/check-diff-coverage.py",
+  "scripts/check-doc-citations.py",
+  "scripts/check-fixture-git-isolation.py",
+  "scripts/check-handoff-path.py",
+  "scripts/check-merge-ready.py",
+  "scripts/check-page-links.py",
+  "scripts/check-paid-caller-arrival.py",
+  "scripts/check-plan-code.py",
+  "scripts/check-plan-leak.py",
+  "scripts/check-plan-progress.py",
+  "scripts/check-rc-contract.py",
+  "scripts/check-reference-namespace.py",
+  "scripts/check-review-recorded.py",
+  "scripts/check-run-hook.py",
+  "scripts/check-selection-card.py",
+  "scripts/check-selftest-counts.py",
+  "scripts/check-stalled-work.py",
+  "scripts/check-surface-recall.py",
+  "scripts/check-transcript-references.py",
+  "scripts/check-usage-pace.py",
+  "scripts/codex-review.py",
+  "scripts/compaction-state.py",
+  "scripts/explainer-serve.py",
+  "scripts/fixture_git.py",
+  "scripts/gates-for-pr.py",
+  "scripts/gen-backlog-page.py",
+  "scripts/gen-dashboard.py",
+  "scripts/gen-features-page.py",
+  "scripts/gen-work-lines.py",
+  "scripts/goal-tree.py",
+  "scripts/observer_log.py",
+  "scripts/page_chrome.py",
+  "scripts/peer-sites.py",
+  "scripts/prune-merged-worktrees.py",
+  "scripts/push-command.py",
+  "scripts/record-review-verdict.py",
+  "scripts/regen-pages.py",
+  "scripts/session-state.py",
+  "scripts/sweep-red-alert.py"
+ ],
+ "strace_stderr": {},
+ "syscalls": {
+  "access": 92,
+  "alarm": 3,
+  "arch_prctl": 92,
+  "brk": 92,
+  "capget": 4,
+  "chdir": 41,
+  "chmod": 41,
+  "clock_nanosleep": 17,
+  "clone": 36,
+  "clone3": 19,
+  "close": 92,
+  "close_range": 48,
+  "connect": 17,
+  "copy_file_range": 1,
+  "dup": 28,
+  "dup2": 48,
+  "epoll_create1": 65,
+  "epoll_ctl": 7,
+  "epoll_pwait": 6,
+  "epoll_pwait2": 1,
+  "epoll_wait": 1,
+  "eventfd2": 6,
+  "execve": 92,
+  "exit": 18,
+  "exit_group": 92,
+  "faccessat2": 1,
+  "fadvise64": 11,
+  "fcntl": 92,
+  "flock": 4,
+  "fstat": 92,
+  "fstatfs": 1,
+  "fsync": 5,
+  "ftruncate": 1,
+  "futex": 92,
+  "getcwd": 92,
+  "getdents64": 92,
+  "getegid": 92,
+  "geteuid": 92,
+  "getgid": 92,
+  "getgroups": 1,
+  "getitimer": 1,
+  "getpeername": 2,
+  "getpgrp": 17,
+  "getpid": 92,
+  "getppid": 25,
+  "getrandom": 92,
+  "getresgid": 15,
+  "getresuid": 15,
+  "getsockname": 1,
+  "gettid": 92,
+  "getuid": 92,
+  "io_uring_enter": 4,
+  "io_uring_setup": 4,
+  "ioctl": 92,
+  "kill": 11,
+  "link": 29,
+  "linkat": 2,
+  "listxattr": 3,
+  "lseek": 92,
+  "madvise": 19,
+  "mkdir": 92,
+  "mkdirat": 2,
+  "mknodat": 9,
+  "mmap": 92,
+  "mprotect": 92,
+  "mremap": 54,
+  "munmap": 92,
+  "nanosleep": 2,
+  "newfstatat": 92,
+  "openat": 92,
+  "pidfd_open": 1,
+  "pipe2": 48,
+  "poll": 48,
+  "prctl": 6,
+  "pread64": 92,
+  "prlimit64": 92,
+  "pselect6": 7,
+  "read": 92,
+  "readlink": 92,
+  "readlinkat": 2,
+  "recvfrom": 1,
+  "rename": 31,
+  "renameat": 1,
+  "restart_syscall": 11,
+  "rmdir": 92,
+  "rseq": 92,
+  "rt_sigaction": 92,
+  "rt_sigprocmask": 92,
+  "rt_sigreturn": 25,
+  "rt_sigsuspend": 2,
+  "sched_getaffinity": 26,
+  "sched_yield": 2,
+  "sendfile": 12,
+  "sendto": 1,
+  "set_robust_list": 92,
+  "set_tid_address": 92,
+  "setitimer": 3,
+  "setpgid": 1,
+  "setsid": 30,
+  "sigaltstack": 22,
+  "socket": 17,
+  "socketpair": 1,
+  "splice": 10,
+  "stat": 4,
+  "statfs": 22,
+  "statx": 24,
+  "symlink": 31,
+  "tgkill": 2,
+  "timerfd_create": 1,
+  "timerfd_settime": 1,
+  "uname": 23,
+  "unlink": 92,
+  "unlinkat": 92,
+  "utimensat": 21,
+  "vfork": 48,
+  "wait4": 48,
+  "write": 92,
+  "writev": 5
+ },
+ "target_count": 92,
+ "timeouts": [],
+ "trace_factor": 15,
+ "trace_factor_from": {
+  "plain": 10.3,
+  "ratio": 14.18,
+  "seed": "0",
+  "spawner": true,
+  "target": "scripts/regen-pages.py",
+  "traced": 146.04
+ },
+ "unpaired_halves": {},
+ "unpaired_halves_coverage": {
+  "measured": 184,
+  "records": 184
+ },
+ "unparsed_line_samples": {},
+ "unresolved_removals": {
+  "scripts/batch-ci.py": 2833,
+  "scripts/begin-plan.py": 72,
+  "scripts/check-banner-armed.py": 9,
+  "scripts/check-decision-scheme.py": 50,
+  "scripts/check-diff-coverage.py": 198,
+  "scripts/check-doc-citations.py": 475,
+  "scripts/check-merge-ready.py": 951,
+  "scripts/check-plan-leak.py": 702,
+  "scripts/check-plan-progress.py": 18,
+  "scripts/check-reference-namespace.py": 118,
+  "scripts/check-review-recorded.py": 647,
+  "scripts/check-run-hook.py": 172,
+  "scripts/check-selftest-counts.py": 85,
+  "scripts/check-stalled-work.py": 396,
+  "scripts/check-usage-pace.py": 82,
+  "scripts/codex-review.py": 64,
+  "scripts/compaction-state.py": 10,
+  "scripts/fixture_git.py": 17,
+  "scripts/gates-for-pr.py": 42,
+  "scripts/gen-work-lines.py": 27,
+  "scripts/goal-tree.py": 9,
+  "scripts/page_chrome.py": 9,
+  "scripts/prune-merged-worktrees.py": 603,
+  "scripts/push-command.py": 81,
+  "scripts/record-review-verdict.py": 145,
+  "scripts/regen-pages.py": 273,
+  "scripts/session-state.py": 10,
+  "scripts/sweep-red-alert.py": 15
+ },
+ "whole_logs": {
+  "1": {
+   "git": {
+    "bytes": 253526,
+    "copy": "/tmp/strace-measure-xns__e2l/sm-0r0199a9",
+    "file": "raw-1/whole-git.log",
+    "seed": 0,
+    "target": "scripts/peer-sites.py"
+   },
+   "threaded": {
+    "bytes": 1728377,
+    "copy": "/tmp/strace-measure-xns__e2l/sm-wj5_ripx",
+    "file": "raw-1/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/explainer-serve.py"
+   }
+  },
+  "2": {
+   "git": {
+    "bytes": 865792,
+    "copy": "/tmp/strace-measure-scldf4e8/sm-s6_eiupf",
+    "file": "raw-2/whole-git.log",
+    "seed": 0,
+    "target": "scripts/check-plan-progress.py"
+   },
+   "threaded": {
+    "bytes": 316734,
+    "copy": "/tmp/strace-measure-scldf4e8/sm-enu1woto",
+    "file": "raw-2/whole-threaded.log",
+    "seed": 0,
+    "target": "scripts/ci-durations.py"
+   }
+  },
+  "3": {
+   "git": {
+    "bytes": 1315812,
+    "copy": "/tmp/strace-measure-abewzncw/sm-47by_mcu",
+    "file": "raw-3/whole-git.log",
+    "seed": 0,
+    "target": "scripts/check-ci-watched.py"
+   },
+   "threaded": {
+    "bytes": 3134382,
+    "copy": "/tmp/strace-measure-abewzncw/sm-qi2pxqz9",
+    "file": "raw-3/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/check-selftest-counts.py"
+   }
+  },
+  "4": {
+   "git": {
+    "bytes": 855259,
+    "copy": "/tmp/strace-measure-3yu7vxms/sm-m22yxkzc",
+    "file": "raw-4/whole-git.log",
+    "seed": 0,
+    "target": "scripts/gen-backlog-page.py"
+   },
+   "threaded": {
+    "bytes": 2688661,
+    "copy": "/tmp/strace-measure-3yu7vxms/sm-baahlbca",
+    "file": "raw-4/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/bounded_read.py"
+   }
+  },
+  "5": {
+   "git": {
+    "bytes": 479306,
+    "copy": "/tmp/strace-measure-q0eua0oq/sm-eqw_mnel",
+    "file": "raw-5/whole-git.log",
+    "seed": 0,
+    "target": "scripts/brief-compose.py"
+   },
+   "threaded": {
+    "bytes": 672869,
+    "copy": "/tmp/strace-measure-q0eua0oq/sm-enwispu0",
+    "file": "raw-5/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/gen-dashboard.py"
+   }
+  },
+  "6": {
+   "git": {
+    "bytes": 1504143,
+    "copy": "/tmp/strace-measure-y9boyle8/sm-w_zw07v9",
+    "file": "raw-6/whole-git.log",
+    "seed": 0,
+    "target": "scripts/gen-features-page.py"
+   },
+   "threaded": {
+    "bytes": 27068891,
+    "copy": "/tmp/strace-measure-y9boyle8/sm-7wfwee5f",
+    "file": "raw-6/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/check-usage-pace.py"
+   }
+  }
+ }
+}

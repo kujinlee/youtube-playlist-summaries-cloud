@@ -7,6 +7,11 @@
 > command into [`2026-11-10-strace-on-runner-run2.json`](2026-11-10-strace-on-runner-run2.json). Its syscall union
 > (118 names) and ioctl tokens (the same 7) are IDENTICAL to run 42893595762's (MEASURED). Where it differs, both are
 > given below.
+>
+> **Removal run:** **42915171820** (head `19d6de5e`, the round-2 fold whose reader LISTS every removal outside the
+> copy), merged into [`2026-11-10-strace-on-runner-run3.json`](2026-11-10-strace-on-runner-run3.json). The removal
+> figures come from it; its syscall union (118), ioctl tokens (7), strace version, `AT_FDCWD` decoration, refusal
+> triggers and unresolved-removal targets (28) match run 42893595762 (MEASURED), so no other constant moves.
 
 # Backlog #586, slice 1: strace on a GitHub-hosted runner
 
@@ -33,7 +38,7 @@ recorder can run"). Each of the 92 manifest targets ran its `--self-test` twice 
 | `RECORD_SEEDS` | `0,1109` (slice 4 reuses them verbatim) | 42893595762 | MEASURED |
 | targets | 92, shards present 6 of 6 | 42893595762 | MEASURED |
 | `-yy` decorates `AT_FDCWD` | **yes** — in all 92 targets (e.g. `openat(AT_FDCWD</t>, …)`) | 42893595762 | MEASURED |
-| `TRACE_FACTOR` | **20** — the MAX over both runs of the ceiling of the largest UNROUNDED traced/plain ratio over spawner targets (see *`TRACE_FACTOR` is noise-dominated* below) | 42893595762: **20**; 42901768433: **12** | MEASURED |
+| `TRACE_FACTOR` | **20** — the MAX over the measured runs of the ceiling of the largest UNROUNDED traced/plain ratio over spawner targets (see *`TRACE_FACTOR` is noise-dominated* below) | 42893595762: **20**; 42901768433: **12**; 42915171820: **15** | MEASURED |
 | largest ratio over ALL targets | 19.94 (the same run; the largest non-spawner ratio is 7.23) | 42893595762 | MEASURED |
 | spawner targets (forked at least once) | 48 of 92 | 42893595762 | MEASURED |
 | targets whose traced and plain case counts differ | **none** | 42893595762 | MEASURED |
@@ -47,11 +52,13 @@ recorder can run"). Each of the 92 manifest targets ran its `--self-test` twice 
 | 42893595762 | `scripts/batch-ci.py` (same target, other seed) | 0 | 6.34 | 65.94 | 10.40 | 11 |
 | 42901768433 | `scripts/prune-merged-worktrees.py` | 1109 | 2.47 | 29.02 | 11.749 | **12** |
 | 42901768433 | `scripts/batch-ci.py` | 0 | 5.04 | 59.21 | 11.748 | 12 |
+| 42915171820 | `scripts/regen-pages.py` | 0 | 10.30 | 146.04 | 14.179 | **15** |
+| 42915171820 | `scripts/batch-ci.py` | 1109 | 4.38 | 49.57 | 11.32 | 12 |
 
 (all MEASURED, from each run's JSON.) The ratio's NUMERATOR is stable — `batch-ci.py` traced is 64.99 / 65.94 / 59.21 s
 across the three samples — while its DENOMINATOR is a few seconds of plain time that halves between two seeds of one
 run (6.34 → 3.26 s). So the worst ratio is set by whichever plain run happened to be fast, and one re-run of the same
-tree on the same image moved the constant 20 → 12. **INFERRED:** it is not reproducible as a point value. The
+tree on the same image moved the constant 20 → 12 (and a third run, on the round-2 fold, gave 15). **INFERRED:** it is not reproducible as a point value. The
 committed constant is the MAX over the measured runs, **20**, because the error is one-sided: a factor too large
 only lengthens a traced run's timeout, while one too small kills a healthy traced suite. In run 42901768433 the two
 leaders differ only in the 4th digit (11.749 vs 11.748); the driver now takes the max over UNROUNDED ratios (review
@@ -85,16 +92,16 @@ Fewer than 92: `alarm` 3, `capget` 4, `chdir` 41, `chmod` 41, `clock_nanosleep` 
 | `io_uring_setup` | `scripts/check-page-links.py`, `scripts/check-paid-caller-arrival.py`, `scripts/explainer-serve.py`, `scripts/page_chrome.py` |
 | `unshare`, `setns`, `chroot`, `pivot_root`, the mount family (`mount`, `umount2`, `open_tree`, `move_mount`, `fsopen`, `fsmount`, `fspick`, `mount_setattr`) | **none** |
 | a ` (deleted)` fd label | `scripts/batch-ci.py` (12 lines), `scripts/check-stalled-work.py` (97 lines) |
-| an unlink/rename/rmdir of a pre-existing path OUTSIDE the copy | **none** — ⚠ see the caveat below |
+| an unlink/rename/rmdir OUTSIDE the copy — every one is LISTED, annotated `created_in_log` | run **42915171820**: **0** annotated not-created (in 0 of 92 targets); **63,720** annotated created (in all 92 targets; most: `scripts/check-rc-contract.py` 9,622, `scripts/batch-ci.py` 6,316); every one of 184 (target, seed) records annotated — MEASURED |
 
-⚠ **The "none" above was computed on the runner by the FIRST reader**, which (a) counted any successful `O_CREAT`
-open as "created by the log", so a truncate-then-delete of a pre-existing file outside the copy was missed; (b) read a
-call's result before joining its `<unfinished ...>` / `<... resumed>` halves; (c) could read a `= N` from inside a
-quoted argument (review round 1: Codex #1-#4, Claude F4). The full logs were not kept, so the "none" cannot be
-recomputed from the artifacts. What CAN be: re-reading the 12 retained whole logs of run 42893595762 (two per shard)
-with the corrected reader gives the same removals, unresolved lines and syscall names as the first reader (MEASURED,
-0 differences). **The corrected rule applies from the next run**; until then this row is a lower bound on what
-slice 2's parser must refuse.
+**The removal row is a LIST, not a verdict (review round 2, the redesign).** From run 42915171820 on, the reader
+EXEMPTS nothing outside the copy: every successful `unlink*`, `rmdir` and `rename*` (source and replaced destination)
+there is listed, per target and annotation, in the JSON's `external_removals`, with whole counts in
+`external_removal_counts` / `external_removal_totals`. `created_in_log` is only an ANNOTATION (the log showed the path
+being created, and no later removal or rename cleared that evidence); a wrong annotation mislabels a removal and can
+no longer hide one. **Slice 2 decides its refusal rule from this list.** The earlier runs' "none" (42893595762, the
+FIRST reader, which exempted any `O_CREAT` path and read results before joining `<unfinished ...>` halves) is
+superseded and not used.
 
 ⚠ **Unresolved removals (MEASURED, run 42893595762): 28 targets** made a removal the driver could not place — e.g.
 `scripts/batch-ci.py` 2,833 lines, `scripts/check-merge-ready.py` 951, `scripts/check-plan-leak.py` 702 (all 28 in
