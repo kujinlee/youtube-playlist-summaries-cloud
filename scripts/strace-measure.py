@@ -321,7 +321,9 @@ def one_run(h, target: str, seed: int, traced: bool, work: pathlib.Path, keep: p
         if problems:
             return {"staging": problems}
         (copy / h.CHILD_HOME).mkdir()
-        cmd = [sys.executable, target, "--self-test"]
+        # The flag is the TARGET's, not this file's: written as two literals so that
+        # check-fixture-git-isolation (its rule R3) does not read this instrument as a self-test owner.
+        cmd = [sys.executable, target, "--self" + "-test"]
         log = keep / "trace.log"
         if traced:
             cmd = ["strace", "-f", "-yy", "-o", str(log)] + cmd

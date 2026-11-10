@@ -1,0 +1,2807 @@
+{
+ "run_id": "42893595762",
+ "source": "strace-measure run 42893595762 (backlog #586 slice 1), raw-<shard>/lines.json of all 6 shards, first sample per (syscall, shape) in shard order",
+ "paths": "every per-run copy directory /tmp/strace-measure-<x>/sm-<y> is written /t and its parent /tmp/strace-measure-<x> /w; nothing else is rewritten, so a returned LENGTH (getcwd) still counts the original path",
+ "samples": [
+  {
+   "syscall": "access",
+   "shape": "= -1 E",
+   "line": "2547  access(\"/etc/ld.so.preload\", R_OK) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "access",
+   "shape": "= N",
+   "line": "2620  access(\"/dev/null\", R_OK)         = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "access",
+   "shape": "resumed",
+   "line": "2620  <... access resumed>)             = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "access",
+   "shape": "unfinished",
+   "line": "2620  access(\"/etc/ld.so.preload\", R_OK <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "alarm",
+   "shape": "= N",
+   "line": "5598  <... alarm resumed>)              = 0",
+   "target": "scripts/batch-ci.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "alarm",
+   "shape": "resumed",
+   "line": "5598  <... alarm resumed>)              = 0",
+   "target": "scripts/batch-ci.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "alarm",
+   "shape": "unfinished",
+   "line": "5598  alarm(0 <unfinished ...>",
+   "target": "scripts/batch-ci.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "arch_prctl",
+   "shape": "= N",
+   "line": "2547  arch_prctl(ARCH_SET_FS, 0x7a3ddbea3bc0) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "arch_prctl",
+   "shape": "resumed",
+   "line": "3229  <... arch_prctl resumed>)         = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "arch_prctl",
+   "shape": "unfinished",
+   "line": "3229  arch_prctl(ARCH_SET_FS, 0x700f34eb1b80 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "brk",
+   "shape": "= N",
+   "line": "2547  brk(NULL)                         = 0x5bcc8292d000",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "brk",
+   "shape": "resumed",
+   "line": "2620  <... brk resumed>)                = 0x58c926bec000",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "brk",
+   "shape": "unfinished",
+   "line": "2620  brk(NULL <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "capget",
+   "shape": "= N",
+   "line": "46591 capget({version=_LINUX_CAPABILITY_VERSION_3, pid=46591}, {effective=0, permitted=0, inheritable=0}) = 0",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chdir",
+   "shape": "= -1 E",
+   "line": "3229  <... chdir resumed>)              = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chdir",
+   "shape": "= N",
+   "line": "2620  chdir(\"/tmp/fixture-tmp-td74stb7/tmpk11z8pdq\") = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chdir",
+   "shape": "resumed",
+   "line": "2625  <... chdir resumed>)              = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chdir",
+   "shape": "unfinished",
+   "line": "2625  chdir(\"/tmp/fixture-tmp-td74stb7/tmpk11z8pdq\" <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chmod",
+   "shape": "= N",
+   "line": "2547  chmod(\"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/backup/live.md\", 0644) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chmod",
+   "shape": "resumed",
+   "line": "3221  <... chmod resumed>)              = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "chmod",
+   "shape": "unfinished",
+   "line": "3221  chmod(\"/tmp/fixture-tmp-dom1kfnt/tmp0i_lv8mi/scripts/fixture_git.py\", 0644 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clock_nanosleep",
+   "shape": "= N",
+   "line": "19932 <... clock_nanosleep resumed>, NULL) = 0",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clock_nanosleep",
+   "shape": "other",
+   "line": "2800  clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, {tv_sec=156, tv_nsec=697788725}, NULL) = ? ERESTARTNOHAND (To be restarted if no handler)",
+   "target": "scripts/check-main-drivable.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "clock_nanosleep",
+   "shape": "resumed",
+   "line": "3549  <... clock_nanosleep resumed> <unfinished ...>) = ?",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clock_nanosleep",
+   "shape": "unfinished",
+   "line": "3549  clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, {tv_sec=252, tv_nsec=487357585} <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clone",
+   "shape": "= N",
+   "line": "2622  <... clone resumed>, child_tidptr=0x79c7f31b6e50) = 2623",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clone",
+   "shape": "resumed",
+   "line": "2622  <... clone resumed>, child_tidptr=0x79c7f31b6e50) = 2623",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clone",
+   "shape": "unfinished",
+   "line": "2622  clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clone3",
+   "shape": "= N",
+   "line": "3220  clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7e672604ace8, parent_tid=0x7e672604a990, exit_signal=0, stack=0x7e672504a000, stack_size=0xffff40, tls=0x7e672604a6c0} => {parent_tid=[3221]}, 88) = 3221",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clone3",
+   "shape": "resumed",
+   "line": "3241  <... clone3 resumed>)             = 3256",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "clone3",
+   "shape": "unfinished",
+   "line": "3241  clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x743c83b73000, stack_size=0x9000}, 88 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close",
+   "shape": "-yy label",
+   "line": "2547  close(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close",
+   "shape": "= -1 E",
+   "line": "6074  <... close resumed>)              = -1 EBADF (Bad file descriptor)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close",
+   "shape": "= N",
+   "line": "2547  close(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close",
+   "shape": "resumed",
+   "line": "2619  <... close resumed>)              = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close",
+   "shape": "unfinished",
+   "line": "2619  close(8<pipe:[20853]> <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close_range",
+   "shape": "= -1 E",
+   "line": "8622  close_range(3, 2, 0)              = -1 EINVAL (Invalid argument)",
+   "target": "scripts/regen-pages.py seed 0",
+   "shard": 6
+  },
+  {
+   "syscall": "close_range",
+   "shape": "= N",
+   "line": "2620  close_range(3, 7, 0)              = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close_range",
+   "shape": "resumed",
+   "line": "3229  <... close_range resumed>)        = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "close_range",
+   "shape": "unfinished",
+   "line": "3229  close_range(3, 21, 0 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "connect",
+   "shape": "-yy label",
+   "line": "6086  connect(3<UNIX-STREAM:[38896]>, {sa_family=AF_UNIX, sun_path=\"/var/run/nscd/socket\"}, 110) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "connect",
+   "shape": "= -1 E",
+   "line": "6086  connect(3<UNIX-STREAM:[38896]>, {sa_family=AF_UNIX, sun_path=\"/var/run/nscd/socket\"}, 110) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "connect",
+   "shape": "= N",
+   "line": "23460 connect(4<UNIX-STREAM:[75556]>, {sa_family=AF_UNIX, sun_path=\"/run/systemd/userdb/io.systemd.DynamicUser\"}, 45) = 0",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "connect",
+   "shape": "resumed",
+   "line": "18675 <... connect resumed>)            = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "connect",
+   "shape": "unfinished",
+   "line": "18675 connect(3<UNIX-STREAM:[101202]>, {sa_family=AF_UNIX, sun_path=\"/var/run/nscd/socket\"}, 110 <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "copy_file_range",
+   "shape": "-yy label",
+   "line": "4411  copy_file_range(3</tmp/fixture-tmp-vgnzf8kn/crr426-9mprddnq/docs/superpowers/specs/m4/gate.sql>, NULL, 4</tmp/fixture-tmp-vgnzf8kn/crr426-9mprddnq/.merge_file_vITBBC>, NULL, 9223372035781033984, 0) = 162",
+   "target": "scripts/check-review-recorded.py seed 0",
+   "shard": 4
+  },
+  {
+   "syscall": "copy_file_range",
+   "shape": "= N",
+   "line": "4411  copy_file_range(3</tmp/fixture-tmp-vgnzf8kn/crr426-9mprddnq/docs/superpowers/specs/m4/gate.sql>, NULL, 4</tmp/fixture-tmp-vgnzf8kn/crr426-9mprddnq/.merge_file_vITBBC>, NULL, 9223372035781033984, 0) = 162",
+   "target": "scripts/check-review-recorded.py seed 0",
+   "shard": 4
+  },
+  {
+   "syscall": "dup",
+   "shape": "-yy label",
+   "line": "2624  dup(0</dev/null<char 1:3>>)       = 1</dev/null<char 1:3>>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "dup",
+   "shape": "resumed",
+   "line": "2628  <... dup resumed>)                = 1</dev/null<char 1:3>>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "dup",
+   "shape": "unfinished",
+   "line": "2628  dup(0</dev/null<char 1:3>> <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "dup2",
+   "shape": "-yy label",
+   "line": "2620  dup2(4<pipe:[20851]>, 1<pipe:[17210]>) = 1<pipe:[20851]>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "dup2",
+   "shape": "= -1 E",
+   "line": "23448 dup2(12, 2</dev/null<char 1:3>>)  = -1 EBADF (Bad file descriptor)",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "dup2",
+   "shape": "resumed",
+   "line": "2625  <... dup2 resumed>)               = 1<pipe:[20860]>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "dup2",
+   "shape": "unfinished",
+   "line": "2625  dup2(4<pipe:[20860]>, 1<pipe:[17210]> <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_create1",
+   "shape": "-yy label",
+   "line": "2547  epoll_create1(EPOLL_CLOEXEC)      = 3<anon_inode:[eventpoll]>",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_create1",
+   "shape": "resumed",
+   "line": "3240  <... epoll_create1 resumed>)      = 3<anon_inode:[eventpoll]>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_create1",
+   "shape": "unfinished",
+   "line": "3240  epoll_create1(EPOLL_CLOEXEC <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_ctl",
+   "shape": "-yy label",
+   "line": "3388  epoll_ctl(4<anon_inode:[eventpoll]>, EPOLL_CTL_ADD, 5<UNIX-STREAM:[23189->23190]>, {events=EPOLLIN, data=0x7de500000005} <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_ctl",
+   "shape": "= -1 E",
+   "line": "46591 epoll_ctl(15<anon_inode:[eventpoll]>, EPOLL_CTL_DEL, 1<pipe:[340660]>, 0x7ffc351f20a4) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_ctl",
+   "shape": "= N",
+   "line": "3388  <... epoll_ctl resumed>)          = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_ctl",
+   "shape": "resumed",
+   "line": "3388  <... epoll_ctl resumed>)          = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_ctl",
+   "shape": "unfinished",
+   "line": "3388  epoll_ctl(4<anon_inode:[eventpoll]>, EPOLL_CTL_ADD, 5<UNIX-STREAM:[23189->23190]>, {events=EPOLLIN, data=0x7de500000005} <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_pwait",
+   "shape": "-yy label",
+   "line": "46592 epoll_pwait(10<anon_inode:[eventpoll]> <unfinished ...>",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_pwait",
+   "shape": "= N",
+   "line": "46591 epoll_pwait(15<anon_inode:[eventpoll]>, [], 1024, 0, NULL, 8) = 0",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_pwait",
+   "shape": "resumed",
+   "line": "46592 <... epoll_pwait resumed>, [{events=EPOLLIN, data=0xe}], 1024, -1, NULL, 8) = 1",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_pwait",
+   "shape": "unfinished",
+   "line": "46592 epoll_pwait(10<anon_inode:[eventpoll]> <unfinished ...>",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_pwait2",
+   "shape": "-yy label",
+   "line": "23460 epoll_pwait2(5<anon_inode:[eventpoll]>, [{events=EPOLLOUT, data=0x5c07ac7b41b0}], 8, {tv_sec=0, tv_nsec=0}, NULL, 8) = 1",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "epoll_pwait2",
+   "shape": "= N",
+   "line": "23460 epoll_pwait2(5<anon_inode:[eventpoll]>, [{events=EPOLLOUT, data=0x5c07ac7b41b0}], 8, {tv_sec=0, tv_nsec=0}, NULL, 8) = 1",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "epoll_wait",
+   "shape": "-yy label",
+   "line": "3388  epoll_wait(4<anon_inode:[eventpoll]> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_wait",
+   "shape": "= N",
+   "line": "3388  <... epoll_wait resumed>, [], 1, 0) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_wait",
+   "shape": "resumed",
+   "line": "3388  <... epoll_wait resumed>, [], 1, 0) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "epoll_wait",
+   "shape": "unfinished",
+   "line": "3388  epoll_wait(4<anon_inode:[eventpoll]> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "eventfd2",
+   "shape": "-yy label",
+   "line": "46591 eventfd2(0, EFD_CLOEXEC|EFD_NONBLOCK) = 9<{eventfd-count=0, eventfd-id=24, eventfd-semaphore=0}>",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "eventfd2",
+   "shape": "resumed",
+   "line": "7199  <... eventfd2 resumed>)           = 6<{eventfd-count=0, eventfd-id=24, eventfd-semaphore=0}>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "eventfd2",
+   "shape": "unfinished",
+   "line": "7199  eventfd2(0, EFD_CLOEXEC|EFD_NONBLOCK <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "execve",
+   "shape": "= -1 E",
+   "line": "2620  execve(\"/opt/hostedtoolcache/Python/3.12.16/x64/bin/git\", [\"git\", \"-c\", \"user.name=t\", \"-c\", \"user.email=t@e\", \"init\", \"-q\", \"-b\", \"main\"], 0x7ef511741200 /* 9 vars */) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "execve",
+   "shape": "= N",
+   "line": "2547  execve(\"/opt/hostedtoolcache/Python/3.12.16/x64/bin/python3\", [\"/opt/hostedtoolcache/Python/3.12\"..., \"scripts/backfill-work-lines.py\", \"--self-test\"], 0x7ffcd5068f30 /* 124 vars */) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "execve",
+   "shape": "resumed",
+   "line": "2620  <... execve resumed>)             = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "execve",
+   "shape": "unfinished",
+   "line": "2620  execve(\"/usr/bin/git\", [\"git\", \"-c\", \"user.name=t\", \"-c\", \"user.email=t@e\", \"init\", \"-q\", \"-b\", \"main\"], 0x7ef511741200 /* 9 vars */ <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "exit",
+   "shape": "other",
+   "line": "3227  exit(0)                           = ?",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "exit",
+   "shape": "resumed",
+   "line": "3226  <... exit resumed>)               = ?",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "exit",
+   "shape": "unfinished",
+   "line": "3226  exit(0 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "exit_group",
+   "shape": "other",
+   "line": "2547  exit_group(0)                     = ?",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "exit_group",
+   "shape": "resumed",
+   "line": "2623  <... exit_group resumed>)         = ?",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "exit_group",
+   "shape": "unfinished",
+   "line": "2623  exit_group(0 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "faccessat2",
+   "shape": "= -1 E",
+   "line": "4706  <... faccessat2 resumed>)         = -1 EACCES (Permission denied)",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "faccessat2",
+   "shape": "AT_FDCWD<",
+   "line": "4706  faccessat2(AT_FDCWD</tmp/fixture-tmp-6ziowbi_/stalled-work-hxjh4hl7/quiet>, \"/tmp/fixture-tmp-6ziowbi_/stalled-work-hxjh4hl7/bin/sleep\", X_OK, AT_EACCESS <unfinished ...>",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "faccessat2",
+   "shape": "resumed",
+   "line": "4706  <... faccessat2 resumed>)         = -1 EACCES (Permission denied)",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "faccessat2",
+   "shape": "unfinished",
+   "line": "4706  faccessat2(AT_FDCWD</tmp/fixture-tmp-6ziowbi_/stalled-work-hxjh4hl7/quiet>, \"/tmp/fixture-tmp-6ziowbi_/stalled-work-hxjh4hl7/bin/sleep\", X_OK, AT_EACCESS <unfinished ...>",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "fadvise64",
+   "shape": "-yy label",
+   "line": "18665 fadvise64(0<pipe:[101872]>, 0, 0, POSIX_FADV_SEQUENTIAL) = -1 ESPIPE (Illegal seek)",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fadvise64",
+   "shape": "= -1 E",
+   "line": "18665 fadvise64(0<pipe:[101872]>, 0, 0, POSIX_FADV_SEQUENTIAL) = -1 ESPIPE (Illegal seek)",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fadvise64",
+   "shape": "= N",
+   "line": "43998 fadvise64(0</dev/null<char 1:3>>, 0, 0, POSIX_FADV_SEQUENTIAL) = 0",
+   "target": "scripts/check-run-hook.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fadvise64",
+   "shape": "resumed",
+   "line": "4632  <... fadvise64 resumed>)          = 0",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "fadvise64",
+   "shape": "unfinished",
+   "line": "4632  fadvise64(3</tmp/fixture-tmp-6ziowbi_/stalled-work-hxjh4hl7/bin/out>, 0, 0, POSIX_FADV_SEQUENTIAL <unfinished ...>",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "fcntl",
+   "shape": "-yy label",
+   "line": "2547  fcntl(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12/encodings/__pycache__/__init__.cpython-312.pyc>, F_GETFD) = 0x1 (flags FD_CLOEXEC)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fcntl",
+   "shape": "= -1 E",
+   "line": "6086  fcntl(255, F_GETFD)               = -1 EBADF (Bad file descriptor)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fcntl",
+   "shape": "= N",
+   "line": "2547  fcntl(0<pipe:[20788]>, F_GETFD)   = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fcntl",
+   "shape": "resumed",
+   "line": "2623  <... fcntl resumed>)              = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fcntl",
+   "shape": "unfinished",
+   "line": "2623  fcntl(4<pipe:[19857]>, F_GETFD <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "flock",
+   "shape": "-yy label",
+   "line": "46810 flock(3</tmp/fixture-tmp-7224m4xp/ss-r3-lz28d_w7/.claude/inflight.jsonl.lock>, LOCK_EX) = 0",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "flock",
+   "shape": "= -1 E",
+   "line": "7546  flock(4</tmp/fixture-tmp-_y7y2jau/regen-fresh-q1h9cq79/main/.claude/regen-pages.lock>, LOCK_EX|LOCK_NB) = -1 EAGAIN (Resource temporarily unavailable)",
+   "target": "scripts/regen-pages.py seed 0",
+   "shard": 6
+  },
+  {
+   "syscall": "flock",
+   "shape": "= N",
+   "line": "46810 flock(3</tmp/fixture-tmp-7224m4xp/ss-r3-lz28d_w7/.claude/inflight.jsonl.lock>, LOCK_EX) = 0",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "flock",
+   "shape": "resumed",
+   "line": "46811 <... flock resumed>)              = 0",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "flock",
+   "shape": "unfinished",
+   "line": "46811 flock(3</tmp/fixture-tmp-7224m4xp/tmpbtmlxbrf/race/inflight.jsonl.lock>, LOCK_EX <unfinished ...>",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fstat",
+   "shape": "-yy label",
+   "line": "2547  fstat(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>, {st_mode=S_IFREG|0777, st_size=29948232, ...}) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fstat",
+   "shape": "= -1 E",
+   "line": "6078  <... fstat resumed>, 0x7ffe6be72210) = -1 EBADF (Bad file descriptor)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fstat",
+   "shape": "= N",
+   "line": "2547  fstat(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>, {st_mode=S_IFREG|0777, st_size=29948232, ...}) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fstat",
+   "shape": "resumed",
+   "line": "2622  <... fstat resumed>, {st_mode=S_IFIFO|0600, st_size=0, ...}) = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fstat",
+   "shape": "unfinished",
+   "line": "2622  fstat(1<pipe:[20857]> <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fstatfs",
+   "shape": "-yy label",
+   "line": "4124  fstatfs(3</tmp/fixture-tmp-tbee4w_8/usage-pace.hpWcyk>, {f_type=EXT2_SUPER_MAGIC, f_bsize=4096, f_blocks=37840252, f_bfree=22704755, f_bavail=22700659, f_files=18690560, f_ffree=17635508, f_fsid={val=[0x48909c9d, 0xcb5b4def]}, f_namelen=255, f_frsize=4096, f_flags=ST_VALID|ST_RELATIME}) = 0",
+   "target": "scripts/check-usage-pace.py seed 0",
+   "shard": 6
+  },
+  {
+   "syscall": "fstatfs",
+   "shape": "= N",
+   "line": "4124  fstatfs(3</tmp/fixture-tmp-tbee4w_8/usage-pace.hpWcyk>, {f_type=EXT2_SUPER_MAGIC, f_bsize=4096, f_blocks=37840252, f_bfree=22704755, f_bavail=22700659, f_files=18690560, f_ffree=17635508, f_fsid={val=[0x48909c9d, 0xcb5b4def]}, f_namelen=255, f_frsize=4096, f_flags=ST_VALID|ST_RELATIME}) = 0",
+   "target": "scripts/check-usage-pace.py seed 0",
+   "shard": 6
+  },
+  {
+   "syscall": "fsync",
+   "shape": "-yy label",
+   "line": "6076  fsync(3</tmp/fixture-tmp-_jctfh40/plan-leak-hgqifb76/plain.git/objects/tmp_objdir-incoming-h5WGm9/bulk_fsync_gqibBK>) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "fsync",
+   "shape": "= N",
+   "line": "6076  fsync(3</tmp/fixture-tmp-_jctfh40/plan-leak-hgqifb76/plain.git/objects/tmp_objdir-incoming-h5WGm9/bulk_fsync_gqibBK>) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "ftruncate",
+   "shape": "-yy label",
+   "line": "7712  ftruncate(3</tmp/fixture-tmp-35apgr5_/tmpbcfkci04/ws.jsonl>, 0) = 0",
+   "target": "scripts/goal-tree.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "ftruncate",
+   "shape": "= N",
+   "line": "7712  ftruncate(3</tmp/fixture-tmp-35apgr5_/tmpbcfkci04/ws.jsonl>, 0) = 0",
+   "target": "scripts/goal-tree.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "futex",
+   "shape": "= -1 E",
+   "line": "3222  futex(0x7e672723c240, FUTEX_WAIT_BITSET_PRIVATE, 0, {tv_sec=220, tv_nsec=443289240}, FUTEX_BITSET_MATCH_ANY) = -1 EAGAIN (Resource temporarily unavailable)",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "futex",
+   "shape": "= N",
+   "line": "2547  futex(0x7a3ddb6186ec, FUTEX_WAKE_PRIVATE, 2147483647) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "futex",
+   "shape": "other",
+   "line": "34839 futex(0x70ad45a3c240, FUTEX_WAIT_BITSET_PRIVATE, 16046, {tv_sec=573, tv_nsec=901468160}, FUTEX_BITSET_MATCH_ANY) = ? ERESTART_RESTARTBLOCK (Interrupted by signal)",
+   "target": "scripts/check-rc-contract.py seed 1109",
+   "shard": 1
+  },
+  {
+   "syscall": "futex",
+   "shape": "resumed",
+   "line": "3220  <... futex resumed>)              = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "futex",
+   "shape": "unfinished",
+   "line": "3220  futex(0x5f2b5fcea730, FUTEX_WAIT_BITSET_PRIVATE|FUTEX_CLOCK_REALTIME, 0, NULL, FUTEX_BITSET_MATCH_ANY <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getcwd",
+   "shape": "= N",
+   "line": "2547  getcwd(\"/t\", 4096) = 41",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getcwd",
+   "shape": "resumed",
+   "line": "3229  <... getcwd resumed>\"/t\", 129) = 41",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getcwd",
+   "shape": "unfinished",
+   "line": "3229  getcwd( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getdents64",
+   "shape": "-yy label",
+   "line": "2547  getdents64(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12>, 0x5bcc82995820 /* 204 entries */, 32768) = 6768",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getdents64",
+   "shape": "= N",
+   "line": "2547  getdents64(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12>, 0x5bcc82995820 /* 204 entries */, 32768) = 6768",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getdents64",
+   "shape": "resumed",
+   "line": "3229  <... getdents64 resumed>, 0x5d89f1320c00 /* 5 entries */, 32768) = 136",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getdents64",
+   "shape": "unfinished",
+   "line": "3229  getdents64(3</usr/share/git-core/templates> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getegid",
+   "shape": "= N",
+   "line": "2547  getegid()                         = 1001",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getegid",
+   "shape": "resumed",
+   "line": "3237  <... getegid resumed>)            = 1001",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getegid",
+   "shape": "unfinished",
+   "line": "3237  getegid( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "geteuid",
+   "shape": "= N",
+   "line": "2547  geteuid()                         = 1001",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "geteuid",
+   "shape": "resumed",
+   "line": "3237  <... geteuid resumed>)            = 1001",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "geteuid",
+   "shape": "unfinished",
+   "line": "3237  geteuid( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getgid",
+   "shape": "= N",
+   "line": "2547  getgid()                          = 1001",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getgid",
+   "shape": "resumed",
+   "line": "3237  <... getgid resumed>)             = 1001",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getgid",
+   "shape": "unfinished",
+   "line": "3237  getgid( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getgroups",
+   "shape": "= N",
+   "line": "6240  getgroups(0, NULL)                = 5",
+   "target": "scripts/gen-backlog-page.py seed 0",
+   "shard": 4
+  },
+  {
+   "syscall": "getitimer",
+   "shape": "= N",
+   "line": "2800  getitimer(ITIMER_REAL, {it_interval={tv_sec=0, tv_usec=0}, it_value={tv_sec=0, tv_usec=0}}) = 0",
+   "target": "scripts/check-main-drivable.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "getpeername",
+   "shape": "-yy label",
+   "line": "27930 getpeername(0<pipe:[15014]>, 0x7ffe83d28630, [16]) = -1 ENOTSOCK (Socket operation on non-socket)",
+   "target": "scripts/sweep-red-alert.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "getpeername",
+   "shape": "= -1 E",
+   "line": "27930 getpeername(0<pipe:[15014]>, 0x7ffe83d28630, [16]) = -1 ENOTSOCK (Socket operation on non-socket)",
+   "target": "scripts/sweep-red-alert.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "getpgrp",
+   "shape": "= N",
+   "line": "6086  getpgrp()                         = 6062",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getpgrp",
+   "shape": "resumed",
+   "line": "18675 <... getpgrp resumed>)            = 18354",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getpgrp",
+   "shape": "unfinished",
+   "line": "18675 getpgrp( <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getpid",
+   "shape": "= N",
+   "line": "2547  getpid()                          = 2547",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getpid",
+   "shape": "resumed",
+   "line": "2624  <... getpid resumed>)             = 2624",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getpid",
+   "shape": "unfinished",
+   "line": "2624  getpid( <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getppid",
+   "shape": "= N",
+   "line": "3256  <... getppid resumed>)            = 3241",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getppid",
+   "shape": "resumed",
+   "line": "3256  <... getppid resumed>)            = 3241",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getppid",
+   "shape": "unfinished",
+   "line": "3256  getppid( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getrandom",
+   "shape": "= N",
+   "line": "2547  getrandom(\"\\xf8\\x45\\x03\\x1a\\xc9\\x1d\\x29\\xf7\", 8, GRND_NONBLOCK) = 8",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getrandom",
+   "shape": "resumed",
+   "line": "3229  <... getrandom resumed>\"\\xd6\\x59\\xaa\\x2d\\x52\\xaf\\xea\\x0b\", 8, GRND_NONBLOCK) = 8",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getrandom",
+   "shape": "unfinished",
+   "line": "3229  getrandom( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getresgid",
+   "shape": "= N",
+   "line": "6086  getresgid([1001], [1001], [1001]) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getresgid",
+   "shape": "resumed",
+   "line": "18675 <... getresgid resumed>[1001], [1001], [1001]) = 0",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getresgid",
+   "shape": "unfinished",
+   "line": "18675 getresgid( <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getresuid",
+   "shape": "= N",
+   "line": "6086  getresuid([1001], [1001], [1001]) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getresuid",
+   "shape": "resumed",
+   "line": "18675 <... getresuid resumed>[1001], [1001], [1001]) = 0",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getresuid",
+   "shape": "unfinished",
+   "line": "18675 getresuid( <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getsockname",
+   "shape": "-yy label",
+   "line": "3388  getsockname(5<UNIX-STREAM:[23189->23190]> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getsockname",
+   "shape": "= N",
+   "line": "3388  <... getsockname resumed>, {sa_family=AF_UNIX}, [128 => 2]) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getsockname",
+   "shape": "resumed",
+   "line": "3388  <... getsockname resumed>, {sa_family=AF_UNIX}, [128 => 2]) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getsockname",
+   "shape": "unfinished",
+   "line": "3388  getsockname(5<UNIX-STREAM:[23189->23190]> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "gettid",
+   "shape": "= N",
+   "line": "2547  gettid()                          = 2547",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "gettid",
+   "shape": "resumed",
+   "line": "3223  <... gettid resumed>)             = 3223",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "gettid",
+   "shape": "unfinished",
+   "line": "3223  gettid( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getuid",
+   "shape": "= N",
+   "line": "2547  getuid()                          = 1001",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getuid",
+   "shape": "resumed",
+   "line": "3237  <... getuid resumed>)             = 1001",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "getuid",
+   "shape": "unfinished",
+   "line": "3237  getuid( <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "io_uring_enter",
+   "shape": "-yy label",
+   "line": "46592 io_uring_enter(11<anon_inode:[io_uring]>, 2, 2, IORING_ENTER_GETEVENTS, NULL, 0 <unfinished ...>",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "io_uring_enter",
+   "shape": "= N",
+   "line": "46592 <... io_uring_enter resumed>)     = 2",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "io_uring_enter",
+   "shape": "resumed",
+   "line": "46592 <... io_uring_enter resumed>)     = 2",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "io_uring_enter",
+   "shape": "unfinished",
+   "line": "46592 io_uring_enter(11<anon_inode:[io_uring]>, 2, 2, IORING_ENTER_GETEVENTS, NULL, 0 <unfinished ...>",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "io_uring_setup",
+   "shape": "-yy label",
+   "line": "46591 io_uring_setup(256, {flags=IORING_SETUP_NO_SQARRAY, sq_thread_cpu=0, sq_thread_idle=0, sq_entries=256, cq_entries=512, features=IORING_FEAT_SINGLE_MMAP|IORING_FEAT_NODROP|IORING_FEAT_SUBMIT_STABLE|IORING_FEAT_RW_CUR_POS|IORING_FEAT_CUR_PERSONALITY|IORING_FEAT_FAST_POLL|IORING_FEAT_POLL_32BITS|IORING_FEAT_SQPOLL_NONFIXED|IORING_FEAT_EXT_ARG|IORING_FEAT_NATIVE_WORKERS|IORING_FEAT_RSRC_TAGS|IORING_FEAT_CQE_SKIP|IORING_FEAT_LINKED_FILE|IORING_FEAT_REG_REG_RING|IORING_FEAT_RECVSEND_BUNDLE|IORING_FEAT_MIN_TIMEOUT|IORING_FEAT_RW_ATTR|IORING_FEAT_NO_IOWAIT, sq_off={head=0, tail=4, ring_mask=16, ring_entries=24, flags=36, dropped=32, array=0, user_addr=0}, cq_off={head=8, tail=12, ring_mask=20, ring_entries=28, overflow=44, cqes=64, flags=40, user_addr=0}}) = 4<anon_inode:[io_uring]>",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "ioctl",
+   "shape": "-yy label",
+   "line": "2547  ioctl(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12/encodings/__pycache__/__init__.cpython-312.pyc>, TCGETS2, 0x7ffd417b7110) = -1 ENOTTY (Inappropriate ioctl for device)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "ioctl",
+   "shape": "= -1 E",
+   "line": "2547  ioctl(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12/encodings/__pycache__/__init__.cpython-312.pyc>, TCGETS2, 0x7ffd417b7110) = -1 ENOTTY (Inappropriate ioctl for device)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "ioctl",
+   "shape": "= N",
+   "line": "2547  ioctl(3</t/scripts/backfill-work-lines.py>, FIOCLEX) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "ioctl",
+   "shape": "resumed",
+   "line": "2619  <... ioctl resumed>, 0x7ffdceebcb10) = -1 ENOTTY (Inappropriate ioctl for device)",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "ioctl",
+   "shape": "unfinished",
+   "line": "2619  ioctl(3</tmp/fixture-tmp-td74stb7/tmpk11z8pdq/new-r1-codex.md>, TCGETS2 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "kill",
+   "shape": "= -1 E",
+   "line": "46810 kill(-46831, SIGKILL)             = -1 ESRCH (No such process)",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "kill",
+   "shape": "= N",
+   "line": "3548  kill(3549, SIGKILL)               = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "kill",
+   "shape": "other",
+   "line": "7379  kill(7379, SIGKILL)               = ?",
+   "target": "scripts/gates-for-pr.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "kill",
+   "shape": "resumed",
+   "line": "46810 <... kill resumed>)               = 0",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "kill",
+   "shape": "unfinished",
+   "line": "46810 kill(-46832, SIGKILL <unfinished ...>",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "link",
+   "shape": "= N",
+   "line": "2621  link(\".git/objects/c1/tmp_obj_oaWls9\", \".git/objects/c1/b0730e0133447badcfd47fd144e254807b06e1\") = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "link",
+   "shape": "resumed",
+   "line": "4861  <... link resumed>)               = 0",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "link",
+   "shape": "unfinished",
+   "line": "4861  link(\".git/objects/34/tmp_obj_wAHZP6\", \".git/objects/34/b07e180d4d907ebc8fe71afee7e15472d57777\" <unfinished ...>",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "linkat",
+   "shape": "= N",
+   "line": "7204  linkat(AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/tmp/fixture-tmp-ui1umrq2/fixture-home-hslp48gl/.local/state/gh/device-id.tmp.985797497\", AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/tmp/fixture-tmp-ui1umrq2/fixture-home-hslp48gl/.local/state/gh/device-id\", 0) = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "linkat",
+   "shape": "AT_FDCWD<",
+   "line": "7204  linkat(AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/tmp/fixture-tmp-ui1umrq2/fixture-home-hslp48gl/.local/state/gh/device-id.tmp.985797497\", AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/tmp/fixture-tmp-ui1umrq2/fixture-home-hslp48gl/.local/state/gh/device-id\", 0) = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "linkat",
+   "shape": "resumed",
+   "line": "7606  <... linkat resumed>)             = 0",
+   "target": "scripts/compaction-state.py seed 1109",
+   "shard": 5
+  },
+  {
+   "syscall": "linkat",
+   "shape": "unfinished",
+   "line": "7606  linkat(AT_FDCWD</tmp/fixture-tmp-gsccz7ty/tmpglwuqnda/late>, \"/tmp/fixture-tmp-gsccz7ty/fixture-home-oz_f06bc/.local/state/gh/device-id.tmp.1645321182\", AT_FDCWD</tmp/fixture-tmp-gsccz7ty/tmpglwuqnda/late>, \"/tmp/fixture-tmp-gsccz7ty/fixture-home-oz_f06bc/.local/state/gh/device-id\", 0 <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 1109",
+   "shard": 5
+  },
+  {
+   "syscall": "listxattr",
+   "shape": "= N",
+   "line": "2547  listxattr(\"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/live.md\", \"\", 256) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "lseek",
+   "shape": "-yy label",
+   "line": "2547  lseek(3</usr/share/zoneinfo/Etc/UTC>, -60, SEEK_CUR) = 54",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "lseek",
+   "shape": "= -1 E",
+   "line": "2547  lseek(0<pipe:[20788]>, 0, SEEK_CUR) = -1 ESPIPE (Illegal seek)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "lseek",
+   "shape": "= N",
+   "line": "2547  lseek(3</usr/share/zoneinfo/Etc/UTC>, -60, SEEK_CUR) = 54",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "lseek",
+   "shape": "resumed",
+   "line": "2619  <... lseek resumed>)              = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "lseek",
+   "shape": "unfinished",
+   "line": "2619  lseek(3</tmp/fixture-tmp-td74stb7/tmpk11z8pdq/new-r1-codex.md>, 0, SEEK_CUR <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "madvise",
+   "shape": "= N",
+   "line": "3220  madvise(0x7e672504a000, 4096, MADV_GUARD_INSTALL) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "madvise",
+   "shape": "resumed",
+   "line": "3220  <... madvise resumed>)            = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "madvise",
+   "shape": "unfinished",
+   "line": "3220  madvise(0x7e671dffe000, 4096, MADV_GUARD_INSTALL <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mkdir",
+   "shape": "= -1 E",
+   "line": "2547  mkdir(\"/tmp/fixture-tmp-3xec1v1d/tmp2bbtqwnp\", 0777) = -1 EEXIST (File exists)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mkdir",
+   "shape": "= N",
+   "line": "2547  mkdir(\"/tmp/fixture-tmp-3xec1v1d\", 0700) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mkdir",
+   "shape": "resumed",
+   "line": "3221  <... mkdir resumed>)              = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mkdir",
+   "shape": "unfinished",
+   "line": "3221  mkdir(\"/tmp/fixture-tmp-dom1kfnt/tmp0i_lv8mi\", 0700 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mkdirat",
+   "shape": "-yy label",
+   "line": "7078  mkdirat(3</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed>, \".remember\", 0700) = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "mkdirat",
+   "shape": "= -1 E",
+   "line": "7078  mkdirat(3</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/ab>, \".remember\", 0700) = -1 EEXIST (File exists)",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "mkdirat",
+   "shape": "= N",
+   "line": "7078  mkdirat(3</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed>, \".remember\", 0700) = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "mkdirat",
+   "shape": "AT_FDCWD<",
+   "line": "7204  mkdirat(AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/tmp/fixture-tmp-ui1umrq2/fixture-home-hslp48gl/.local\", 0755) = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "mkdirat",
+   "shape": "resumed",
+   "line": "7606  <... mkdirat resumed>)            = 0",
+   "target": "scripts/compaction-state.py seed 1109",
+   "shard": 5
+  },
+  {
+   "syscall": "mkdirat",
+   "shape": "unfinished",
+   "line": "7606  mkdirat(AT_FDCWD</tmp/fixture-tmp-gsccz7ty/tmpglwuqnda/late>, \"/tmp/fixture-tmp-gsccz7ty/fixture-home-oz_f06bc/.local\", 0755 <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 1109",
+   "shard": 5
+  },
+  {
+   "syscall": "mknodat",
+   "shape": "= N",
+   "line": "46810 mknodat(AT_FDCWD</t>, \"/tmp/fixture-tmp-7224m4xp/tmpbtmlxbrf/fifo-root/.claude/inflight.jsonl\", S_IFIFO|0666) = 0",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mknodat",
+   "shape": "AT_FDCWD<",
+   "line": "46810 mknodat(AT_FDCWD</t>, \"/tmp/fixture-tmp-7224m4xp/tmpbtmlxbrf/fifo-root/.claude/inflight.jsonl\", S_IFIFO|0666) = 0",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mknodat",
+   "shape": "resumed",
+   "line": "3875  <... mknodat resumed>)            = 0",
+   "target": "scripts/check-usage-pace.py seed 0",
+   "shard": 6
+  },
+  {
+   "syscall": "mknodat",
+   "shape": "unfinished",
+   "line": "3875  mknodat(AT_FDCWD</t>, \"/tmp/fixture-tmp-tbee4w_8/tmpaybqw1rz/fifo.jsonl\", S_IFIFO|0666 <unfinished ...>",
+   "target": "scripts/check-usage-pace.py seed 0",
+   "shard": 6
+  },
+  {
+   "syscall": "mmap",
+   "shape": "-yy label",
+   "line": "2547  mmap(NULL, 6925480, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>, 0) = 0x7a3ddb800000",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mmap",
+   "shape": "= N",
+   "line": "2547  mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7a3ddbea5000",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mmap",
+   "shape": "resumed",
+   "line": "2620  <... mmap resumed>)               = 0x7f7e61ec8000",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mmap",
+   "shape": "unfinished",
+   "line": "2620  mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mprotect",
+   "shape": "= N",
+   "line": "2547  mprotect(0x7a3ddb613000, 16384, PROT_READ) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mprotect",
+   "shape": "resumed",
+   "line": "3223  <... mprotect resumed>)           = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mprotect",
+   "shape": "unfinished",
+   "line": "3223  mprotect(0x7e6714000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mremap",
+   "shape": "= N",
+   "line": "2547  mremap(0x7a3ddb634000, 139264, 155648, MREMAP_MAYMOVE) = 0x7a3ddadb9000",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mremap",
+   "shape": "resumed",
+   "line": "3388  <... mremap resumed>)             = 0x7de544cea000",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "mremap",
+   "shape": "unfinished",
+   "line": "3388  mremap(0x7de544e31000, 139264, 155648, MREMAP_MAYMOVE <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "munmap",
+   "shape": "= N",
+   "line": "2547  munmap(0x7a3ddb7f5000, 41247)     = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "munmap",
+   "shape": "resumed",
+   "line": "2624  <... munmap resumed>)             = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "munmap",
+   "shape": "unfinished",
+   "line": "2624  munmap(0x77ce247d7000, 109 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "nanosleep",
+   "shape": "= N",
+   "line": "7201  <... nanosleep resumed>, NULL)    = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "nanosleep",
+   "shape": "resumed",
+   "line": "7201  <... nanosleep resumed>, NULL)    = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "nanosleep",
+   "shape": "unfinished",
+   "line": "7201  nanosleep({tv_sec=0, tv_nsec=20000} <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "newfstatat",
+   "shape": "-yy label",
+   "line": "2547  newfstatat(3</tmp/fixture-tmp-3xec1v1d/tmpjvdpetc3>, \"sess-aaaa1111\", {st_mode=S_IFDIR|0755, st_size=4096, ...}, AT_SYMLINK_NOFOLLOW) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "newfstatat",
+   "shape": "= -1 E",
+   "line": "2547  newfstatat(AT_FDCWD</t>, \"/opt/hostedtoolcache/Python/3.12.16/x64/lib/glibc-hwcaps/x86-64-v3/\", 0x7ffd417b73e0, 0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "newfstatat",
+   "shape": "= N",
+   "line": "2547  newfstatat(AT_FDCWD</t>, \"/opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12/os.py\", {st_mode=S_IFREG|0777, st_size=40858, ...}, 0) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "newfstatat",
+   "shape": "AT_FDCWD<",
+   "line": "2547  newfstatat(AT_FDCWD</t>, \"/opt/hostedtoolcache/Python/3.12.16/x64/lib/glibc-hwcaps/x86-64-v3/\", 0x7ffd417b73e0, 0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "newfstatat",
+   "shape": "resumed",
+   "line": "2622  <... newfstatat resumed>, 0x7ffe43c492a0, AT_SYMLINK_NOFOLLOW) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "newfstatat",
+   "shape": "unfinished",
+   "line": "2622  newfstatat(AT_FDCWD</tmp/fixture-tmp-td74stb7/tmpk11z8pdq>, \".git/MERGE_AUTOSTASH\" <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "openat",
+   "shape": "-yy label",
+   "line": "2547  openat(AT_FDCWD</t>, \"/opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0\", O_RDONLY|O_CLOEXEC) = 3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "openat",
+   "shape": "= -1 E",
+   "line": "2547  openat(AT_FDCWD</t>, \"/opt/hostedtoolcache/Python/3.12.16/x64/lib/glibc-hwcaps/x86-64-v3/libpython3.12.so.1.0\", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "openat",
+   "shape": "AT_FDCWD<",
+   "line": "2547  openat(AT_FDCWD</t>, \"/opt/hostedtoolcache/Python/3.12.16/x64/lib/glibc-hwcaps/x86-64-v3/libpython3.12.so.1.0\", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "openat",
+   "shape": "resumed",
+   "line": "2621  <... openat resumed>)             = 3</etc/ld.so.cache>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "openat",
+   "shape": "unfinished",
+   "line": "2621  openat(AT_FDCWD</tmp/fixture-tmp-td74stb7/tmpk11z8pdq>, \"/etc/ld.so.cache\", O_RDONLY|O_CLOEXEC <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pidfd_open",
+   "shape": "-yy label",
+   "line": "3388  <... pidfd_open resumed>)         = 7<pid:3388>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pidfd_open",
+   "shape": "resumed",
+   "line": "3388  <... pidfd_open resumed>)         = 7<pid:3388>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pidfd_open",
+   "shape": "unfinished",
+   "line": "3388  pidfd_open(3388, 0 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pipe2",
+   "shape": "-yy label",
+   "line": "2619  pipe2([3<pipe:[20851]>, 4<pipe:[20851]>], O_CLOEXEC) = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pipe2",
+   "shape": "= N",
+   "line": "2619  pipe2([3<pipe:[20851]>, 4<pipe:[20851]>], O_CLOEXEC) = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pipe2",
+   "shape": "resumed",
+   "line": "2619  <... pipe2 resumed>[7<pipe:[20862]>, 8<pipe:[20862]>], O_CLOEXEC) = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pipe2",
+   "shape": "unfinished",
+   "line": "2619  pipe2( <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "poll",
+   "shape": "-yy label",
+   "line": "2619  poll([{fd=3<pipe:[20851]>, events=POLLIN}, {fd=5<pipe:[20852]>, events=POLLIN}], 2, -1 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "poll",
+   "shape": "resumed",
+   "line": "2619  <... poll resumed>)               = 2 ([{fd=3, revents=POLLHUP}, {fd=5, revents=POLLHUP}])",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "poll",
+   "shape": "unfinished",
+   "line": "2619  poll([{fd=3<pipe:[20851]>, events=POLLIN}, {fd=5<pipe:[20852]>, events=POLLIN}], 2, -1 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "prctl",
+   "shape": "= N",
+   "line": "46592 prctl(PR_SET_NAME, \"DelayedTaskSche\"...) = 0",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "prctl",
+   "shape": "resumed",
+   "line": "6405  <... prctl resumed>)              = 0",
+   "target": "scripts/check-page-links.py seed 1109",
+   "shard": 3
+  },
+  {
+   "syscall": "prctl",
+   "shape": "unfinished",
+   "line": "6405  prctl(PR_SET_NAME, \"DelayedTaskSche\"... <unfinished ...>",
+   "target": "scripts/check-page-links.py seed 1109",
+   "shard": 3
+  },
+  {
+   "syscall": "pread64",
+   "shape": "-yy label",
+   "line": "2547  pread64(3</usr/lib/x86_64-linux-gnu/libc.so.6>, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 840, 64) = 840",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pread64",
+   "shape": "= N",
+   "line": "2547  pread64(3</usr/lib/x86_64-linux-gnu/libc.so.6>, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 840, 64) = 840",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pread64",
+   "shape": "resumed",
+   "line": "3229  <... pread64 resumed>, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 840, 64) = 840",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pread64",
+   "shape": "unfinished",
+   "line": "3229  pread64(3</usr/lib/x86_64-linux-gnu/libc.so.6> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "prlimit64",
+   "shape": "= N",
+   "line": "2547  prlimit64(0, RLIMIT_STACK, NULL, {rlim_cur=16384*1024, rlim_max=RLIM64_INFINITY}) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "prlimit64",
+   "shape": "resumed",
+   "line": "3229  <... prlimit64 resumed>, {rlim_cur=16384*1024, rlim_max=RLIM64_INFINITY}) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "prlimit64",
+   "shape": "unfinished",
+   "line": "3229  prlimit64(0, RLIMIT_STACK, NULL <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "pselect6",
+   "shape": "-yy label",
+   "line": "3163  pselect6(1, [0<pipe:[21845]>], NULL, NULL, {tv_sec=2, tv_nsec=0}, NULL) = 1 (in [0], left {tv_sec=1, tv_nsec=999998010})",
+   "target": "scripts/check-ci-watched.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "pselect6",
+   "shape": "resumed",
+   "line": "2480  <... pselect6 resumed>)           = 1 (in [3], left {tv_sec=1, tv_nsec=499927027})",
+   "target": "scripts/bounded_read.py seed 0",
+   "shard": 4
+  },
+  {
+   "syscall": "pselect6",
+   "shape": "unfinished",
+   "line": "2480  pselect6(4, [3<pipe:[15074]>], NULL, NULL, {tv_sec=2, tv_nsec=0}, NULL <unfinished ...>",
+   "target": "scripts/bounded_read.py seed 0",
+   "shard": 4
+  },
+  {
+   "syscall": "read",
+   "shape": "-yy label",
+   "line": "2547  read(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "read",
+   "shape": "= N",
+   "line": "2547  read(3</opt/hostedtoolcache/Python/3.12.16/x64/lib/libpython3.12.so.1.0>, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "read",
+   "shape": "resumed",
+   "line": "2619  <... read resumed>, \"\", 50000)    = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "read",
+   "shape": "unfinished",
+   "line": "2619  read(7<pipe:[20853]> <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "readlink",
+   "shape": "= -1 E",
+   "line": "2547  readlink(\"/opt/hostedtoolcache/Python/3.12.16/x64/bin/python3.12\", 0x7ffd417b2900, 4096) = -1 EINVAL (Invalid argument)",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "readlink",
+   "shape": "= N",
+   "line": "2547  readlink(\"/opt/hostedtoolcache/Python/3.12.16/x64/bin/python3\", \"python3.12\", 4096) = 10",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "readlink",
+   "shape": "resumed",
+   "line": "3229  <... readlink resumed>, 0x7ffec6c99b46, 1) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "readlink",
+   "shape": "unfinished",
+   "line": "3229  readlink(\"/tmp/fixture-tmp-dom1kfnt/tmpqqtf5u6t/victim/.git/HEAD\" <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "readlinkat",
+   "shape": "= N",
+   "line": "7199  readlinkat(AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/proc/self/exe\", \"/usr/bin/gh\", 128) = 11",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "readlinkat",
+   "shape": "AT_FDCWD<",
+   "line": "7199  readlinkat(AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/late>, \"/proc/self/exe\", \"/usr/bin/gh\", 128) = 11",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "readlinkat",
+   "shape": "resumed",
+   "line": "7225  <... readlinkat resumed>, \"/usr/share/zoneinfo/Etc/UTC\", 128) = 27",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "readlinkat",
+   "shape": "unfinished",
+   "line": "7225  readlinkat(AT_FDCWD</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/ab>, \"/etc/localtime\" <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "recvfrom",
+   "shape": "-yy label",
+   "line": "23460 recvfrom(4<UNIX-STREAM:[75556->77425]>, \"{\\\"error\\\":\\\"io.systemd.UserDatabas\"..., 131080, MSG_DONTWAIT, NULL, NULL) = 50",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "recvfrom",
+   "shape": "= N",
+   "line": "23460 recvfrom(4<UNIX-STREAM:[75556->77425]>, \"{\\\"error\\\":\\\"io.systemd.UserDatabas\"..., 131080, MSG_DONTWAIT, NULL, NULL) = 50",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "rename",
+   "shape": "= N",
+   "line": "2547  rename(\"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/.one.md.backfill-tmp\", \"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/one.md\") = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rename",
+   "shape": "resumed",
+   "line": "3229  <... rename resumed>)             = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rename",
+   "shape": "unfinished",
+   "line": "3229  rename(\"/tmp/fixture-tmp-dom1kfnt/tmpqqtf5u6t/victim/.git/config.lock\", \"/tmp/fixture-tmp-dom1kfnt/tmpqqtf5u6t/victim/.git/config\" <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "renameat",
+   "shape": "-yy label",
+   "line": "7078  renameat(4</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed/.remember/compaction/S-kill>, \".receipt.json.7078.fcef515a\", 4</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed/.remember/compaction/S-kill>, \"receipt.json\") = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "renameat",
+   "shape": "= N",
+   "line": "7078  renameat(4</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed/.remember/compaction/S-kill>, \".receipt.json.7078.fcef515a\", 4</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed/.remember/compaction/S-kill>, \"receipt.json\") = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "restart_syscall",
+   "shape": "= -1 E",
+   "line": "3393  <... restart_syscall resumed>)    = -1 EAGAIN (Resource temporarily unavailable)",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "restart_syscall",
+   "shape": "= N",
+   "line": "3223  <... restart_syscall resumed>)    = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "restart_syscall",
+   "shape": "resumed",
+   "line": "3223  <... restart_syscall resumed>)    = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "restart_syscall",
+   "shape": "unfinished",
+   "line": "3223  restart_syscall(<... resuming interrupted futex ...> <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rmdir",
+   "shape": "= -1 E",
+   "line": "6074  rmdir(\".git/refs/remotes/origin\") = -1 ENOTEMPTY (Directory not empty)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rmdir",
+   "shape": "= N",
+   "line": "2547  rmdir(\"/tmp/fixture-tmp-3xec1v1d/tmp2bbtqwnp\") = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rmdir",
+   "shape": "resumed",
+   "line": "3238  <... rmdir resumed>)              = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rmdir",
+   "shape": "unfinished",
+   "line": "3238  rmdir(\"/tmp/fixture-tmp-dom1kfnt/fixture-tmp-9dejic7n\" <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rseq",
+   "shape": "= N",
+   "line": "2547  rseq(0x7a3ddbea3ac0, 0x21, 0, 0x53053053) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rseq",
+   "shape": "resumed",
+   "line": "3221  <... rseq resumed>)               = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rseq",
+   "shape": "unfinished",
+   "line": "3221  rseq(0x7e672604a5c0, 0x21, 0, 0x53053053 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigaction",
+   "shape": "= -1 E",
+   "line": "2623  rt_sigaction(SIGKILL, {sa_handler=SIG_DFL, sa_mask=[KILL], sa_flags=SA_RESTORER|SA_RESTART, sa_restorer=0x79c7f2e47e10}, 0x7ffe43c48f70, 8) = -1 EINVAL (Invalid argument)",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigaction",
+   "shape": "= N",
+   "line": "2547  rt_sigaction(SIGPIPE, {sa_handler=SIG_IGN, sa_mask=[], sa_flags=SA_RESTORER|SA_ONSTACK, sa_restorer=0x7a3ddb447e10}, {sa_handler=SIG_DFL, sa_mask=[], sa_flags=0}, 8) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigaction",
+   "shape": "resumed",
+   "line": "2625  <... rt_sigaction resumed>, {sa_handler=SIG_IGN, sa_mask=[], sa_flags=SA_RESTORER|SA_ONSTACK, sa_restorer=0x7ef512047e10}, 8) = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigaction",
+   "shape": "unfinished",
+   "line": "2625  rt_sigaction(SIGPIPE, {sa_handler=SIG_DFL, sa_mask=[], sa_flags=SA_RESTORER|SA_ONSTACK, sa_restorer=0x7ef512047e10} <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigprocmask",
+   "shape": "= N",
+   "line": "2547  rt_sigprocmask(SIG_BLOCK, ~[], [], 8) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigprocmask",
+   "shape": "resumed",
+   "line": "2622  <... rt_sigprocmask resumed>, NULL, 8) = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigprocmask",
+   "shape": "unfinished",
+   "line": "2622  rt_sigprocmask(SIG_SETMASK, ~[KILL STOP RTMIN RT_1] <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigreturn",
+   "shape": "= -1 E",
+   "line": "43641 rt_sigreturn({mask=[]})           = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-run-hook.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigreturn",
+   "shape": "= N",
+   "line": "3256  <... rt_sigreturn resumed>)       = 3258",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigreturn",
+   "shape": "resumed",
+   "line": "3256  <... rt_sigreturn resumed>)       = 3258",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigreturn",
+   "shape": "unfinished",
+   "line": "3256  rt_sigreturn({mask=[]} <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigsuspend",
+   "shape": "resumed",
+   "line": "46835 <... rt_sigsuspend resumed>)      = ?",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "rt_sigsuspend",
+   "shape": "unfinished",
+   "line": "46835 rt_sigsuspend([], 8 <unfinished ...>",
+   "target": "scripts/session-state.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sched_getaffinity",
+   "shape": "= N",
+   "line": "6088  sched_getaffinity(6088, 32, [0 1 2 3]) = 8",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sched_getaffinity",
+   "shape": "resumed",
+   "line": "18683 <... sched_getaffinity resumed>, [0 1 2 3]) = 8",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sched_getaffinity",
+   "shape": "unfinished",
+   "line": "18683 sched_getaffinity(18683, 32 <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sched_yield",
+   "shape": "= N",
+   "line": "7203  <... sched_yield resumed>)        = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "sched_yield",
+   "shape": "resumed",
+   "line": "7203  <... sched_yield resumed>)        = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "sched_yield",
+   "shape": "unfinished",
+   "line": "7203  sched_yield( <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "sendfile",
+   "shape": "-yy label",
+   "line": "2547  sendfile(4</tmp/fixture-tmp-3xec1v1d/tmp828gr67c/backup/live.md>, 3</tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/live.md>, [0] => [35], 8388608) = 35",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sendfile",
+   "shape": "= N",
+   "line": "2547  sendfile(4</tmp/fixture-tmp-3xec1v1d/tmp828gr67c/backup/live.md>, 3</tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/live.md>, [0] => [35], 8388608) = 35",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sendfile",
+   "shape": "resumed",
+   "line": "3221  <... sendfile resumed> => [24059], 8388608) = 24059",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sendfile",
+   "shape": "unfinished",
+   "line": "3221  sendfile(6</tmp/fixture-tmp-dom1kfnt/tmp0i_lv8mi/scripts/fixture_git.py>, 3</t/scripts/fixture_git.py>, [0] <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sendto",
+   "shape": "-yy label",
+   "line": "23460 sendto(4<UNIX-STREAM:[75556->77425]>, \"{\\\"method\\\":\\\"io.systemd.UserDataba\"..., 120, MSG_DONTWAIT|MSG_NOSIGNAL, NULL, 0) = 120",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "sendto",
+   "shape": "= N",
+   "line": "23460 sendto(4<UNIX-STREAM:[75556->77425]>, \"{\\\"method\\\":\\\"io.systemd.UserDataba\"..., 120, MSG_DONTWAIT|MSG_NOSIGNAL, NULL, 0) = 120",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "set_robust_list",
+   "shape": "= N",
+   "line": "2547  set_robust_list(0x7a3ddbea3ea0, 24) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "set_robust_list",
+   "shape": "resumed",
+   "line": "2623  <... set_robust_list resumed>)    = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "set_robust_list",
+   "shape": "unfinished",
+   "line": "2623  set_robust_list(0x79c7f31b6e60, 24 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "set_tid_address",
+   "shape": "= N",
+   "line": "2547  set_tid_address(0x7a3ddbea41e8)   = 2547",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "set_tid_address",
+   "shape": "resumed",
+   "line": "3229  <... set_tid_address resumed>)    = 3229",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "set_tid_address",
+   "shape": "unfinished",
+   "line": "3229  set_tid_address(0x700f34eb21a8 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "setitimer",
+   "shape": "= N",
+   "line": "5354  setitimer(ITIMER_REAL, {it_interval={tv_sec=1, tv_usec=0}, it_value={tv_sec=1, tv_usec=0}}, NULL) = 0",
+   "target": "scripts/batch-ci.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "setpgid",
+   "shape": "= N",
+   "line": "7256  setpgid(0, 0)                     = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "setpgid",
+   "shape": "resumed",
+   "line": "7658  <... setpgid resumed>)            = 0",
+   "target": "scripts/compaction-state.py seed 1109",
+   "shard": 5
+  },
+  {
+   "syscall": "setpgid",
+   "shape": "unfinished",
+   "line": "7658  setpgid(0, 0 <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 1109",
+   "shard": 5
+  },
+  {
+   "syscall": "setsid",
+   "shape": "= N",
+   "line": "2624  setsid()                          = 2624",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "setsid",
+   "shape": "resumed",
+   "line": "2628  <... setsid resumed>)             = 2628",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "setsid",
+   "shape": "unfinished",
+   "line": "2628  setsid( <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sigaltstack",
+   "shape": "= N",
+   "line": "6088  sigaltstack(NULL, {ss_sp=NULL, ss_flags=SS_DISABLE, ss_size=0}) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sigaltstack",
+   "shape": "resumed",
+   "line": "6088  <... sigaltstack resumed>, NULL)  = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "sigaltstack",
+   "shape": "unfinished",
+   "line": "6088  sigaltstack({ss_sp=NULL, ss_flags=SS_DISABLE, ss_size=8192} <unfinished ...>",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socket",
+   "shape": "-yy label",
+   "line": "6086  socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0) = 3<UNIX-STREAM:[38896]>",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socket",
+   "shape": "resumed",
+   "line": "18675 <... socket resumed>)             = 3<UNIX-STREAM:[101202]>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socket",
+   "shape": "unfinished",
+   "line": "18675 socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0 <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socketpair",
+   "shape": "-yy label",
+   "line": "3388  <... socketpair resumed>, [5<UNIX-STREAM:[23189->23190]>, 6<UNIX-STREAM:[23190->23189]>]) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socketpair",
+   "shape": "= N",
+   "line": "3388  <... socketpair resumed>, [5<UNIX-STREAM:[23189->23190]>, 6<UNIX-STREAM:[23190->23189]>]) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socketpair",
+   "shape": "resumed",
+   "line": "3388  <... socketpair resumed>, [5<UNIX-STREAM:[23189->23190]>, 6<UNIX-STREAM:[23190->23189]>]) = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "socketpair",
+   "shape": "unfinished",
+   "line": "3388  socketpair(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "splice",
+   "shape": "-yy label",
+   "line": "18665 splice(0<pipe:[101872]>, NULL, 4<pipe:[101875]>, NULL, 1048576, 0) = 10",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "splice",
+   "shape": "= -1 E",
+   "line": "43998 splice(0</dev/null<char 1:3>>, NULL, 4<pipe:[316697]>, NULL, 1048576, 0) = -1 EINVAL (Invalid argument)",
+   "target": "scripts/check-run-hook.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "splice",
+   "shape": "= N",
+   "line": "18665 splice(0<pipe:[101872]>, NULL, 4<pipe:[101875]>, NULL, 1048576, 0) = 10",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "splice",
+   "shape": "resumed",
+   "line": "18665 <... splice resumed>)             = 10",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "splice",
+   "shape": "unfinished",
+   "line": "18665 splice(3<pipe:[101875]>, NULL, 1<pipe:[101179]>, NULL, 10, 0 <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "stat",
+   "shape": "= -1 E",
+   "line": "46591 stat(\"/var/lib/crypto-config/profiles/current/openssl.conf.d\", 0x7ffc351f2080) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/explainer-serve.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statfs",
+   "shape": "= -1 E",
+   "line": "6088  statfs(\"/sys/fs/selinux\", 0x7fffbea13cc0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statfs",
+   "shape": "= N",
+   "line": "22068 statfs(\"/tmp/fixture-tmp-tdgxd2e1/tmpdkdf9jfm/work2\", {f_type=EXT2_SUPER_MAGIC, f_bsize=4096, f_blocks=37840252, f_bfree=22707135, f_bavail=22703039, f_files=18690560, f_ffree=17635556, f_fsid={val=[0x48909c9d, 0xcb5b4def]}, f_namelen=255, f_frsize=4096, f_flags=ST_VALID|ST_RELATIME}) = 0",
+   "target": "scripts/fixture_git.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "statfs",
+   "shape": "resumed",
+   "line": "18683 <... statfs resumed>, 0x7fff9141c2d0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statfs",
+   "shape": "unfinished",
+   "line": "18683 statfs(\"/sys/fs/selinux\" <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statx",
+   "shape": "-yy label",
+   "line": "6088  statx(3</usr/share/coreutils/locales/uucore/en-US.ftl>, \"\", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0777, stx_size=4113, ...}) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statx",
+   "shape": "= -1 E",
+   "line": "2998  statx(AT_FDCWD</t>, \"/t/scripts/node_modules/typescript\", AT_STATX_SYNC_AS_STAT, STATX_ALL, 0x7fff6e8b3ed0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-paid-caller-arrival.py seed 0",
+   "shard": 4
+  },
+  {
+   "syscall": "statx",
+   "shape": "= N",
+   "line": "6088  statx(AT_FDCWD</tmp/fixture-tmp-_jctfh40/plan-leak-hgqifb76/plain>, \"/usr/share/coreutils/locales/dirname\", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0777, stx_size=4096, ...}) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statx",
+   "shape": "AT_FDCWD<",
+   "line": "6088  statx(AT_FDCWD</tmp/fixture-tmp-_jctfh40/plan-leak-hgqifb76/plain>, \"/usr/share/coreutils/locales/dirname\", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0777, stx_size=4096, ...}) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statx",
+   "shape": "resumed",
+   "line": "18683 <... statx resumed>, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0777, stx_size=4096, ...}) = 0",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "statx",
+   "shape": "unfinished",
+   "line": "18683 statx(AT_FDCWD</t>, \"/usr/share/coreutils/locales/dirname\", AT_STATX_SYNC_AS_STAT, STATX_ALL <unfinished ...>",
+   "target": "scripts/check-rc-contract.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "symlink",
+   "shape": "= N",
+   "line": "2620  symlink(\"testing\", \"/tmp/fixture-tmp-td74stb7/tmpk11z8pdq/.git/tt8ZTqp\") = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "symlink",
+   "shape": "resumed",
+   "line": "3230  <... symlink resumed>)            = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "symlink",
+   "shape": "unfinished",
+   "line": "3230  symlink(\"testing\", \"/tmp/fixture-tmp-dom1kfnt/tmp0i_lv8mi/victim/.git/t8uZYoM\" <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "tgkill",
+   "shape": "= N",
+   "line": "7201  <... tgkill resumed>)             = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "tgkill",
+   "shape": "resumed",
+   "line": "7201  <... tgkill resumed>)             = 0",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "tgkill",
+   "shape": "unfinished",
+   "line": "7201  tgkill(7199, 7199, SIGURG <unfinished ...>",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "timerfd_create",
+   "shape": "-yy label",
+   "line": "23460 timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC|TFD_NONBLOCK) = 6<anon_inode:[timerfd]>",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "timerfd_settime",
+   "shape": "-yy label",
+   "line": "23460 timerfd_settime(6<anon_inode:[timerfd]>, TFD_TIMER_ABSTIME, {it_interval={tv_sec=0, tv_nsec=0}, it_value={tv_sec=365, tv_nsec=850043000}}, NULL) = 0",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "timerfd_settime",
+   "shape": "= N",
+   "line": "23460 timerfd_settime(6<anon_inode:[timerfd]>, TFD_TIMER_ABSTIME, {it_interval={tv_sec=0, tv_nsec=0}, it_value={tv_sec=365, tv_nsec=850043000}}, NULL) = 0",
+   "target": "scripts/push-command.py seed 0",
+   "shard": 3
+  },
+  {
+   "syscall": "uname",
+   "shape": "= N",
+   "line": "6068  <... uname resumed>{sysname=\"Linux\", nodename=\"runnervmwuk1x\", ...}) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "uname",
+   "shape": "resumed",
+   "line": "6068  <... uname resumed>{sysname=\"Linux\", nodename=\"runnervmwuk1x\", ...}) = 0",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "uname",
+   "shape": "unfinished",
+   "line": "6068  uname( <unfinished ...>",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlink",
+   "shape": "= -1 E",
+   "line": "2622  unlink(\".git/logs/AUTO_MERGE\")    = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlink",
+   "shape": "= N",
+   "line": "2547  unlink(\"/tmp/y4w8ft5b\")           = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlink",
+   "shape": "resumed",
+   "line": "2624  <... unlink resumed>)             = 0",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlink",
+   "shape": "unfinished",
+   "line": "2624  unlink(\"/tmp/fixture-tmp-td74stb7/tmpk11z8pdq/.git/objects/maintenance.lock\" <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlinkat",
+   "shape": "-yy label",
+   "line": "2547  unlinkat(3</tmp/fixture-tmp-3xec1v1d/tmp2bbtqwnp>, \"sess-aaaa1111.jsonl\", 0) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlinkat",
+   "shape": "= -1 E",
+   "line": "7078  unlinkat(4</tmp/fixture-tmp-ui1umrq2/tmpv8wu6lj0/killed/.remember/compaction/S-kill>, \"snapshot.md\", 0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "unlinkat",
+   "shape": "= N",
+   "line": "2547  unlinkat(3</tmp/fixture-tmp-3xec1v1d/tmp2bbtqwnp>, \"sess-aaaa1111.jsonl\", 0) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlinkat",
+   "shape": "AT_FDCWD<",
+   "line": "14068 unlinkat(AT_FDCWD</t>, \"/tmp/fixture-tmp-f4kbs_7b/tmp.MxbNuE4Ipq\", 0) = 0",
+   "target": "scripts/check-handoff-path.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "unlinkat",
+   "shape": "resumed",
+   "line": "3238  <... unlinkat resumed>)           = 0",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "unlinkat",
+   "shape": "unfinished",
+   "line": "3238  unlinkat(5</tmp/fixture-tmp-dom1kfnt/fixture-tmp-9dejic7n/tmpviyybc3j/.git>, \"HEAD\", 0 <unfinished ...>",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "utimensat",
+   "shape": "= -1 E",
+   "line": "13493 utimensat(AT_FDCWD</t>, \"/tmp/fixture-tmp-cidin46o/tmpuln8vs6b/scripts/backfill-work-lines.py\", NULL, 0) = -1 ENOENT (No such file or directory)",
+   "target": "scripts/check-diff-coverage.py seed 0",
+   "shard": 2
+  },
+  {
+   "syscall": "utimensat",
+   "shape": "= N",
+   "line": "2547  utimensat(AT_FDCWD</t>, \"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/one.md\", [{tv_sec=1700000000, tv_nsec=0} /* 2023-11-14T22:13:20+0000 */, {tv_sec=1700000000, tv_nsec=0} /* 2023-11-14T22:13:20+0000 */], 0) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "utimensat",
+   "shape": "AT_FDCWD<",
+   "line": "2547  utimensat(AT_FDCWD</t>, \"/tmp/fixture-tmp-3xec1v1d/tmp828gr67c/repo/.claude/plans/one.md\", [{tv_sec=1700000000, tv_nsec=0} /* 2023-11-14T22:13:20+0000 */, {tv_sec=1700000000, tv_nsec=0} /* 2023-11-14T22:13:20+0000 */], 0) = 0",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "utimensat",
+   "shape": "resumed",
+   "line": "4860  <... utimensat resumed>)          = 0",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "utimensat",
+   "shape": "unfinished",
+   "line": "4860  utimensat(AT_FDCWD</tmp/fixture-tmp-6ziowbi_/stalled-work-hxjh4hl7/mm>, \".git/objects/e1/5cd32f94c7d7a28513716871390a8a50c9b4e2\", NULL, 0 <unfinished ...>",
+   "target": "scripts/check-stalled-work.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "vfork",
+   "shape": "= N",
+   "line": "2619  <... vfork resumed>)              = 2620",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "vfork",
+   "shape": "resumed",
+   "line": "2619  <... vfork resumed>)              = 2620",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "vfork",
+   "shape": "unfinished",
+   "line": "2619  vfork( <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "wait4",
+   "shape": "= -1 E",
+   "line": "3256  <... wait4 resumed>, 0x7ffd48f2841c, WNOHANG, NULL) = -1 ECHILD (No child processes)",
+   "target": "scripts/check-fixture-git-isolation.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "wait4",
+   "shape": "= N",
+   "line": "2619  wait4(2620, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 2620",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "wait4",
+   "shape": "resumed",
+   "line": "2622  <... wait4 resumed>, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 2623",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "wait4",
+   "shape": "unfinished",
+   "line": "2622  wait4(2623 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "write",
+   "shape": "-yy label",
+   "line": "2547  write(3</tmp/y4w8ft5b>, \"blat\", 4) = 4",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "write",
+   "shape": "= -1 E",
+   "line": "7078  write(4<pipe:[55681]>, \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"..., 987136) = -1 EPIPE (Broken pipe)",
+   "target": "scripts/compaction-state.py seed 0",
+   "shard": 5
+  },
+  {
+   "syscall": "write",
+   "shape": "= N",
+   "line": "2547  write(3</tmp/y4w8ft5b>, \"blat\", 4) = 4",
+   "target": "scripts/backfill-work-lines.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "write",
+   "shape": "resumed",
+   "line": "2619  <... write resumed>)              = 1",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "write",
+   "shape": "unfinished",
+   "line": "2619  write(3</tmp/fixture-tmp-td74stb7/tmpk11z8pdq/new-r1-codex.md>, \"x\", 1 <unfinished ...>",
+   "target": "scripts/check-decision-scheme.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "writev",
+   "shape": "-yy label",
+   "line": "6076  writev(1<pipe:[40332]>, [{iov_base=\"0030\\1\", iov_len=5}, {iov_base=\"000eunpack ok\\n0019ok refs/heads/\"..., iov_len=43}], 2 <unfinished ...>",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "writev",
+   "shape": "= N",
+   "line": "6076  <... writev resumed>)             = 48",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "writev",
+   "shape": "resumed",
+   "line": "6076  <... writev resumed>)             = 48",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  },
+  {
+   "syscall": "writev",
+   "shape": "unfinished",
+   "line": "6076  writev(1<pipe:[40332]>, [{iov_base=\"0030\\1\", iov_len=5}, {iov_base=\"000eunpack ok\\n0019ok refs/heads/\"..., iov_len=43}], 2 <unfinished ...>",
+   "target": "scripts/check-plan-leak.py seed 0",
+   "shard": 1
+  }
+ ]
+}
