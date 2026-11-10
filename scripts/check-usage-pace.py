@@ -1230,7 +1230,7 @@ def _self_test_body() -> int:
         check("use-it-or-lose-it r1 P2: a room under 0.1 is '<0.1%' left, never '0%' — which reads as nothing",
               evm(cache(97.95, week_reset=_sat2, at=_l), m85, _l)[1].startswith("⏳ USE IT — <0.1% is left"), True)
         check("use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side",
-              ["USE IT" in evm(cache(90, week_reset=_sat2, at=t), m85, t)[1] for t in (rise_start(_sat2) - 60, rise_start(_sat2) + 60)]
+              ["⏳ USE IT —" in evm(cache(90, week_reset=_sat2, at=t), m85, t)[1] for t in (rise_start(_sat2) - 60, rise_start(_sat2) + 60)]
               + [cap_at(rise_start(_sat2) - 60, _sat2) == STOP_CAP, cap_at(rise_start(_sat2) + 60, _sat2) > STOP_CAP],
               [False, True, True, True])
         # backlog #523 (owner 11-05 20:46/20:53, strategy B): on the last night the stop IS the hard limit
