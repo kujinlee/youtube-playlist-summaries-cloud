@@ -19708,3 +19708,19 @@ the hook with its undo, never overwriting what is there (r3 F1, F4, F6); with th
 must be at or under the merged head (F2); BY-PEER only when git registers the archive path at this HEAD (F3); a
 remembered refusal expires after 24 h (F5); the undo is shell-quoted (F7). 92 self-test cases, 52 mutations, all
 killed and attributed.
+
+## 2026-11-10
+The usage guard now speaks your elastic day band from yesterday, instead of the old "pace line". Each day it
+measures from where the weekly meter stood at local midnight: below start + 12% is NORMAL, from +12% to +20% is
+WIND-DOWN (finish running work, only small items that fit, no new build or review loop), and +20% or more is NO NEW
+STARTS. Every day still to come keeps at least 8%, so the band is capped to leave it, and the last day before the
+reset says "use it all". This week's own bands are written in as you gave them: Mon 70–72, Tue 78–80, Wed 88–90,
+Thu until the Fri 02:00 reset use it all. They switch themselves off when the week resets. A WIND-DOWN or NO NEW
+STARTS zone now warns in the prompt. Above the weekly trend (14.3% a day + 8) the message says so as a guide. When
+the start of the day cannot be read, the band is called UNKNOWN, never fine. The hard stop that refuses new agents
+is unchanged. Today at 72% it reads: band 78–80% (this week's override), zone NORMAL.
+<!--tech-->
+`scripts/check-usage-pace.py`: `pace_line` → `day_start` (returns start% only); new `day_band`, `band_zone`,
+`band_cap`, `trend_at`, `band_note`, `BAND_OVERRIDES` keyed by the window's `resets_at` local date then today's.
+`refuse_at`, `cap_at` and `RESERVE_PER_DAY` untouched. The last day is from `rise_start` (#521's own boundary), so
+for a Fri 02:00 reset Thursday is already "use it all". 403 self-test cases; mutation pin 175 → 188.

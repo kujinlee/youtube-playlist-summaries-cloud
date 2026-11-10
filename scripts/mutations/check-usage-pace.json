@@ -447,8 +447,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if five_note:\n        return WARN",
-        "    if False:\n        return WARN"
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN",
+        "    if zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):\n        return WARN"
       ]
     ],
     "expect": [
@@ -1381,16 +1381,16 @@
     ]
   },
   {
-    "name": "#500: the line itself is not capped at 97",
+    "name": "day band: the 8% floor no longer caps the band's top",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "return min(LINE_CAP, start[1] + LINE_FRONT_LOAD",
-        "return (start[1] + LINE_FRONT_LOAD"
+        "    return min(low, cap), min(high, cap), source, False",
+        "    return min(low, cap), high, source, False"
       ]
     ],
     "expect": [
-      "#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)"
+      "⭐ day band: the 8% floor caps an edge — start 45 keeps 57 but its 65 is capped at 59.33; start 50 caps both"
     ]
   },
   {
@@ -1421,16 +1421,16 @@
     ]
   },
   {
-    "name": "#500: the front-load factor is lost",
+    "name": "day band: the 8% floor is lost (DAY_FLOOR 8 → 0)",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "LINE_FRONT_LOAD = 1.5",
-        "LINE_FRONT_LOAD = 1.0"
+        "DAY_FLOOR = 8.0",
+        "DAY_FLOOR = 0.0"
       ]
     ],
     "expect": [
-      "⭐ #500: the pace line is start% + 1.5 × (100 − start%) ÷ days-to-reset"
+      "⭐ day band: the 8% floor caps an edge — start 45 keeps 57 but its 65 is capped at 59.33; start 50 caps both"
     ]
   },
   {
@@ -1456,7 +1456,7 @@
       ]
     ],
     "expect": [
-      "#500: last week's rows and future rows never set the line, and garbage lines are skipped"
+      "#500: last week's rows and future rows never set start%, and garbage lines are skipped"
     ]
   },
   {
@@ -1469,20 +1469,20 @@
       ]
     ],
     "expect": [
-      "#500: last week's rows and future rows never set the line, and garbage lines are skipped"
+      "#500: last week's rows and future rows never set start%, and garbage lines are skipped"
     ]
   },
   {
-    "name": "#500: an unreadable line is silent",
+    "name": "day band: an unknown band is silent",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "else f\" Today's pace line cannot be read ({why}): treat it as NOT RUN.\" if why else \"\")",
-        "else \"\")"
+        "        return (f\" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, \"\n                f\"never as fine.{trend_note}\", BAND_UNKNOWN)",
+        "        return \"\", BAND_UNKNOWN"
       ]
     ],
     "expect": [
-      "⭐ #500: an unreadable line is SAID, and the stop is unchanged"
+      "⭐ #500: an unreadable start% is SAID (the band is UNKNOWN), and the stop is unchanged"
     ]
   },
   {
@@ -1495,7 +1495,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500: main() reads --meter: its message names the 92.5 line from that file"
+      "⭐ #500: main() reads --meter: its message names the start% 85 from that file"
     ]
   },
   {
@@ -1508,7 +1508,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%"
     ]
   },
   {
@@ -1521,7 +1521,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%"
     ]
   },
   {
@@ -1534,7 +1534,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line"
+      "⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%"
     ]
   },
   {
@@ -1590,16 +1590,16 @@
     ]
   },
   {
-    "name": "#500: the pace line moves the stop again",
+    "name": "day band: the band's floor moves the stop",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)\n",
-        "    line, why = (None, \"\") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)\n    stop = line if line is not None else stop\n"
+        "    line_note, zone = (\"\", None) if meter is False else band_note(meter, now, resets, weekly, meter_why, meter_cut)\n",
+        "    line_note, zone = (\"\", None) if meter is False else band_note(meter, now, resets, weekly, meter_why, meter_cut)\n    stop = min(stop, band_cap(now, resets))\n"
       ]
     ],
     "expect": [
-      "⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter"
+      "⭐ #500: the DAY BAND never moves the stop — the same cache gives the same verdict under any meter"
     ]
   },
   {
@@ -1612,7 +1612,7 @@
       ]
     ],
     "expect": [
-      "⭐ #500: the message states the stop's reserve, and names the line as a guide"
+      "⭐ #500: the message states the stop's reserve, and names the day band as a guide"
     ]
   },
   {
@@ -1785,16 +1785,17 @@
     ]
   },
   {
-    "name": "the pace line is still shown on the last day, beside the usage it reads as a stop",
+    "name": "day band: the last day is a band to hold under, not USE IT ALL",
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    if last_day:\n        line_note = \"\"\n",
-        ""
+        "    if on_last_day(now, resets):\n        return cap, cap, \"the last day: use it all\", True",
+        "    if False:\n        return cap, cap, \"the last day: use it all\", True"
       ]
     ],
     "expect": [
-      "11-05 19:44: ...and the pace line is not shown on the last day — '97% — a guide' beside 97% read as a stop"
+      "⭐ day band: the LAST day (from rise_start) is USE IT ALL at the 100 cap; the day before it (Wed 23:00) is a band",
+      "11-05 19:44: ...and on the last day the day band says USE IT ALL, never a band to hold under"
     ]
   },
   {
@@ -1815,7 +1816,7 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "    last_day = now > rise_start(resets)",
+        "    last_day = on_last_day(now, resets)",
         "    last_day = True"
       ]
     ],
@@ -1854,8 +1855,8 @@
     "file": "scripts/check-usage-pace.py",
     "edits": [
       [
-        "rise_start(resets)   # the same instant the stop starts rising",
-        "rise_start(resets) + 3600   # the same instant the stop starts rising"
+        "    last_day = on_last_day(now, resets)   # the same instant",
+        "    last_day = on_last_day(now - 3600, resets)   # the same instant"
       ]
     ],
     "expect": [
@@ -2056,7 +2057,7 @@
       ]
     ],
     "expect": [
-      "⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's line (92.5)"
+      "⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's start% (85)"
     ]
   },
   {
@@ -2099,8 +2100,8 @@
       "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
       "#501: a cut that drops the midnight row's partial line is refused the same way",
       "#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
-      "⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 55",
-      "⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 75"
+      "⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 10",
+      "⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 50"
     ]
   },
   {
@@ -2181,7 +2182,7 @@
       ]
     ],
     "expect": [
-      "⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% that would give 55); the line still reads"
+      "⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% start); start% still reads 85"
     ]
   },
   {
@@ -2194,7 +2195,7 @@
       ]
     ],
     "expect": [
-      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
+      "⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 10",
       "#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
       "⭐ #501 r3: the canary — a row exactly S before the row above it answers; S + 1 s is a broken contract",
       "⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s before its predecessor, is a broken contract",
@@ -2212,7 +2213,7 @@
     ],
     "expect": [
       "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
-      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 88"
     ]
   },
   {
@@ -2226,7 +2227,7 @@
     ],
     "expect": [
       "⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
-      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 88"
     ]
   },
   {
@@ -2253,7 +2254,7 @@
       ]
     ],
     "expect": [
-      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 94"
+      "⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp (start − 1 h) is refused; 1 s more answers 88"
     ]
   },
   {
@@ -2279,8 +2280,8 @@
       ]
     ],
     "expect": [
-      "⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (21.96)",
-      "⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 22.99"
+      "⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (1)",
+      "⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 2"
     ]
   },
   {
@@ -2293,7 +2294,7 @@
       ]
     ],
     "expect": [
-      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (85)"
     ]
   },
   {
@@ -2307,7 +2308,7 @@
     ],
     "expect": [
       "⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
-      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)"
+      "#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (85)"
     ]
   },
   {
@@ -2321,6 +2322,280 @@
     ],
     "expect": [
       "⭐ backlog #231: meter_row is memoised on the line's text, and a changed line is a changed answer"
+    ]
+  },
+  {
+    "name": "day band: A and B swapped",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "        low, high, source = start + BAND_LOW, start + BAND_HIGH,",
+        "        low, high, source = start + BAND_HIGH, start + BAND_LOW,"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "day band: the band top ignores start% (a constant base)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "start + BAND_HIGH, f\"{BAND_LOW:g}",
+        "10 + BAND_HIGH, f\"{BAND_LOW:g}"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "day band: the owner's override is ignored",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    over = BAND_OVERRIDES.get(local_date(resets), {}).get(local_date(now))",
+        "    over = None"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the owner's override HITS for its window (Tue 11-10 → 78–80, start% ignored) and MISSES for another window (start 50 → 62–70)"
+    ]
+  },
+  {
+    "name": "day band: the override is read for ANY window, so it never expires with its own",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ".get(local_date(resets), {})",
+        ".get(\"2026-11-13\", {})"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the owner's override HITS for its window (Tue 11-10 → 78–80, start% ignored) and MISSES for another window (start 50 → 62–70)"
+    ]
+  },
+  {
+    "name": "day band: the NORMAL/WIND-DOWN boundary is inclusive",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return NORMAL if weekly < low else WIND_DOWN if weekly < high else NO_NEW_STARTS",
+        "    return NORMAL if weekly <= low else WIND_DOWN if weekly < high else NO_NEW_STARTS"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: each zone boundary on both sides — 21.9 NORMAL, 22 WIND-DOWN, 29.9 WIND-DOWN, 30 NO NEW STARTS"
+    ]
+  },
+  {
+    "name": "day band: the WIND-DOWN/NO NEW STARTS boundary is inclusive",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "WIND_DOWN if weekly < high",
+        "WIND_DOWN if weekly <= high"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: each zone boundary on both sides — 21.9 NORMAL, 22 WIND-DOWN, 29.9 WIND-DOWN, 30 NO NEW STARTS"
+    ]
+  },
+  {
+    "name": "day band: a WIND-DOWN or NO NEW STARTS zone is silent at rc 0",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):",
+        "    if five_note or zone in (BAND_UNKNOWN,):"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the zone sets the verdict below WARN — NORMAL is OK, WIND-DOWN and NO NEW STARTS are WARN"
+    ]
+  },
+  {
+    "name": "day band: NORMAL warns too",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)",
+        "zone in (NORMAL, WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN)"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the zone sets the verdict below WARN — NORMAL is OK, WIND-DOWN and NO NEW STARTS are WARN"
+    ]
+  },
+  {
+    "name": "day band: the trend base is lost (8 → 0)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "TREND_BASE = 8.0",
+        "TREND_BASE = 0.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "day band: the trend slope moves off 14.3",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "TREND_PER_DAY = 14.3",
+        "TREND_PER_DAY = 14.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "day band: USE IT ALL is said beside a refusal at the stop",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if weekly >= stop and zone == USE_IT_ALL:\n        line_note = \"\"",
+        "    if False:\n        line_note = \"\""
+      ]
+    ],
+    "expect": [
+      "11-05 19:44: at the stop there is no room, so no USE IT — the refusal stands"
+    ]
+  },
+  {
+    "name": "day band: BAND_LOW moves off 12",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_LOW = 12.0",
+        "BAND_LOW = 11.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "day band: BAND_HIGH moves off 20",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_HIGH = 20.0",
+        "BAND_HIGH = 21.0"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)"
+    ]
+  },
+  {
+    "name": "pace-band r1 U1: an UNKNOWN band is OK again, so the prompt hook is silent",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ", BAND_UNKNOWN):\n        return WARN, f\"⚠ usage pace",
+        "):\n        return WARN, f\"⚠ usage pace"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 U1: an unknown start% with no override is a WARN that says the band is UNKNOWN and why, and the prompt hook speaks it"
+    ]
+  },
+  {
+    "name": "pace-band r1 C2: the last day excludes its own midnight again",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    return now >= rise_start(resets)",
+        "    return now > rise_start(resets)"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 C2: AT the last day's midnight the band is USE IT ALL and the room is said; one second before it is still the band (NO NEW STARTS)"
+    ]
+  },
+  {
+    "name": "pace-band r1 L5: start% has no age bound",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "    if before is not None and before[0] < local_midnight(midnight - 1):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); one AT yesterday's midnight and one an hour before today's still set start%",
+      "pace-band r1 L5: ...and evaluate() says that band is UNKNOWN, as a WARN"
+    ]
+  },
+  {
+    "name": "pace-band r1 L5: the age bound counts back two midnights, not one",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "before[0] < local_midnight(midnight - 1):",
+        "before[0] < local_midnight(local_midnight(midnight - 1) - 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); one AT yesterday's midnight and one an hour before today's still set start%"
+    ]
+  },
+  {
+    "name": "pace-band r1 L1: today's override key is the UTC date (Claude's surviving mutation)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        ".get(local_date(now))",
+        ".get(time.strftime(\"%Y-%m-%d\", time.gmtime(now)))"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at Thu 17:00 PST is not the Fri 11-13 window"
+    ]
+  },
+  {
+    "name": "pace-band r1 L1: the window's override key is the UTC date",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "BAND_OVERRIDES.get(local_date(resets)",
+        "BAND_OVERRIDES.get(time.strftime(\"%Y-%m-%d\", time.gmtime(resets))"
+      ]
+    ],
+    "expect": [
+      "⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at Thu 17:00 PST is not the Fri 11-13 window"
+    ]
+  },
+  {
+    "name": "pace-band r1 L2: the trend line moves up by 0.05 (Claude's surviving mutation)",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "(now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE",
+        "(now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE + 0.05"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
+    ]
+  },
+  {
+    "name": "pace-band r1 L2: the trend line moves down by 0.05",
+    "file": "scripts/check-usage-pace.py",
+    "edits": [
+      [
+        "/ 86400 + TREND_BASE",
+        "/ 86400 + TREND_BASE - 0.05"
+      ]
+    ],
+    "expect": [
+      "⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over and says so, and the verdict stays OK (a guide, not a verdict)"
     ]
   }
 ]

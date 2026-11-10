@@ -2055,7 +2055,18 @@ EXPECTED_MUTATIONS = {
     # the canary removed, the witness's strict < and its skew, `before[0]` and the window bound's slack, the running
     # maximum, `min_at` over every window, a whole log refused for a breach, and the witness applied to a whole log.
     # ⟳ 2026-11-07, backlog #231 (suite cost): 174 -> 175, none retired, none re-bound. `meter_row` loses its memo.
-    "scripts/check-usage-pace.py": 175,
+    # ⟳ 2026-11-10, the owner's elastic DAY BAND (11-09) replaces the 1.5× pace line: 175 -> 188. 3 retired-and-replaced
+    # with the line's code (its 97 cap, its front-load factor, its last-day suppression -> the floor cap, DAY_FLOOR,
+    # the last-day USE IT ALL branch); 3 re-bound (an unknown band silent, the band moving the stop, the five-hour
+    # WARN anchor). 13 new: A/B swapped, a constant base, BAND_LOW, BAND_HIGH, the override ignored and read for any
+    # window, both zone boundaries inclusive, the zone WARN dropped and NORMAL warning, TREND_BASE, TREND_PER_DAY, and
+    # USE IT ALL said beside a refusal.
+    # ⟳ 2026-11-10, pace-band r1 fold: 188 -> 196, none retired. 7 re-bound by the fold's own edits (the zone WARN set
+    # gained BAND_UNKNOWN: 3 anchors; the unknown band's return value; the last-day test is now `on_last_day`: 3
+    # anchors) and 2 expects renamed (the trend case's tighter edges). 8 new: U1 (UNKNOWN back to OK), C2 (the last
+    # day exclusive again), L5 (no age bound; the bound two midnights back), L1 (today's key and the window's key in
+    # UTC: Claude r1's surviving mutation and its twin), L2 (the trend line ±0.05: Claude r1's survivor and its twin).
+    "scripts/check-usage-pace.py": 196,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree

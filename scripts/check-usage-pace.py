@@ -16,7 +16,8 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
     OK            weekly below 80%
     WARN          weekly 80% or more — names the % (floored to 0.1, never rounded up) and the reset time
                   in local time WITH its zone abbreviation, so a reset across a DST change is unambiguous;
-                  also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level
+                  also: five-hour 90% or more, or a five-hour window that cannot be read, at any weekly level;
+                  and the DAY BAND's WIND-DOWN or NO NEW STARTS zone, at any weekly level (below)
     REFUSE-SPAWN  weekly at or over the stop: 100% − 5% × the days left after today, never above 97% (backlog #500) —
                   except on the LAST DAY, when the 97% cap rises linearly to 99% at 1 h before the reset (backlog #510)
                   — and for the last 8 h before the reset (the LAST NIGHT) there is no soft stop: the stop is the hard
@@ -32,6 +33,16 @@ THE VERDICTS (the weekly window decides; the five-hour window can only add a war
                   + 1 h ahead — a millisecond or nanosecond epoch — or one this platform cannot format).
                   LOUD, and never read as fine — but it does NOT block anything: a statusline hiccup must
                   not stop all work.
+
+THE DAY BAND (the owner, 2026-11-09 15:12–15:32; it replaced the 11-01 pace line, start% + 1.5 × the rest ÷ days)
+is a GUIDE read from the meter log (~/.claude/meter/log.jsonl), and never moves the stop. Today's band is
+start% + 12 … start% + 20 (start% = the weekly value at local midnight, `day_start`), both edges capped so every day
+after today keeps 8% (100 − 8 × the days after today), or this window's owner override (`BAND_OVERRIDES`). Below the
+band is NORMAL (start whole items that fit under its top); inside it WIND-DOWN (finish running work and its review
+rounds, no new build or review loop); at its top or over, NO NEW STARTS. The last day is USE IT ALL. A meter at over
+14.3%/day since the window began + 8 adds a trend note. WIND-DOWN and NO NEW STARTS are WARN, because the prompt hook
+speaks only on WARN; so is an UNKNOWN band (no start%, or one from before yesterday, and no override — said as NOT
+RUN), since an unknown start% never reads as fine (pace-band r1 U1). NORMAL leaves the verdict alone.
 
 ⟳ PR #446 r1 (X1/M3): a bad FIVE-HOUR window no longer disables the weekly verdict. It was CANNOT RUN, so a
 valid weekly 95% beside a five-hour `resets_at` of 1e300 let a spawn through — the row's own FAILS IF. Now
@@ -147,7 +158,7 @@ Usage:
     python3 scripts/check-usage-pace.py --hook prompt      # the UserPromptSubmit hook's output
     python3 scripts/check-usage-pace.py --hook spawn       # the PreToolUse(Agent) hook's output
     python3 scripts/check-usage-pace.py --hook wake        # the PreToolUse(SendMessage) hook's output
-    python3 scripts/check-usage-pace.py --self-test  # 394 cases
+    python3 scripts/check-usage-pace.py --self-test  # 409 cases
 """
 from __future__ import annotations
 
@@ -168,7 +179,7 @@ WARN_AT = 80.0
 # 100 − RESERVE_PER_DAY × the days left AFTER today (fractional: a reset at 02:00 leaves 2 h, not a whole day), never
 # above the cap (STOP_CAP, rising to LAST_DAY_CAP over the last day — backlog #510, below). Unused reserve is never
 # lost: each midnight the stop rises by RESERVE_PER_DAY, and on the last day all of it is spendable. The points above
-# the cap let work IN FLIGHT finish and cover a cache up to MAX_AGE_S old. The owner's PACE LINE (11-01 15:38) keeps the day-to-day pace steady; it is a GUIDE, named in the message,
+# the cap let work IN FLIGHT finish and cover a cache up to MAX_AGE_S old. The owner's DAY BAND (below) keeps the day-to-day pace steady; it is a GUIDE, named in the message,
 # and never moves the stop — so the meter log it is read from cannot move the stop either.
 RESERVE_PER_DAY = 5.0
 STOP_CAP = 97.0
@@ -187,8 +198,30 @@ RISE_END_S = 3600
 # for the reset, which the night makes short. 8 h is a 02:00 reset's 18:00, while the owner is still often present.
 LAST_NIGHT_S = 8 * 3600
 HARD_LIMIT = 100.0
-LINE_CAP = 97.0
-LINE_FRONT_LOAD = 1.5
+# THE ELASTIC DAY BAND (the owner, 2026-11-09 15:12–15:32), replacing the 11-01 pace line (start% + 1.5 × the rest ÷
+# days). Each day has a band of DAILY spend measured from the start-of-day value (`day_start`): below start + BAND_LOW
+# is NORMAL, start + BAND_LOW up to start + BAND_HIGH is WIND-DOWN, and start + BAND_HIGH or more is NO NEW STARTS.
+# One hard invariant: every remaining day keeps DAY_FLOOR, so both edges are capped at 100 − DAY_FLOOR × the days
+# after today. The last day (from `rise_start`, the instant the stop starts rising and #521's room becomes room the
+# reset loses) is "use it all". A GUIDE, never a stop: `refuse_at` does not read it.
+BAND_LOW = 12.0
+BAND_HIGH = 20.0
+DAY_FLOOR = 8.0
+# The weekly trend guard (same message): 14.3%/day since the window began, plus 8. Above it, the message says so — a
+# note, not a verdict.
+TREND_PER_DAY = 14.3
+TREND_BASE = 8.0
+# THIS WEEK ONLY, the owner's explicit CUMULATIVE bands (2026-11-09 15:27: "Mon 70–72, Tue 78–80, Wed 88–90, Thu until
+# the Fri 02:00 reset: use all"). Keyed by the window's `resets_at` LOCAL DATE (measured in ~/.claude/meter/log.jsonl:
+# resets_at 1794564000 = Fri 2026-11-13 02:00 PST), then by today's local date, so it expires by itself when the window
+# changes: any other window falls back to BAND_LOW/BAND_HIGH from start%. The owner's "Thu ... use all" is the
+# LAST-DAY rule (`on_last_day`: from Thu 00:00 for a Fri 02:00 reset), not an entry here (pace-band r1 L3: the entries
+# that said it were dead, so no case could tell them from the rule).
+BAND_OVERRIDES: dict = {
+    "2026-11-13": {"2026-11-09": (70.0, 72.0), "2026-11-10": (78.0, 80.0), "2026-11-11": (88.0, 90.0)},
+}
+NORMAL, WIND_DOWN, NO_NEW_STARTS, USE_IT_ALL = "NORMAL", "WIND-DOWN", "NO NEW STARTS", "USE IT ALL"
+BAND_UNKNOWN = "UNKNOWN"   # the zone when the band cannot be known: a WARN, never fine (pace-band r1 U1)
 METER_LOG = os.path.join("~", ".claude", "meter", "log.jsonl")
 # backlog #501: the bound is on the TAIL read, never the file — the log grows ~100 rows a day, and a whole-file bound
 # refused every read after ~9 months. Today's start% needs only the newest row at or before local midnight.
@@ -321,7 +354,7 @@ def meter_row(line: str) -> tuple[object, object, object] | None:
 
     ⚠ MEMOISED (backlog #231): the soundness sweep in the self-test re-reads every suffix of its logs, so one line is
     parsed up to ~80 times, and that was most of the suite's single largest case. Each value is a float, a str, None
-    or another JSON value; `pace_line` only READS them (`is_number`, comparisons), and a list or a dict reading is
+    or another JSON value; `day_start` only READS them (`is_number`, comparisons), and a list or a dict reading is
     refused by `is_number` before anything could touch it. Bounded, so a log at the bound cannot grow it: one
     production read parses each line once, and the cache costs it a hash per line."""
     try:
@@ -332,14 +365,13 @@ def meter_row(line: str) -> tuple[object, object, object] | None:
         return None
 
 
-def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: bool = False) -> tuple[float | None, str]:
-    """The RULE (backlog #500): today's pace line from the meter log's text, or (None, why) when it cannot be
-    read. The owner's 11-01 15:38 rule: start% + 1.5 × (100 − start%) ÷ days-to-reset-from-midnight, capped at
-    97; the last day before the reset is 97. start% is the weekly value AT local midnight — the last row at or
-    before it — or, when the window began after midnight, the window's first row. Only rows of THIS window
-    (same `resets_at`) count, so last week's numbers never set this week's line; a reading outside 0..100 is
-    skipped, so start% is at most 100 and the last day's line is the cap (r1 X2/C3/C6). `why` is the read's own
-    reason when it failed (r1 C5). No I/O.
+def day_start(text: str | None, now: float, resets: float, why: str = "", cut: bool = False) -> tuple[float | None, str]:
+    """The RULE (backlog #500): today's START% from the meter log's text, or (None, why) when it cannot be read —
+    the base the owner's day band is measured from (2026-11-09; it was the 11-01 pace line's base). start% is the
+    weekly value AT local midnight — the last row at or before it — or, when the window began after midnight, the
+    window's first row. Only rows of THIS window (same `resets_at`) count, so last week's numbers never set this
+    week's band; a reading outside 0..100 is skipped, so start% is within 0..100 (r1 X2/C3/C6). `why` is the read's
+    own reason when it failed (r1 C5). No I/O.
 
     `cut` (backlog #501) says `text` is only the TAIL of a log over its bound. Then the newest row at or before
     midnight may lie before the part read, so a cut answer needs a proof about rows that were NOT read. It rests on
@@ -391,12 +423,16 @@ def pace_line(text: str | None, now: float, resets: float, why: str = "", cut: b
         needed = before[0] if before else resets - SEVEN_DAY_S - HORIZON_SLACK_S
         if min_at is None or not min_at < needed - METER_SKEW_S:
             return None, TAIL_TOO_SHORT
+    # pace-band r1 L5: a row from before YESTERDAY's local midnight does not stand for today's start (the statusline
+    # was off for days), and a stale base fires NO NEW STARTS early. Not a fall-through to a later row: that base is
+    # higher, so it would loosen the band.
+    if before is not None and before[0] < local_midnight(midnight - 1):
+        return None, (f"the newest reading at or before midnight is from {safe_time(before[0])}, before yesterday, so "
+                      f"it is not today's start")
     start = before or after
     if start is None:
         return None, "the meter log has no reading of this week's window"
-    days = (resets - midnight) / 86400
-    # No last-day branch: at days <= 1 the formula is >= 150 - start/2 >= 100, so the cap already gives 97.
-    return min(LINE_CAP, start[1] + LINE_FRONT_LOAD * (100 - start[1]) / days), ""
+    return start[1], ""
 
 
 def days_after_today(now: float, resets: float) -> float:
@@ -414,6 +450,13 @@ def rise_start(resets: float) -> float:
     will lose (backlog #521). One definition, so the two cannot disagree — across a DST change too, where #510 r1 M1
     ruled the rise starts at the midnight before `resets − 24 h`."""
     return local_midnight(resets - 86400)
+
+
+def on_last_day(now: float, resets: float) -> bool:
+    """Is `now` on the LAST DAY — from `rise_start` INCLUSIVE (pace-band r1 C2: at 00:00:00 itself the band was still a
+    band, and a millisecond later USE IT ALL)? One definition for the day band and the USE IT message, so the two
+    cannot disagree. A guide's boundary only: the stop reads `cap_at`, which is STOP_CAP at that instant either way."""
+    return now >= rise_start(resets)
 
 
 def cap_at(now: float, resets: float) -> float:
@@ -438,6 +481,78 @@ def refuse_at(now: float, resets: float) -> float:
     if last_night(now, resets):
         return HARD_LIMIT
     return min(cap_at(now, resets), 100 - RESERVE_PER_DAY * days_after_today(now, resets))
+
+
+def local_date(t: float) -> str:
+    return time.strftime("%Y-%m-%d", time.localtime(t))
+
+
+def band_cap(now: float, resets: float) -> float:
+    """The day band's one hard invariant (owner 2026-11-09): every remaining day keeps DAY_FLOOR, so neither edge
+    is above 100 − DAY_FLOOR × the days after today."""
+    return 100 - DAY_FLOOR * days_after_today(now, resets)
+
+
+def day_band(start: float | None, now: float, resets: float) -> tuple[float, float, str, bool] | None:
+    """Today's band as ABSOLUTE weekly %: (low, high, source, use_all), or None when it is unknown (no start% and
+    no override). The owner's override for this window wins over BAND_LOW/BAND_HIGH; both edges are capped by
+    `band_cap`. The last day (`on_last_day`) is "use it all": (cap, cap, ..., True)."""
+    cap = band_cap(now, resets)
+    over = BAND_OVERRIDES.get(local_date(resets), {}).get(local_date(now))
+    if on_last_day(now, resets):
+        return cap, cap, "the last day: use it all", True
+    if over is not None:
+        low, high, source = over[0], over[1], "this week's owner override"
+    elif start is None:
+        return None
+    else:
+        low, high, source = start + BAND_LOW, start + BAND_HIGH, f"{BAND_LOW:g}–{BAND_HIGH:g}% a day"
+    if high > cap:
+        source += f"; capped at {pct(cap)} so each day after today keeps {DAY_FLOOR:g}%"
+    return min(low, cap), min(high, cap), source, False
+
+
+def band_zone(weekly: float, band: tuple[float, float, str, bool]) -> str:
+    low, high, _, use_all = band
+    if use_all:
+        return USE_IT_ALL
+    return NORMAL if weekly < low else WIND_DOWN if weekly < high else NO_NEW_STARTS
+
+
+def trend_at(now: float, resets: float) -> float:
+    """The weekly trend guard (owner 2026-11-09): TREND_PER_DAY × the days since the window began, + TREND_BASE."""
+    return TREND_PER_DAY * (now - (resets - SEVEN_DAY_S)) / 86400 + TREND_BASE
+
+
+def edge(p: float) -> str:
+    return f"{round(p, 1):g}"
+
+
+ZONE_TEXT = {
+    NORMAL: "start whole items whose cost fits under the band's top",
+    WIND_DOWN: "finish running work and its review rounds; start only small items that finish before the band's top; "
+               "no new build or review loop",
+    NO_NEW_STARTS: "no new starts; running work still finishes, then commit, record and hand off",
+    USE_IT_ALL: "use it all — what is left is lost at the reset",
+}
+
+
+def band_note(meter: str | None, now: float, resets: float, weekly: float, why: str = "",
+              cut: bool = False) -> tuple[str, str | None]:
+    """(the message's band text, the zone — BAND_UNKNOWN when the band is unknown). A GUIDE, never a stop."""
+    start, start_why = day_start(meter, now, resets, why, cut)
+    band = day_band(start, now, resets)
+    trend = trend_at(now, resets)
+    trend_note = (f" Above the weekly trend ({pct(trend)} now: {TREND_PER_DAY:g}%/day + {TREND_BASE:g}) — a guide, "
+                  f"not a verdict." if weekly > trend else "")
+    if band is None:
+        return (f" pace: today's band is UNKNOWN — start% cannot be read ({start_why}): treat it as NOT RUN, "
+                f"never as fine.{trend_note}", BAND_UNKNOWN)
+    zone = band_zone(weekly, band)
+    spent = "" if start is None else f" · started {pct(start)}, spent {edge(weekly - start)}"
+    shown = f"{edge(band[0])}%" if band[3] else f"{edge(band[0])}–{edge(band[1])}%"
+    return (f" pace: today's band {shown} ({band[2]}) · now {pct(weekly)}{spent} → zone {zone}: "
+            f"{ZONE_TEXT[zone]}.{trend_note}", zone)
 
 
 def cannot(reason: str) -> tuple[str, str]:
@@ -510,15 +625,15 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                  else f" The stop is the {pct(STOP_CAP)} cap: the rest is for work in flight." if stop == STOP_CAP
                  else f" The stop rises over the last day, {pct_up(stop)} now and {next_stop} from "
                       f"{local_time(next_at, exact=True)}: what is left under it is lost at the reset.")
-    # `meter` False = the line was not consulted; None or text = the meter log's read. Either way it is a GUIDE.
-    line, why = (None, "") if meter is False else pace_line(meter, now, resets, meter_why, meter_cut)
-    line_note = (f" Today's pace line is {pct(line)} — a guide, not a stop." if line is not None
-                 else f" Today's pace line cannot be read ({why}): treat it as NOT RUN." if why else "")
+    # `meter` False = the band was not consulted; None or text = the meter log's read. Either way it is a GUIDE: it
+    # never moves the stop, but a WIND-DOWN, NO NEW STARTS or UNKNOWN zone is a WARN, since the prompt hook speaks
+    # only then (an unknown band must never read as fine: pace-band r1 U1).
+    line_note, zone = ("", None) if meter is False else band_note(meter, now, resets, weekly, meter_why, meter_cut)
     # owner 2026-11-05 19:44 ("fix token management logic so that remaining capacity will not be wasted"): on the LAST
     # day the room under the stop is lost at the reset. Every note above says HOLD BACK, so at 97% with a stale meter
-    # the session went idle for an hour with room left. The room is said FIRST, and the pace line — a fraction of a
-    # week that has run out — is not shown, because "97% — a guide" next to 97% read as a stop.
-    last_day = now > rise_start(resets)   # the same instant the stop starts rising (use-it-or-lose-it r1 P2)
+    # the session went idle for an hour with room left. The room is said FIRST; the day band then says "use it all"
+    # (it once showed the 11-01 pace line here, and "97% — a guide" next to 97% read as a stop).
+    last_day = on_last_day(now, resets)   # the same instant the stop starts rising (use-it-or-lose-it r1 P2; r1 C2)
     # r1 P2: a positive room under 0.1 floors to "0%", which reads as NOTHING left; it is "<0.1%"
     use_it = (f"⏳ USE IT — {pct(stop - weekly) if stop - weekly >= 0.1 else '<0.1%'} is left {'before the hard limit' if stop == HARD_LIMIT else 'under the stop'} and is LOST at the reset "
               f"({local_time(resets)}): idling is waste. "
@@ -526,8 +641,8 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                  "new week. " if stop == HARD_LIMIT else
                  "Keep starting queued items that fit the room, never wait for the reset. ")
               if last_day and weekly < stop else "")
-    if last_day:
-        line_note = ""
+    if weekly >= stop and zone == USE_IT_ALL:
+        line_note = ""   # at the stop there is no room left to use: "use it all" beside a refusal contradicts it
     if weekly >= stop:
         return REFUSE, (f"⛔ usage pace: weekly usage is {pct(weekly)} — new subagent spawns, and messages that "
                         f"wake an agent, are REFUSED (at {pct_up(stop)}); work in flight continues, and a "
@@ -537,10 +652,10 @@ def _evaluate(text: str | None, now: float, missing: str, path: str,
                       f"{pct_up(stop)} new spawns and agent wake-ups are refused). "
                       f"Resets {local_time(resets)}.{stop_note}{line_note}{five_note}")
     if use_it:   # below the WARN line on the last day is the MOST room to lose: it is said, never silent
-        return WARN, f"{use_it}Weekly usage is {pct(weekly)}; the stop is {pct_up(stop)}.{stop_note}{five_note}"
-    if five_note:
-        return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{five_note}"
-    return OK, ""
+        return WARN, f"{use_it}Weekly usage is {pct(weekly)}; the stop is {pct_up(stop)}.{stop_note}{line_note}{five_note}"
+    if five_note or zone in (WIND_DOWN, NO_NEW_STARTS, BAND_UNKNOWN):
+        return WARN, f"⚠ usage pace: weekly usage is {pct(weekly)}.{line_note}{five_note}"
+    return OK, line_note.strip()
 
 
 def read_regular(path: str, limit: int, deadline: float = READ_DEADLINE_S) -> tuple[str | None, str]:
@@ -567,7 +682,7 @@ def read_regular(path: str, limit: int, deadline: float = READ_DEADLINE_S) -> tu
 
 def read_meter(path: str, limit: int = METER_MAX_BYTES, deadline: float = READ_DEADLINE_S) -> tuple[str | None, str, bool]:
     """backlog #501: the meter log's TAIL, bounded like every read: (text, reason-if-None, cut). `cut` is True when the
-    file is over `limit`, so only its last `limit` bytes were read — `pace_line` must then check the part reaches
+    file is over `limit`, so only its last `limit` bytes were read — `day_start` must then check the part reaches
     back to midnight."""
     return _bounded(lambda: _read_tail(path, limit), path, deadline, (False,))
 
@@ -656,7 +771,7 @@ def _read_tail(path: str, limit: int) -> tuple[str | None, str, bool]:
     at or under `limit` is read whole from offset 0 and is not cut. Over it, the read seeks to `size - limit` and
     starts ONE BYTE EARLIER: everything through the first newline is dropped, so a partial first line is never
     parsed, and a window that starts exactly on a line keeps that line whole (the byte before it is the newline).
-    A window with no newline at all is "" and cut, which `pace_line` refuses with its reason. Rows appended after
+    A window with no newline at all is "" and cut, which `day_start` refuses with its reason. Rows appended after
     the `fstat` are not read; a half-written last row fails to parse and is skipped."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
@@ -1016,11 +1131,11 @@ def _self_test_body() -> int:
             return f"raised {type(e).__name__}", str(e)
 
     try:
-        # ── backlog #500: the stop follows the owner's pace line when it is higher ─────────────────
-        # NOW is local midnight and the reset is 3 days later: start 85 → 85 + 1.5 × 15 ÷ 3 = 92.5.
+        # ── backlog #500: the stop is a reserve; the meter log gives the day band its start% ─────────
+        # NOW is local midnight and the reset is 3 days later; the row an hour before it is today's start%: 85.
         m85 = meter((NOW - 3600, 85, WEEK_RESET))
-        check("⭐ #500: the pace line is start% + 1.5 × (100 − start%) ÷ days-to-reset",
-              pace_line(m85, NOW + 60, WEEK_RESET), (92.5, ""))
+        check("⭐ #500: start% is the meter row at or before local midnight (85)",
+              day_start(m85, NOW + 60, WEEK_RESET), (85.0, ""))
         # NOW is Fri 00:00; the next midnight is Sat 00:00; WEEK_RESET is Mon 00:00 → 2 days after today → 90.
         check("⭐ #500: the stop is 100 − 5 × the days after today (the owner's example: 3 days → 85; 2 h after today → the 97 cap; 2 days 2 h → 89.6)",
               (refuse_at(NOW, NOW + 4 * 86400), refuse_at(NOW, WEEK_RESET), refuse_at(NOW, NOW + 86400 + 7200), refuse_at(NOW, NOW + 3 * 86400 + 7200),
@@ -1039,8 +1154,8 @@ def _self_test_body() -> int:
               (days_after_today(NOW, NOW + 3600), days_after_today(NOW, NOW + 86400 + 7200)), (0.0, 7200 / 86400))
         check("#500: the hour of NOW does not change the count — 00:00, 13:00 and 23:59 Fri all keep 1 day",
               [days_after_today(NOW + h, NOW + 2 * 86400) for h in (0, 13 * 3600, 86400 - 60)], [1.0, 1.0, 1.0])
-        check("#500: pace_line names the read's own reason, and a generic one without it",
-              (pace_line(None, NOW, WEEK_RESET, "/m was not read within 1 s"), pace_line(None, NOW, WEEK_RESET)),
+        check("#500: day_start names the read's own reason, and a generic one without it",
+              (day_start(None, NOW, WEEK_RESET, "/m was not read within 1 s"), day_start(None, NOW, WEEK_RESET)),
               ((None, "the meter log is unreadable: /m was not read within 1 s"),
                (None, "the meter log is missing or unreadable")))
         def lt(*ymdh):  # a local time in the suite's PST8PDT zone
@@ -1066,7 +1181,7 @@ def _self_test_body() -> int:
                "at 94.6% new spawns" in evm(cache(94.55, week_reset=NOW + 2 * 86400 + 7200), m85)[1],
                pct_up(90.0), pct_up(97.0), pct_up(94.5000001)), (WARN, True, "90%", "97%", "94.6%"))
         t0 = time.monotonic()
-        blank_line = pace_line("\n" * (METER_MAX_BYTES - 1), NOW, WEEK_RESET)
+        blank_line = day_start("\n" * (METER_MAX_BYTES - 1), NOW, WEEK_RESET)
         check("⭐ #500 r3 C1: a meter log of 4 MiB of blank lines is read in under 2 s (measured 0.2; was 19.3)",
               (blank_line[0], time.monotonic() - t0 < 2.0), (None, True))
         # The skip's property, COUNTED rather than timed: since backlog #231 memoised `meter_row`, a log of identical
@@ -1080,19 +1195,19 @@ def _self_test_body() -> int:
         try:
             _row = meter((NOW - 60, 20, WEEK_RESET)).strip()
             _junk = "".join(f"\n\n{{\"garbage\": {i}}}\n" for i in range(200))
-            _skipped = pace_line(_junk + _row + "\n" + _junk, NOW, WEEK_RESET)
+            _skipped = day_start(_junk + _row + "\n" + _junk, NOW, WEEK_RESET)
         finally:
             _g["meter_row"] = _real_row
         check("⭐ #500 r3 C1: blank and garbage meter lines never reach the parse — only the seven_day row does",
-              (_seen, _skipped), ([_row], pace_line(_row + "\n", NOW, WEEK_RESET)))
-        check("⭐ #500: the PACE LINE never moves the stop — the same cache gives the same verdict under any meter",
+              (_seen, _skipped), ([_row], day_start(_row + "\n", NOW, WEEK_RESET)))
+        check("⭐ #500: the DAY BAND never moves the stop — the same cache gives the same verdict under any meter",
               [evm(cache(89.9), m)[0] + "/" + evm(cache(90), m)[0]
                for m in (m85, meter((NOW - 60, 20, WEEK_RESET)), None, meter((NOW - 60, 99, WEEK_RESET)))],
               ["WARN/REFUSE-SPAWN"] * 4)
-        check("⭐ #500: the message states the stop's reserve, and names the line as a guide",
+        check("⭐ #500: the message states the stop's reserve, and names the day band as a guide",
               ("at 90% new spawns" in evm(cache(85), m85)[1],
                "The stop keeps 5% for each of the 2.0 days after today." in evm(cache(85), m85)[1],
-               "Today's pace line is 92.5% — a guide, not a stop." in evm(cache(85), m85)[1],
+               "started 85%, spent 0 → zone NO NEW STARTS" in evm(cache(85), m85)[1],
                "The stop is the 97% cap: the rest is for work in flight." in
                evm(cache(85, week_reset=NOW + 86400 + 7200), m85)[1]), (True, True, True, True))
         # ── backlog #510: the cap rises over the last day (owner 2026-11-05 08:47, card A) ─────────────────────────
@@ -1123,15 +1238,15 @@ def _self_test_body() -> int:
         check("⭐ 11-05 19:44: on the last day with room under the stop the message LEADS with USE IT, the room and the reset",
               (_lw[0], _lw[1].startswith("⏳ USE IT — 1% is left under the stop and is LOST at the reset (Sat 01-16 02:00 PST)")),
               (WARN, True))
-        check("11-05 19:44: ...and the pace line is not shown on the last day — '97% — a guide' beside 97% read as a stop",
-              "pace line" in _lw[1], False)
+        check("11-05 19:44: ...and on the last day the day band says USE IT ALL, never a band to hold under",
+              ("pace: today's band 99.3% (the last day: use it all)" in _lw[1], "zone USE IT ALL" in _lw[1]), (True, True))
         check("⭐ 11-05 19:44: below the WARN line on the last day the room is SAID, never a silent OK",
               (lambda r: (r[0], r[1].startswith("⏳ USE IT — 48% is left")))(evm(cache(50, week_reset=_sat2, at=_l), m85, _l)),
               (WARN, True))
         check("use-it-or-lose-it r1 P2: a room under 0.1 is '<0.1%' left, never '0%' — which reads as nothing",
               evm(cache(97.95, week_reset=_sat2, at=_l), m85, _l)[1].startswith("⏳ USE IT — <0.1% is left"), True)
         check("use-it-or-lose-it r1 P2: USE IT starts at the SAME instant the stop starts rising — one helper, a minute either side",
-              ["USE IT" in evm(cache(90, week_reset=_sat2, at=t), m85, t)[1] for t in (rise_start(_sat2) - 60, rise_start(_sat2) + 60)]
+              ["⏳ USE IT —" in evm(cache(90, week_reset=_sat2, at=t), m85, t)[1] for t in (rise_start(_sat2) - 60, rise_start(_sat2) + 60)]
               + [cap_at(rise_start(_sat2) - 60, _sat2) == STOP_CAP, cap_at(rise_start(_sat2) + 60, _sat2) > STOP_CAP],
               [False, True, True, True])
         # backlog #523 (owner 11-05 20:46/20:53, strategy B): on the last night the stop IS the hard limit
@@ -1212,37 +1327,135 @@ def _self_test_body() -> int:
               [(True, True), (True, True)])
         check("use-it-or-lose-it r1 P2: rise_start is the stop's rise on ANY reset — a minute after it, the cap has left 97",
               [cap_at(rise_start(x) + 60, x) > STOP_CAP for x in (_sat2, WEEK_RESET)], [True, True])
-        check("#500: the pace line on the last day is its 97 cap by the formula alone (50 at midnight)",
-              pace_line(meter((NOW - 60, 50, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0], 97.0)
-        check("#500: a pace-line formula above 97 is capped (start 96 → 98 → 97)",
-              pace_line(meter((NOW - 60, 96, WEEK_RESET)), NOW, WEEK_RESET)[0], 97.0)
+        # ── the owner's ELASTIC DAY BAND (2026-11-09 15:12–15:32), which replaced the 11-01 pace line ─────────────
+        # R7 is Thu 01-21 02:00, so at NOW (Fri 00:00) 5 days 2 h follow today: the floor caps the band at
+        # 100 − 8 × (5 + 2/24) = 59.33, the hard stop is 100 − 5 × 5.083 = 74.58, and the window began Thu 01-14
+        # 02:00, 22 h ago, so the trend is 14.3 × 22/24 + 8 = 21.108.
+        R7 = NOW + 6 * 86400 + 7200
+        _cap7 = 100 - 8 * (5 + 2 / 24)
+        m10, m30 = meter((NOW - 60, 10, R7)), meter((NOW - 60, 30, R7))
+        check("⭐ day band: the band is start + 12 … start + 20, from two distinct start% values (10 → 22–30; 30 → 42–50)",
+              (day_band(10.0, NOW, R7), day_band(30.0, NOW, R7)),
+              ((22.0, 30.0, "12–20% a day", False), (42.0, 50.0, "12–20% a day", False)))
+        check("⭐ day band: the 8% floor caps an edge — start 45 keeps 57 but its 65 is capped at 59.33; start 50 caps both",
+              (day_band(45.0, NOW, R7)[:2], day_band(50.0, NOW, R7)[:2], round(band_cap(NOW, R7), 4)),
+              ((57.0, _cap7), (_cap7, _cap7), round(_cap7, 4)))
+        check("day band: a capped band says why in its source",
+              day_band(45.0, NOW, R7)[2], "12–20% a day; capped at 59.3% so each day after today keeps 8%")
+        check("⭐ day band: each zone boundary on both sides — 21.9 NORMAL, 22 WIND-DOWN, 29.9 WIND-DOWN, 30 NO NEW STARTS",
+              [band_zone(w, day_band(10.0, NOW, R7)) for w in (21.9, 22.0, 29.9, 30.0)],
+              [NORMAL, WIND_DOWN, WIND_DOWN, NO_NEW_STARTS])
+        # pace-band r1 fold (check-fixture-variation): each of band_cap's and band_zone's parameters at a second value.
+        check("day band: band_cap and band_zone at second values — a day later 4 days 2 h follow (100 − 8 × 4.083); a "
+              "Mon 00:00 reset leaves 2 (84); start 30's band 42–50 puts 45 in WIND-DOWN and 41.9 in NORMAL",
+              (round(band_cap(NOW + 86400, R7), 4), band_cap(NOW, WEEK_RESET),
+               band_zone(45.0, day_band(30.0, NOW, R7)), band_zone(41.9, day_band(30.0, NOW, R7))),
+              (round(100 - 8 * (4 + 2 / 24), 4), 84.0, WIND_DOWN, NORMAL))
+        check("⭐ day band: the zone sets the verdict below WARN — NORMAL is OK, WIND-DOWN and NO NEW STARTS are WARN",
+              [evm(cache(w, week_reset=R7), m10)[0] for w in (21.0, 22.0, 30.0)], [OK, WARN, WARN])
+        check("⭐ day band: the message names the band, start%, spend and zone — and its zone's instruction",
+              (evm(cache(21.0, week_reset=R7), m10)[1].startswith(
+                  "pace: today's band 22–30% (12–20% a day) · now 21% · started 10%, spent 11 → zone NORMAL: "),
+               "pace: today's band 42–50% (12–20% a day) · now 43% · started 30%, spent 13 → zone WIND-DOWN: finish "
+               "running work and its review rounds; start only small items that finish before the band's top; no new "
+               "build or review loop." in evm(cache(43.0, week_reset=R7), m30)[1],
+               "→ zone NO NEW STARTS: no new starts; running work still finishes" in evm(cache(50.0, week_reset=R7), m30)[1]),
+              (True, True, True))
+        # pace-band r1 L2: the edges sit 0.008 and 0.002 from the line, so moving TREND_BASE by ±0.05 fails here.
+        check("⭐ day band: the trend guard — 21.10 is under 14.3 × 22/24 + 8 = 21.108 and says nothing; 21.11 is over "
+              "and says so, and the verdict stays OK (a guide, not a verdict)",
+              ("weekly trend" in evm(cache(21.10, week_reset=R7), m10)[1],
+               "Above the weekly trend (21.1% now: 14.3%/day + 8) — a guide, not a verdict."
+               in evm(cache(21.11, week_reset=R7), m10)[1], evm(cache(21.11, week_reset=R7), m10)[0]),
+              (False, True, OK))
+        check("⭐ day band: the LAST day (from rise_start) is USE IT ALL at the 100 cap; the day before it (Wed 23:00) is a band",
+              (day_band(10.0, NOW + 3600, NOW + 20 * 3600), day_band(10.0, NOW - 86400 - 3600, NOW + 20 * 3600)[3]),
+              ((100.0, 100.0, "the last day: use it all", True), False))
+        # pace-band r1 U1 (both halves): an UNKNOWN band was OK, and the prompt hook speaks only on WARN, so losing the
+        # meter log turned a NO NEW STARTS warning into silence. Unknown never reads as fine: it is a WARN that says why.
+        _u1 = evm(cache(21.0, week_reset=R7), None)
+        check("⭐ pace-band r1 U1: an unknown start% with no override is a WARN that says the band is UNKNOWN and why, "
+              "and the prompt hook speaks it",
+              (day_band(None, NOW, R7), _u1, prompt_output(*_u1) is not None),
+              (None, (WARN, "⚠ usage pace: weekly usage is 21%. pace: today's band is UNKNOWN — start% cannot be read "
+                            "(the meter log is missing or unreadable): treat it as NOT RUN, never as fine."), True))
+        check("pace-band r1 U1: ...while the same 21% with a known start% (10 → 22–30) is NORMAL, OK and silent",
+              (lambda r: (r[0], prompt_output(*r)))(evm(cache(21.0, week_reset=R7), m10)), (OK, None))
+        # The owner's override for the window resetting Fri 2026-11-13 02:00 PST (resets_at 1794564000, the log's own
+        # value). Tue 11-10 08:00 is 78–80 whatever start% is; a window one day later is a MISS and falls back to 12/20.
+        _ow, _tue = 1794564000.0, lt(2026, 11, 10, 8)
+        check("⭐ day band: the owner's override HITS for its window (Tue 11-10 → 78–80, start% ignored) and MISSES for "
+              "another window (start 50 → 62–70)",
+              (day_band(50.0, _tue, _ow), (day_band(None, _tue, _ow) or (None, None))[:2], day_band(50.0, _tue, _ow + 86400)),
+              ((78.0, 80.0, "this week's owner override", False), (78.0, 80.0), (62.0, 70.0, "12–20% a day", False)))
+        # pace-band r1 L3: the owner's "Thu until the reset: use all" is the LAST-DAY rule (rise_start is Thu 00:00 for
+        # a Fri 02:00 reset), not an override entry; the entries that said it were dead and are gone.
+        check("day band: the override's other days — Mon 70–72, Wed 88–90; Thu is use it all through the last-day rule, "
+              "and the override has no entry for it",
+              (day_band(50.0, lt(2026, 11, 9, 12), _ow)[:2], day_band(50.0, lt(2026, 11, 11, 12), _ow)[:2],
+               day_band(50.0, lt(2026, 11, 12, 12), _ow)[2:], sorted(BAND_OVERRIDES["2026-11-13"])),
+              ((70.0, 72.0), (88.0, 90.0), ("the last day: use it all", True), ["2026-11-09", "2026-11-10", "2026-11-11"]))
+        # pace-band r1 L1: the override is keyed by LOCAL dates. Tue 17:00 PST is already Wed 01:00 UTC, so a UTC key
+        # for today gives Wed's 88–90; a reset at Thu 11-12 17:00 PST is Fri 11-13 in UTC, so a UTC key for the window
+        # hits this week's override, where the local key misses it.
+        check("⭐ pace-band r1 L1: the override is keyed by LOCAL dates — Tue 17:00 PST is Tue's 78–80, and a reset at "
+              "Thu 17:00 PST is not the Fri 11-13 window",
+              (day_band(50.0, lt(2026, 11, 10, 17), _ow)[:2], day_band(50.0, _tue, lt(2026, 11, 12, 17))[:3]),
+              ((78.0, 80.0), (62.0, 70.0, "12–20% a day")))
+        # pace-band r1 C2 (Codex): the last day starts AT midnight, inclusive — 00:00:00 was still a band (NO NEW STARTS
+        # at start 10, weekly 31) and a millisecond later USE IT ALL with 66% under the stop. One definition
+        # (`on_last_day`) serves the band and the USE IT message, so the two cannot disagree at the instant either.
+        _c2r = NOW + 86400 + 7200                  # Sat 02:00: rise_start is NOW, Fri 00:00
+        _c2m = meter((NOW - 60, 10, _c2r))
+        _c2at, _c2before = evm(cache(31, week_reset=_c2r), _c2m), evm(cache(31, week_reset=_c2r), _c2m, NOW - 1)
+        check("⭐ pace-band r1 C2: AT the last day's midnight the band is USE IT ALL and the room is said; one second "
+              "before it is still the band (NO NEW STARTS)",
+              (day_band(10.0, NOW, _c2r)[3], day_band(10.0, NOW - 1, _c2r)[3], _c2at[0], _c2at[1].startswith("⏳ USE IT"),
+               "zone USE IT ALL" in _c2at[1], _c2before[0], "zone NO NEW STARTS" in _c2before[1],
+               "USE IT —" in _c2before[1]),
+              (True, False, WARN, True, True, WARN, True, False))
         check("⭐ #500: start% is the value AT midnight, not the latest reading (83 at midnight, 88 now)",
-              pace_line(meter((NOW - 900, 80, WEEK_RESET), (NOW - 100, 83, WEEK_RESET),
-                              (NOW + 3000, 88, WEEK_RESET)), NOW + 3600, WEEK_RESET)[0], 83 + 1.5 * 17 / 3)
+              day_start(meter((NOW - 900, 80, WEEK_RESET), (NOW - 100, 83, WEEK_RESET),
+                              (NOW + 3000, 88, WEEK_RESET)), NOW + 3600, WEEK_RESET)[0], 83.0)
         check("#500: a window that began after midnight starts at its FIRST row",
-              pace_line(meter((NOW + 7200, 4, WEEK_RESET), (NOW + 9000, 9, WEEK_RESET)), NOW + 9999,
-                        WEEK_RESET)[0], 4 + 1.5 * 96 / 3)
-        check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set the line",
-              (pace_line(meter((NOW - 60, -100, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               pace_line(meter((NOW - 60, 150, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               pace_line(meter((NOW - 60, 110, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0],
-               pace_line(meter((NOW - 60, 100, WEEK_RESET), (NOW - 30, 0, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               pace_line(meter((NOW - 60, True, WEEK_RESET)), NOW, WEEK_RESET)[0]),
-              (None, None, None, 0 + 1.5 * 100 / 3, None))
+              day_start(meter((NOW + 7200, 4, WEEK_RESET), (NOW + 9000, 9, WEEK_RESET)), NOW + 9999,
+                        WEEK_RESET)[0], 4.0)
+        # pace-band r1 L5: start% has an AGE bound. A row from before yesterday's local midnight does not stand for
+        # today's start (the statusline was off for days); it would set a stale, low base and an early NO NEW STARTS.
+        # The band is then UNKNOWN, a WARN (U1). Yesterday's midnight itself, and any later row, still counts.
+        _yday = NOW - 86400                         # Thu 01-14 00:00 PST
+        check("⭐ pace-band r1 L5: a start row from before yesterday's midnight is too old (UNKNOWN, with its time); "
+              "one AT yesterday's midnight and one an hour before today's still set start%",
+              (day_start(meter((_yday - 1, 40, WEEK_RESET)), NOW + 60, WEEK_RESET),
+               day_start(meter((_yday, 40, WEEK_RESET)), NOW + 60, WEEK_RESET),
+               day_start(meter((NOW - 3600, 41, WEEK_RESET)), NOW + 60, WEEK_RESET)),
+              ((None, "the newest reading at or before midnight is from Wed 01-13 23:59 PST, before yesterday, so it "
+                      "is not today's start"), (40.0, ""), (41.0, "")))
+        check("pace-band r1 L5: ...and evaluate() says that band is UNKNOWN, as a WARN",
+              (lambda r: (r[0], "today's band is UNKNOWN — start% cannot be read (the newest reading at or before "
+                                "midnight is from Wed 01-13 23:59 PST" in r[1]))(
+                  evm(cache(45), meter((_yday - 1, 40, WEEK_RESET)), NOW + 60)), (WARN, True))
+        check("⭐ #500 r1 X2/C3/C6: a meter reading outside 0..100 (or a boolean) is skipped, so it cannot set start%",
+              (day_start(meter((NOW - 60, -100, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               day_start(meter((NOW - 60, 150, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               day_start(meter((NOW - 60, 110, NOW + 20 * 3600)), NOW, NOW + 20 * 3600)[0],
+               day_start(meter((NOW - 60, 100, WEEK_RESET), (NOW - 30, 0, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               day_start(meter((NOW - 60, True, WEEK_RESET)), NOW, WEEK_RESET)[0]),
+              (None, None, None, 0.0, None))
         check("#500 r1 C5: a meter log that cannot be read says WHY, from the read",
               "the meter log is unreadable: /m was not read within 1 s" in evaluate(cache(91), NOW, meter=None,
                                                                                 meter_why="/m was not read within 1 s")[1],
               True)
-        check("#500: last week's rows and future rows never set the line, and garbage lines are skipped",
-              (pace_line(meter((NOW - 60, 85, WEEK_RESET - 7 * 86400)), NOW, WEEK_RESET),
-               pace_line(meter((NOW + 600, 85, WEEK_RESET)), NOW, WEEK_RESET)[0],
-               pace_line(meter((NOW - 60, 85, WEEK_RESET), garbage=True), NOW, WEEK_RESET)[0]),
-              ((None, "the meter log has no reading of this week's window"), None, 92.5))
-        check("⭐ #500: an unreadable line is SAID, and the stop is unchanged",
-              (evm(cache(90), None)[0], "Today's pace line cannot be read (the meter log is missing or unreadable): "
-               "treat it as NOT RUN." in evm(cache(85), None)[1]), (REFUSE, True))
-        check("#500: not consulting the meter names no line",
-              (kind(cache(90)), "pace line" in ev(cache(85))[1]), (REFUSE, False))
+        check("#500: last week's rows and future rows never set start%, and garbage lines are skipped",
+              (day_start(meter((NOW - 60, 85, WEEK_RESET - 7 * 86400)), NOW, WEEK_RESET),
+               day_start(meter((NOW + 600, 85, WEEK_RESET)), NOW, WEEK_RESET)[0],
+               day_start(meter((NOW - 60, 85, WEEK_RESET), garbage=True), NOW, WEEK_RESET)[0]),
+              ((None, "the meter log has no reading of this week's window"), None, 85.0))
+        check("⭐ #500: an unreadable start% is SAID (the band is UNKNOWN), and the stop is unchanged",
+              (evm(cache(90), None)[0], "pace: today's band is UNKNOWN — start% cannot be read (the meter log is "
+               "missing or unreadable): treat it as NOT RUN, never as fine." in evm(cache(85), None)[1]), (REFUSE, True))
+        check("#500: not consulting the meter names no band",
+              (kind(cache(90)), "today's band" in ev(cache(85))[1]), (REFUSE, False))
         with tempfile.TemporaryDirectory() as td:
             cp, mp = os.path.join(td, "c.json"), os.path.join(td, "m.jsonl")
             with open(cp, "w") as f:
@@ -1268,14 +1481,14 @@ def _self_test_body() -> int:
             finally:
                 os.environ["HOME"] = fake_home
         check("⭐ #500 r1 C1: with NO --meter, main() reads ~/.claude/meter/log.jsonl — the path the hooks use",
-              (rc_default, "Today's pace line is 92.5%" in buf2.getvalue()), (RC[WARN], True))
-        check("⭐ #500: main() reads --meter: its message names the 92.5 line from that file",
-              (rc_line, "Today's pace line is 92.5%" in buf.getvalue()), (RC[WARN], True))
+              (rc_default, "started 85%" in buf2.getvalue()), (RC[WARN], True))
+        check("⭐ #500: main() reads --meter: its message names the start% 85 from that file",
+              (rc_line, "started 85%" in buf.getvalue()), (RC[WARN], True))
 
         # ── backlog #501: only the TAIL of a large meter log is read ───────────────────────────────
         # The log grows ~100 rows a day, so a whole-file bound refused every read after ~9 months. `_read_tail` reads the
         # last `limit` bytes (plus the byte before them, which says whether the first line is whole), drops a partial
-        # first line, and says the read was CUT; `pace_line(..., cut=True)` refuses when the part read cannot reach
+        # first line, and says the read was CUT; `day_start(..., cut=True)` refuses when the part read cannot reach
         # back to local midnight, rather than taking a later row as today's start.
         WR, LAST_WR = WEEK_RESET, WEEK_RESET - 7 * 86400
         # ⟳ PR #531 r3 fold (Phase 6): a cut part answers only when its OLDEST row is more than METER_SKEW_S older than
@@ -1302,16 +1515,16 @@ def _self_test_body() -> int:
             out_big = io.StringIO()
             with contextlib.redirect_stdout(out_big):
                 rc_big = main(["--cache", cbig, "--meter", big, "--now", str(NOW)], env={}, payload="")
-            check("⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's line (92.5)",
-                  (size(big) > METER_MAX_BYTES, rc_big, "Today's pace line is 92.5%" in out_big.getvalue()),
+            check("⭐ #501 FALSIFIER: a meter log OVER the 4 MiB bound still yields today's start% (85)",
+                  (size(big) > METER_MAX_BYTES, rc_big, "started 85%" in out_big.getvalue()),
                   (True, RC[WARN], True))
 
             two = m85 + meter((NOW + 60, 88, WR))
             exact = put("exact.jsonl", two)
             check("⭐ #501: a log EXACTLY at the bound is read whole and NOT cut — its first line is kept",
                   _read_tail(exact, size(exact)), (two, "", False))
-            check("⭐ #501: a log exactly at the bound yields today's line from its FIRST line (92.5)",
-                  pace_line(_read_tail(exact, size(exact))[0], NOW + 600, WR, cut=False), (92.5, ""))
+            check("⭐ #501: a log exactly at the bound yields today's start% from its FIRST line (85)",
+                  day_start(_read_tail(exact, size(exact))[0], NOW + 600, WR, cut=False), (85.0, ""))
             row2 = meter((NOW + 60, 88, WR))
             check("#501: one byte over the bound cuts the first line, which is DROPPED, not parsed",
                   _read_tail(exact, size(exact) - 1), (row2, "", True))
@@ -1319,42 +1532,42 @@ def _self_test_body() -> int:
                   _read_tail(exact, len(row2)), (row2, "", True))
 
             # A tail that starts MID-LINE, where the fragment parses as a row with a WRONG start (10%, newer than the
-            # real midnight row): dropped, so the line is the real row's 92.5, not 10 + 1.5 × 90 ÷ 3 = 55.
+            # real midnight row): dropped, so start% is the real row's 85, not 10.
             # ⟳ r3 fold: OLD at the front of the part, so the part reaches back in time (a parsed fragment now also
-            # breaks the contract, since OLD follows it 280 days earlier — either way it is not 92.5).
+            # breaks the contract, since OLD follows it 280 days earlier — either way it is not 85).
             frag = json.dumps({"at": NOW - 60, "rate_limits": {"seven_day": {"used_percentage": 10, "resets_at": WR}}})
             pad = "x" * 40 + " "
             mid = put("mid.jsonl", pad + frag + "\n" + OLD + m85)
             cut_at = len(pad)          # the window begins just after the pad's space; the byte before it is that space
             t_mid = _read_tail(mid, size(mid) - cut_at)
             check("⭐ #501: a tail that starts MID-LINE drops the partial line — neither parsed nor refused",
-                  (t_mid, pace_line(t_mid[0], NOW + 600, WR, cut=t_mid[2])), ((OLD + m85, "", True), (92.5, "")))
+                  (t_mid, day_start(t_mid[0], NOW + 600, WR, cut=t_mid[2])), ((OLD + m85, "", True), (85.0, "")))
             check("#501: the whole mid-line file, read uncut, skips that line as garbage (the control)",
-                  pace_line(_read_tail(mid, size(mid))[0], NOW + 600, WR), (92.5, ""))
+                  day_start(_read_tail(mid, size(mid))[0], NOW + 600, WR), (85.0, ""))
 
             # Over the bound, the midnight row lies BEFORE the window: refused with a reason. Read uncut, the same rows
-            # would give 94.0 from the first row after midnight — the wrong start the refusal must never fall back to.
+            # would give 88 from the first row after midnight — the wrong start the refusal must never fall back to.
             three = m85 + meter((NOW + 60, 88, WR), (NOW + 120, 89, WR))
             late = put("late.jsonl", three)
             t_late = _read_tail(late, len(meter((NOW + 60, 88, WR), (NOW + 120, 89, WR))))
             check("⭐ #501: over the bound, a midnight row BEFORE the window is refused with a reason, never a later start",
-                  (t_late[2], pace_line(t_late[0], NOW + 600, WR, cut=t_late[2]),
-                   pace_line(t_late[0], NOW + 600, WR, cut=False)),
-                  (True, (None, TAIL_TOO_SHORT), (94.0, "")))
+                  (t_late[2], day_start(t_late[0], NOW + 600, WR, cut=t_late[2]),
+                   day_start(t_late[0], NOW + 600, WR, cut=False)),
+                  (True, (None, TAIL_TOO_SHORT), (88.0, "")))
             check("#501: a cut that drops the midnight row's partial line is refused the same way",
-                  pace_line(_read_tail(exact, size(exact) - 1)[0], NOW + 600, WR, cut=True), (None, TAIL_TOO_SHORT))
+                  day_start(_read_tail(exact, size(exact) - 1)[0], NOW + 600, WR, cut=True), (None, TAIL_TOO_SHORT))
             # A window that began AFTER midnight: the cut part holds last week's pre-midnight row, and this window's
-            # first row is the start — 3 + 1.5 × 97 ÷ 3 = 51.5. ⟳ r3 fold: the part reaches back in time through OLD at
+            # first row is the start — 3. ⟳ r3 fold: the part reaches back in time through OLD at
             # its front (more than METER_SKEW_S before this window's earliest possible row); last week's row alone is not
             # a proof any more.
             fresh = meter((NOW - 2 * 86400, 70, LAST_WR)) + OLD + meter((NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))
             fresh_p = put("fresh.jsonl", fresh)
             t_fresh = _read_tail(fresh_p, len(OLD + meter((NOW - 3600, 98, LAST_WR), (NOW + 60, 3, WR))))
-            check("#501: a cut part that reaches back past midnight through LAST week's row still yields the line",
-                  (t_fresh[2], pace_line(t_fresh[0], NOW + 600, WR, cut=True)), (True, (51.5, "")))
+            check("#501: a cut part that reaches back past midnight through LAST week's row still yields start%",
+                  (t_fresh[2], day_start(t_fresh[0], NOW + 600, WR, cut=True)), (True, (3.0, "")))
             t_fresh2 = _read_tail(fresh_p, len(meter((NOW + 60, 3, WR))))
             check("#501: a cut part holding ONLY rows after midnight is refused, even when the window began after it",
-                  pace_line(t_fresh2[0], NOW + 600, WR, cut=t_fresh2[2]), (None, TAIL_TOO_SHORT))
+                  day_start(t_fresh2[0], NOW + 600, WR, cut=t_fresh2[2]), (None, TAIL_TOO_SHORT))
 
             late_big = put("late_big.jsonl", m85 + meter(*[(NOW + 60, 88, WR)] * (METER_MAX_BYTES // 80 + 1)))
             out_late = io.StringIO()
@@ -1363,8 +1576,8 @@ def _self_test_body() -> int:
                                 "--now", str(NOW + 3600)], env={}, payload="")
             check("⭐ #501: main() over the bound with the midnight row outside the tail says WHY, as NOT RUN, and the "
                   "stop is unchanged",
-                  (rc_late, f"Today's pace line cannot be read ({TAIL_TOO_SHORT}): treat it as NOT RUN."
-                   in out_late.getvalue(), "pace line is" in out_late.getvalue()), (RC[WARN], True, False))
+                  (rc_late, f"today's band is UNKNOWN — start% cannot be read ({TAIL_TOO_SHORT}): treat it as NOT RUN"
+                   in out_late.getvalue(), "started " in out_late.getvalue()), (RC[WARN], True, False))
             check("#501: read_meter of no file is (None, '', False) — NO FILE, as for the cache",
                   read_meter(os.path.join(td, "nope.jsonl")), (None, "", False))
             fifo = os.path.join(td, "fifo.jsonl")
@@ -1385,30 +1598,30 @@ def _self_test_body() -> int:
 
             # r1 C1 (Codex): rows OUT OF TIME ORDER. The real 85% midnight row lies before the part read; a 10% row
             # stamped an hour before midnight was appended AFTER a post-midnight row, inside it. Today's rule takes
-            # the newest row at or before midnight IN THE PART READ, so 10 + 1.5 × 90 ÷ 3 = 55 — a wrong start, with
+            # the newest row at or before midnight IN THE PART READ, so a start% of 10 — a wrong start, with
             # no refusal. Out-of-order rows inside a cut part mean the part cannot prove what lies before it.
             c1_tail = meter((NOW + 60, 88, WR), (NOW - 3600, 10, WR), (NOW + 120, 89, WR))
             c1 = meter((NOW - 1, 85, WR)) + c1_tail
             t_c1 = _read_tail(put("c1.jsonl", c1), len(c1_tail))
             # ⟳ r3 fold: the 10% row is stamped 3,660 s before the row above it — more than METER_SKEW_S — so the canary
             # refuses it: the contract is broken inside the part.
-            check("⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 55",
-                  (t_c1[2], brk(pace_line(t_c1[0], NOW + 600, WR, cut=t_c1[2]))), (True, (None, TAIL_CONTRACT_BROKEN)))
-            check("#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (92.5)",
-                  pace_line(c1, NOW + 600, WR), (92.5, ""))
+            check("⭐ #501 r1 C1: a CUT part holding two rows out of time order is refused with a reason, never the wrong 10",
+                  (t_c1[2], brk(day_start(t_c1[0], NOW + 600, WR, cut=t_c1[2]))), (True, (None, TAIL_CONTRACT_BROKEN)))
+            check("#501 r1 C1: the same rows read WHOLE keep today's rule — the newest row at or before midnight (85)",
+                  day_start(c1, NOW + 600, WR), (85.0, ""))
             # ⟳ r3 fold: OLD at the front (the part must reach back in time); the subject is still that equal times break
             # nothing.
             check("#501 r1 C1: two rows with the SAME time are not out of order — a cut part holding them still answers",
-                  pace_line(OLD + meter((NOW - 3600, 85, WR), (NOW - 3600, 85, WR), (NOW + 60, 88, WR)), NOW + 600, WR,
-                            cut=True), (92.5, ""))
+                  day_start(OLD + meter((NOW - 3600, 85, WR), (NOW - 3600, 85, WR), (NOW + 60, 88, WR)), NOW + 600, WR,
+                            cut=True), (85.0, ""))
             # ⟳ r3 fold: 3,600 s of disorder is inside the contract now, so the second row moved to 3,601 s earlier.
             check("#501 r1 C1: disorder among rows of an EARLIER window counts too — the part is not in append order",
-                  brk(pace_line(meter((NOW - 3600, 98, LAST_WR), (NOW - 7201, 97, LAST_WR), (NOW + 60, 3, WR)), NOW + 600,
+                  brk(day_start(meter((NOW - 3600, 98, LAST_WR), (NOW - 7201, 97, LAST_WR), (NOW + 60, 3, WR)), NOW + 600,
                                 WR, cut=True)), (None, TAIL_CONTRACT_BROKEN))
 
             # r1 F3 (Claude): the week reset falls between local midnight and the first row read. The part holds the
             # LAST window's rows written after midnight, then this window's; under append order an earlier window's row
-            # ANYWHERE in the part proves this window's first row is in it too. Start 2 → 2 + 1.5 × 98 ÷ 3 = 51.
+            # ANYWHERE in the part proves this window's first row is in it too.
             OLD_AFTER = NOW + 100
             f3_tail = meter((NOW + 60, 99, OLD_AFTER), (NOW + 120, 2, WR), (NOW + 180, 3, WR))
             f3 = meter((NOW - 3600, 97, OLD_AFTER)) + f3_tail
@@ -1416,7 +1629,7 @@ def _self_test_body() -> int:
             # ⟳ r3 fold: this 3-row part spans 2 minutes, so it cannot prove that no row of this window lies before it —
             # refused. The same reset AT SCALE (OLD in front) answers: the r3 fold's case 11, below.
             check("#501 r1 F3: a reset between midnight and the first row read, in a 3-row part, is refused as too short",
-                  (t_f3[2], pace_line(t_f3[0], NOW + 10 * 3600, WR, cut=t_f3[2])), (True, (None, TAIL_TOO_SHORT)))
+                  (t_f3[2], day_start(t_f3[0], NOW + 10 * 3600, WR, cut=t_f3[2])), (True, (None, TAIL_TOO_SHORT)))
 
             # r1 F1/F2 (Claude): `read_meter`'s limit and deadline, `evaluate`'s meter_cut, and the failure arity.
             check("#501 r1 F1: read_meter(limit=…) under the file's size reads the TAIL and says it was cut",
@@ -1424,9 +1637,9 @@ def _self_test_body() -> int:
                   (t_late, (three, "", False)))
             ev_cut = evaluate(cache(85), NOW + 600, meter=t_late[0], meter_cut=True)
             ev_whole = evaluate(cache(85), NOW + 600, meter=t_late[0], meter_cut=False)
-            check("⭐ #501 r1 F1: evaluate(meter_cut=True) says the line is NOT RUN and why; the same text uncut gives 94",
-                  (ev_cut[0], f"Today's pace line cannot be read ({TAIL_TOO_SHORT}): treat it as NOT RUN." in ev_cut[1],
-                   ev_whole[0], "Today's pace line is 94% — a guide" in ev_whole[1]), (WARN, True, WARN, True))
+            check("⭐ #501 r1 F1: evaluate(meter_cut=True) says the band is NOT RUN and why; the same text uncut starts at 88",
+                  (ev_cut[0], f"today's band is UNKNOWN — start% cannot be read ({TAIL_TOO_SHORT}): treat it as NOT RUN"
+                   in ev_cut[1], ev_whole[0], "started 88%" in ev_whole[1]), (WARN, True, WARN, True))
             real_tail = _read_tail
 
             def slow_tail(path: str, limit: int) -> tuple[str | None, str, bool]:
@@ -1473,8 +1686,8 @@ def _self_test_body() -> int:
             with open(bad_p, "wb") as f:
                 f.write(meter((NOW - 2 * 86400, 40, LAST_WR)).encode() + bad_tail)
             got_bad = read_meter(bad_p, len(bad_tail))
-            check("⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% that would give 55); the line still reads",
-                  (got_bad[1:], pace_line(got_bad[0], NOW + 600, WR, cut=got_bad[2])), (("", True), (92.5, "")))
+            check("⭐ #501 r1 F4: one invalid byte in the tail skips ITS row (a 10% start); start% still reads 85",
+                  (got_bad[1:], day_start(got_bad[0], NOW + 600, WR, cut=got_bad[2])), (("", True), (85.0, "")))
 
             # ── PR #531 r2 fold ────────────────────────────────────────────────────────────────────
             # r2 F1 (Claude): the order check covered every row of the part — ~280 days at the bound — so ONE inverted
@@ -1484,17 +1697,17 @@ def _self_test_body() -> int:
             f1_tail = meter((NOW - 200 * 86400 + 1, 40, OLD_R), (NOW - 200 * 86400, 40, OLD_R),
                             (NOW - 3600, 85, WR), (NOW + 60, 88, WR))
             t_f1 = _read_tail(put("r2f1.jsonl", meter((NOW - 201 * 86400, 39, OLD_R)) + f1_tail), len(f1_tail))
-            check("⭐ #501 r2 F1: a 1 s inversion 200 days back, in a CUT part, does not refuse — the line still reads 92.5",
-                  (t_f1[2], pace_line(t_f1[0], NOW + 600, WR, cut=t_f1[2])), (True, (92.5, "")))
+            check("⭐ #501 r2 F1: a 1 s inversion 200 days back, in a CUT part, does not refuse — start% still reads 85",
+                  (t_f1[2], day_start(t_f1[0], NOW + 600, WR, cut=t_f1[2])), (True, (85.0, "")))
 
             # r2 F2 (Claude): a row after midnight carrying an older `resets_at` (a stale statusline after the reset, or
-            # jitter) gave 88 + 1.5 × 12 ÷ 3 = 94 where the whole log gives 92.5 — a silent WRONG start. ⟳ r3 fold: the
+            # jitter) gave a start% of 88 where the whole log gives 85 — a silent WRONG start. ⟳ r3 fold: the
             # rows are kept; each part holds only rows after midnight, so it cannot reach back in time — TAIL_TOO_SHORT.
             def f2(stale: tuple) -> tuple[float | None, str]:
                 tail = meter(*stale)
                 t = _read_tail(put("r2f2.jsonl", meter((NOW - 3600, 85, WR)) + tail), len(tail))
-                return brk(pace_line(t[0], NOW + 10 * 3600, WR, cut=t[2]))
-            check("⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 94 — "
+                return brk(day_start(t[0], NOW + 10 * 3600, WR, cut=t[2]))
+            check("⭐ #501 r2 F2: a cut part whose `resets_at` DECREASES in file order is refused, never the wrong 88 — "
                   "a stale row between, a stale row last, and R−1 jitter",
                   [f2(((NOW + 60, 88, WR), (NOW + 120, 30, LAST_WR), (NOW + 180, 89, WR))),
                    f2(((NOW + 60, 88, WR), (NOW + 180, 89, WR), (NOW + 240, 30, LAST_WR))),
@@ -1516,77 +1729,77 @@ def _self_test_body() -> int:
             S, N10 = METER_SKEW_S, NOW + 10 * 3600
 
             def whole_and_cut(unseen: tuple, seen: tuple, now: float, resets: float = WR) -> tuple:
-                return pace_line(meter(*unseen) + meter(*seen), now, resets), brk(pace_line(meter(*seen), now, resets,
+                return day_start(meter(*unseen) + meter(*seen), now, resets), brk(day_start(meter(*seen), now, resets,
                                                                                            cut=True))
             # 1. R3-F1, Codex's exact rows. Its two old rows are appended AFTER a row of today, but stamped 11 and 14 days
             # earlier: a breach of W1 that lies entirely across the cut, so no rule that reads only the part can see it.
             check("⭐ #501 r3 BOUND (R3-F1's exact rows): a W1 breach ACROSS the cut, rows appended 11 days late, is "
-                  "OUTSIDE the contract and answers the wrong 94 — a change that detects it must update the bound sentence",
+                  "OUTSIDE the contract and answers the wrong 88 — a change that detects it must update the bound sentence",
                   whole_and_cut([(NOW - 3600, 85, WR)], [(HZ + 1, 30, LAST_WR), (HZ - 1, 20, WR - 14 * 86400),
                                                         (NOW + 60, 88, WR), (NOW + 180, 89, WR)], N10),
-                  ((92.5, ""), (94.0, "")))
+                  ((85.0, ""), (88.0, "")))
             # 2. The same, in contract: the two old rows restamped within S of the unseen row.
             check("⭐ #501 r3: R3-F1 IN contract (the old rows within S of the unseen one) is refused as too short",
                   whole_and_cut([(NOW - 3600, 85, WR)], [(NOW - 5400, 30, LAST_WR), (NOW - 5760, 20, WR - 14 * 86400),
                                                         (NOW + 60, 88, WR), (NOW + 180, 89, WR)], N10),
-                  ((92.5, ""), (None, TAIL_TOO_SHORT)))
-            # 3. C1 in contract: a 30-minute disorder, which the order proof answered 55 from.
-            check("⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 55",
+                  ((85.0, ""), (None, TAIL_TOO_SHORT)))
+            # 3. C1 in contract: a 30-minute disorder, which the order proof answered a start% of 10 from.
+            check("⭐ #501 r3: C1 in contract (30 min of disorder across the cut) is refused, never the wrong 10",
                   whole_and_cut([(NOW - 1, 85, WR)], [(NOW - 1800, 10, WR), (NOW + 60, 88, WR)], NOW + 600),
-                  ((92.5, ""), (None, TAIL_TOO_SHORT)))
+                  ((85.0, ""), (None, TAIL_TOO_SHORT)))
             # 4. The counterexample to "the start row sits S before midnight" (option (a) as briefed), in contract.
-            check("⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 75",
+            check("⭐ #501 r3: an unseen newer row at or before midnight (0.5 h of disorder) is refused, never the wrong 50",
                   whole_and_cut([(NOW - 7200, 50, WR), (NOW - 5400, 85, WR)], [(NOW - 7200, 50, WR), (NOW + 60, 88, WR)],
-                                NOW + 600), ((92.5, ""), (None, TAIL_TOO_SHORT)))
+                                NOW + 600), ((85.0, ""), (None, TAIL_TOO_SHORT)))
             # 5. A stale session's old-window reading as the part's FIRST row, in strict time order.
-            check("⭐ #501 r3: a stale old-window row FIRST in a part, in strict time order, is refused, never the wrong 85",
+            check("⭐ #501 r3: a stale old-window row FIRST in a part, in strict time order, is refused, never the wrong 70",
                   whole_and_cut([(NOW - 1800, 75, WR)], [(NOW + 1440, 97, LAST_WR), (NOW + 3000, 70, WR),
                                                         (NOW + 3300, 78, WR)], NOW + 3 * 3600),
-                  ((87.5, ""), (None, TAIL_TOO_SHORT)))
+                  ((75.0, ""), (None, TAIL_TOO_SHORT)))
             # 6. A stale old-window row after the reset, at scale: the order proof refused it for up to two weeks.
-            check("⭐ #501 r3: a stale old-window row after the reset, at scale, still answers 92.5",
-                  pace_line(OLD + meter((NOW - 3600, 85, WR), (NOW + 60, 88, WR), (NOW + 120, 97, LAST_WR),
-                                        (NOW + 180, 89, WR)), N10, WR, cut=True), (92.5, ""))
+            check("⭐ #501 r3: a stale old-window row after the reset, at scale, still answers 85",
+                  day_start(OLD + meter((NOW - 3600, 85, WR), (NOW + 60, 88, WR), (NOW + 120, 97, LAST_WR),
+                                        (NOW + 180, 89, WR)), N10, WR, cut=True), (85.0, ""))
             # 7. A 1 s inversion inside two weeks, at scale (two sessions appending without a lock).
-            check("⭐ #501 r3: a 1 s inversion of today's rows, at scale, still answers 92.5",
-                  pace_line(OLD + meter((NOW - 3600, 85, WR), (NOW + 61, 88, WR), (NOW + 60, 88, WR)), NOW + 600, WR,
-                            cut=True), (92.5, ""))
+            check("⭐ #501 r3: a 1 s inversion of today's rows, at scale, still answers 85",
+                  day_start(OLD + meter((NOW - 3600, 85, WR), (NOW + 61, 88, WR), (NOW + 60, 88, WR)), NOW + 600, WR,
+                            cut=True), (85.0, ""))
             # 8. The witness's boundaries, both branches. Strict: the oldest row must be MORE than S before `needed`.
             B0, W0 = NOW - 3600, WR - SEVEN_DAY_S - HORIZON_SLACK_S
             check("⭐ #501 r3: the witness with a midnight row — oldest row exactly S before it is refused; 1 s more answers",
-                  [brk(pace_line(meter((B0 - S - k, 40, LAST_WR), (B0, 85, WR)), NOW + 600, WR, cut=True)) for k in (0, 1)],
-                  [(None, TAIL_TOO_SHORT), (92.5, "")])
+                  [brk(day_start(meter((B0 - S - k, 40, LAST_WR), (B0, 85, WR)), NOW + 600, WR, cut=True)) for k in (0, 1)],
+                  [(None, TAIL_TOO_SHORT), (85.0, "")])
             check("⭐ #501 r3: the witness with no midnight row — oldest row exactly S before the window's earliest stamp "
-                  "(start − 1 h) is refused; 1 s more answers 94",
-                  [brk(pace_line(meter((W0 - S - k, 40, LAST_WR), (NOW + 60, 88, WR)), N10, WR, cut=True)) for k in (0, 1)],
-                  [(None, TAIL_TOO_SHORT), (94.0, "")])
+                  "(start − 1 h) is refused; 1 s more answers 88",
+                  [brk(day_start(meter((W0 - S - k, 40, LAST_WR), (NOW + 60, 88, WR)), N10, WR, cut=True)) for k in (0, 1)],
+                  [(None, TAIL_TOO_SHORT), (88.0, "")])
             # 9. The canary's boundaries, on rows of an EARLIER window, so the selection is not involved.
             A9 = NOW - 86400
 
             def c9(*mid: float) -> tuple:
-                return brk(pace_line(OLD + meter(*[(a, 40, LAST_WR) for a in mid], (NOW - 3600, 85, WR),
+                return brk(day_start(OLD + meter(*[(a, 40, LAST_WR) for a in mid], (NOW - 3600, 85, WR),
                                                  (NOW + 60, 88, WR)), NOW + 600, WR, cut=True))
             check("⭐ #501 r3: the canary — a row exactly S before the row above it answers; S + 1 s is a broken contract",
-                  (c9(A9, A9 - S), c9(A9, A9 - S - 1)), ((92.5, ""), (None, TAIL_CONTRACT_BROKEN)))
+                  (c9(A9, A9 - S), c9(A9, A9 - S - 1)), ((85.0, ""), (None, TAIL_CONTRACT_BROKEN)))
             check("⭐ #501 r3: the canary keeps the RUNNING MAXIMUM — a row S + 1 s before an EARLIER row, though only 601 s "
                   "before its predecessor, is a broken contract",
                   c9(A9, A9 - 3000, A9 - S - 1), (None, TAIL_CONTRACT_BROKEN))
-            got_msg = pace_line(meter((NOW + 60, 88, WR), (NOW - 3600, 10, WR)), NOW + 600, WR, cut=True)[1]
+            got_msg = day_start(meter((NOW + 60, 88, WR), (NOW - 3600, 10, WR)), NOW + 600, WR, cut=True)[1]
             check("#501 r3: a broken contract names the two rows, so the late row can be found and deleted",
                   (got_msg.startswith(TAIL_CONTRACT_BROKEN), safe_time(NOW - 3600) in got_msg, safe_time(NOW + 60) in got_msg),
                   (True, True, True))
             # 10. Reset day at scale: the window began at 02:00, after midnight; the order-free proof still answers.
             RD = NOW + 2 * 3600
             WR2 = RD + SEVEN_DAY_S
-            check("⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (21.96)",
-                  pace_line(OLD + meter((NOW - 3600, 99, RD), (RD + 60, 1, WR2), (RD + 600, 2, WR2)), N10, WR2, cut=True),
-                  (1 + LINE_FRONT_LOAD * 99 / ((WR2 - NOW) / 86400), ""))
+            check("⭐ #501 r3: a reset at 02:00, after midnight, at scale, answers from this window's first row (1)",
+                  day_start(OLD + meter((NOW - 3600, 99, RD), (RD + 60, 1, WR2), (RD + 600, 2, WR2)), N10, WR2, cut=True),
+                  (1.0, ""))
             # 11. R1-F3 at scale: the reset between midnight and the first row read.
             OA = NOW + 100
-            check("⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 22.99",
-                  pace_line(OLD + meter((NOW - 3600, 97, OA), (NOW + 60, 99, OA), (NOW + 120, 2, OA + SEVEN_DAY_S),
+            check("⭐ #501 r3: R1-F3 at scale (a reset between midnight and the first row read) answers 2",
+                  day_start(OLD + meter((NOW - 3600, 97, OA), (NOW + 60, 99, OA), (NOW + 120, 2, OA + SEVEN_DAY_S),
                                         (NOW + 180, 3, OA + SEVEN_DAY_S)), N10, OA + SEVEN_DAY_S, cut=True),
-                  (2 + LINE_FRONT_LOAD * 98 / ((OA + SEVEN_DAY_S - NOW) / 86400), ""))
+                  (2.0, ""))
 
             # 12. The soundness sweep: seeded random logs that keep the contract (disorder up to S, 5 % stale old-window
             # readings, resets from 2 h to 6 d after midnight), cut at every line. A cut answer that differs from the
@@ -1613,12 +1826,12 @@ def _self_test_body() -> int:
                         if at <= now:
                             rows.append((at, rng.randint(0, 100), r))
                     text = meter(*rows)
-                    whole = pace_line(text, now, resets)
+                    whole = day_start(text, now, resets)
                     if whole[0] is None:
                         continue
                     lines = text.splitlines(keepends=True)
                     for k in range(1, len(lines)):
-                        v = pace_line("".join(lines[k:]), now, resets, cut=True)
+                        v = day_start("".join(lines[k:]), now, resets, cut=True)
                         total += 1
                         wrong += v[0] is not None and abs(v[0] - whole[0]) >= 1e-9
                 return wrong, total
@@ -2158,8 +2371,13 @@ def _self_test_body() -> int:
                 except ValueError:
                     return {}
 
-            check("main: the verdict's exit codes", [drive(cache(t))[0] for t in (10, 85, 98.5)] + [drive(None)[0]],
-                  [0, 1, 3, 2])
+            # pace-band r1 U1: with no meter the band is UNKNOWN, a WARN; these cases are about the cache's verdict, so
+            # they read a meter whose band (start 45 → 57–65) leaves 10% and 50% NORMAL.
+            mpath = os.path.join(tmp, "meter.jsonl")
+            with open(mpath, "w") as fh:
+                fh.write(meter((NOW - 60, 45, WEEK_RESET)))
+            check("main: the verdict's exit codes",
+                  [drive(cache(t), "--meter", mpath)[0] for t in (10, 85, 98.5)] + [drive(None)[0]], [0, 1, 3, 2])
             rc, out = drive(cache(98.5), "--hook", "spawn")
             check("main: spawn hook at 98.5% denies, rc 0",
                   (rc, hso(out).get("hookSpecificOutput", {}).get("permissionDecision")), (0, "deny"))
@@ -2168,7 +2386,7 @@ def _self_test_body() -> int:
                   (0, ""))
             rc, out = drive(None, "--hook", "prompt")
             check("main: prompt hook with a missing cache is LOUD", (rc, "CANNOT RUN" in out), (0, True))
-            check("main: prompt hook at 50% is silent", drive(cache(50), "--hook", "prompt"), (0, ""))
+            check("main: prompt hook at 50% is silent", drive(cache(50), "--hook", "prompt", "--meter", mpath), (0, ""))
             rc, out = drive(cache(98.5), "--hook", "prompt", env={OVERRIDE_ENV: "1"})
             check("main: an ACTIVE override is named in the prompt notice at REFUSE",
                   ACTIVE_NOTE in hso(out).get("hookSpecificOutput", {}).get("additionalContext", ""), True)
