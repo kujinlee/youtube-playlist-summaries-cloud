@@ -59,3 +59,30 @@ correct the plan's call-bound sentence to say that the listing is capped and wha
 Decision-log: the r5 `redesign` bet scored `continued` (refuted by B1); next route `split` — the held parts stay, only the freeze boundary continues.
 
 Round 7 is the Claude half, scoped to this fold, BLOCKER-only.
+
+## Fold
+
+Applied 2026-11-10 to the plan (Task 7.2 `observe_final`, `newest_finals`, `settled`, `LISTING_DAYS`, the call
+bound and the cases; Task 7.3 `absorb_epoch`'s `final_runs` merge, the schema prose and the cases) and spec §2 /
+§8.6. The YAML above is unchanged: both dispositions held.
+
+- **B1 (fixed):** (1) `SKEW_DAYS = 1`, `FINAL_AFTER = RERUN_DAYS + SKEW_DAYS`: an observation is final only past
+  +31 days, in `observe_final` and in `settled`'s re-check; (2) `settled` unfreezes a push whenever `runs_now`
+  lists its run at a count other than the recorded one, reads the NEWEST observation per run across every epoch
+  (`newest_finals`; r5's `update` let an archive's older record win), and the absorb keeps the first observation
+  only while a later one agrees: a later one at another count replaces it. `LISTING_DAYS` moves to 46 to keep the
+  15-day cushion past +31. No new predicate decides not to look; both changes only add comparisons. Pinned by:
+  Codex's 2 s fast-runner reproduction (nothing recorded; attempt 2 not settled; the miss latches over `clean`);
+  a recorded attempt-1 observation contradicted by a listing at 2 (unfrozen, re-decided, the newer record replaces
+  it, then settled; a HEAD keeping the first refused; an earlier-observed disagreeing report does not replace);
+  the same in an archived epoch (not settled, the miss latches in the new epoch, the active newer record is read;
+  a newer archived record is read); the adjacent pass at +31 d + 1 s unchanged (recorded, next day's repeat
+  byte-identical, frozen with the listing at 1); the margin boundary (exactly +31 d → not final and freezes
+  nothing; one second past → final). The new cases go red on the r5 code (10 checks, run).
+- **M1 (filed):** backlog #595, beside #594. The plan's call-bound sentence now says the listing is capped at
+  1,000 runs (about 10 days), that a run past the cap is absent and so re-decided (fail-closed), and that the r5
+  "~63 calls a day" steady state is not reached: by an INFERRED count, about 86 re-decisions a report, past the
+  hour. Pinned by the capped-listing case (1,000 runs omitting run 55 → not settled, no `final_runs` entry).
+
+Extracted Task 7.2 + 7.3 blocks run with the r5 cases (timestamps moved past the margin) and the r6 cases under
+`python3 -I`: 72 assertions, all pass.
