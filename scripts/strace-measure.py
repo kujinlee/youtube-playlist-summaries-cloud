@@ -10,6 +10,9 @@ the parser's tables may hold against it. It supplies the constants the later sli
 `MEASURED_SYSCALLS`, `MEASURED_IOCTLS`, `TRACE_FACTOR`, whether `-yy` decorates `AT_FDCWD`, and which suites trip
 a refusal trigger (spec §2, "The build plan's FIRST step").
 
+NO-MUTATIONS: a one-shot measurement instrument with no suite of its own to mutate; its output is a reviewed
+measurement document, and nothing gates on it.
+
 Per target in the shard, per seed: a PLAIN run, then a TRACED run (`strace -f -yy -o <log> python3 <target>
 --self-test`), each in a FRESH `stage_tree` copy with a fresh `CHILD_HOME`, under `mutation_env(copy, seed)`,
 timeout `SUITE_TIMEOUT * 10`. The harness's own pieces are loaded with importlib (the spike's method), so the
