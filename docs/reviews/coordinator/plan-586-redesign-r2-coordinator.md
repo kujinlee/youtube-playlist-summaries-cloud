@@ -68,3 +68,12 @@ Round 3 runs the Claude half (alternation). It is the last round before the cap 
   only (Task 7.3 case **(a report from the old epoch, absorbed after a reset)**).
 
 The YAML block above stands: every disposition is `fixed`.
+
+## Decision log
+
+A prospective row for `plan-586-redesign` (route `accrete`) is appended to
+`docs/reviews/decision-scheme/decision-log.jsonl` before round 3 runs; its bet is that r3 finds no section-8 BLOCKER.
+**The `plan-586` `split` row is left unscored on purpose.** Its bet ("the scoped review finds no section-8 BLOCKER")
+was refuted by redesign r1. But scoring it `continued` makes trigger 3 demand the next route on the OLD unit, and
+the only route left is the terminal `defer`. The old unit's work continues under this subject, so that would record
+a closure that did not happen. It is scored when this subject ends, against what then happened.
