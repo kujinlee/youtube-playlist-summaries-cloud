@@ -79,8 +79,9 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #508 · filed 2026-11-05 from the owner's card A: a rising self-test count is cleared by the gate; every other flagged line is answered by the final reviewer, not the PR's author
 > 2026-11-05 08:19 "If the agenda list shows larger goat that the line item belongs to, I can see the current focus or which area you are working on"
 > 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
+> 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-10-15-brief-marketplace-inventory-walkthrough.html let's add this initiative to current focus."
 - fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
-- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this · waits on the owner's walkthrough
+- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; walked through 11-09, D1-D4 and section 7.1 answered · waits on three spec folds (D1 cost checkpoint, cheapest publish route, phased publishing), then the owner walks the changed sections
 - fix · backlog #504 · the agenda log's record check refuses a step whose refs are not (kind, number) pairs
 - fix · backlog #514 · in-flight work is added with a goal, or says why it has none
 - fix · backlog #515 · an agenda step for a partly-done row is not ticked by its PR's merge
