@@ -402,8 +402,9 @@ EXPECTED_MUTATIONS = {
     # round 1 fold), none retired, two re-bound to `_ledger_refs`: four escapes dropped (answer body, `asked`, Older key,
     # the answers-file error), the tray asked of the exit code, a non-list `answers` and a non-text `asked` let through,
     # a thread marker drawn inside its fold and the two hoisted draws dropped, and the ledger match by bare number twice.
-    # Then 354 -> 355 (PR #558 round 2 fold): an unpaired surrogate in an answer no longer refused by name.
-    "scripts/goal-tree.py": 355,
+    # Then 354 -> 355 (PR #558 round 2 fold): an unpaired surrogate in an answer no longer refused by name. Then
+    # 355 -> 360 (round 3 fold): the UTF-8 check skipping each of its four fields, and an unreadable file raising.
+    "scripts/goal-tree.py": 360,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

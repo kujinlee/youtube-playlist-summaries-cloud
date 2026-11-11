@@ -4628,7 +4628,72 @@
       ]
     ],
     "expect": [
-      "⛔ r2: text no UTF-8 writer can encode is refused by name — in `a` at entry 0, in `asked` at entry 1"
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `key` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_encodes(r[f]) for f in (\"key\", ",
+        "_encodes(r[f]) for f in ("
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `q` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"key\", \"q\", \"a\", \"asked\") if isinstance",
+        "(\"key\", \"a\", \"asked\") if isinstance"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `a` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"q\", \"a\", \"asked\") if isinstance(r.get",
+        "\"q\", \"asked\") if isinstance(r.get"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `asked` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"a\", \"asked\") if isinstance(r.get(f), str))]",
+        "\"a\") if isinstance(r.get(f), str))]"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "an answers file it may not read raises (PR #558 r3 L3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    except (ValueError, KeyError, TypeError, OSError) as e:",
+        "    except (ValueError, KeyError, TypeError) as e:"
+      ]
+    ],
+    "expect": [
+      "⛔ r3 L3: an answers file it may not read is refused by name, never raised"
     ]
   }
 ]

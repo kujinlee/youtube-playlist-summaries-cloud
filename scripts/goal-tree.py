@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 473 cases
+    python3 scripts/goal-tree.py --self-test                 # 474 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -96,6 +96,7 @@ import contextlib
 import datetime as _dt
 import html
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -2076,7 +2077,7 @@ def load_answers(path: pathlib.Path) -> tuple[list[dict], str]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         rows = data["answers"]
-    except (ValueError, KeyError, TypeError) as e:
+    except (ValueError, KeyError, TypeError, OSError) as e:   # OSError: a file it may not read (r3 L3)
         return [], f"{path.name} is unreadable ({type(e).__name__}: {e})"
     # ⛔ PR #558 r1 A: every SHAPE check is a refusal by name, never an exception — the page must still be written
     if not isinstance(rows, list):
@@ -3362,21 +3363,31 @@ def _self_test_cases(*, outside: dict) -> int:
          ["`answers` is NoneType, not a list", "`answers` is int, not a list", "entry [0] carries a non-text asked"])
 
     # ⛔ r2: an unpaired surrogate (JSON `\ud800`) in ANY text field is refused by name, and the page is still WRITTEN.
-    # Two distinct fields and positions, so a check of one field or entry 0 only stays red.
+    # r3 M1: EVERY checked field, each at its own entry (key@1, q@3, a@4, asked@5), so dropping any one field from the
+    # check drops its index and turns this red.
     with tempfile.TemporaryDirectory() as _std:
         _sd = pathlib.Path(_std)
+        (_sd / "s4.json").write_text(json.dumps({"answers": [
+            _qa[1], dict(_qa[1], key="goal:gone\ud800"), _qa[2], dict(_qa[1], q="q\udc00"),
+            dict(_qa[1], a="x\ud800"), dict(_qa[1], asked="\udfff")]}))
         (_sd / "sa.json").write_text(json.dumps({"answers": [dict(_qa[1], a="x\ud800")]}))
-        (_sd / "sk.json").write_text(json.dumps({"answers": [_qa[1], dict(_qa[1], asked="\udfff")]}))
-        _ls = [_never_raises(lambda n=n: load_answers(_sd / n)) for n in ("sa.json", "sk.json")]
+        (_sd / "locked.json").write_text(json.dumps({"answers": [_qa[1]]}))
+        (_sd / "locked.json").chmod(0)
+        _ls = [_never_raises(lambda n=n: load_answers(_sd / n)) for n in ("s4.json", "locked.json")]
+        (_sd / "locked.json").chmod(0o600)
         _sp = _sd / "page.html"
-        _sw = _never_raises(lambda: write_page(_sp, [_bsnap], "2026-11-05 19:09", answers_path=_sd / "sa.json",
-                                               composer=[sys.executable, "-c", "pass"]))
+        with contextlib.redirect_stderr(io.StringIO()) as _serr:   # r3 L4: the expected warning stays out of the run
+            _sw = _never_raises(lambda: write_page(_sp, [_bsnap], "2026-11-05 19:09", answers_path=_sd / "sa.json",
+                                                   composer=[sys.executable, "-c", "pass"]))
         _swrote = _sp.is_file() and "not valid UTF-8" in _sp.read_text(encoding="utf-8")
-    case("⛔ r2: text no UTF-8 writer can encode is refused by name — in `a` at entry 0, in `asked` at entry 1",
-         [r[1].split(": ", 1)[-1] if r[0] != "RAISED" else r for r in _ls],
-         ["entry [0] carries text that is not valid UTF-8", "entry [1] carries text that is not valid UTF-8"])
-    case("...and the page is still written, saying so", (_sw[0] if isinstance(_sw, tuple) else None, _swrote),
-         (None, True))
+    case("⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry",
+         _ls[0][1].split(": ", 1)[-1] if _ls[0][0] != "RAISED" else _ls[0],
+         "entries [1, 3, 4, 5] carry text that is not valid UTF-8")
+    case("⛔ r3 L3: an answers file it may not read is refused by name, never raised",
+         (_ls[1][0], _ls[1][1].startswith("locked.json is unreadable (PermissionError")) if _ls[1][0] != "RAISED" else _ls[1],
+         ([], True))
+    case("...and the page is still written, saying so on stderr", (_sw[0] if isinstance(_sw, tuple) else None, _swrote,
+         "not valid UTF-8" in _serr.getvalue()), (None, True, True))
 
     # ⛔ r1 B: EVERY escaped field, each with markup in it — removing any ONE escape turns its own term red.
     _xq = [{"key": "pr-21", "asked": "11-11 <i>x</i>", "q": "q", "a": "say <b>hi</b>\n\n<script>x</script>"},
