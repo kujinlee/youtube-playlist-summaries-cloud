@@ -51,6 +51,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #545, PR #539 · the stalled-work hook names a DIRTY PR that has no CI run
 - bookkeeping · backlog #544 · measured twice more on 11-08: a merge of master that changes no flagged file still voids every sibling PR's loosening answers
 - bookkeeping · backlog #578 · filed from the held-pins-head Phase 6 review: every `python3 scripts/X.py`, the merge gate included, runs a stdlib-named file committed in `scripts/`
+- fix · PR #557 · closure detection cannot remove files outside its copy: the Phase 6 review deletes slice 1's guessing removal model (backlog #601); isolation refuses removals outside the sandbox (backlog #600)
 ## GOAL comprehensibility-suite
 > 2026-10-27 11:30 "I am aiming to complete comprehensibility suite features. … what is current status of comprehensibility suite?"
 > 2026-10-27 17:45 "we would need to define role and usages for these comprehensibility/status/explainer pages (goals, features, backlogs, dashboard, worklines, brief etc) … these pages are currently developed and produced in ad-hoc manner without overarching design"
@@ -58,6 +59,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-10-28 03:41 "I wonder if this kind of goal tree is logged every so often (periodically in time or when meaningful changes are made) and I can see the page to learn how your work has been progressed, the page can be ideal dashboard."
 - fix · backlog #381, PR #421 · a backlog row can carry several tags, read by one parser for both pages
 - fix · backlog #376, PR #422 · a composed page with the Theme button gets the text-style switcher too
+- fix · backlog #603 · explainer pages mark each owner decision with a yellow ✍ DECISION n of N tag and a top counter; an answered tag turns green
 - fix · backlog #384 · the suite's overarching design · waits on the owner's walkthrough of the design ideas
 - fix · backlog #363 · the goal tree as a logged, generated page
 - bookkeeping · PR #423 · backlog #384, backlog #385 and backlog #386 filed; the design-ideas section
@@ -81,7 +83,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-11-07 20:06 "I will be AFK mostly until Monday Nov. 9th. Meanwhile, try to fix remaining high impact backlogs on dev-speed-first, token-usage-first, comprehensibility-suite, guard-harness-audit"
 > 2026-11-10 08:25 "last night I reviewed http://127.0.0.1:7391/2026-10-15-brief-marketplace-inventory-walkthrough.html let's add this initiative to current focus."
 - fix · backlog #509 · each agenda step shows the goal it serves, derived from the thread lines, and a NOW line shows what is in flight
-- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; walked through 11-09, D1-D4 and section 7.1 answered · waits on three spec folds (D1 cost checkpoint, cheapest publish route, phased publishing), then the owner walks the changed sections
+- fix · PR #376 · the marketplace-inventory spec: could a stranger use any of this; APPROVED by the owner 11-11 05:53, folded as section 2c, round 7 converged
 - fix · backlog #504 · the agenda log's record check refuses a step whose refs are not (kind, number) pairs
 - fix · backlog #514 · in-flight work is added with a goal, or says why it has none
 - fix · backlog #515 · an agenda step for a partly-done row is not ticked by its PR's merge
@@ -93,6 +95,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 - fix · backlog #496 · NEEDS YOU flags a row whose status records a decision after its NEEDS-OWNER marker (DECIDED / answered by the owner, or a status head rewritten after the marker), with the remedy, and keeps it listed
 - fix · backlog #408, PR #536 · the generated pages are rebuilt from a fresh private tree, with a stated threat model, after a thrashing-armed architecture review
+- side · PR #558 · the goal-tree page gets the Ask tray, lifted by brief-compose like the backlog and dashboard pages; answers to its questions show as a collapsed marker, never interlaced with the tree
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
 > 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"
@@ -194,6 +197,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #558, PR #538 · a mutant's suite timeout scales with its own control, min(600, max(120, 20×control)); master's full sweep is green again
 - fix · backlog #586, PR #552 · spec approved 11-09: a PR's mutation sweep picks the guards whose tests were SEEN to read a changed file (strace -f), so a docs-only PR stops sweeping 67 of 89 manifests
 - fix · backlog #586 · the plan: a committed shadow ledger read at BASE (owner 11-09 14:55, card A); redesign review round 1, then the plan PR and slices 1-5 (slice 1 measures strace on the CI runner)
+- fix · backlog #586, PR #557 · slice 1 of observed-reach selection: strace records each suite's reads on the runner, so a PR's mutation sweep can be chosen by what the suites actually read
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"

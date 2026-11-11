@@ -1,0 +1,26 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/backlog.md": "100644 0b0b6a8824a471730551a9664ba07124337a3c84",
+    "docs/reviews/claude/goal-tree-ask-r3-claude.md": "100644 b021625bc174d10dd03fc3e1cfca25b5e51859ce",
+    "docs/reviews/coordinator/goal-tree-ask-r3-coordinator.md": "100644 7866f1aa5a4ff97889ec099353ac504918c953f2",
+    "scripts/goal-tree.py": "100644 ca4b9b1618c19f69597a18407106af840accc621",
+    "scripts/mutations/expected_mutations.py": "100644 d04d0b3f632f9d1bfce5a1d8a10a69ef60a2a1a3",
+    "scripts/mutations/goal-tree.json": "100644 4150e0e04ebd4abb26ed9f057fecfd497aae323a"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d304538b5e0b5b798a8208a16db8c0d8434854df",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/p558-r3.md",
+  "reason": "claude half filed: 8919 chars, names d304538b5e0b",
+  "refused": false,
+  "review": "goal-tree-ask-r3-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/goal-tree-ask",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}

@@ -1,0 +1,23 @@
+{
+  "attempts": [],
+  "dirty": {
+    "docs/reviews/claude/goal-tree-ask-r1-claude.md": "100644 2b045d1c7ed4b364cae1e96162fb6ef1f217b327",
+    "docs/reviews/codex/goal-tree-ask-r1-codex.md": "100644 8b94f6dd7fa68793f8f29c99a4925b4d5eceb683",
+    "docs/reviews/verdicts/goal-tree-ask-r1-codex.verdict.json": "100644 7bf6472fb21c32421974049cb5e687f9e79b912d"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f21e47985e1a89a2e7054f1ee1ca1c52d4648eff",
+  "intrusions": [],
+  "loosening_answers": {},
+  "model": null,
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/b387c8e6-9003-42f5-a944-1d4eb1de0c9b/scratchpad/p558-r1.md",
+  "reason": "claude half filed: 10717 chars, names f21e47985e1a",
+  "refused": false,
+  "review": "goal-tree-ask-r1-claude.md",
+  "schema": 3,
+  "tool": "record-review-verdict",
+  "tree": "/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/.claude/worktrees/goal-tree-ask",
+  "verdict": "NOT CONVERGED",
+  "writer": "claude"
+}
