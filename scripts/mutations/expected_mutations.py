@@ -395,7 +395,7 @@ EXPECTED_MUTATIONS = {
     # sibling read through its .pyc; compiled under goal-tree's `from __future__` flags; the sweep restore out of
     # finally / never run; a nested sweep with its own memo; the outside probe taken inside the sweep; the body run
     # outside any sweep. Above master's 325 by eleven.
-    "scripts/goal-tree.py": 337,
+    "scripts/goal-tree.py": 340,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).

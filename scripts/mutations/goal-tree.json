@@ -2969,12 +2969,12 @@
     ]
   },
   {
-    "name": "#509 r1 Codex L2: the page drops the first step line (owner 2026-11-05)",
+    "name": "#509 r1 Codex L2: the page drops the first line of All steps (its first group title) (owner 2026-11-05)",
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "        for ln in agenda_step_lines(snap, ag)) + \"</pre>\")",
-        "        for ln in agenda_step_lines(snap, ag)[1:]) + \"</pre>\")"
+        "        for k, ln in agenda_step_items(snap, ag)) + \"</pre>\")",
+        "        for k, ln in agenda_step_items(snap, ag)[1:]) + \"</pre>\")"
       ]
     ],
     "expect": [
@@ -4389,12 +4389,51 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "_html_line(ln, repo) if ln.startswith(\" \") else f'<span class=\"ag-when\">",
-        "_html_line(ln, repo) if True else f'<span class=\"ag-when\">"
+        "</span>' if k == \"when\" else _html_line(ln, repo)",
+        "</span>' if False else _html_line(ln, repo)"
       ]
     ],
     "expect": [
       "⭐ owner 11-11 14:52: each `## <when>` group in All steps is a TITLE (its own span, in the accent), and no step line is one"
+    ]
+  },
+  {
+    "name": "a group is told from a step by indentation again (PR #559 r1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "</span>' if k == \"when\" else",
+        "</span>' if not ln.startswith(\" \") else"
+      ]
+    ],
+    "expect": [
+      "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
+    ]
+  },
+  {
+    "name": "a group title is not escaped (PR #559 r1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<span class=\"ag-when\">{_html_line(ln, repo)}</span>'",
+        "f'<span class=\"ag-when\">{ln}</span>'"
+      ]
+    ],
+    "expect": [
+      "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
+    ]
+  },
+  {
+    "name": "the group title loses its accent style rule (PR #559 r1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "  font-weight:700;color:var(--accent)}\n",
+        "  font-weight:700}\n"
+      ]
+    ],
+    "expect": [
+      "⭐ PR #559 r1: an indented or HTML-bearing group is still a title, escaped, with or without a change-if; the accent style rule for the title exists"
     ]
   }
 ]
