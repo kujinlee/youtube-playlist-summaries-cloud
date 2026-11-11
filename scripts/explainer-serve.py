@@ -231,7 +231,10 @@ PAGE_SOURCES = {
     # The declared threads only: the snapshot log is git-ignored (no checkout would carry it, which the
     # every-source-is-a-real-file case below would refuse), and the STATES move with gh and git, which
     # no file carries — so "fresh" here means "nothing re-declared since", not "gh agrees".
-    "goal-tree": ["docs/goal-threads.md"],
+    # The answers file too (PR #558 r1 F): the page shows answers to questions asked on it, so an answer added
+    # after the build lights the banner. ⚠ The page is built from origin/master, so an answer reaches it only
+    # after its PR merges; until then the banner says "stale" only in a checkout that holds the edit.
+    "goal-tree": ["docs/goal-threads.md", "docs/goal-tree-answers.json"],
 }
 # ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
 # keys whose source list is empty, so an empty list can never appear on another page silently.

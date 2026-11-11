@@ -20220,6 +20220,34 @@ is unchanged. Today at 72% it reads: band 78–80% (this week's override), zone 
 `refuse_at`, `cap_at` and `RESERVE_PER_DAY` untouched. The last day is from `rise_start` (#521's own boundary), so
 for a Fri 02:00 reset Thursday is already "use it all". 403 self-test cases; mutation pin 175 → 188.
 
+## 2026-11-11
+The goal-tree page now has the Ask tray, like the backlog, dashboard and explainer pages. Hover a heading (or
+select text), press ask, type, Send: the question goes to `~/explainers/questions.md` under `goal-tree.html`,
+where the session's watcher picks it up. The tray is not retyped; it is lifted from a page where it already works,
+the same way the backlog and dashboard pages get theirs. If no tray can be lifted (a fresh clone, say), the page is
+still written, and `--page` prints a ⚠ line saying the Ask button is missing and why. One cost: a Refresh of this
+page now takes about 28 s instead of 7-8 s, because lifting the tray into the 8 MB page takes about 18 s. That is
+still inside Refresh's 60 s limit. PR #557 (slice 1 of backlog #586) now hangs under GOAL dev-speed-first instead
+of "no goal". Answers to questions asked here do not clutter the tree (owner, 11-11 06:18): each answered goal or
+thread shows only a small "💬 1 answer" marker, and the Q&A opens only when you click it. An answer whose goal or
+thread has left the tree is kept in one closed "Older questions" section at the bottom, never dropped.
+Two in-flight items that showed under "no goal" now hang under goals (owner, 11-11 06:38): the Phase 6 review
+of PR #557 under GOAL guard-harness-audit, and the decision tags (filed as backlog #603) under GOAL
+comprehensibility-suite. Why they showed there is filed as backlog #604: a ledger entry's goal is checked but not
+used to place it, so an entry needs a full thread line as well.
+<!--tech-->
+`scripts/goal-tree.py` `write_page` builds a fragment and runs `scripts/brief-compose.py --content … --slug
+goal-tree --out <page>` with a 40 s bound. It returns "" or the reason, and `page_report` prints every line of that
+reason. On failure it writes the old tray-less page. Whether the tray is there is checked on the written file
+(`brief-compose.has_tray`), not taken from the exit code. The palettes declare `--good/--defect/--structure`,
+because brief-compose refuses a theme toggle whose light palette misses a token the shim supplies. Self-test 443
+cases at the tray commit. Answers live in `docs/goal-tree-answers.json` (key `goal:<slug>` or a thread key
+`backlog-N`/`pr-N`), read on every `--page`. A goal's answers sit under its heading (outside the fold of a folded
+goal). A thread's answers sit beside its key's first, id-bearing occurrence on the live tree; timeline trees carry
+none. Keys not on the live tree go to `older_qa_html` at the bottom. Every `<details class="qa">` is emitted
+without `open`. An unreadable file, or an entry missing key/q/a, is refused by name, on the page and on stderr.
+Self-test 458 cases. Six new mutations in all (manifest pin 336 -> 342): the two above, plus an answer rendered
+open, an orphaned answer dropped, a thread's answers never attached, and a bad entry skipped.
 ## 2026-11-10
 The first build step of the faster mutation sweep (backlog #586) is measured: `strace` works on GitHub's runners.
 Every one of the 92 guard suites ran twice under two fixed seeds, once plain and once traced, on six machines in

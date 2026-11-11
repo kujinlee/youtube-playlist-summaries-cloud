@@ -372,8 +372,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "for e in src[\"ledger\"] if not (_ledger_numbers(e) & nums) and not _SS.waits_on_owner(e)]",
-        "for e in src[\"ledger\"] if not (_ledger_numbers(e) & nums)]"
+        "for e in src[\"ledger\"] if not (_ledger_refs(e) & pairs) and not _SS.waits_on_owner(e)]",
+        "for e in src[\"ledger\"] if not (_ledger_refs(e) & pairs)]"
       ]
     ],
     "expect": [
@@ -1664,8 +1664,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "render_tree_html(newest, ids=True, at=built)",
-        "render_tree_html(newest, ids=True)"
+        "render_tree_html(newest, ids=True, at=built, qa=qa, seen=seen)",
+        "render_tree_html(newest, ids=True, qa=qa, seen=seen)"
       ]
     ],
     "expect": [
@@ -2733,8 +2733,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "            | ({n for _, n in t[\"refs\"]} if t else set()))",
-        "            | {int(n) for n in LEDGER_NUM_RE.findall(str(entry.get('thread', '')))})"
+        "        return {(k, n) for k, n in t[\"refs\"]} if t else set()",
+        "        return {(k, int(n)) for k, n in REF_RE.findall(str(entry[\"thread\"]))} if t else set()"
       ]
     ],
     "expect": "backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)"
@@ -2966,19 +2966,6 @@
     ],
     "expect": [
       "⭐ #509 r1 Codex L1: the age line says how old the plan is beside the snapshot's own time; none when the snapshot is older, or either stamp is not a minute stamp"
-    ]
-  },
-  {
-    "name": "#509 r1 Codex L2: the page drops the first line of All steps (its first group title) (owner 2026-11-05)",
-    "file": "scripts/goal-tree.py",
-    "edits": [
-      [
-        "        for k, ln in agenda_step_items(snap, ag)) + \"</pre>\")",
-        "        for k, ln in agenda_step_items(snap, ag)[1:]) + \"</pre>\")"
-      ]
-    ],
-    "expect": [
-      "⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them"
     ]
   },
   {
@@ -4382,6 +4369,331 @@
     ],
     "expect": [
       "backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags"
+    ]
+  },
+  {
+    "name": "the Ask tray is not lifted: the tray-less fragment page overwrites the composed one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if why:\n        out.write_text(f\"<!doctype html><meta charset=utf-8>\"",
+        "    if True:\n        out.write_text(f\"<!doctype html><meta charset=utf-8>\""
+      ]
+    ],
+    "expect": [
+      "⛔ the written page carries the Ask tray, lifted by brief-compose — and says so"
+    ]
+  },
+  {
+    "name": "--page prints only the headline of why the tray is missing",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            + [\"   \" + line for line in why.splitlines()]\n",
+        "            + [\"   \" + why.splitlines()[0]]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ --page says the tray is missing, with EVERY line of the reason"
+    ]
+  },
+  {
+    "name": "an answer renders OPEN, interlaced with the tree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (f'<details class=\"qa\"><summary>{head}</summary><div class=\"qa-body\">'",
+        "    return (f'<details class=\"qa\" open><summary>{head}</summary><div class=\"qa-body\">'"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: EVERY Q&A renders COLLAPSED — a <details> with no `open` attribute (the clutter remedy)"
+    ]
+  },
+  {
+    "name": "an answer whose key left the tree is dropped silently",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not gone:\n        return \"\"\n",
+        "    if True:\n        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: a key no longer on the tree lands in ONE collapsed 'Older questions' section at the BOTTOM"
+    ]
+  },
+  {
+    "name": "a thread's answers are never attached to its key",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if a and qa:   # the key's FIRST",
+        "        if False:   # the key's FIRST"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: a thread's answers sit beside its key's FIRST occurrence on the live tree, counted"
+    ]
+  },
+  {
+    "name": "an answers entry missing a field is skipped, not refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        return [], f\"{path.name}: entr",
+        "    if False:\n        return [], f\"{path.name}: entr"
+      ]
+    ],
+    "expect": [
+      "⛔ answers file: missing = none yet; unreadable or an entry missing a field is REFUSED by name, never skipped"
+    ]
+  },
+  {
+    "name": "an answer's body is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "paras = \"\".join(f\"<p>{html.escape(p.strip())}</p>\"",
+        "paras = \"\".join(f\"<p>{p.strip()}</p>\""
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: the answer BODY is escaped, every paragraph"
+    ]
+  },
+  {
+    "name": "an answer's `asked` is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<time>{html.escape(r[\"asked\"])}</time> '",
+        "f'<time>{r[\"asked\"]}</time> '"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: `asked` is escaped"
+    ]
+  },
+  {
+    "name": "an Older-questions key is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'<p class=\"qa-key\">{html.escape(k)}</p>",
+        "f'<p class=\"qa-key\">{k}</p>"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: an Older-questions KEY is escaped"
+    ]
+  },
+  {
+    "name": "the answers-file error line is not escaped (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "NOT shown: {html.escape(answers_error)}",
+        "NOT shown: {answers_error}"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: the answers-file ERROR line is escaped"
+    ]
+  },
+  {
+    "name": "the tray is asked of the exit code, not the file (PR #558 r1 B)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if not _has_tray(written):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 B: brief-compose exiting 0 with NO tray on disk is reported, and the page is still written"
+    ]
+  },
+  {
+    "name": "a non-list `answers` is not refused (PR #558 r1 A)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not isinstance(rows, list):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 A: a malformed SHAPE is refused by name, never raised — `answers` null or a number, a non-text `asked`, a top-level list"
+    ]
+  },
+  {
+    "name": "a non-text `asked` is not refused (PR #558 r1 A)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if odd:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 A: a malformed SHAPE is refused by name, never raised — `answers` null or a number, a non-text `asked`, a top-level list"
+    ]
+  },
+  {
+    "name": "a thread's marker is drawn inside its closed fold (PR #558 r1 C)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            if hoist is None:\n                out.append(qa_html(",
+        "            if True:\n                out.append(qa_html("
+      ]
+    ],
+    "expect": [
+      "⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to"
+    ]
+  },
+  {
+    "name": "a fold's hoisted markers are never drawn (PR #558 r1 C)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "                       + (_hoisted(mine) if hoist is None else \"\"))",
+        "                       + \"\")"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to"
+    ]
+  },
+  {
+    "name": "a folded goal's hoisted thread markers are never drawn (PR #558 r1 C)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "f'{asked}{_hoisted(mine) if hoist is None else \"\"}</section>')",
+        "f'{asked}</section>')"
+      ]
+    ],
+    "expect": [
+      "⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to"
+    ]
+  },
+  {
+    "name": "a ledger entry matches a thread by NUMBER, dropping the kind (PR #558 r1 E)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    naming = [e for e in src[\"ledger\"] if _ledger_refs(e) & _thread_refs(t)]",
+        "    naming = [e for e in src[\"ledger\"] if {n for _, n in _ledger_refs(e)} & {n for _, n in _thread_refs(t)}]"
+      ]
+    ],
+    "expect": [
+      "⛔ PR #558 r1 E: ledger PR #N attaches to PR #N, never to backlog #N; bare #N and an id's -N name nothing"
+    ]
+  },
+  {
+    "name": "a bare #N in a ledger entry's text names a thread of either kind (PR #558 r1 E)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return {(k, int(n)) for k, n in REF_RE.findall(f\"{entry.get('id', '')} {entry.get('what', '')}\")}",
+        "    return {(k, int(n)) for n in re.findall(r\"#(\\d+)\", str(entry.get('what', ''))) for k in (\"PR\", \"backlog\")}"
+      ]
+    ],
+    "expect": [
+      "...an entry naming only a bare #N is IN FLIGHT UNDER NO GOAL, never hung on a thread with that number"
+    ]
+  },
+  {
+    "name": "text no UTF-8 writer can encode is not refused (PR #558 r2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if unenc:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `key` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "_encodes(r[f]) for f in (\"key\", ",
+        "_encodes(r[f]) for f in ("
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `q` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "(\"key\", \"q\", \"a\", \"asked\") if isinstance",
+        "(\"key\", \"a\", \"asked\") if isinstance"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `a` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"q\", \"a\", \"asked\") if isinstance(r.get",
+        "\"q\", \"asked\") if isinstance(r.get"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "the UTF-8 check skips `asked` (PR #558 r3 M1)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "\"a\", \"asked\") if isinstance(r.get(f), str))]",
+        "\"a\") if isinstance(r.get(f), str))]"
+      ]
+    ],
+    "expect": [
+      "⛔ r2/r3: text no UTF-8 writer can encode is refused by name — in `key`, `q`, `a` and `asked`, each at its own entry"
+    ]
+  },
+  {
+    "name": "an answers file it may not read raises (PR #558 r3 L3)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    except (ValueError, KeyError, TypeError, OSError) as e:",
+        "    except (ValueError, KeyError, TypeError) as e:"
+      ]
+    ],
+    "expect": [
+      "⛔ r3 L3: an answers file it may not read is refused by name, never raised"
+    ]
+  },
+  {
+    "name": "#509 r1 Codex L2: the page drops the first line of All steps (its first group title) (owner 2026-11-05)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        for k, ln in agenda_step_items(snap, ag)) + \"</pre>\")",
+        "        for k, ln in agenda_step_items(snap, ag)[1:]) + \"</pre>\")"
+      ]
+    ],
+    "expect": [
+      "⭐ #509 r1 Codex L2: the page keeps every when heading and every step, whatever lines sit above them"
     ]
   },
   {
