@@ -5,7 +5,7 @@
     python3 scripts/goal-tree.py                             # = --snapshot --page (the Refresh button)
     python3 scripts/goal-tree.py --page                      # re-render from the log: no gh; git only
                                                              # to find the MAIN checkout's log
-    python3 scripts/goal-tree.py --self-test                 # 458 cases
+    python3 scripts/goal-tree.py --self-test                 # 471 cases
 
 WHY THIS EXISTS (backlog #363). Asked 2026-10-28 03:41: *"I wonder if this kind of goal tree is logged
 every so often (periodically in time or when meaningful changes are made) and I can see the page to learn
@@ -81,8 +81,9 @@ no arguments.
 
 ⚠ BOUNDS, stated. A backlog-only thread finds its PR by the `(backlog #N)` subject tail on master and by
 `backlog #N` in an open PR's title; a PR that names its row any other way is not found and the thread
-reads "no PR names it yet". The in-flight ledger is matched by NUMBER (`#424`, `merge-424`), so a ledger
-entry about backlog #N attaches to a thread naming PR #N too. `gh pr list --state all` is capped at
+reads "no PR names it yet". The in-flight ledger is matched by (KIND, number) (`_ledger_refs`): an entry's
+declared `thread` refs, else the `PR #N` / `backlog #N` in its id and text. A bare `#424` or an id's `-424` names
+nothing, so such an entry shows IN FLIGHT UNDER NO GOAL rather than on a guessed thread. `gh pr list --state all` is capped at
 ALL_LIMIT, so an old PR beyond it reads NOT FOUND, never a guessed state.
 
 EXIT CODES (repo convention): 0 = done · 1 = `docs/goal-threads.md` or the log is malformed ·
@@ -134,7 +135,6 @@ REFS_RE = re.compile(r"(?:backlog|PR) #\d+(?:, (?:backlog|PR) #\d+)*")
 REF_RE = page_markup.KEY_REF      # one key grammar, owned by the link function
 # A merged subject ends `… (backlog #N) (#PR)` or `… (#PR)`; the PR number is the LAST parenthesis.
 SUBJECT_PR_RE = re.compile(r"\(#(\d+)\)\s*$")
-LEDGER_NUM_RE = re.compile(r"(?:#|(?<=-))(\d+)\b")
 
 GLYPH = {"merged": "✅", "open": "⏳", "inflight": "⏳", "next": "⬜", "blocked": "❌",
          "closed": "✖", "superseded": "✖", "withdrawn": "✖", "notfound": "❓", "cannot": "⚠"}
@@ -356,11 +356,21 @@ def ledger_threads(goals: list[dict], ledger: list[dict]) -> tuple[list[dict], l
     return out, problems
 
 
-def _ledger_numbers(entry: dict) -> set:
-    # a declared `thread` counts by its STRUCTURED refs only — a number in its prose is not an association (r1 Codex M3)
-    t, _ = parse_thread_line("- " + str(entry["thread"]).removeprefix("- ")) if entry.get("thread") else (None, None)
-    return ({int(n) for n in LEDGER_NUM_RE.findall(f"{entry.get('id', '')} {entry.get('what', '')}")}
-            | ({n for _, n in t["refs"]} if t else set()))
+def _ledger_refs(entry: dict) -> set:
+    """The (kind, number) refs a ledger entry names — compared with a thread's refs as PAIRS, so `PR #558` is never
+    `backlog #558` (PR #558 r1 E: both sequences are in the 500-600s and grow together, so the collision recurs).
+    An entry that declares a `thread` names exactly that thread's STRUCTURED refs; its prose is not an association
+    (r1 Codex M3). One with no thread names the KINDED refs in its id and text (`PR #N`, `backlog #N`). ⛔ A bare
+    `#N` or an id's `-N` names NOTHING: it carries no kind, and reading it as both hung a review of `#586` on the
+    merged backlog #586 threads."""
+    if entry.get("thread"):
+        t, _ = parse_thread_line("- " + str(entry["thread"]).removeprefix("- "))
+        return {(k, n) for k, n in t["refs"]} if t else set()
+    return {(k, int(n)) for k, n in REF_RE.findall(f"{entry.get('id', '')} {entry.get('what', '')}")}
+
+
+def _thread_refs(t: dict) -> set:
+    return {(k, n) for k, n in t["refs"]}
 
 
 def merge_when(full) -> str:
@@ -529,8 +539,7 @@ def derive_thread(t: dict, src: dict) -> dict:
             if not live_rows and state in ("merged", "next", "closed"):
                 state = "superseded" if any(f[0] == "superseded" for f in fated) else "withdrawn"
             detail = " · ".join(dict.fromkeys(f[1] for f in fated)) + " · " + detail
-    nums = set(prs) | set(rows)
-    naming = [e for e in src["ledger"] if _ledger_numbers(e) & nums]
+    naming = [e for e in src["ledger"] if _ledger_refs(e) & _thread_refs(t)]
     # backlog #497: a PARKED entry is not work in flight — it is shown as parked, and never turns ⬜ into ⏳.
     parked = [_SS.clean(e.get("what", ""), 160) for e in naming if is_parked(e)]
     flying = [_SS.clean(e.get("what", ""), 160) for e in naming if not is_parked(e)]
@@ -574,17 +583,18 @@ def derive(goals: list[dict], src: dict, now: str) -> dict:
     undeclared = [{"pr": n, "title": _SS.clean(p.get("title") or "", 160),
                    "draft": bool(p.get("isDraft"))}
                   for n, p in sorted(src["open"].items()) if n not in named_prs]
-    nums = {n for g in out_goals for t in g["threads"] for _, n in t["refs"]}
-    unnamed = [e for e in src["ledger"] if not (_ledger_numbers(e) & nums) and not _SS.waits_on_owner(e)]
+    pairs = {r for g in out_goals for t in g["threads"] for r in _thread_refs(t)}
+    unnamed = [e for e in src["ledger"] if not (_ledger_refs(e) & pairs) and not _SS.waits_on_owner(e)]
     loose = [{"id": _SS.clean(e.get("id", ""), 60), "what": _SS.clean(e.get("what", ""), 160)}
              for e in unnamed if not is_parked(e)]
     # backlog #497: a parked entry naming no thread of any goal is its own group — shown, never dropped. So is one
     # whose every named thread has LANDED: its leaves are folded as older, and work that landed is not what is
-    # parked — the ledger matches by NUMBER, so `PR #376` attaches to a `backlog #376` thread (backlog #489).
+    # parked (backlog #489). Matching is by (kind, number) since PR #558 r1 E, so `PR #376` no longer reaches a
+    # `backlog #376` thread; a landed thread the entry really names still routes it here.
     parked_loose = [{"id": _SS.clean(e.get("id", ""), 60), "what": _SS.clean(e.get("what", ""), 160)}
                     for e in unnamed if is_parked(e)]
     for e in src["ledger"]:
-        hits = [t for g in out_goals for t in g["threads"] if _ledger_numbers(e) & {n for _, n in t["refs"]}]
+        hits = [t for g in out_goals for t in g["threads"] if _ledger_refs(e) & _thread_refs(t)]
         if hits and is_parked(e) and all(t["state"] in LANDED for t in hits):
             parked_loose.append({"id": _SS.clean(e.get("id", ""), 60), "what": _SS.clean(e.get("what", ""), 160),
                                  "landed": [t["key"] for t in hits]})
@@ -2034,7 +2044,8 @@ def _id_attr(t: str, ids: set | None) -> str:
     return f' id="{page_markup.thread_id(key)}"'
 
 
-def _html_line(line: str, repo: str | None, ids: set | None = None, qa: dict | None = None) -> str:
+def _html_line(line: str, repo: str | None, ids: set | None = None, qa: dict | None = None,
+               hoist: list | None = None) -> str:
     out = []
     for t, h in segments(line, repo):
         a = _id_attr(t, ids)
@@ -2045,7 +2056,10 @@ def _html_line(line: str, repo: str | None, ids: set | None = None, qa: dict | N
         else:
             out.append(html.escape(t))
         if a and qa:   # the key's FIRST occurrence on the live tree carries its answers, once
-            out.append(qa_html(qa.get(_thread_key(t), [])))
+            if hoist is None:
+                out.append(qa_html(qa.get(_thread_key(t), [])))
+            elif qa.get(_thread_key(t)):    # inside a CLOSED fold: the marker goes after the fold (r1 C)
+                hoist.append((t, qa[_thread_key(t)]))
     return "".join(out)
 
 
@@ -2064,10 +2078,16 @@ def load_answers(path: pathlib.Path) -> tuple[list[dict], str]:
         rows = data["answers"]
     except (ValueError, KeyError, TypeError) as e:
         return [], f"{path.name} is unreadable ({type(e).__name__}: {e})"
+    # ⛔ PR #558 r1 A: every SHAPE check is a refusal by name, never an exception — the page must still be written
+    if not isinstance(rows, list):
+        return [], f"{path.name}: `answers` is {type(rows).__name__}, not a list"
     bad = [i for i, r in enumerate(rows)
            if not isinstance(r, dict) or not all(isinstance(r.get(f), str) and r.get(f) for f in ("key", "q", "a"))]
     if bad:
         return [], f"{path.name}: entr{'y' if len(bad) == 1 else 'ies'} {bad} lack key, q or a"
+    odd = [i for i, r in enumerate(rows) if "asked" in r and not isinstance(r["asked"], str)]
+    if odd:
+        return [], f"{path.name}: entr{'y' if len(odd) == 1 else 'ies'} {odd} carr{'ies' if len(odd) == 1 else 'y'} a non-text asked"
     return rows, ""
 
 
@@ -2085,13 +2105,14 @@ def _qa_item(r: dict) -> str:
             f'<div class="qa-a">{paras}</div></div>')
 
 
-def qa_html(rows: list[dict]) -> str:
+def qa_html(rows: list[dict], about: str = "") -> str:
     """A small `💬 N answer(s)` marker whose Q&A sits in a CLOSED `<details>` — never `open` (owner 2026-11-11
-    06:18: interlacing Q&A with the tree is the clutter; collapse is the remedy). "" when there are none."""
+    06:18: interlacing Q&A with the tree is the clutter; collapse is the remedy). "" when there are none.
+    `about` names the thread when the marker is HOISTED out of the closed fold its key sits in (r1 C)."""
     if not rows:
         return ""
     n = len(rows)
-    head = f'💬 {n} answer{"" if n == 1 else "s"}'
+    head = f'💬 {n} answer{"" if n == 1 else "s"}' + (f" — {html.escape(about)} (folded above)" if about else "")
     return (f'<details class="qa"><summary>{head}</summary><div class="qa-body">'
             + "".join(_qa_item(r) for r in rows) + "</div></details>")
 
@@ -2106,7 +2127,11 @@ def older_qa_html(qa: dict, seen: set) -> str:
             f'no longer on the tree</summary><div class="qa-body">{items}</div></details>')
 
 
-def _goal_html(b: tuple, repo, seen, qa=None) -> str:
+def _hoisted(hoist: list) -> str:
+    return "".join(qa_html(rows, about=t) for t, rows in hoist)
+
+
+def _goal_html(b: tuple, repo, seen, qa=None, hoist=None) -> str:
     """One goal as its own bordered `<section>`, headed `GOAL n · slug` in the heading colour (owner, 2026-11-04
     01:14). A goal with nothing current keeps that heading as the summary of a CLOSED `<details>`."""
     _, n, slug, first, counts, tags, inner = b
@@ -2120,26 +2145,33 @@ def _goal_html(b: tuple, repo, seen, qa=None) -> str:
             + (f'<span class="goal-agenda">{html.escape(tag_text(tags)[3:])}</span>' if tags else ""))
     quote = (f'<p class="goal-q"><time>{html.escape(first["when"])}</time> '
              f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>')
-    body = _blocks_html(inner, repo, seen, qa)
-    if counts is not None:   # the marker sits OUTSIDE the fold, so a folded goal still shows it has answers
+    if counts is not None:   # the markers sit OUTSIDE the fold, so a folded goal still shows it has answers —
+        mine = [] if hoist is None else hoist   # its own, and its threads' (r1 C)
+        body = _blocks_html(inner, repo, seen, qa, mine)
         return (f'<section class="goal"{anchor}><details class="fold goal"><summary>{head}'
                 f'<span class="goal-counts"> — {html.escape(counts)}</span></summary>{quote}{body}</details>'
-                f'{asked}</section>')
+                f'{asked}{_hoisted(mine) if hoist is None else ""}</section>')
+    body = _blocks_html(inner, repo, seen, qa, hoist)
     return f'<section class="goal"{anchor}>{head}{asked}{quote}{body}</section>'
 
 
-def _blocks_html(blocks: list, repo, seen, qa=None) -> str:
+def _blocks_html(blocks: list, repo, seen, qa=None, hoist=None) -> str:
+    """`hoist` is None outside any closed fold. Inside one, a thread's answers are COLLECTED into it instead of
+    drawn beside the key, and the OUTERMOST fold draws them right after itself, each naming its thread — so a
+    marker is never hidden in a fold, as a goal's never was (PR #558 r1 C)."""
     out = []
     for b in blocks:
         if b[0] == "pre":
             if any(ln for ln in b[1]):      # a blank separator line is the section border's job on the page
-                out.append('<pre class="tree">' + "\n".join(_html_line(ln, repo, seen, qa) for ln in b[1])
+                out.append('<pre class="tree">' + "\n".join(_html_line(ln, repo, seen, qa, hoist) for ln in b[1])
                            + "</pre>")
         elif b[0] == "goal":
-            out.append(_goal_html(b, repo, seen, qa))
+            out.append(_goal_html(b, repo, seen, qa, hoist))
         else:
+            mine = [] if hoist is None else hoist
             out.append(f'<details class="fold {b[1]}"><summary>{_html_line(b[2], repo)}</summary>'
-                       + _blocks_html(b[4], repo, seen, qa) + "</details>")
+                       + _blocks_html(b[4], repo, seen, qa, mine) + "</details>"
+                       + (_hoisted(mine) if hoist is None else ""))
     return "".join(out)
 
 
@@ -2304,15 +2336,20 @@ section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-fain
 
 
 PAGE_TITLE = "Goal tree"
-# The lift is bounded: `--page` runs from explainer-serve's Refresh, which waits REGEN_TIMEOUTS["goal-tree"]
-# (60 s) for the whole run. A compose that hangs must leave time to write the tray-less page and say so.
-# ⚠ MEASURED 2026-11-11 on the real 8.2 MB page: the compose alone took 18.2 s and the whole `--page` 28.0 s
-# (it was 6-8 s without the lift, explainer-serve's 11-04 measurement) — the lift is most of a Refresh now.
-COMPOSE_TIMEOUT = 40
+# The lift is bounded: a Refresh runs `goal-tree.py` with no arguments (= `--snapshot --page`) and explainer-serve
+# waits REGEN_TIMEOUTS["goal-tree"] (60 s) for the WHOLE run. A compose that hangs must leave time to write the
+# tray-less page and say so. ⚠ MEASURED 2026-11-11 on the real 8.2 MB page (round 1 Claude half): the compose
+# alone 18.2 s, the whole `--page` 28.0 s, so the rest of `--page` ~9.8 s. MEASURED in the PR #558 r1 fold
+# (`time python3 scripts/goal-tree.py --snapshot`, two runs): 5.3 s and 6.3 s. With a HUNG compose the run is
+# 6.3 + 9.8 + COMPOSE_TIMEOUT; at 30 that is 46.1 s, leaving ~14 s of the 60 for the fallback write and the
+# Refresh's own fresh-clone setup (not measured here). 30 is still 1.6x the measured normal compose.
+# (Round 1 G: the old 40 left ~4 s — 6.3 + 9.8 + 40 = 56.1.)
+COMPOSE_TIMEOUT = 30
 
 
 def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None, *,
-               tray_source: str | None = None, answers_path: pathlib.Path | None = None) -> str:
+               tray_source: str | None = None, answers_path: pathlib.Path | None = None,
+               composer: list[str] | None = None) -> str:
     """Write the page, with the Ask tray LIFTED by `brief-compose.py` — never retyped (owner 2026-11-11:
     "goal-tree page do not have interactive 'ask' feature"). The same mechanism the backlog and dashboard
     pages use; `brief-compose.py`'s docstring records why the tray is never hand-copied.
@@ -2322,7 +2359,8 @@ def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None
     it is never silent: the caller prints the reason. `tray_source` names the page to lift from (the
     self-test passes a tracked one); None lets `brief-compose` pick the newest page that has a tray.
     `answers_path` (default `ANSWERS_REL`) holds the answers to questions asked here; an unreadable one is
-    said on the page AND on stderr, and the page is still written."""
+    said on the page AND on stderr, and the page is still written. `composer` replaces the brief-compose
+    command (its arguments are appended) — the self-test's seam for a compose that exits 0 and writes no tray."""
     answers, answers_error = load_answers(answers_path or ROOT / ANSWERS_REL)
     if answers_error:
         print(f"⚠  goal tree: answers NOT shown — {answers_error}", file=sys.stderr)
@@ -2338,7 +2376,7 @@ def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None
     with tempfile.TemporaryDirectory() as td:
         frag = pathlib.Path(td) / "goal-tree-fragment.html"
         frag.write_text(fragment, encoding="utf-8")
-        cmd = [sys.executable, str(SCRIPTS / "brief-compose.py"), "--content", str(frag),
+        cmd = (composer or [sys.executable, str(SCRIPTS / "brief-compose.py")]) + ["--content", str(frag),
                "--slug", "goal-tree", "--title", PAGE_TITLE, "--out", str(out)]
         if tray_source:
             cmd += ["--source", str(tray_source)]
@@ -2774,7 +2812,22 @@ def _self_test_cases(*, outside: dict) -> int:
              (derive(_g2, src(ledger=[_e, dict(_e, id="w3", goal="nope")]), "T2"), _pre))],
          [["ledger problem, new"], ["ledger problem, cleared"]])
     case("backlog #505: a ledger thread associates by its STRUCTURED refs, never a number in its prose (r1 Codex M3)",
-         _ledger_numbers({"id": "x", "what": "w", "thread": "fix · PR #30 · depends on PR #777"}), {30})
+         _ledger_refs({"id": "x", "what": "w", "thread": "fix · PR #30 · depends on PR #777"}), {("PR", 30)})
+    # ⛔ PR #558 r1 E: a ledger entry matches a thread by (KIND, number) — `PR #40` is not `backlog #40` — and a bare
+    # `#N` in prose, or an id's `-N`, names nothing. Three DISTINCT entries in ONE case, each with one right home.
+    _ge = parse_threads('## GOAL g\n> 2026-01-01 00:00 "q"\n- fix · backlog #40, PR #20 · the row\n'
+                        '- side · PR #40 · the pr\n- side · PR #41 · other\n')
+    _gl = derive(_ge, src(ledger=[
+        {"id": "ask-40", "what": "pr work, see #41", "goal": "g", "thread": "side · PR #40 · the pr"},
+        {"id": "row-41", "what": "row work", "goal": "g", "thread": "fix · backlog #40 · x"},
+        {"id": "z", "what": "CI on PR #41"}]), "T")
+    case("⛔ PR #558 r1 E: ledger PR #N attaches to PR #N, never to backlog #N; bare #N and an id's -N name nothing",
+         {t["key"]: t["detail"].split(" · in flight: ", 1)[1] if " · in flight: " in t["detail"] else None
+          for t in _gl["goals"][0]["threads"]},
+         {"fix · backlog #40, PR #20": "row work", "side · PR #40": "pr work, see #41", "side · PR #41": "CI on PR #41"})
+    case("...an entry naming only a bare #N is IN FLIGHT UNDER NO GOAL, never hung on a thread with that number",
+         derive(_ge, src(ledger=[{"id": "w-40", "what": "review of #40"}]), "T")["inflight_loose"],
+         [{"id": "w-40", "what": "review of #40"}])
     case("backlog #505: parse_thread_line reads ONE line — a thread, a bad relation, bad refs, no separators",
          [(t and t["key"], bad and bad.split(" ")[0]) for t, bad in (
              parse_thread_line("- side · PR #7 · x"), parse_thread_line("- fixx · PR #7 · x"),
@@ -2800,15 +2853,18 @@ def _self_test_cases(*, outside: dict) -> int:
          (b["state"], b["detail"].endswith("waits on the owner (declared)")), ("blocked", True))
     case("⛔ a declared wait never overrides a derived MERGED",
          one("- fix · PR #20 · f · waits on the owner\n", src())["state"], "merged")
-    led = [{"id": "build-12", "what": "subagent building it"}]
+    # PR #558 r1 E: the entry names its row by KIND (`backlog #12`); an id's `-12` alone names nothing
+    led = [{"id": "build-12", "what": "subagent building backlog #12"}]
     fl = one("- fix · backlog #12 · f\n", src(ledger=led))
     case("a ledger entry naming the row makes an unstarted thread IN FLIGHT",
-         (fl["state"], fl["detail"]), ("inflight", "no PR names it yet · in flight: subagent building it"))
+         (fl["state"], fl["detail"]), ("inflight", "no PR names it yet · in flight: subagent building backlog #12"))
     case("a ledger entry naming '#N' in its text attaches too",
          one("- side · PR #21 · a\n", src(ledger=[{"id": "x", "what": "CI on PR #21"}]))["detail"]
          .endswith("in flight: CI on PR #21"), True)
     case("...and an OPEN PR stays open — in flight is a note, not a downgrade",
-         one("- side · PR #21 · a\n", src(ledger=[{"id": "merge-21", "what": "w"}]))["state"], "open")
+         [(r["state"], "in flight: merging PR #21" in r["detail"]) for r in
+          [one("- side · PR #21 · a\n", src(ledger=[{"id": "merge-21", "what": "merging PR #21"}]))]][0],
+         ("open", True))   # PR #558 r1 E: the entry names PR #21 by kind, so it ATTACHES — and still downgrades nothing
     gh_down = src(errors={"gh": "gh pr list: exited 1: no network"}, open={}, all={})
     case("⛔ gh down: an unmerged PR leaf says CANNOT RUN, never a guessed state",
          one("- side · PR #21 · a\n", gh_down)["state"], "cannot")
@@ -3046,11 +3102,11 @@ def _self_test_cases(*, outside: dict) -> int:
     case("⛔ backlog #497: a parked entry does NOT make an unstarted leaf in flight — it is shown as parked",
          (_pk["state"], _pk["parked"], _pk["detail"]),
          ("next", True, "no PR names it yet · parked: backlog #12 PARKED till 11-10"))
-    _pk2 = one("- fix · backlog #12 · f\n", src(ledger=[{"id": "park-12", "what": "w", "kind": "owner-wait"},
-                                                      {"id": "build-12", "what": "building"}]))
+    _pk2 = one("- fix · backlog #12 · f\n", src(ledger=[{"id": "park-12", "what": "backlog #12 w", "kind": "owner-wait"},
+                                                      {"id": "build-12", "what": "building backlog #12"}]))
     case("backlog #497 adjacent: a routine entry beside the parked one still makes it in flight, and both are named",
          (_pk2["state"], _pk2["parked"], _pk2["detail"]),
-         ("inflight", True, "no PR names it yet · in flight: building · parked: w"))
+         ("inflight", True, "no PR names it yet · in flight: building backlog #12 · parked: backlog #12 w"))
     _lp = derive(goals, src(ledger=[{"id": "park-77", "what": "PR #77 PARKED", "kind": "owner-wait"},
                                     {"id": "loose-7", "what": "unrelated job"}]), "2026-10-28 04:00")
     case("⛔ backlog #497: a parked entry naming NO thread is its own group, and not 'in flight under no goal'",
@@ -3248,6 +3304,9 @@ def _self_test_cases(*, outside: dict) -> int:
     case("answers: qa_html is EMPTY for no answers and counts in the plural for several",
          (qa_html([]), re.findall(r"<summary>([^<]+)</summary>", qa_html(_qa[1:3])), qa_html(_qa[1:3]).count("qa-item")),
          ("", ["💬 2 answers"], 2))
+    case("answers: a HOISTED marker names its own thread, escaped — two threads, two names (r1 C)",
+         [re.findall(r"<summary>([^<]+)</summary>", qa_html(_qa[1:2], about=a)) for a in ("PR #7", "backlog #<9>")],
+         [["💬 1 answer — PR #7 (folded above)"], ["💬 1 answer — backlog #&lt;9&gt; (folded above)"]])
     _rs = set()
     _rt = render_tree_html(_bsnap, ids=True, at="2026-11-05 19:09", qa={"pr-21": _qa[1:2]}, seen=_rs)
     case("⛔ answers: render_tree_html attaches only the answers it is GIVEN, and fills the caller's `seen` with every "
@@ -3269,6 +3328,63 @@ def _self_test_cases(*, outside: dict) -> int:
          in render_page([_bsnap], "2026-11-05 19:09", answers_error=_la[1][1]), True)
     case("answers file: the tracked one parses (an empty list until a question is answered)",
          load_answers(ROOT / ANSWERS_REL)[1], "")
+
+    def _never_raises(f):
+        try:
+            return f()
+        except Exception as e:   # the property under test: a malformed file is a REASON, never an exception
+            return ("RAISED", type(e).__name__)
+
+    with tempfile.TemporaryDirectory() as _mtd:
+        _md = pathlib.Path(_mtd)
+        for _n, _body in (("null.json", {"answers": None}), ("five.json", {"answers": 5}),
+                          ("asked.json", {"answers": [dict(_qa[1], asked=7)]}), ("top.json", [1])):
+            (_md / _n).write_text(json.dumps(_body))
+        _lm = [_never_raises(lambda n=n: load_answers(_md / n)) for n in ("null.json", "five.json", "asked.json", "top.json")]
+    case("⛔ r1 A: a malformed SHAPE is refused by name, never raised — `answers` null or a number, a non-text `asked`, "
+         "a top-level list",
+         [(r[0], r[1].split(" ", 1)[0]) if r[0] != "RAISED" else r for r in _lm],
+         [([], "null.json:"), ([], "five.json:"), ([], "asked.json:"), ([], "top.json")])
+    case("...and each says WHAT is wrong",
+         [r[1].split(": ", 1)[-1] if r[0] != "RAISED" else r for r in _lm[:3]],
+         ["`answers` is NoneType, not a list", "`answers` is int, not a list", "entry [0] carries a non-text asked"])
+
+    # ⛔ r1 B: EVERY escaped field, each with markup in it — removing any ONE escape turns its own term red.
+    _xq = [{"key": "pr-21", "asked": "11-11 <i>x</i>", "q": "q", "a": "say <b>hi</b>\n\n<script>x</script>"},
+           {"key": "goal:<gone>", "asked": "a", "q": "q2", "a": "a2"}]
+    _xp = render_page([_bsnap], "2026-11-05 19:09", answers=_xq, answers_error="bad <u>file</u>")
+    case("⛔ r1 B: the answer BODY is escaped, every paragraph", ("<p>say &lt;b&gt;hi&lt;/b&gt;</p>" in _xp,
+         "<p>&lt;script&gt;x&lt;/script&gt;</p>" in _xp, "<b>hi</b>" in _xp, "<script>x</script>" in _xp),
+         (True, True, False, False))
+    case("⛔ r1 B: `asked` is escaped", ("<time>11-11 &lt;i&gt;x&lt;/i&gt;</time>" in _xp, "<i>x</i>" in _xp),
+         (True, False))
+    case("⛔ r1 B: an Older-questions KEY is escaped",
+         ('<p class="qa-key">goal:&lt;gone&gt;</p>' in _xp, "goal:<gone>" in _xp), (True, False))
+    case("⛔ r1 B: the answers-file ERROR line is escaped",
+         ("NOT shown: bad &lt;u&gt;file&lt;/u&gt;" in _xp, "<u>file</u>" in _xp), (True, False))
+
+    # ⛔ r1 C: a thread's marker is never hidden in a CLOSED fold — PR #24 sits in goal mix's `older` fold and PR #25
+    # in the folded goal `done`; each marker is hoisted to just after its fold and names its thread.
+    def _in_fold(page, needle):
+        """For each `needle`, whether it sits inside a `<details class="fold …">` (closed until opened)."""
+        out, stack = [], []
+        for m in re.finditer(r'<details(?: class="([^"]*)")?[^>]*>|</details>|' + re.escape(needle), page):
+            if m.group(0) == needle:
+                out.append(any("fold" in c.split() for c in stack))
+            elif m.group(0) == "</details>":
+                stack.pop()
+            else:
+                stack.append(m.group(1) or "")
+        return out
+
+    _cf = render_page([_bsnap], "2026-11-05 19:09",
+                      answers=[dict(_qa[1], key="pr-24"), dict(_qa[1], key="pr-25", q="in a folded goal")])
+    case("⛔ r1 C: a thread's 💬 marker is OUTSIDE every closed fold, naming the thread it belongs to",
+         (_in_fold(_cf, "<summary>💬 1 answer"), re.findall(r"<summary>(💬 1 answer[^<]*)</summary>", _cf),
+          "qa-older" in _cf),
+         ([False, False], ["💬 1 answer — PR #24 (folded above)", "💬 1 answer — PR #25 (folded above)"], False))
+    case("r1 C adjacent: a thread NOT in a fold keeps its marker inline beside the key, unlabelled",
+         (_in_fold(_ap, "<summary>💬 2 answers"), "💬 2 answers —" in _ap), ([False], False))
     case("backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run",
          ('<details class="fold older"><summary>├─ older (2)' in _np,
           '<details class="fold older"><summary>├─ older (3)' in render_page([_bsnap], "2026-11-08 19:09")),
@@ -3892,6 +4008,25 @@ def _self_test_cases(*, outside: dict) -> int:
         case("⛔ --page says the tray is missing, with EVERY line of the reason",
              (rep[1].startswith("⚠  WITHOUT the Ask tray"), "   the actionable line" in rep,
               page_report(out, "") == [f"goal tree page -> {out}  (Ask tray lifted)"]), (True, True, True))
+        # ⛔ r1 B: the tray is asked of the FILE — a compose that exits 0 and writes no tray is a reason, not success
+        shim = pathlib.Path(d) / "compose-shim.py"
+        shim.write_text("import sys, pathlib\na = sys.argv\n"
+                        "pathlib.Path(a[a.index('--out') + 1]).write_text("
+                        "pathlib.Path(a[a.index('--content') + 1]).read_text())\n", encoding="utf-8")
+        out_shim = pathlib.Path(d) / "shim.html"
+        why_shim = write_page(out_shim, log2, "2026-10-28 07:00", composer=[sys.executable, str(shim)])
+        case("⛔ r1 B: brief-compose exiting 0 with NO tray on disk is reported, and the page is still written",
+             (why_shim.startswith("brief-compose exited 0 but"), "carries no Ask tray" in why_shim,
+              out_shim.read_text().lower().startswith("<!doctype html>")), (True, True, True))
+        # ⛔ r1 A, end to end: a malformed answers file never stops the page being written
+        (pathlib.Path(d) / "n.json").write_text(json.dumps({"answers": None}))
+        out_n = pathlib.Path(d) / "n.html"
+        with contextlib.redirect_stderr(io.StringIO()) as _errn:
+            _wn = _never_raises(lambda: write_page(out_n, log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src),
+                                                   answers_path=pathlib.Path(d) / "n.json"))
+        case("⛔ r1 A: `answers: null` — the page is STILL written and says why, on the page and on stderr",
+             (_wn, out_n.is_file() and "NOT shown: n.json: `answers` is NoneType" in out_n.read_text(),
+              "n.json: `answers` is NoneType" in _errn.getvalue()), ("", True, True))
         out_down = pathlib.Path(d) / "sub" / "down.html"
         write_page(out_down, [snap], "2026-10-28 08:30", derive(goals, gh_down, "2026-10-28 08:30"),
                    tray_source=tray_src and str(tray_src))

@@ -95,6 +95,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - bookkeeping · backlog #516 · two agenda-block behaviours with no failing case (Focus escaping and links, the empty in-flight line)
 - fix · backlog #496 · NEEDS YOU flags a row whose status records a decision after its NEEDS-OWNER marker (DECIDED / answered by the owner, or a status head rewritten after the marker), with the remedy, and keeps it listed
 - fix · backlog #408, PR #536 · the generated pages are rebuilt from a fresh private tree, with a stated threat model, after a thrashing-armed architecture review
+- side · PR #558 · the goal-tree page gets the Ask tray, lifted by brief-compose like the backlog and dashboard pages; answers to its questions show as a collapsed marker, never interlaced with the tree
 ## GOAL compaction-guards
 > 2026-10-28 04:03 "let's pause currently running works and finish the safety guards for auto compaction"
 > 2026-10-28 04:12 "when auto-compaction-guard is fully built, continue the works and test the effectiveness of the guard"
@@ -197,7 +198,6 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #586, PR #552 · spec approved 11-09: a PR's mutation sweep picks the guards whose tests were SEEN to read a changed file (strace -f), so a docs-only PR stops sweeping 67 of 89 manifests
 - fix · backlog #586 · the plan: a committed shadow ledger read at BASE (owner 11-09 14:55, card A); redesign review round 1, then the plan PR and slices 1-5 (slice 1 measures strace on the CI runner)
 - fix · backlog #586, PR #557 · slice 1 of observed-reach selection: strace records each suite's reads on the runner, so a PR's mutation sweep can be chosen by what the suites actually read
-- side · PR #558 · the goal-tree page gets the Ask tray, lifted by brief-compose like the backlog and dashboard pages; answers to its questions show as a collapsed marker, never interlaced with the tree
 
 ## GOAL product
 > 2026-11-02 09:05 "Our main thrust was comprehensibility suite and publishing them as public tool (as plugin) and development speed enhancement. After these, original youtube playlist product at 3rd priority"

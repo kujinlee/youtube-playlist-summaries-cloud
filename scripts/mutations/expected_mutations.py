@@ -363,8 +363,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-11-11, side job goal-tree-ask: 336 -> 338, none retired. Two new: the Ask tray's lift removed (the tray-less
     # fragment page overwrites the composed one), and the missing-tray reason cut to its headline. Then 338 -> 342
     # (owner 11-11 06:18, answers collapsed): an answer rendered open, an orphaned answer dropped, a thread's
-    # answers never attached, and an answers entry missing a field skipped rather than refused.
-    "scripts/goal-tree.py": 342,
+    # answers never attached, and an answers entry missing a field skipped rather than refused. Then 342 -> 354 (PR #558
+    # round 1 fold), none retired, two re-bound to `_ledger_refs`: four escapes dropped (answer body, `asked`, Older key,
+    # the answers-file error), the tray asked of the exit code, a non-list `answers` and a non-text `asked` let through,
+    # a thread marker drawn inside its fold and the two hoisted draws dropped, and the ledger match by bare number twice.
+    "scripts/goal-tree.py": 354,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
