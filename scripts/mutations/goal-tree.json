@@ -1664,8 +1664,8 @@
     "file": "scripts/goal-tree.py",
     "edits": [
       [
-        "render_tree_html(newest, ids=True, at=built)",
-        "render_tree_html(newest, ids=True)"
+        "render_tree_html(newest, ids=True, at=built, qa=qa, seen=seen)",
+        "render_tree_html(newest, ids=True, qa=qa, seen=seen)"
       ]
     ],
     "expect": [

@@ -19811,5 +19811,5 @@ cases at the tray commit. Answers live in `docs/goal-tree-answers.json` (key `go
 goal). A thread's answers sit beside its key's first, id-bearing occurrence on the live tree; timeline trees carry
 none. Keys not on the live tree go to `older_qa_html` at the bottom. Every `<details class="qa">` is emitted
 without `open`. An unreadable file, or an entry missing key/q/a, is refused by name, on the page and on stderr.
-Self-test 455 cases. Six new mutations in all (manifest pin 336 -> 342): the two above, plus an answer rendered
+Self-test 458 cases. Six new mutations in all (manifest pin 336 -> 342): the two above, plus an answer rendered
 open, an orphaned answer dropped, a thread's answers never attached, and a bad entry skipped.

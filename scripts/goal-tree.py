@@ -2085,13 +2085,13 @@ def _qa_item(r: dict) -> str:
             f'<div class="qa-a">{paras}</div></div>')
 
 
-def qa_html(rows: list[dict], label: str = "") -> str:
+def qa_html(rows: list[dict]) -> str:
     """A small `💬 N answer(s)` marker whose Q&A sits in a CLOSED `<details>` — never `open` (owner 2026-11-11
     06:18: interlacing Q&A with the tree is the clutter; collapse is the remedy). "" when there are none."""
     if not rows:
         return ""
     n = len(rows)
-    head = label or f'💬 {n} answer{"" if n == 1 else "s"}'
+    head = f'💬 {n} answer{"" if n == 1 else "s"}'
     return (f'<details class="qa"><summary>{head}</summary><div class="qa-body">'
             + "".join(_qa_item(r) for r in rows) + "</div></details>")
 
@@ -3245,6 +3245,16 @@ def _self_test_cases(*, outside: dict) -> int:
                    r'<details class="qa"><summary>💬 1 answer</summary>',
                    render_page([_bsnap], "2026-11-05 19:09", answers=[dict(_qa[0], key="goal:done")])) is not None,
          True)
+    case("answers: qa_html is EMPTY for no answers and counts in the plural for several",
+         (qa_html([]), re.findall(r"<summary>([^<]+)</summary>", qa_html(_qa[1:3])), qa_html(_qa[1:3]).count("qa-item")),
+         ("", ["💬 2 answers"], 2))
+    _rs = set()
+    _rt = render_tree_html(_bsnap, ids=True, at="2026-11-05 19:09", qa={"pr-21": _qa[1:2]}, seen=_rs)
+    case("⛔ answers: render_tree_html attaches only the answers it is GIVEN, and fills the caller's `seen` with every "
+         "goal and thread key it drew — the set the Older section is computed from",
+         (_rt.count("💬"), "pr-21" in _rs, "goal:mix" in _rs, "goal:done" in _rs, "pr-999" in _rs,
+          "💬" in render_tree_html(_bsnap, ids=True, at="2026-11-05 19:09")),
+         (1, True, True, True, False, False))
     with tempfile.TemporaryDirectory() as _atd:
         _ad = pathlib.Path(_atd)
         (_ad / "bad.json").write_text("{not json")
@@ -3844,6 +3854,21 @@ def _self_test_cases(*, outside: dict) -> int:
         out = pathlib.Path(d) / "p.html"
         why = write_page(out, log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src))
         built = out.read_text()
+        (pathlib.Path(d) / "a.json").write_text(json.dumps({"answers": [
+            {"key": "goal:long-gone", "asked": "10-01 09:00", "q": "where did it go?", "a": "kept"}]}))
+        (pathlib.Path(d) / "b.json").write_text("{")
+        write_page(pathlib.Path(d) / "pa.html", log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src),
+                   answers_path=pathlib.Path(d) / "a.json")
+        with contextlib.redirect_stderr(io.StringIO()) as _err:
+            write_page(pathlib.Path(d) / "pb.html", log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src),
+                       answers_path=pathlib.Path(d) / "b.json")
+        _pa, _pb = ((pathlib.Path(d) / n).read_text() for n in ("pa.html", "pb.html"))
+        case("⛔ write_page reads the answers file it is GIVEN: an orphan lands under Older questions on the written "
+             "page; an unreadable one is said on the page AND on stderr",
+             ("💬 Older questions (1)" in _pa, "where did it go?" in _pa,
+              "Answers to questions asked here are NOT shown: b.json is unreadable" in _pb,
+              "answers NOT shown — b.json is unreadable" in _err.getvalue()),
+             (True, True, True, True))
         case("the written page is chrome-wired (theme palettes and the Refresh button)",
              (page_chrome.missing_palettes(built), 'data-page="goal-tree"' in built), ([], True))
         # ⭐ owner 2026-11-11: the goal-tree page had no Ask tray. It is LIFTED, so it posts where every tray does.
