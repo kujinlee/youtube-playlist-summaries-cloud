@@ -20250,12 +20250,13 @@ Self-test 458 cases. Six new mutations in all (manifest pin 336 -> 342): the two
 open, an orphaned answer dropped, a thread's answers never attached, and a bad entry skipped.
 ## 2026-11-10
 The first build step of the faster mutation sweep (backlog #586) is measured: `strace` works on GitHub's runners.
-Every one of the 92 guard suites ran twice under two fixed seeds, once plain and once traced, on six machines in
-parallel. The trace step succeeded on all six, so the plan goes ahead with `strace` as the recorder; the fallback
-recorder is not needed. Tracing makes a suite up to about 20 times slower, and the whole measurement took about 47
-minutes of machine time. The pull request is a draft and waits for its review. Two things it found for the next
-slice: one suite (`regen-pages`) fails a signal-timing case only when traced, and the recorder must follow each
-process's working directory, because git deletes files by relative path.
+This was a ONE-TIME experiment, not a recurring cost: every one of the 92 guard suites ran once plain and once
+traced, on six machines in parallel, about 47 minutes of machine time in all. The trace step succeeded on all six,
+so the plan goes ahead with `strace` as the recorder. Tracing a suite is up to about 20 times slower, which is why
+it never runs on a pull request: a separate job records after each merge to master, and a pull request only reads
+the saved map. (Reworded 2026-11-11: the first version read as an ongoing cost.) The pull request merged on 11-11.
+Two things it found for the next slice: one suite (`regen-pages`) fails a signal-timing case only when traced,
+and the recorder must follow each process's working directory, because git deletes files by relative path.
 <!--tech-->
 PR #557 (draft), run 42893595762: strace 6.19; `-yy` decorates `AT_FDCWD`; 118 syscall names, 7 ioctl tokens;
 `io_uring_setup` in 4 targets, ` (deleted)` labels in 2, no unshare/setns/mount; `TRACE_FACTOR` 20 (batch-ci 19.94);
@@ -20285,3 +20286,13 @@ channel and its reading of C2-C4); §2b's checkpoint bullet and D11 table, §3 E
 Master merged in (171 commits, 10 conflicts); `check-claim-propagation` now runs its suite inside
 `fixture_git.isolated()`; `.githooks/` joins `STAGEABLE_PREFIXES`; pins moved to
 `scripts/mutations/expected_mutations.py`; two retroactive decision-log rows for this subject.
+
+## 2026-11-11
+The faster mutation sweep (backlog #586) now has a "worth it?" gate, at your request (15:58). Its trial run on 20
+real pull requests already had to prove the new selector misses nothing; now it must also save enough. If the
+median pull request would skip less than a quarter of today's mutation targets, the work stops after slices 1-5,
+the recording job is switched off, and today's selector stays. The 11-10 entry about measuring `strace` is
+reworded, because it read as an ongoing cost when it was a one-time experiment.
+<!--tech-->
+Spec `docs/superpowers/specs/2026-11-09-observed-reach-selection-design.md` §7 gains row Q7 (owner 15:58,
+signature line ✍ DECISION 1 of 1). The 11-10 strace entry's prose rewritten; its tech section unchanged.
