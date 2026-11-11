@@ -4383,5 +4383,31 @@
     "expect": [
       "backlog #406: a sibling compiles as ITSELF, never under goal-tree's own `from __future__` flags"
     ]
+  },
+  {
+    "name": "the Ask tray is not lifted: the tray-less fragment page overwrites the composed one",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if why:\n        out.write_text(f\"<!doctype html><meta charset=utf-8>\"",
+        "    if True:\n        out.write_text(f\"<!doctype html><meta charset=utf-8>\""
+      ]
+    ],
+    "expect": [
+      "⛔ the written page carries the Ask tray, lifted by brief-compose — and says so"
+    ]
+  },
+  {
+    "name": "--page prints only the headline of why the tray is missing",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "            + [\"   \" + line for line in why.splitlines()]\n",
+        "            + [\"   \" + why.splitlines()[0]]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ --page says the tray is missing, with EVERY line of the reason"
+    ]
   }
 ]

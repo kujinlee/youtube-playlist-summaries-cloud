@@ -19788,3 +19788,20 @@ is unchanged. Today at 72% it reads: band 78–80% (this week's override), zone 
 `band_cap`, `trend_at`, `band_note`, `BAND_OVERRIDES` keyed by the window's `resets_at` local date then today's.
 `refuse_at`, `cap_at` and `RESERVE_PER_DAY` untouched. The last day is from `rise_start` (#521's own boundary), so
 for a Fri 02:00 reset Thursday is already "use it all". 403 self-test cases; mutation pin 175 → 188.
+
+## 2026-11-11
+The goal-tree page now has the Ask tray, like the backlog, dashboard and explainer pages. Hover a heading (or
+select text), press ask, type, Send: the question goes to `~/explainers/questions.md` under `goal-tree.html`,
+where the session's watcher picks it up. The tray is not retyped; it is lifted from a page where it already works,
+the same way the backlog and dashboard pages get theirs. If no tray can be lifted (a fresh clone, say), the page is
+still written, and `--page` prints a ⚠ line saying the Ask button is missing and why. One cost: a Refresh of this
+page now takes about 28 s instead of 7-8 s, because lifting the tray into the 8 MB page takes about 18 s. That is
+still inside Refresh's 60 s limit. PR #557 (slice 1 of backlog #586) now hangs under GOAL dev-speed-first instead
+of "no goal".
+<!--tech-->
+`scripts/goal-tree.py` `write_page` builds a fragment and runs `scripts/brief-compose.py --content … --slug
+goal-tree --out <page>` with a 40 s bound. It returns "" or the reason, and `page_report` prints every line of that
+reason. On failure it writes the old tray-less page. Whether the tray is there is checked on the written file
+(`brief-compose.has_tray`), not taken from the exit code. The palettes declare `--good/--defect/--structure`,
+because brief-compose refuses a theme toggle whose light palette misses a token the shim supplies. Self-test 443
+cases. Two new mutations: the lift is removed, and the reason is cut to its headline.

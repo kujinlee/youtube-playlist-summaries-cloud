@@ -2143,16 +2143,22 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
 
 
 CSS = """
+/* --good/--defect/--structure: read by the LIFTED Ask tray and SHIM (brief-compose); declared in every palette
+   so the theme toggle is not half-live (brief-compose refuses a light palette that misses one). */
 :root{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;--ink-faint:#838a9b;
       --rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;--accent:#8a5a2b;
+      --good:#2f7d63;--defect:#a3323c;--structure:#33607a;
       --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
       --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 @media (prefers-color-scheme:dark){:root{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;
-      --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee;--accent:#cb9a68}}
+      --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee;--accent:#cb9a68;
+      --good:#6fcf9a;--defect:#f0937c;--structure:#82b4ee;}}
 :root[data-theme="dark"]{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;--ink-soft:#b4bac9;
-      --ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee;--accent:#cb9a68}
+      --ink-faint:#7d8496;--rule:#2e313b;--pending:#d9a441;--link:#7fb2ee;--accent:#cb9a68;
+      --good:#6fcf9a;--defect:#f0937c;--structure:#82b4ee;}
 :root[data-theme="light"]{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;
-      --ink-faint:#838a9b;--rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;--accent:#8a5a2b}
+      --ink-faint:#838a9b;--rule:#ddd9d0;--pending:#8f6410;--link:#1d5fa8;--accent:#8a5a2b;
+      --good:#2f7d63;--defect:#a3323c;--structure:#33607a;}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.5}
 main{max-width:72rem;margin:0 auto;padding:2rem 1rem}
 h1{font-size:2rem;margin:.2rem 0 1rem}
@@ -2213,17 +2219,70 @@ section.needs .src{font-family:var(--mono);font-size:.72rem;color:var(--ink-fain
 """
 
 
-def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None) -> None:
+PAGE_TITLE = "Goal tree"
+# The lift is bounded: `--page` runs from explainer-serve's Refresh, which waits REGEN_TIMEOUTS["goal-tree"]
+# (60 s) for the whole run. A compose that hangs must leave time to write the tray-less page and say so.
+# ⚠ MEASURED 2026-11-11 on the real 8.2 MB page: the compose alone took 18.2 s and the whole `--page` 28.0 s
+# (it was 6-8 s without the lift, explainer-serve's 11-04 measurement) — the lift is most of a Refresh now.
+COMPOSE_TIMEOUT = 40
+
+
+def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None, *,
+               tray_source: str | None = None) -> str:
+    """Write the page, with the Ask tray LIFTED by `brief-compose.py` — never retyped (owner 2026-11-11:
+    "goal-tree page do not have interactive 'ask' feature"). The same mechanism the backlog and dashboard
+    pages use; `brief-compose.py`'s docstring records why the tray is never hand-copied.
+
+    Returns "" when the tray was lifted, else the reason it was not. A missing tray is NOT fatal — a fresh
+    clone has no explainer to lift one from, and a tree without the Ask button is still worth having — but
+    it is never silent: the caller prints the reason. `tray_source` names the page to lift from (the
+    self-test passes a tracked one); None lets `brief-compose` pick the newest page that has a tray."""
     # Every key left as TEXT (NEEDS YOU's prose, the lede) becomes a link too (backlog #470).
     body = page_markup.link_html(render_page(log, built, live), log[-1].get("repo"))
-    page = (f"<!doctype html><meta charset=utf-8>"
-            f"<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>Goal tree</title>"
-            f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
-            f"<script>{page_chrome.chrome_script()}</script>")
-    page_chrome.assert_wired(page, "goal-tree.py")
+    fragment = (f"<title>{PAGE_TITLE}</title>"
+                f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
+                f"<script>{page_chrome.chrome_script()}</script>")
+    page_chrome.assert_wired(fragment, "goal-tree.py")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(page)
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        frag = pathlib.Path(td) / "goal-tree-fragment.html"
+        frag.write_text(fragment, encoding="utf-8")
+        cmd = [sys.executable, str(SCRIPTS / "brief-compose.py"), "--content", str(frag),
+               "--slug", "goal-tree", "--title", PAGE_TITLE, "--out", str(out)]
+        if tray_source:
+            cmd += ["--source", str(tray_source)]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=COMPOSE_TIMEOUT)
+            why = "" if r.returncode == 0 else (r.stderr.strip() or r.stdout.strip() or
+                                                f"brief-compose exited {r.returncode} with no output")
+        except subprocess.TimeoutExpired:
+            why = f"brief-compose did not finish in {COMPOSE_TIMEOUT}s"
+    # ⛔ ASKED OF THE FILE, not of the exit code: rc 0 with no tray on disk is the failure this exists for.
+    if not why:
+        written = out.read_text(encoding="utf-8") if out.is_file() else ""
+        if not _has_tray(written):
+            why = f"brief-compose exited 0 but {out} carries no Ask tray"
+    if why:
+        out.write_text(f"<!doctype html><meta charset=utf-8>"
+                       f"<meta name=viewport content='width=device-width,initial-scale=1'>{fragment}")
+    return why
+
+
+def page_report(out: pathlib.Path, why: str) -> list[str]:
+    """PURE. What `--page` prints for `write_page`'s answer. ⛔ The WHOLE reason, every line of it: brief-compose
+    puts its headline on line 1 and the actionable part on line 2 (the backlog page learned it, r2 R2-9)."""
+    if not why:
+        return [f"goal tree page -> {out}  (Ask tray lifted)"]
+    return ([f"goal tree page -> {out}", "⚠  WITHOUT the Ask tray — brief-compose.py could not lift one:"]
+            + ["   " + line for line in why.splitlines()]
+            + ["   The page renders and refreshes; only the ask-a-question button is missing."])
+
+
+def _has_tray(page: str) -> bool:
+    """`brief-compose.has_tray`, ASKED of that module — one definition of what a tray is."""
+    return _sibling("brief-compose").has_tray(page)
 
 
 # ── the command ───────────────────────────────────────────────────────────────────────────────
@@ -2307,8 +2366,7 @@ def main(argv: list[str] | None = None, *, root: pathlib.Path = ROOT, run=None,
         warn = _sibling("gen-backlog-page").publish_rows(root)
         if warn:
             print(warn)
-        write_page(a.out, log, now, live)
-        print(f"goal tree page -> {a.out}")
+        print("\n".join(page_report(a.out, write_page(a.out, log, now, live))))
     if a.print_:
         shown = live if live is not None else (log[-1] if log else None)
         if shown is None:
@@ -3631,14 +3689,50 @@ def _self_test_cases(*, outside: dict) -> int:
     case("a failed live read is announced above the tree, with its reason",
          "could NOT run, so it was not logged: gh: gh pr list" in
          render_page(log2, "t", derive(goals, gh_down, "2026-10-28 08:00")), True)
+    def _wired(page):
+        try:
+            page_chrome.assert_wired(page, "goal-tree self-test")
+            return True
+        except SystemExit:
+            return False
+
+    # The tray is lifted from a TRACKED explainer, so the case does not depend on what ~/explainers holds.
+    _bc = _sibling("brief-compose")
+    tray_src = next((f for f in sorted((ROOT / "docs" / "explainers").glob("*.html"), reverse=True)
+                     if _bc.TRAY_BEGIN in (t := f.read_text(encoding="utf-8", errors="ignore"))
+                     and _bc.has_tray(t)), None)
+    case("CANNOT RUN guard: a tracked explainer with a marked Ask tray exists to lift from",
+         tray_src is not None, True)
     with tempfile.TemporaryDirectory() as d:
         out = pathlib.Path(d) / "p.html"
-        write_page(out, log2, "2026-10-28 07:00")
+        why = write_page(out, log2, "2026-10-28 07:00", tray_source=tray_src and str(tray_src))
         built = out.read_text()
         case("the written page is chrome-wired (theme palettes and the Refresh button)",
              (page_chrome.missing_palettes(built), 'data-page="goal-tree"' in built), ([], True))
+        # ⭐ owner 2026-11-11: the goal-tree page had no Ask tray. It is LIFTED, so it posts where every tray does.
+        case("⛔ the written page carries the Ask tray, lifted by brief-compose — and says so",
+             (why, _bc.has_tray(built), built.count('id="tray"'), _bc.TRAY_BEGIN in built,
+              "/questions" in built), ("", True, 1, True, True))
+        case("...the lifted page is still ONE chrome bar, wired, with the goal tree's own Refresh",
+              (built.count('id="chrome-theme"'), built.count('data-page="goal-tree"'),
+              _wired(built), "<title>Goal tree</title>" in built,
+              built.lower().startswith("<!doctype html>")), (1, 1, True, True, True))
+        notray = pathlib.Path(d) / "plain.html"
+        notray.write_text("<title>x</title><style>body{}</style><p>no tray here</p>", encoding="utf-8")
+        out_no = pathlib.Path(d) / "no.html"
+        why_no = write_page(out_no, log2, "2026-10-28 07:00", tray_source=str(notray))
+        plain = out_no.read_text()
+        case("⛔ a source with no tray: the page is STILL written, chrome-wired, without a tray, and the reason returned",
+             (bool(why_no), "no Ask tray" in why_no, _bc.has_tray(plain), page_chrome.missing_palettes(plain),
+              'data-page="goal-tree"' in plain, plain.lower().startswith("<!doctype html>")),
+             (True, True, False, [], True, True))
+        rep = page_report(out_no, "headline\nthe actionable line")
+        case("⛔ --page says the tray is missing, with EVERY line of the reason",
+             (rep[1].startswith("⚠  WITHOUT the Ask tray"), "   the actionable line" in rep,
+              page_report(out, "") == [f"goal tree page -> {out}  (Ask tray lifted)"]), (True, True, True))
         out_down = pathlib.Path(d) / "sub" / "down.html"
-        write_page(out_down, [snap], "2026-10-28 08:30", derive(goals, gh_down, "2026-10-28 08:30"))
+        write_page(out_down, [snap], "2026-10-28 08:30", derive(goals, gh_down, "2026-10-28 08:30"),
+                   tray_source=tray_src and str(tray_src))
         case("write_page creates its directory and carries the failed live read",
              ("could NOT run" in out_down.read_text(), "<time>2026-10-28 08:30</time>" in
               out_down.read_text()), (True, True))
