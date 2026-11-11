@@ -51,6 +51,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 - fix · backlog #545, PR #539 · the stalled-work hook names a DIRTY PR that has no CI run
 - bookkeeping · backlog #544 · measured twice more on 11-08: a merge of master that changes no flagged file still voids every sibling PR's loosening answers
 - bookkeeping · backlog #578 · filed from the held-pins-head Phase 6 review: every `python3 scripts/X.py`, the merge gate included, runs a stdlib-named file committed in `scripts/`
+- fix · PR #557 · closure detection cannot remove files outside its copy: the Phase 6 review deletes slice 1's guessing removal model (backlog #601); isolation refuses removals outside the sandbox (backlog #600)
 ## GOAL comprehensibility-suite
 > 2026-10-27 11:30 "I am aiming to complete comprehensibility suite features. … what is current status of comprehensibility suite?"
 > 2026-10-27 17:45 "we would need to define role and usages for these comprehensibility/status/explainer pages (goals, features, backlogs, dashboard, worklines, brief etc) … these pages are currently developed and produced in ad-hoc manner without overarching design"
@@ -58,6 +59,7 @@ Grammar, read by `scripts/goal-tree.py` (`parse_threads`); a line that breaks it
 > 2026-10-28 03:41 "I wonder if this kind of goal tree is logged every so often (periodically in time or when meaningful changes are made) and I can see the page to learn how your work has been progressed, the page can be ideal dashboard."
 - fix · backlog #381, PR #421 · a backlog row can carry several tags, read by one parser for both pages
 - fix · backlog #376, PR #422 · a composed page with the Theme button gets the text-style switcher too
+- fix · backlog #603 · explainer pages mark each owner decision with a yellow ✍ DECISION n of N tag and a top counter; an answered tag turns green
 - fix · backlog #384 · the suite's overarching design · waits on the owner's walkthrough of the design ideas
 - fix · backlog #363 · the goal tree as a logged, generated page
 - bookkeeping · PR #423 · backlog #384, backlog #385 and backlog #386 filed; the design-ideas section

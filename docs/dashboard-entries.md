@@ -19800,6 +19800,10 @@ still inside Refresh's 60 s limit. PR #557 (slice 1 of backlog #586) now hangs u
 of "no goal". Answers to questions asked here do not clutter the tree (owner, 11-11 06:18): each answered goal or
 thread shows only a small "💬 1 answer" marker, and the Q&A opens only when you click it. An answer whose goal or
 thread has left the tree is kept in one closed "Older questions" section at the bottom, never dropped.
+Two in-flight items that showed under "no goal" now hang under goals (owner, 11-11 06:38): the Phase 6 review
+of PR #557 under GOAL guard-harness-audit, and the decision tags (filed as backlog #603) under GOAL
+comprehensibility-suite. Why they showed there is filed as backlog #604: a ledger entry's goal is checked but not
+used to place it, so an entry needs a full thread line as well.
 <!--tech-->
 `scripts/goal-tree.py` `write_page` builds a fragment and runs `scripts/brief-compose.py --content … --slug
 goal-tree --out <page>` with a 40 s bound. It returns "" or the reason, and `page_report` prints every line of that
