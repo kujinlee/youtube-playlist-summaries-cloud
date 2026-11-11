@@ -212,8 +212,10 @@ the PR with (`--body-file`), written before the push.
 
 **Decides:** whether v1 records with strace or falls back to the audit hook, and supplies every MEASURED constant
 the later slices pin: `STRACE_VERSION`, `MEASURED_SYSCALLS`, `MEASURED_IOCTLS`, `TRACE_FACTOR`, whether `-yy`
-decorates `AT_FDCWD`, and which suites trip `io_uring_setup`, `unshare`, `setns`, the mount family, a ` (deleted)`
-label, or an unlink/rename of a pre-existing external path.
+decorates `AT_FDCWD`, and which suites trip `io_uring_setup`, `unshare`, `setns`, the mount family or a ` (deleted)`
+label. ⟳ backlog #601 (2026-11-11, Phase 6 R1.1): slice 1 does NOT decide which suites remove a pre-existing external
+path. Strace text cannot prove that negative (backlog #600); slice 2 refuses by LOCATION with no creation state
+(backlog #602). For removers slice 1 records only raw call counts, the unresolved list and raw-line samples.
 
 ### Task 1.0: preserve the spike's read sets as a committed fixture
 
@@ -276,8 +278,11 @@ json.dump(out, open(sys.argv[2], "w"), indent=1, sort_keys=True)
   seconds of each run; from the log: the multiset of syscall NAMES (the token before `(` on each line, `resumed`
   lines included), every `ioctl` request token (the second argument, verbatim), whether any line holds
   `AT_FDCWD<`, the count of ` (deleted)>` labels, every `unshare|setns|chroot|pivot_root|mount|umount2|open_tree|
-  move_mount|fsopen|fsmount|fspick|mount_setattr|io_uring_setup` line, and every `unlink*`/`rename*`/`rmdir` whose
-  path is outside the copy and was not created earlier in the same log by a creating call. Header: `strace -V`
+  move_mount|fsopen|fsmount|fspick|mount_setattr|io_uring_setup` line, and, for `unlink*`/`rename*`/`rmdir`, the
+  raw call count per target and every such call whose path cannot be written down from its line (UNRESOLVED: a
+  relative path with no `-yy` label). No removal is classified inside/outside or created/pre-existing (⟳ backlog #601:
+  the creation exemption this step once named was removed in review round 2, and the model that replaced it was
+  deleted by the Phase 6 review). Header: `strace -V`
   first line, `uname -r`, `ImageOS`, `ImageVersion`, `node -v`, `python3 -V`. Also per target and seed: whether
   the traced run hit its timeout, and strace's own stderr (to tell strace's failure from a red suite, since strace
   exits with the tracee's status; r1 Claude F10).

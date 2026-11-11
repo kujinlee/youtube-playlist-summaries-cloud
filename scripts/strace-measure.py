@@ -19,26 +19,15 @@ timeout `SUITE_TIMEOUT * 10`. The harness's own pieces are loaded with importlib
 staged tree, the environment and the green test are exactly the ones `--mutate` uses.
 
 ⚠ WHAT IT DOES NOT DO. It does not parse paths into read sets (slice 2 does, from the raw lines kept here),
-and it tracks no cwd: a relative unlink/rename/rmdir whose directory it cannot name from a `-yy` label is listed
-as UNRESOLVED, never guessed to be inside or outside the copy. Every unlink/rename (both sides)/rmdir whose path
-resolves outside the copy BY TEXT (`os.path.normpath`, LEXICAL) is LISTED; nothing is exempted (review round 2, Codex X1: twice, creation-provenance
-EXEMPTION hid an external removal, so the exemption is gone, not patched). Each listed removal carries
-`created_in_log`, an ANNOTATION from creation EVIDENCE (`removed_and_created`): a successful `O_CREAT|O_EXCL` open,
-`mkdir*`, `mknod*`, `link*`, `symlink*`, or a successful `rename*` whose source was itself created; a path under a
-created DIRECTORY is created too. A successful removal, a rename's source and a replaced destination CLEAR the
-evidence for that path and its subtree, so the annotation is not stale; correctness no longer depends on it. Slice
-2 decides its refusal rule from the list. An `<unfinished ...>` half is JOINED with its pid's `<... resumed>` half
-before its arguments and result are read; an unpaired half (including one still pending at its pid's `+++ exited`
-or `+++ killed`) is counted (`unpaired_halves`), never dropped.
-
-⚠ THE REMOVAL LIST IS A LOWER BOUND, NOT A PROOF (review round 3, the split). Resolution is LEXICAL and therefore
-symlink-blind: a removal through a symlink the suite made (`/t/ln/.gitconfig`, `ln` -> `/home/runner`) or a `..`
-after one resolves INSIDE the copy and is never listed (r3 F1), and a pre-existing file reached through a symlink
-inside a created directory is annotated `created_in_log` (r3 F2). So "0 not created" means 0 THIS READER CAN SEE.
-That no pre-existing path outside the copy is removed is NOT claimed here and is not to be proved from strace text;
-it is enforced by isolation or a refusal rule (backlog #600). This reader deliberately gains no symlink rules.
-Each listed removal carries `ok`; the counts are split by it too (`external_removal_outcomes`: a FAILED call is an
-attempt, listed conservatively, r3 F4).
+it tracks no cwd, and it does NOT CLASSIFY REMOVALS (backlog #601, the Phase 6 review's R1.1). For removers
+(`unlink*`, `rmdir`, `rename*`) it keeps three things: the raw call counts (each record's `syscalls`, merged per
+target as `removal_calls`), the UNRESOLVED list (a remover whose path it cannot write down from the line alone: a
+relative path with no `-yy` label, an unbalanced line, an unpaired half), and the raw-line samples. Whether a removal
+lies inside or outside the copy, or was created earlier in the log, is judged nowhere here: three review rounds showed
+that strace text cannot prove "no pre-existing path outside the copy was removed" (backlog #600), and slice 2's
+refusal rule decides by LOCATION with no per-log creation state (backlog #602). An `<unfinished ...>` half is JOINED
+with its pid's `<... resumed>` half before its arguments are read; an unpaired half (including one still pending at
+its pid's `+++ exited` or `+++ killed`) is counted (`unpaired_halves`), never dropped.
 """
 from __future__ import annotations
 
@@ -79,19 +68,12 @@ LINE = re.compile(rf"^(\d+)\s+(?:<\.\.\. ({NAME}) resumed>(.*)|({NAME})\((.*))$"
 UNFINISHED = "<unfinished ...>"
 SIGNAL = re.compile(r"^(\d+)\s+--- (SIG[A-Z0-9]+|[A-Z]+) ")
 EXITED = re.compile(r"^(\d+)\s+\+\+\+ (exited|killed) ")
-# Matched ONLY against the text after the argument scanner's closing `)`, never searched for in the line.
-RETURN = re.compile(r"\s*= (-?\d+|0x[0-9a-f]+|\?)(<.*>)?(?: (E[A-Z0-9]+))?")
 FAMILY = {"unshare", "setns", "chroot", "pivot_root", "mount", "umount2", "open_tree", "move_mount", "fsopen",
           "fsmount", "fspick", "mount_setattr", "io_uring_setup"}
 REMOVERS = {"unlink", "unlinkat", "rmdir", "rename", "renameat", "renameat2"}
-CREATORS = {"open", "openat", "openat2", "mkdir", "mkdirat", "mknod", "mknodat", "link", "linkat", "symlink",
-            "symlinkat"}
 FORKS = {"clone", "clone3", "fork", "vfork"}
 KEEP_FAMILY_LINES = 20
 KEEP_SHAPES = 200
-# Listed removals kept per record, by annotation. The COUNTS are always whole; the not-created ones (what slice 2's
-# refusal rule is about) are kept generously, the created ones (temp files, mostly) only as samples.
-KEEP_REMOVALS = {"not_created_in_log": 500, "created_in_log": 50}
 
 
 def scan_args(s: str) -> "tuple[list[str], int] | None":
@@ -174,63 +156,27 @@ def label_of(arg: str) -> "str | None":
     return decode_c(m.group(1)) if m else None
 
 
-def resolve(dirfd: "str | None", path_arg: str) -> "str | None":
+def nameable(dirfd: "str | None", path_arg: str) -> bool:
+    """Whether the path a remover names can be written down from its line alone: an absolute string, or a relative
+    one under a `-yy`-labelled dirfd. Nothing is folded, resolved or judged inside/outside (backlog #601)."""
     p = unquote(path_arg)
     if p is None:
-        return None
-    if p.startswith("/"):
-        return os.path.normpath(p)
-    base = label_of(dirfd) if dirfd is not None else None
-    return os.path.normpath(os.path.join(base, p)) if base else None
+        return False
+    return p.startswith("/") or bool(dirfd is not None and label_of(dirfd))
 
 
-def removed_and_created(name: str, args: list, ok: bool, ret_label: "str | None", kind_of):
-    """`(removed, created)`: the (dirfd, path-arg) pairs this call removes or replaces, and the `(path, kind)`
-    it PROVABLY created, `kind` "dir" (its whole subtree is new) or "file" (the path only).
-
-    CREATION EVIDENCE (review round 1, Codex X1/X2, Claude F4): a SUCCESSFUL `O_CREAT|O_EXCL` open (`O_CREAT`
-    alone, and `creat`, succeed on an existing file), `mkdir*`, `mknod*`, `link*`, `symlink*` (a symlink is a
-    "file": what lies beneath it was not created), or a successful `rename*` whose SOURCE was itself created
-    (`kind_of(path)` says how). Anything else is possibly pre-existing."""
-    removed, created = [], []
+def removed_paths(name: str, args: list) -> list:
+    """The (dirfd, path-arg) pairs this remover names: a rename's source AND its destination."""
     a = args
     if name in ("unlink", "rmdir") and a:
-        removed.append((None, a[0]))
-    elif name == "unlinkat" and len(a) >= 2:
-        removed.append((a[0], a[1]))
-    elif name == "rename" and len(a) >= 2:
-        removed += [(None, a[0]), (None, a[1])]
-    elif name in ("renameat", "renameat2") and len(a) >= 4:
-        removed += [(a[0], a[1]), (a[2], a[3])]
-    if not ok:
-        return removed, []
+        return [(None, a[0])]
+    if name == "unlinkat" and len(a) >= 2:
+        return [(a[0], a[1])]
     if name == "rename" and len(a) >= 2:
-        src, dst = resolve(None, a[0]), resolve(None, a[1])
-        if src and kind_of(src):
-            created.append((dst, kind_of(src)))
-    elif name in ("renameat", "renameat2") and len(a) >= 4:
-        src, dst = resolve(a[0], a[1]), resolve(a[2], a[3])
-        if src and kind_of(src):
-            created.append((dst, kind_of(src)))
-    elif name == "open" and len(a) >= 2 and "O_CREAT" in a[1] and "O_EXCL" in a[1]:
-        created.append((ret_label or resolve(None, a[0]), "file"))
-    elif name in ("openat", "openat2") and len(a) >= 3 and "O_CREAT" in a[2] and "O_EXCL" in a[2]:
-        created.append((ret_label or resolve(a[0], a[1]), "file"))
-    elif name == "mkdir" and a:
-        created.append((resolve(None, a[0]), "dir"))
-    elif name == "mkdirat" and len(a) >= 2:
-        created.append((resolve(a[0], a[1]), "dir"))
-    elif name == "mknod" and a:
-        created.append((resolve(None, a[0]), "file"))
-    elif name == "mknodat" and len(a) >= 2:
-        created.append((resolve(a[0], a[1]), "file"))
-    elif name in ("link", "symlink") and len(a) >= 2:
-        created.append((resolve(None, a[1]), "file"))
-    elif name == "linkat" and len(a) >= 4:
-        created.append((resolve(a[2], a[3]), "file"))
-    elif name == "symlinkat" and len(a) >= 3:
-        created.append((resolve(a[1], a[2]), "file"))
-    return removed, [(p, k) for p, k in created if p]
+        return [(None, a[0]), (None, a[1])]
+    if name in ("renameat", "renameat2") and len(a) >= 4:
+        return [(a[0], a[1]), (a[2], a[3])]
+    return []
 
 
 def shape(line: str) -> str:
@@ -259,34 +205,15 @@ def return_tags(line: str) -> "set[str]":
     return tags or {"other"}
 
 
-def analyse_log(log: pathlib.Path, copies: "list[str]", samples: dict, shapes: dict, who: str) -> dict:
+def analyse_log(log: pathlib.Path, samples: dict, shapes: dict, who: str) -> dict:
     """Everything Task 1.1 records from one traced log. `samples` and `shapes` are the SHARD's raw-line
     stores, filled first-come."""
     syscalls, ioctls, family_counts = {}, {}, {}
-    family_lines, removals, unresolved, unparsed, unpaired = [], [], [], [], []
-    by_note = {"created_in_log": 0, "not_created_in_log": 0}     # EVERY listed removal, counted by annotation
-    by_ok = {"succeeded": 0, "failed": 0}                         # ... and by whether the call succeeded (r3 F4)
-    created: dict = {}           # path -> "dir" | "file", in the order the log proves them
+    family_lines, unresolved, unparsed, unpaired = [], [], [], []
     pending: dict = {}           # pid -> (name, the unfinished half's argument text, its line)
     root_pid = None
     at_fdcwd = deleted = forks = threads = 0
     execs: set = set()
-
-    def kind_of(p: str) -> "str | None":
-        """How `p` was created by this log: its own kind, "file" if it lies under a created directory (created, but
-        its kind is not known, so it is never claimed to cover a subtree), else None."""
-        if p in created:
-            return created[p]
-        return "file" if any(k == "dir" and p.startswith(c.rstrip("/") + "/") for c, k in created.items()) else None
-
-    def forget(p: str) -> None:
-        """`p` no longer names what the log created (it was removed, moved away, or replaced): drop the evidence for
-        it and everything beneath it (review round 2, Codex X1)."""
-        for c in [c for c in created if c == p or c.startswith(p.rstrip("/") + "/")]:
-            del created[c]
-
-    def inside(p: str) -> bool:
-        return any(p == c or p.startswith(c + "/") for c in copies)
 
     def count(name: str) -> None:
         syscalls[name] = syscalls.get(name, 0) + 1
@@ -317,36 +244,14 @@ def analyse_log(log: pathlib.Path, copies: "list[str]", samples: dict, shapes: d
                 execs.add(unquote(ex_path.group(1)))
         if name == "ioctl" and args and len(args) >= 2:
             ioctls[args[1]] = ioctls.get(args[1], 0) + 1
-        if name not in REMOVERS and name not in CREATORS:
+        if name not in REMOVERS:
             return
-        if args is None:
-            if name in REMOVERS:      # a remover this scanner cannot balance is counted, never dropped
-                unresolved.append(line)
+        if args is None:          # a remover this scanner cannot balance is counted, never dropped
+            unresolved.append(line)
             return
-        r = RETURN.match(body, end + 1)
-        ok = bool(r) and r.group(1) not in ("-1", "?")
-        ret_label = label_of("0" + r.group(2)) if r and r.group(2) else None
-        removed, made = removed_and_created(name, args, ok, ret_label, kind_of)
-        for dirfd, parg in removed:
-            p = resolve(dirfd, parg)
-            if p is None:
+        for dirfd, parg in removed_paths(name, args):
+            if not nameable(dirfd, parg):
                 unresolved.append(line)
-            elif not inside(p):
-                # LISTED, never exempted (review round 2, Codex X1): the evidence only ANNOTATES. Only a path whose
-                # TEXT resolves outside is examined at all; one reached through a symlink is not (r3 F1, backlog #600).
-                note = kind_of(p) is not None
-                key = "created_in_log" if note else "not_created_in_log"
-                by_note[key] += 1
-                by_ok["succeeded" if ok else "failed"] += 1
-                if by_note[key] <= KEEP_REMOVALS[key]:
-                    removals.append({"path": p, "line": line, "created_in_log": note, "ok": ok})
-        if ok:      # a removed path, a rename's source and its replaced destination no longer name what was created
-            for dirfd, parg in removed:
-                p = resolve(dirfd, parg)
-                if p is not None:
-                    forget(p)
-        for p, k in made:
-            created[p] = k
 
     with open(log, encoding="utf-8", errors="surrogateescape") as fh:
         for raw in fh:
@@ -403,8 +308,6 @@ def analyse_log(log: pathlib.Path, copies: "list[str]", samples: dict, shapes: d
         orphan(name, line)
     return {"syscalls": syscalls, "ioctls": ioctls, "at_fdcwd_decorated_lines": at_fdcwd,
             "deleted_labels": deleted, "family_counts": family_counts, "family_lines": family_lines,
-            "external_removals": removals, "external_removal_count": sum(by_note.values()),
-            "external_removal_counts": dict(by_note), "external_removal_outcomes": dict(by_ok),
             "unresolved_removals": unresolved[:20], "unresolved_removal_count": len(unresolved),
             "unpaired_halves": len(unpaired), "unpaired_samples": unpaired[:20],
             "unparsed_lines": unparsed, "forks": forks, "threads": threads, "spawner": forks > 0,
@@ -483,8 +386,7 @@ def measure_shard(index: int, total: int, seeds: "list[int]", out: pathlib.Path)
                 log = keep / "trace.log"
                 if log.exists():
                     copy = traced.pop("copy", "")
-                    traced.update(analyse_log(log, [copy, os.path.realpath(copy)], samples, shapes,
-                                              f"{target} seed {seed}"))
+                    traced.update(analyse_log(log, samples, shapes, f"{target} seed {seed}"))
                     for kind, flag in (("git", traced["runs_git"]), ("threaded", traced["threads"] > 0)):
                         size = log.stat().st_size
                         if flag and (whole[kind] is None or size < whole[kind][0]):
@@ -535,15 +437,14 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
         return 2
     headers = {json.dumps(s["header"] | {}, sort_keys=True) for s in shards}
     total = shards[0]["shard"][1]
-    syscalls, ioctls, family, deleted, removals, unresolved, unpaired = {}, {}, {}, {}, {}, {}, {}
+    syscalls, ioctls, family, deleted, unresolved, unpaired = {}, {}, {}, {}, {}, {}
     ratios, case_diff, red, timeouts, unparsed, strace_err = [], [], [], [], {}, {}
     at_fdcwd_targets = set()
     targets = {}
     # COVERAGE per (target, seed) record (review round 2, Codex X2): a field a record lacks was NOT MEASURED there, and
     # one measured record must not make the whole merge read as measured. A total is null unless EVERY record has it.
-    records = paired_records = annotated_records = outcome_records = analysed_records = 0
-    removal_counts: dict = {}   # target -> annotation -> the max over its seeds
-    removal_outcomes: dict = {}  # target -> succeeded/failed -> the max over its seeds (review round 3, F4)
+    records = paired_records = analysed_records = 0
+    removal_calls: dict = {}    # target -> remover syscall -> its call count, the max over the target's seeds
     log_missing = []            # (target, seed) records whose traced run left no log: nothing was analysed (r3 F6)
     for s in shards:
         for t, by_seed in s["targets"].items():
@@ -568,20 +469,10 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
                 if tr.get("deleted_labels"):
                     deleted[t] = max(deleted.get(t, 0), tr["deleted_labels"])
                 records += 1
-                for x in tr.get("external_removals", []):
-                    note = {True: "created_in_log", False: "not_created_in_log"}.get(x.get("created_in_log"),
-                                                                                       "not_annotated")
-                    removals.setdefault(t, {}).setdefault(note, set()).add(x["path"])
-                if "external_removal_counts" in tr:
-                    annotated_records += 1
-                    for note, n in tr["external_removal_counts"].items():
-                        per = removal_counts.setdefault(t, {})
-                        per[note] = max(per.get(note, 0), n)
-                if "external_removal_outcomes" in tr:
-                    outcome_records += 1
-                    for how, n in tr["external_removal_outcomes"].items():
-                        per = removal_outcomes.setdefault(t, {})
-                        per[how] = max(per.get(how, 0), n)
+                for name, n in tr.get("syscalls", {}).items():
+                    if name in REMOVERS:
+                        per = removal_calls.setdefault(t, {})
+                        per[name] = max(per.get(name, 0), n)
                 if tr.get("unresolved_removal_count"):
                     unresolved[t] = max(unresolved.get(t, 0), tr["unresolved_removal_count"])
                 if "unpaired_halves" in tr:
@@ -624,23 +515,8 @@ def merge(dirs: "list[pathlib.Path]", out: pathlib.Path, jobs: "pathlib.Path | N
         "refusal_triggers": {k: sorted(v) for k, v in sorted(family.items())} if whole else None,
         "deleted_labels": dict(sorted(deleted.items())) if whole else None,
         "analysis_coverage": {"analysed": analysed_records, "records": records, "log_missing": log_missing},
-        # Every listed removal outside the copy, by its `created_in_log` annotation; nothing is exempted. The created
-        # ones are mostly temp files, so only 20 paths per target are kept; the counts are whole. A LOWER BOUND: the
-        # reader's resolution is lexical (see the module docstring, r3 F1/F2). Each total is the SUM over targets of
-        # the MAX over that target's seeds (r3 F5), not the number of removal calls in the run.
-        "external_removals": {t: {note: sorted(paths)[:20] if note == "created_in_log" else sorted(paths)
-                                  for note, paths in sorted(by.items())} for t, by in sorted(removals.items())},
-        "external_removal_counts": {t: dict(sorted(c.items())) for t, c in sorted(removal_counts.items())
-                                    if any(c.values())},
-        "external_removal_totals": None if annotated_records < records else {
-            "created_in_log": sum(c.get("created_in_log", 0) for c in removal_counts.values()),
-            "not_created_in_log": sum(c.get("not_created_in_log", 0) for c in removal_counts.values()),
-            "targets_with_not_created": sum(1 for c in removal_counts.values() if c.get("not_created_in_log")),
-            "records": records},
-        "external_removal_coverage": {"annotated": annotated_records, "records": records},
-        "external_removal_outcome_totals": None if not records or outcome_records < records else {
-            "succeeded": sum(c.get("succeeded", 0) for c in removal_outcomes.values()),
-            "failed": sum(c.get("failed", 0) for c in removal_outcomes.values()), "records": records},
+        # The raw remover call counts per target (the max over its seeds), unclassified (backlog #601).
+        "removal_calls": {t: dict(sorted(c.items())) for t, c in sorted(removal_calls.items())} if whole else None,
         "unresolved_removals": dict(sorted(unresolved.items())) if whole else None,
         "unpaired_halves": dict(sorted(unpaired.items())) if records and paired_records == records else None,
         "unpaired_halves_coverage": {"measured": paired_records, "records": records},
@@ -690,14 +566,12 @@ def _self_test() -> int:
         return _self_test_body()
 
 
-def _read(text: str, copies: "list[str] | None" = None, samples: "dict | None" = None,
-          shapes: "dict | None" = None, who: str = "case") -> dict:
-    """`analyse_log` over `text`, the copy being `/t` unless `copies` says otherwise."""
+def _read(text: str, samples: "dict | None" = None, shapes: "dict | None" = None, who: str = "case") -> dict:
+    """`analyse_log` over `text`."""
     with tempfile.TemporaryDirectory() as d:
         p = pathlib.Path(d) / "trace.log"
         p.write_text(text)
-        return analyse_log(p, ["/t"] if copies is None else copies, {} if samples is None else samples,
-                           {} if shapes is None else shapes, who)
+        return analyse_log(p, {} if samples is None else samples, {} if shapes is None else shapes, who)
 
 
 def _stores(text: str, samples: dict, shapes: dict, who: str):
@@ -753,77 +627,38 @@ def _self_test_body() -> int:
             fail += 1
             print(f"[FAIL] {label}\n       got  {got!r}\n       want {want!r}")
 
-    # Since review round 2 NOTHING outside the copy is exempted: every removal is LISTED, annotated `created_in_log`.
-    # `ext`/`lines` read the removals NOT proved created by the log (the annotation the round-1 cases are about);
-    # `listed` reads the whole list, in log order, with its annotation.
-    ext = lambda text: sorted({r["path"] for r in _read(text)["external_removals"] if r.get("created_in_log") is not True})
-    lines = lambda text: sorted({r["line"] for r in _read(text)["external_removals"] if r.get("created_in_log") is not True})
-    listed = lambda text: [(r["path"], r.get("created_in_log")) for r in _read(text)["external_removals"]]
-
-    # Creation evidence (Codex X1, Claude F4): only a successful O_CREAT|O_EXCL proves the open created the path.
-    check("X1 an O_CREAT open WITHOUT O_EXCL of an outside file, then its unlink, is an external removal",
-          lambda: ext('1 openat(AT_FDCWD</t>, "/external/existing", O_CREAT|O_WRONLY, 0600) = 3</external/existing>\n'
-                      '1 unlink("/external/existing") = 0\n'), ["/external/existing"])
-    check("X1 Claude F4's truncate-then-delete of ~/.gitconfig is an external removal",
-          lambda: ext('100 openat(AT_FDCWD</t>, "/home/runner/.gitconfig", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666)'
-                      ' = 3</home/runner/.gitconfig>\n100 unlink("/home/runner/.gitconfig") = 0\n'),
-          ["/home/runner/.gitconfig"])
-    check("X1 a successful O_CREAT|O_EXCL open IS creation: its later unlink is annotated created",
-          lambda: ext('1 openat(AT_FDCWD</t>, "/external/new", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</external/new>\n'
-                      '1 unlink("/external/new") = 0\n'), [])
-    check("X1 a FAILED O_CREAT|O_EXCL open is not creation",
-          lambda: ext('1 openat(AT_FDCWD</t>, "/external/old", O_WRONLY|O_CREAT|O_EXCL, 0600) = -1 EEXIST (File exists)\n'
-                      '1 unlink("/external/old") = 0\n'), ["/external/old"])
-    check("X1 creat() truncates an existing file: not creation",
-          lambda: ext('1 creat("/external/c", 0644) = 3</external/c>\n1 unlink("/external/c") = 0\n'), ["/external/c"])
-    check("X1 a successful mknodat is creation",
-          lambda: ext('1 mknodat(AT_FDCWD</t>, "/external/fifo", S_IFIFO|0600) = 0\n1 unlink("/external/fifo") = 0\n'), [])
-    # A failed rename creates nothing (Codex X2); a rename creates its new side only if its source was created.
-    check("X2 a FAILED renameat does not mark its destination created",
-          lambda: ext('1 renameat(3</external>, "absent", 3</external>, "existing") = -1 ENOENT (No such file or directory)\n'
-                      '1 unlinkat(3</external>, "existing", 0) = 0\n'), ["/external/absent", "/external/existing"])
-    # A rename ONTO an outside path is itself reported: it replaces whatever was there.
-    check("X2 a successful rename of a CREATED file creates its destination: only the rename is reported",
-          lambda: lines('1 openat(AT_FDCWD</t>, "/external/tmp1", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</external/tmp1>\n'
-                        '1 rename("/external/tmp1", "/t/x") = 0\n1 rename("/t/x", "/external/final") = 0\n'
-                        '1 unlink("/external/final") = 0\n'), ['1 rename("/t/x", "/external/final") = 0'])
-    check("X2 a successful rename of a PRE-EXISTING file does not make its destination created",
-          lambda: ext('1 rename("/t/old", "/external/dst") = 0\n1 unlink("/external/dst") = 0\n'), ["/external/dst"])
-    check("X2 a path under a created DIRECTORY is created; under a created SYMLINK it is not",
-          lambda: ext('1 mkdir("/external/d", 0700) = 0\n1 unlink("/external/d/x") = 0\n'
-                      '1 symlink("/home/runner", "/external/s") = 0\n1 unlink("/external/s/.gitconfig") = 0\n'),
-          ["/external/s/.gitconfig"])
-    check("X2 a renamed created directory keeps its subtree created: only the rename is reported",
-          lambda: lines('1 mkdir("/external/d", 0700) = 0\n1 rename("/external/d", "/external/e") = 0\n'
-                        '1 unlink("/external/e/x") = 0\n'), ['1 rename("/external/d", "/external/e") = 0'])
-    # The return is read after the argument scanner's matching unquoted `)` (Codex X3).
-    check("X3 a `) = 7` inside a quoted path is not the return: the failed open creates nothing",
-          lambda: ext('1 openat(AT_FDCWD</t>, "/external/) = 7", O_CREAT|O_WRONLY|O_EXCL, 0600) = -1 EACCES (Permission denied)\n'
-                      '1 unlink("/external/) = 7") = 0\n'), ["/external/) = 7"])
-    # unfinished/resumed are JOINED per pid before the arguments and the result are read (Codex X4).
+    # Backlog #601 (the Phase 6 review's R1.1): the reader classifies no removal, so the cases that pinned the
+    # removal-provenance model (round 1 X1-X3, round 2 X1, round 3 F3/F4, F8, the `copies` roots) went with it. What a
+    # remover still yields is its raw count and, when its path cannot be written down from the line, `unresolved`.
+    unres = lambda text: _read(text)["unresolved_removal_count"]
+    # unfinished/resumed are JOINED per pid before the arguments are read (Codex X4).
     check("X4 a resumed tail's arguments are read: ioctl's request token",
           lambda: _read('1 ioctl(3</dev/tty>, <unfinished ...>\n1 <... ioctl resumed>TCGETS, 0x123) = 0\n')["ioctls"],
           {"TCGETS": 1})
     check("X4 a joined call is counted once",
           lambda: _read('1 ioctl(3</dev/tty>, <unfinished ...>\n1 <... ioctl resumed>TCGETS, 0x123) = 0\n')["syscalls"],
           {"ioctl": 1})
-    check("X4 a removal whose path is in the resumed tail is read",
-          lambda: ext('7 unlinkat(3</external>, <unfinished ...>\n8 getpid() = 8\n'
-                      '7 <... unlinkat resumed>"victim", 0) = 0\n'), ["/external/victim"])
-    check("X4 interleaved pids are joined to their own halves",
-          lambda: ext('7 unlinkat(3</external>, <unfinished ...>\n8 unlinkat(3</t>, <unfinished ...>\n'
-                      '8 <... unlinkat resumed>"in-copy", 0) = 0\n7 <... unlinkat resumed>"out", 0) = 0\n'),
-          ["/external/out"])
-    check("X4 a join's return decides creation: a resumed failure creates nothing",
-          lambda: ext('1 mkdir("/external/d", 0700 <unfinished ...>\n1 <... mkdir resumed>) = -1 EEXIST (File exists)\n'
-                      '1 unlink("/external/d/x") = 0\n'), ["/external/d/x"])
+    check("X4 a remover whose path is in the resumed tail is read: a labelled dirfd and a string path, nameable",
+          lambda: unres('7 unlinkat(3</external>, <unfinished ...>\n8 getpid() = 8\n'
+                        '7 <... unlinkat resumed>"victim", 0) = 0\n'), 0)
+    check("X4 interleaved pids are joined to their own halves: only pid 8's unlabelled relative unlink is unresolved",
+          lambda: _read('7 unlinkat(3</external>, <unfinished ...>\n8 unlinkat(AT_FDCWD, <unfinished ...>\n'
+                        '8 <... unlinkat resumed>"rel", 0) = 0\n7 <... unlinkat resumed>"out", 0) = 0\n')
+          ["unresolved_removals"],
+          ['8 unlinkat(AT_FDCWD, <unfinished ...> … 8 <... unlinkat resumed>"rel", 0) = 0'])
     for label, text, want in (
             ("an orphan resumed half", '1 <... unlinkat resumed>"x", 0) = 0\n', 1),
             ("an unfinished half never resumed", '1 unlinkat(3</external>, "x", 0 <unfinished ...>\n', 1),
             ("a resumed half naming a different call", '1 read(3, <unfinished ...>\n1 <... write resumed>) = 1\n', 2)):
         check(f"X4 {label} is COUNTED as unpaired", lambda t=text: _read(t)["unpaired_halves"], want)
     check("X4 an unpaired REMOVER half is unresolved, not dropped",
-          lambda: _read('1 <... unlinkat resumed>"x", 0) = 0\n')["unresolved_removal_count"], 1)
+          lambda: unres('1 <... unlinkat resumed>"x", 0) = 0\n'), 1)
+    # What `unresolved` means: a remover whose path is not written on its line.
+    check("unresolved: a relative unlink (no dirfd, so no -yy label) is unresolved; an absolute one is not",
+          lambda: unres('1 unlink(".git/objects/e3/tmp_obj_x") = 0\n1 unlink("/tmp/a") = 0\n'), 1)
+    check("unresolved: a rename names TWO paths, each judged, the DESTINATION too: a relative path under a labelled "
+          "dirfd is nameable, an undecorated or dirfd-less relative one is not",
+          lambda: unres('1 renameat(3</d>, "a", AT_FDCWD, "b") = 0\n1 rename("/tmp/a", "rel") = 0\n'), 2)
     # `???` is a syscall name strace prints when it cannot read the number (Claude F2; REAL lines, run 42901768433).
     q = '7044  ???( <unfinished ...>\n7044  <... ??? resumed>)                = ?\n'
     check("F2 the recorded `???` pair parses: no line unparsed", lambda: _read(q)["unparsed_lines"], [])
@@ -837,12 +672,6 @@ def _self_test_body() -> int:
     check("X4 merge: a shard that counted them reports the count",
           lambda: _merge_ratio(10, 200, key="unpaired_halves", traced_extra={"unpaired_halves": 3}), {"t.py": 3})
     # The parameters every case above holds constant (check-fixture-variation), each varied where it decides.
-    check("copies: an unlink under the SECOND copy root (the driver passes the copy and its realpath) is inside",
-          lambda: sorted(r["path"] for r in _read('1 unlink("/real/t/x") = 0\n', copies=["/t", "/real/t"])
-                         ["external_removals"]), [])
-    check("copies: the same unlink with only the first root is outside",
-          lambda: sorted(r["path"] for r in _read('1 unlink("/real/t/x") = 0\n', copies=["/t"])
-                         ["external_removals"]), ["/real/t/x"])
     check("samples/shapes/who: the shard's stores are filled first-come, each line credited to the target that "
           "logged it; a store already holding a key keeps its first owner",
           lambda: _stores('1 unlink("/t/x") = 0\n1 --- SIGCHLD {si_signo=SIGCHLD} ---\n',
@@ -858,39 +687,12 @@ def _self_test_body() -> int:
           {"per_job_secs": {"s (1)": 100.0, "s (2)": 30.0}, "sum_secs": 130.0, "max_secs": 100.0})
 
     # ── review round 2 (docs/reviews/codex/586-slice1-r2-codex.md), each red on the round-1 reader ──
-    # X1 (High): creation evidence EXEMPTED removals, and stale evidence hid a pre-existing directory moved onto a
-    # created name. The class is removed: nothing is exempted; evidence only ANNOTATES, and a removal or a rename
-    # source clears it (so the annotation is not misleading either).
-    codex_x1 = ('1 mkdir("/external/d", 0700) = 0\n1 rmdir("/external/d") = 0\n'
-                '1 rename("/t/preexisting", "/external/d") = 0\n1 unlink("/external/d/valuable") = 0\n')
-    check("r2 X1 nothing is exempted: an unlink of an O_EXCL-created outside file is LISTED, annotated created",
-          lambda: listed('1 openat(AT_FDCWD</t>, "/external/new", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</external/new>\n'
-                         '1 unlink("/external/new") = 0\n'), [("/external/new", True)])
-    check("r2 X1 Codex's input: the rmdir clears d's evidence, so the directory renamed onto d and its contents "
-          "are listed NOT created",
-          lambda: listed(codex_x1),
-          [("/external/d", True), ("/external/d", False), ("/external/d/valuable", False)])
-    check("r2 X1 Codex's variant: the created directory MOVED away (a rename source) leaves no evidence at d",
-          lambda: listed('1 mkdir("/external/d", 0700) = 0\n1 rename("/external/d", "/external/e") = 0\n'
-                         '1 rename("/t/preexisting", "/external/d") = 0\n1 unlink("/external/d/valuable") = 0\n'),
-          [("/external/d", True), ("/external/e", False), ("/external/d", False), ("/external/d/valuable", False)])
-    check("r2 X1 a pre-existing object renamed onto a created FILE's name replaces its evidence",
-          lambda: listed('1 openat(AT_FDCWD</t>, "/external/f", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</external/f>\n'
-                         '1 rename("/t/old", "/external/f") = 0\n1 unlink("/external/f") = 0\n'),
-          [("/external/f", True), ("/external/f", False)])
-    check("r2 X1 a file inside a created directory, renamed out, is not claimed a created DIRECTORY",
-          lambda: listed('1 mkdir("/external/d", 0700) = 0\n1 rename("/external/d/sub", "/external/s") = 0\n'
-                         '1 unlink("/external/s/x") = 0\n'),
-          [("/external/d/sub", True), ("/external/s", False), ("/external/s/x", False)])
-    check("r2 X1 the record counts its removals BY ANNOTATION",
-          lambda: _read(codex_x1)["external_removal_counts"], {"created_in_log": 1, "not_created_in_log": 2})
     # X5 (Low): a pid's pending half is orphaned at its exit; a later resumed half on that pid pairs with nothing.
     for how in ("exited with 0", "killed by SIGKILL"):
-        check(f"r2 X5 an unfinished remover half is orphaned at `+++ {how} +++`: nothing fabricated, both halves "
-              "unpaired and unresolved",
-              lambda h=how: (lambda r: (r["external_removals"], r["unpaired_halves"], r["unresolved_removal_count"]))(
+        check(f"r2 X5 an unfinished remover half is orphaned at `+++ {how} +++`: both halves unpaired and unresolved",
+              lambda h=how: (lambda r: (r["unpaired_halves"], r["unresolved_removal_count"]))(
                   _read(f'7 unlinkat(3</external>, <unfinished ...>\n7 +++ {h} +++\n'
-                        '7 <... unlinkat resumed>"victim", 0) = 0\n')), ([], 2, 2))
+                        '7 <... unlinkat resumed>"victim", 0) = 0\n')), (2, 2))
     # X2 (Medium): one measured record made the whole merge "measured".
     measured, unknown = _shard(1, 2, "measured.py", 1, 2, {"unpaired_halves": 0}), _shard(2, 2, "unknown.py", 1, 2)
     check("r2 X2 Codex's input: a merge where one target never measured pairing reports null, not {}",
@@ -899,19 +701,6 @@ def _self_test_body() -> int:
           lambda: _merge([[measured, unknown]], "unpaired_halves_coverage"), {"measured": 1, "records": 2})
     check("r2 X2 every record measured, none unpaired: {} (none observed), not null",
           lambda: _merge([[measured, _shard(2, 2, "other.py", 1, 2, {"unpaired_halves": 0})]], "unpaired_halves"), {})
-    # The merged removal list, by annotation; its totals are null unless every record was annotated (X2's lesson).
-    ann = {"external_removals": [{"path": "/x", "line": "l1", "created_in_log": False},
-                                 {"path": "/y", "line": "l2", "created_in_log": True}],
-           "external_removal_count": 2, "external_removal_counts": {"created_in_log": 1, "not_created_in_log": 1}}
-    check("r2 X1 merge lists each target's removals by annotation",
-          lambda: _merge([[_shard(1, 1, "t.py", 1, 2, ann)]], "external_removals"),
-          {"t.py": {"created_in_log": ["/y"], "not_created_in_log": ["/x"]}})
-    check("r2 X1 merge totals the removals by annotation",
-          lambda: _merge([[_shard(1, 1, "t.py", 1, 2, ann)]], "external_removal_totals"),
-          {"created_in_log": 1, "not_created_in_log": 1, "targets_with_not_created": 1, "records": 1})
-    check("r2 X1 merge totals are null when a record carries no annotation counts",
-          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, ann), _shard(2, 2, "u.py", 1, 2)]], "external_removal_totals"),
-          None)
     # X3 (Medium): the sample store case supplied the only sample it checked. From an EMPTY store: insertion AND owner.
     check("r2 X3 an EMPTY sample store gains the line, credited to the target that logged it",
           lambda: (lambda st: (_read('1 unlink("/t/x") = 0\n', samples=st, who="second.py"), st)[1])({}),
@@ -923,49 +712,12 @@ def _self_test_body() -> int:
     check("r2 X4 ... and both shards are present", lambda: _merge(two_dirs, "shards_present"), [1, 2])
 
     # ── review round 3 (docs/reviews/claude/586-slice1-r3-claude.md) ──
-    # F3: three r2 behaviours survived mutation. Each case below is red on its mutation, green on this reader.
-    # (a) `forget` clears the SUBTREE (mutation: `c == p` only): d/e's evidence must not outlive d's move.
-    check("r3 F3 a created directory MOVED away takes its created subdirectory's evidence with it",
-          lambda: listed('1 mkdir("/external/d", 0700) = 0\n1 mkdir("/external/d/e", 0700) = 0\n'
-                         '1 rename("/external/d", "/external/z") = 0\n1 rename("/t/pre", "/external/d") = 0\n'
-                         '1 unlink("/external/d/e/f") = 0\n')[-1], ("/external/d/e/f", False))
-    # (b) a target's count is the MAX over its seeds (mutation: the sum). Two seeds, different counts.
-    def _two_seeds(a: int, b: int) -> dict:
-        sh = _shard(1, 1, "t.py", 1, 2)
-        sh["seeds"] = [0, 1]
-        sh["targets"]["t.py"] = {str(seed): {"plain": {"secs": 1, "cases": 1, "green": True},
-                                             "traced": {"secs": 2, "cases": 1, "green": True, "spawner": True,
-                                                        "external_removal_counts": {"created_in_log": n,
-                                                                                    "not_created_in_log": 0}}}
-                                 for seed, n in ((0, a), (1, b))}
-        return sh
-    check("r3 F3 a target's removal count is the MAX over its seeds, not their sum",
-          lambda: _merge([[_two_seeds(3, 5)]], "external_removal_totals")["created_in_log"], 5)
-    # (c) `targets_with_not_created` counts only targets WITH one (mutation: every target). Two targets, one has one.
-    clean = {"external_removal_counts": {"created_in_log": 4, "not_created_in_log": 0}}
-    check("r3 F3 two targets, only ONE with a not-created removal: targets_with_not_created is 1, not 2",
-          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, ann), _shard(2, 2, "u.py", 1, 2, clean)]],
-                         "external_removal_totals")["targets_with_not_created"], 1)
-    # F4: a FAILED removal is an attempt — listed (conservative), and counted apart from the ones that happened.
-    check("r3 F4 the record splits its listed removals by outcome",
-          lambda: _read('1 unlink("/home/runner/absent") = -1 ENOENT (No such file or directory)\n'
-                        '1 unlink("/external/x") = 0\n')["external_removal_outcomes"], {"succeeded": 1, "failed": 1})
-    check("r3 F4 ... and each listed removal keeps `ok`",
-          lambda: [r["ok"] for r in _read('1 unlink("/home/runner/absent") = -1 ENOENT (No such file or directory)\n')
-                   ["external_removals"]], [False])
-    outc = lambda s, f: {"external_removal_outcomes": {"succeeded": s, "failed": f}}
-    check("r3 F4 merge totals the outcomes (sum over targets of the max over seeds)",
-          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, outc(2, 1)), _shard(2, 2, "u.py", 1, 2, outc(3, 0))]],
-                         "external_removal_outcome_totals"), {"succeeded": 5, "failed": 1, "records": 2})
-    check("r3 F4 merge outcome totals are null when a record never split them (e.g. run 42915171820's reader)",
-          lambda: _merge([[_shard(1, 2, "t.py", 1, 2, outc(2, 1)), _shard(2, 2, "u.py", 1, 2)]],
-                         "external_removal_outcome_totals"), None)
     # F6: the r2 X2 rule over the CLASS: every analyse_log table is null unless every record was analysed.
     seen = {"syscalls": {"unlink": 1}, "family_counts": {"io_uring_setup": 1}, "deleted_labels": 2,
             "unresolved_removal_count": 3}
     nolog = {"log_missing": True}
     half = [[_shard(1, 2, "t.py", 1, 2, seen), _shard(2, 2, "u.py", 1, 2, nolog)]]
-    for key in ("refusal_triggers", "deleted_labels", "unresolved_removals", "syscalls"):
+    for key in ("refusal_triggers", "deleted_labels", "unresolved_removals", "syscalls", "removal_calls"):
         check(f"r3 F6 a record with no log makes `{key}` null (NOT MEASURED), not a silent absence",
               lambda k=key: _merge(half, k), None)
     check("r3 F6 ... and the merge names the record whose log is missing",
@@ -976,11 +728,21 @@ def _self_test_body() -> int:
     check("r3 F6 every record analysed: unresolved removals",
           lambda: _merge(whole, "unresolved_removals"), {"t.py": 3})
 
+    # The raw remover counts per target (backlog #601): the MAX over a target's seeds, removers only.
+    def _two_seeds(a: int, b: int) -> dict:
+        sh = _shard(1, 1, "t.py", 1, 2)
+        sh["seeds"] = [0, 1]
+        sh["targets"]["t.py"] = {str(seed): {"plain": {"secs": 1, "cases": 1, "green": True},
+                                             "traced": {"secs": 2, "cases": 1, "green": True, "spawner": True,
+                                                        "syscalls": {"unlink": n, "rename": 1, "read": 9}}}
+                                 for seed, n in ((0, a), (1, b))}
+        return sh
+    check("removal_calls: a target's remover count is the MAX over its seeds (not the sum); non-removers are not kept",
+          lambda: _merge([[_two_seeds(3, 5)]], "removal_calls"), {"t.py": {"rename": 1, "unlink": 5}})
+
     # Low findings.
     check("F5 a REMOVER line the splitter cannot balance is unresolved, never dropped",
-          lambda: _read('100 unlinkat(3</home/runner/a<b>, "f", 0) = 0\n')["unresolved_removal_count"], 1)
-    check("F8 a -yy label's C escapes are decoded before resolving",
-          lambda: ext('1 mkdir("/external/my dir", 0700) = 0\n1 unlinkat(3</external/my\\x20dir>, "f", 0) = 0\n'), [])
+          lambda: unres('100 unlinkat(3</home/runner/a<b>, "f", 0) = 0\n'), 1)
     # The recorded logs: every line parses (a property of the fixtures this run committed, MEASURED by this case).
     for name in ("whole-git.log", "whole-threaded.log"):
         p = FIXTURES / name

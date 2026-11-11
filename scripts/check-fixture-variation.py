@@ -317,7 +317,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # backlog #586 slice 1 (2026-11-10): the strace measurement instrument, which joined this population when its
     # review-round-1 fold gave it a `--self-test`. DERIVED by running `analyse()` on the delivered source: 8 keys,
     # every one reached through ONE forwarding helper (`_read`, `_merge`) and EXEMPT below naming the cases that vary it.
-    "strace-measure.py": ("analyse_log.copies", "analyse_log.log", "analyse_log.samples", "analyse_log.shapes",
+    # ⟳ backlog #601 (2026-11-11): re-derived, 8 -> 7 keys; `analyse_log.copies` left with the removal classification.
+    "strace-measure.py": ("analyse_log.log", "analyse_log.samples", "analyse_log.shapes",
                           "analyse_log.who", "merge.dirs", "merge.jobs", "merge.out"),
     # backlog #397 (2026-11-09): the CI-duration tripwire, pinned in the commit that creates it. DERIVED by running
     # `analyse()` on the delivered source. ⟳ r1 fold: re-derived, 36 -> 47 keys, none lost — combine_rc, is_timeout_kill,
@@ -1353,7 +1354,6 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 EXEMPT: dict[str, str] = {
     # backlog #586 slice 1 (2026-11-10): strace-measure.py — its two entry points are driven through ONE helper each
     # (`_read` for analyse_log, `_merge` for merge), which forward their arguments; the helpers' CALLERS vary them.
-    "strace-measure.py:analyse_log.copies": "driven through ONE helper, `_read`; its callers vary copies (`/t` alone, and `/t` with a second root `/real/t`, where the same unlink flips inside/outside)",
     "strace-measure.py:analyse_log.samples": "driven through ONE helper, `_read`; its callers vary samples: an EMPTY store, which must gain the line credited to `who` (case `r2 X3`, red under both of review round 2's mutations: no insert, a wrong owner), and one already holding a key, which must keep its first owner",
     "strace-measure.py:analyse_log.shapes": "driven through ONE helper, `_read`; its callers vary shapes (an empty store per case, and the store `_stores` reads back to check each shape's owner)",
     "strace-measure.py:analyse_log.who": "driven through ONE helper, `_read`; its callers vary who (`case`, and `second.py`, whose lines must be credited to it and not to the store's earlier owner)",
