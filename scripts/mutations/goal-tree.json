@@ -4617,5 +4617,18 @@
     "expect": [
       "...an entry naming only a bare #N is IN FLIGHT UNDER NO GOAL, never hung on a thread with that number"
     ]
+  },
+  {
+    "name": "text no UTF-8 writer can encode is not refused (PR #558 r2)",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if unenc:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r2: text no UTF-8 writer can encode is refused by name — in `a` at entry 0, in `asked` at entry 1"
+    ]
   }
 ]

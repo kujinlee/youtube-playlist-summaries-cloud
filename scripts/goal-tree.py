@@ -2088,6 +2088,18 @@ def load_answers(path: pathlib.Path) -> tuple[list[dict], str]:
     odd = [i for i, r in enumerate(rows) if "asked" in r and not isinstance(r["asked"], str)]
     if odd:
         return [], f"{path.name}: entr{'y' if len(odd) == 1 else 'ies'} {odd} carr{'ies' if len(odd) == 1 else 'y'} a non-text asked"
+    # ⛔ PR #558 r2: JSON's `\ud800` escape parses to an unpaired surrogate, which no UTF-8 writer can encode — the
+    # page write then raised and NO page was written. Refused here by name, like every shape above.
+    def _encodes(s: str) -> bool:
+        try:
+            s.encode("utf-8")
+            return True
+        except UnicodeEncodeError:
+            return False
+    unenc = [i for i, r in enumerate(rows)
+             if not all(_encodes(r[f]) for f in ("key", "q", "a", "asked") if isinstance(r.get(f), str))]
+    if unenc:
+        return [], f"{path.name}: entr{'y' if len(unenc) == 1 else 'ies'} {unenc} carr{'ies' if len(unenc) == 1 else 'y'} text that is not valid UTF-8"
     return rows, ""
 
 
@@ -3348,6 +3360,23 @@ def _self_test_cases(*, outside: dict) -> int:
     case("...and each says WHAT is wrong",
          [r[1].split(": ", 1)[-1] if r[0] != "RAISED" else r for r in _lm[:3]],
          ["`answers` is NoneType, not a list", "`answers` is int, not a list", "entry [0] carries a non-text asked"])
+
+    # ⛔ r2: an unpaired surrogate (JSON `\ud800`) in ANY text field is refused by name, and the page is still WRITTEN.
+    # Two distinct fields and positions, so a check of one field or entry 0 only stays red.
+    with tempfile.TemporaryDirectory() as _std:
+        _sd = pathlib.Path(_std)
+        (_sd / "sa.json").write_text(json.dumps({"answers": [dict(_qa[1], a="x\ud800")]}))
+        (_sd / "sk.json").write_text(json.dumps({"answers": [_qa[1], dict(_qa[1], asked="\udfff")]}))
+        _ls = [_never_raises(lambda n=n: load_answers(_sd / n)) for n in ("sa.json", "sk.json")]
+        _sp = _sd / "page.html"
+        _sw = _never_raises(lambda: write_page(_sp, [_bsnap], "2026-11-05 19:09", answers_path=_sd / "sa.json",
+                                               composer=[sys.executable, "-c", "pass"]))
+        _swrote = _sp.is_file() and "not valid UTF-8" in _sp.read_text(encoding="utf-8")
+    case("⛔ r2: text no UTF-8 writer can encode is refused by name — in `a` at entry 0, in `asked` at entry 1",
+         [r[1].split(": ", 1)[-1] if r[0] != "RAISED" else r for r in _ls],
+         ["entry [0] carries text that is not valid UTF-8", "entry [1] carries text that is not valid UTF-8"])
+    case("...and the page is still written, saying so", (_sw[0] if isinstance(_sw, tuple) else None, _swrote),
+         (None, True))
 
     # ⛔ r1 B: EVERY escaped field, each with markup in it — removing any ONE escape turns its own term red.
     _xq = [{"key": "pr-21", "asked": "11-11 <i>x</i>", "q": "q", "a": "say <b>hi</b>\n\n<script>x</script>"},
