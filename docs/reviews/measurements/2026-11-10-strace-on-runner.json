@@ -1,0 +1,1942 @@
+{
+ "at_fdcwd_decorated": true,
+ "at_fdcwd_decorated_targets": 92,
+ "case_count_differs": [],
+ "deleted_labels": {
+  "scripts/batch-ci.py": 12,
+  "scripts/check-stalled-work.py": 97
+ },
+ "external_removals": {},
+ "headers": [
+  {
+   "ImageOS": "ubuntu26",
+   "ImageVersion": "20261101.186.1",
+   "node": "v22.23.4",
+   "python": "Python 3.12.16",
+   "run_attempt": "1",
+   "run_id": "42893595762",
+   "sha": "be0f552febaaf4ea0eb702f933b896057b5ac9a9",
+   "strace_version": "strace -- version 6.19",
+   "uname_r": "7.0.0-1019-azure"
+  }
+ ],
+ "ioctls": {
+  "BTRFS_IOC_CLONE or FICLONE": 1,
+  "FIOCLEX": 92,
+  "FIONBIO": 5,
+  "TCGETS": 2,
+  "TCGETS2": 92,
+  "TIOCGPGRP": 15,
+  "TIOCGWINSZ": 60
+ },
+ "jobs": {
+  "max_secs": 656.0,
+  "per_job_secs": {
+   "strace-measure (1)": 656.0,
+   "strace-measure (2)": 577.0,
+   "strace-measure (3)": 540.0,
+   "strace-measure (4)": 213.0,
+   "strace-measure (5)": 365.0,
+   "strace-measure (6)": 445.0
+  },
+  "sum_secs": 2796.0
+ },
+ "not_green": [
+  {
+   "rc": 1,
+   "run": "plain",
+   "seed": "0",
+   "staging": null,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "0",
+   "staging": null,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "plain",
+   "seed": "1109",
+   "staging": null,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "1109",
+   "staging": null,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "plain",
+   "seed": "0",
+   "staging": null,
+   "target": "scripts/check-merge-ready.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "0",
+   "staging": null,
+   "target": "scripts/check-merge-ready.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "plain",
+   "seed": "1109",
+   "staging": null,
+   "target": "scripts/check-merge-ready.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "1109",
+   "staging": null,
+   "target": "scripts/check-merge-ready.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "0",
+   "staging": null,
+   "target": "scripts/regen-pages.py",
+   "timeout": false
+  },
+  {
+   "rc": 1,
+   "run": "traced",
+   "seed": "1109",
+   "staging": null,
+   "target": "scripts/regen-pages.py",
+   "timeout": false
+  }
+ ],
+ "ratio_all_targets_max": 19.94,
+ "ratios": [
+  {
+   "plain": 0.59,
+   "ratio": 3.64,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/backfill-work-lines.py",
+   "traced": 2.15
+  },
+  {
+   "plain": 0.59,
+   "ratio": 3.58,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/backfill-work-lines.py",
+   "traced": 2.11
+  },
+  {
+   "plain": 0.09,
+   "ratio": 1.89,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-agent-long-call.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.09,
+   "ratio": 1.78,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-agent-long-call.py",
+   "traced": 0.16
+  },
+  {
+   "plain": 0.77,
+   "ratio": 7.23,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-canonical-source.py",
+   "traced": 5.57
+  },
+  {
+   "plain": 0.87,
+   "ratio": 6.36,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-canonical-source.py",
+   "traced": 5.53
+  },
+  {
+   "plain": 0.32,
+   "ratio": 4.0,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-decision-scheme.py",
+   "traced": 1.28
+  },
+  {
+   "plain": 0.32,
+   "ratio": 4.06,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-decision-scheme.py",
+   "traced": 1.3
+  },
+  {
+   "plain": 15.52,
+   "ratio": 1.87,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "traced": 29.08
+  },
+  {
+   "plain": 14.84,
+   "ratio": 1.93,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-fixture-git-isolation.py",
+   "traced": 28.68
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-guard-coverage.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-guard-coverage.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.07,
+   "ratio": 2.14,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-memory-link.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.07,
+   "ratio": 2.29,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-memory-link.py",
+   "traced": 0.16
+  },
+  {
+   "plain": 5.45,
+   "ratio": 5.52,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-plan-leak.py",
+   "traced": 30.08
+  },
+  {
+   "plain": 5.43,
+   "ratio": 5.56,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-plan-leak.py",
+   "traced": 30.18
+  },
+  {
+   "plain": 11.8,
+   "ratio": 5.32,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-rc-contract.py",
+   "traced": 62.8
+  },
+  {
+   "plain": 11.75,
+   "ratio": 5.55,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-rc-contract.py",
+   "traced": 65.2
+  },
+  {
+   "plain": 2.13,
+   "ratio": 7.39,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-run-hook.py",
+   "traced": 15.74
+  },
+  {
+   "plain": 2.15,
+   "ratio": 7.4,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-run-hook.py",
+   "traced": 15.92
+  },
+  {
+   "plain": 0.79,
+   "ratio": 1.54,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-storage-independence.py",
+   "traced": 1.22
+  },
+  {
+   "plain": 0.78,
+   "ratio": 1.62,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-storage-independence.py",
+   "traced": 1.26
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.75,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-vocabulary-collisions.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.75,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-vocabulary-collisions.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 5.12,
+   "ratio": 1.12,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/explainer-serve.py",
+   "traced": 5.71
+  },
+  {
+   "plain": 5.12,
+   "ratio": 1.12,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/explainer-serve.py",
+   "traced": 5.74
+  },
+  {
+   "plain": 0.09,
+   "ratio": 1.89,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/gen-goals-page.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.09,
+   "ratio": 1.89,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/gen-goals-page.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.12,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/peer-sites.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.12,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/peer-sites.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 6.78,
+   "ratio": 1.15,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/session-state.py",
+   "traced": 7.81
+  },
+  {
+   "plain": 6.85,
+   "ratio": 1.16,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/session-state.py",
+   "traced": 7.97
+  },
+  {
+   "plain": 6.34,
+   "ratio": 10.4,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/batch-ci.py",
+   "traced": 65.94
+  },
+  {
+   "plain": 3.26,
+   "ratio": 19.94,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/batch-ci.py",
+   "traced": 64.99
+  },
+  {
+   "plain": 0.04,
+   "ratio": 5.25,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-anchors.py",
+   "traced": 0.21
+  },
+  {
+   "plain": 0.04,
+   "ratio": 5.25,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-anchors.py",
+   "traced": 0.21
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-catalog-coverage.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-catalog-coverage.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 1.4,
+   "ratio": 4.21,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-diff-coverage.py",
+   "traced": 5.9
+  },
+  {
+   "plain": 1.39,
+   "ratio": 4.31,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-diff-coverage.py",
+   "traced": 5.99
+  },
+  {
+   "plain": 13.2,
+   "ratio": 1.03,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-fixture-variation.py",
+   "traced": 13.6
+  },
+  {
+   "plain": 13.14,
+   "ratio": 1.06,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-fixture-variation.py",
+   "traced": 13.88
+  },
+  {
+   "plain": 0.62,
+   "ratio": 4.52,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-handoff-path.py",
+   "traced": 2.8
+  },
+  {
+   "plain": 0.58,
+   "ratio": 4.91,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-handoff-path.py",
+   "traced": 2.85
+  },
+  {
+   "plain": 13.34,
+   "ratio": 2.45,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-merge-ready.py",
+   "traced": 32.74
+  },
+  {
+   "plain": 13.19,
+   "ratio": 2.48,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-merge-ready.py",
+   "traced": 32.65
+  },
+  {
+   "plain": 0.07,
+   "ratio": 7.43,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-plan-progress.py",
+   "traced": 0.52
+  },
+  {
+   "plain": 0.07,
+   "ratio": 7.86,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-plan-progress.py",
+   "traced": 0.55
+  },
+  {
+   "plain": 0.25,
+   "ratio": 10.68,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-reference-namespace.py",
+   "traced": 2.67
+  },
+  {
+   "plain": 0.24,
+   "ratio": 10.67,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-reference-namespace.py",
+   "traced": 2.56
+  },
+  {
+   "plain": 0.78,
+   "ratio": 3.86,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-selection-card.py",
+   "traced": 3.01
+  },
+  {
+   "plain": 0.78,
+   "ratio": 3.88,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-selection-card.py",
+   "traced": 3.03
+  },
+  {
+   "plain": 4.7,
+   "ratio": 4.65,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-surface-recall.py",
+   "traced": 21.85
+  },
+  {
+   "plain": 4.59,
+   "ratio": 4.74,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-surface-recall.py",
+   "traced": 21.75
+  },
+  {
+   "plain": 0.64,
+   "ratio": 1.11,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/ci-durations.py",
+   "traced": 0.71
+  },
+  {
+   "plain": 0.57,
+   "ratio": 1.23,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/ci-durations.py",
+   "traced": 0.7
+  },
+  {
+   "plain": 0.11,
+   "ratio": 7.82,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/fixture_git.py",
+   "traced": 0.86
+  },
+  {
+   "plain": 0.11,
+   "ratio": 7.55,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/fixture_git.py",
+   "traced": 0.83
+  },
+  {
+   "plain": 0.1,
+   "ratio": 12.0,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-work-lines.py",
+   "traced": 1.2
+  },
+  {
+   "plain": 0.11,
+   "ratio": 12.09,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-work-lines.py",
+   "traced": 1.33
+  },
+  {
+   "plain": 1.72,
+   "ratio": 18.24,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/prune-merged-worktrees.py",
+   "traced": 31.38
+  },
+  {
+   "plain": 1.7,
+   "ratio": 18.02,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/prune-merged-worktrees.py",
+   "traced": 30.64
+  },
+  {
+   "plain": 0.57,
+   "ratio": 4.11,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/sweep-red-alert.py",
+   "traced": 2.34
+  },
+  {
+   "plain": 0.57,
+   "ratio": 4.12,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/sweep-red-alert.py",
+   "traced": 2.35
+  },
+  {
+   "plain": 1.66,
+   "ratio": 3.31,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/begin-plan.py",
+   "traced": 5.5
+  },
+  {
+   "plain": 1.63,
+   "ratio": 3.53,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/begin-plan.py",
+   "traced": 5.76
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-anon-exposure.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-anon-exposure.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.32,
+   "ratio": 3.12,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-ci-watched.py",
+   "traced": 1.0
+  },
+  {
+   "plain": 0.32,
+   "ratio": 2.84,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-ci-watched.py",
+   "traced": 0.91
+  },
+  {
+   "plain": 1.88,
+   "ratio": 4.43,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-doc-citations.py",
+   "traced": 8.32
+  },
+  {
+   "plain": 0.54,
+   "ratio": 14.26,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-doc-citations.py",
+   "traced": 7.7
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-function-revokes.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.25,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-function-revokes.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-hook-commands.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-hook-commands.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 10.28,
+   "ratio": 1.45,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-page-links.py",
+   "traced": 14.92
+  },
+  {
+   "plain": 10.27,
+   "ratio": 1.42,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-page-links.py",
+   "traced": 14.62
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.75,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-plan-task-order.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-plan-task-order.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.25,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-review-decision.py",
+   "traced": 0.18
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-review-decision.py",
+   "traced": 0.16
+  },
+  {
+   "plain": 3.9,
+   "ratio": 1.36,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-selftest-counts.py",
+   "traced": 5.32
+  },
+  {
+   "plain": 3.85,
+   "ratio": 1.39,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-selftest-counts.py",
+   "traced": 5.36
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-test-counts.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-test-counts.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/codex-frontier-model.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/codex-frontier-model.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 10.8,
+   "ratio": 1.38,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gates-for-pr.py",
+   "traced": 14.89
+  },
+  {
+   "plain": 10.75,
+   "ratio": 1.38,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gates-for-pr.py",
+   "traced": 14.84
+  },
+  {
+   "plain": 0.52,
+   "ratio": 2.79,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/goal-tree.py",
+   "traced": 1.45
+  },
+  {
+   "plain": 0.5,
+   "ratio": 2.82,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/goal-tree.py",
+   "traced": 1.41
+  },
+  {
+   "plain": 17.46,
+   "ratio": 6.44,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/push-command.py",
+   "traced": 112.38
+  },
+  {
+   "plain": 16.37,
+   "ratio": 6.79,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/push-command.py",
+   "traced": 111.1
+  },
+  {
+   "plain": 3.35,
+   "ratio": 1.35,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/bounded_read.py",
+   "traced": 4.52
+  },
+  {
+   "plain": 3.35,
+   "ratio": 1.37,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/bounded_read.py",
+   "traced": 4.6
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.75,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-arch-findings.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.5,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-arch-findings.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 1.43,
+   "ratio": 2.2,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-closing-table.py",
+   "traced": 3.15
+  },
+  {
+   "plain": 1.39,
+   "ratio": 2.34,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-closing-table.py",
+   "traced": 3.25
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.33,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-docs.py",
+   "traced": 0.1
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-docs.py",
+   "traced": 0.09
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-gate-falsifiability.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-gate-falsifiability.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.07,
+   "ratio": 2.14,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-live-schema.py",
+   "traced": 0.15
+  },
+  {
+   "plain": 0.04,
+   "ratio": 4.25,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-live-schema.py",
+   "traced": 0.17
+  },
+  {
+   "plain": 5.78,
+   "ratio": 1.39,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-paid-caller-arrival.py",
+   "traced": 8.03
+  },
+  {
+   "plain": 5.76,
+   "ratio": 1.4,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-paid-caller-arrival.py",
+   "traced": 8.06
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-producer-enumeration.py",
+   "traced": 0.09
+  },
+  {
+   "plain": 0.03,
+   "ratio": 4.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-producer-enumeration.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 1.01,
+   "ratio": 12.84,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-review-recorded.py",
+   "traced": 12.97
+  },
+  {
+   "plain": 0.99,
+   "ratio": 13.19,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-review-recorded.py",
+   "traced": 13.06
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.67,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-sentinel-meanings.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.03,
+   "ratio": 4.67,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-sentinel-meanings.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.67,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-theme-token-coverage.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.03,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-theme-token-coverage.py",
+   "traced": 0.09
+  },
+  {
+   "plain": 1.65,
+   "ratio": 4.87,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/codex-review.py",
+   "traced": 8.03
+  },
+  {
+   "plain": 1.56,
+   "ratio": 5.04,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/codex-review.py",
+   "traced": 7.86
+  },
+  {
+   "plain": 13.38,
+   "ratio": 1.05,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-backlog-page.py",
+   "traced": 14.09
+  },
+  {
+   "plain": 13.48,
+   "ratio": 1.04,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-backlog-page.py",
+   "traced": 13.99
+  },
+  {
+   "plain": 0.06,
+   "ratio": 3.33,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/observer_log.py",
+   "traced": 0.2
+  },
+  {
+   "plain": 0.05,
+   "ratio": 4.0,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/observer_log.py",
+   "traced": 0.2
+  },
+  {
+   "plain": 0.07,
+   "ratio": 6.14,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/recall-llm.py",
+   "traced": 0.43
+  },
+  {
+   "plain": 0.07,
+   "ratio": 6.14,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/recall-llm.py",
+   "traced": 0.43
+  },
+  {
+   "plain": 4.72,
+   "ratio": 1.06,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/brief-compose.py",
+   "traced": 4.98
+  },
+  {
+   "plain": 4.71,
+   "ratio": 1.04,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/brief-compose.py",
+   "traced": 4.89
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-backlog-closure.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-backlog-closure.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.31,
+   "ratio": 3.94,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-compaction-boundary.py",
+   "traced": 1.22
+  },
+  {
+   "plain": 0.3,
+   "ratio": 4.13,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-compaction-boundary.py",
+   "traced": 1.24
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.2,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-explainer-delivery.py",
+   "traced": 0.16
+  },
+  {
+   "plain": 0.05,
+   "ratio": 3.6,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-explainer-delivery.py",
+   "traced": 0.18
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.6,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-goal-status.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.8,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-goal-status.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 9.55,
+   "ratio": 1.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-main-drivable.py",
+   "traced": 9.58
+  },
+  {
+   "plain": 9.52,
+   "ratio": 1.03,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-main-drivable.py",
+   "traced": 9.82
+  },
+  {
+   "plain": 10.05,
+   "ratio": 2.52,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-plan-code.py",
+   "traced": 25.34
+  },
+  {
+   "plain": 10.1,
+   "ratio": 2.5,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-plan-code.py",
+   "traced": 25.27
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.17,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-python-pin.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.17,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-python-pin.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.06,
+   "ratio": 4.33,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-review-rounds.py",
+   "traced": 0.26
+  },
+  {
+   "plain": 0.07,
+   "ratio": 3.57,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-review-rounds.py",
+   "traced": 0.25
+  },
+  {
+   "plain": 10.39,
+   "ratio": 2.13,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-stalled-work.py",
+   "traced": 22.08
+  },
+  {
+   "plain": 10.35,
+   "ratio": 2.12,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-stalled-work.py",
+   "traced": 21.9
+  },
+  {
+   "plain": 2.17,
+   "ratio": 1.79,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-transcript-references.py",
+   "traced": 3.89
+  },
+  {
+   "plain": 2.2,
+   "ratio": 1.79,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-transcript-references.py",
+   "traced": 3.93
+  },
+  {
+   "plain": 6.26,
+   "ratio": 1.47,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/compaction-state.py",
+   "traced": 9.18
+  },
+  {
+   "plain": 6.01,
+   "ratio": 1.53,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/compaction-state.py",
+   "traced": 9.21
+  },
+  {
+   "plain": 3.1,
+   "ratio": 1.08,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-dashboard.py",
+   "traced": 3.35
+  },
+  {
+   "plain": 3.07,
+   "ratio": 1.09,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-dashboard.py",
+   "traced": 3.36
+  },
+  {
+   "plain": 0.39,
+   "ratio": 2.77,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/page_chrome.py",
+   "traced": 1.08
+  },
+  {
+   "plain": 0.38,
+   "ratio": 2.92,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/page_chrome.py",
+   "traced": 1.11
+  },
+  {
+   "plain": 0.52,
+   "ratio": 8.92,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/record-review-verdict.py",
+   "traced": 4.64
+  },
+  {
+   "plain": 0.51,
+   "ratio": 8.9,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/record-review-verdict.py",
+   "traced": 4.54
+  },
+  {
+   "plain": 0.13,
+   "ratio": 2.62,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-agent-large-read.py",
+   "traced": 0.34
+  },
+  {
+   "plain": 0.13,
+   "ratio": 2.23,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-agent-large-read.py",
+   "traced": 0.29
+  },
+  {
+   "plain": 2.35,
+   "ratio": 2.54,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-banner-armed.py",
+   "traced": 5.97
+  },
+  {
+   "plain": 2.37,
+   "ratio": 2.31,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-banner-armed.py",
+   "traced": 5.48
+  },
+  {
+   "plain": 0.16,
+   "ratio": 1.56,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-dashboard-entry.py",
+   "traced": 0.25
+  },
+  {
+   "plain": 0.16,
+   "ratio": 1.56,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-dashboard-entry.py",
+   "traced": 0.25
+  },
+  {
+   "plain": 0.21,
+   "ratio": 1.43,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-features.py",
+   "traced": 0.3
+  },
+  {
+   "plain": 0.21,
+   "ratio": 1.43,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-features.py",
+   "traced": 0.3
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-group-claims.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-group-claims.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.5,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-memory-index-budget.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.4,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-memory-index-budget.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.07,
+   "ratio": 3.86,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-plan-file-tags.py",
+   "traced": 0.27
+  },
+  {
+   "plain": 0.07,
+   "ratio": 4.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-plan-file-tags.py",
+   "traced": 0.28
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.62,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-ratchet-contract.py",
+   "traced": 0.21
+  },
+  {
+   "plain": 0.08,
+   "ratio": 2.62,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-ratchet-contract.py",
+   "traced": 0.21
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-roadmap-consistency.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.17,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-roadmap-consistency.py",
+   "traced": 0.13
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.75,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/check-storage-grant-pin.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.04,
+   "ratio": 3.0,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/check-storage-grant-pin.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 10.41,
+   "ratio": 2.19,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/check-usage-pace.py",
+   "traced": 22.82
+  },
+  {
+   "plain": 10.43,
+   "ratio": 2.18,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/check-usage-pace.py",
+   "traced": 22.7
+  },
+  {
+   "plain": 0.04,
+   "ratio": 2.75,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/coverage_verdict.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.05,
+   "ratio": 2.2,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/coverage_verdict.py",
+   "traced": 0.11
+  },
+  {
+   "plain": 0.6,
+   "ratio": 2.08,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/gen-features-page.py",
+   "traced": 1.25
+  },
+  {
+   "plain": 0.6,
+   "ratio": 1.98,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/gen-features-page.py",
+   "traced": 1.19
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.0,
+   "seed": "0",
+   "spawner": false,
+   "target": "scripts/page_markup.py",
+   "traced": 0.12
+  },
+  {
+   "plain": 0.06,
+   "ratio": 2.33,
+   "seed": "1109",
+   "spawner": false,
+   "target": "scripts/page_markup.py",
+   "traced": 0.14
+  },
+  {
+   "plain": 10.16,
+   "ratio": 8.37,
+   "seed": "0",
+   "spawner": true,
+   "target": "scripts/regen-pages.py",
+   "traced": 85.02
+  },
+  {
+   "plain": 10.13,
+   "ratio": 14.34,
+   "seed": "1109",
+   "spawner": true,
+   "target": "scripts/regen-pages.py",
+   "traced": 145.23
+  }
+ ],
+ "refusal_triggers": {
+  "io_uring_setup": [
+   "scripts/check-page-links.py",
+   "scripts/check-paid-caller-arrival.py",
+   "scripts/explainer-serve.py",
+   "scripts/page_chrome.py"
+  ]
+ },
+ "seeds": [
+  0,
+  1109
+ ],
+ "shard_elapsed_secs": {
+  "1": 628.8,
+  "2": 551.0,
+  "3": 511.4,
+  "4": 182.1,
+  "5": 337.4,
+  "6": 415.6
+ },
+ "shard_elapsed_sum_secs": 2626.3,
+ "shards_expected": 6,
+ "shards_present": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6
+ ],
+ "spawner_targets": [
+  "scripts/batch-ci.py",
+  "scripts/begin-plan.py",
+  "scripts/bounded_read.py",
+  "scripts/brief-compose.py",
+  "scripts/check-banner-armed.py",
+  "scripts/check-ci-watched.py",
+  "scripts/check-closing-table.py",
+  "scripts/check-compaction-boundary.py",
+  "scripts/check-decision-scheme.py",
+  "scripts/check-diff-coverage.py",
+  "scripts/check-doc-citations.py",
+  "scripts/check-fixture-git-isolation.py",
+  "scripts/check-handoff-path.py",
+  "scripts/check-merge-ready.py",
+  "scripts/check-page-links.py",
+  "scripts/check-paid-caller-arrival.py",
+  "scripts/check-plan-code.py",
+  "scripts/check-plan-leak.py",
+  "scripts/check-plan-progress.py",
+  "scripts/check-rc-contract.py",
+  "scripts/check-reference-namespace.py",
+  "scripts/check-review-recorded.py",
+  "scripts/check-run-hook.py",
+  "scripts/check-selection-card.py",
+  "scripts/check-selftest-counts.py",
+  "scripts/check-stalled-work.py",
+  "scripts/check-surface-recall.py",
+  "scripts/check-transcript-references.py",
+  "scripts/check-usage-pace.py",
+  "scripts/codex-review.py",
+  "scripts/compaction-state.py",
+  "scripts/explainer-serve.py",
+  "scripts/fixture_git.py",
+  "scripts/gates-for-pr.py",
+  "scripts/gen-backlog-page.py",
+  "scripts/gen-dashboard.py",
+  "scripts/gen-features-page.py",
+  "scripts/gen-work-lines.py",
+  "scripts/goal-tree.py",
+  "scripts/observer_log.py",
+  "scripts/page_chrome.py",
+  "scripts/peer-sites.py",
+  "scripts/prune-merged-worktrees.py",
+  "scripts/push-command.py",
+  "scripts/record-review-verdict.py",
+  "scripts/regen-pages.py",
+  "scripts/session-state.py",
+  "scripts/sweep-red-alert.py"
+ ],
+ "strace_stderr": {},
+ "syscalls": {
+  "access": 92,
+  "alarm": 3,
+  "arch_prctl": 92,
+  "brk": 92,
+  "capget": 4,
+  "chdir": 41,
+  "chmod": 41,
+  "clock_nanosleep": 17,
+  "clone": 36,
+  "clone3": 19,
+  "close": 92,
+  "close_range": 48,
+  "connect": 17,
+  "copy_file_range": 1,
+  "dup": 28,
+  "dup2": 48,
+  "epoll_create1": 65,
+  "epoll_ctl": 7,
+  "epoll_pwait": 6,
+  "epoll_pwait2": 1,
+  "epoll_wait": 1,
+  "eventfd2": 6,
+  "execve": 92,
+  "exit": 18,
+  "exit_group": 92,
+  "faccessat2": 1,
+  "fadvise64": 11,
+  "fcntl": 92,
+  "flock": 4,
+  "fstat": 92,
+  "fstatfs": 1,
+  "fsync": 5,
+  "ftruncate": 1,
+  "futex": 92,
+  "getcwd": 92,
+  "getdents64": 92,
+  "getegid": 92,
+  "geteuid": 92,
+  "getgid": 92,
+  "getgroups": 1,
+  "getitimer": 1,
+  "getpeername": 2,
+  "getpgrp": 17,
+  "getpid": 92,
+  "getppid": 25,
+  "getrandom": 92,
+  "getresgid": 15,
+  "getresuid": 15,
+  "getsockname": 1,
+  "gettid": 92,
+  "getuid": 92,
+  "io_uring_enter": 4,
+  "io_uring_setup": 4,
+  "ioctl": 92,
+  "kill": 11,
+  "link": 29,
+  "linkat": 2,
+  "listxattr": 3,
+  "lseek": 92,
+  "madvise": 19,
+  "mkdir": 92,
+  "mkdirat": 2,
+  "mknodat": 9,
+  "mmap": 92,
+  "mprotect": 92,
+  "mremap": 54,
+  "munmap": 92,
+  "nanosleep": 2,
+  "newfstatat": 92,
+  "openat": 92,
+  "pidfd_open": 1,
+  "pipe2": 48,
+  "poll": 48,
+  "prctl": 6,
+  "pread64": 92,
+  "prlimit64": 92,
+  "pselect6": 7,
+  "read": 92,
+  "readlink": 92,
+  "readlinkat": 2,
+  "recvfrom": 1,
+  "rename": 31,
+  "renameat": 1,
+  "restart_syscall": 11,
+  "rmdir": 92,
+  "rseq": 92,
+  "rt_sigaction": 92,
+  "rt_sigprocmask": 92,
+  "rt_sigreturn": 25,
+  "rt_sigsuspend": 2,
+  "sched_getaffinity": 26,
+  "sched_yield": 2,
+  "sendfile": 12,
+  "sendto": 1,
+  "set_robust_list": 92,
+  "set_tid_address": 92,
+  "setitimer": 3,
+  "setpgid": 1,
+  "setsid": 30,
+  "sigaltstack": 22,
+  "socket": 17,
+  "socketpair": 1,
+  "splice": 10,
+  "stat": 4,
+  "statfs": 22,
+  "statx": 24,
+  "symlink": 31,
+  "tgkill": 2,
+  "timerfd_create": 1,
+  "timerfd_settime": 1,
+  "uname": 23,
+  "unlink": 92,
+  "unlinkat": 92,
+  "utimensat": 21,
+  "vfork": 48,
+  "wait4": 48,
+  "write": 92,
+  "writev": 5
+ },
+ "target_count": 92,
+ "timeouts": [],
+ "trace_factor": 20,
+ "trace_factor_from": {
+  "plain": 3.26,
+  "ratio": 19.94,
+  "seed": "1109",
+  "spawner": true,
+  "target": "scripts/batch-ci.py",
+  "traced": 64.99
+ },
+ "unparsed_line_samples": {},
+ "unresolved_removals": {
+  "scripts/batch-ci.py": 2833,
+  "scripts/begin-plan.py": 72,
+  "scripts/check-banner-armed.py": 9,
+  "scripts/check-decision-scheme.py": 50,
+  "scripts/check-diff-coverage.py": 198,
+  "scripts/check-doc-citations.py": 475,
+  "scripts/check-merge-ready.py": 951,
+  "scripts/check-plan-leak.py": 702,
+  "scripts/check-plan-progress.py": 18,
+  "scripts/check-reference-namespace.py": 118,
+  "scripts/check-review-recorded.py": 647,
+  "scripts/check-run-hook.py": 172,
+  "scripts/check-selftest-counts.py": 85,
+  "scripts/check-stalled-work.py": 396,
+  "scripts/check-usage-pace.py": 82,
+  "scripts/codex-review.py": 64,
+  "scripts/compaction-state.py": 10,
+  "scripts/fixture_git.py": 17,
+  "scripts/gates-for-pr.py": 42,
+  "scripts/gen-work-lines.py": 27,
+  "scripts/goal-tree.py": 9,
+  "scripts/page_chrome.py": 9,
+  "scripts/prune-merged-worktrees.py": 603,
+  "scripts/push-command.py": 81,
+  "scripts/record-review-verdict.py": 145,
+  "scripts/regen-pages.py": 273,
+  "scripts/session-state.py": 10,
+  "scripts/sweep-red-alert.py": 15
+ },
+ "whole_logs": {
+  "1": {
+   "git": {
+    "bytes": 253604,
+    "copy": "/tmp/strace-measure-wo1t1cth/sm-i53dujhh",
+    "file": "raw-1/whole-git.log",
+    "seed": 0,
+    "target": "scripts/peer-sites.py"
+   },
+   "threaded": {
+    "bytes": 1730197,
+    "copy": "/tmp/strace-measure-wo1t1cth/sm-8k30dvmi",
+    "file": "raw-1/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/explainer-serve.py"
+   }
+  },
+  "2": {
+   "git": {
+    "bytes": 866598,
+    "copy": "/tmp/strace-measure-ipfx99yk/sm-2xfqq3p5",
+    "file": "raw-2/whole-git.log",
+    "seed": 0,
+    "target": "scripts/check-plan-progress.py"
+   },
+   "threaded": {
+    "bytes": 319256,
+    "copy": "/tmp/strace-measure-ipfx99yk/sm-0hks4z2z",
+    "file": "raw-2/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/ci-durations.py"
+   }
+  },
+  "3": {
+   "git": {
+    "bytes": 1317167,
+    "copy": "/tmp/strace-measure-im2e2xik/sm-rm7668fr",
+    "file": "raw-3/whole-git.log",
+    "seed": 0,
+    "target": "scripts/check-ci-watched.py"
+   },
+   "threaded": {
+    "bytes": 3135776,
+    "copy": "/tmp/strace-measure-im2e2xik/sm-2uvbqj3k",
+    "file": "raw-3/whole-threaded.log",
+    "seed": 0,
+    "target": "scripts/check-selftest-counts.py"
+   }
+  },
+  "4": {
+   "git": {
+    "bytes": 854408,
+    "copy": "/tmp/strace-measure-_ezcbgxj/sm-72itoz2_",
+    "file": "raw-4/whole-git.log",
+    "seed": 0,
+    "target": "scripts/gen-backlog-page.py"
+   },
+   "threaded": {
+    "bytes": 2696768,
+    "copy": "/tmp/strace-measure-_ezcbgxj/sm-nn_2ffrv",
+    "file": "raw-4/whole-threaded.log",
+    "seed": 0,
+    "target": "scripts/bounded_read.py"
+   }
+  },
+  "5": {
+   "git": {
+    "bytes": 478813,
+    "copy": "/tmp/strace-measure-t4po6h4g/sm-m916fw_g",
+    "file": "raw-5/whole-git.log",
+    "seed": 0,
+    "target": "scripts/brief-compose.py"
+   },
+   "threaded": {
+    "bytes": 684133,
+    "copy": "/tmp/strace-measure-t4po6h4g/sm-vccz5ucu",
+    "file": "raw-5/whole-threaded.log",
+    "seed": 0,
+    "target": "scripts/gen-dashboard.py"
+   }
+  },
+  "6": {
+   "git": {
+    "bytes": 1504534,
+    "copy": "/tmp/strace-measure-8xo_ltl9/sm-her11n29",
+    "file": "raw-6/whole-git.log",
+    "seed": 1109,
+    "target": "scripts/gen-features-page.py"
+   },
+   "threaded": {
+    "bytes": 27069597,
+    "copy": "/tmp/strace-measure-8xo_ltl9/sm-6nz16jqc",
+    "file": "raw-6/whole-threaded.log",
+    "seed": 1109,
+    "target": "scripts/check-usage-pace.py"
+   }
+  }
+ }
+}

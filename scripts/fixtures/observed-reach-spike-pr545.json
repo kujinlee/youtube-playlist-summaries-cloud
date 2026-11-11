@@ -1,0 +1,765 @@
+{
+ "diff": [
+  [
+   "M",
+   "docs/backlog.md"
+  ],
+  [
+   "M",
+   "docs/dashboard-entries.md"
+  ]
+ ],
+ "source": "observed-reads spike, audit hook, d206e066",
+ "targets": {
+  "scripts/backfill-work-lines.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/batch-ci.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/begin-plan.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md"
+   ],
+   "traced": false
+  },
+  "scripts/bounded_read.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/brief-compose.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-agent-large-read.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-agent-long-call.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-anchors.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-anon-exposure.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-arch-findings.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-backlog-closure.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-banner-armed.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-canonical-source.py": {
+   "listed": [
+    "docs"
+   ],
+   "reads": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-catalog-coverage.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-ci-watched.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-closing-table.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-compaction-boundary.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-dashboard-entry.py": {
+   "listed": [],
+   "reads": [
+    "docs/dashboard-entries.md"
+   ],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-decision-scheme.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-diff-coverage.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-doc-citations.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-docs.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-explainer-delivery.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-features.py": {
+   "listed": [],
+   "reads": [
+    "docs/backlog.md"
+   ],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-fixture-git-isolation.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-fixture-variation.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-function-revokes.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-gate-falsifiability.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-goal-status.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-group-claims.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-guard-coverage.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-handoff-path.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-hook-commands.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-live-schema.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-main-drivable.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-memory-index-budget.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-memory-link.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-merge-ready.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-page-links.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-paid-caller-arrival.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-plan-code.py": {
+   "listed": [
+    "docs"
+   ],
+   "reads": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-plan-file-tags.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-plan-leak.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-plan-progress.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-plan-task-order.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-producer-enumeration.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-python-pin.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-ratchet-contract.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/check-rc-contract.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-reference-namespace.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-review-decision.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-review-recorded.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-review-rounds.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-roadmap-consistency.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-run-hook.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-selection-card.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-selftest-counts.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-sentinel-meanings.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-stalled-work.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-storage-grant-pin.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-storage-independence.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-surface-recall.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-test-counts.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-theme-token-coverage.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/check-transcript-references.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/check-usage-pace.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/check-vocabulary-collisions.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/codex-frontier-model.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/codex-review.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/compaction-state.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/coverage_verdict.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/explainer-serve.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/fixture_git.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/gates-for-pr.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/gen-backlog-page.py": {
+   "listed": [],
+   "reads": [
+    "docs/backlog.md"
+   ],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/gen-dashboard.py": {
+   "listed": [],
+   "reads": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/gen-features-page.py": {
+   "listed": [],
+   "reads": [
+    "docs/backlog.md"
+   ],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/gen-goals-page.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": true
+  },
+  "scripts/gen-work-lines.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/goal-tree.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/observer_log.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/page_chrome.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/page_markup.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md"
+   ],
+   "traced": true
+  },
+  "scripts/peer-sites.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/push-command.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  },
+  "scripts/recall-llm.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": true
+  },
+  "scripts/record-review-verdict.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/regen-pages.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/session-state.py": {
+   "listed": [],
+   "reads": [],
+   "today": [
+    "docs/backlog.md",
+    "docs/dashboard-entries.md"
+   ],
+   "traced": false
+  },
+  "scripts/sweep-red-alert.py": {
+   "listed": [],
+   "reads": [],
+   "today": [],
+   "traced": false
+  }
+ },
+ "today_full": null
+}
