@@ -299,6 +299,11 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         (1, "the sweep shard's timeout, longer on the two-seed scheduled sweep — gates no step"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
+    # backlog #586 slice 1: the strace measurement runs on a pull request only when its own workflow or driver
+    # changes. It is not a required check, and nothing it does gates a merge.
+    ("strace-measure.yml", "pull_request:"):
+        (1, "the workflow TRIGGER of the strace measurement (backlog #586) — no step or job in it is "
+            "pull-request-only, and it is not a merge gate"),
     ("schema-gates.yml", "pull_request:"):
         (1, "the workflow TRIGGER — schema-gates has no pull-request-only step or job"),
     # ⟳ Codex r3, High: the detector now keys on `github.event_name` as well, because PR-only-ness

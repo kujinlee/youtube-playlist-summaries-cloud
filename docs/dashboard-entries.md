@@ -20220,6 +20220,20 @@ is unchanged. Today at 72% it reads: band 78–80% (this week's override), zone 
 `refuse_at`, `cap_at` and `RESERVE_PER_DAY` untouched. The last day is from `rise_start` (#521's own boundary), so
 for a Fri 02:00 reset Thursday is already "use it all". 403 self-test cases; mutation pin 175 → 188.
 
+## 2026-11-10
+The first build step of the faster mutation sweep (backlog #586) is measured: `strace` works on GitHub's runners.
+Every one of the 92 guard suites ran twice under two fixed seeds, once plain and once traced, on six machines in
+parallel. The trace step succeeded on all six, so the plan goes ahead with `strace` as the recorder; the fallback
+recorder is not needed. Tracing makes a suite up to about 20 times slower, and the whole measurement took about 47
+minutes of machine time. The pull request is a draft and waits for its review. Two things it found for the next
+slice: one suite (`regen-pages`) fails a signal-timing case only when traced, and the recorder must follow each
+process's working directory, because git deletes files by relative path.
+<!--tech-->
+PR #557 (draft), run 42893595762: strace 6.19; `-yy` decorates `AT_FDCWD`; 118 syscall names, 7 ioctl tokens;
+`io_uring_setup` in 4 targets, ` (deleted)` labels in 2, no unshare/setns/mount; `TRACE_FACTOR` 20 (batch-ci 19.94);
+case counts identical plain vs traced; job wall sum 2,796 s. Doc + JSON: `docs/reviews/measurements/2026-11-10-strace-on-runner.*`;
+fixtures `scripts/fixtures/strace-lines/`. Also: `check-merge-ready.py` accounts for the new workflow's
+`pull_request:` trigger, and the driver writes the target's flag as two literals for `check-fixture-git-isolation`.
 ## 2026-11-11 [needs-you] [resolved: 2026-10-15/5] [resolved: 2026-10-16/1] [resolved: 2026-10-16/3] [resolved: 2026-10-16/4] [resolved: 2026-10-17/2]
 You approved the marketplace-inventory spec at 05:53 this morning, so its implementation plan is next. Your
 11-10 evening answers are now in the spec. The separate marketplace repo is what keeps this repository
