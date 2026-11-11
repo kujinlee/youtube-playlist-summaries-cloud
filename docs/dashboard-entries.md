@@ -19797,11 +19797,19 @@ the same way the backlog and dashboard pages get theirs. If no tray can be lifte
 still written, and `--page` prints a ⚠ line saying the Ask button is missing and why. One cost: a Refresh of this
 page now takes about 28 s instead of 7-8 s, because lifting the tray into the 8 MB page takes about 18 s. That is
 still inside Refresh's 60 s limit. PR #557 (slice 1 of backlog #586) now hangs under GOAL dev-speed-first instead
-of "no goal".
+of "no goal". Answers to questions asked here do not clutter the tree (owner, 11-11 06:18): each answered goal or
+thread shows only a small "💬 1 answer" marker, and the Q&A opens only when you click it. An answer whose goal or
+thread has left the tree is kept in one closed "Older questions" section at the bottom, never dropped.
 <!--tech-->
 `scripts/goal-tree.py` `write_page` builds a fragment and runs `scripts/brief-compose.py --content … --slug
 goal-tree --out <page>` with a 40 s bound. It returns "" or the reason, and `page_report` prints every line of that
 reason. On failure it writes the old tray-less page. Whether the tray is there is checked on the written file
 (`brief-compose.has_tray`), not taken from the exit code. The palettes declare `--good/--defect/--structure`,
 because brief-compose refuses a theme toggle whose light palette misses a token the shim supplies. Self-test 443
-cases. Two new mutations: the lift is removed, and the reason is cut to its headline.
+cases at the tray commit. Answers live in `docs/goal-tree-answers.json` (key `goal:<slug>` or a thread key
+`backlog-N`/`pr-N`), read on every `--page`. A goal's answers sit under its heading (outside the fold of a folded
+goal). A thread's answers sit beside its key's first, id-bearing occurrence on the live tree; timeline trees carry
+none. Keys not on the live tree go to `older_qa_html` at the bottom. Every `<details class="qa">` is emitted
+without `open`. An unreadable file, or an entry missing key/q/a, is refused by name, on the page and on stderr.
+Self-test 455 cases. Six new mutations in all (manifest pin 336 -> 342): the two above, plus an answer rendered
+open, an orphaned answer dropped, a thread's answers never attached, and a bad entry skipped.

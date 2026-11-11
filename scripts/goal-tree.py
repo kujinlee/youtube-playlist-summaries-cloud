@@ -108,6 +108,9 @@ import page_markup  # noqa: E402
 
 ROOT = SCRIPTS.parent
 THREADS_REL = "docs/goal-threads.md"
+# Answers to questions asked FROM this page (owner 2026-11-11 06:18: Q&A must not clutter the tree). A SEPARATE
+# source, so an answer survives every regeneration, keyed to a goal or thread so it survives the tree changing.
+ANSWERS_REL = "docs/goal-tree-answers.json"
 # ⛔ GIT-IGNORED, IN THE MAIN CHECKOUT (the coordinator's decision, 2026-10-28): a log appended on every
 # merge must not churn a tracked file, and a worktree run must append to the ONE log the page reads.
 LOG_REL = ".claude/goal-tree-log.jsonl"
@@ -2031,7 +2034,7 @@ def _id_attr(t: str, ids: set | None) -> str:
     return f' id="{page_markup.thread_id(key)}"'
 
 
-def _html_line(line: str, repo: str | None, ids: set | None = None) -> str:
+def _html_line(line: str, repo: str | None, ids: set | None = None, qa: dict | None = None) -> str:
     out = []
     for t, h in segments(line, repo):
         a = _id_attr(t, ids)
@@ -2041,52 +2044,119 @@ def _html_line(line: str, repo: str | None, ids: set | None = None) -> str:
             out.append(f'<span{a}>{html.escape(t)}</span>')
         else:
             out.append(html.escape(t))
+        if a and qa:   # the key's FIRST occurrence on the live tree carries its answers, once
+            out.append(qa_html(qa.get(_thread_key(t), [])))
     return "".join(out)
 
 
-def _goal_html(b: tuple, repo, seen) -> str:
+def _thread_key(t: str) -> str:
+    m = page_markup.KEY_REF.fullmatch(t)
+    return f"{m.group(1).lower()}-{m.group(2)}" if m else ""
+
+
+def load_answers(path: pathlib.Path) -> tuple[list[dict], str]:
+    """The answers file as a list of {key, asked, q, a}, and "" — or ([], <why>) when it cannot be read. A
+    missing file is no answers yet, not an error. An entry missing a field is REFUSED by name, never skipped."""
+    if not path.is_file():
+        return [], ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rows = data["answers"]
+    except (ValueError, KeyError, TypeError) as e:
+        return [], f"{path.name} is unreadable ({type(e).__name__}: {e})"
+    bad = [i for i, r in enumerate(rows)
+           if not isinstance(r, dict) or not all(isinstance(r.get(f), str) and r.get(f) for f in ("key", "q", "a"))]
+    if bad:
+        return [], f"{path.name}: entr{'y' if len(bad) == 1 else 'ies'} {bad} lack key, q or a"
+    return rows, ""
+
+
+def answers_by_key(rows: list[dict]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["key"].strip(), []).append(r)
+    return out
+
+
+def _qa_item(r: dict) -> str:
+    when = f'<time>{html.escape(r["asked"])}</time> ' if r.get("asked") else ""
+    paras = "".join(f"<p>{html.escape(p.strip())}</p>" for p in r["a"].split("\n\n") if p.strip())
+    return (f'<div class="qa-item"><p class="qa-q">{when}<b>Q.</b> {html.escape(r["q"])}</p>'
+            f'<div class="qa-a">{paras}</div></div>')
+
+
+def qa_html(rows: list[dict], label: str = "") -> str:
+    """A small `💬 N answer(s)` marker whose Q&A sits in a CLOSED `<details>` — never `open` (owner 2026-11-11
+    06:18: interlacing Q&A with the tree is the clutter; collapse is the remedy). "" when there are none."""
+    if not rows:
+        return ""
+    n = len(rows)
+    head = label or f'💬 {n} answer{"" if n == 1 else "s"}'
+    return (f'<details class="qa"><summary>{head}</summary><div class="qa-body">'
+            + "".join(_qa_item(r) for r in rows) + "</div></details>")
+
+
+def older_qa_html(qa: dict, seen: set) -> str:
+    """Answers whose goal or thread is NOT on the live tree: one collapsed section at the bottom, never dropped."""
+    gone = [(k, r) for k, rows in qa.items() if k not in seen for r in rows]
+    if not gone:
+        return ""
+    items = "".join(f'<p class="qa-key">{html.escape(k)}</p>{_qa_item(r)}' for k, r in gone)
+    return (f'<details class="qa qa-older"><summary>💬 Older questions ({len(gone)}) — their goal or thread is '
+            f'no longer on the tree</summary><div class="qa-body">{items}</div></details>')
+
+
+def _goal_html(b: tuple, repo, seen, qa=None) -> str:
     """One goal as its own bordered `<section>`, headed `GOAL n · slug` in the heading colour (owner, 2026-11-04
     01:14). A goal with nothing current keeps that heading as the summary of a CLOSED `<details>`."""
     _, n, slug, first, counts, tags, inner = b
     anchor = f' id="goal-{html.escape(slug, quote=True)}"' if seen is not None else ""   # by SLUG: a number can move
+    asked = ""
+    if seen is not None and f"goal:{slug}" not in seen:
+        seen.add(f"goal:{slug}")
+        asked = qa_html((qa or {}).get(f"goal:{slug}", []))
     head = (f'<h3 class="goal-h"><span class="goal-n">GOAL {n} ·</span> '
             f'<span class="goal-slug">{html.escape(slug)}</span></h3>'
             + (f'<span class="goal-agenda">{html.escape(tag_text(tags)[3:])}</span>' if tags else ""))
     quote = (f'<p class="goal-q"><time>{html.escape(first["when"])}</time> '
              f'{_html_line(chr(34) + first["quote"] + chr(34), repo)}</p>')
-    body = _blocks_html(inner, repo, seen)
-    if counts is not None:
+    body = _blocks_html(inner, repo, seen, qa)
+    if counts is not None:   # the marker sits OUTSIDE the fold, so a folded goal still shows it has answers
         return (f'<section class="goal"{anchor}><details class="fold goal"><summary>{head}'
-                f'<span class="goal-counts"> — {html.escape(counts)}</span></summary>{quote}{body}</details></section>')
-    return f'<section class="goal"{anchor}>{head}{quote}{body}</section>'
+                f'<span class="goal-counts"> — {html.escape(counts)}</span></summary>{quote}{body}</details>'
+                f'{asked}</section>')
+    return f'<section class="goal"{anchor}>{head}{asked}{quote}{body}</section>'
 
 
-def _blocks_html(blocks: list, repo, seen) -> str:
+def _blocks_html(blocks: list, repo, seen, qa=None) -> str:
     out = []
     for b in blocks:
         if b[0] == "pre":
             if any(ln for ln in b[1]):      # a blank separator line is the section border's job on the page
-                out.append('<pre class="tree">' + "\n".join(_html_line(ln, repo, seen) for ln in b[1]) + "</pre>")
+                out.append('<pre class="tree">' + "\n".join(_html_line(ln, repo, seen, qa) for ln in b[1])
+                           + "</pre>")
         elif b[0] == "goal":
-            out.append(_goal_html(b, repo, seen))
+            out.append(_goal_html(b, repo, seen, qa))
         else:
             out.append(f'<details class="fold {b[1]}"><summary>{_html_line(b[2], repo)}</summary>'
-                       + _blocks_html(b[4], repo, seen) + "</details>")
+                       + _blocks_html(b[4], repo, seen, qa) + "</details>")
     return "".join(out)
 
 
-def render_tree_html(snap: dict, ids: bool = False, at=None) -> str:
+def render_tree_html(snap: dict, ids: bool = False, at=None, qa: dict | None = None,
+                     seen: set | None = None) -> str:
     """The tree as one `<div class="tree">` of `<pre>` runs and collapsed folds (`tree_blocks`). `ids=True` for
     the LIVE tree only: the timeline's past trees sit on the same page, so their ids would collide with it
     (backlog #470)."""
-    seen = set() if ids else None
-    return '<div class="tree">' + _blocks_html(tree_blocks(snap, at), snap.get("repo"), seen) + "</div>"
+    seen = (set() if seen is None else seen) if ids else None
+    return '<div class="tree">' + _blocks_html(tree_blocks(snap, at), snap.get("repo"), seen, qa) + "</div>"
 
 
 TIMELINE_SHOWN = 6   # newest timeline entries shown open; the rest fold (owner 2026-11-05 17:28)
 
 
-def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
+def render_page(log: list[dict], built: str, live: dict | None = None, answers: list[dict] = (),
+                answers_error: str = "") -> str:
     """PURE. The page body: the newest snapshot as the current tree, then the timeline newest first.
 
     `live` is this run's derivation when it could not be logged (its `cannot` is non-empty), so the
@@ -2121,7 +2191,11 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
     # backlog #499: the AGENDA under NEEDS YOU — from the snapshot the tree below is, so step and leaf agree
     parts.insert(7, agenda_html(newest))
     # backlog #497: the current tree is bucketed at the BUILD time, as --print is at its run, so the two agree.
-    parts += ['<h2>Now</h2>', render_tree_html(newest, ids=True, at=built), '<h2>Timeline</h2>',
+    qa, seen = answers_by_key(list(answers)), set()
+    parts += ['<h2>Now</h2>', render_tree_html(newest, ids=True, at=built, qa=qa, seen=seen)]
+    if answers_error:
+        parts.append(f'<p class="warn">⚠ Answers to questions asked here are NOT shown: {html.escape(answers_error)}</p>')
+    parts += ['<h2>Timeline</h2>',
               '<p class="lede">Newest first. A snapshot is logged only when the tree changed. Before this '
               f'page, the plan history was drawn by the work-lines page, now retired and FROZEN: '
               f'<a href="{WORK_LINES_ARCHIVE}">the work-lines archive</a> (backlog #389).</p>']
@@ -2138,7 +2212,7 @@ def render_page(log: list[dict], built: str, live: dict | None = None) -> str:
                      + '</ul>' + render_tree_html(snap) + '</details>')
     if len(log) > TIMELINE_SHOWN:
         parts.append('</details>')
-    parts.append('</main>')
+    parts += [older_qa_html(qa, seen), '</main>']   # at the BOTTOM: answers whose key left the tree
     return "\n".join(parts)
 
 
@@ -2173,6 +2247,16 @@ div.tree>pre.tree,section.goal{background:var(--card);border:1px solid var(--rul
 h3.goal-h{margin:.1rem 0 .3rem;color:var(--accent);font-family:var(--ui);font-weight:600;font-size:1rem;
          display:inline-block}
 h3.goal-h .goal-slug{font-size:1.4rem;font-weight:700}
+details.qa{display:inline-block;vertical-align:top;margin:0 0 0 .6ch;font-family:var(--ui);white-space:normal}
+details.qa>summary{cursor:pointer;font-size:.72rem;color:var(--ink-faint);list-style:none}
+details.qa>summary::-webkit-details-marker{display:none}
+details.qa[open]{display:block;margin:.3rem 0 .5rem}
+details.qa .qa-body{background:var(--bg);border:1px solid var(--rule);border-left:3px solid var(--accent);
+         border-radius:.3rem;padding:.3rem .8rem;margin-top:.25rem;max-width:72ch;font-size:.85rem;line-height:1.45}
+details.qa .qa-q{margin:.3rem 0;color:var(--ink)} details.qa .qa-a p{margin:.25rem 0;color:var(--ink-soft)}
+details.qa .qa-q time{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
+details.qa-older{display:block;margin:1.6rem 0 0} details.qa-older>summary{font-size:.85rem}
+details.qa .qa-key{margin:.6rem 0 0;font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
 .goal-q{margin:0 0 .5rem;color:var(--ink-soft);font-size:.85rem;max-width:none}
 .goal-q time{font-family:var(--mono);font-size:.75rem;color:var(--ink-soft)}
 details.fold.goal>summary{white-space:normal;font-family:var(--ui);font-size:.9rem}
@@ -2228,7 +2312,7 @@ COMPOSE_TIMEOUT = 40
 
 
 def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None = None, *,
-               tray_source: str | None = None) -> str:
+               tray_source: str | None = None, answers_path: pathlib.Path | None = None) -> str:
     """Write the page, with the Ask tray LIFTED by `brief-compose.py` — never retyped (owner 2026-11-11:
     "goal-tree page do not have interactive 'ask' feature"). The same mechanism the backlog and dashboard
     pages use; `brief-compose.py`'s docstring records why the tray is never hand-copied.
@@ -2236,9 +2320,14 @@ def write_page(out: pathlib.Path, log: list[dict], built: str, live: dict | None
     Returns "" when the tray was lifted, else the reason it was not. A missing tray is NOT fatal — a fresh
     clone has no explainer to lift one from, and a tree without the Ask button is still worth having — but
     it is never silent: the caller prints the reason. `tray_source` names the page to lift from (the
-    self-test passes a tracked one); None lets `brief-compose` pick the newest page that has a tray."""
+    self-test passes a tracked one); None lets `brief-compose` pick the newest page that has a tray.
+    `answers_path` (default `ANSWERS_REL`) holds the answers to questions asked here; an unreadable one is
+    said on the page AND on stderr, and the page is still written."""
+    answers, answers_error = load_answers(answers_path or ROOT / ANSWERS_REL)
+    if answers_error:
+        print(f"⚠  goal tree: answers NOT shown — {answers_error}", file=sys.stderr)
     # Every key left as TEXT (NEEDS YOU's prose, the lede) becomes a link too (backlog #470).
-    body = page_markup.link_html(render_page(log, built, live), log[-1].get("repo"))
+    body = page_markup.link_html(render_page(log, built, live, answers, answers_error), log[-1].get("repo"))
     fragment = (f"<title>{PAGE_TITLE}</title>"
                 f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
                 f"<script>{page_chrome.chrome_script()}</script>")
@@ -3122,6 +3211,54 @@ def _self_test_cases(*, outside: dict) -> int:
          ("h3.goal-h{" in CSS and "color:var(--accent)" in CSS.split("h3.goal-h{", 1)[1].split("}", 1)[0],
           CSS.count("--accent:#8a5a2b"), CSS.count("--accent:#cb9a68")), (True, 2, 2))
     _np = render_page([_bsnap], "2026-11-05 19:09")
+
+    # ── ANSWERS to questions asked from this page (owner 2026-11-11 06:18): a marker, the Q&A COLLAPSED ──────────
+    _qa = [{"key": "goal:mix", "asked": "11-11 06:20", "q": "why <this>?", "a": "first para\n\nsecond para"},
+           {"key": "pr-21", "asked": "11-11 06:21", "q": "is 21 open?", "a": "yes"},
+           {"key": "pr-21", "asked": "11-11 06:22", "q": "still?", "a": "still"},
+           {"key": "goal:gone-away", "asked": "10-01 09:00", "q": "orphan q", "a": "orphan a"},
+           {"key": "pr-999", "asked": "10-02 09:00", "q": "orphan thread q", "a": "orphan thread a"}]
+    _ap = render_page([_bsnap], "2026-11-05 19:09", answers=_qa)
+    _det = re.findall(r"<details class=\"qa[^\"]*\"[^>]*>", _ap)
+    case("⛔ answers: EVERY Q&A renders COLLAPSED — a <details> with no `open` attribute (the clutter remedy)",
+         (len(_det), [d for d in _det if "open" in d]), (3, []))
+    case("⛔ answers: a goal's answer is a small marker right under ITS heading, inside its own section",
+         re.search(r'<section class="goal" id="goal-mix"><h3 class="goal-h">.*?</h3><details class="qa">'
+                   r'<summary>💬 1 answer</summary>', _ap) is not None, True)
+    case("⛔ answers: a thread's answers sit beside its key's FIRST occurrence on the live tree, counted",
+         re.search(r'id="t-pr-21"[^>]*>PR #21</a><details class="qa"><summary>💬 2 answers</summary>', _ap)
+         is not None, True)
+    _tail = _ap[_ap.index("<h2>Timeline</h2>"):]
+    case("⛔ answers: a key no longer on the tree lands in ONE collapsed 'Older questions' section at the BOTTOM",
+         (_ap.count("qa-older"), "qa-older" in _tail, _tail.rstrip().endswith("</details>\n</main>"),
+          "orphan q" in _tail and "orphan thread q" in _tail, "goal:gone-away" in _tail),
+         (1, True, True, True, True))
+    case("answers: a key that IS on the tree is not repeated under Older questions",
+         _tail.split("qa-older", 1)[1].count("is 21 open?"), 0)
+    case("answers: the Q and A are escaped, and a blank line in an answer is a new paragraph",
+         ("why &lt;this&gt;?" in _ap, "<p>first para</p><p>second para</p>" in _ap), (True, True))
+    case("answers: only the LIVE tree carries them — a timeline tree does not repeat the marker",
+         _ap.count("💬 2 answers"), 1)
+    case("answers: no answers renders no marker and no Older section", ("💬" in _np, "qa-older" in _np), (False, False))
+    case("answers: a folded goal's marker sits OUTSIDE its fold, so it is visible while the goal is closed",
+         re.search(r'<section class="goal" id="goal-done"><details class="fold goal">.*?</details>'
+                   r'<details class="qa"><summary>💬 1 answer</summary>',
+                   render_page([_bsnap], "2026-11-05 19:09", answers=[dict(_qa[0], key="goal:done")])) is not None,
+         True)
+    with tempfile.TemporaryDirectory() as _atd:
+        _ad = pathlib.Path(_atd)
+        (_ad / "bad.json").write_text("{not json")
+        (_ad / "hole.json").write_text(json.dumps({"answers": [_qa[1], {"key": "pr-1", "q": "no answer"}]}))
+        (_ad / "ok.json").write_text(json.dumps({"answers": _qa[:2]}))
+        _la = [load_answers(_ad / n) for n in ("missing.json", "bad.json", "hole.json", "ok.json")]
+    case("⛔ answers file: missing = none yet; unreadable or an entry missing a field is REFUSED by name, never skipped",
+         [(len(r), bool(e)) for r, e in _la] + [_la[2][1]],
+         [(0, False), (0, True), (0, True), (2, False), "hole.json: entry [1] lack key, q or a"])
+    case("⛔ answers file unreadable: the page SAYS so, beside the tree",
+         '<p class="warn">⚠ Answers to questions asked here are NOT shown: bad.json is unreadable'
+         in render_page([_bsnap], "2026-11-05 19:09", answers_error=_la[1][1]), True)
+    case("answers file: the tracked one parses (an empty list until a question is answered)",
+         load_answers(ROOT / ANSWERS_REL)[1], "")
     case("backlog #497: the page's current tree is bucketed at its BUILD time, like --print at its run",
          ('<details class="fold older"><summary>├─ older (2)' in _np,
           '<details class="fold older"><summary>├─ older (3)' in render_page([_bsnap], "2026-11-08 19:09")),

@@ -4409,5 +4409,57 @@
     "expect": [
       "⛔ --page says the tray is missing, with EVERY line of the reason"
     ]
+  },
+  {
+    "name": "an answer renders OPEN, interlaced with the tree",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    return (f'<details class=\"qa\"><summary>{head}</summary><div class=\"qa-body\">'",
+        "    return (f'<details class=\"qa\" open><summary>{head}</summary><div class=\"qa-body\">'"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: EVERY Q&A renders COLLAPSED — a <details> with no `open` attribute (the clutter remedy)"
+    ]
+  },
+  {
+    "name": "an answer whose key left the tree is dropped silently",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if not gone:\n        return \"\"\n",
+        "    if True:\n        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: a key no longer on the tree lands in ONE collapsed 'Older questions' section at the BOTTOM"
+    ]
+  },
+  {
+    "name": "a thread's answers are never attached to its key",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "        if a and qa:   # the key's FIRST",
+        "        if False:   # the key's FIRST"
+      ]
+    ],
+    "expect": [
+      "⛔ answers: a thread's answers sit beside its key's FIRST occurrence on the live tree, counted"
+    ]
+  },
+  {
+    "name": "an answers entry missing a field is skipped, not refused",
+    "file": "scripts/goal-tree.py",
+    "edits": [
+      [
+        "    if bad:\n        return [], f\"{path.name}: entr",
+        "    if False:\n        return [], f\"{path.name}: entr"
+      ]
+    ],
+    "expect": [
+      "⛔ answers file: missing = none yet; unreadable or an entry missing a field is REFUSED by name, never skipped"
+    ]
   }
 ]

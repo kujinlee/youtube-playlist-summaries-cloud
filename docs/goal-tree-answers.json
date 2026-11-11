@@ -1,0 +1,4 @@
+{
+  "_doc": "Answers to questions asked from the goal-tree page (~/explainers/goal-tree.html). Read by scripts/goal-tree.py on every --page; never hand-edit the generated HTML. key = 'goal:<slug>' for a goal, or a thread key 'backlog-<N>' / 'pr-<N>'. Each entry: key, asked ('mm-dd hh:mm'), q, a (blank line = new paragraph). An answer whose key is no longer on the tree is shown under 'Older questions' at the bottom, never dropped.",
+  "answers": []
+}
