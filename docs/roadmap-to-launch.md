@@ -2388,10 +2388,10 @@ retraction is kept beside the reasoning it replaces.
 - [x] ⭐ **THE REVIEW'S DECIDING FINDING, NOW ACTED ON: this exact review ran two days earlier under
       the same trigger, and its redesign had landed.** *One canonical source per mechanism*
       (2026-10-14) collapsed two mechanisms to one file each **with every live site citing rather
-      than restating**, and left *"a mechanism missing from `CANONS` is unprotected"* as #282 / #288.
+      than restating**, and left *"a mechanism missing from `CANONS` is unprotected"* as backlog #282 / backlog #288.
       This document pair was that instance, and `check-claim-propagation.py` implemented the
       **opposite** remedy. **ADR-0015 reverses that**: the spec is now a registered canon, the
-      walkthrough a declared citing site, and the guard's copy-policing half is deleted. #298 closed.
+      walkthrough a declared citing site, and the guard's copy-policing half is deleted. Backlog #298 closed.
 - [x] **The owner chose candidate 1 by selection card (2026-10-17)**, answering the fork candidates
       1 and 3 opened about how much a reader-facing page may restate. ⭐ **The answer drawn, and it is
       narrower than the question:** the line is by **decision SYMBOL**, not by semantic category — a
@@ -2413,7 +2413,7 @@ retraction is kept beside the reasoning it replaces.
       was partly misreported as filed: ① was spec-INTERNAL only; the page already carried the
       corrected *D9 does not grade C4*. ③ was worse than filed — the page said *Both* and *either*
       over a list of three.
-- [x] **`scripts/check-canonical-source.py` widened to `*.html`** (part of #282). Measured before:
+- [x] **`scripts/check-canonical-source.py` widened to `*.html`** (part of backlog #282). Measured before:
       1,937 files in the population, **0** HTML, so the canon's own citing sites were invisible to
       it. Now carries a case, a CONTROL and a mutation that redden when `SEARCHED` is reverted.
 - [x] **`scripts/check-claim-propagation.py` reduced to its derived-figures half** — 1,459 → 880
@@ -2438,9 +2438,9 @@ retraction is kept beside the reasoning it replaces.
       to **wait and review the settled tree once**, rather than pay for a round over code candidate 1
       was about to delete — which it did: the copy-policing half the unreviewed commits changed is
       now gone. **WORK:** one round, both halves, over the tree as it now stands.
-- [ ] **Merging is the human gate.** #298 is closed, so the earlier reason not to merge is spent;
+- [ ] **Merging is the human gate.** Backlog #298 is closed, so the earlier reason not to merge is spent;
       the remaining reasons are the deferred review round above and the owner's C5 item.
-- [ ] **Residue that candidate 1 could not dissolve, and the split is a fact about it** (#296): M5
+- [ ] **Residue that candidate 1 could not dissolve, and the split is a fact about it** (backlog #296): M5
       dissolved with the deleted matcher, M4 partly; **M1, M6, M7 are defects in the SPEC'S CONTENT**
       and M3 is candidate 4's territory. Candidate 1 was a mechanism fix; content is row #295's pass.
 ## Redesign-or-accretion mechanism — backlog #320–326 — anchor `review-decides-itself` — 🔴 **NOT CONVERGED after THREE rounds; Phase 6 review done 2026-10-20; NOTHING MERGED**

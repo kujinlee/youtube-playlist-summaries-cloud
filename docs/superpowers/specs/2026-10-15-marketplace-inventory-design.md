@@ -4,8 +4,8 @@
 > **Anchor:** `harness-ships-elsewhere` — **ADR:** none
 > **Goal:** The harness this project built can be installed and used by someone who has never seen this repository.
 
-**Status: SPEC, walked through by the owner 2026-11-09; four answers folded in as §2b, awaiting the owner's
-walkthrough of the changed sections. Nothing here is implemented.** This document is the Phase 1 artifact
+**Status: SPEC, APPROVED by the owner 2026-11-11 05:53 (walkthrough page); the 11-09 answers are §2b and the
+approval with the last answers is §2c. Nothing here is implemented.** This document is the Phase 1 artifact
 for a milestone whose deliverable is a *decision*, not a published plugin.
 
 ⭐ **It is also the claiming document `docs/backlog.md` row 290 asked for.** That row recorded that
@@ -85,7 +85,7 @@ find out the real cost."*
 - **The D1 checkpoint.** It runs after the install experiment (§6) and before the inventory is final. If,
   for most components, the public bar costs far more than the softer target, the inventory stops and
   goes to the owner as a selection card: keep D1, or drop to "my next project". It never continues on
-  its own past that point.
+  its own past that point. ⟳ 11-11: "far more" and "most" are numbers now — §2c.
 - §9 already sends D4 back to the owner when the experiment cannot run. Before this change, nothing did
   the same for D1, and an expensive public bar would simply have been paid.
 
@@ -113,8 +113,8 @@ publish more later."*
 | Phase | Efforts | What this milestone does for them |
 |---|---|---|
 | **1** | (3) comprehensibility | the full treatment: scan, install experiment, verdict, cost record, route |
-| **1, if feasible** | (1) recall | scan, verdict, cost record, route. "Feasible" is a question the route answers: can recall be useful to a stranger whose memory corpus starts empty, and is its own corpus clear of C5 (§7 item 11)? |
-| **later** | (2) development velocity | scan and a first estimate of its cheapest route only; its deep evaluation is a later phase and its own milestone |
+| **1, if feasible** | (1) recall | scan, verdict, cost record, route. "Feasible" is two conditions, both required (§2c) |
+| **later** | (2) development velocity | scan, cost record and cheapest route, evaluated for SHIPPING as a portable CI layer (§2c); no install experiment; its deep evaluation is a later phase and its own milestone |
 
 - D2 still holds: there is one evaluation across all three efforts. Only the depth now differs by phase.
 - **The milestone's definition of done moves.** It was "every component has a final verdict". It is now
@@ -132,6 +132,26 @@ verdicts than (3)"), answered by selection card A: accept it now, evaluate deepe
   cheapest route, not an experiment each.
 - Their verdicts rest on argument until their later phase, and the inventory says so: their evidence
   field reads `argued` (D5), never `measured`.
+
+## 2c. Owner approval and last answers, 2026-11-11
+
+The owner approved this spec on 2026-11-11 at 05:53 (*"Had I already approved this? If not, I approve"*), on
+the walkthrough page. Their 11-10 evening answers are folded here. Two questions on the 11-10 changes page
+got no answer; for those the coordinator's recommendation was **TAKEN**, and the owner may still overturn it.
+
+| Decision | What it now says | Source |
+|---|---|---|
+| **D1 checkpoint** (TAKEN) | Fires when D1's public bar costs **≥ 3×** the "my next project" estimate for **more than half** of the phase-1 components (D11), both read off the cost record. **FAILS IF** the cost record shows that ratio for more than half of the phase-1 components and the inventory continues without a selection card going to the owner. | 11-10 changes page Q1 |
+| **D11 "if feasible"** (TAKEN) | Recall is in phase 1 only if (a) it is useful to a stranger whose memory corpus starts **empty**, and (b) our own corpus passes the owner's **content review** (C5's corpus half). Either one failing moves (1) to "later". | 11-10 changes page Q2 |
+| **D7** | The licence scope follows from D3's separate marketplace repo: the MIT `LICENSE` lives there, and this repo stays unlicensed. That is what the owner wanted: carve the tooling out as a general plugin repo, the way `mattpocock/skills` is. | 18:41 |
+| **D5** | Confirmed (*"Agree"*). No change. | 18:45 |
+| **Effort (2)** | Evaluated for **SHIPPING** as a portable, engine-agnostic CI layer, not only as a harvest (D6 still applies to its practices). See §3, Effort (2). | 19:07, 19:11 |
+| **Install channel for CI pieces** | Installed as a **reusable GitHub workflow** (`uses: <owner>/<repo>/.github/workflows/…@<tag>`) hosted in the same marketplace repo (D3), not through `/plugin marketplace add`. One repo still holds everything. | 19:11 |
+
+**What the install channel changes in C1–C5:** no criterion changes its definition. For a CI piece, C2 and C3 are
+read against GitHub Actions plus an **arbitrary mutation engine**: depending on our engine is a C3 failure, in the
+same way depending on Supabase is a C2 failure. C4's "install" means adding one `uses:` line, and C4 stays
+`argued` (no experiment this milestone). C5 is unchanged: MIT, on the marketplace repo.
 
 ---
 
@@ -336,6 +356,17 @@ CI mutation sharding (39 references in `.github/workflows/ci.yml`), `scripts/che
 the three velocity documents (spec, plan, `docs/velocity-evidence-2026-09-24.md`). **Q0 is designed in
 form and not built** and is one of two items `check-roadmap-consistency` still reports open.
 
+⟳ **11-11 (§2c): evaluated for SHIPPING as a CI layer, in three pieces.** (a) Sharding a sweep across a GitHub
+Actions matrix. (b) Partial selection by closure: which targets a change can reach. Backlog #586's observed
+reach, which records the files each suite actually reads with `strace -f`, is the language-agnostic candidate
+for it. (c) A scheduled full sweep after merge that opens a `sweep-red` issue when it goes red. The mutation
+engine itself (`check-plan-code.py --mutate`, `scripts/mutations/`) is the expected `DON'T-SHIP`: a stranger
+brings their own engine. The scan must compare each piece with the incremental and shard modes established
+engines already have (Stryker, mutmut, PIT and cargo-mutants are examples). ⚠ Any statement about what those
+engines do is **unverified** until checked against the project's own documentation. This milestone gives
+effort (2) a scan, a cost record and a route, with no install experiment: the 11-09 lopsided-evidence answer
+stands (§2b), so its evidence grade is `argued`.
+
 ### Effort (1) — recall
 
 ⟳ **MEMBERSHIP CORRECTED 2026-10-16 by round 1 (CLAUDE B1, CODEX 1), and this was a Blocking
@@ -415,7 +446,8 @@ never put. So:
 - the **published harness package** is MIT, and the `LICENSE` lands on the marketplace repo whose
   creation §10 defers;
 - **this repository stays as it is** — public, unlicensed, all rights reserved — until someone
-  decides that separately;
+  decides that separately. ⟳ 11-11 (§2c): this follows from D3's separate marketplace repo, which is what
+  the owner wanted;
 - ⚠ **the copyright holder is not yet named.** No author is declared anywhere (`package.json` has no
   author field, the only `Copyright` line in the tree belongs to a vendored dependency, and the git
   identity is the placeholder `t <t@example.com>`). The GitHub account is `kujinlee`. **A legal name

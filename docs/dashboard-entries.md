@@ -20219,3 +20219,27 @@ is unchanged. Today at 72% it reads: band 78–80% (this week's override), zone 
 `band_cap`, `trend_at`, `band_note`, `BAND_OVERRIDES` keyed by the window's `resets_at` local date then today's.
 `refuse_at`, `cap_at` and `RESERVE_PER_DAY` untouched. The last day is from `rise_start` (#521's own boundary), so
 for a Fri 02:00 reset Thursday is already "use it all". 403 self-test cases; mutation pin 175 → 188.
+
+## 2026-11-11 [needs-you] [resolved: 2026-10-15/5] [resolved: 2026-10-16/1] [resolved: 2026-10-16/3] [resolved: 2026-10-16/4] [resolved: 2026-10-17/2]
+You approved the marketplace-inventory spec at 05:53 this morning, so its implementation plan is next. Your
+11-10 evening answers are now in the spec. The separate marketplace repo is what keeps this repository
+unlicensed while the tooling goes out under MIT, which is what you wanted. The CI sweep work (effort 2) is now
+judged as something to SHIP, a portable CI layer any GitHub project with a mutation sweep could add with one
+line, and not only as practices to copy. CI pieces install as a reusable GitHub workflow from the same
+marketplace repo. The older asks on this spec are cleared: the spec is approved, the licence is decided, and
+the review rounds are closed.
+
+**Waiting on you:** two answers were TAKEN on your behalf, because the 11-10 changes page asked them and no
+answer came. Either can still be overturned. (1) The cost checkpoint stops the inventory and asks you when the
+public bar costs at least 3 times the "my next project" estimate for more than half of the first-phase
+components. (2) Memory recall joins the first phase only if it is useful to a stranger starting with no
+memories, and our own memory files pass your content review. That content review is still yours, and recall
+cannot ship until it is done.
+<!--tech-->
+Branch `marketplace-inventory` (PR #376). Spec
+`docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md`: status line APPROVED; new §2c (D1
+checkpoint FAILS IF, D11 "if feasible", D7, D5 confirmed, effort (2) for shipping, the reusable-workflow install
+channel and its reading of C2-C4); §2b's checkpoint bullet and D11 table, §3 Effort (2) and §4 D7 point at it.
+Master merged in (171 commits, 10 conflicts); `check-claim-propagation` now runs its suite inside
+`fixture_git.isolated()`; `.githooks/` joins `STAGEABLE_PREFIXES`; pins moved to
+`scripts/mutations/expected_mutations.py`; two retroactive decision-log rows for this subject.
